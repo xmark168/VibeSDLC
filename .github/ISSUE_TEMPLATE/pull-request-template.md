@@ -1,6 +1,6 @@
 ---
 name: Pull request template
-about: This help developers write better pull request
+about: 'This help developers write better pull request '
 title: "[PR]"
 labels: ''
 assignees: ''
