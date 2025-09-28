@@ -17,4 +17,25 @@ export default defineConfig({
     }),
     react(),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // React ecosystem
+          react: ["react", "react-dom"],
+          // UI library
+          ui: ["@chakra-ui/react", "@emotion/react"],
+          // TanStack libraries
+          tanstack: [
+            "@tanstack/react-query",
+            "@tanstack/react-router",
+            "@tanstack/react-query-devtools",
+          ],
+          // Icons and utils
+          utils: ["react-icons", "axios", "react-hook-form"],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 1000,
+  },
 })

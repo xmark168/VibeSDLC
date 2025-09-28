@@ -1,14 +1,19 @@
 {
-  "name": "frontend",
+  "name": "vibesdlc-frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.build.json && vite build",
     "lint": "biome check --write --unsafe --no-errors-on-unmatched --files-ignore-unknown=true ./",
     "preview": "vite preview",
-    "generate-client": "openapi-ts"
+    "generate-client": "openapi-ts",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "analyze": "vite-bundle-analyzer",
+    "ci": "npm run typecheck && npm run lint && npm run build"
   },
   "dependencies": {
     "@chakra-ui/react": "^3.27.0",

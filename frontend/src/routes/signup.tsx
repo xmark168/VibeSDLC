@@ -16,17 +16,6 @@ import useAuth, { isLoggedIn } from "@/hooks/useAuth"
 import { confirmPasswordRules, emailPattern, passwordRules } from "@/utils"
 import Logo from "/assets/images/fastapi-logo.svg"
 
-export const Route = createFileRoute("/signup")({
-  component: SignUp,
-  beforeLoad: async () => {
-    if (isLoggedIn()) {
-      throw redirect({
-        to: "/",
-      })
-    }
-  },
-})
-
 interface UserRegisterForm extends UserRegister {
   confirm_password: string
 }
@@ -129,4 +118,13 @@ function SignUp() {
   )
 }
 
-export default SignUp
+export const Route = createFileRoute("/signup")({
+  component: SignUp,
+  beforeLoad: async () => {
+    if (isLoggedIn()) {
+      throw redirect({
+        to: "/",
+      })
+    }
+  },
+})
