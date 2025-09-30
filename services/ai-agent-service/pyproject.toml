@@ -1,0 +1,79 @@
+[project]
+name = "ai-agent-service"
+version = "0.1.0"
+description = "AI Agent service with LangChain and LangGraph"
+requires-python = ">=3.10,<4.0"
+dependencies = [
+    "fastapi[standard]<1.0.0,>=0.114.2",
+    "python-multipart<1.0.0,>=0.0.7",
+    "pydantic>2.0",
+    "pydantic-settings<3.0.0,>=2.2.1",
+    "httpx<1.0.0,>=0.25.1",
+    # LangChain ecosystem
+    "langchain<1.0.0,>=0.3.0",
+    "langchain-openai<1.0.0,>=0.2.0",
+    "langchain-anthropic<1.0.0,>=0.2.0",
+    "langchain-community<1.0.0,>=0.3.0",
+    "langgraph<1.0.0,>=0.2.0",
+    "langsmith<1.0.0,>=0.1.0",
+    # LangFuse for observability
+    "langfuse<3.0.0,>=2.50.0",
+    # Kafka for event streaming
+    "aiokafka<1.0.0,>=0.10.0",
+    "confluent-kafka<3.0.0,>=2.3.0",
+    # Vector database
+    "chromadb<1.0.0,>=0.5.0",
+    "sentence-transformers<3.0.0,>=2.7.0",
+    # Additional tools
+    "beautifulsoup4<5.0.0,>=4.12.0",
+    "requests<3.0.0,>=2.31.0",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest<8.0.0,>=7.4.3",
+    "pytest-asyncio<1.0.0,>=0.21.0",
+    "mypy<2.0.0,>=1.8.0",
+    "ruff<1.0.0,>=0.2.2",
+    "pre-commit<4.0.0,>=3.6.2",
+    "coverage<8.0.0,>=7.4.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.mypy]
+strict = true
+
+[tool.ruff]
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "ARG001", # unused arguments in functions
+    "T201",   # print statements are not allowed
+]
+ignore = [
+    "E501",  # line too long
+    "B008",  # do not perform function calls in argument defaults
+    "W191",  # indentation contains tabs
+]
+
+[tool.ruff.lint.pyupgrade]
+keep-runtime-typing = true
+
+[tool.coverage.run]
+source = ["app"]
+dynamic_context = "test_function"
+
+[tool.coverage.report]
+show_missing = true
+sort = "-Cover"
