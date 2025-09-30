@@ -13,13 +13,13 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "AI Agent Service"
     ENVIRONMENT: str = "local"
 
-    # OpenAI
+    # OpenAI - Latest models
     OPENAI_API_KEY: Optional[str] = None
-    OPENAI_MODEL: str = "gpt-4"
+    OPENAI_MODEL: str = "gpt-4o"  # Latest GPT-4 Omni model
 
-    # Anthropic
+    # Anthropic - Latest Claude 3.5 Sonnet
     ANTHROPIC_API_KEY: Optional[str] = None
-    ANTHROPIC_MODEL: str = "claude-3.5-sonnet-20241022"
+    ANTHROPIC_MODEL: str = "claude-3-5-sonnet-20241022"  # Latest Claude 3.5 Sonnet
 
     # LangFuse Configuration
     LANGFUSE_SECRET_KEY: Optional[str] = None

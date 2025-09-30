@@ -18,15 +18,26 @@ async def lifespan(app: FastAPI):
     """Lifespan events for the FastAPI application."""
     # Startup
     logging.info("Starting AI Agent Service...")
-    await event_consumer.start()
-    logging.info("Kafka consumer started")
+
+    # Start Kafka consumer (will fail gracefully if Kafka is not available)
+    try:
+        # Don't await start() - it's a blocking consumer loop
+        # Instead, we'll start it as a background task
+        import asyncio
+        asyncio.create_task(event_consumer.start())
+        logging.info("Kafka consumer started in background")
+    except Exception as e:
+        logging.warning(f"Kafka consumer not started: {e}. Service will work without event processing.")
 
     yield
 
     # Shutdown
     logging.info("Shutting down AI Agent Service...")
-    await event_consumer.stop()
-    logging.info("Kafka consumer stopped")
+    try:
+        await event_consumer.stop()
+        logging.info("Kafka consumer stopped")
+    except Exception as e:
+        logging.warning(f"Error stopping Kafka consumer: {e}")
 
 
 app = FastAPI(
