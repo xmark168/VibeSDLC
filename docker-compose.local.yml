@@ -2,7 +2,7 @@
 services:
   # Local PostgreSQL for development
   postgres:
-    image: postgres:15
+    image: postgres:18
     container_name: postgres-local
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-app}
