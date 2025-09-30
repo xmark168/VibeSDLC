@@ -6,3 +6,7 @@ node_modules/
 /playwright/.cache/
 
 .claude
+
+__pycache__/
+*.pyc
+*.pyo
