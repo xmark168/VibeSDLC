@@ -1,425 +1,222 @@
-"""
-Gatherer Agent
-
-Tính năng:
-- Phỏng vấn người dùng để thu thập requirements
-- Lập kế hoạch từ câu hỏi nghiên cứu
-- Web search và extract nội dung (tavily)
-- Tổng hợp insight và requirements
-- Giao tiếp với các sub-agents khác trong PO
-
-"""
-
-from __future__ import annotations
-from typing import List, Dict, Any, Set, Optional
-from typing_extensions import TypedDict, Literal
-from dataclasses import dataclass
-import os, json, time
-from datetime import datetime
-
-from langgraph.graph import StateGraph, START, END
-from pydantic import BaseModel, Field
-
-# LLM
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from typing import TypedDict, Annotated, Dict, Any, List, Optional
 from langchain_core.prompts import ChatPromptTemplate
-import httpx
+from langchain_openai import ChatOpenAI
+from langchain.agents import create_react_agent, AgentExecutor
+from langchain.memory import ConversationBufferMemory
+from langchain_community.tools import DuckDuckGoSearchRun
+from langchain.tools import Tool
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+import operator
+import json
+import os
 
-# Tavily tools
-from langchain_tavily import TavilySearch, TavilyExtract
+# --- Langfuse: tracing/observability ---
+from langfuse import Langfuse
+from langfuse.callback import CallbackHandler
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except Exception:
-    pass
+# ===== Langfuse callback (đọc key/host từ .env) =====
+langfuse = Langfuse()
+lf_handler = CallbackHandler(
+    langfuse=langfuse,
+    user_id=os.getenv("LF_USER_ID", "it@ckhub.vn"),
+    session_id=os.getenv("LF_SESSION_ID", "gatherer-session"),
+    tags=["gatherer", "react-agent"]
+)
 
+# ===== Cấu hình OpenAI-compatible =====
+# Dùng model từ env (nếu provider của bạn yêu cầu tên khác 'gpt-4o')
+MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # đã được map từ API_KEY ở main.py
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")  # ví dụ: https://v98store.com/v1
 
-# === Data Models ===
-
-class UserRequirement(BaseModel):
-    """Mô hình cho một requirement từ user"""
-    id: str
-    title: str
-    description: str
-    priority: Literal["high", "medium", "low"] = "medium"
-    category: str  # e.g., "functional", "non-functional", "ui/ux"
-    source: str  # "interview", "research", "assumption"
-    confidence: float = 0.5  # 0-1, độ tin cậy của requirement
-    created_at: datetime = Field(default_factory=datetime.now)
-
-
-class ResearchQuery(BaseModel):
-    """Câu hỏi nghiên cứu"""
-    query: str
-    purpose: str
-    priority: int = 1
-
-
+# ============ State schema ============
 class GathererState(TypedDict):
-    """State của Gatherer Agent"""
-    user_input: str
-    conversation_history: List[Dict[str, Any]]
-    requirements: List[UserRequirement]
-    research_queries: List[ResearchQuery]
-    research_results: List[Dict[str, Any]]
-    insights: List[str]
-    next_questions: List[str]
-    status: Literal["gathering", "researching", "analyzing", "complete"]
-    error: Optional[str]
+    input_data: Dict[str, Any]
+    memory: Annotated[List[Dict[str, str]], operator.add]
+    uncertainties: List[str]
+    brief: Optional[str]
+    status: str
+    next_question: Optional[str]
+    tool_results: Dict[str, Any]
+    gaps: List[str]
+    completeness_score: float
 
+# ============ Prompts ============
+EVALUATE_PROMPT = """
+Bạn là một chuyên gia đánh giá tính hoàn chỉnh của thông tin sản phẩm.
+Dựa trên template sau và memory chat, đánh giá completeness score từ 0-1.
+Template: {template}
+Memory: {memory}
+Output JSON: {{"status": "hoàn tất/chưa hoàn tất/hỏi thêm", "completeness_score": number (0-1), "gaps": ["list of missing fields"]}}
+"""
 
-# === Gatherer Agent Class ===
+GENERATE_PROMPT = """
+Tạo product brief dựa trên template và memory.
+Template: {template}
+Memory: {memory}
+Output: JSON theo template.
+"""
 
-class GathererAgent:
+REFLECTION_PROMPT = """
+Phản ánh và validate brief.
+Brief: {brief}
+Memory: {memory}
+Output JSON: {{"validated_brief": updated brief JSON, "issues": ["list of issues"]}}
+"""
+
+NATURAL_QUESTION_PROMPT = """
+Chuyển uncertainties thành câu hỏi tự nhiên.
+Uncertainties: {uncertainties}
+Output: Câu hỏi tự nhiên để hỏi user.
+"""
+
+# ============ Template brief ============
+PRODUCT_BRIEF_TEMPLATE = {
+    "ten_san_pham": {"required": True, "value": ""},
+    "tong_quan": {"required": True, "value": ""},
+    "muc_tieu": {"required": True, "value": ""},
+    "doi_tuong_muc_tieu": {"required": True, "value": ""},
+    "tinh_nang_chinh": {"required": True, "value": []},
+    "tinh_nang_mo_rong": {"required": False, "value": []},
+}
+
+# ===== Helpers =====
+def _safe_json_loads(text: str) -> Dict[str, Any]:
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except Exception:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return json.loads(text[start : end + 1])
+        raise
+
+def _chat_llm(temp: float):
     """
-    Gatherer Agent - Thu thập requirements từ user và research
+    Khởi tạo ChatOpenAI trỏ thẳng tới OpenAI-compatible endpoint của bạn.
+    Truyền api_key & base_url tường minh để không phụ thuộc env trong runtime.
     """
+    return ChatOpenAI(
+        model=MODEL_NAME,
+        temperature=temp,
+        api_key=OPENAI_API_KEY,
+        base_url=OPENAI_BASE_URL,
+        callbacks=[lf_handler],
+    )
 
-    def __init__(self, llm_model: str = "gpt-4o-mini", api_base_url: str = "https://v98store.com/v1"):
-        # Configure ChatOpenAI to use third-party API service
-        self.llm = ChatOpenAI(
-            model=llm_model,
-            temperature=0.7,
-            base_url=api_base_url,
-            api_key=os.getenv("OPENAI_API_KEY")  # Your v98store API key
-        )
-        self.tavily_search = TavilySearch()
-        self.tavily_extract = TavilyExtract()
-        self.api_base_url = api_base_url
+# ===== Custom tools =====
+def evaluate_completeness(state: GathererState) -> Dict[str, Any]:
+    llm = _chat_llm(0.3)
+    prompt = ChatPromptTemplate.from_messages([("system", EVALUATE_PROMPT)])
+    chain = prompt | llm
+    memory_str = json.dumps(state.get("memory", []), ensure_ascii=False)
+    resp = chain.invoke(
+        {
+            "template": json.dumps(PRODUCT_BRIEF_TEMPLATE, ensure_ascii=False),
+            "memory": memory_str,
+        },
+        config={"callbacks": [lf_handler]},
+    )
+    return _safe_json_loads(resp.content)
 
-    async def check_api_balance(self) -> Dict[str, Any]:
-        """Check API key balance from v98store"""
-        try:
-            api_key = os.getenv("OPENAI_API_KEY")
-            if not api_key:
-                return {"error": "API key not found in environment variables"}
+def naturalize_question(state: GathererState) -> str:
+    llm = _chat_llm(0.5)
+    prompt = ChatPromptTemplate.from_messages([("system", NATURAL_QUESTION_PROMPT)])
+    chain = prompt | llm
+    resp = chain.invoke(
+        {"uncertainties": state.get("gaps", [])},
+        config={"callbacks": [lf_handler]},
+    )
+    return resp.content.strip()
 
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"https://v98store.com/check-balance?key={api_key}",
-                    timeout=10.0
-                )
+def generate_brief(state: GathererState) -> Dict[str, Any]:
+    llm = _chat_llm(0.3)
+    prompt = ChatPromptTemplate.from_messages([("system", GENERATE_PROMPT)])
+    chain = prompt | llm
+    memory_str = json.dumps(state.get("memory", []), ensure_ascii=False)
+    resp = chain.invoke(
+        {
+            "template": json.dumps(PRODUCT_BRIEF_TEMPLATE, ensure_ascii=False),
+            "memory": memory_str,
+        },
+        config={"callbacks": [lf_handler]},
+    )
+    return _safe_json_loads(resp.content)
 
-                if response.status_code == 200:
-                    return {"status": "success", "data": response.json()}
-                else:
-                    return {"error": f"API check failed with status {response.status_code}"}
+def reflect_validate(state: GathererState) -> Dict[str, Any]:
+    llm = _chat_llm(0.2)
+    prompt = ChatPromptTemplate.from_messages([("system", REFLECTION_PROMPT)])
+    chain = prompt | llm
+    memory_str = json.dumps(state.get("memory", []), ensure_ascii=False)
+    resp = chain.invoke(
+        {
+            "brief": state.get("brief", ""),
+            "memory": memory_str,
+        },
+        config={"callbacks": [lf_handler]},
+    )
+    return _safe_json_loads(resp.content)
 
-        except Exception as e:
-            return {"error": f"Failed to check API balance: {str(e)}"}
+# ===== Tools list =====
+tools = [
+    DuckDuckGoSearchRun(name="web_search"),
+    Tool(name="evaluate_completeness", func=evaluate_completeness,
+         description="Đánh giá tính hoàn chỉnh của thông tin dựa trên memory."),
+    Tool(name="naturalize_question", func=naturalize_question,
+         description="Chuyển gaps thành câu hỏi tự nhiên."),
+    Tool(name="generate_brief", func=generate_brief,
+         description="Tạo product brief từ memory."),
+    Tool(name="reflect_validate", func=reflect_validate,
+         description="Phản ánh và validate brief."),
+]
 
-        # Prompts
-        self.interview_prompt = ChatPromptTemplate.from_messages([
-            ("system", """Bạn là một Product Owner chuyên nghiệp, nhiệm vụ là phỏng vấn user để thu thập requirements cho dự án website.
+# ===== System prompt =====
+SYSTEM_PROMPT = """
+Bạn là Gatherer Agent, phỏng vấn user để thu thập thông tin sản phẩm và tạo brief.
+Sử dụng tools để đánh giá, hỏi thêm, search nếu cần, và generate brief khi hoàn chỉnh (>0.8).
+Bắt đầu bằng chào hỏi empathic.
+Giữ memory cập nhật.
+Kết thúc khi brief validated.
+"""
 
-Nguyên tắc phỏng vấn:
-1. Đặt câu hỏi mở, khuyến khích user chia sẻ chi tiết
-2. Đào sâu vào business logic và user experience
-3. Xác định rõ functional và non-functional requirements
-4. Ưu tiên các tính năng theo business value
-5. Tránh leading questions, để user tự mô tả vision
+# ===== LLM + Memory + Agent =====
+llm = _chat_llm(0.4)
+memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
-Hãy phân tích input của user và:
-- Trích xuất requirements rõ ràng
-- Đặt 2-3 câu hỏi follow-up thông minh
-- Đề xuất research queries nếu cần
+agent = create_react_agent(
+    llm=llm,
+    tools=tools,
+    prompt=ChatPromptTemplate.from_messages([
+        ("system", SYSTEM_PROMPT),
+        ("placeholder", "{chat_history}"),
+        ("human", "{input}"),
+        ("placeholder", "{agent_scratchpad}"),
+    ])
+)
 
-Trả về JSON format:
-{{
-    "requirements": [
-        {{
-            "title": "...",
-            "description": "...",
-            "category": "functional|non-functional|ui/ux",
-            "priority": "high|medium|low",
-            "confidence": 0.8
-        }}
-    ],
-    "next_questions": ["...", "..."],
-    "research_queries": [
-        {{
-            "query": "...",
-            "purpose": "...",
-            "priority": 1
-        }}
-    ]
-}}"""),
-            ("human", "{user_input}")
-        ])
+agent_executor = AgentExecutor(
+    agent=agent,
+    tools=tools,
+    memory=memory,
+    verbose=True,
+    handle_parsing_errors=True,
+    callbacks=[lf_handler],
+)
 
-        self.analysis_prompt = ChatPromptTemplate.from_messages([
-            ("system", """Bạn là chuyên gia phân tích requirements. Hãy tổng hợp và phân tích:
-
-1. Tất cả requirements đã thu thập
-2. Kết quả research từ web
-3. Insights và patterns
-
-Đưa ra:
-- Tóm tắt requirements theo priority
-- Gaps cần thu thập thêm
-- Recommendations cho development team
-
-Format JSON:
-{{
-    "summary": "...",
-    "priority_requirements": ["...", "..."],
-    "gaps": ["...", "..."],
-    "recommendations": ["...", "..."],
-    "insights": ["...", "..."]
-}}"""),
-            ("human", "Requirements: {requirements}\nResearch: {research_results}")
-        ])
-
-    def create_workflow(self) -> StateGraph:
-        """Tạo LangGraph workflow cho Gatherer"""
-        workflow = StateGraph(GathererState)
-
-        # Add nodes
-        workflow.add_node("interview", self.interview_user)
-        workflow.add_node("research", self.research_topics)
-        workflow.add_node("analyze", self.analyze_requirements)
-
-        # Add edges
-        workflow.add_edge(START, "interview")
-        workflow.add_conditional_edges(
-            "interview",
-            self.should_research,
-            {
-                "research": "research",
-                "analyze": "analyze"
-            }
-        )
-        workflow.add_edge("research", "analyze")
-        workflow.add_edge("analyze", END)
-
-        return workflow.compile()
-
-    async def interview_user(self, state: GathererState) -> GathererState:
-        """Phỏng vấn user để thu thập requirements"""
-        try:
-            # Check API balance before making calls
-            balance_check = await self.check_api_balance()
-            if "error" in balance_check:
-                state["error"] = f"API service error: {balance_check['error']}"
-                state["status"] = "complete"
-                return state
-
-            # Gọi LLM để phân tích input
-            response = await self.llm.ainvoke(
-                self.interview_prompt.format_messages(
-                    user_input=state["user_input"]
-                )
-            )
-
-            # Parse JSON response
-            import json
-            result = json.loads(response.content)
-
-            # Cập nhật state
-            new_requirements = [
-                UserRequirement(
-                    id=f"req_{len(state['requirements'])}_{int(time.time())}",
-                    title=req["title"],
-                    description=req["description"],
-                    category=req["category"],
-                    priority=req["priority"],
-                    confidence=req["confidence"],
-                    source="interview"
-                )
-                for req in result.get("requirements", [])
-            ]
-
-            state["requirements"].extend(new_requirements)
-            state["next_questions"] = result.get("next_questions", [])
-            state["research_queries"].extend([
-                ResearchQuery(**query) for query in result.get("research_queries", [])
-            ])
-            state["status"] = "researching" if state["research_queries"] else "analyzing"
-
-        except Exception as e:
-            state["error"] = f"Interview error: {str(e)}"
-            state["status"] = "complete"
-
-        return state
-
-    async def research_topics(self, state: GathererState) -> GathererState:
-        """Research các topics liên quan đến requirements"""
-        try:
-            research_results = []
-
-            for query in state["research_queries"]:
-                # Search với Tavily
-                search_results = await self.tavily_search.ainvoke(query.query)
-
-                # Extract content từ top results
-                if search_results and len(search_results) > 0:
-                    top_urls = [result.get("url") for result in search_results[:3] if result.get("url")]
-                    if top_urls:
-                        extracted_content = await self.tavily_extract.ainvoke(top_urls)
-
-                        research_results.append({
-                            "query": query.query,
-                            "purpose": query.purpose,
-                            "search_results": search_results,
-                            "extracted_content": extracted_content,
-                            "timestamp": datetime.now().isoformat()
-                        })
-
-            state["research_results"] = research_results
-            state["status"] = "analyzing"
-
-        except Exception as e:
-            state["error"] = f"Research error: {str(e)}"
-            state["status"] = "analyzing"  # Continue to analysis even if research fails
-
-        return state
-
-    async def analyze_requirements(self, state: GathererState) -> GathererState:
-        """Phân tích và tổng hợp tất cả requirements"""
-        try:
-            # Check API balance before making calls
-            balance_check = await self.check_api_balance()
-            if "error" in balance_check:
-                state["error"] = f"API service error during analysis: {balance_check['error']}"
-                state["status"] = "complete"
-                return state
-
-            # Prepare data for analysis
-            requirements_summary = [
-                {
-                    "title": req.title,
-                    "description": req.description,
-                    "category": req.category,
-                    "priority": req.priority,
-                    "confidence": req.confidence,
-                    "source": req.source
-                }
-                for req in state["requirements"]
-            ]
-
-            research_summary = [
-                {
-                    "query": res["query"],
-                    "purpose": res["purpose"],
-                    "key_findings": res.get("extracted_content", {}).get("summary", "No summary available")
-                }
-                for res in state["research_results"]
-            ]
-
-            # Gọi LLM để phân tích
-            response = await self.llm.ainvoke(
-                self.analysis_prompt.format_messages(
-                    requirements=json.dumps(requirements_summary, indent=2),
-                    research_results=json.dumps(research_summary, indent=2)
-                )
-            )
-
-            # Parse kết quả
-            import json
-            analysis = json.loads(response.content)
-
-            state["insights"] = analysis.get("insights", [])
-            state["status"] = "complete"
-
-            # Add analysis results to conversation history
-            state["conversation_history"].append({
-                "type": "analysis",
-                "summary": analysis.get("summary", ""),
-                "priority_requirements": analysis.get("priority_requirements", []),
-                "gaps": analysis.get("gaps", []),
-                "recommendations": analysis.get("recommendations", []),
-                "timestamp": datetime.now().isoformat()
-            })
-
-        except Exception as e:
-            state["error"] = f"Analysis error: {str(e)}"
-            state["status"] = "complete"
-
-        return state
-
-    def should_research(self, state: GathererState) -> str:
-        """Quyết định có cần research hay không"""
-        if state["research_queries"] and len(state["research_queries"]) > 0:
-            return "research"
-        return "analyze"
-
-    async def run(self, user_input: str) -> Dict[str, Any]:
-        """Main method để chạy Gatherer agent"""
-        # Initialize state
-        initial_state: GathererState = {
-            "user_input": user_input,
-            "conversation_history": [],
-            "requirements": [],
-            "research_queries": [],
-            "research_results": [],
-            "insights": [],
-            "next_questions": [],
-            "status": "gathering",
-            "error": None
-        }
-
-        # Create and run workflow
-        workflow = self.create_workflow()
-        final_state = await workflow.ainvoke(initial_state)
-
-        # Format output
-        return {
-            "status": final_state["status"],
-            "requirements": [req.model_dump() for req in final_state["requirements"]],
-            "next_questions": final_state["next_questions"],
-            "insights": final_state["insights"],
-            "conversation_history": final_state["conversation_history"],
-            "error": final_state.get("error")
-        }
-
-
-# === Tools cho Gatherer Agent ===
-
-class GathererTools:
-    """Collection of tools for Gatherer Agent"""
-
-    def __init__(self, gatherer: GathererAgent):
-        self.gatherer = gatherer
-
-    async def interview_user(self, user_input: str) -> Dict[str, Any]:
-        """Tool để phỏng vấn user"""
-        return await self.gatherer.run(user_input)
-
-    async def get_requirements_summary(self, requirements: List[UserRequirement]) -> str:
-        """Tool để tóm tắt requirements"""
-        summary = "## Requirements Summary\n\n"
-
-        # Group by priority
-        high_priority = [req for req in requirements if req.priority == "high"]
-        medium_priority = [req for req in requirements if req.priority == "medium"]
-        low_priority = [req for req in requirements if req.priority == "low"]
-
-        for priority, reqs in [("High", high_priority), ("Medium", medium_priority), ("Low", low_priority)]:
-            if reqs:
-                summary += f"### {priority} Priority\n"
-                for req in reqs:
-                    summary += f"- **{req.title}**: {req.description}\n"
-                summary += "\n"
-
-        return summary
-
-    async def export_requirements(self, requirements: List[UserRequirement], format: str = "json") -> str:
-        """Export requirements to different formats"""
-        if format == "json":
-            return json.dumps([req.model_dump() for req in requirements], indent=2)
-        elif format == "markdown":
-            return await self.get_requirements_summary(requirements)
-        else:
-            raise ValueError(f"Unsupported format: {format}")
-
-
-# === Factory function ===
-
-def create_gatherer_agent(
-    llm_model: str = "gpt-4o-mini",
-    api_base_url: str = "https://v98store.com/v1"
-) -> GathererAgent:
-    """Factory function để tạo Gatherer Agent với third-party API support"""
-    return GathererAgent(llm_model=llm_model, api_base_url=api_base_url)
+# ===== Public API =====
+def run_gatherer(user_input: str):
+    # State khởi tạo (nếu sau này bạn muốn chuyền state vào tools)
+    state = GathererState(
+        input_data={},
+        memory=[],
+        uncertainties=[],
+        brief=None,
+        status="chưa hoàn tất",
+        next_question=None,
+        tool_results={},
+        gaps=[],
+        completeness_score=0.0
+    )
+    response = agent_executor.invoke({"input": user_input}, config={"callbacks": [lf_handler]})
+    return response["output"]
