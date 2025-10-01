@@ -11,7 +11,10 @@ logger = logging.getLogger(__name__)
 
 
 def custom_generate_unique_id(route: APIRoute) -> str:
-    return f"{route.tags[0]}-{route.name}"
+    """Generate unique ID for API routes."""
+    if route.tags:
+        return f"{route.tags[0]}-{route.name}"
+    return route.name
 
 
 app = FastAPI(
