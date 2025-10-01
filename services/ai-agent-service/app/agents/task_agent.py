@@ -208,36 +208,3 @@ class TaskAgent:
                 "processed_at": datetime.utcnow().isoformat()
             }
 
-    # Event handlers for Kafka events
-    async def on_user_created(self, data: Dict[str, Any]):
-        """Handle user creation event."""
-        logger.info(f"New user created: {data.get('email')}")
-        # Could send welcome message or create onboarding tasks
-
-    async def on_user_updated(self, data: Dict[str, Any]):
-        """Handle user update event."""
-        logger.info(f"User updated: {data.get('email')}")
-
-    async def on_user_deleted(self, data: Dict[str, Any]):
-        """Handle user deletion event."""
-        logger.info(f"User deleted: {data.get('email')}")
-
-    async def on_item_created(self, data: Dict[str, Any]):
-        """Handle item/task creation event."""
-        logger.info(f"New item created: {data.get('title')}")
-
-        # Automatically process the new task
-        if data.get('title') and data.get('owner_id'):
-            result = await self.process_task(
-                user_id=str(data['owner_id']),
-                task_description=data['title']
-            )
-            logger.info(f"Task processed: {result}")
-
-    async def on_item_updated(self, data: Dict[str, Any]):
-        """Handle item/task update event."""
-        logger.info(f"Item updated: {data.get('title')}")
-
-    async def on_item_deleted(self, data: Dict[str, Any]):
-        """Handle item/task deletion event."""
-        logger.info(f"Item deleted: {data.get('title')}")

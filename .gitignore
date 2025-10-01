@@ -6,7 +6,10 @@ node_modules/
 /playwright/.cache/
 
 .claude
-
+.venv
+uv.lock
+.egg-info
 __pycache__/
 *.pyc
 *.pyo
+*.pyd

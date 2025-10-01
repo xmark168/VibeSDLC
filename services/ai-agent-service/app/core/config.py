@@ -26,20 +26,5 @@ class Settings(BaseSettings):
     LANGFUSE_PUBLIC_KEY: Optional[str] = None
     LANGFUSE_HOST: str = "https://cloud.langfuse.com"
 
-    # Kafka Configuration
-    KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
-    KAFKA_GROUP_ID: str = "ai-agent-service"
-
-    # Vector Database
-    CHROMA_HOST: str = "localhost"
-    CHROMA_PORT: int = 8000
-
-    @field_validator("KAFKA_BOOTSTRAP_SERVERS")
-    @classmethod
-    def assemble_kafka_servers(cls, v: str) -> str:
-        if isinstance(v, str):
-            return v
-        return v
-
 
 settings = Settings()

@@ -2,7 +2,8 @@
 name = "ai-agent-service"
 version = "0.1.0"
 description = "AI Agent service with LangChain and LangGraph"
-requires-python = ">=3.10,<4.0"
+readme = "README.md"
+requires-python = ">=3.10"
 dependencies = [
     "fastapi[standard]>=0.115.0",
     "python-multipart>=0.0.17",
@@ -19,9 +20,7 @@ dependencies = [
     "langsmith>=0.2.7",
     # LangFuse for observability
     "langfuse>=2.56.0",
-    # Kafka for event streaming
-    "aiokafka>=0.12.0",
-    # Additional tools
+    # Server
     "uvicorn>=0.34.0",
 ]
 
@@ -36,8 +35,8 @@ dev-dependencies = [
 ]
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [tool.mypy]
 strict = true
