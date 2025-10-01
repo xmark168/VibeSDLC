@@ -12,7 +12,10 @@ interface ButtonLoadingProps {
   loadingText?: React.ReactNode
 }
 
-export interface ButtonProps extends ChakraButtonProps, ButtonLoadingProps {}
+// Extend ButtonProps to include custom variants
+export interface ButtonProps extends Omit<ChakraButtonProps, 'variant'>, ButtonLoadingProps {
+  variant?: ChakraButtonProps['variant'] | 'black'
+}
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   function Button(props, ref) {
