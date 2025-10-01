@@ -14,6 +14,7 @@ IMAGE_NAME="vibe-management-service"
 CONTAINER_NAME="vibe-management-service"
 PORT=8000
 SERVICE_PATH="/home/xmark/Desktop/VibeSDLC/services/management-service"
+ROOT_PATH="/home/xmark/Desktop/VibeSDLC"
 
 # Function to print colored messages
 print_info() {
@@ -51,14 +52,14 @@ cleanup_container() {
 build_image() {
     print_info "Building Management Service Docker image..."
 
-    # Check if .env file exists
-    if [ ! -f "${SERVICE_PATH}/.env" ]; then
-        print_warning ".env file not found. Creating from .env.example..."
-        if [ -f "${SERVICE_PATH}/.env.example" ]; then
-            cp "${SERVICE_PATH}/.env.example" "${SERVICE_PATH}/.env"
-            print_warning "Please update ${SERVICE_PATH}/.env with your configuration"
+    # Check if .env file exists in root
+    if [ ! -f "${ROOT_PATH}/.env" ]; then
+        print_warning ".env file not found in root. Creating from .env.example..."
+        if [ -f "${ROOT_PATH}/.env.example" ]; then
+            cp "${ROOT_PATH}/.env.example" "${ROOT_PATH}/.env"
+            print_warning "Please update ${ROOT_PATH}/.env with your configuration"
         else
-            print_error ".env.example not found"
+            print_error ".env.example not found in root"
             exit 1
         fi
     fi
@@ -79,7 +80,7 @@ run_container() {
     docker run -d \
         -p ${PORT}:8000 \
         --name ${CONTAINER_NAME} \
-        --env-file ${SERVICE_PATH}/.env \
+        --env-file ${ROOT_PATH}/.env \
         --restart unless-stopped \
         ${IMAGE_NAME}
 
