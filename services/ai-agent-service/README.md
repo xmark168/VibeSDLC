@@ -1,0 +1,323 @@
+# AI Agent Service
+
+An intelligent AI agent service built with FastAPI, LangChain, and LangGraph for automated task management and analysis.
+
+## 🤖 Features
+
+- **Task Analysis**: Intelligent analysis of task complexity and requirements
+- **Smart Suggestions**: AI-powered recommendations for task completion
+- **Priority Management**: Automatic task prioritization
+- **Event-Driven**: Kafka integration for real-time processing
+- **Observability**: LangFuse integration for monitoring and debugging
+- **Multi-LLM Support**: Claude (Anthropic) and GPT (OpenAI)
+
+## 🏗️ Architecture
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│                 │    │                  │    │                 │
+│   Task Input    │───►│   LangGraph      │───►│   AI Analysis   │
+│                 │    │   Workflow       │    │   & Suggestions │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+                               │
+                               ▼
+                    ┌──────────────────┐
+                    │                  │
+                    │   LangFuse       │
+                    │   Observability  │
+                    │                  │
+                    └──────────────────┘
+```
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- **Python 3.10+**
+- **LangGraph CLI** (for studio development)
+- **API Keys** (OpenAI and/or Anthropic)
+
+### Installation
+
+```bash
+# Clone and navigate
+cd services/ai-agent-service
+
+# Install dependencies
+pip install -r requirements.txt
+# or with uv
+uv sync
+
+# Setup environment
+cp .env.example .env
+# Edit .env with your API keys
+```
+
+### Running the Service
+
+#### 1. Standard FastAPI Server
+
+```bash
+# Development server
+python -m uvicorn app.main:app --reload --port 8001
+
+# Or via main.py
+python app/main.py
+```
+
+#### 2. LangGraph Studio Development
+
+**Install LangGraph CLI:**
+```bash
+pip install langgraph-cli
+```
+
+**Start LangGraph Studio:**
+```bash
+# In the ai-agent-service directory
+langgraph dev
+
+# This will start:
+# - LangGraph Studio UI at http://localhost:8123
+# - API server at http://localhost:8001
+```
+
+**LangGraph Studio Benefits:**
+- **Visual Workflow Editor** - See and edit your agent graph
+- **Step-by-Step Debugging** - Debug each node execution
+- **Real-time Testing** - Test different inputs and see outputs
+- **Performance Monitoring** - Track execution time and memory
+- **Version Control** - Save and compare different graph versions
+
+### Configuration
+
+**Required Environment Variables:**
+```bash
+# At least one LLM API key is required
+OPENAI_API_KEY=your-openai-api-key
+ANTHROPIC_API_KEY=your-anthropic-api-key
+
+# Optional: LangFuse for observability
+LANGFUSE_SECRET_KEY=your-langfuse-secret
+LANGFUSE_PUBLIC_KEY=your-langfuse-public
+LANGFUSE_HOST=https://cloud.langfuse.com
+
+# Kafka for event processing
+KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+```
+
+## 🛠️ Development Workflow
+
+### 1. Using LangGraph Studio
+
+```bash
+# Start studio
+langgraph dev
+
+# Open browser to http://localhost:8123
+# Visual graph editor will show your TaskAgent workflow
+```
+
+**Studio Features:**
+- **Graph Visualization** - See nodes: analyze_task → generate_suggestions → prioritize_task
+- **Interactive Testing** - Input test tasks and see AI responses
+- **Debug Mode** - Step through each node execution
+- **State Inspection** - View TaskState at each step
+
+### 2. Testing the Agent
+
+**Via Studio UI:**
+1. Open http://localhost:8123
+2. Select "task_agent" graph
+3. Input test data:
+   ```json
+   {
+     "user_id": "test-user",
+     "task_description": "Build a React component for user authentication"
+   }
+   ```
+4. Run and inspect results
+
+**Via API:**
+```bash
+# Test the REST endpoint
+curl -X POST "http://localhost:8001/api/v1/agents/process-task" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "test-user",
+    "task_description": "Implement user authentication system"
+  }'
+```
+
+### 3. Debugging & Monitoring
+
+**LangFuse Integration:**
+- All LLM calls are automatically traced
+- View execution traces at your LangFuse dashboard
+- Monitor token usage and costs
+- Debug prompt engineering
+
+**Logs:**
+```bash
+# View service logs
+docker compose logs -f ai-agent-service
+
+# Or if running locally
+python app/main.py  # Logs to console
+```
+
+## 📊 Agent Workflow
+
+The TaskAgent uses a LangGraph workflow with these nodes:
+
+```mermaid
+graph TD
+    A[Start] --> B[analyze_task]
+    B --> C[generate_suggestions]
+    C --> D[prioritize_task]
+    D --> E[End]
+```
+
+**Node Functions:**
+1. **analyze_task** - LLM analyzes complexity, time, skills needed
+2. **generate_suggestions** - Creates 3-5 actionable recommendations
+3. **prioritize_task** - Determines priority level and next actions
+
+**State Management:**
+```python
+class TaskState(BaseModel):
+    user_id: Optional[str] = None
+    task_description: Optional[str] = None
+    priority: str = "medium"
+    suggestions: List[str] = []
+    analysis: Optional[str] = None
+    next_action: Optional[str] = None
+```
+
+## 🔗 Integration
+
+### Kafka Events
+
+The service automatically processes these events:
+- `user.created` - Welcome new users
+- `user.updated` - Update user context
+- `item.created` - Analyze new tasks
+- `item.updated` - Re-analyze changed tasks
+
+### API Endpoints
+
+```bash
+GET  /health                    # Health check
+POST /api/v1/agents/process-task # Manual task processing
+```
+
+## 🧪 Testing
+
+```bash
+# Unit tests
+pytest
+
+# With coverage
+pytest --cov=app
+
+# Async tests
+pytest -v tests/test_agents.py
+```
+
+## 📈 Monitoring
+
+### LangFuse Observability
+
+1. **Trace Every LLM Call**
+2. **Monitor Token Usage**
+3. **Debug Prompt Performance**
+4. **Track User Sessions**
+
+### Health Checks
+
+```bash
+# Service health
+curl http://localhost:8001/health
+
+# LangGraph Studio
+curl http://localhost:8123/health  # When using langgraph dev
+```
+
+## 🔧 Advanced Configuration
+
+### Custom Models
+
+Edit `app/core/config.py`:
+```python
+OPENAI_MODEL = "gpt-4o"  # or gpt-4o-mini
+ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
+```
+
+### Graph Modifications
+
+1. **Edit in Studio** - Visual editor at http://localhost:8123
+2. **Code Changes** - Modify `app/agents/task_agent.py`
+3. **Hot Reload** - Studio auto-reloads on file changes
+
+### Adding New Agents
+
+1. Create new agent in `app/agents/`
+2. Add to `studio_graph.py`
+3. Update `langgraph.json`
+4. Test in Studio
+
+## 🚨 Troubleshooting
+
+### Common Issues
+
+**LangGraph Dev Not Starting:**
+```bash
+# Install langgraph-cli
+pip install langgraph-cli
+
+# Check Python path
+which python
+python --version  # Should be 3.10+
+```
+
+**Studio UI Not Loading:**
+```bash
+# Check if port 8123 is available
+lsof -i :8123
+
+# Try different port
+langgraph dev --port 8124
+```
+
+**LLM API Errors:**
+```bash
+# Check API keys
+echo $OPENAI_API_KEY
+echo $ANTHROPIC_API_KEY
+
+# Test API connectivity
+curl -H "Authorization: Bearer $OPENAI_API_KEY" \
+  https://api.openai.com/v1/models
+```
+
+### Debug Mode
+
+```bash
+# Start with debug logging
+LOG_LEVEL=DEBUG langgraph dev
+
+# Or in code
+import logging
+logging.getLogger("langgraph").setLevel(logging.DEBUG)
+```
+
+## 📚 Resources
+
+- **LangGraph Docs**: https://python.langchain.com/docs/langgraph
+- **LangGraph Studio**: https://docs.smith.langchain.com/how_to_guides/langgraph_studio
+- **LangFuse**: https://langfuse.com/docs
+- **FastAPI**: https://fastapi.tiangolo.com
+
+---
+
+**Ready to build intelligent agents!** 🤖✨

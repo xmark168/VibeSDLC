@@ -2,31 +2,26 @@
 name = "ai-agent-service"
 version = "0.1.0"
 description = "AI Agent service with LangChain and LangGraph"
-requires-python = ">=3.10,<4.0"
+readme = "README.md"
+requires-python = ">=3.10"
 dependencies = [
-    "fastapi[standard]<1.0.0,>=0.114.2",
-    "python-multipart<1.0.0,>=0.0.7",
-    "pydantic>2.0",
-    "pydantic-settings<3.0.0,>=2.2.1",
-    "httpx<1.0.0,>=0.25.1",
-    # LangChain ecosystem
-    "langchain<1.0.0,>=0.3.0",
-    "langchain-openai<1.0.0,>=0.2.0",
-    "langchain-anthropic<1.0.0,>=0.2.0",
-    "langchain-community<1.0.0,>=0.3.0",
-    "langgraph<1.0.0,>=0.2.0",
-    "langsmith<1.0.0,>=0.1.0",
+    "fastapi[standard]>=0.115.0",
+    "python-multipart>=0.0.17",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.6.0",
+    "httpx>=0.28.0",
+    # LangChain ecosystem - Latest versions
+    "langchain>=0.3.13",
+    "langchain-openai>=0.2.14",
+    "langchain-anthropic>=0.3.3",
+    "langchain-community>=0.3.13",
+    "langchain-core>=0.3.28",
+    "langgraph>=0.2.62",
+    "langsmith>=0.2.7",
     # LangFuse for observability
-    "langfuse<3.0.0,>=2.50.0",
-    # Kafka for event streaming
-    "aiokafka<1.0.0,>=0.10.0",
-    "confluent-kafka<3.0.0,>=2.3.0",
-    # Vector database
-    "chromadb<1.0.0,>=0.5.0",
-    "sentence-transformers<3.0.0,>=2.7.0",
-    # Additional tools
-    "beautifulsoup4<5.0.0,>=4.12.0",
-    "requests<3.0.0,>=2.31.0",
+    "langfuse>=2.56.0",
+    # Server
+    "uvicorn>=0.34.0",
 ]
 
 [tool.uv]
@@ -40,8 +35,12 @@ dev-dependencies = [
 ]
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
 
 [tool.mypy]
 strict = true
