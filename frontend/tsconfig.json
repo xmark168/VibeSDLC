@@ -21,6 +21,7 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
     "paths": {
       "@/*": [
         "./src/*"
@@ -36,5 +37,5 @@
     {
       "path": "./tsconfig.node.json"
     }
-  ]
+  ],
 }
