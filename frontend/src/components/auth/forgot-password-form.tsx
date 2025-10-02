@@ -18,14 +18,12 @@ export function ForgotPasswordForm() {
         e.preventDefault()
         setIsLoading(true)
 
-        // Simulate API call
         await new Promise((resolve) => setTimeout(resolve, 1500))
 
         console.log("Password reset requested for:", email)
         setIsLoading(false)
         setIsSubmitted(true)
 
-        // Redirect to OTP page after 2 seconds
         setTimeout(() => {
 
             navigate({ to: "/verify-otp" })
