@@ -13,6 +13,7 @@ export function ResizableHandle({ onResize }: ResizableHandleProps) {
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (isDragging) {
+        e.preventDefault()
         const delta = e.clientX - startXRef.current
         startXRef.current = e.clientX
         onResize(delta)
@@ -21,9 +22,14 @@ export function ResizableHandle({ onResize }: ResizableHandleProps) {
 
     const handleMouseUp = () => {
       setIsDragging(false)
+      document.body.style.userSelect = ""
+      document.body.style.cursor = ""
     }
 
     if (isDragging) {
+      document.body.style.userSelect = "none"
+      document.body.style.cursor = "col-resize"
+
       document.addEventListener("mousemove", handleMouseMove)
       document.addEventListener("mouseup", handleMouseUp)
     }
@@ -36,8 +42,9 @@ export function ResizableHandle({ onResize }: ResizableHandleProps) {
 
   return (
     <div
-      className="w-1 bg-border hover:bg-primary/50 cursor-col-resize flex items-center justify-center group relative transition-colors"
+      className="w-1 bg-border hover:bg-primary/50 cursor-col-resize flex items-center justify-center group relative transition-colors select-none"
       onMouseDown={(e) => {
+        e.preventDefault()
         setIsDragging(true)
         startXRef.current = e.clientX
       }}

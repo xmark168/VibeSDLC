@@ -1,4 +1,6 @@
 
+import type React from "react"
+
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -30,6 +32,8 @@ export function KanbanBoard() {
   const [columns, setColumns] = useState<KanbanColumn[]>(initialColumns)
   const [addingCardTo, setAddingCardTo] = useState<string | null>(null)
   const [newCardContent, setNewCardContent] = useState("")
+  const [draggedCard, setDraggedCard] = useState<KanbanCard | null>(null)
+  const [draggedOverColumn, setDraggedOverColumn] = useState<string | null>(null)
 
   const handleAddCard = (columnId: string) => {
     if (!newCardContent.trim()) return
@@ -71,11 +75,64 @@ export function KanbanBoard() {
     )
   }
 
+  const handleDragStart = (card: KanbanCard) => {
+    setDraggedCard(card)
+  }
+
+  const handleDragOver = (e: React.DragEvent, columnId: string) => {
+    e.preventDefault()
+    setDraggedOverColumn(columnId)
+  }
+
+  const handleDragLeave = () => {
+    setDraggedOverColumn(null)
+  }
+
+  const handleDrop = (e: React.DragEvent, targetColumnId: string) => {
+    e.preventDefault()
+    if (!draggedCard) return
+
+    // Remove card from source column and add to target column
+    setColumns((prev) =>
+      prev.map((col) => {
+        // Remove from source column
+        if (col.id === draggedCard.columnId) {
+          return {
+            ...col,
+            cards: col.cards.filter((card) => card.id !== draggedCard.id),
+          }
+        }
+        // Add to target column
+        if (col.id === targetColumnId) {
+          return {
+            ...col,
+            cards: [...col.cards, { ...draggedCard, columnId: targetColumnId }],
+          }
+        }
+        return col
+      }),
+    )
+
+    setDraggedCard(null)
+    setDraggedOverColumn(null)
+  }
+
+  const handleDragEnd = () => {
+    setDraggedCard(null)
+    setDraggedOverColumn(null)
+  }
+
   return (
     <div className="h-full overflow-x-auto bg-background p-6">
       <div className="flex gap-4 min-w-max">
         {columns.map((column) => (
-          <div key={column.id} className="w-64 flex-shrink-0">
+          <div
+            key={column.id}
+            className="w-64 flex-shrink-0"
+            onDragOver={(e) => handleDragOver(e, column.id)}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, column.id)}
+          >
             {/* Column Header */}
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -86,12 +143,20 @@ export function KanbanBoard() {
               </div>
             </div>
 
-            {/* Cards Container */}
-            <div className="space-y-2">
+            <div
+              className={`space-y-2 min-h-[100px] rounded-lg p-2 transition-colors ${
+                draggedOverColumn === column.id ? "bg-muted/50" : ""
+              }`}
+            >
               {column.cards.map((card) => (
                 <div
                   key={card.id}
-                  className={`bg-card rounded-lg border-2 ${column.color} p-3 group relative hover:shadow-sm transition-shadow`}
+                  draggable
+                  onDragStart={() => handleDragStart(card)}
+                  onDragEnd={handleDragEnd}
+                  className={`bg-card rounded-lg border-2 ${column.color} p-3 group relative hover:shadow-sm transition-all cursor-move ${
+                    draggedCard?.id === card.id ? "opacity-50" : ""
+                  }`}
                 >
                   <p className="text-sm text-foreground pr-6">{card.content}</p>
                   <button

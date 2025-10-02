@@ -10,7 +10,7 @@ export const Route = createFileRoute('/chat/$id')({
 
 function ChatPage() {
   const { id } = Route.useParams()
-const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
   const [chatWidth, setChatWidth] = useState(50) // percentage
 
   return (

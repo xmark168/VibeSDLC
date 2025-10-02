@@ -1,3 +1,4 @@
+
 import { Button } from "@/components/ui/button"
 import { Menu, Plus, Sparkles, ChevronRight, ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -38,7 +39,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </Button>
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-sidebar-foreground" />
-            <span className="font-semibold text-sidebar-foreground">VibeSDLC</span>
+            <span className="font-semibold text-sidebar-foreground">MGX</span>
           </div>
         </div>
       </div>

@@ -1,4 +1,3 @@
-"use client"
 
 import type React from "react"
 
@@ -449,15 +448,6 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
                 onClick={() => fileInputRef.current?.click()}
               >
                 <Paperclip className="w-4 h-4" />
-              </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-accent">
-                <Plus className="w-4 h-4" />
-              </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-accent">
-                <Shuffle className="w-4 h-4" />
-              </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-accent">
-                <User className="w-4 h-4" />
               </Button>
             </div>
             <Button size="icon" className={`h-8 w-8 rounded-lg agent-question ${activeAgent.colorClass}`}>
