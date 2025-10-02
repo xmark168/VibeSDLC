@@ -10,7 +10,7 @@ import {
   type UserRegister,
   UsersService,
 } from "@/client"
-import { handleError } from "@/utils"
+// import { handleError } from "@/utils"
 
 const isLoggedIn = () => {
   return localStorage.getItem("access_token") !== null
@@ -34,7 +34,7 @@ const useAuth = () => {
       navigate({ to: "/login" })
     },
     onError: (err: ApiError) => {
-      handleError(err)
+      // handleError(err)
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] })
@@ -54,7 +54,7 @@ const useAuth = () => {
       navigate({ to: "/" })
     },
     onError: (err: ApiError) => {
-      handleError(err)
+      // handleError(err)
     },
   })
 
