@@ -1,23 +1,10 @@
-"use client"
 
 import type React from "react"
 
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
-import {
-  History,
-  Globe,
-  ChevronLeft,
-  Monitor,
-  Code2,
-  ExternalLink,
-  Terminal,
-  FolderOpen,
-  LayoutGrid,
-  Pencil,
-} from "lucide-react"
+import { History, Globe, Code2, ExternalLink, Terminal, FolderOpen, LayoutGrid, Pencil, Plus } from "lucide-react"
 import { KanbanBoard } from "./kanban-board"
 
 type WorkspaceView = "app-viewer" | "editor" | "terminal" | "file" | "planner" | "kanban"
@@ -49,6 +36,34 @@ export function WorkspacePanel() {
       setIsEditingName(false)
     }
   }
+
+  const getViewName = () => {
+    switch (activeView) {
+      case "app-viewer":
+        return "Preview"
+      case "editor":
+        return "Editor"
+      case "terminal":
+        return "Terminal"
+      case "file":
+        return "File"
+      case "planner":
+        return "Planner"
+      case "kanban":
+        return "Kanban"
+      default:
+        return "Kanban"
+    }
+  }
+
+  const views: Array<{ id: WorkspaceView; icon: React.ReactNode; label: string }> = [
+    { id: "app-viewer", icon: <Globe className="w-4 h-4" />, label: "Preview" },
+    { id: "editor", icon: <Code2 className="w-4 h-4" />, label: "Editor" },
+    { id: "terminal", icon: <Terminal className="w-4 h-4" />, label: "Terminal" },
+    { id: "file", icon: <FolderOpen className="w-4 h-4" />, label: "File" },
+    { id: "planner", icon: <LayoutGrid className="w-4 h-4" />, label: "Planner" },
+    { id: "kanban", icon: <LayoutGrid className="w-4 h-4" />, label: "Kanban" },
+  ]
 
   const renderView = () => {
     switch (activeView) {
@@ -139,10 +154,6 @@ export function WorkspacePanel() {
     <div className="flex flex-col h-full bg-background">
       <div className="flex items-center justify-between px-6 py-3 border-b border-border">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="h-8 w-8">
-            <History className="w-4 h-4" />
-          </Button>
-
           {isEditingName ? (
             <Input
               ref={inputRef}
@@ -161,9 +172,33 @@ export function WorkspacePanel() {
               <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" />
             </button>
           )}
+        </div>
 
-          <Button variant="ghost" size="icon" className="h-8 w-8">
-            <Globe className="w-4 h-4" />
+        <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-1">
+          {views.map((view) => (
+            <div key={view.id} className="relative group/tooltip">
+              <button
+                onClick={() => setActiveView(view.id)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  activeView === view.id
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                }`}
+              >
+                {view.icon}
+                {activeView === view.id && <span>{view.label}</span>}
+              </button>
+              {/* Tooltip for inactive tabs */}
+              {activeView !== view.id && (
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-popover text-popover-foreground text-xs rounded shadow-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none whitespace-nowrap border border-border z-50">
+                  {view.label}
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-popover" />
+                </div>
+              )}
+            </div>
+          ))}
+          <Button variant="ghost" size="icon" className="h-8 w-8 ml-1">
+            <Plus className="w-4 h-4" />
           </Button>
         </div>
 
@@ -196,71 +231,6 @@ export function WorkspacePanel() {
       </div>
 
       {renderView()}
-
-      <div className="flex items-center justify-between px-4 py-2 border-t border-border bg-card">
-        <Button variant="ghost" size="icon" className="h-8 w-8">
-          <ChevronLeft className="w-4 h-4" />
-        </Button>
-
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="h-8 w-8">
-            <Monitor className="w-4 h-4" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8">
-            <Code2 className="w-4 h-4" />
-          </Button>
-        </div>
-
-        <Select value={activeView} onValueChange={(value) => setActiveView(value as WorkspaceView)}>
-          <SelectTrigger className="w-[140px] h-8 text-xs bg-transparent border-border">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="app-viewer">
-              <div className="flex items-center gap-2">
-                <Monitor className="w-3 h-3" />
-                App Viewer
-              </div>
-            </SelectItem>
-            <SelectItem value="editor">
-              <div className="flex items-center gap-2">
-                <Code2 className="w-3 h-3" />
-                Editor
-              </div>
-            </SelectItem>
-            <SelectItem value="terminal">
-              <div className="flex items-center gap-2">
-                <Terminal className="w-3 h-3" />
-                Terminal
-              </div>
-            </SelectItem>
-            <SelectItem value="file">
-              <div className="flex items-center gap-2">
-                <FolderOpen className="w-3 h-3" />
-                File
-              </div>
-            </SelectItem>
-            <SelectItem value="planner">
-              <div className="flex items-center gap-2">
-                <LayoutGrid className="w-3 h-3" />
-                Planner
-              </div>
-            </SelectItem>
-            <SelectItem value="kanban">
-              <div className="flex items-center gap-2">
-                <LayoutGrid className="w-3 h-3" />
-                Kanban
-              </div>
-            </SelectItem>
-          </SelectContent>
-        </Select>
-
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="h-8 w-8">
-            <ExternalLink className="w-4 h-4" />
-          </Button>
-        </div>
-      </div>
     </div>
   )
 }

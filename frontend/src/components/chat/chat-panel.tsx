@@ -1,10 +1,25 @@
+"use client"
 
 import type React from "react"
 
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Plus, Shuffle, User, Menu, ChevronDown, ChevronUp, ArrowUp } from "lucide-react"
+import {
+  Plus,
+  Shuffle,
+  User,
+  Menu,
+  ChevronDown,
+  ChevronUp,
+  ArrowUp,
+  Copy,
+  Check,
+  Paperclip,
+  X,
+  FileText,
+  ImageIcon,
+} from "lucide-react"
 
 interface ChatPanelProps {
   sidebarCollapsed: boolean
@@ -25,6 +40,14 @@ interface Message {
   expanded?: boolean
 }
 
+interface AttachedFile {
+  id: string
+  name: string
+  size: number
+  type: string
+  url?: string
+}
+
 const AGENTS = [
   { name: "Mike", role: "Team Leader", avatar: "👨‍💼", colorClass: "agent-mike" },
   { name: "Emma", role: "Product Manager", avatar: "👩‍💼", colorClass: "agent-emma" },
@@ -39,8 +62,11 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
   const [showMentions, setShowMentions] = useState(false)
   const [mentionSearch, setMentionSearch] = useState("")
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0)
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const mentionDropdownRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -178,6 +204,55 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
     }
   }
 
+  const copyToClipboard = async (content: string, messageId: string) => {
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopiedMessageId(messageId)
+      setTimeout(() => setCopiedMessageId(null), 2000)
+    } catch (err) {
+      console.error("Failed to copy:", err)
+    }
+  }
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files) return
+
+    const newFiles: AttachedFile[] = Array.from(files).map((file) => ({
+      id: Math.random().toString(36).substr(2, 9),
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      url: URL.createObjectURL(file),
+    }))
+
+    setAttachedFiles((prev) => [...prev, ...newFiles])
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
+    }
+  }
+
+  const removeFile = (fileId: string) => {
+    setAttachedFiles((prev) => {
+      const file = prev.find((f) => f.id === fileId)
+      if (file?.url) {
+        URL.revokeObjectURL(file.url)
+      }
+      return prev.filter((f) => f.id !== fileId)
+    })
+  }
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + " B"
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB"
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB"
+  }
+
+  const getFileIcon = (type: string) => {
+    if (type.startsWith("image/")) return <ImageIcon className="w-4 h-4" />
+    return <FileText className="w-4 h-4" />
+  }
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -222,26 +297,65 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
               <div className="text-xs font-medium text-muted-foreground">{msg.agent.name}</div>
 
               {msg.type === "thinking" && (
-                <div className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap">{msg.content}</div>
-              )}
-
-              {msg.type === "question" && (
-                <div className={`rounded-lg p-4 relative agent-question ${msg.agent.colorClass}`}>
-                  <div className="text-sm leading-relaxed whitespace-pre-wrap pr-8">
-                    {msg.expanded ? msg.content : msg.content.slice(0, 100) + "..."}
+                <div className="relative group">
+                  <div className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap pr-8">
+                    {msg.content}
                   </div>
                   <button
-                    onClick={() => toggleExpand(msg.id)}
-                    className="absolute top-4 right-4 hover:opacity-80 transition-opacity"
+                    onClick={() => copyToClipboard(msg.content, msg.id)}
+                    className="absolute top-0 right-0 p-1.5 rounded hover:bg-accent/50 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Copy message"
                   >
-                    {msg.expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    {copiedMessageId === msg.id ? (
+                      <Check className="w-4 h-4 text-green-500" />
+                    ) : (
+                      <Copy className="w-4 h-4 text-muted-foreground" />
+                    )}
                   </button>
                 </div>
               )}
 
+              {msg.type === "question" && (
+                <div className={`rounded-lg p-4 relative group agent-question ${msg.agent.colorClass}`}>
+                  <div className="text-sm leading-relaxed whitespace-pre-wrap pr-16">
+                    {msg.expanded ? msg.content : msg.content.slice(0, 100) + "..."}
+                  </div>
+                  <div className="absolute top-4 right-4 flex items-center gap-1">
+                    <button
+                      onClick={() => copyToClipboard(msg.content, msg.id)}
+                      className="p-1.5 rounded hover:bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Copy message"
+                    >
+                      {copiedMessageId === msg.id ? (
+                        <Check className="w-4 h-4 text-white" />
+                      ) : (
+                        <Copy className="w-4 h-4 text-white/80" />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => toggleExpand(msg.id)}
+                      className="p-1.5 hover:bg-black/10 rounded transition-colors"
+                    >
+                      {msg.expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {msg.type === "reply" && (
-                <div className="rounded-lg p-4 bg-[#1a1a1a] border border-white/10">
-                  <div className="text-sm text-white leading-relaxed whitespace-pre-wrap">{msg.content}</div>
+                <div className="rounded-lg p-4 bg-[#1a1a1a] border border-white/10 relative group">
+                  <div className="text-sm text-white leading-relaxed whitespace-pre-wrap pr-8">{msg.content}</div>
+                  <button
+                    onClick={() => copyToClipboard(msg.content, msg.id)}
+                    className="absolute top-4 right-4 p-1.5 rounded hover:bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Copy message"
+                  >
+                    {copiedMessageId === msg.id ? (
+                      <Check className="w-4 h-4 text-green-500" />
+                    ) : (
+                      <Copy className="w-4 h-4 text-white/60" />
+                    )}
+                  </button>
                 </div>
               )}
             </div>
@@ -287,6 +401,29 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
         )}
 
         <div className="bg-card rounded-lg p-4">
+          {attachedFiles.length > 0 && (
+            <div className="mb-3 flex flex-wrap gap-2">
+              {attachedFiles.map((file) => (
+                <div
+                  key={file.id}
+                  className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg text-sm group hover:bg-muted/80 transition-colors"
+                >
+                  {getFileIcon(file.type)}
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-foreground truncate max-w-[150px]">{file.name}</span>
+                    <span className="text-xs text-muted-foreground">{formatFileSize(file.size)}</span>
+                  </div>
+                  <button
+                    onClick={() => removeFile(file.id)}
+                    className="ml-1 p-1 hover:bg-background rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <Textarea
             ref={textareaRef}
             value={message}
@@ -297,6 +434,22 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
           />
           <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/50">
             <div className="flex gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/*,.pdf,.doc,.docx,.txt"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 hover:bg-accent"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Paperclip className="w-4 h-4" />
+              </Button>
               <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-accent">
                 <Plus className="w-4 h-4" />
               </Button>
