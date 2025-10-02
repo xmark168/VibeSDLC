@@ -5,11 +5,14 @@ node_modules/
 /blob-report/
 /playwright/.cache/
 
+
+#BACKEND
 .claude
-.venv
-uv.lock
 .egg-info
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+.env
+uv.lock

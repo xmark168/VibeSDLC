@@ -5,6 +5,7 @@ description = "Scrum Agents team in a service that expose through some http rout
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "dotenv>=0.9.9",
     "duckduckgo-search>=8.1.1",
     "fastapi>=0.118.0",
     "langchain>=0.3.27",
@@ -14,5 +15,19 @@ dependencies = [
     "langgraph>=0.6.8",
     "langgraph-checkpoint-postgres>=2.0.24",
     "passlib[bcrypt]>=1.7.4",
+    "pylint>=3.3.8",
     "uvicorn>=0.37.0",
 ]
+[tool.setuptools.packages.find]
+where = ["app"]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+
+[project.optional-dependencies]
+dev = ["ruff", "pylint", "pytest"]
+
+[tool.ruff]
+line-length = 100
