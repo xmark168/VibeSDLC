@@ -1,0 +1,7 @@
+README.md
+pyproject.toml
+agents_service.egg-info/PKG-INFO
+agents_service.egg-info/SOURCES.txt
+agents_service.egg-info/dependency_links.txt
+agents_service.egg-info/requires.txt
+agents_service.egg-info/top_level.txt
