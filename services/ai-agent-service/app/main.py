@@ -39,47 +39,25 @@ def test_gatherer_agent():
     print(f"Session ID: {session_id}")
     print(f"User ID: {user_id}")
 
-    # Start a span for the test
-    test_span = langfuse.start_span(
-        name="gatherer_agent_test",
-        metadata={
-            "test_type": "integration",
-            "environment": os.getenv("APP_ENV", "development"),
-            "timestamp": datetime.now().isoformat(),
-            "session_id": session_id,
-            "user_id": user_id,
-        },
-    )
-
     # Initialize the agent with tracking IDs
     print("\nInitializing Gatherer Agent...")
     agent = GathererAgent(session_id=session_id, user_id=user_id)
     print("Agent initialized successfully")
 
     # Test case
-    initial_context = "Build an AI-powered task management app"
+    initial_context = """Tôi muốn xây dựng một ứng dụng quản lý công việc thông minh sử dụng AI.
 
-    print(f"\nInitial Context: {initial_context}")
+Ứng dụng này sẽ giúp người dùng quản lý task hàng ngày hiệu quả hơn.
+Mục tiêu chính là tự động ưu tiên công việc dựa trên deadline và mức độ quan trọng."""
+
+    print(f"\nNgữ cảnh ban đầu: {initial_context}")
     print_separator()
 
     # Run the agent
     print("Running Gatherer Agent workflow...\n")
 
     try:
-        # Log start of execution
-        langfuse.create_event(
-            name="test_execution_started",
-            metadata={
-                "session_id": session_id,
-                "user_id": user_id,
-                "initial_context": initial_context,
-            },
-        )
-
-        result = agent.run(
-            initial_context=initial_context,
-            trace_name="gatherer_agent_test_run",
-        )
+        result = agent.run(initial_context=initial_context)
 
         print_separator()
         print("Workflow completed successfully!")
@@ -94,74 +72,15 @@ def test_gatherer_agent():
         if final_node_state:
             print("Final State (JSON):")
             print(json.dumps(final_node_state, indent=2, default=str))
-
-            # End test span with results
-            test_span.end(
-                output=final_node_state,
-                metadata={
-                    "test_type": "integration",
-                    "environment": os.getenv("APP_ENV", "development"),
-                    "timestamp": datetime.now().isoformat(),
-                    "status": "success",
-                    "final_state": final_node_state.get("status") if final_node_state else "unknown",
-                },
-            )
-
-            # Log success event
-            langfuse.create_event(
-                name="test_execution_completed",
-                metadata={
-                    "session_id": session_id,
-                    "user_id": user_id,
-                    "status": "success",
-                    "final_state": final_node_state.get("status") if final_node_state else "unknown",
-                },
-            )
         else:
             print("No final state found in result")
             print("Result:", result)
-
-            # Log warning
-            langfuse.create_event(
-                name="test_execution_warning",
-                level="WARNING",
-                metadata={
-                    "session_id": session_id,
-                    "user_id": user_id,
-                    "warning": "No final state found in result",
-                },
-            )
 
     except Exception as e:
         print(f"\nError during execution: {e}")
         import traceback
 
         traceback.print_exc()
-
-        # End span with error
-        test_span.end(
-            level="ERROR",
-            status_message=str(e),
-            metadata={
-                "test_type": "integration",
-                "environment": os.getenv("APP_ENV", "development"),
-                "timestamp": datetime.now().isoformat(),
-                "status": "error",
-            },
-        )
-
-        # Log error event
-        langfuse.create_event(
-            name="test_execution_failed",
-            level="ERROR",
-            metadata={
-                "session_id": session_id,
-                "user_id": user_id,
-                "error": str(e),
-                "traceback": traceback.format_exc(),
-            },
-        )
-
         return False
 
     finally:
