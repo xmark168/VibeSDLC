@@ -1,5 +1,5 @@
 @import "tailwindcss";
-
+@plugin "tailwindcss-animate";
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -41,42 +41,62 @@
 }
 
 :root {
-    --radius: 0.625rem;
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.646 0.222 41.116);
-    --chart-2: oklch(0.6 0.118 184.704);
-    --chart-3: oklch(0.398 0.07 227.392);
-    --chart-4: oklch(0.828 0.189 84.429);
-    --chart-5: oklch(0.769 0.188 70.08);
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+    /* Themeable Colors - Restored to Original Vibe */
+    --background: 210 11% 7%;
+    /* #0f1211 */
+    --foreground: 160 14% 93%;
+    /* #e7eceb */
+
+    --muted: 240 2% 16%;
+    /* #27272a */
+    --muted-foreground: 160 14% 93% / 0.7;
+    /* rgba(231, 236, 235, 0.7) */
+    --muted-foreground-light: 160 14% 93% / 0.5;
+    /* rgba(231, 236, 235, 0.5) */
+    --muted-foreground-dark: 160 14% 93% / 0.6;
+    /* rgba(231, 236, 235, 0.6) */
+
+    --card: 220 17% 98% / 0.01;
+    --card-foreground: 160 14% 93%;
+
+    --popover: 210 11% 7%;
+    --popover-foreground: 160 14% 93%;
+
+    /* Primary Accent Colors */
+    --primary: 165 96% 71%;
+    /* #78fcd6 */
+    --primary-foreground: 160 8% 6%;
+    /* #0d0f0e */
+    --primary-dark: 160 100% 50%;
+    /* #00ffb6 */
+    --primary-light: 160 48% 87%;
+    /* New variable for lighter teal/green shades */
+
+    /* Secondary Accent Colors (for buttons, etc.) */
+    --secondary: 160 14% 93%;
+    /* #e7eceb */
+    --secondary-foreground: 165 14% 8%;
+    /* #141a18 */
+
+    --accent: 240 2% 25%;
+    /* #3f3f42 */
+    --accent-foreground: 240 2% 96%;
+    /* #f4f4f5 */
+
+    --border: 240 100% 100% / 0.08;
+    /* rgba(255, 255, 255, 0.08) */
+    --border-light: 210 17% 6% / 0.1;
+    /* rgba(16,24,40,0.1) */
+    --border-dark: 210 17% 6% / 0.05;
+    /* rgba(16,24,40,0.05) */
+
+    --ring: 165 96% 71%;
+
+    --radius: 0.5rem;
 }
 
 .dark {
-    --background: oklch(0.145 0 0);
+    --background: oklch(0.205 0 0);
     --foreground: oklch(0.985 0 0);
     --card: oklch(0.205 0 0);
     --card-foreground: oklch(0.985 0 0);
