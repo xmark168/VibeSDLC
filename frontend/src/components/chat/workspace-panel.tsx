@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { History, Globe, Code2, ExternalLink, LayoutGrid, Pencil, ScrollText, Plus, X, PanelLeftOpen } from "lucide-react"
 import { KanbanBoard } from "./kanban-board"
-
+import { FileExplorer } from "../shared/file-explorer"
+import { CodeViewer } from "../shared/code-viewer"
 type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings"
 
 interface Tab {
@@ -31,7 +32,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat }: WorkspacePanelPr
   const [projectName, setProjectName] = useState("Website sobre camisetas")
   const [isEditingName, setIsEditingName] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
-
+  const [selectedFile, setSelectedFile] = useState<string | null>("components/sidebar.tsx")
   useEffect(() => {
     if (isEditingName && inputRef.current) {
       inputRef.current.focus()
@@ -143,24 +144,18 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat }: WorkspacePanelPr
         return <KanbanBoard />
       case "file":
         return (
-          <div className="flex-1 overflow-auto bg-[#1e1e1e] text-[#d4d4d4] font-mono border-t">
-            <div className="p-4">
-              <div className="text-xs text-[#858585] mb-2">app/page.tsx</div>
-              <pre className="text-sm leading-relaxed">
-                <code>
-                  {`export default function Home() {
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm">
-        <h1 className="text-4xl font-bold">
-          Welcome to Next.js!
-        </h1>
-      </div>
-    </main>
-  )
-}`}
-                </code>
-              </pre>
+          <div className="flex h-full">
+            <div className="w-64 flex-shrink-0">
+              <FileExplorer onFileSelect={setSelectedFile} selectedFile={selectedFile} />
+            </div>
+            <div className="flex-1">
+              {selectedFile ? (
+                <CodeViewer filePath={selectedFile} content={getFileContent(selectedFile)} />
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground">
+                  Select a file to view
+                </div>
+              )}
             </div>
           </div>
         )
@@ -207,7 +202,77 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat }: WorkspacePanelPr
         return null
     }
   }
+  const getFileContent = (path: string): string => {
+    // Mock file contents - in a real app, this would fetch from an API
+    const contents: Record<string, string> = {
+      "components/sidebar.tsx": `"use client"
 
+import { Button } from "@/components/ui/button"
+import { Menu, Plus, Sparkles, ChevronRight, ChevronDown } from 'lucide-react'
+import { cn } from "@/lib/utils"
+import { useState } from "react"
+
+interface SidebarProps {
+  collapsed: boolean
+  onToggle: () => void
+}
+
+export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+  const [myChatsExpanded, setMyChatsExpanded] = useState(true)
+
+  const chats = [
+    { id: "1", title: "ádf", active: false },
+    { id: "2", title: "Website sobre camisetas", active: true },
+  ]
+
+  return (
+    <div className={cn(
+      "flex flex-col bg-sidebar border-r border-sidebar-border",
+      collapsed ? "absolute -translate-x-full" : "relative translate-x-0"
+    )}>
+      {/* Sidebar content */}
+    </div>
+  )
+}`,
+      "app/page.tsx": `"use client"
+
+import { useState } from "react"
+import { Sidebar } from "@/components/sidebar"
+import { ChatPanel } from "@/components/chat-panel"
+import { WorkspacePanel } from "@/components/workspace-panel"
+
+export default function Home() {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  
+  return (
+    <div className="flex h-screen overflow-hidden">
+      <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
+      <ChatPanel />
+      <WorkspacePanel />
+    </div>
+  )
+}`,
+      "package.json": `{
+  "name": "multi-agent-dev-platform",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "15.1.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}`,
+    }
+
+    return contents[path] || `// File: ${path}\n// Content not available`
+  }
+
+  
   return (
     <div className="flex flex-col h-full bg-background">
       <div className="flex flex-col border-b border-border">

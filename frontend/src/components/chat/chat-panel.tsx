@@ -625,7 +625,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse }: Cha
           </div>
         )}
 
-        <div className="bg-transparent rounded-4xl p-2">
+        <div className="bg-transparent rounded-4xl p-2 border-0">
           {attachedFiles.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-2">
               {attachedFiles.map((file) => (
@@ -657,7 +657,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse }: Cha
             placeholder="Press Enter to send requests anytime - we'll notice."
             className="min-h-[40px] resize-none dark:bg-transparent border-0 focus-visible:ring-0 text-sm text-foreground placeholder:text-muted-foreground p-0"
           />
-          <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/50">
+          <div className="flex items-center justify-between pt-3">
             <div className="flex gap-2">
               <input
                 ref={fileInputRef}
