@@ -1,13 +1,12 @@
+"use client"
 
 import type React from "react"
 
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import {
-  Plus,
-  Shuffle,
-  User,
   Menu,
   ChevronDown,
   ChevronUp,
@@ -20,6 +19,9 @@ import {
   ImageIcon,
   Download,
   File,
+  Moon,
+  Sun,
+  AtSign,
 } from "lucide-react"
 
 interface ChatPanelProps {
@@ -66,6 +68,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0)
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([])
+  const [theme, setTheme] = useState<"light" | "dark">("dark")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const mentionDropdownRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -295,39 +298,73 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
           <img
             src={file.url || "/placeholder.svg"}
             alt={file.name}
-            className="max-w-sm max-h-64 rounded-lg border border-white/10 object-cover"
+            className="max-w-sm max-h-64 rounded-lg border border-border object-cover"
           />
           <a
             href={file.url}
             download={file.name}
-            className="absolute top-2 right-2 p-2 bg-black/60 hover:bg-black/80 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+            className="absolute top-2 right-2 p-2 bg-background/80 hover:bg-background/90 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity border border-border"
             title="Download"
           >
-            <Download className="w-4 h-4 text-white" />
+            <Download className="w-4 h-4 text-foreground" />
           </a>
         </div>
       )
     }
 
-    // For PDFs and other files
     return (
       <a
         key={file.id}
         href={file.url}
         download={file.name}
-        className="flex items-center gap-3 px-4 py-3 bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 transition-colors group max-w-sm"
+        className="flex items-center gap-3 px-4 py-3 bg-muted hover:bg-muted/80 rounded-lg border border-border transition-colors group max-w-sm"
       >
-        <div className="p-2 bg-white/10 rounded">
-          {isPDF ? <FileText className="w-5 h-5 text-red-400" /> : <File className="w-5 h-5 text-blue-400" />}
+        <div className="p-2 bg-background rounded">
+          {isPDF ? <FileText className="w-5 h-5 text-red-500" /> : <File className="w-5 h-5 text-blue-500" />}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm text-white font-medium truncate">{file.name}</div>
-          <div className="text-xs text-white/60">{formatFileSize(file.size)}</div>
+          <div className="text-sm text-foreground font-medium truncate">{file.name}</div>
+          <div className="text-xs text-muted-foreground">{formatFileSize(file.size)}</div>
         </div>
-        <Download className="w-4 h-4 text-white/60 group-hover:text-white transition-colors flex-shrink-0" />
+        <Download className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors flex-shrink-0" />
       </a>
     )
   }
+
+  const toggleTheme = () => {
+    const newTheme = theme === "light" ? "dark" : "light"
+    setTheme(newTheme)
+    localStorage.setItem("theme", newTheme)
+    document.documentElement.classList.toggle("dark", newTheme === "dark")
+  }
+
+  const triggerMention = () => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+
+    const cursorPos = textarea.selectionStart
+    const newMessage = message.slice(0, cursorPos) + "@" + message.slice(cursorPos)
+
+    setMessage(newMessage)
+    setShowMentions(true)
+    setMentionSearch("")
+    setSelectedMentionIndex(0)
+
+    setTimeout(() => {
+      textarea.focus()
+      const newCursorPos = cursorPos + 1
+      textarea.setSelectionRange(newCursorPos, newCursorPos)
+    }, 0)
+  }
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem("theme") as "light" | "dark" | null
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches
+    const initialTheme = savedTheme || (prefersDark ? "dark" : "light")
+
+    setTheme(initialTheme)
+    document.documentElement.classList.toggle("dark", initialTheme === "dark")
+  }, [])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -356,6 +393,30 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
             className="w-8 h-8 text-foreground hover:bg-accent"
           >
             <Menu className="w-5 h-5" />
+          </Button>
+          <div className="flex-1" />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleTheme}
+            className="w-8 h-8 text-foreground hover:bg-accent"
+            title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+          >
+            {theme === "light" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+          </Button>
+        </div>
+      )}
+
+      {!sidebarCollapsed && (
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-b border-border">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleTheme}
+            className="w-8 h-8 text-foreground hover:bg-accent"
+            title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+          >
+            {theme === "light" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
           </Button>
         </div>
       )}
@@ -533,15 +594,18 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
               >
                 <Paperclip className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-accent">
-                <Plus className="w-4 h-4" />
-              </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-accent">
-                <Shuffle className="w-4 h-4" />
-              </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-accent">
-                <User className="w-4 h-4" />
-              </Button>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-accent" onClick={triggerMention}>
+                      <AtSign className="w-4 h-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Mention an agent</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
             <Button
               size="icon"
