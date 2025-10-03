@@ -1,4 +1,3 @@
-"use client"
 
 import type React from "react"
 
@@ -22,11 +21,13 @@ import {
   Moon,
   Sun,
   AtSign,
+  PanelRightClose,
 } from "lucide-react"
 
 interface ChatPanelProps {
   sidebarCollapsed: boolean
   onToggleSidebar: () => void
+  onCollapse: () => void
 }
 
 type MessageType = "thinking" | "question" | "reply"
@@ -36,7 +37,6 @@ interface Message {
   agent: {
     name: string
     avatar: string
-    colorClass: string
   }
   type: MessageType
   content: string
@@ -53,15 +53,15 @@ interface AttachedFile {
 }
 
 const AGENTS = [
-  { name: "Mike", role: "Team Leader", avatar: "👨‍💼", colorClass: "agent-mike" },
-  { name: "Emma", role: "Product Manager", avatar: "👩‍💼", colorClass: "agent-emma" },
-  { name: "Bob", role: "Architect", avatar: "👨‍🔧", colorClass: "agent-bob" },
-  { name: "Alex", role: "Engineer", avatar: "👨‍💻", colorClass: "agent-alex" },
-  { name: "Developer", role: "Developer", avatar: "🔧", colorClass: "agent-developer" },
-  { name: "Tester", role: "Tester", avatar: "🧪", colorClass: "agent-tester" },
+  { name: "Mike", role: "Team Leader", avatar: "👨‍💼" },
+  { name: "Emma", role: "Product Manager", avatar: "👩‍💼" },
+  { name: "Bob", role: "Architect", avatar: "👨‍🔧" },
+  { name: "Alex", role: "Engineer", avatar: "👨‍💻" },
+  { name: "Developer", role: "Developer", avatar: "🔧" },
+  { name: "Tester", role: "Tester", avatar: "🧪" },
 ]
 
-export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps) {
+export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse }: ChatPanelProps) {
   const [message, setMessage] = useState("")
   const [showMentions, setShowMentions] = useState(false)
   const [mentionSearch, setMentionSearch] = useState("")
@@ -72,6 +72,8 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const mentionDropdownRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const prevMessagesLengthRef = useRef(0)
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -79,7 +81,6 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
       agent: {
         name: "Developer",
         avatar: "🔧",
-        colorClass: "agent-developer",
       },
       type: "thinking",
       content:
@@ -90,7 +91,6 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
       agent: {
         name: "Developer",
         avatar: "🔧",
-        colorClass: "agent-developer",
       },
       type: "question",
       content:
@@ -102,7 +102,6 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
       agent: {
         name: "User",
         avatar: "👤",
-        colorClass: "",
       },
       type: "reply",
       content: "Race m",
@@ -112,7 +111,6 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
       agent: {
         name: "Tester",
         avatar: "🧪",
-        colorClass: "agent-tester",
       },
       type: "thinking",
       content:
@@ -123,7 +121,6 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
       agent: {
         name: "Tester",
         avatar: "🧪",
-        colorClass: "agent-tester",
       },
       type: "question",
       content:
@@ -135,7 +132,6 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
   const activeAgent = {
     name: "Developer",
     avatar: "🔧",
-    colorClass: "agent-developer",
   }
 
   const toggleExpand = (id: string) => {
@@ -196,7 +192,6 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
       agent: {
         name: "User",
         avatar: "👤",
-        colorClass: "",
       },
       type: "reply",
       content: message.trim(),
@@ -247,6 +242,17 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
     } catch (err) {
       console.error("Failed to copy:", err)
     }
+  }
+
+  const formatTimestamp = (id: string) => {
+    const date = new Date(Number.parseInt(id))
+    const hours = date.getHours()
+    const minutes = date.getMinutes().toString().padStart(2, "0")
+    const ampm = hours >= 12 ? "PM" : "AM"
+    const displayHours = hours % 12 || 12
+    const month = date.toLocaleString("en-US", { month: "short" })
+    const day = date.getDate().toString().padStart(2, "0")
+    return `${displayHours}:${minutes} ${ampm} on ${month} ${day}`
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -382,10 +388,18 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
+   useEffect(() => {
+    // Only auto-scroll if a new message was added, not when updating existing messages
+    if (messagesContainerRef.current && messages.length > prevMessagesLengthRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+    }
+    prevMessagesLengthRef.current = messages.length
+  }, [messages])
+
   return (
     <div className="flex flex-col h-full bg-background">
       {sidebarCollapsed && (
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
           <Button
             variant="ghost"
             size="icon"
@@ -404,11 +418,20 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
           >
             {theme === "light" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
           </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onCollapse}
+            className="w-8 h-8 text-foreground hover:bg-accent"
+            title="Hide chat panel"
+          >
+            <PanelRightClose className="w-4 h-4" />
+          </Button>
         </div>
       )}
 
       {!sidebarCollapsed && (
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-b border-border">
+        <div className="flex items-center justify-end gap-2 px-3 py-2 border-b border-border">
           <Button
             variant="ghost"
             size="icon"
@@ -418,96 +441,156 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
           >
             {theme === "light" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
           </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onCollapse}
+            className="w-8 h-8 text-foreground hover:bg-accent"
+            title="Hide chat panel"
+          >
+            <PanelRightClose className="w-4 h-4" />
+          </Button>
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
-        {messages.map((msg) => (
-          <div key={msg.id} className="flex gap-3">
-            <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg agent-avatar ${msg.agent.colorClass}`}
-            >
-              {msg.agent.avatar}
-            </div>
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
+        {messages.map((msg) => {
+          const isUserMessage = msg.agent.name === "User"
 
-            <div className="flex-1 space-y-2">
-              <div className="text-xs font-medium text-muted-foreground">{msg.agent.name}</div>
-
-              {msg.type === "thinking" && (
-                <div className="relative group">
-                  <div className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap pr-8">
-                    {msg.content}
-                  </div>
-                  <button
-                    onClick={() => copyToClipboard(msg.content, msg.id)}
-                    className="absolute top-0 right-0 p-1.5 rounded hover:bg-accent/50 opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="Copy message"
-                  >
-                    {copiedMessageId === msg.id ? (
-                      <Check className="w-4 h-4 text-green-500" />
-                    ) : (
-                      <Copy className="w-4 h-4 text-muted-foreground" />
-                    )}
-                  </button>
-                </div>
-              )}
-
-              {msg.type === "question" && (
-                <div className={`rounded-lg p-4 relative group agent-question ${msg.agent.colorClass}`}>
-                  <div className="text-sm leading-relaxed whitespace-pre-wrap pr-16">
-                    {msg.expanded ? msg.content : msg.content.slice(0, 100) + "..."}
-                  </div>
-                  <div className="absolute top-4 right-4 flex items-center gap-1">
-                    <button
-                      onClick={() => copyToClipboard(msg.content, msg.id)}
-                      className="p-1.5 rounded hover:bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="Copy message"
-                    >
-                      {copiedMessageId === msg.id ? (
-                        <Check className="w-4 h-4 text-white" />
-                      ) : (
-                        <Copy className="w-4 h-4 text-white/80" />
-                      )}
-                    </button>
-                    <button
-                      onClick={() => toggleExpand(msg.id)}
-                      className="p-1.5 hover:bg-black/10 rounded transition-colors"
-                    >
-                      {msg.expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {msg.type === "reply" && (
-                <div className="space-y-3">
+          if (isUserMessage) {
+            return (
+              <div key={msg.id} className="flex justify-end">
+                <div className="max-w-[70%] space-y-2">
                   {msg.content && (
-                    <div className="rounded-lg p-4 bg-[#1a1a1a] border border-white/10 relative group">
-                      <div className="text-sm text-white leading-relaxed whitespace-pre-wrap pr-8">{msg.content}</div>
-                      <button
-                        onClick={() => copyToClipboard(msg.content, msg.id)}
-                        className="absolute top-4 right-4 p-1.5 rounded hover:bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                        title="Copy message"
-                      >
-                        {copiedMessageId === msg.id ? (
-                          <Check className="w-4 h-4 text-green-500" />
-                        ) : (
-                          <Copy className="w-4 h-4 text-white/60" />
-                        )}
-                      </button>
+                    <div className="space-y-1.5">
+                      <div className="rounded-lg px-3 py-2 bg-muted border border-border">
+                        <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground">{msg.content}</div>
+                      </div>
+                      <div className="flex items-center justify-end gap-2 px-1">
+                        <span className="text-xs text-muted-foreground">{formatTimestamp(msg.id)}</span>
+                        <button
+                          onClick={() => copyToClipboard(msg.content, msg.id)}
+                          className="p-1 rounded hover:bg-accent transition-colors"
+                          title="Copy message"
+                        >
+                          {copiedMessageId === msg.id ? (
+                            <Check className="w-3.5 h-3.5 text-green-500" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+                          )}
+                        </button>
+                      </div>
                     </div>
                   )}
                   {msg.attachments && msg.attachments.length > 0 && (
                     <div className="flex flex-col gap-2">{msg.attachments.map((file) => renderAttachment(file))}</div>
                   )}
                 </div>
-              )}
+              </div>
+            )
+          }
+
+          return (
+            <div key={msg.id} className="flex gap-3">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
+                {msg.agent.avatar}
+              </div>
+
+              <div className="flex-1 space-y-2">
+                <div className="text-xs font-medium text-muted-foreground">{msg.agent.name}</div>
+
+                {msg.type === "thinking" && (
+                  <div className="space-y-1.5">
+                    <div className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap">{msg.content}</div>
+                    <div className="flex items-center gap-2 px-1">
+                      <span className="text-xs text-muted-foreground">{formatTimestamp(msg.id)}</span>
+                      <button
+                        onClick={() => copyToClipboard(msg.content, msg.id)}
+                        className="p-1 rounded hover:bg-accent transition-colors"
+                        title="Copy message"
+                      >
+                        {copiedMessageId === msg.id ? (
+                          <Check className="w-3.5 h-3.5 text-green-500" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {msg.type === "question" && (
+                  <div className="space-y-1.5">
+                    <div className="rounded-lg px-3 py-2 bg-muted border border-border">
+                      <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground">
+                        {msg.expanded ? msg.content : msg.content.slice(0, 100) + "..."}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 px-1">
+                      <span className="text-xs text-muted-foreground">{formatTimestamp(msg.id)}</span>
+                      <button
+                        onClick={() => copyToClipboard(msg.content, msg.id)}
+                        className="p-1 rounded hover:bg-accent transition-colors"
+                        title="Copy message"
+                      >
+                        {copiedMessageId === msg.id ? (
+                          <Check className="w-3.5 h-3.5 text-green-500" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+                        )}
+                      </button>
+                      <button
+                        onClick={() => toggleExpand(msg.id)}
+                        className="p-1 hover:bg-accent rounded transition-colors"
+                        title={msg.expanded ? "Collapse" : "Expand"}
+                      >
+                        {msg.expanded ? (
+                          <ChevronUp className="w-3.5 h-3.5 text-foreground" />
+                        ) : (
+                          <ChevronDown className="w-3.5 h-3.5 text-foreground" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {msg.type === "reply" && !isUserMessage && (
+                  <div className="space-y-3">
+                    {msg.content && (
+                      <div className="space-y-1.5">
+                        <div className="rounded-lg px-3 py-2 bg-muted border border-border">
+                          <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
+                            {msg.content}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 px-1">
+                          <span className="text-xs text-muted-foreground">{formatTimestamp(msg.id)}</span>
+                          <button
+                            onClick={() => copyToClipboard(msg.content, msg.id)}
+                            className="p-1 rounded hover:bg-accent transition-colors"
+                            title="Copy message"
+                          >
+                            {copiedMessageId === msg.id ? (
+                              <Check className="w-3.5 h-3.5 text-green-500" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {msg.attachments && msg.attachments.length > 0 && (
+                      <div className="flex flex-col gap-2">{msg.attachments.map((file) => renderAttachment(file))}</div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
-      <div className={`p-1 m-4 rounded-xl relative agent-input-border ${activeAgent.colorClass}`}>
+      <div className="p-2 m-4 rounded-4xl relative border border-border bg-muted">
         {showMentions && filteredAgents.length > 0 && (
           <div
             ref={mentionDropdownRef}
@@ -529,9 +612,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
                     index === selectedMentionIndex ? "bg-accent/50" : ""
                   }`}
                 >
-                  <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0 agent-avatar ${agent.colorClass}`}
-                  >
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0 bg-muted">
                     {agent.avatar}
                   </div>
                   <div className="flex-1 text-left">
@@ -544,7 +625,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
           </div>
         )}
 
-        <div className="bg-card rounded-lg p-4">
+        <div className="bg-transparent rounded-4xl p-2">
           {attachedFiles.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-2">
               {attachedFiles.map((file) => (
@@ -574,7 +655,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
             placeholder="Press Enter to send requests anytime - we'll notice."
-            className="min-h-[80px] resize-none bg-transparent border-0 focus-visible:ring-0 text-sm text-foreground placeholder:text-muted-foreground p-0"
+            className="min-h-[40px] resize-none dark:bg-transparent border-0 focus-visible:ring-0 text-sm text-foreground placeholder:text-muted-foreground p-0"
           />
           <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/50">
             <div className="flex gap-2">
@@ -607,11 +688,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
                 </Tooltip>
               </TooltipProvider>
             </div>
-            <Button
-              size="icon"
-              className={`h-8 w-8 rounded-lg agent-question ${activeAgent.colorClass}`}
-              onClick={handleSend}
-            >
+            <Button size="icon" className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90" onClick={handleSend}>
               <ArrowUp className="w-4 h-4" />
             </Button>
           </div>

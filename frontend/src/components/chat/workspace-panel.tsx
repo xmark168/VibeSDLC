@@ -4,7 +4,7 @@ import type React from "react"
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { History, Globe, Code2, ExternalLink, LayoutGrid, Pencil, ScrollText, Plus, X } from "lucide-react"
+import { History, Globe, Code2, ExternalLink, LayoutGrid, Pencil, ScrollText, Plus, X, PanelLeftOpen } from "lucide-react"
 import { KanbanBoard } from "./kanban-board"
 
 type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings"
@@ -15,7 +15,12 @@ interface Tab {
   label: string
 }
 
-export function WorkspacePanel() {
+interface WorkspacePanelProps {
+  chatCollapsed?: boolean
+  onExpandChat?: () => void
+}
+
+export function WorkspacePanel({ chatCollapsed, onExpandChat }: WorkspacePanelProps) {
   const [tabs, setTabs] = useState<Tab[]>([
     { id: "tab-1", view: "app-preview", label: "App Preview" },
     { id: "tab-2", view: "kanban", label: "Kanban" },
@@ -210,6 +215,15 @@ export function WorkspacePanel() {
         {/* Toolbar */}
         <div className="flex items-center justify-between px-6 py-2 bg-background">
           <div className="flex items-center gap-3">
+            {chatCollapsed && onExpandChat && (
+              <button
+                onClick={onExpandChat}
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-t-lg transition-colors mr-2"
+                title="Show chat panel"
+              >
+                <PanelLeftOpen className="w-4 h-4" />
+              </button>
+            )}
             <Button variant="ghost" size="icon" className="h-8 w-8">
               <History className="w-4 h-4" />
             </Button>
@@ -249,8 +263,8 @@ export function WorkspacePanel() {
             key={tab.id}
             onClick={() => setActiveTabId(tab.id)}
             className={`group flex items-center gap-2 px-4 py-2 text-sm font-medium transition-all relative ${activeTabId === tab.id
-                ? "bg-background text-foreground rounded-t-lg border-t border-l border-r border-border"
-                : "bg-transparent text-muted-foreground hover:bg-muted/50 rounded-t-lg"
+              ? "bg-background text-foreground rounded-t-lg border-t border-l border-r border-border"
+              : "bg-transparent text-muted-foreground hover:bg-muted/50 rounded-t-lg"
               }`}
             style={{
               marginBottom: activeTabId === tab.id ? "-1px" : "0",
