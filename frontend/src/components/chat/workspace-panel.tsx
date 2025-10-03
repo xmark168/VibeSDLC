@@ -266,6 +266,10 @@ export function WorkspacePanel() {
                 <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" />
               </button>
             )}
+
+            <Button variant="ghost" size="icon" className="h-8 w-8">
+              <Globe className="w-4 h-4" />
+            </Button>
           </div>
 
           <div className="flex items-center gap-2">
@@ -286,6 +290,10 @@ export function WorkspacePanel() {
                 <span className="text-xs text-white">✨</span>
               </div>
             </div>
+            <Button variant="ghost" size="sm" className="h-8 text-xs">
+              <ExternalLink className="w-3 h-3 mr-1" />
+              Publish
+            </Button>
             <Button size="sm" className="h-8 text-xs bg-[#6366f1] hover:bg-[#5558e3]">
               Share
             </Button>

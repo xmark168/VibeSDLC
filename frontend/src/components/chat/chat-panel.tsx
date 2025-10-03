@@ -18,6 +18,8 @@ import {
   X,
   FileText,
   ImageIcon,
+  Download,
+  File,
 } from "lucide-react"
 
 interface ChatPanelProps {
@@ -37,6 +39,7 @@ interface Message {
   type: MessageType
   content: string
   expanded?: boolean
+  attachments?: AttachedFile[]
 }
 
 interface AttachedFile {
@@ -180,6 +183,36 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
     }
   }
 
+  const handleSend = () => {
+    // Don't send if message is empty (or only whitespace) and no files attached
+    if (!message.trim() && attachedFiles.length === 0) return
+
+    // Create new message with attachments
+    const newMessage: Message = {
+      id: Date.now().toString(),
+      agent: {
+        name: "User",
+        avatar: "👤",
+        colorClass: "",
+      },
+      type: "reply",
+      content: message.trim(),
+      attachments: attachedFiles.length > 0 ? [...attachedFiles] : undefined,
+    }
+
+    // Add message to chat
+    setMessages((prev) => [...prev, newMessage])
+
+    // Clear input and files
+    setMessage("")
+    setAttachedFiles([])
+
+    // Focus back on textarea
+    setTimeout(() => {
+      textareaRef.current?.focus()
+    }, 0)
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (showMentions && filteredAgents.length > 0) {
       if (e.key === "ArrowDown") {
@@ -199,7 +232,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
       }
     } else if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
-      // Handle send
+      handleSend()
     }
   }
 
@@ -250,6 +283,50 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
   const getFileIcon = (type: string) => {
     if (type.startsWith("image/")) return <ImageIcon className="w-4 h-4" />
     return <FileText className="w-4 h-4" />
+  }
+
+  const renderAttachment = (file: AttachedFile) => {
+    const isImage = file.type.startsWith("image/")
+    const isPDF = file.type === "application/pdf"
+
+    if (isImage && file.url) {
+      return (
+        <div key={file.id} className="relative group">
+          <img
+            src={file.url || "/placeholder.svg"}
+            alt={file.name}
+            className="max-w-sm max-h-64 rounded-lg border border-white/10 object-cover"
+          />
+          <a
+            href={file.url}
+            download={file.name}
+            className="absolute top-2 right-2 p-2 bg-black/60 hover:bg-black/80 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+            title="Download"
+          >
+            <Download className="w-4 h-4 text-white" />
+          </a>
+        </div>
+      )
+    }
+
+    // For PDFs and other files
+    return (
+      <a
+        key={file.id}
+        href={file.url}
+        download={file.name}
+        className="flex items-center gap-3 px-4 py-3 bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 transition-colors group max-w-sm"
+      >
+        <div className="p-2 bg-white/10 rounded">
+          {isPDF ? <FileText className="w-5 h-5 text-red-400" /> : <File className="w-5 h-5 text-blue-400" />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm text-white font-medium truncate">{file.name}</div>
+          <div className="text-xs text-white/60">{formatFileSize(file.size)}</div>
+        </div>
+        <Download className="w-4 h-4 text-white/60 group-hover:text-white transition-colors flex-shrink-0" />
+      </a>
+    )
   }
 
   useEffect(() => {
@@ -342,19 +419,26 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
               )}
 
               {msg.type === "reply" && (
-                <div className="rounded-lg p-4 bg-[#1a1a1a] border border-white/10 relative group">
-                  <div className="text-sm text-white leading-relaxed whitespace-pre-wrap pr-8">{msg.content}</div>
-                  <button
-                    onClick={() => copyToClipboard(msg.content, msg.id)}
-                    className="absolute top-4 right-4 p-1.5 rounded hover:bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="Copy message"
-                  >
-                    {copiedMessageId === msg.id ? (
-                      <Check className="w-4 h-4 text-green-500" />
-                    ) : (
-                      <Copy className="w-4 h-4 text-white/60" />
-                    )}
-                  </button>
+                <div className="space-y-3">
+                  {msg.content && (
+                    <div className="rounded-lg p-4 bg-[#1a1a1a] border border-white/10 relative group">
+                      <div className="text-sm text-white leading-relaxed whitespace-pre-wrap pr-8">{msg.content}</div>
+                      <button
+                        onClick={() => copyToClipboard(msg.content, msg.id)}
+                        className="absolute top-4 right-4 p-1.5 rounded hover:bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Copy message"
+                      >
+                        {copiedMessageId === msg.id ? (
+                          <Check className="w-4 h-4 text-green-500" />
+                        ) : (
+                          <Copy className="w-4 h-4 text-white/60" />
+                        )}
+                      </button>
+                    </div>
+                  )}
+                  {msg.attachments && msg.attachments.length > 0 && (
+                    <div className="flex flex-col gap-2">{msg.attachments.map((file) => renderAttachment(file))}</div>
+                  )}
                 </div>
               )}
             </div>
@@ -449,8 +533,21 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar }: ChatPanelProps)
               >
                 <Paperclip className="w-4 h-4" />
               </Button>
+              <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-accent">
+                <Plus className="w-4 h-4" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-accent">
+                <Shuffle className="w-4 h-4" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-accent">
+                <User className="w-4 h-4" />
+              </Button>
             </div>
-            <Button size="icon" className={`h-8 w-8 rounded-lg agent-question ${activeAgent.colorClass}`}>
+            <Button
+              size="icon"
+              className={`h-8 w-8 rounded-lg agent-question ${activeAgent.colorClass}`}
+              onClick={handleSend}
+            >
               <ArrowUp className="w-4 h-4" />
             </Button>
           </div>
