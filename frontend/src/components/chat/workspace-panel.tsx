@@ -290,10 +290,6 @@ export function WorkspacePanel() {
                 <span className="text-xs text-white">✨</span>
               </div>
             </div>
-            <Button variant="ghost" size="sm" className="h-8 text-xs">
-              <ExternalLink className="w-3 h-3 mr-1" />
-              Publish
-            </Button>
             <Button size="sm" className="h-8 text-xs bg-[#6366f1] hover:bg-[#5558e3]">
               Share
             </Button>
