@@ -108,7 +108,7 @@ export function CTASection() {
                         Coding made effortless
                     </h2>
                     <p className="text-muted-foreground text-sm md:text-base font-medium leading-[18.20px] md:leading-relaxed break-words max-w-2xl">
-                        Hear how developers ship products faster, collaborate seamlessly, and build with confidence using Pointer's
+                        Hear how developers ship products faster, collaborate seamlessly, and build with confidence using VibeSDLC's
                         powerful AI tools
                     </p>
                 </div>
