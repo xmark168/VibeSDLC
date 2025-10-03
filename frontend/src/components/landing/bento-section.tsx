@@ -4,6 +4,11 @@ import OneClickIntegrationsIllustration from "./bento/one-click-integrations-ill
 import MCPConnectivityIllustration from "./bento/mcp-connectivity-illustration" // Updated import
 import EasyDeployment from "./bento/easy-deployment"
 import ParallelCodingAgents from "./bento/parallel-agents" // Updated import
+import MultiAgentTeam from "./bento/multi-agent-ai-team"
+import ChatInterface from "./bento/chat-interface"
+import { Kanban } from "lucide-react"
+import kanbanBento from "./bento/kanban"
+import TestingQA from "./bento/testing-qa"
 interface BentoCardProps {
     title: string
     description: string
@@ -40,33 +45,33 @@ const BentoCard = ({ title, description, Component }: BentoCardProps) => (
 export function BentoSection() {
     const cards = [
         {
-            title: "AI-powered code reviews.",
-            description: "Get real-time, smart suggestions for cleaner code.",
-            Component: AiCodeReviews,
+            title: "Multi-Agent AI Team",
+            description: "Complete Scrum team with PO, Scrum Master, Developer, and QA agents working in harmony.",
+            Component: MultiAgentTeam,
         },
         {
-            title: "Real-time coding previews",
-            description: "Chat, collaborate, and instantly preview changes together.",
-            Component: RealtimeCodingPreviews,
+            title: "Interactive Chat Interface",
+            description: "Direct conversation with each agent for context, approvals, and real-time collaboration.",
+            Component: ChatInterface,
         },
         {
-            title: "One-click integrations",
-            description: "Easily connect your workflow with popular dev tools.",
-            Component: OneClickIntegrationsIllustration,
+            title: "Visual Kanban Board",
+            description: "Track agent progress transparently with real-time status updates and WIP limits.",
+            Component: kanbanBento,
         },
         {
-            title: "Flexible MCP connectivity",
-            description: "Effortlessly manage and configure MCP server access.",
-            Component: MCPConnectivityIllustration, // Updated component
+            title: "Automated Testing & QA",
+            description: "Quality gates, automated tests, and merge policies ensure production-ready code.",
+            Component: TestingQA, // Updated component
         },
         {
-            title: "Launch parallel coding agents", // Swapped position
+            title: "Full SDLC Automation", // Swapped position
             description: "Solve complex problems faster with multiple AI agents.",
             Component: ParallelCodingAgents, // Updated component
         },
         {
-            title: "Deployment made easy", // Swapped position
-            description: "Go from code to live deployment on Vercel instantly.",
+            title: "Production-Ready Output", // Swapped position
+            description: "Scalable, maintainable code with complete traceability and CI/CD integration.",
             Component: EasyDeployment,
         },
     ]

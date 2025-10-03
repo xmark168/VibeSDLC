@@ -1,237 +1,158 @@
 import type React from "react"
-import type { ThemeVars } from "@/types/theme"
 
-const AiCodeReviews: React.FC = () => {
-    const themeVars: ThemeVars = {
-        "--ai-primary-color": "hsl(var(--primary))",
-        "--ai-background-color": "hsl(var(--background))",
-        "--ai-text-color": "hsl(var(--foreground))",
-        "--ai-text-dark": "hsl(var(--primary-foreground))",
-        "--ai-border-color": "hsl(var(--border))",
-        "--ai-border-main": "hsl(var(--foreground) / 0.1)",
-        "--ai-highlight-primary": "hsl(var(--primary) / 0.12)",
-        "--ai-highlight-header": "hsl(var(--accent) / 0.2)",
-    }
+interface DeploymentEasyProps {
+    /** Width of component – number (px) or any CSS size value */
+    width?: number | string
+    /** Height of component – number (px) or any CSS size value */
+    height?: number | string
+    /** Extra Tailwind / CSS classes for root element */
+    className?: string
+}
+
+const DeploymentEasy: React.FC<DeploymentEasyProps> = ({ width = "100%", height = "100%", className = "" }) => {
+    /* ------------------------------------------------------------
+     * Theme-based design tokens using global CSS variables
+     * ---------------------------------------------------------- */
+    const themeVars = {
+        "--deploy-primary-color": "hsl(var(--primary))",
+        "--deploy-background-color": "hsl(var(--background))",
+        "--deploy-text-color": "hsl(var(--foreground))",
+        "--deploy-text-secondary": "hsl(var(--muted-foreground))",
+        "--deploy-border-color": "hsl(var(--border))",
+    } as React.CSSProperties
+
+    /* ------------------------------------------------------------
+     * Console log output (static for demo) – can be replaced via props
+     * ---------------------------------------------------------- */
+    const logLines = [
+        "[16:37:25.637] Running build in Washington, D.C., USA (East) – iad1",
+        "[16:37:25.638] Build machine configuration: 2 cores, 8 GB",
+        "[16:37:25.653] Retrieving list of deployment files...",
+        "[16:37:25.741] Previous build caches not available",
+        "[16:37:25.979] Downloading 84 deployment files...",
+        '[16:37:29.945] Running "vercel build"',
+        "[16:37:30.561] Vercel CLI 44.5.0",
+        '[16:37:30.880] Running "install" command: `bun install`...',
+        "[16:37:30.914] bun install v1.2.19 (aad3abea)",
+        "[16:37:30.940] Resolving dependencies",
+        "[16:37:34.436] Resolved, downloaded and extracted [1116]",
+        '[16:37:34.436] warn: incorrect peer dependency "react@19.1.0"',
+        "[16:37:37.265] Saved lockfile",
+        "[16:37:39.076] Next.js anonymous telemetry notice",
+        "[16:37:39.137] ▲ Next.js 15.2.4",
+        "[16:37:41.439] ✓ Compiled successfully",
+        "[16:37:53.979] ✓ Generated static pages",
+        "[16:38:00.585] ○ (Static) prerendered as static content",
+        "[16:38:01.099] Build Completed in /vercel/output [30s]",
+        "🚀 Deployment complete – Easy!",
+    ]
 
     return (
         <div
-            style={
-                {
-                    width: "100%",
-                    height: "100%",
-                    position: "relative",
-                    background: "transparent",
-                    ...themeVars,
-                }
-            }
+            className={`w-full h-full flex items-center justify-center p-4 relative ${className}`}
+            style={{
+                width,
+                height,
+                position: "relative",
+                background: "transparent",
+                ...themeVars,
+            }}
             role="img"
-            aria-label="AI Code Reviews interface showing code suggestions with apply buttons"
+            aria-label="Deployment console output with Deploy on Vercel button"
         >
-            {/* Background Message Box (Blurred) */}
+            {/* -------------------------------------------------------- */}
+            {/* Console / Terminal panel                                */}
+            {/* -------------------------------------------------------- */}
             <div
                 style={{
                     position: "absolute",
-                    top: "30px",
+                    top: "50%",
                     left: "50%",
-                    transform: "translateX(-50%) scale(0.9)",
+                    transform: "translate(-50%, -50%)",
                     width: "340px",
-                    height: "205.949px",
-                    background: "linear-gradient(180deg, var(--ai-background-color) 0%, transparent 100%)",
-                    opacity: 0.6,
-                    borderRadius: "8.826px",
-                    border: "0.791px solid var(--ai-border-color)",
+                    height: "239px",
+                    background: "linear-gradient(180deg, var(--deploy-background-color) 0%, transparent 100%)",
+                    backdropFilter: "blur(7.907px)",
+                    borderRadius: "10px",
                     overflow: "hidden",
-                    backdropFilter: "blur(16px)",
                 }}
             >
+                {/* Inner translucent panel – replicates subtle overlay */}
                 <div
-                    className="border rounded-lg bg-card"
                     style={{
-                        padding: "7.355px 8.826px",
+                        position: "absolute",
+                        inset: "2px",
+                        borderRadius: "8px",
+                        background: "hsl(var(--foreground) / 0.08)",
+                    }}
+                />
+
+                {/* Log text */}
+                <div
+                    style={{
+                        position: "relative",
+                        padding: "8px",
                         height: "100%",
-                        boxSizing: "border-box",
                         overflow: "hidden",
+                        fontFamily: "'Geist Mono', 'SF Mono', Monaco, Consolas, 'Liberation Mono', monospace",
+                        fontSize: "10px",
+                        lineHeight: "16px",
+                        color: "var(--deploy-text-color)",
+                        whiteSpace: "pre",
                     }}
                 >
-                    <div
-                        style={{
-                            fontFamily: "'Geist Mono', 'SF Mono', Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-                            fontSize: "9.562px",
-                            lineHeight: "14.711px",
-                            letterSpacing: "-0.2942px",
-                            color: "hsl(var(--muted-foreground))",
-                            width: "100%",
-                            maxWidth: "320px",
-                            margin: 0,
-                        }}
-                    >
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}>switch (type) {"{"}</p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}> case 'success':</p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}> return {"{"}</p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}>
-                            {"          border: theme === 'dark' ? 'border-[rgba(34,197,94,0.4)]' : 'border-green-200',"}
+                    {logLines.map((line, index) => (
+                        <p key={index} style={{ margin: 0 }}>
+                            {line}
                         </p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}> icon: (</p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}>
-                            {'            <svg className={\'baseIconClasses\'} fill="none" viewBox="0 0 14 14">'}
-                        </p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}> &lt;path</p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}>
-                            {'                d="M3.85156 7.875L6.47656 10.5L10.8516 3.5"'}
-                        </p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}>
-                            {'                stroke="var(--ai-primary-color)"'}
-                        </p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}>
-                            {'                strokeLinecap="round"'}
-                        </p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}>
-                            {'                strokeLinejoin="round"'}
-                        </p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}>{'                strokeWidth="1.5"'}</p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}> /&gt;</p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}> &lt;/svg&gt;</p>
-                    </div>
+                    ))}
                 </div>
+
+                {/* Inner border overlay */}
+                <div
+                    style={{
+                        position: "absolute",
+                        inset: 0,
+                        border: "0.791px solid var(--deploy-border-color)",
+                        borderRadius: "10px",
+                        pointerEvents: "none",
+                    }}
+                />
             </div>
 
-            {/* Foreground Message Box (Main) */}
-            <div
+            {/* -------------------------------------------------------- */}
+            {/* Call-to-action button                                   */}
+            {/* -------------------------------------------------------- */}
+            <button
                 style={{
                     position: "absolute",
-                    top: "51.336px",
+                    top: "calc(50% + 57.6px)",
                     left: "50%",
-                    transform: "translateX(-50%)",
-                    width: "340px",
-                    height: "221.395px",
-                    background: "var(--ai-background-color)",
-                    backdropFilter: "blur(16px)",
-                    borderRadius: "9.488px",
-                    border: "1px solid var(--ai-border-main)",
-                    overflow: "hidden",
+                    transform: "translate(-50%, -50%)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6.375px",
+                    padding: "5.1px 10.2px",
+                    background: "var(--deploy-primary-color)",
+                    color: "hsl(var(--primary-foreground))",
+                    border: "none",
+                    cursor: "pointer",
+                    borderRadius: "8.925px",
+                    fontFamily: "'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                    fontSize: "16.575px",
+                    lineHeight: "25.5px",
+                    letterSpacing: "-0.51px",
+                    fontWeight: 500,
+                    whiteSpace: "nowrap",
+                    boxShadow:
+                        "0px 42.075px 11.475px rgba(0, 0, 0, 0), 0px 26.775px 10.2px rgba(0, 0, 0, 0.01), 0px 15.3px 8.925px rgba(0, 0, 0, 0.05), 0px 6.375px 6.375px rgba(0, 0, 0, 0.09), 0px 1.275px 3.825px rgba(0, 0, 0, 0.1)",
                 }}
             >
-                <div
-                    className="bg-card border border-border"
-                    style={{
-                        padding: "9.488px",
-                        height: "100%",
-                        boxSizing: "border-box",
-                        position: "relative",
-                        overflow: "hidden",
-                    }}
-                >
-                    <div
-                        style={{
-                            position: "absolute",
-                            left: 0,
-                            right: 0,
-                            width: "100%",
-                            top: "47.67px",
-                            height: "33.118px",
-                            background: "hsl(var(--foreground) / 0.08)",
-                            zIndex: 1,
-                        }}
-                    />
-                    <div
-                        style={{
-                            position: "absolute",
-                            left: 0,
-                            right: 0,
-                            width: "100%",
-                            top: "80.791px",
-                            height: "45.465px",
-                            background: "var(--ai-highlight-primary)",
-                            zIndex: 1,
-                        }}
-                    />
-                    <div
-                        style={{
-                            fontFamily: "'Geist Mono', 'SF Mono', Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-                            fontSize: "10.279px",
-                            lineHeight: "15.814px",
-                            letterSpacing: "-0.3163px",
-                            color: "var(--ai-text-color)",
-                            width: "100%",
-                            maxWidth: "320px",
-                            position: "relative",
-                            zIndex: 2,
-                            margin: 0,
-                        }}
-                    >
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}>switch (type) {"{"}</p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}> case 'success':</p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}> return {"{"}</p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}>
-                            {"          border: theme === 'dark' ? 'border-[rgba(34,197,94,0.4)]' : 'border-green-200',"}
-                        </p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}> icon: (</p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}>
-                            {'            <svg className={\'baseIconClasses\'} fill="none" viewBox="0 0 14 14">'}
-                        </p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}> &lt;path</p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}>
-                            {'                d="M3.85156 7.875L6.47656 10.5L10.8516 3.5"'}
-                        </p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}>{'                stroke="#22C55E"'}</p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}>
-                            {'                strokeLinecap="round"'}
-                        </p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}>
-                            {'                strokeLinejoin="round"'}
-                        </p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}>{'                strokeWidth="1.5"'}</p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}> /&gt;</p>
-                        <p style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 400 }}> &lt;/svg&gt;</p>
-                    </div>
-                    <button
-                        style={{
-                            position: "absolute",
-                            top: "calc(50% + 29.745px)",
-                            right: "20px",
-                            transform: "translateY(-50%)",
-                            zIndex: 3,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            gap: "3.953px",
-                            background: "var(--ai-primary-color)",
-                            color: "var(--ai-text-dark)",
-                            border: "none",
-                            cursor: "pointer",
-                            fontWeight: 500,
-                            whiteSpace: "nowrap",
-                            transition: "all 0.2s ease",
-                            padding: "3.163px 6.326px",
-                            borderRadius: "5.535px",
-                            fontSize: "10.279px",
-                            lineHeight: "15.814px",
-                            letterSpacing: "-0.3163px",
-                            boxShadow:
-                                "0px 26.093px 7.116px rgba(0, 0, 0, 0), 0px 16.605px 6.326px rgba(0, 0, 0, 0.01), 0px 9.488px 5.535px rgba(0, 0, 0, 0.05), 0px 3.953px 3.953px rgba(0, 0, 0, 0.09), 0px 0.791px 2.372px rgba(0, 0, 0, 0.1)",
-                        }}
-                    >
-                        <span
-                            style={{
-                                fontFamily: "'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-                                fontWeight: 500,
-                            }}
-                        >
-                            Apply changes
-                        </span>
-                        <span
-                            style={{
-                                fontFamily: "'SF Pro', -apple-system, BlinkMacSystemFont, system-ui, sans-serif",
-                                fontWeight: 500,
-                            }}
-                        >
-                            ⌘Y
-                        </span>
-                    </button>
-                </div>
-            </div>
+                🚀 Deploy on Vercel
+            </button>
         </div>
     )
 }
 
-export default AiCodeReviews
+export default DeploymentEasy

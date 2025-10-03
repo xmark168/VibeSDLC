@@ -1,10 +1,9 @@
 "use client"
 
 import type React from "react"
-import type { ThemeVars } from "@/types/theme"
 
 const RealtimeCodingPreviews: React.FC = () => {
-    const themeVars: ThemeVars = {
+    const themeVars = {
         "--realtime-primary-color": "hsl(var(--primary))",
         "--realtime-background-editor": "hsl(var(--background) / 0.8)", // Tinted gray from background
         "--realtime-background-preview": "hsl(var(--background) / 0.8)", // Tinted gray from background
@@ -26,7 +25,7 @@ const RealtimeCodingPreviews: React.FC = () => {
                     position: "relative",
                     background: "transparent",
                     ...themeVars,
-                }
+                } as React.CSSProperties
             }
             role="img"
             aria-label="Realtime Coding Previews interface showing split-screen code editor and live preview"
@@ -241,7 +240,16 @@ const RealtimeCodingPreviews: React.FC = () => {
                 </div>
             </div>
 
+            {/* Live Recording Indicator */}
 
+            {/* Sync Indicator at connection point */}
+
+            <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 0.4; }
+          50% { opacity: 1; }
+        }
+      `}</style>
         </div>
     )
 }

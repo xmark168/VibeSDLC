@@ -1,30 +1,12 @@
 import type React from "react"
-import type { ThemeVars } from "@/types/theme"
 
 interface DeploymentEasyProps {
-    /** Width of component – number (px) or any CSS size value */
     width?: number | string
-    /** Height of component – number (px) or any CSS size value */
     height?: number | string
-    /** Extra Tailwind / CSS classes for root element */
     className?: string
 }
 
 const DeploymentEasy: React.FC<DeploymentEasyProps> = ({ width = "100%", height = "100%", className = "" }) => {
-    /* ------------------------------------------------------------
-     * Theme-based design tokens using global CSS variables
-     * ---------------------------------------------------------- */
-    const themeVars: ThemeVars = {
-        "--deploy-primary-color": "hsl(var(--primary))",
-        "--deploy-background-color": "hsl(var(--background))",
-        "--deploy-text-color": "hsl(var(--foreground))",
-        "--deploy-text-secondary": "hsl(var(--muted-foreground))",
-        "--deploy-border-color": "hsl(var(--border))",
-    }
-
-    /* ------------------------------------------------------------
-     * Console log output (static for demo) – can be replaced via props
-     * ---------------------------------------------------------- */
     const logLines = [
         "[16:37:25.637] Running build in Washington, D.C., USA (East) – iad1",
         "[16:37:25.638] Build machine configuration: 2 cores, 8 GB",
@@ -50,13 +32,11 @@ const DeploymentEasy: React.FC<DeploymentEasyProps> = ({ width = "100%", height 
 
     return (
         <div
-            className={`w-full h-full flex items-center justify-center p-4 relative ${className}`}
+            className={`w-full h-full flex items-center justify-center p-4 relative ${className} bg-[#2a2b2a]/80 backdrop-blur-xl rounded-3xl border border-[#3a3b3a]`}
             style={{
                 width,
                 height,
                 position: "relative",
-                background: "transparent",
-                ...themeVars,
             }}
             role="img"
             aria-label="Deployment console output with Deploy on Vercel button"
@@ -65,93 +45,52 @@ const DeploymentEasy: React.FC<DeploymentEasyProps> = ({ width = "100%", height 
             {/* Console / Terminal panel                                */}
             {/* -------------------------------------------------------- */}
             <div
+                className="relative bg-[#1a1b1a]/90 backdrop-blur-md border border-[#3a3b3a] rounded-xl overflow-hidden"
                 style={{
-                    position: "absolute",
-                    top: "50%",
-                    left: "50%",
-                    transform: "translate(-50%, -50%)",
                     width: "340px",
                     height: "239px",
-                    background: "linear-gradient(180deg, var(--deploy-background-color) 0%, transparent 100%)",
-                    backdropFilter: "blur(7.907px)",
-                    borderRadius: "10px",
-                    overflow: "hidden",
                 }}
             >
-                {/* Inner translucent panel – replicates subtle overlay */}
-                <div
+                {/* Button inside terminal - positioned at bottom */}
+                <button
+                    className="absolute bottom-3 left-1/2 transform -translate-x-1/2 flex items-center justify-center gap-2 px-4 py-2 bg-[#6efcd9] text-black font-bold border-none cursor-pointer rounded-xl whitespace-nowrap shadow-lg hover:bg-[#5ae0c0] transition-all duration-300 z-10"
                     style={{
-                        position: "absolute",
-                        inset: "2px",
-                        borderRadius: "8px",
-                        background: "hsl(var(--foreground) / 0.08)",
+                        fontSize: "12px",
                     }}
-                />
+                >
+                    <span>🚀</span>
+                    Deploy to production
+                </button>
 
-                {/* Log text */}
+                {/* Log text with padding bottom để tránh button */}
                 <div
+                    className="p-4 h-full overflow-hidden font-mono text-xs leading-relaxed"
                     style={{
-                        position: "relative",
-                        padding: "8px",
-                        height: "100%",
-                        overflow: "hidden",
-                        fontFamily: "'Geist Mono', 'SF Mono', Monaco, Consolas, 'Liberation Mono', monospace",
-                        fontSize: "10px",
-                        lineHeight: "16px",
-                        color: "var(--deploy-text-color)",
+                        color: "#e5e7eb",
                         whiteSpace: "pre",
+                        paddingBottom: "50px", // Tạo không gian cho button
                     }}
                 >
                     {logLines.map((line, index) => (
-                        <p key={index} style={{ margin: 0 }}>
+                        <p
+                            key={index}
+                            className="m-0"
+                            style={{
+                                color: line.includes("✓") || line.includes("🚀") ? "#10b981" :
+                                    line.includes("warn") ? "#f59e0b" :
+                                        line.includes("▲") ? "#8b5cf6" : "#9ca3af",
+                            }}
+                        >
                             {line}
                         </p>
                     ))}
                 </div>
 
-                {/* Inner border overlay */}
+                {/* Gradient overlay for fade effect - chỉ áp dụng phần trên button */}
                 <div
-                    style={{
-                        position: "absolute",
-                        inset: 0,
-                        border: "0.791px solid var(--deploy-border-color)",
-                        borderRadius: "10px",
-                        pointerEvents: "none",
-                    }}
+                    className="absolute bottom-10 left-0 right-0 h-6 bg-gradient-to-t from-[#1a1b1a] to-transparent pointer-events-none"
                 />
             </div>
-
-            {/* -------------------------------------------------------- */}
-            {/* Call-to-action button                                   */}
-            {/* -------------------------------------------------------- */}
-            <button
-                style={{
-                    position: "absolute",
-                    top: "calc(50% + 57.6px)",
-                    left: "50%",
-                    transform: "translate(-50%, -50%)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "6.375px",
-                    padding: "5.1px 10.2px",
-                    background: "var(--deploy-primary-color)",
-                    color: "hsl(var(--primary-foreground))",
-                    border: "none",
-                    cursor: "pointer",
-                    borderRadius: "8.925px",
-                    fontFamily: "'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-                    fontSize: "16.575px",
-                    lineHeight: "25.5px",
-                    letterSpacing: "-0.51px",
-                    fontWeight: 500,
-                    whiteSpace: "nowrap",
-                    boxShadow:
-                        "0px 42.075px 11.475px rgba(0, 0, 0, 0), 0px 26.775px 10.2px rgba(0, 0, 0, 0.01), 0px 15.3px 8.925px rgba(0, 0, 0, 0.05), 0px 6.375px 6.375px rgba(0, 0, 0, 0.09), 0px 1.275px 3.825px rgba(0, 0, 0, 0.1)",
-                }}
-            >
-                🚀 Deploy on Vercel
-            </button>
         </div>
     )
 }

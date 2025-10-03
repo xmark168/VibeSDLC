@@ -1,12 +1,11 @@
 import type React from "react"
-import type { ThemeVars } from "@/types/theme"
 
 interface OneClickIntegrationsIllustrationProps {
     className?: string
 }
 
 const OneClickIntegrationsIllustration: React.FC<OneClickIntegrationsIllustrationProps> = ({ className = "" }) => {
-    const themeVars: ThemeVars = {
+    const themeVars = {
         "--oci-primary-color": "hsl(var(--primary))",
         "--oci-background-color": "hsl(var(--background))",
         "--oci-foreground-color": "hsl(var(--foreground))",
@@ -15,7 +14,7 @@ const OneClickIntegrationsIllustration: React.FC<OneClickIntegrationsIllustratio
         "--oci-shadow-color": "rgba(0, 0, 0, 0.12)",
         "--oci-gradient-light-gray-start": "hsl(var(--foreground) / 0.2)",
         "--oci-gradient-light-gray-end": "transparent",
-    }
+    } as React.CSSProperties
 
     // Helper component for rendering each logo box
     const LogoBox: React.FC<{
@@ -27,7 +26,7 @@ const OneClickIntegrationsIllustration: React.FC<OneClickIntegrationsIllustratio
             height: "60px",
             position: "relative",
             borderRadius: "9px",
-            border: `1px ${themeVars["--oci-border-color"]} solid`,
+            border: `1px ${(themeVars as Record<string, string>)["--oci-border-color"]} solid`,
             display: "flex",
             justifyContent: "center",
             alignItems: "center",
@@ -46,8 +45,8 @@ const OneClickIntegrationsIllustration: React.FC<OneClickIntegrationsIllustratio
         }
 
         if (isGradientBg) {
-            boxStyle.background = `linear-gradient(180deg, ${themeVars["--oci-gradient-light-gray-start"]} 0%, ${themeVars["--oci-gradient-light-gray-end"]} 100%)`
-            boxStyle.boxShadow = `0px 1px 2px ${themeVars["--oci-shadow-color"]}`
+            boxStyle.background = `linear-gradient(180deg, ${(themeVars as Record<string, string>)["--oci-gradient-light-gray-start"]} 0%, ${(themeVars as Record<string, string>)["--oci-gradient-light-gray-end"]} 100%)`
+            boxStyle.boxShadow = `0px 1px 2px ${(themeVars as Record<string, string>)["--oci-shadow-color"]}`
             boxStyle.backdropFilter = "blur(18px)"
             boxStyle.padding = "6px 8px"
         }
@@ -215,11 +214,11 @@ const OneClickIntegrationsIllustration: React.FC<OneClickIntegrationsIllustratio
                     top: "24px",
                     position: "absolute",
                     background: `radial-gradient(ellipse 103.87% 77.04% at 52.56% -1.80%, 
-            ${themeVars["--oci-foreground-color"]}00 0%, 
-            ${themeVars["--oci-foreground-color"]}F5 15%, 
-            ${themeVars["--oci-foreground-color"]}66 49%, 
-            ${themeVars["--oci-foreground-color"]}F5 87%, 
-            ${themeVars["--oci-foreground-color"]}00 100%)`,
+            ${(themeVars as Record<string, string>)["--oci-foreground-color"]}00 0%, 
+            ${(themeVars as Record<string, string>)["--oci-foreground-color"]}F5 15%, 
+            ${(themeVars as Record<string, string>)["--oci-foreground-color"]}66 49%, 
+            ${(themeVars as Record<string, string>)["--oci-foreground-color"]}F5 87%, 
+            ${(themeVars as Record<string, string>)["--oci-foreground-color"]}00 100%)`,
                 }}
             />
 

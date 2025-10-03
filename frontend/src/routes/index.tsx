@@ -28,9 +28,9 @@ function RouteComponent() {
             </AnimatedSection>
           </div>
         </main>
-        <AnimatedSection className="relative z-10 max-w-[1320px] mx-auto px-6 mt-[411px] md:mt-[400px]" delay={0.1}>
+        {/* <AnimatedSection className="relative z-10 max-w-[1320px] mx-auto px-6 mt-[411px] md:mt-[400px]" delay={0.1}>
           <SocialProof />
-        </AnimatedSection>
+        </AnimatedSection> */}
         <AnimatedSection id="features-section" className="relative z-10 max-w-[1320px] mx-auto mt-16" delay={0.2}>
           <BentoSection />
         </AnimatedSection>

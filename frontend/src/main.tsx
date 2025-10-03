@@ -11,6 +11,7 @@ import { ApiError, OpenAPI } from "./client"
 import { routeTree } from "./routeTree.gen"
 
 import "./index.css"
+import "../public/assets/fonts/ibm-plex-sans.regular.ttf"
 import { ThemeProvider } from "./components/provider/theme-provider"
 
 OpenAPI.BASE = import.meta.env.VITE_API_URL
