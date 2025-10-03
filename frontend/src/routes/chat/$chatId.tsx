@@ -13,10 +13,15 @@ function ChatPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
   const [chatWidth, setChatWidth] = useState(40) // percentage
   const [chatCollapsed, setChatCollapsed] = useState(false)
-
+  const [sidebarHovered, setSidebarHovered] = useState(false)
  return (
     <div className="flex h-screen overflow-hidden bg-background relative">
-      <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
+      <Sidebar 
+      collapsed={sidebarCollapsed} 
+      onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} 
+      hovered={sidebarHovered}
+        onHoverChange={setSidebarHovered}
+      />
 
       <div className="flex flex-1 overflow-hidden">
         {!chatCollapsed && (
@@ -26,6 +31,7 @@ function ChatPage() {
                 sidebarCollapsed={sidebarCollapsed}
                 onToggleSidebar={() => setSidebarCollapsed(false)}
                 onCollapse={() => setChatCollapsed(true)}
+                onSidebarHover = {setSidebarHovered}
               />
             </div>
 

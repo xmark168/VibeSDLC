@@ -125,7 +125,7 @@
 
 /* Track (nền thanh cuộn) */
 ::-webkit-scrollbar-track {
-    background: #f5f5f5;
+    background: transparent;
     border-radius: 10px;
 }
 

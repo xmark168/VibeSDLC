@@ -28,6 +28,7 @@ interface ChatPanelProps {
   sidebarCollapsed: boolean
   onToggleSidebar: () => void
   onCollapse: () => void
+  onSidebarHover: (hovered: boolean) => void
 }
 
 type MessageType = "thinking" | "question" | "reply"
@@ -61,7 +62,7 @@ const AGENTS = [
   { name: "Tester", role: "Tester", avatar: "🧪" },
 ]
 
-export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse }: ChatPanelProps) {
+export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSidebarHover }: ChatPanelProps) {
   const [message, setMessage] = useState("")
   const [showMentions, setShowMentions] = useState(false)
   const [mentionSearch, setMentionSearch] = useState("")
@@ -404,6 +405,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse }: Cha
             variant="ghost"
             size="icon"
             onClick={onToggleSidebar}
+            onMouseEnter={()=>onSidebarHover(true)}
             className="w-8 h-8 text-foreground hover:bg-accent"
           >
             <Menu className="w-5 h-5" />
