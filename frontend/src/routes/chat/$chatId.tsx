@@ -4,12 +4,12 @@ import { Sidebar } from '@/components/chat/sidebar'
 import { WorkspacePanel } from '@/components/chat/workspace-panel'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from "react"
-export const Route = createFileRoute('/chat/$id')({
+export const Route = createFileRoute('/chat/$chatId')({
   component: ChatPage,
 })
 
 function ChatPage() {
-  const { id } = Route.useParams()
+  const { chatId } = Route.useParams()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
   const [chatWidth, setChatWidth] = useState(50) // percentage
 

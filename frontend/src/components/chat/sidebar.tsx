@@ -39,7 +39,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </Button>
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-sidebar-foreground" />
-            <span className="font-semibold text-sidebar-foreground">MGX</span>
+            <span className="font-semibold text-sidebar-foreground">VibeSDLC</span>
           </div>
         </div>
       </div>
