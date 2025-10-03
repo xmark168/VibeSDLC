@@ -96,7 +96,7 @@ export function WorkspacePanel() {
     switch (activeView) {
       case "app-preview":
         return (
-          <div className="flex-1 overflow-auto bg-background">
+          <div className="flex-1 overflow-auto bg-background border-t">
             <div className="max-w-6xl mx-auto p-12">
               <div className="text-center space-y-6">
                 <div className="flex justify-between items-start mb-8">
@@ -138,7 +138,7 @@ export function WorkspacePanel() {
         return <KanbanBoard />
       case "file":
         return (
-          <div className="flex-1 overflow-auto bg-[#1e1e1e] text-[#d4d4d4] font-mono">
+          <div className="flex-1 overflow-auto bg-[#1e1e1e] text-[#d4d4d4] font-mono border-t">
             <div className="p-4">
               <div className="text-xs text-[#858585] mb-2">app/page.tsx</div>
               <pre className="text-sm leading-relaxed">
@@ -206,40 +206,6 @@ export function WorkspacePanel() {
   return (
     <div className="flex flex-col h-full bg-background">
       <div className="flex flex-col border-b border-border">
-        {/* Tab bar */}
-        <div className="flex items-center gap-0 px-2 pt-2 bg-muted/30">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTabId(tab.id)}
-              className={`group flex items-center gap-2 px-4 py-2 text-sm font-medium transition-all relative ${
-                activeTabId === tab.id
-                  ? "bg-background text-foreground rounded-t-lg border-t border-l border-r border-border"
-                  : "bg-transparent text-muted-foreground hover:bg-muted/50 rounded-t-lg"
-              }`}
-              style={{
-                marginBottom: activeTabId === tab.id ? "-1px" : "0",
-              }}
-            >
-              {getViewIcon(tab.view)}
-              <span className="max-w-[120px] truncate">{tab.label}</span>
-              {tabs.length > 1 && (
-                <button
-                  onClick={(e) => handleCloseTab(tab.id, e)}
-                  className="ml-1 opacity-0 group-hover:opacity-100 hover:bg-muted rounded p-0.5 transition-opacity"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              )}
-            </button>
-          ))}
-          <button
-            onClick={handleAddTab}
-            className="flex items-center justify-center w-8 h-8 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-t-lg transition-colors ml-1"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
 
         {/* Toolbar */}
         <div className="flex items-center justify-between px-6 py-2 bg-background">
@@ -266,37 +232,49 @@ export function WorkspacePanel() {
                 <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" />
               </button>
             )}
-
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <Globe className="w-4 h-4" />
-            </Button>
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="flex -space-x-2">
-              <div className="w-7 h-7 rounded-full bg-[#f59e0b] border-2 border-background flex items-center justify-center">
-                <span className="text-xs text-white">😊</span>
-              </div>
-              <div className="w-7 h-7 rounded-full bg-[#3b82f6] border-2 border-background flex items-center justify-center">
-                <span className="text-xs text-white">💬</span>
-              </div>
-              <div className="w-7 h-7 rounded-full bg-[#8b5cf6] border-2 border-background flex items-center justify-center">
-                <span className="text-xs text-white">🎨</span>
-              </div>
-              <div className="w-7 h-7 rounded-full bg-[#10b981] border-2 border-background flex items-center justify-center">
-                <span className="text-xs text-white">🤖</span>
-              </div>
-              <div className="w-7 h-7 rounded-full bg-[#ec4899] border-2 border-background flex items-center justify-center">
-                <span className="text-xs text-white">✨</span>
-              </div>
-            </div>
+
             <Button size="sm" className="h-8 text-xs bg-[#6366f1] hover:bg-[#5558e3]">
               Share
             </Button>
           </div>
         </div>
       </div>
-
+      {/* Tab bar */}
+      <div className="flex items-center gap-0 px-2 pt-2 bg-muted/30">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTabId(tab.id)}
+            className={`group flex items-center gap-2 px-4 py-2 text-sm font-medium transition-all relative ${activeTabId === tab.id
+                ? "bg-background text-foreground rounded-t-lg border-t border-l border-r border-border"
+                : "bg-transparent text-muted-foreground hover:bg-muted/50 rounded-t-lg"
+              }`}
+            style={{
+              marginBottom: activeTabId === tab.id ? "-1px" : "0",
+            }}
+          >
+            {getViewIcon(tab.view)}
+            <span className="max-w-[120px] truncate">{tab.label}</span>
+            {tabs.length > 1 && (
+              <button
+                onClick={(e) => handleCloseTab(tab.id, e)}
+                className="ml-1 opacity-0 group-hover:opacity-100 hover:bg-muted rounded p-0.5 transition-opacity"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </button>
+        ))}
+        <button
+          onClick={handleAddTab}
+          className="flex items-center justify-center w-8 h-8 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-t-lg transition-colors ml-1"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+      </div>
       {renderView()}
     </div>
   )
