@@ -150,7 +150,7 @@ export function KanbanBoard() {
       <div
         ref={scrollContainerRef}
         onWheel={handleWheel}
-        className="h-full overflow-x-auto bg-background p-6"
+        className="h-full overflow-x-auto bg-background p-6 border-t"
         style={{ scrollBehavior: "smooth" }}
       >
         <div className="flex gap-4 min-w-max">

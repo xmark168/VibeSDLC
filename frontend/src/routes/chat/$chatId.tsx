@@ -11,26 +11,41 @@ export const Route = createFileRoute('/chat/$chatId')({
 function ChatPage() {
   const { chatId } = Route.useParams()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
-  const [chatWidth, setChatWidth] = useState(50) // percentage
-
-  return (
+  const [chatWidth, setChatWidth] = useState(40) // percentage
+  const [chatCollapsed, setChatCollapsed] = useState(false)
+  const [sidebarHovered, setSidebarHovered] = useState(false)
+ return (
     <div className="flex h-screen overflow-hidden bg-background relative">
-      <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
+      <Sidebar 
+      collapsed={sidebarCollapsed} 
+      onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} 
+      hovered={sidebarHovered}
+        onHoverChange={setSidebarHovered}
+      />
 
       <div className="flex flex-1 overflow-hidden">
-        <div className="flex flex-col overflow-hidden border-r border-border" style={{ width: `${chatWidth}%` }}>
-          <ChatPanel sidebarCollapsed={sidebarCollapsed} onToggleSidebar={() => setSidebarCollapsed(false)} />
-        </div>
+        {!chatCollapsed && (
+          <>
+            <div className="flex flex-col overflow-hidden border-r border-border" style={{ width: `${chatWidth}%` }}>
+              <ChatPanel
+                sidebarCollapsed={sidebarCollapsed}
+                onToggleSidebar={() => setSidebarCollapsed(false)}
+                onCollapse={() => setChatCollapsed(true)}
+                onSidebarHover = {setSidebarHovered}
+              />
+            </div>
 
-        <ResizableHandle
-          onResize={(delta) => {
-            const newWidth = chatWidth + (delta / window.innerWidth) * 100
-            setChatWidth(Math.max(20, Math.min(80, newWidth)))
-          }}
-        />
+            <ResizableHandle
+              onResize={(delta) => {
+                const newWidth = chatWidth + (delta / window.innerWidth) * 100
+                setChatWidth(Math.max(20, Math.min(80, newWidth)))
+              }}
+            />
+          </>
+        )}
 
         <div className="flex-1 overflow-hidden">
-          <WorkspacePanel />
+          <WorkspacePanel chatCollapsed={chatCollapsed} onExpandChat={() => setChatCollapsed(false)} />
         </div>
       </div>
     </div>

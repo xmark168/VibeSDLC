@@ -1,15 +1,17 @@
 
 import { Button } from "@/components/ui/button"
-import { Menu, Plus, Sparkles, ChevronRight, ChevronDown } from "lucide-react"
+import { Menu, Plus, Sparkles, ChevronRight, ChevronDown, PanelRightClose, PanelLeftClose } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useState } from "react"
 
 interface SidebarProps {
   collapsed: boolean
   onToggle: () => void
+  hovered: boolean
+  onHoverChange: (hovered: boolean) => void
 }
 
-export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+export function Sidebar({ collapsed, onToggle,hovered, onHoverChange }: SidebarProps) {
   const [myChatsExpanded, setMyChatsExpanded] = useState(true)
 
   const chats = [
@@ -20,12 +22,20 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     { id: "5", title: "T-shirt Costume Website Code", active: false },
   ]
 
+ const isVisible = !collapsed || hovered
+
   return (
     <div
       className={cn(
         "flex flex-col bg-sidebar border-r border-sidebar-border transition-all duration-300 ease-in-out w-[280px] h-full",
-        collapsed ? "absolute -translate-x-full z-50" : "relative translate-x-0",
+        !collapsed ? "relative translate-x-0 z-50" : hovered ? "fixed translate-x-0 z-50" : "absolute -translate-x-full z-50",
+        hovered && collapsed && "shadow-2xl",
       )}
+      onMouseLeave={() => {
+        if (collapsed && onHoverChange) {
+          onHoverChange(false)
+        }
+      }}
     >
       <div className="flex items-center justify-between p-4 border-b border-sidebar-border">
         <div className="flex items-center gap-2">
@@ -35,7 +45,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             onClick={onToggle}
             className="w-6 h-6 text-sidebar-foreground hover:bg-sidebar-accent"
           >
-            <Menu className="w-4 h-4" />
+            {collapsed ? <PanelRightClose className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
           </Button>
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-sidebar-foreground" />
