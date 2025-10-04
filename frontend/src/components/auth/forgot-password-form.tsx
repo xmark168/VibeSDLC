@@ -82,13 +82,13 @@ export function ForgotPasswordForm() {
             </div>
 
             {/* Back button */}
-            <Link
+            {/* <Link
                 to="/"
                 className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
                 <ArrowLeft className="w-4 h-4" />
                 Back to login
-            </Link>
+            </Link> */}
 
             <div className="space-y-2">
                 <motion.h2
@@ -159,9 +159,6 @@ export function ForgotPasswordForm() {
 
                         <div className="text-center text-sm text-muted-foreground">
                             Remember your password?{" "}
-                            <Link href="/" className="text-foreground underline hover:text-accent transition-colors">
-                                Sign in
-                            </Link>
                         </div>
                     </motion.div>
                 </form>

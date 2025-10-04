@@ -12,7 +12,7 @@ function RouteComponent() {
       {/* Left Side - Animated Agent Circle */}
       <div
         className="relative flex flex-1 items-center justify-center overflow-hidden p-8 lg:p-16"
-        style={{ background: "linear-gradient(90deg,rgba(39, 39, 115, 1) 0%, rgba(55, 55, 161, 1) 35%, rgba(0, 212, 255, 0) 100%)" }}
+        style={{ background: "linear-gradient(90deg,rgba(39, 39, 115, 1) 0%, rgba(55, 55, 161, 1) 35%, rgb(34, 35, 39) 100%)" }}
       >
         {/* Animated Background Gradient Blobs */}
         <div className="absolute inset-0">
