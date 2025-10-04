@@ -1,10 +1,9 @@
-"use client"
-
 import type React from "react"
 
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Menu } from "lucide-react"
+import { Link } from "@tanstack/react-router"
 
 export function Header() {
     const navItems = [
@@ -43,11 +42,11 @@ export function Header() {
                     </nav>
                 </div>
                 <div className="flex items-center gap-4">
-                    <a href="https://vercel.com/home" target="_blank" rel="noopener noreferrer" className="hidden md:block">
+                    <Link to="/login" rel="noopener noreferrer" className="hidden md:block">
                         <Button className="bg-secondary text-secondary-foreground hover:bg-secondary/90 px-6 py-2 rounded-full font-medium shadow-sm">
                             Try for Free
                         </Button>
-                    </a>
+                    </Link>
                     <Sheet>
                         <SheetTrigger asChild className="md:hidden">
                             <Button variant="ghost" size="icon" className="text-foreground">
@@ -59,7 +58,7 @@ export function Header() {
                             <SheetHeader>
                                 <SheetTitle className="text-left text-xl font-semibold text-foreground">Navigation</SheetTitle>
                             </SheetHeader>
-                            <nav className="flex flex-col gap-4 mt-6">
+                            <nav className="flex flex-col gap-4 mt-6 ml-6">
                                 {navItems.map((item) => (
                                     <a
                                         key={item.name}

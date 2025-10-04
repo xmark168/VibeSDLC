@@ -6,32 +6,32 @@ const faqData = [
     {
         question: "What is VibeSDLC and who is it for?",
         answer:
-            "VibeSDLC is an AI-powered development platform designed for developers, teams, and organizations who want toaccelerate their coding workflow. It's perfect for both individual developers looking to enhance their productivity and teams seeking seamless collaboration tools.",
+            "VibeSDLC is a Multi-Agent AI platform that automates 60-80% of the Software Development Lifecycle. It's designed for startups seeking faster time-to-market, outsourcing firms managing multiple projects, and enterprise teams wanting to maintain production-ready code quality while accelerating delivery. Unlike traditional code assistants, VibeSDLC simulates an entire Scrum team.",
     },
     {
-        question: "How does VibeSDLC's AI code review work?",
+        question: "How does VibeSDLC differ from tools like GitHub Copilot or Cursor?",
         answer:
-            "Our AI analyzes your code in real-time, providing intelligent suggestions for improvements, catching potential bugs, and ensuring best practices. It learns from your coding patterns and adapts to your team's standards, making code reviews faster and more consistent.",
+            "While code assistants focus on generating snippets, VibeSDLC covers the entire SDLC. Our AI Product Owner clarifies requirements, Scrum Master coordinates workflow, Developer agents implement features incrementally, and Tester agents ensure quality. You get production-ready software with proper documentation, testing, and architecture—not just code snippets that accumulate technical debt.",
     },
     {
-        question: "Can I integrate VibeSDLC with my existing tools?",
+        question: "What is the Scrumban board and how does it work?",
         answer:
-            "Yes! VibeSDLC offers one-click integrations with popular development tools including GitHub, GitLab, VS Code, Slack, and many more. Our MCP connectivity allows you to easily manage and configure server access across your entire development stack.",
+            "The Scrumban board provides complete visibility into your AI agents' work. You can see each agent's tasks, progress, and status in real-time. It manages sprint planning, backlog prioritization, and task assignments automatically while allowing human intervention at critical decision points. This transparency ensures you stay in control throughout the development process.",
     },
     {
-        question: "What's included in the free plan?",
+        question: "How does human-in-the-loop work?",
         answer:
-            "The free plan includes real-time code suggestions, basic integrations, single MCP server connection, up to 2 AI coding agents, and Vercel deployments with VibeSDLC branding. It's perfect for individual developers getting started.",
+            "You can interact with each AI agent through a chat interface to provide context, approve/reject pull requests, adjust sprint scope, reorder the backlog, or escalate blockers. High-risk decisions, architectural changes, and scope trade-offs require your explicit confirmation. You can also skip AI-assigned tasks and delegate new ones directly to agents.",
     },
     {
-        question: "How do parallel coding agents work?",
+        question: "What makes VibeSDLC production-ready vs just a prototype generator?",
         answer:
-            "Our parallel coding agents can work on different parts of your codebase simultaneously, solving complex problems faster than traditional single-threaded approaches. You can launch multiple agents to handle different tasks like bug fixes, feature development, and code optimization concurrently.",
+            "VibeSDLC implements incremental development with quality gates at every stage. Our agents follow Definition of Ready and Definition of Done, run automated tests, enforce code coverage thresholds, conduct security scans, and maintain full traceability of all decisions and changes. The output is maintainable, scalable code designed for long-term production use.",
     },
     {
-        question: "Is my code secure with VibeSDLC?",
+        question: "Can VibeSDLC integrate with my existing DevOps tools?",
         answer:
-            "Absolutely. We use enterprise-grade security measures including end-to-end encryption, secure data transmission, and compliance with industry standards. Your code never leaves your secure environment without your explicit permission, and we offer on-premises deployment options for enterprise customers.",
+            "Yes! VibeSDLC is designed for deep integration with your DevOps ecosystem including GitHub Actions for CI/CD, common source control platforms, and monitoring tools like Prometheus. All pull requests, test runs, and deployments are automatically tracked and linked on the Scrum board with full audit trails for compliance.",
     },
 ]
 

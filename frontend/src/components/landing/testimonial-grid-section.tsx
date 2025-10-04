@@ -2,7 +2,7 @@
 const testimonials: TestimonialCardProps[] = [
     {
         quote:
-            "The real-time code suggestions from VibeSDLC feel like having a senior engineer reviewing every line of code as you write. The accuracy of its recommendations has improved our overall code quality, reduced review time.",
+            "VibeSDLC's multi-agent approach transformed how we build software. Having AI agents handle the entire SDLC from requirements to deployment reduced our time-to-market by 40% while maintaining production-ready quality.",
         name: "Annette Black",
         company: "Sony",
         avatar: "assets/images/avt.jpg",
@@ -10,7 +10,7 @@ const testimonials: TestimonialCardProps[] = [
     },
     {
         quote:
-            "Integrating VibeSDLC into our stack was smooth, and the MCP server connections saved us days of configuration work",
+            "The AI Product Owner clarified our vague ideas into clear requirements in hours, not weeks. No more endless requirement meetings.",
         name: "Dianne Russell",
         company: "McDonald's",
         avatar: "assets/images/avt.jpg",
@@ -18,7 +18,7 @@ const testimonials: TestimonialCardProps[] = [
     },
     {
         quote:
-            "VibeSDLC’s multi-agent coding feature has been a game changer. We’re fixing complex bugs in hours instead of spending entire sprints on them.",
+            "Finally, an AI coding solution that doesn't create technical debt. VibeSDLC's incremental approach keeps our codebase maintainable and scalable.",
         name: "Cameron Williamson",
         company: "IBM",
         avatar: "assets/images/avt.jpg",
@@ -26,7 +26,7 @@ const testimonials: TestimonialCardProps[] = [
     },
     {
         quote:
-            "We no longer juggle multiple tools. VibeSDLC brought all our integrations together in one place, which simplified our entire workflow.",
+            "The Scrumban board gives us complete visibility into what each AI agent is doing. It's like managing a real team, but 10x faster.",
         name: "Robert Fox",
         company: "MasterCard",
         avatar: "assets/images/avt.jpg",
@@ -34,7 +34,7 @@ const testimonials: TestimonialCardProps[] = [
     },
     {
         quote:
-            "We started with the free plan just to test it out, but within a week we upgraded to Pro. Now, we can’t imagine coding without it",
+            "We went from idea to production-ready MVP in days instead of months. VibeSDLC automated 70% of our development cycle without sacrificing quality.",
         name: "Darlene Robertson",
         company: "Ferrari",
         avatar: "assets/images/avt.jpg",
@@ -42,7 +42,7 @@ const testimonials: TestimonialCardProps[] = [
     },
     {
         quote:
-            "Collaborative coding feels effortless now. With VibeSDLC’s real-time previews, pair programming has become faster and more productive.",
+            "The human-in-the-loop approach is brilliant. We stay in control at critical decision points while the AI agents handle the heavy lifting.",
         name: "Cody Fisher",
         company: "Apple",
         avatar: "assets/images/avt.jpg",
@@ -50,7 +50,7 @@ const testimonials: TestimonialCardProps[] = [
     },
     {
         quote:
-            "Deploying on Vercel with VibeSDLC was not just simple, it felt seamless. We went from coding to seeing our changes live in minutes without worrying about build pipelines or configuration issues.",
+            "Unlike other AI code generators, VibeSDLC understands our business goals and architectural needs. It's not just generating code—it's building a complete, scalable system with proper documentation and testing.",
         name: "Albert Flores",
         company: "Louis Vuitton",
         avatar: "assets/images/avt.jpg",

@@ -8,12 +8,12 @@ export function LargeTestimonial() {
                         <div className="flex-1 px-4 py-8 md:px-12 lg:px-20 md:py-8 lg:py-10 overflow-hidden rounded-lg flex flex-col justify-center items-center gap-6 md:gap-8 lg:gap-11">
                             <div className="w-full max-w-[1024px] text-center text-foreground leading-7 md:leading-10 lg:leading-[64px] font-medium text-lg md:text-3xl lg:text-6xl">
                                 {
-                                    "VibeSDLC's real-time previews cut our debugging time in half and made coding collaboratively actually enjoyable."
+                                    "VibeSDLC's automated SDLC process cut our time-to-market in half and made scaling our products actually achievable."
                                 }
                             </div>
                             <div className="flex justify-start items-center gap-5">
                                 <img
-                                    src="/images/guillermo-rauch.png"
+                                    src="/assets/images/avt.jpg"
                                     alt="Guillermo Rauch avatar"
                                     width={48}
                                     height={48}
@@ -21,8 +21,8 @@ export function LargeTestimonial() {
                                     style={{ border: "1px solid rgba(0, 0, 0, 0.08)" }}
                                 />
                                 <div className="flex flex-col justify-start items-start">
-                                    <div className="text-foreground text-base font-medium leading-6">Guillermo Rauch</div>
-                                    <div className="text-muted-foreground text-sm font-normal leading-6">{"CEO, Vercel"}</div>
+                                    <div className="text-foreground text-base font-medium leading-6">Soobin Hoàng Sơn</div>
+                                    <div className="text-muted-foreground text-sm font-normal leading-6">{"Sonmm"}</div>
                                 </div>
                             </div>
                         </div>

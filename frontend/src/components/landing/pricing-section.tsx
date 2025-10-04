@@ -57,7 +57,7 @@ export function PricingSection() {
             ],
             buttonText: "Talk to Sales",
             buttonClass:
-                "bg-secondary shadow-[0px_1px_1px_-0.5px_rgba(16,24,40,0.20)] text-secondary-foreground text-shadow-[0px_1px_1px_rgba(16,24,40,0.08)] hover:bg-secondary/90",
+                "bg-zinc-300 shadow-[0px_1px_1px_-0.5px_rgba(16,24,40,0.20)] outline outline-0.5 outline-[#1e29391f] outline-offset-[-0.5px] text-gray-800 text-shadow-[0px_1px_1px_rgba(16,24,40,0.08)] hover:bg-zinc-400",
         },
     ]
 
@@ -113,7 +113,7 @@ export function PricingSection() {
                                     {plan.name}
                                     {plan.popular && (
                                         <div className="ml-2 px-2 overflow-hidden rounded-full justify-center items-center gap-2.5 inline-flex mt-0 py-0.5 bg-gradient-to-b from-primary-light/50 to-primary-light bg-white">
-                                            <div className="text-center text-primary-foreground text-xs font-normal leading-tight break-words">
+                                            <div className="text-center text-black text-xs font-normal leading-tight break-words">
                                                 Popular
                                             </div>
                                         </div>

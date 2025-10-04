@@ -15,13 +15,11 @@ export const Route = createFileRoute("/_auth/login")({
 
 function Login() {
     return (
-        <motion.div
-            initial={{ opacity: 0, x: 50 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.8, ease: "easeOut" }}
+        <div
+
             className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-card"
         >
             <LoginForm />
-        </motion.div>
+        </div>
     )
 }
