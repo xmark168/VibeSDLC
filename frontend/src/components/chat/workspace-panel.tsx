@@ -333,7 +333,7 @@ export default function Home() {
                 className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-t-lg transition-colors mr-2"
                 title="Show chat panel"
               >
-                <PanelRightOpen className="w-4 h-4" />
+                <PanelLeftOpen className="w-4 h-4" />
               </button>
             )}
             <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -369,38 +369,36 @@ export default function Home() {
         </div>
       </div>
       {/* Tab bar */}
-      <div className="flex items-center gap-0 px-2 pt-2 bg-muted/30">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTabId(tab.id)}
-            className={`group flex items-center gap-2 px-4 py-2 text-sm font-medium transition-all relative ${activeTabId === tab.id
-              ? "bg-background text-foreground rounded-t-lg border-t border-l border-r border-border"
-              : "bg-transparent text-muted-foreground hover:bg-muted/50 rounded-t-lg"
+        <div className="flex items-center gap-1 px-2 pt-2 bg-background mb-2">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTabId(tab.id)}
+              className={`rounded-md group flex items-center gap-2 px-3 py-1.5 text-sm font-medium transition-colors ${
+                activeTabId === tab.id
+                  ? "bg-muted text-foreground"
+                  : "bg-transparent text-muted-foreground hover:bg-muted/50"
               }`}
-            style={{
-              marginBottom: activeTabId === tab.id ? "-1px" : "0",
-            }}
+            >
+              {getViewIcon(tab.view)}
+              <span className="max-w-[120px] truncate">{tab.label}</span>
+              {/* {tabs.length > 1 && (
+                <button
+                  onClick={(e) => handleCloseTab(tab.id, e)}
+                  className="ml-1 opacity-0 group-hover:opacity-100 hover:bg-background/50 rounded p-0.5 transition-opacity"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )} */}
+            </button>
+          ))}
+          {/* <button
+            onClick={handleAddTab}
+            className="flex items-center justify-center w-8 h-8 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
           >
-            {getViewIcon(tab.view)}
-            <span className="max-w-[120px] truncate">{tab.label}</span>
-            {tabs.length > 1 && (
-              <button
-                onClick={(e) => handleCloseTab(tab.id, e)}
-                className="ml-1 opacity-0 group-hover:opacity-100 hover:bg-muted rounded p-0.5 transition-opacity"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            )}
-          </button>
-        ))}
-        <button
-          onClick={handleAddTab}
-          className="flex items-center justify-center w-8 h-8 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-t-lg transition-colors ml-1"
-        >
-          <Plus className="w-4 h-4" />
-        </button>
-      </div>
+            <Plus className="w-4 h-4" />
+          </button> */}
+        </div>
       {renderView()}
     </div>
   )

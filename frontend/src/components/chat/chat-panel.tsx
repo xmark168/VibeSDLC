@@ -22,6 +22,7 @@ import {
   Sun,
   AtSign,
   PanelRightClose,
+  PanelLeftClose,
 } from "lucide-react"
 
 interface ChatPanelProps {
@@ -427,7 +428,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
             className="w-8 h-8 text-foreground hover:bg-accent"
             title="Hide chat panel"
           >
-            <PanelRightClose className="w-4 h-4" />
+            <PanelLeftClose className="w-4 h-4" />
           </Button>
         </div>
       )}
@@ -450,7 +451,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
             className="w-8 h-8 text-foreground hover:bg-accent"
             title="Hide chat panel"
           >
-            <PanelRightClose className="w-4 h-4" />
+            <PanelLeftClose className="w-4 h-4" />
           </Button>
         </div>
       )}
@@ -626,7 +627,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
           </div>
         )}
 
-        <div className="bg-transparent rounded-4xl p-2 border-0">
+        <div className="bg-transparent rounded-4xl p-1 border-0">
           {attachedFiles.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-2">
               {attachedFiles.map((file) => (
@@ -656,7 +657,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
             placeholder="Press Enter to send requests anytime - we'll notice."
-            className="min-h-[40px] resize-none dark:bg-transparent border-0 focus-visible:ring-0 text-sm text-foreground placeholder:text-muted-foreground p-0"
+            className="min-h-[40px] resize-none dark:bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground p-1 focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
           />
           <div className="flex items-center justify-between pt-3">
             <div className="flex gap-2">
