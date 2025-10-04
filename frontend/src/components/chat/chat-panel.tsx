@@ -22,6 +22,7 @@ import {
   Sun,
   AtSign,
   PanelRightClose,
+  PanelLeftClose,
 } from "lucide-react"
 
 interface ChatPanelProps {
@@ -427,7 +428,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
             className="w-8 h-8 text-foreground hover:bg-accent"
             title="Hide chat panel"
           >
-            <PanelRightClose className="w-4 h-4" />
+            <PanelLeftClose className="w-4 h-4" />
           </Button>
         </div>
       )}
@@ -450,7 +451,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
             className="w-8 h-8 text-foreground hover:bg-accent"
             title="Hide chat panel"
           >
-            <PanelRightClose className="w-4 h-4" />
+            <PanelLeftClose className="w-4 h-4" />
           </Button>
         </div>
       )}
