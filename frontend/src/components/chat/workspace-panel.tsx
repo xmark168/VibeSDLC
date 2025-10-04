@@ -4,10 +4,11 @@ import type React from "react"
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { History, Globe, Code2, ExternalLink, LayoutGrid, Pencil, ScrollText, Plus, X, PanelLeftOpen } from "lucide-react"
+import { History, Globe, Code2, ExternalLink, LayoutGrid, Pencil, ScrollText, Plus, X, PanelLeftOpen, PanelRightOpen } from "lucide-react"
 import { KanbanBoard } from "./kanban-board"
 import { FileExplorer } from "../shared/file-explorer"
 import { CodeViewer } from "../shared/code-viewer"
+import { AnimatedTooltip } from "../ui/animated-tooltip"
 type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings"
 
 interface Tab {
@@ -20,6 +21,52 @@ interface WorkspacePanelProps {
   chatCollapsed?: boolean
   onExpandChat?: () => void
 }
+
+const agent = [
+  {
+    id: 1,
+    name: "John Doe",
+    designation: "Software Engineer",
+    image:
+      "https://images.unsplash.com/photo-1599566150163-29194dcaad36?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=3387&q=80",
+  },
+  {
+    id: 2,
+    name: "Robert Johnson",
+    designation: "Product Manager",
+    image:
+      "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8YXZhdGFyfGVufDB8fDB8fHww&auto=format&fit=crop&w=800&q=60",
+  },
+  {
+    id: 3,
+    name: "Jane Smith",
+    designation: "Data Scientist",
+    image:
+      "https://images.unsplash.com/photo-1580489944761-15a19d654956?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8NXx8YXZhdGFyfGVufDB8fDB8fHww&auto=format&fit=crop&w=800&q=60",
+  },
+  {
+    id: 4,
+    name: "Emily Davis",
+    designation: "UX Designer",
+    image:
+      "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTB8fGF2YXRhcnxlbnwwfHwwfHx8MA%3D%3D&auto=format&fit=crop&w=800&q=60",
+  },
+  {
+    id: 5,
+    name: "Tyler Durden",
+    designation: "Soap Developer",
+    image:
+      "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=3540&q=80",
+  },
+  {
+    id: 6,
+    name: "Dora",
+    designation: "The Explorer",
+    image:
+      "https://images.unsplash.com/photo-1544725176-7c40e5a71c5e?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=3534&q=80",
+  },
+];
+
 
 export function WorkspacePanel({ chatCollapsed, onExpandChat }: WorkspacePanelProps) {
   const [tabs, setTabs] = useState<Tab[]>([
@@ -286,7 +333,7 @@ export default function Home() {
                 className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-t-lg transition-colors mr-2"
                 title="Show chat panel"
               >
-                <PanelLeftOpen className="w-4 h-4" />
+                <PanelRightOpen className="w-4 h-4" />
               </button>
             )}
             <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -313,8 +360,8 @@ export default function Home() {
             )}
           </div>
 
-          <div className="flex items-center gap-2">
-
+          <div className="flex items-center gap-10">
+            <AnimatedTooltip items={agent} />
             <Button size="sm" className="h-8 text-xs bg-[#6366f1] hover:bg-[#5558e3]">
               Share
             </Button>

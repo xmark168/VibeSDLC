@@ -1,6 +1,6 @@
-
 import { Copy, Download, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import Editor from "@monaco-editor/react"
 import { useState } from "react"
 
 interface CodeViewerProps {
@@ -9,6 +9,7 @@ interface CodeViewerProps {
 }
 
 export function CodeViewer({ filePath, content }: CodeViewerProps) {
+  
   const [copied, setCopied] = useState(false)
 
   const handleCopy = () => {
@@ -29,8 +30,30 @@ export function CodeViewer({ filePath, content }: CodeViewerProps) {
     URL.revokeObjectURL(url)
   }
 
+  const getLanguage = (path: string) => {
+    const ext = path.split(".").pop()?.toLowerCase()
+    const languageMap: Record<string, string> = {
+      tsx: "typescript",
+      ts: "typescript",
+      jsx: "javascript",
+      js: "javascript",
+      css: "css",
+      json: "json",
+      html: "html",
+      md: "markdown",
+      py: "python",
+      sql: "sql",
+      yaml: "yaml",
+      yml: "yaml",
+      xml: "xml",
+      sh: "shell",
+      bash: "shell",
+    }
+    return languageMap[ext || ""] || "plaintext"
+  }
+
   const pathParts = filePath.split("/")
-  const lines = content.split("\n")
+  const language = getLanguage(filePath)
 
   return (
     <div className="flex flex-col h-full bg-background">
@@ -54,24 +77,38 @@ export function CodeViewer({ filePath, content }: CodeViewerProps) {
         </div>
       </div>
 
-      {/* Code content */}
-      <div className="flex-1 overflow-auto bg-[#1e1e1e]">
-        <div className="flex font-mono text-sm">
-          {/* Line numbers */}
-          <div className="flex-shrink-0 px-4 py-4 text-right text-[#858585] select-none bg-[#1e1e1e] border-r border-[#2d2d2d]">
-            {lines.map((_, index) => (
-              <div key={index} className="leading-6">
-                {index + 1}
-              </div>
-            ))}
-          </div>
-          {/* Code */}
-          <div className="flex-1 px-4 py-4 text-[#d4d4d4] overflow-x-auto">
-            <pre className="leading-6">
-              <code>{content}</code>
-            </pre>
-          </div>
-        </div>
+      <div className="flex-1 overflow-hidden">
+        <Editor
+          height="100%"
+          language={language}
+          value={content}
+          theme="vs-dark"
+          options={{
+            readOnly: true,
+            minimap: { enabled: false },
+            scrollBeyondLastLine: false,
+            fontSize: 14,
+            lineNumbers: "on",
+            glyphMargin: false,
+            folding: true,
+            lineDecorationsWidth: 0,
+            lineNumbersMinChars: 3,
+            renderLineHighlight: "line",
+            scrollbar: {
+              vertical: "visible",
+              horizontal: "visible",
+              useShadows: false,
+              verticalScrollbarSize: 10,
+              horizontalScrollbarSize: 10,
+            },
+            overviewRulerLanes: 0,
+            hideCursorInOverviewRuler: true,
+            overviewRulerBorder: false,
+          }}
+          loading={
+            <div className="flex items-center justify-center h-full text-muted-foreground">Loading editor...</div>
+          }
+        />
       </div>
     </div>
   )

@@ -389,7 +389,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
-   useEffect(() => {
+  useEffect(() => {
     // Only auto-scroll if a new message was added, not when updating existing messages
     if (messagesContainerRef.current && messages.length > prevMessagesLengthRef.current) {
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
@@ -405,10 +405,10 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
             variant="ghost"
             size="icon"
             onClick={onToggleSidebar}
-            onMouseEnter={()=>onSidebarHover(true)}
+            onMouseEnter={() => onSidebarHover(true)}
             className="w-8 h-8 text-foreground hover:bg-accent"
           >
-            <Menu className="w-5 h-5" />
+            <PanelRightClose className="w-5 h-5" />
           </Button>
           <div className="flex-1" />
           <Button
@@ -462,11 +462,11 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
           if (isUserMessage) {
             return (
               <div key={msg.id} className="flex justify-end">
-                <div className="max-w-[70%] space-y-2">
+                <div className="max-w-[70%]">
                   {msg.content && (
                     <div className="space-y-1.5">
-                      <div className="rounded-lg px-3 py-2 bg-muted border border-border">
-                        <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground">{msg.content}</div>
+                      <div className="rounded-lg px-3 py-2 bg-muted w-fit ml-auto">
+                        <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">{msg.content}</div>
                       </div>
                       <div className="flex items-center justify-end gap-2 px-1">
                         <span className="text-xs text-muted-foreground">{formatTimestamp(msg.id)}</span>
@@ -503,7 +503,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
 
                 {msg.type === "thinking" && (
                   <div className="space-y-1.5">
-                    <div className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap">{msg.content}</div>
+                    <div className="text-sm text-foreground/80 leading-loose whitespace-pre-wrap">{msg.content}</div>
                     <div className="flex items-center gap-2 px-1">
                       <span className="text-xs text-muted-foreground">{formatTimestamp(msg.id)}</span>
                       <button
@@ -523,8 +523,8 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
 
                 {msg.type === "question" && (
                   <div className="space-y-1.5">
-                    <div className="rounded-lg px-3 py-2 bg-muted border border-border">
-                      <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground">
+                    <div className="rounded-lg px-3 py-2 bg-muted w-fit">
+                      <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
                         {msg.expanded ? msg.content : msg.content.slice(0, 100) + "..."}
                       </div>
                     </div>
@@ -561,7 +561,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
                     {msg.content && (
                       <div className="space-y-1.5">
                         <div className="rounded-lg px-3 py-2 bg-muted border border-border">
-                          <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
+                          <div className="text-sm text-foreground leading-loose whitespace-pre-wrap">
                             {msg.content}
                           </div>
                         </div>
@@ -610,9 +610,8 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
                 <button
                   key={agent.name}
                   onClick={() => insertMention(agent.name)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors ${
-                    index === selectedMentionIndex ? "bg-accent/50" : ""
-                  }`}
+                  className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors ${index === selectedMentionIndex ? "bg-accent/50" : ""
+                    }`}
                 >
                   <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0 bg-muted">
                     {agent.avatar}

@@ -1,6 +1,6 @@
 
 import { Button } from "@/components/ui/button"
-import { Menu, Plus, Sparkles, ChevronRight, ChevronDown } from "lucide-react"
+import { Menu, Plus, Sparkles, ChevronRight, ChevronDown, PanelRightClose, PanelLeftClose } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useState } from "react"
 
@@ -28,7 +28,7 @@ export function Sidebar({ collapsed, onToggle,hovered, onHoverChange }: SidebarP
     <div
       className={cn(
         "flex flex-col bg-sidebar border-r border-sidebar-border transition-all duration-300 ease-in-out w-[280px] h-full",
-        isVisible ? "relative translate-x-0 z-50" : "absolute -translate-x-full z-50",
+        !collapsed ? "relative translate-x-0 z-50" : hovered ? "fixed translate-x-0 z-50" : "absolute -translate-x-full z-50",
         hovered && collapsed && "shadow-2xl",
       )}
       onMouseLeave={() => {
@@ -45,7 +45,7 @@ export function Sidebar({ collapsed, onToggle,hovered, onHoverChange }: SidebarP
             onClick={onToggle}
             className="w-6 h-6 text-sidebar-foreground hover:bg-sidebar-accent"
           >
-            <Menu className="w-4 h-4" />
+            {collapsed ? <PanelRightClose className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
           </Button>
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-sidebar-foreground" />

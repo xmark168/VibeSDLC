@@ -17,15 +17,7 @@ const fileTree: FileNode[] = [
     type: "folder",
     path: "app",
     children: [
-      {
-        name: "styles",
-        type: "folder",
-        path: "app/styles",
-        children: [
-          { name: "globals.css", type: "file", path: "app/styles/globals.css" },
-          { name: "theme.css", type: "file", path: "app/styles/theme.css" },
-        ],
-      },
+      { name: "globals.css", type: "file", path: "app/globals.css" },
       { name: "layout.tsx", type: "file", path: "app/layout.tsx" },
       { name: "page.tsx", type: "file", path: "app/page.tsx" },
     ],
@@ -35,17 +27,10 @@ const fileTree: FileNode[] = [
     type: "folder",
     path: "components",
     children: [
-      {
-        name: "kanban",
-        type: "folder",
-        path: "components/kanban",
-        children: [
-          { name: "kanban-board.tsx", type: "file", path: "components/kanban/kanban-board.tsx" },
-          { name: "kanban-card.tsx", type: "file", path: "components/kanban/kanban-card.tsx" },
-          { name: "kanban-column.tsx", type: "file", path: "components/kanban/kanban-column.tsx" },
-        ],
-      },
       { name: "chat-panel.tsx", type: "file", path: "components/chat-panel.tsx" },
+      { name: "kanban-board.tsx", type: "file", path: "components/kanban-board.tsx" },
+      { name: "kanban-card.tsx", type: "file", path: "components/kanban-card.tsx" },
+      { name: "kanban-column.tsx", type: "file", path: "components/kanban-column.tsx" },
       { name: "resizable-handle.tsx", type: "file", path: "components/resizable-handle.tsx", modified: "+2/-2" },
       { name: "sidebar.tsx", type: "file", path: "components/sidebar.tsx" },
       { name: "task-detail-modal.tsx", type: "file", path: "components/task-detail-modal.tsx" },
@@ -59,22 +44,14 @@ const fileTree: FileNode[] = [
     path: "public",
     children: [
       {
-        name: "images",
-        type: "folder",
-        path: "public/images",
-        children: [
-          {
-            name: "abstract-infinity-symbol.jpg",
-            type: "file",
-            path: "public/images/abstract-infinity-symbol.jpg",
-          },
-        ],
+        name: "abstract-infinity-symbol-design-in-white-on-black-.jpg",
+        type: "file",
+        path: "public/abstract-infinity-symbol-design-in-white-on-black-.jpg",
       },
     ],
   },
   { name: "package.json", type: "file", path: "package.json" },
-];
-
+]
 
 interface FileExplorerProps {
   onFileSelect: (path: string) => void
