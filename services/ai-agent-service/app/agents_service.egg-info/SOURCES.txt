@@ -1,8 +1,13 @@
 pyproject.toml
-app/agents/product-owner/gatherer-agent.py
+app/agents/product_owner/gatherer_agent.py
 app/agents_service.egg-info/PKG-INFO
 app/agents_service.egg-info/SOURCES.txt
 app/agents_service.egg-info/dependency_links.txt
 app/agents_service.egg-info/requires.txt
 app/agents_service.egg-info/top_level.txt
 app/core/config.py
+app/models/models_agent.py
+app/templates/__init__.py
+app/templates/prompts/__init__.py
+app/templates/prompts/product_owner/__init__.py
+app/templates/prompts/product_owner/gatherer.py

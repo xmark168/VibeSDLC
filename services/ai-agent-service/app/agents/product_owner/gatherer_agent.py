@@ -1,4 +1,4 @@
-"""This class contains the LangGraph Agent/workflow and interactions with the LLM for gatherer agent."""
+"""Lớp này chứa LangGraph Agent/workflow và các tương tác với LLM cho gatherer agent."""
 
 import json
 import os
@@ -24,7 +24,7 @@ class EvaluateOutput(BaseModel):
 
 
 class State(BaseModel):
-    """State for the gatherer agent workflow."""
+    """Trạng thái cho quy trình làm việc của gatherer agent."""
 
     messages: list[BaseMessage] = Field(default_factory=list)
     iteration_count: int = 0
@@ -42,17 +42,17 @@ class State(BaseModel):
 
 
 class GathererAgent:
-    """Gatherer Agent for gathering product brief that can help generate backlog in future."""
+    """Gatherer Agent để thu thập thông tin sản phẩm giúp tạo backlog trong tương lai."""
 
     MODEL = "gpt-4o"
     TEMPERATURE = 0.2
 
     def __init__(self, session_id: str | None = None, user_id: str | None = None):
-        """Initialize the gatherer agent.
+        """Khởi tạo gatherer agent.
 
         Args:
-            session_id: Optional session ID for tracking
-            user_id: Optional user ID for tracking
+            session_id: Session ID tùy chọn để theo dõi
+            user_id: User ID tùy chọn để theo dõi
         """
         self.session_id = session_id
         self.user_id = user_id
@@ -69,7 +69,7 @@ class GathererAgent:
         self.graph = self._build_graph()
 
     def _build_graph(self) -> StateGraph:
-        """Build the LangGraph workflow."""
+        """Xây dựng quy trình làm việc LangGraph."""
         graph_builder = StateGraph(State)
 
         # Add nodes
@@ -84,10 +84,10 @@ class GathererAgent:
         return graph_builder.compile()
 
     def _initialize(self, state: State) -> State:
-        """Initialize the state."""
+        """Khởi tạo trạng thái."""
         return state
     def collect_inputs(self, state: State) -> State:
-        """Collect additional inputs from user to fill information gaps."""
+        """Thu thập thông tin bổ sung từ người dùng để điền vào các khoảng trống thông tin."""
         if not state.gaps:
             return state
 
@@ -119,7 +119,7 @@ class GathererAgent:
         return state
     
     def evaluate(self, state: State) -> State:
-        """Evaluate conversation completeness for brief generation using structured output."""
+        """Đánh giá độ đầy đủ của cuộc hội thoại để tạo bản tóm tắt sử dụng structured output."""
         # Format messages
         formatted_messages = "\n".join([
             f"{i}. [{'User' if isinstance(msg, HumanMessage) else 'Assistant'}]: "
@@ -140,13 +140,13 @@ class GathererAgent:
         state.confidence = evaluation.confidence
         return state
     def run(self, initial_context: str = "") -> dict[str, Any]:
-        """Run the gatherer agent workflow.
+        """Chạy quy trình làm việc của gatherer agent.
 
         Args:
-            initial_context: Initial context or requirements for the product brief
+            initial_context: Ngữ cảnh ban đầu hoặc yêu cầu cho bản tóm tắt sản phẩm
 
         Returns:
-            dict: Final state containing the generated brief and evaluation metrics
+            dict: Trạng thái cuối cùng chứa bản tóm tắt đã tạo và các chỉ số đánh giá
         """
         initial_state = State(
             messages=[HumanMessage(content=initial_context)] if initial_context else []
