@@ -13,33 +13,18 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "AI Agent Service"
     ENVIRONMENT: str = "local"
 
-    # OpenAI
+    # OpenAI - Latest models
     OPENAI_API_KEY: Optional[str] = None
-    OPENAI_MODEL: str = "gpt-4"
+    OPENAI_MODEL: str = "gpt-4o"  # Latest GPT-4 Omni model
 
-    # Anthropic
+    # Anthropic - Latest Claude 3.5 Sonnet
     ANTHROPIC_API_KEY: Optional[str] = None
-    ANTHROPIC_MODEL: str = "claude-3.5-sonnet-20241022"
+    ANTHROPIC_MODEL: str = "claude-3-5-sonnet-20241022"  # Latest Claude 3.5 Sonnet
 
     # LangFuse Configuration
     LANGFUSE_SECRET_KEY: Optional[str] = None
     LANGFUSE_PUBLIC_KEY: Optional[str] = None
     LANGFUSE_HOST: str = "https://cloud.langfuse.com"
-
-    # Kafka Configuration
-    KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
-    KAFKA_GROUP_ID: str = "ai-agent-service"
-
-    # Vector Database
-    CHROMA_HOST: str = "localhost"
-    CHROMA_PORT: int = 8000
-
-    @field_validator("KAFKA_BOOTSTRAP_SERVERS")
-    @classmethod
-    def assemble_kafka_servers(cls, v: str) -> str:
-        if isinstance(v, str):
-            return v
-        return v
 
 
 settings = Settings()
