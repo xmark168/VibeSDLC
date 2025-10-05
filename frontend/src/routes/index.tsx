@@ -9,6 +9,7 @@ import { LargeTestimonial } from '@/components/landing/large-testimonial'
 import { PricingSection } from '@/components/landing/pricing-section'
 import { SocialProof } from '@/components/landing/social-proof'
 import { TestimonialGridSection } from '@/components/landing/testimonial-grid-section'
+import { AIAgentsSection } from '@/components/landing/ai-agents-section'
 import { createFileRoute } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/')({
@@ -35,6 +36,9 @@ function RouteComponent() {
         </AnimatedSection> */}
         <AnimatedSection id="features-section" className="relative z-10 max-w-[1320px] mx-auto mt-16" delay={0.2}>
           <BentoSection />
+        </AnimatedSection>
+        <AnimatedSection id="ai-agents-section" className="relative z-10 max-w-[1320px] mx-auto mt-8 md:mt-16" delay={0.2}>
+          <AIAgentsSection />
         </AnimatedSection>
         <AnimatedSection className="relative z-10 max-w-[1320px] mx-auto mt-8 md:mt-16" delay={0.2}>
           <LargeTestimonial />
