@@ -301,8 +301,8 @@ export default function Home() {
             key={tab.id}
             onClick={() => setActiveTabId(tab.id)}
             className={`rounded-md group flex items-center gap-2 px-3 py-1.5 text-sm font-medium transition-colors ${activeTabId === tab.id
-                ? "bg-muted text-foreground"
-                : "bg-transparent text-muted-foreground hover:bg-muted/50"
+              ? "bg-muted text-foreground"
+              : "bg-transparent text-muted-foreground hover:bg-muted/50"
               }`}
           >
             {getViewIcon(tab.view)}
@@ -324,7 +324,9 @@ export default function Home() {
             <Plus className="w-4 h-4" />
           </button> */}
       </div>
-      {renderView()}
+      <div className="border border-3 mb-3 mr-3 shadow-2xs rounded-2xl h-screen overflow-auto">
+        {renderView()}  
+      </div>
     </div>
   )
 }

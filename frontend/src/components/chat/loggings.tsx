@@ -1,7 +1,7 @@
 
 export default function Loggings() {
   return (
-    <div className="flex-1 overflow-auto bg-[#1a1a1a] text-[#d4d4d4] font-mono">
+    <div className="flex-1 overflow-auto h-screen bg-[#1a1a1a] text-[#d4d4d4] font-mono">
             <div className="p-4 space-y-2">
               <div className="text-xs">
                 <span className="text-[#858585]">[10:23:45]</span> <span className="text-[#4ade80]">INFO</span>{" "}

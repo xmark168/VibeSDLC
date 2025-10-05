@@ -659,7 +659,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
             placeholder="Press Enter to send requests anytime - we'll notice."
-            className="min-h-[40px] resize-none dark:bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground p-1 focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
+            className="min-h-[40px] resize-none bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground p-1 focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
           />
           <div className="flex items-center justify-between pt-3">
             <div className="flex gap-2">
