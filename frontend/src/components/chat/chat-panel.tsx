@@ -23,7 +23,9 @@ import {
   AtSign,
   PanelRightClose,
   PanelLeftClose,
+  ChevronsLeft,
 } from "lucide-react"
+import { TechStackDialog } from "./tech-stack-dialog"
 
 interface ChatPanelProps {
   sidebarCollapsed: boolean
@@ -401,7 +403,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
   return (
     <div className="flex flex-col h-full bg-background">
       {sidebarCollapsed && (
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
+        <div className="flex items-center gap-2 px-3 py-2">
           <Button
             variant="ghost"
             size="icon"
@@ -428,13 +430,13 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
             className="w-8 h-8 text-foreground hover:bg-accent"
             title="Hide chat panel"
           >
-            <PanelLeftClose className="w-4 h-4" />
+            <ChevronsLeft className="w-4 h-4" />
           </Button>
         </div>
       )}
 
       {!sidebarCollapsed && (
-        <div className="flex items-center justify-end gap-2 px-3 py-2 border-b border-border">
+        <div className="flex items-center justify-end gap-2 px-3 py-2">
           <Button
             variant="ghost"
             size="icon"
@@ -593,7 +595,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
         })}
       </div>
 
-      <div className="p-2 m-4 rounded-4xl relative border border-border bg-muted">
+      <div className="p-2 m-4 rounded-4xl relative bg-muted">
         {showMentions && filteredAgents.length > 0 && (
           <div
             ref={mentionDropdownRef}
@@ -657,7 +659,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
             placeholder="Press Enter to send requests anytime - we'll notice."
-            className="min-h-[40px] resize-none dark:bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground p-1 focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
+            className="min-h-[40px] resize-none bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground p-1 focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
           />
           <div className="flex items-center justify-between pt-3">
             <div className="flex gap-2">
@@ -686,6 +688,18 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
                   </TooltipTrigger>
                   <TooltipContent>
                     <p>Mention an agent</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div>
+                      <TechStackDialog />
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>View tech stack</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

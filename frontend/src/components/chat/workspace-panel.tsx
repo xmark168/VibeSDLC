@@ -4,11 +4,13 @@ import type React from "react"
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { History, Globe, Code2, ExternalLink, LayoutGrid, Pencil, ScrollText, Plus, X, PanelLeftOpen, PanelRightOpen } from "lucide-react"
+import { History, Globe, Code2, ExternalLink, LayoutGrid, Pencil, ScrollText, Plus, X, PanelLeftOpen, PanelRightOpen, MessageCircle } from "lucide-react"
 import { KanbanBoard } from "./kanban-board"
 import { FileExplorer } from "../shared/file-explorer"
 import { CodeViewer } from "../shared/code-viewer"
 import { AnimatedTooltip } from "../ui/animated-tooltip"
+import { AppViewer } from "./app-viewer"
+import Loggings from "./loggings"
 type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings"
 
 interface Tab {
@@ -26,44 +28,37 @@ const agent = [
   {
     id: 1,
     name: "John Doe",
-    designation: "Software Engineer",
+    designation: "Product Owner",
     image:
       "https://images.unsplash.com/photo-1599566150163-29194dcaad36?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=3387&q=80",
   },
   {
     id: 2,
     name: "Robert Johnson",
-    designation: "Product Manager",
+    designation: "Scrum Master",
     image:
       "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8YXZhdGFyfGVufDB8fDB8fHww&auto=format&fit=crop&w=800&q=60",
   },
   {
     id: 3,
     name: "Jane Smith",
-    designation: "Data Scientist",
+    designation: "Developer",
     image:
       "https://images.unsplash.com/photo-1580489944761-15a19d654956?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8NXx8YXZhdGFyfGVufDB8fDB8fHww&auto=format&fit=crop&w=800&q=60",
   },
   {
     id: 4,
     name: "Emily Davis",
-    designation: "UX Designer",
+    designation: "Designer",
     image:
       "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTB8fGF2YXRhcnxlbnwwfHwwfHx8MA%3D%3D&auto=format&fit=crop&w=800&q=60",
   },
   {
     id: 5,
     name: "Tyler Durden",
-    designation: "Soap Developer",
+    designation: "Tester",
     image:
       "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=3540&q=80",
-  },
-  {
-    id: 6,
-    name: "Dora",
-    designation: "The Explorer",
-    image:
-      "https://images.unsplash.com/photo-1544725176-7c40e5a71c5e?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=3534&q=80",
   },
 ];
 
@@ -149,43 +144,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat }: WorkspacePanelPr
     switch (activeView) {
       case "app-preview":
         return (
-          <div className="flex-1 overflow-auto bg-background border-t">
-            <div className="max-w-6xl mx-auto p-12">
-              <div className="text-center space-y-6">
-                <div className="flex justify-between items-start mb-8">
-                  <h1 className="text-3xl font-bold text-foreground">Costume T-Shirt Shop</h1>
-                  <Button variant="outline" className="text-sm bg-transparent">
-                    Browse Catalog
-                  </Button>
-                </div>
-
-                <div className="space-y-4">
-                  <h2 className="text-6xl font-bold text-primary leading-tight">Wear the character.</h2>
-                  <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-                    Premium costume-themed T-shirts. Find your character and wear the look.
-                  </p>
-                </div>
-
-                <div className="flex gap-4 justify-center mt-8">
-                  <Button className="px-8 py-6 text-lg">Shop Now</Button>
-                  <Button variant="outline" className="px-8 py-6 text-lg bg-transparent">
-                    View Cart
-                  </Button>
-                </div>
-
-                <div className="mt-16">
-                  <h3 className="text-2xl font-bold text-foreground mb-8">Featured Tees</h3>
-                  <div className="bg-card rounded-lg overflow-hidden border">
-                    <img
-                      src="/abstract-infinity-symbol-design-in-white-on-black-.jpg"
-                      alt="Featured design"
-                      className="w-full h-[400px] object-cover"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <AppViewer />
         )
       case "kanban":
         return <KanbanBoard />
@@ -208,42 +167,9 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat }: WorkspacePanelPr
         )
       case "loggings":
         return (
-          <div className="flex-1 overflow-auto bg-[#1a1a1a] text-[#d4d4d4] font-mono">
-            <div className="p-4 space-y-2">
-              <div className="text-xs">
-                <span className="text-[#858585]">[10:23:45]</span> <span className="text-[#4ade80]">INFO</span>{" "}
-                <span className="text-[#d4d4d4]">Application started successfully</span>
-              </div>
-              <div className="text-xs">
-                <span className="text-[#858585]">[10:23:46]</span> <span className="text-[#60a5fa]">DEBUG</span>{" "}
-                <span className="text-[#d4d4d4]">Loading configuration from env</span>
-              </div>
-              <div className="text-xs">
-                <span className="text-[#858585]">[10:23:47]</span> <span className="text-[#4ade80]">INFO</span>{" "}
-                <span className="text-[#d4d4d4]">Database connection established</span>
-              </div>
-              <div className="text-xs">
-                <span className="text-[#858585]">[10:23:48]</span> <span className="text-[#fbbf24]">WARN</span>{" "}
-                <span className="text-[#d4d4d4]">Deprecated API usage detected in module auth.ts</span>
-              </div>
-              <div className="text-xs">
-                <span className="text-[#858585]">[10:23:49]</span> <span className="text-[#4ade80]">INFO</span>{" "}
-                <span className="text-[#d4d4d4]">Server listening on port 3000</span>
-              </div>
-              <div className="text-xs">
-                <span className="text-[#858585]">[10:23:50]</span> <span className="text-[#ef4444]">ERROR</span>{" "}
-                <span className="text-[#d4d4d4]">Failed to load user preferences: Network timeout</span>
-              </div>
-              <div className="text-xs">
-                <span className="text-[#858585]">[10:23:51]</span> <span className="text-[#60a5fa]">DEBUG</span>{" "}
-                <span className="text-[#d4d4d4]">Retrying connection attempt 1/3</span>
-              </div>
-              <div className="text-xs">
-                <span className="text-[#858585]">[10:23:52]</span> <span className="text-[#4ade80]">INFO</span>{" "}
-                <span className="text-[#d4d4d4]">User preferences loaded successfully</span>
-              </div>
-            </div>
-          </div>
+          <>
+            <Loggings />
+          </>
         )
       default:
         return null
@@ -319,10 +245,10 @@ export default function Home() {
     return contents[path] || `// File: ${path}\n// Content not available`
   }
 
-  
+
   return (
     <div className="flex flex-col h-full bg-background">
-      <div className="flex flex-col border-b border-border">
+      <div className="flex flex-col">
 
         {/* Toolbar */}
         <div className="flex items-center justify-between px-6 py-2 bg-background">
@@ -333,7 +259,7 @@ export default function Home() {
                 className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-t-lg transition-colors mr-2"
                 title="Show chat panel"
               >
-                <PanelLeftOpen className="w-4 h-4" />
+                <MessageCircle className="w-4 h-4" /> Chat
               </button>
             )}
             <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -369,20 +295,19 @@ export default function Home() {
         </div>
       </div>
       {/* Tab bar */}
-        <div className="flex items-center gap-1 px-2 pt-2 bg-background mb-2">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTabId(tab.id)}
-              className={`rounded-md group flex items-center gap-2 px-3 py-1.5 text-sm font-medium transition-colors ${
-                activeTabId === tab.id
-                  ? "bg-muted text-foreground"
-                  : "bg-transparent text-muted-foreground hover:bg-muted/50"
+      <div className="flex items-center gap-1 px-2 pt-2 bg-background mb-2">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTabId(tab.id)}
+            className={`rounded-md group flex items-center gap-2 px-3 py-1.5 text-sm font-medium transition-colors ${activeTabId === tab.id
+              ? "bg-muted text-foreground"
+              : "bg-transparent text-muted-foreground hover:bg-muted/50"
               }`}
-            >
-              {getViewIcon(tab.view)}
-              <span className="max-w-[120px] truncate">{tab.label}</span>
-              {/* {tabs.length > 1 && (
+          >
+            {getViewIcon(tab.view)}
+            <span className="max-w-[120px] truncate">{tab.label}</span>
+            {/* {tabs.length > 1 && (
                 <button
                   onClick={(e) => handleCloseTab(tab.id, e)}
                   className="ml-1 opacity-0 group-hover:opacity-100 hover:bg-background/50 rounded p-0.5 transition-opacity"
@@ -390,16 +315,18 @@ export default function Home() {
                   <X className="w-3 h-3" />
                 </button>
               )} */}
-            </button>
-          ))}
-          {/* <button
+          </button>
+        ))}
+        {/* <button
             onClick={handleAddTab}
             className="flex items-center justify-center w-8 h-8 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
           >
             <Plus className="w-4 h-4" />
           </button> */}
-        </div>
-      {renderView()}
+      </div>
+      <div className="border border-3 mb-3 mr-3 shadow-2xs rounded-2xl h-screen overflow-auto">
+        {renderView()}  
+      </div>
     </div>
   )
 }
