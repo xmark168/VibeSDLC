@@ -17,7 +17,7 @@ const agents: Agent[] = [
     {
         id: 'mike',
         name: 'Mike',
-        role: 'Team Leader',
+        role: 'Product Owner',
         image: '/assets/images/agent/scrum master.png',
         description: 'Conflict resolution and decision-making',
         expertise: 'Specialized expertise',
@@ -32,7 +32,7 @@ const agents: Agent[] = [
     {
         id: 'emma',
         name: 'Emma',
-        role: 'Product Manager',
+        role: 'Scrum Master',
         image: '/assets/images/agent/product owner.png',
         description: 'Product vision and strategy',
         expertise: 'Product Development',
@@ -47,7 +47,7 @@ const agents: Agent[] = [
     {
         id: 'bob',
         name: 'Bob',
-        role: 'Architect',
+        role: 'Developer',
         image: '/assets/images/agent/develop.png',
         description: 'System design and architecture',
         expertise: 'Technical Architecture',
@@ -62,7 +62,7 @@ const agents: Agent[] = [
     {
         id: 'alex',
         name: 'Alex',
-        role: 'Engineer',
+        role: 'Tester',
         image: '/assets/images/agent/tester.png',
         description: 'Quality assurance and testing',
         expertise: 'QA & Testing',
@@ -74,21 +74,6 @@ const agents: Agent[] = [
         ],
         service: 'Global Service'
     },
-    {
-        id: 'david',
-        name: 'David',
-        role: 'Data Analyst',
-        image: '/assets/images/agent/develop.png',
-        description: 'Data analysis and insights',
-        expertise: 'Data Science',
-        skills: [
-            'Data visualization',
-            'Statistical analysis',
-            'Predictive modeling',
-            'Business intelligence'
-        ],
-        service: 'Global Service'
-    }
 ];
 
 export function AIAgentsSection() {
@@ -96,26 +81,30 @@ export function AIAgentsSection() {
 
     return (
         <section className="relative py-20 px-4 overflow-hidden">
-            {/* Background with purple gradient */}
-            <div className="absolute inset-0 bg-gradient-to-b from-purple-950/20 via-transparent to-transparent" />
+            {/* Subtle background gradient - blends with page background */}
+            <div className="absolute inset-0 bg-gradient-to-b from-purple-950/5 via-transparent to-transparent" />
 
-            {/* Animated background blobs */}
+            {/* Fade-out edges for seamless blending */}
+            <div className="absolute inset-0 bg-gradient-to-r from-background/80 via-transparent to-background/80" />
+            <div className="absolute inset-0 bg-gradient-to-b from-background/60 via-transparent to-background/60" />
+
+            {/* Animated background blobs - more subtle */}
             <motion.div
                 animate={{
                     scale: [1, 1.2, 1],
-                    opacity: [0.1, 0.2, 0.1],
+                    opacity: [0.03, 0.08, 0.03],
                 }}
                 transition={{
                     duration: 8,
                     repeat: Number.POSITIVE_INFINITY,
                     ease: "easeInOut",
                 }}
-                className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full bg-purple-500/20 blur-3xl"
+                className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full bg-purple-500/10 blur-3xl"
             />
             <motion.div
                 animate={{
                     scale: [1, 1.3, 1],
-                    opacity: [0.1, 0.15, 0.1],
+                    opacity: [0.03, 0.06, 0.03],
                 }}
                 transition={{
                     duration: 10,
@@ -123,7 +112,7 @@ export function AIAgentsSection() {
                     ease: "easeInOut",
                     delay: 1,
                 }}
-                className="absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full bg-violet-500/20 blur-3xl"
+                className="absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full bg-violet-500/10 blur-3xl"
             />
 
             <div className="relative max-w-7xl mx-auto">
@@ -161,8 +150,8 @@ export function AIAgentsSection() {
                     </motion.p>
                 </div>
 
-                {/* Agents Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+                {/* Agents Grid - 4 Cards Layout */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                     {agents.map((agent, index) => (
                         <motion.div
                             key={agent.id}
@@ -203,9 +192,7 @@ function AgentCard({ agent, onClick }: AgentCardProps) {
             onClick={onClick}
             className="relative group cursor-pointer"
         >
-            {/* Glassmorphism Card */}
             <div className="relative rounded-3xl overflow-hidden">
-                {/* Background with blur */}
                 <div
                     className="absolute inset-0 rounded-3xl"
                     style={{
@@ -215,17 +202,13 @@ function AgentCard({ agent, onClick }: AgentCardProps) {
                     }}
                 />
 
-                {/* Border gradient */}
                 <div className="absolute inset-0 rounded-3xl border border-purple-500/30 group-hover:border-purple-400/50 transition-colors" />
 
-                {/* Glow effect on hover */}
                 <div className="absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                     <div className="absolute inset-0 bg-gradient-to-b from-purple-500/20 to-transparent rounded-3xl" />
                 </div>
 
-                {/* Content */}
                 <div className="relative p-6 flex flex-col items-center">
-                    {/* Agent Image */}
                     <div className="relative mb-4">
                         <div className="w-32 h-32 rounded-2xl bg-gradient-to-br from-purple-900/40 to-purple-950/40 p-3 backdrop-blur-sm border border-purple-500/20">
                             <img
@@ -245,10 +228,27 @@ function AgentCard({ agent, onClick }: AgentCardProps) {
                         </motion.div>
                     </div>
 
+                    {/* Pixel Text below image */}
+                    <div className="mb-3">
+                        <p
+                            className="text-xs text-purple-300 tracking-wider"
+                            style={{
+                                fontFamily: '"Courier New", Courier, monospace',
+                                textShadow: '0 0 8px rgba(168, 85, 247, 0.4), 0 0 2px rgba(168, 85, 247, 0.6)',
+                                letterSpacing: '0.15em',
+                            }}
+                        >
+                            &lt;{agent.name.toUpperCase()}/&gt;
+                        </p>
+                    </div>
+
                     {/* Agent Info */}
                     <div className="text-center space-y-2 w-full">
                         <div className="flex items-center justify-center gap-2">
-                            <h3 className="text-xl font-bold text-foreground">{agent.name}</h3>
+                            {/* Agent Name Badge */}
+                            {/* <div className="px-3 py-1.5 rounded-lg bg-purple-500/20 border border-purple-500/30 backdrop-blur-sm">
+                                <h3 className="text-lg font-bold text-foreground">{agent.name}</h3>
+                            </div> */}
                             <span className="px-2 py-0.5 text-[10px] font-semibold rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
                                 CARD
                             </span>
@@ -315,13 +315,6 @@ function AgentModal({ agent, onClose }: AgentModalProps) {
 
                     {/* Content */}
                     <div className="relative p-8">
-                        {/* Close Button */}
-                        <button
-                            onClick={onClose}
-                            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 flex items-center justify-center transition-colors group"
-                        >
-                            <X className="w-5 h-5 text-purple-300 group-hover:text-purple-200" />
-                        </button>
 
                         {/* Header with Service Badge */}
                         <div className="flex items-center gap-3 mb-6">
@@ -330,7 +323,7 @@ function AgentModal({ agent, onClose }: AgentModalProps) {
                             </div>
                             <div className="flex-1">
                                 <div className="flex items-center gap-2">
-                                    <span className="text-sm font-medium text-purple-300">MetaGPT</span>
+                                    <span className="text-sm font-medium text-purple-300">VibeSDLC</span>
                                     <span className="px-2 py-0.5 text-xs rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
                                         {agent.service}
                                     </span>
