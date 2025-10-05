@@ -26,7 +26,7 @@ function ChatPage() {
       <div className="flex flex-1 overflow-hidden">
         {!chatCollapsed && (
           <>
-            <div className="flex flex-col overflow-hidden border-r border-border" style={{ width: `${chatWidth}%` }}>
+            <div className="flex flex-col overflow-hidden" style={{ width: `${chatWidth}%` }}>
               <ChatPanel
                 sidebarCollapsed={sidebarCollapsed}
                 onToggleSidebar={() => setSidebarCollapsed(false)}

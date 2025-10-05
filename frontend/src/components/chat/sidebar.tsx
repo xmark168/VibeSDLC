@@ -27,7 +27,7 @@ export function Sidebar({ collapsed, onToggle,hovered, onHoverChange }: SidebarP
   return (
     <div
       className={cn(
-        "flex flex-col bg-sidebar border-r border-sidebar-border transition-all duration-300 ease-in-out w-[280px] h-full",
+        "flex flex-col bg-sidebar transition-all duration-300 ease-in-out w-[280px] h-full",
         !collapsed ? "relative translate-x-0 z-50" : hovered ? "fixed translate-x-0 z-50" : "absolute -translate-x-full z-50",
         hovered && collapsed && "shadow-2xl",
       )}
@@ -37,7 +37,7 @@ export function Sidebar({ collapsed, onToggle,hovered, onHoverChange }: SidebarP
         }
       }}
     >
-      <div className="flex items-center justify-between p-4 border-b border-sidebar-border">
+      <div className="flex items-center justify-between p-4">
         <div className="flex items-center gap-2">
           <Button
             variant="ghost"
@@ -102,7 +102,7 @@ export function Sidebar({ collapsed, onToggle,hovered, onHoverChange }: SidebarP
         )}
       </div>
 
-      <div className="p-3 border-t border-sidebar-border">
+      <div className="p-3">
         <div className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-sidebar-accent cursor-pointer transition-colors">
           <div className="w-8 h-8 rounded-full bg-[#8b5cf6] flex items-center justify-center text-white text-sm font-semibold">
             T
