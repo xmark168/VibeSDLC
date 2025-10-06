@@ -1,5 +1,5 @@
 import type { ApiError } from "./client"
-import useCustomToast from "./hooks/useCustomToast"
+
 
 export const emailPattern = {
   value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
@@ -44,12 +44,61 @@ export const confirmPasswordRules = (
   return rules
 }
 
-export const handleError = (err: ApiError) => {
-  const { showErrorToast } = useCustomToast()
-  const errDetail = (err.body as any)?.detail
-  let errorMessage = errDetail || "Something went wrong."
-  if (Array.isArray(errDetail) && errDetail.length > 0) {
-    errorMessage = errDetail[0].msg
-  }
-  showErrorToast(errorMessage)
+// export const handleError = (err: ApiError) => {
+//   const { showErrorToast } = useCustomToast()
+//   const errDetail = (err.body as any)?.detail
+//   let errorMessage = errDetail || "Something went wrong."
+//   if (Array.isArray(errDetail) && errDetail.length > 0) {
+//     errorMessage = errDetail[0].msg
+//   }
+//   showErrorToast(errorMessage)
+// }
+
+// Password validation utilities
+export const hasMinLength = (password: string): boolean => {
+  return password.length >= 8
+}
+
+export const hasUppercase = (password: string): boolean => {
+  return /[A-Z]/.test(password)
+}
+
+export const hasLowercase = (password: string): boolean => {
+  return /[a-z]/.test(password)
+}
+
+export const hasNumber = (password: string): boolean => {
+  return /[0-9]/.test(password)
+}
+
+export const hasSpecialChar = (password: string): boolean => {
+  return /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)
+}
+
+export const calculatePasswordStrength = (password: string): number => {
+  if (!password) return 0
+
+  let strength = 0
+  if (hasMinLength(password)) strength++
+  if (hasUppercase(password)) strength++
+  if (hasLowercase(password)) strength++
+  if (hasNumber(password)) strength++
+  if (hasSpecialChar(password)) strength++
+
+  // Map 0-5 to 0-4 scale
+  if (strength === 0) return 0
+  if (strength <= 2) return 1
+  if (strength === 3) return 2
+  if (strength === 4) return 3
+  return 4
+}
+
+export const getPasswordRequirements = (password: string) => {
+  return [
+    { label: "At least 8 characters", met: hasMinLength(password) },
+    { label: "One uppercase letter", met: hasUppercase(password) },
+    { label: "One lowercase letter", met: hasLowercase(password) },
+    { label: "One number", met: hasNumber(password) },
+    { label: "One special character", met: hasSpecialChar(password) },
+  ]
 }

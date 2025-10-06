@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ProductBrief",
+  "description": "Template định nghĩa cấu trúc của Product Brief",
+  "type": "object",
+  "properties": {
+    "product_name": {
+      "type": "string",
+      "description": "Tên chính thức của sản phẩm, nên ngắn gọn, dễ nhớ và phản ánh bản chất sản phẩm. Ví dụ: 'SmartWatch Pro' hoặc 'Ứng Dụng Quản Lý Tài Chính Cá Nhân'.",
+      "minLength": 3,
+      "maxLength": 100
+    },
+    "description": {
+      "type": "string",
+      "description": "Mô tả chi tiết về sản phẩm là gì, hoạt động như thế nào, mục đích sử dụng chính. Bao gồm lịch sử phát triển ngắn gọn, công nghệ cốt lõi và cách nó khác biệt với các sản phẩm khác. Đảm bảo mô tả rõ ràng, hấp dẫn và dễ hiểu cho người không chuyên.",
+      "minLength": 50,
+      "maxLength": 2000
+    },
+    "target_audience": {
+      "type": "array",
+      "description": "Xác định rõ nhóm người dùng mục tiêu, bao gồm nhân khẩu học (tuổi tác, giới tính, nghề nghiệp, vị trí địa lý), nhu cầu cụ thể (vấn đề họ đang gặp phải), hành vi sử dụng (tần suất, ngữ cảnh sử dụng) và lý do họ chọn sản phẩm này.",
+      "items": {
+        "type": "string",
+        "minLength": 20,
+        "maxLength": 500
+      },
+      "minItems": 1,
+      "maxItems": 5
+    },
+    "key_features": {
+      "type": "array",
+      "description": "Danh sách chi tiết các tính năng cốt lõi và chức năng của sản phẩm, ưu tiên theo mức độ quan trọng. Mô tả từng tính năng một cách cụ thể, kèm ví dụ minh họa (ví dụ: 'Tích hợp AI để dự đoán xu hướng, với độ chính xác lên đến 95%'). Bao gồm cả tính năng cơ bản và nâng cao.",
+      "items": {
+        "type": "string",
+        "minLength": 20,
+        "maxLength": 300
+      },
+      "minItems": 3,
+      "maxItems": 10
+    },
+    "benefits": {
+      "type": "array",
+      "description": "Giải thích rõ ràng lợi ích mà sản phẩm mang lại cho người dùng, tập trung vào cách nó giải quyết vấn đề, tiết kiệm thời gian/chi phí, cải thiện chất lượng cuộc sống hoặc tăng hiệu quả kinh doanh. Sử dụng dữ liệu hoặc ví dụ thực tế để minh họa lợi ích.",
+      "items": {
+        "type": "string",
+        "minLength": 30,
+        "maxLength": 400
+      },
+      "minItems": 2,
+      "maxItems": 8
+    },
+    "competitors": {
+      "type": "array",
+      "description": "Phân tích chi tiết các sản phẩm hoặc dịch vụ tương tự trên thị trường, bao gồm điểm mạnh/yếu của từng đối thủ, vị trí cạnh tranh của sản phẩm mình (unique selling points - USP), và chiến lược để vượt trội (ví dụ: giá cả, chất lượng, tính năng độc quyền).",
+      "items": {
+        "type": "string",
+        "minLength": 50,
+        "maxLength": 500
+      },
+      "minItems": 1,
+      "maxItems": 5
+    }
+  },
+  "required": [
+    "product_name",
+    "description",
+    "target_audience",
+    "key_features",
+    "benefits",
+    "competitors"
+  ],
+  "additionalProperties": false
+}
