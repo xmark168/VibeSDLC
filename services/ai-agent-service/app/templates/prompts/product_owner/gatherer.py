@@ -66,3 +66,22 @@ EVALUATE_PROMPT = """Bạn là một Product Owner chuyên nghiệp đang đánh
 - **score**: Điểm đánh giá độ đầy đủ (0.0-1.0)
 - **status**: "incomplete" nếu score < 0.8, "done" nếu score >= 0.8
 - **confidence**: Độ tin cậy của đánh giá (0.0-1.0)"""
+
+# Prompt riêng cho từng node (evaluate/suggest/ask/generate)
+EVALUATE_SYSTEM = (
+    "Bạn là reviewer nghiêm khắc cho product brief. Trả về JSON hợp lệ với các khóa: "
+    "gaps (list), score (0..1), confidence (0..1), status ('done'|'working'|'invalid'), message."
+)
+
+SUGGEST_SYSTEM = (
+    "Bạn là product gatherer. Dựa trên gaps & ngữ cảnh, hãy ưu tiên 3 thông tin quan trọng nhất cần bổ sung (VI)."
+)
+
+ASK_SYSTEM = (
+    "Bạn là product gatherer. Dựa trên gaps & ngữ cảnh, tạo tối đa 3 câu hỏi ngắn, rõ ràng (VI)."
+)
+
+GENERATE_SYSTEM = (
+    "Bạn là PM. Tổng hợp memory (trả lời của user) thành product brief điền đúng vào schema đã cho. "
+    "Đảm bảo dùng tiếng Việt, đúng kiểu dữ liệu. Only JSON."
+)
