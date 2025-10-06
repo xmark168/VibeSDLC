@@ -9,8 +9,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 import operator
 import json
 import os
-
-# --- Langfuse: tracing/observability ---
+import uuid
 from langfuse import Langfuse
 from langfuse.langchain import CallbackHandler
 
@@ -21,8 +20,8 @@ lf_handler = CallbackHandler()
 def _lf_metadata():
     """Metadata Langfuse cho mỗi run."""
     return {
-        "langfuse_user_id": os.getenv("LF_USER_ID", "it@ckhub.vn"),
-        "langfuse_session_id": os.getenv("LF_SESSION_ID", "gatherer-session"),
+        "langfuse_user_id": 'đồng đội ngu như bò',
+        "langfuse_session_id":'gatherer-agent-demo' + uuid.uuid4(),
         "langfuse_tags": ["gatherer", "react-agent"],
     }
 
@@ -104,7 +103,6 @@ def _chat_llm(temp: float):
         callbacks=[lf_handler],
     )
 
-# ===== Custom tools (Fixed for ReAct agent) =====
 # ReAct tools cần nhận string input và trả về string output
 def evaluate_completeness(input_str: str) -> str:
     """Đánh giá tính hoàn chỉnh của thông tin dựa trên memory."""
