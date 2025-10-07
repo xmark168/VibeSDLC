@@ -69,8 +69,9 @@ class State(BaseModel):
     incomplete_flag: bool = False
     questions: list[str] = Field(default_factory=list)
     unclear_input: list[str] = Field(default_factory=list)
-    user_choice: Literal["approve", "edit", "regenerate", ""] = ""
+    user_choice: Literal["approve", "edit", "regenerate", "skip", ""] = ""
     edit_changes: str = ""
+    user_skipped: bool = False
 
 
 class GathererAgent:
@@ -119,6 +120,7 @@ class GathererAgent:
         graph_builder.add_node("suggest", self.suggest)
         graph_builder.add_node("ask_user", self.ask_user)
         graph_builder.add_node("increment_iteration", self.increment_iteration)
+        graph_builder.add_node("wait_for_user", self.wait_for_user)
         # graph_builder.add_node("preview", self.preview)
         # graph_builder.add_node("edit_mode", self.edit_mode)
         # graph_builder.add_node("finalize", self.finalize)
@@ -133,6 +135,8 @@ class GathererAgent:
         graph_builder.add_edge("clarify", "suggest")
         graph_builder.add_edge("suggest", "ask_user")
         graph_builder.add_edge("ask_user", "increment_iteration")
+        graph_builder.add_edge("increment_iteration", "wait_for_user")
+        graph_builder.add_conditional_edges("wait_for_user", self.wait_for_user_branch)
         checkpointer = MemorySaver()  # Khởi tạo MemorySaver
         return graph_builder.compile(
             checkpointer=checkpointer,
@@ -324,27 +328,14 @@ class GathererAgent:
             structured_llm = self._llm("gpt-4.1", 0.1).with_structured_output(AskUserOutput)
             ask_result = structured_llm.invoke([HumanMessage(content=prompt)])
             state.questions = ask_result.questions
+            state.status = "awaiting_user"  # Set status để chờ user ở wait_for_user node
         except Exception as e:
             print(f"Error in ask_user: {e}")
             state.questions = []
+            state.status = "error_generating_questions"
 
-        has_responses = False
-        for question in state.questions:
-            # Append the question as an AIMessage to maintain conversation flow
-            state.messages.append(AIMessage(content=question))
-            print(f"Câu hỏi để làm rõ: {question}")
-            user_response = input("Câu trả lời của bạn (hoặc gõ 'skip' để bỏ qua câu này): ").strip()
-            if user_response.lower() == 'skip':
-                continue
-            state.messages.append(HumanMessage(content=user_response))
-            has_responses = True
-
-        if has_responses:
-            state.status = "clarified"
-        else:
-            state.status = "skipped"
-
-        print(f"Full: {state.messages}")
+        # Không hỏi user ở đây nữa, chỉ generate questions
+        print(f"\n📝 Đã tạo {len(state.questions)} câu hỏi để thu thập thông tin.")
 
         return state
 
@@ -356,6 +347,91 @@ class GathererAgent:
         print(f"Score: {state.score}, Confidence: {state.confidence}, Status: {state.status}")
 
         # Checkpoint is automatically saved by LangGraph MemorySaver after each node execution
+        return state
+
+    def wait_for_user(self, state: State) -> State:
+        """Hỏi user từng câu một và đợi response với timeout 10 phút cho mỗi câu."""
+        import signal
+
+        print("\n" + "="*60)
+        print("💬 PHẦN HỎI ĐÁP - Thu thập thông tin")
+        print("="*60)
+        print("💡 Bạn có thể:")
+        print("  - Trả lời từng câu hỏi")
+        print("  - Gõ 'skip' để bỏ qua câu hiện tại")
+        print("  - Gõ 'skip_all' để bỏ qua tất cả và tạo brief với thông tin hiện có")
+        print("  - Timeout: 10 phút cho mỗi câu hỏi")
+        print("="*60 + "\n")
+
+        def timeout_handler(signum, frame):
+            raise TimeoutError("Timeout")
+
+        has_responses = False
+        skip_all = False
+
+        for idx, question in enumerate(state.questions, 1):
+            if skip_all:
+                break
+
+            # Append question to messages
+            state.messages.append(AIMessage(content=question))
+
+            print(f"\n[Câu hỏi {idx}/{len(state.questions)}]")
+            print(f"❓ {question}\n")
+
+            try:
+                # Set timeout 10 minutes for each question (Unix only)
+                if hasattr(signal, 'SIGALRM'):
+                    signal.signal(signal.SIGALRM, timeout_handler)
+                    signal.alarm(600)  # 10 minutes
+
+                user_input = input("👤 Câu trả lời của bạn: ").strip()
+
+                if hasattr(signal, 'SIGALRM'):
+                    signal.alarm(0)  # Cancel alarm
+
+                # Check user input
+                if user_input.lower() == 'skip_all':
+                    skip_all = True
+                    print("\n⊘ Bạn đã chọn bỏ qua tất cả câu hỏi còn lại.")
+                    break
+                elif user_input.lower() == 'skip':
+                    print("⊘ Bỏ qua câu này.\n")
+                    continue
+                elif user_input:
+                    state.messages.append(HumanMessage(content=user_input))
+                    has_responses = True
+                    print("✓ Đã ghi nhận câu trả lời.\n")
+                else:
+                    print("⚠ Câu trả lời trống, bỏ qua.\n")
+
+            except TimeoutError:
+                print(f"\n⏰ Timeout cho câu hỏi {idx}. Bỏ qua câu này.")
+                continue
+            except Exception as e:
+                print(f"\n❌ Lỗi: {e}. Bỏ qua câu này.")
+                continue
+
+        # Update state based on results
+        if skip_all:
+            state.user_skipped = True
+            state.status = "skipped_all"
+            print("\n" + "="*60)
+            print("⊘ Đã bỏ qua tất cả câu hỏi. Sẽ tạo brief với thông tin hiện có.")
+            print("="*60 + "\n")
+        elif has_responses:
+            state.user_skipped = False
+            state.status = "user_responded"
+            print("\n" + "="*60)
+            print("✓ Đã hoàn thành phần hỏi đáp. Tiếp tục thu thập thông tin...")
+            print("="*60 + "\n")
+        else:
+            state.user_skipped = True
+            state.status = "no_responses"
+            print("\n" + "="*60)
+            print("⚠ Không có câu trả lời nào. Sẽ tạo brief với thông tin hiện có.")
+            print("="*60 + "\n")
+
         return state
 
     # def preview(self, state: State) -> State:
@@ -409,6 +485,18 @@ class GathererAgent:
             return "force_generate"
         else:
             return END
+
+    def wait_for_user_branch(self, state: State) -> str:
+        """Quyết định next node sau wait_for_user."""
+        if state.user_skipped or state.status in ["skipped_all", "no_responses", "error_generating_questions"]:
+            # User skipped/no responses → generate với thông tin hiện có
+            return "generate"
+        elif state.status == "user_responded":
+            # User responded → quay lại collect_inputs để evaluate lại
+            return "collect_inputs"
+        else:
+            # Default: generate
+            return "generate"
 
     def run(self, initial_context: str = "", thread_id: str | None = None) -> dict[str, Any]:
         """Chạy quy trình làm việc của gatherer agent.
