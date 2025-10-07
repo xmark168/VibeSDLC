@@ -5,6 +5,7 @@ description = "Scrum Agents team in a service that expose through some http rout
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "deepagents>=0.0.10",
     "dotenv>=0.9.9",
     "duckduckgo-search>=8.1.1",
     "fastapi>=0.118.0",
