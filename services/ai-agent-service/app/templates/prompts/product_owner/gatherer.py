@@ -173,3 +173,132 @@ Tạo tối đa 3 câu hỏi thông minh, rõ ràng và dễ trả lời để t
 
 ## Output yêu cầu:
 - **questions**: Danh sách tối đa 3 câu hỏi (mỗi câu là 1 string hoàn chỉnh)"""
+
+# Generate prompt để tạo Product Brief hoàn chỉnh
+GENERATE_PROMPT = """Bạn là một Product Owner chuyên nghiệp đang tạo Product Brief từ thông tin đã thu thập.
+
+## Nhiệm vụ:
+Tạo một Product Brief hoàn chỉnh và chi tiết từ cuộc hội thoại dưới đây.
+
+## Cuộc hội thoại:
+{messages}
+
+## Cấu trúc Product Brief cần tạo:
+
+### 1. Tên Sản Phẩm (product_name)
+- Tên chính thức của sản phẩm, ngắn gọn, dễ nhớ
+- Nếu không có thông tin rõ ràng, gợi ý tên dựa trên mô tả
+
+### 2. Mô Tả (description)
+- Mô tả chi tiết về sản phẩm là gì, hoạt động như thế nào
+- Bao gồm: ý tưởng cốt lõi, công nghệ sử dụng, điểm khác biệt
+- Độ dài: 50-1000 ký tự
+
+### 3. Đối Tượng Mục Tiêu (target_audience)
+- Danh sách 1-3 nhóm người dùng chính
+- Mỗi nhóm: ai họ là (nghề nghiệp, độ tuổi), vấn đề gặp phải, lý do chọn sản phẩm
+
+### 4. Tính Năng Chính (key_features)
+- Danh sách 3-5 tính năng cốt lõi
+- Mỗi tính năng: mô tả cụ thể, có ví dụ, sắp xếp theo độ quan trọng
+
+### 5. Lợi Ích (benefits)
+- Danh sách 2-5 lợi ích chính
+- Mỗi lợi ích: giải thích cách giải quyết vấn đề, tiết kiệm thời gian/chi phí
+
+### 6. Đối Thủ Cạnh Tranh (competitors) - Nếu có
+- Danh sách 1-3 đối thủ
+- Mỗi đối thủ: tên, điểm mạnh/yếu, USP của sản phẩm
+
+## Hướng dẫn:
+- Sử dụng thông tin trực tiếp từ cuộc hội thoại
+- Nếu thiếu thông tin, suy luận hợp lý dựa trên ngữ cảnh
+- Đánh dấu rõ các phần được suy luận với "[Suy luận]" ở đầu câu
+- Giữ tone professional nhưng dễ hiểu
+- Đảm bảo tính nhất quán giữa các phần
+
+## Output yêu cầu:
+- **product_name**: Tên sản phẩm
+- **description**: Mô tả chi tiết
+- **target_audience**: Danh sách đối tượng mục tiêu (list of strings)
+- **key_features**: Danh sách tính năng chính (list of strings)
+- **benefits**: Danh sách lợi ích (list of strings)
+- **competitors**: Danh sách đối thủ (list of strings), có thể rỗng nếu không có thông tin
+- **completeness_note**: Ghi chú về mức độ hoàn thiện và các phần còn thiếu (nếu có)"""
+
+# Validate prompt để xác thực brief đã tạo
+VALIDATE_PROMPT = """Bạn là một AI reviewer chuyên nghiệp. Hãy xác thực Product Brief sau về tính hoàn chỉnh và chính xác dựa trên cuộc trò chuyện.
+
+## Brief đã tạo:
+{brief}
+
+## Cuộc trò chuyện:
+{messages}
+
+## Nhiệm vụ:
+1. Kiểm tra xem brief có đầy đủ các thông tin quan trọng không (product_name, description, target_audience, key_features, benefits)
+2. So sánh brief với cuộc trò chuyện để đảm bảo tính chính xác
+3. Đánh giá độ tin cậy của brief
+
+## Tiêu chí đánh giá:
+
+### 1. Completeness Score (0.0-1.0)
+- **0.0-0.2**: Thiếu hầu hết các trường bắt buộc (>3 trường thiếu)
+- **0.2-0.4**: Thiếu 3 trường bắt buộc hoặc các trường có giá trị quá ngắn/không đủ chi tiết
+- **0.4-0.6**: Thiếu 2 trường bắt buộc hoặc nhiều trường chưa đầy đủ chi tiết
+- **0.6-0.8**: Thiếu 1 trường bắt buộc hoặc một số trường chưa đủ số lượng items (ví dụ: key_features < 3 items)
+- **0.8-0.9**: Đầy đủ tất cả trường bắt buộc, đạt số lượng tối thiểu nhưng chưa đủ chi tiết/chất lượng
+- **0.9-1.0**: Đầy đủ tất cả trường, đạt cả số lượng và chất lượng
+
+### 2. Confidence Score (0.0-1.0)
+Tính bằng công thức: **confidence = completeness_score × accuracy_factor**
+
+**Accuracy Factor:**
+- **1.0**: Brief chính xác 100% với thông tin từ cuộc trò chuyện, không có suy luận
+- **0.9**: Brief có 1-2 phần suy luận hợp lý, không mâu thuẫn
+- **0.8**: Brief có 3-4 phần suy luận hoặc 1 điểm mơ hồ nhỏ
+- **0.7**: Brief có nhiều phần suy luận hoặc 2-3 điểm mơ hồ
+- **0.6**: Brief có mâu thuẫn nhỏ hoặc suy luận không hợp lý ở 1-2 điểm
+- **0.5 hoặc thấp hơn**: Brief có mâu thuẫn lớn hoặc suy luận sai ở nhiều điểm
+
+### 3. Is Valid
+- **true**: Nếu completeness_score >= 0.6 VÀ không có mâu thuẫn nghiêm trọng
+- **false**: Nếu completeness_score < 0.6 HOẶC có mâu thuẫn nghiêm trọng
+
+## Output yêu cầu:
+- **is_valid**: true/false (true nếu brief đạt yêu cầu tối thiểu)
+- **confidence_score**: 0.0-1.0 (độ tin cậy của brief)
+- **completeness_score**: 0.0-1.0 (điểm đánh giá độ đầy đủ)
+- **missing_fields**: Danh sách fields còn thiếu hoặc chưa đầy đủ (list of strings)
+- **validation_message**: Giải thích ngắn gọn kết quả validation (string)"""
+
+# Finalize prompt để tạo summary cuối cùng từ brief đã approve
+FINALIZE_PROMPT = """Bạn là một Product Owner chuyên nghiệp đang tạo tóm tắt cuối cùng từ Product Brief đã được phê duyệt.
+
+## Product Brief đã phê duyệt:
+{brief}
+
+## Nhiệm vụ:
+Tạo một tóm tắt ngắn gọn, chuyên nghiệp và hấp dẫn từ Product Brief.
+
+## Tóm tắt cần bao gồm:
+1. **Tên sản phẩm**: Tên chính thức
+2. **Mô tả ngắn gọn**: 1-2 câu highlight ý tưởng cốt lõi và giá trị chính
+3. **Đối tượng mục tiêu**: Nhóm người dùng chính
+4. **Tính năng nổi bật**: 3-5 tính năng quan trọng nhất
+5. **Giá trị cốt lõi**: Lợi ích chính mang lại cho người dùng
+
+## Hướng dẫn:
+- Viết theo định dạng markdown
+- Giữ tone professional nhưng friendly
+- Ngắn gọn (200-400 từ)
+- Tập trung vào điểm khác biệt và giá trị
+- Dễ đọc, dễ hiểu cho cả người không chuyên
+
+## Output yêu cầu:
+- **product_name**: Tên sản phẩm (string)
+- **executive_summary**: Tóm tắt điều hành 2-3 câu (string)
+- **target_users**: Đối tượng mục tiêu chính (string, 1 câu ngắn)
+- **top_features**: Danh sách 3-5 tính năng nổi bật (list of strings, mỗi item ~1 câu)
+- **core_value**: Giá trị cốt lõi mang lại (string, 1-2 câu)
+- **summary_markdown**: Tóm tắt đầy đủ theo format markdown (string, kết hợp tất cả thông tin trên)"""

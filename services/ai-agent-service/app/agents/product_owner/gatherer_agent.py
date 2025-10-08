@@ -12,7 +12,15 @@ from langfuse.langchain import CallbackHandler
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 
-from templates.prompts.product_owner.gatherer import EVALUATE_PROMPT, CLARIFY_PROMPT, SUGGEST_PROMPT, ASK_USER_PROMPT
+from templates.prompts.product_owner.gatherer import (
+    EVALUATE_PROMPT,
+    CLARIFY_PROMPT,
+    SUGGEST_PROMPT,
+    ASK_USER_PROMPT,
+    GENERATE_PROMPT,
+    VALIDATE_PROMPT,
+    FINALIZE_PROMPT,
+)
 from langgraph.checkpoint.memory import MemorySaver
 
 load_dotenv()
@@ -21,7 +29,7 @@ load_dotenv()
 class EvaluateOutput(BaseModel):
     gaps: list[str] = Field(description="Danh sách các thông tin còn thiếu")
     score: float = Field(description="Điểm đánh giá độ đầy đủ", ge=0.0, le=1.0)
-    status: str = Field(description="Trạng thái: incomplete hoặc done")
+    status: Literal["incomplete", "done"] = Field(description="Trạng thái: 'incomplete' nếu score < 0.8, 'done' nếu score >= 0.8")
     confidence: float = Field(description="Độ tin cậy đánh giá", ge=0.0, le=1.0)
     message: str = Field(description="Lý do")
 
@@ -49,8 +57,53 @@ class SuggestOutput(BaseModel):
     filled_gaps: list[FilledGap] = Field(description="Danh sách các gaps đã gợi ý fill với giá trị và lý do")
 
 
+class CollectInputsOutput(BaseModel):
+    total_messages: int = Field(description="Tổng số messages trong context")
+    new_input_received: bool = Field(description="True nếu có input mới từ user")
+    last_message_type: str = Field(description="Loại message cuối: human hoặc ai")
+    last_message_preview: str = Field(description="Preview 200 ký tự đầu của message cuối")
+    context_summary: str = Field(description="Tóm tắt ngắn gọn context hiện tại")
+
+
 class AskUserOutput(BaseModel):
     questions: list[str] = Field(description="Danh sách tối đa 3 câu hỏi để thu thập thông tin cho các gaps")
+
+
+class WaitForUserOutput(BaseModel):
+    has_responses: bool = Field(description="True nếu user đã trả lời ít nhất 1 câu hỏi")
+    answered_count: int = Field(description="Số câu hỏi đã được trả lời")
+    skipped_count: int = Field(description="Số câu hỏi bị bỏ qua")
+    skip_all: bool = Field(description="True nếu user chọn skip_all")
+    user_responses: list[dict[str, str]] = Field(description="Danh sách {question, answer} của các câu đã trả lời")
+    status: str = Field(description="Trạng thái: user_responded, skipped_all, no_responses, hoặc error")
+    message: str = Field(description="Thông điệp tóm tắt kết quả thu thập")
+
+
+class GenerateOutput(BaseModel):
+    product_name: str = Field(description="Tên sản phẩm")
+    description: str = Field(description="Mô tả chi tiết sản phẩm")
+    target_audience: list[str] = Field(description="Danh sách đối tượng mục tiêu")
+    key_features: list[str] = Field(description="Danh sách tính năng chính")
+    benefits: list[str] = Field(description="Danh sách lợi ích")
+    competitors: list[str] = Field(default_factory=list, description="Danh sách đối thủ cạnh tranh")
+    completeness_note: str = Field(description="Ghi chú về mức độ hoàn thiện")
+
+
+class ValidateOutput(BaseModel):
+    is_valid: bool = Field(description="True nếu brief đạt yêu cầu tối thiểu")
+    confidence_score: float = Field(description="Độ tin cậy của brief", ge=0.0, le=1.0)
+    completeness_score: float = Field(description="Điểm đánh giá độ đầy đủ", ge=0.0, le=1.0)
+    missing_fields: list[str] = Field(description="Danh sách fields còn thiếu hoặc chưa đầy đủ")
+    validation_message: str = Field(description="Giải thích ngắn gọn kết quả validation")
+
+
+class FinalizeOutput(BaseModel):
+    product_name: str = Field(description="Tên sản phẩm")
+    executive_summary: str = Field(description="Tóm tắt điều hành 2-3 câu")
+    target_users: str = Field(description="Đối tượng mục tiêu chính (1 câu ngắn)")
+    top_features: list[str] = Field(description="Danh sách 3-5 tính năng nổi bật")
+    core_value: str = Field(description="Giá trị cốt lõi mang lại (1-2 câu)")
+    summary_markdown: str = Field(description="Tóm tắt đầy đủ theo format markdown")
 
 
 class State(BaseModel):
@@ -111,36 +164,33 @@ class GathererAgent:
 
         # Add nodes
         graph_builder.add_node("initialize", self._initialize)
-        graph_builder.add_node("collect_inputs", self.collect_inputs)
         graph_builder.add_node("evaluate", self.evaluate)
-        # graph_builder.add_node("force_generate", self.force_generate)
-        # graph_builder.add_node("validate", self.validate)    
-        # graph_builder.add_node("retry_decision", self.retry_decision)
         graph_builder.add_node("clarify", self.clarify)
         graph_builder.add_node("suggest", self.suggest)
         graph_builder.add_node("ask_user", self.ask_user)
         graph_builder.add_node("increment_iteration", self.increment_iteration)
         graph_builder.add_node("wait_for_user", self.wait_for_user)
-        # graph_builder.add_node("preview", self.preview)
-        # graph_builder.add_node("edit_mode", self.edit_mode)
-        # graph_builder.add_node("finalize", self.finalize)
-        # graph_builder.add_node("generate", self.generate)
-        # # Add edges
+        graph_builder.add_node("generate", self.generate)
+        graph_builder.add_node("validate", self.validate)
+        graph_builder.add_node("retry_decision", self.retry_decision)
+        graph_builder.add_node("preview", self.preview)
+
+        # Add edges
         graph_builder.add_edge(START, "initialize")
-        # graph_builder.add_edge("initialize", "collect_inputs")
-        # graph_builder.add_edge("initialize", END)
-        graph_builder.add_edge("collect_inputs", "evaluate")
-        graph_builder.add_conditional_edges("initialize", self.initialize_branch)
+        graph_builder.add_edge("initialize", "evaluate")  # initialize → evaluate trực tiếp
         graph_builder.add_conditional_edges("evaluate", self.evaluate_branch)
         graph_builder.add_edge("clarify", "suggest")
         graph_builder.add_edge("suggest", "ask_user")
         graph_builder.add_edge("ask_user", "increment_iteration")
         graph_builder.add_edge("increment_iteration", "wait_for_user")
         graph_builder.add_conditional_edges("wait_for_user", self.wait_for_user_branch)
+        graph_builder.add_edge("generate", "validate")  # generate → END để kết thúc workflow
+        graph_builder.add_conditional_edges("validate", self.validate_branch)
+        graph_builder.add_edge("preview", END)  # generate → END để kết thúc workflow
         checkpointer = MemorySaver()  # Khởi tạo MemorySaver
         return graph_builder.compile(
-            checkpointer=checkpointer,
-            interrupt_before=["collect_inputs"]  # Pause trước node collect_inputs
+            checkpointer=checkpointer
+            # Không cần interrupt_before vì wait_for_user đã handle input collection
         )
 
     def _initialize(self, state: State) -> State:
@@ -148,8 +198,58 @@ class GathererAgent:
         """Khởi tạo trạng thái."""
         return state
     def collect_inputs(self, state: State) -> State:
-        """Thu thập thông tin bổ sung từ người dùng để điền vào các khoảng trống thông tin."""
-        
+        """Thu thập thông tin bổ sung từ người dùng để điền vào các khoảng trống thông tin.
+
+        Theo sơ đồ:
+        - append last_user_input vào messages (nếu có input mới từ interrupt)
+        - update memory & context
+        - output structured JSON
+        """
+        # Check if there's new input
+        new_input_received = False
+        last_message_type = ""
+        last_message_preview = ""
+
+        if state.messages:
+            last_msg = state.messages[-1]
+            last_message_type = last_msg.type
+            last_message_preview = last_msg.content[:200] if hasattr(last_msg, 'content') else str(last_msg)[:200]
+            new_input_received = last_msg.type == "human"
+
+        # Generate context summary using LLM
+        if len(state.messages) > 0:
+            formatted_messages = "\n".join([
+                f"[{'User' if msg.type=='human' else 'Assistant'}]: {msg.content[:100]}"
+                for msg in state.messages[-5:]  # Last 5 messages for summary
+            ])
+
+            summary_prompt = f"""Tóm tắt ngắn gọn (1-2 câu) nội dung chính của cuộc hội thoại sau:
+
+{formatted_messages}
+
+Chỉ trả về tóm tắt, không thêm giải thích."""
+
+            try:
+                summary_response = self._llm("gpt-4.1", 0.1).invoke([HumanMessage(content=summary_prompt)])
+                context_summary = summary_response.content.strip()
+            except Exception:
+                context_summary = "Cuộc hội thoại đang trong quá trình thu thập thông tin"
+        else:
+            context_summary = "Chưa có thông tin được thu thập"
+
+        # Create structured output
+        output = CollectInputsOutput(
+            total_messages=len(state.messages),
+            new_input_received=new_input_received,
+            last_message_type=last_message_type or "none",
+            last_message_preview=last_message_preview or "Chưa có message",
+            context_summary=context_summary
+        )
+
+        # Print structured output
+        print(f"\n📥 Structured Output từ collect_inputs:")
+        print(json.dumps(output.model_dump(), ensure_ascii=False, indent=2))
+        print()
 
         return state
     
@@ -206,9 +306,12 @@ class GathererAgent:
         # Update state
         state.gaps = evaluation.gaps
         state.score = evaluation.score
-        state.status = evaluation.status
         state.confidence = evaluation.confidence
         state.message = evaluation.message
+
+        # Override status based on score to ensure correctness
+        state.status = "done" if evaluation.score >= 0.8 else "incomplete"
+
         return state
 
     
@@ -217,24 +320,6 @@ class GathererAgent:
     #     response = self.llm.invoke(prompt)
     #     state.brief = response.content
     #     state.incomplete_flag = True
-    #     return state
-
-    # def validate(self, state: State) -> State:
-    #     prompt = f"""Xác thực brief đã tạo về tính hoàn chỉnh và chính xác so với cuộc trò chuyện:
-    #     Brief: {state.brief}
-    #     Cuộc trò chuyện: {state.messages}
-    #     Output dưới dạng JSON với valid (bool), confidence, score."""
-    #     response = self.llm.invoke(prompt)
-    #     try:
-    #         parsed = json.loads(response.content)
-    #         state.confidence = parsed.get("confidence", 0.0)
-    #         state.score = parsed.get("score", 0.0)
-    #     except:
-    #         pass
-    #     return state
-
-    # def retry_decision(self, state: State) -> State:
-    #     state.retry_count += 1
     #     return state
 
     def clarify(self, state: State) -> State:
@@ -350,7 +435,7 @@ class GathererAgent:
         return state
 
     def wait_for_user(self, state: State) -> State:
-        """Hỏi user từng câu một và đợi response với timeout 10 phút cho mỗi câu."""
+        """Hỏi user từng câu một và đợi response với timeout 10 phút cho mỗi câu. Trả về structured output."""
         import signal
 
         print("\n" + "="*60)
@@ -368,6 +453,9 @@ class GathererAgent:
 
         has_responses = False
         skip_all = False
+        answered_count = 0
+        skipped_count = 0
+        user_responses = []
 
         for idx, question in enumerate(state.questions, 1):
             if skip_all:
@@ -397,51 +485,245 @@ class GathererAgent:
                     break
                 elif user_input.lower() == 'skip':
                     print("⊘ Bỏ qua câu này.\n")
+                    skipped_count += 1
                     continue
                 elif user_input:
                     state.messages.append(HumanMessage(content=user_input))
+                    user_responses.append({"question": question, "answer": user_input})
                     has_responses = True
+                    answered_count += 1
                     print("✓ Đã ghi nhận câu trả lời.\n")
                 else:
                     print("⚠ Câu trả lời trống, bỏ qua.\n")
+                    skipped_count += 1
 
             except TimeoutError:
                 print(f"\n⏰ Timeout cho câu hỏi {idx}. Bỏ qua câu này.")
+                skipped_count += 1
                 continue
             except Exception as e:
                 print(f"\n❌ Lỗi: {e}. Bỏ qua câu này.")
+                skipped_count += 1
                 continue
 
-        # Update state based on results
+        # Create structured output
         if skip_all:
+            output = WaitForUserOutput(
+                has_responses=has_responses,
+                answered_count=answered_count,
+                skipped_count=skipped_count,
+                skip_all=True,
+                user_responses=user_responses,
+                status="skipped_all",
+                message=f"Đã bỏ qua tất cả câu hỏi. Trả lời: {answered_count}, Bỏ qua: {skipped_count}"
+            )
             state.user_skipped = True
             state.status = "skipped_all"
             print("\n" + "="*60)
             print("⊘ Đã bỏ qua tất cả câu hỏi. Sẽ tạo brief với thông tin hiện có.")
             print("="*60 + "\n")
         elif has_responses:
+            output = WaitForUserOutput(
+                has_responses=True,
+                answered_count=answered_count,
+                skipped_count=skipped_count,
+                skip_all=False,
+                user_responses=user_responses,
+                status="user_responded",
+                message=f"Thu thập thành công {answered_count} câu trả lời, bỏ qua {skipped_count} câu"
+            )
             state.user_skipped = False
             state.status = "user_responded"
             print("\n" + "="*60)
             print("✓ Đã hoàn thành phần hỏi đáp. Tiếp tục thu thập thông tin...")
             print("="*60 + "\n")
         else:
+            output = WaitForUserOutput(
+                has_responses=False,
+                answered_count=0,
+                skipped_count=skipped_count,
+                skip_all=False,
+                user_responses=[],
+                status="no_responses",
+                message=f"Không có câu trả lời nào. Bỏ qua: {skipped_count} câu"
+            )
             state.user_skipped = True
             state.status = "no_responses"
             print("\n" + "="*60)
             print("⚠ Không có câu trả lời nào. Sẽ tạo brief với thông tin hiện có.")
             print("="*60 + "\n")
 
+        # Print structured output as JSON
+        print("\n📊 Structured Output:")
+        print(json.dumps(output.model_dump(), ensure_ascii=False, indent=2))
+        print()
+
+        return state
+    
+    def generate(self, state: State) -> State:
+        """Tạo Product Brief hoàn chỉnh từ thông tin đã thu thập, output structured JSON."""
+        # Format messages
+        formatted_messages = "\n".join([
+            f"[{'User' if msg.type=='human' else 'Assistant'}]: {msg.content}"
+            for msg in state.messages
+        ])
+
+        prompt = GENERATE_PROMPT.format(messages=formatted_messages)
+
+        try:
+            # Use structured output with Pydantic model
+            structured_llm = self._llm("gpt-4.1", 0.3).with_structured_output(GenerateOutput)
+            brief_output = structured_llm.invoke([HumanMessage(content=prompt)])
+
+            # Store in state.brief as dict
+            state.brief = brief_output.model_dump()
+
+            # Print structured output
+            print("\n" + "="*80)
+            print("📄 PRODUCT BRIEF ĐÃ TẠO")
+            print("="*80)
+            print(json.dumps(state.brief, ensure_ascii=False, indent=2))
+            print("="*80 + "\n")
+
+        except Exception as e:
+            print(f"❌ Lỗi khi tạo brief: {e}")
+            # Fallback: tạo brief đơn giản
+            state.brief = {
+                "product_name": "Chưa xác định",
+                "description": f"Brief được tạo từ {len(state.messages)} messages",
+                "target_audience": [],
+                "key_features": [],
+                "benefits": [],
+                "competitors": [],
+                "completeness_note": f"Lỗi khi generate: {str(e)}"
+            }
+
         return state
 
-    # def preview(self, state: State) -> State:
-    #     print(f"Brief Đã Tạo (Cờ chưa hoàn chỉnh: {state.incomplete_flag}):\n{state.brief}")
-    #     user_choice = input("Phê duyệt/Chỉnh sửa/Tạo lại? ").lower()
-    #     state.user_choice = user_choice
-    #     if user_choice == "edit":
-    #         edit_changes = input("Nhập chỉnh sửa của bạn: ")
-    #         state.edit_changes = edit_changes
-    #     return state
+    def validate(self, state: State) -> State:
+        """Validate brief đã tạo bằng llm_reflect - kiểm tra completeness và calculate confidence_score.
+
+        Theo sơ đồ:
+        - Input: brief từ force_generate
+        - Sử dụng llm_reflect để phân tích brief
+        - Output: ValidateOutput structured JSON
+        - Branch logic sẽ được xử lý ở validate_branch
+        """
+        # Format brief for validation
+        brief_text = json.dumps(state.brief, ensure_ascii=False, indent=2) if state.brief else "Chưa có brief"
+
+        # Format messages context
+        formatted_messages = "\n".join([
+            f"[{'User' if msg.type=='human' else 'Assistant'}]: {msg.content[:300]}"
+            for msg in state.messages[-10:]  # Last 10 messages
+        ])
+
+        prompt = VALIDATE_PROMPT.format(
+            brief=brief_text,
+            messages=formatted_messages
+        )
+
+        try:
+            # Use structured output with Pydantic model
+            structured_llm = self._llm("gpt-4.1", 0.1).with_structured_output(ValidateOutput)
+            validation_result = structured_llm.invoke([HumanMessage(content=prompt)])
+
+            # Update state
+            state.confidence = validation_result.confidence_score
+            state.score = validation_result.completeness_score
+
+            # Print validation result
+            print("\n" + "="*60)
+            print("✓ Validation Result:")
+            print(f"  - Valid: {validation_result.is_valid}")
+            print(f"  - Confidence: {state.confidence:.2f}")
+            print(f"  - Completeness: {state.score:.2f}")
+            print(f"  - Message: {validation_result.validation_message}")
+
+            if validation_result.missing_fields:
+                print(f"  - Missing: {', '.join(validation_result.missing_fields)}")
+
+            print("="*60 + "\n")
+
+            # Print structured output
+            print("\n📊 Structured Output từ validate:")
+            print(json.dumps(validation_result.model_dump(), ensure_ascii=False, indent=2))
+            print()
+
+        except Exception as e:
+            print(f"❌ Error in validate: {e}")
+            # Fallback: set low confidence/score to trigger retry or force to preview
+            state.confidence = 0.3
+            state.score = 0.3
+
+        return state
+
+    def retry_decision(self, state: State) -> State:
+        """Tăng retry_count để theo dõi số lần retry validate.
+
+        Theo sơ đồ:
+        - Input: brief không hợp lệ hoặc confidence ≤ 0.7
+        - Tăng retry_count
+        - Branch logic sẽ được xử lý ở retry_decision_branch
+        """
+        state.retry_count += 1
+
+        print("\n" + "="*60)
+        print(f"🔄 RETRY DECISION - Lần thử {state.retry_count}")
+        print(f"  - Confidence: {state.confidence:.2f}")
+        print(f"  - Completeness: {state.score:.2f}")
+        print("="*60 + "\n")
+
+        return state
+
+    def preview(self, state: State) -> State:
+        """Hiển thị brief cho user và hỏi: Approve/Edit/Regenerate.
+
+        Theo sơ đồ:
+        - Format brief và show to user
+        - Hỏi user lựa chọn: Approve/Edit/Regenerate (với timeout option)
+        - Cập nhật user_choice vào state
+        - Nếu chọn Edit, thu thập edit_changes
+        """
+        print("\n" + "="*80)
+        print("📋 PREVIEW - XEM TRƯỚC PRODUCT BRIEF")
+        print("="*80)
+        print(f"🚩 Cờ chưa hoàn chỉnh: {state.incomplete_flag}")
+        print("\nNội dung Brief:")
+        print("-"*80)
+        print(json.dumps(state.brief, ensure_ascii=False, indent=2))
+        print("="*80 + "\n")
+
+        print("💡 Bạn có thể:")
+        print("  1. Gõ 'approve' để phê duyệt brief")
+        print("  2. Gõ 'edit' để chỉnh sửa brief")
+        print("  3. Gõ 'regenerate' để tạo lại brief")
+        print()
+
+        try:
+            user_choice = input("👤 Lựa chọn của bạn (approve/edit/regenerate): ").strip().lower()
+
+            if user_choice not in ["approve", "edit", "regenerate"]:
+                print(f"⚠ Lựa chọn không hợp lệ: '{user_choice}'. Mặc định chọn 'approve'.")
+                user_choice = "approve"
+
+            state.user_choice = user_choice
+
+            if user_choice == "edit":
+                print("\n📝 Nhập các thay đổi bạn muốn áp dụng vào brief:")
+                edit_changes = input("👤 Thay đổi: ").strip()
+                state.edit_changes = edit_changes
+                print(f"✓ Đã ghi nhận thay đổi: {edit_changes[:100]}...")
+            elif user_choice == "approve":
+                print("✓ Bạn đã phê duyệt brief.")
+            elif user_choice == "regenerate":
+                print("🔄 Sẽ tạo lại brief.")
+
+        except Exception as e:
+            print(f"❌ Lỗi khi nhận input: {e}. Mặc định chọn 'approve'.")
+            state.user_choice = "approve"
+
+        return state
 
     # def edit_mode(self, state: State) -> State:
     #     prompt = f"Áp dụng các thay đổi sau vào brief:\nThay đổi: {state.edit_changes}\nBrief Gốc: {state.brief}"
@@ -450,41 +732,76 @@ class GathererAgent:
     #     state.edit_changes = ""
     #     return state
 
-    # def finalize(self, state: State) -> State:
-    #     prompt = f"Tạo tóm tắt cuối cùng từ brief đã phê duyệt:\n{state.brief}"
-    #     response = self.llm.invoke(prompt)
-    #     state.status = "completed"
-    #     print(f"Tóm Tắt Cuối Cùng:\n{response.content}")
-    #     return state
+    def finalize(self, state: State) -> State:
+        """Lưu brief và tạo summary cuối cùng với structured output.
 
-    # def generate(self, state: State) -> State:
-    #     prompt = f"Tạo bản nháp brief từ cuộc trò chuyện dù có bỏ qua:\n{state.messages}"
-    #     response = self.llm.invoke(prompt)
-    #     state.brief = response.content
-    #     return state
+        Theo sơ đồ:
+        - Input: brief đã được approve
+        - Generate summary từ brief với structured JSON output
+        - Cập nhật status = "completed"
+        - Output: FinalizeOutput structured JSON
+        """
+        # Format brief
+        brief_text = json.dumps(state.brief, ensure_ascii=False, indent=2)
 
-    # # Conditional branches
-    # def evaluate_branch(self, state: State) -> str:
-    #     if len(state.gaps) > 0 and state.confidence > 0.6:
-    #         return "clarify"
-    #     elif state.iteration_count < state.max_iterations:
-    #         return "force_generate"
-    #     else:
-    #         return END
-        
-    def initialize_branch(self, state: State) -> str:
-        if len(state.gaps) == 0 and len(state.messages) == 1:
-            return "evaluate"
-        else:
-            return "collect_inputs"
+        prompt = FINALIZE_PROMPT.format(brief=brief_text)
 
+        try:
+            # Use structured output with Pydantic model
+            structured_llm = self._llm("gpt-4.1", 0.3).with_structured_output(FinalizeOutput)
+            finalize_result = structured_llm.invoke([HumanMessage(content=prompt)])
+
+            # Update state
+            state.status = "completed"
+
+            # Print final output
+            print("\n" + "="*80)
+            print("✅ HOÀN TẤT - PRODUCT BRIEF ĐÃ ĐƯỢC PHÊ DUYỆT")
+            print("="*80)
+            print("\n📊 TÓM TẮT CUỐI CÙNG:\n")
+            print(finalize_result.summary_markdown)
+            print("\n" + "="*80)
+            print(f"📈 Thống kê:")
+            print(f"  - Số lần lặp: {state.iteration_count}/{state.max_iterations}")
+            print(f"  - Số lần retry: {state.retry_count}")
+            print(f"  - Confidence score: {state.confidence:.2f}")
+            print(f"  - Completeness score: {state.score:.2f}")
+            print(f"  - Tổng số messages: {len(state.messages)}")
+            print("="*80 + "\n")
+
+            # Print structured output
+            print("\n📄 Structured Output từ finalize:")
+            print(json.dumps(finalize_result.model_dump(), ensure_ascii=False, indent=2))
+            print()
+
+        except Exception as e:
+            print(f"❌ Lỗi khi tạo tóm tắt: {e}")
+            state.status = "completed_with_errors"
+            print("\n" + "="*80)
+            print("⚠ HOÀN TẤT VỚI LỖI")
+            print("="*80)
+            print(f"Brief đã được lưu nhưng không thể tạo tóm tắt: {str(e)}")
+            print("="*80 + "\n")
+
+        return state
+
+    
+
+    # Conditional branches
     def evaluate_branch(self, state: State) -> str:
-        if state.confidence <= 0.6:
+        """Quyết định luồng sau evaluate node theo sơ đồ."""
+        # Priority 1: status == done OR score >= 0.8 → generate (check TRƯỚC để tránh bị override)
+        if state.status == "done" or state.score >= 0.8:
+            return "generate"
+        # Priority 2: low confidence → clarify
+        elif state.confidence <= 0.6:
             return "clarify"
-        elif len(state.gaps) > 0 and state.confidence > 0.6 and state.confidence < 0.8:
-            return "force_generate"
+        # Priority 3: có gaps AND confidence > 0.6 → suggest (continue collecting)
+        elif len(state.gaps) > 0 and state.confidence > 0.6:
+            return "suggest"
         else:
-            return END
+            # Fallback: generate nếu không match điều kiện nào
+            return "generate"
 
     def wait_for_user_branch(self, state: State) -> str:
         """Quyết định next node sau wait_for_user."""
@@ -492,11 +809,26 @@ class GathererAgent:
             # User skipped/no responses → generate với thông tin hiện có
             return "generate"
         elif state.status == "user_responded":
-            # User responded → quay lại collect_inputs để evaluate lại
-            return "collect_inputs"
+            # User responded → evaluate lại với thông tin mới
+            return "evaluate"
         else:
             # Default: generate
             return "generate"
+
+    def validate_branch(self, state: State) -> str:
+        """Quyết định luồng sau validate node theo sơ đồ.
+
+        Theo sơ đồ:
+        - Nếu valid AND confidence > 0.7 → preview
+        - Nếu invalid OR confidence ≤ 0.7 → retry_decision
+        """
+        # Check validation result
+        if state.confidence > 0.7:
+            # Valid and high confidence → preview
+            return "preview"
+        else:
+            # Invalid or low confidence → retry_decision
+            return "retry_decision"
 
     def run(self, initial_context: str = "", thread_id: str | None = None) -> dict[str, Any]:
         """Chạy quy trình làm việc của gatherer agent.
@@ -522,29 +854,9 @@ class GathererAgent:
 
         final_state = None
         for output in self.graph.stream(
-            initial_state.model_dump() if initial_state else None,  # Nếu resume, pass None để load từ checkpointer
+            initial_state.model_dump() if initial_state else None,
             config=config,
         ):
             final_state = output
 
-        # Sau interrupt, bạn có thể check state và resume
-        current_state = self.graph.get_state(config)
-        if current_state.next:  # Nếu bị interrupt (paused)
-            print("Graph paused at:", current_state.next)
-            # Lấy input từ người dùng
-            user_input = input("Nhập input của bạn (hoặc 'skip' để bỏ qua): ").strip()
-
-            if user_input.lower() != 'skip':
-                # Append input vào state.messages
-                updated_messages = current_state.values["messages"] + [HumanMessage(content=user_input)]
-                updates = {"messages": updated_messages}
-                # Update state (as_node=None để resume chạy node tiếp theo)
-                self.graph.update_state(config, updates, as_node=None)
-            else:
-                print("\n⊘ Bỏ qua append input")
-
-            # Resume stream từ state đã update
-            for output in self.graph.stream(None, config):
-                final_state = output
-
-        return final_state or {}  # Return final_state hoặc empty nếu không có
+        return final_state or {}
