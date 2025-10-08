@@ -26,6 +26,99 @@ def print_separator():
     print("\n" + "=" * 80 + "\n")
 
 
+def print_final_summary(state_data: Dict[str, Any]) -> None:
+    """In tóm tắt kết quả cuối cùng với format dễ đọc."""
+    import textwrap
+
+    print("\n" + "="*80)
+    print("📊 KẾT QUẢ CUỐI CÙNG - GATHERER AGENT")
+    print("="*80)
+
+    # Brief info
+    if "brief" in state_data and state_data["brief"]:
+        brief = state_data["brief"]
+        print(f"\n✅ PRODUCT BRIEF: {brief.get('product_name', 'N/A')}")
+        print(f"   Status: {'⚠️  Chưa hoàn chỉnh' if state_data.get('incomplete_flag') else '✓ Hoàn chỉnh'}")
+        print(f"   Confidence: {state_data.get('confidence', 0):.2f}")
+        print(f"   Completeness: {state_data.get('score', 0):.2f}")
+
+    # Statistics
+    print(f"\n📈 THỐNG KÊ:")
+    print(f"   • Số lần lặp: {state_data.get('iteration_count', 0)}/{state_data.get('max_iterations', 0)}")
+    print(f"   • Số lần retry: {state_data.get('retry_count', 0)}")
+    print(f"   • Tổng messages: {len(state_data.get('messages', []))}")
+    print(f"   • Số gaps còn lại: {len(state_data.get('gaps', []))}")
+    print(f"   • Unclear inputs: {len(state_data.get('unclear_input', []))}")
+
+    # Brief content
+    if "brief" in state_data and state_data["brief"]:
+        brief = state_data["brief"]
+        print(f"\n📄 NỘI DUNG BRIEF:")
+        print(f"\n   🏷️  Tên sản phẩm: {brief.get('product_name', 'N/A')}")
+
+        print(f"\n   📝 Mô tả:")
+        desc = brief.get('description', 'N/A')
+        for line in textwrap.wrap(desc, width=70):
+            print(f"      {line}")
+
+        print(f"\n   👥 Đối tượng mục tiêu ({len(brief.get('target_audience', []))}):")
+        for i, audience in enumerate(brief.get('target_audience', []), 1):
+            wrapped_lines = textwrap.wrap(audience, width=70)
+            for j, line in enumerate(wrapped_lines):
+                if j == 0:
+                    print(f"      {i}. {line}")
+                else:
+                    print(f"         {line}")
+
+        print(f"\n   ⚙️  Tính năng chính ({len(brief.get('key_features', []))}):")
+        for i, feature in enumerate(brief.get('key_features', []), 1):
+            wrapped_lines = textwrap.wrap(feature, width=70)
+            for j, line in enumerate(wrapped_lines):
+                if j == 0:
+                    print(f"      {i}. {line}")
+                else:
+                    print(f"         {line}")
+
+        print(f"\n   💡 Lợi ích ({len(brief.get('benefits', []))}):")
+        for i, benefit in enumerate(brief.get('benefits', []), 1):
+            wrapped_lines = textwrap.wrap(benefit, width=70)
+            for j, line in enumerate(wrapped_lines):
+                if j == 0:
+                    print(f"      {i}. {line}")
+                else:
+                    print(f"         {line}")
+
+        if brief.get('competitors'):
+            print(f"\n   🏆 Đối thủ cạnh tranh ({len(brief.get('competitors', []))}):")
+            for i, competitor in enumerate(brief.get('competitors', []), 1):
+                wrapped_lines = textwrap.wrap(competitor, width=70)
+                for j, line in enumerate(wrapped_lines):
+                    if j == 0:
+                        print(f"      {i}. {line}")
+                    else:
+                        print(f"         {line}")
+
+        if brief.get('completeness_note'):
+            print(f"\n   ℹ️  Ghi chú:")
+            for line in textwrap.wrap(brief.get('completeness_note', ''), width=70):
+                print(f"      {line}")
+
+    # Gaps remaining
+    if state_data.get('gaps'):
+        print(f"\n⚠️  CÁC GAPS CÒN THIẾU ({len(state_data['gaps'])}):")
+        for i, gap in enumerate(state_data['gaps'], 1):
+            wrapped_lines = textwrap.wrap(gap, width=70)
+            for j, line in enumerate(wrapped_lines):
+                if j == 0:
+                    print(f"   {i}. {line}")
+                else:
+                    print(f"      {line}")
+
+    print("\n" + "="*80)
+    print(f"✅ HOÀN THÀNH - Workflow status: {state_data.get('status', 'unknown')}")
+    print("="*80 + "\n")
+
+
 def test_gatherer_agent():
     """Test the gatherer agent with a sample product requirement."""
     print_separator()
@@ -119,14 +212,14 @@ tối ưu và tự động điều chỉnh kế hoạch khi có thay đổi.
 
 USP của TaskMaster Pro: AI cá nhân hóa sâu, học習 thói quen làm việc và đưa ra gợi ý proactive thay vì chỉ reminder thụ động."""
 
-    print(f"\nNgữ cảnh ban đầu: {initial_context_unclear}")
+    print(f"\nNgữ cảnh ban đầu: {initial_context_complete}")
     print_separator()
 
     # Run the agent
     print("Running Gatherer Agent workflow...\n")
 
     try:
-        result = agent.run(initial_context=initial_context_unclear)
+        result = agent.run(initial_context=initial_context_complete)
 
         print_separator()
         print("Workflow completed successfully!")
@@ -139,8 +232,7 @@ USP của TaskMaster Pro: AI cá nhân hóa sâu, học習 thói quen làm việ
                 final_node_state = value
 
         if final_node_state:
-            print("Final State (JSON):")
-            print(json.dumps(final_node_state, indent=2, default=str))
+            print_final_summary(final_node_state)
         else:
             print("No final state found in result")
             print("Result:", result)
