@@ -81,11 +81,15 @@ EVALUATE_PROMPT = """Bạn là một Product Owner chuyên nghiệp đang đánh
 - Không phát hiện mâu thuẫn, thông tin chi tiết đầy đủ → **CI = 1.00**, **score = 0.9** ⇒ **confidence = 0.9**.
 
 ## Output yêu cầu:
-- **gaps**: Danh sách cụ thể các thông tin còn thiếu/chưa đủ. Mỗi gap phải actionable.
-  Ví dụ: "Tên Sản Phẩm: chưa có", "Tính Năng Chính: chỉ có 2/3 items tối thiểu", "Đối Tượng Mục Tiêu: thiếu thông tin về hành vi sử dụng"
+- **gaps**: Danh sách cụ thể các thông tin còn thiếu/chưa đủ.
+  + CHỈ list các gaps THỰC SỰ còn thiếu, KHÔNG list lại gaps đã có thông tin trong cuộc hội thoại
+  + Mỗi gap phải actionable và cụ thể
+  + Nếu thông tin đã đủ cho một trường, KHÔNG thêm gap cho trường đó
+  + Ví dụ: "Tên Sản Phẩm: chưa có", "Tính Năng Chính: chỉ có 2/3 items tối thiểu", "Đối Tượng Mục Tiêu: thiếu thông tin về hành vi sử dụng"
 - **score**: Điểm đánh giá độ đầy đủ (0.0-1.0)
 - **status**: "incomplete" nếu score < 0.8, "done" nếu score >= 0.8
-- **confidence**: Độ tin cậy của đánh giá (0.0-1.0)"""
+- **confidence**: Độ tin cậy của đánh giá (0.0-1.0)
+- **message**: Lý do chi tiết về đánh giá"""
 
 # Clarify prompt để làm rõ các thông tin mơ hồ hoặc không rõ ràng
 CLARIFY_PROMPT = """Bạn là một Product Owner chuyên nghiệp đang thu thập thông tin sản phẩm.

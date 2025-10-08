@@ -40,7 +40,7 @@ def print_final_summary(state_data: Dict[str, Any]) -> None:
         print(f"\n✅ PRODUCT BRIEF: {brief.get('product_name', 'N/A')}")
         print(f"   Status: {'⚠️  Chưa hoàn chỉnh' if state_data.get('incomplete_flag') else '✓ Hoàn chỉnh'}")
         print(f"   Confidence: {state_data.get('confidence', 0):.2f}")
-        print(f"   Completeness: {state_data.get('score', 0):.2f}")
+        print(f"   Score: {state_data.get('score', 0):.2f}")
 
     # Statistics
     print(f"\n📈 THỐNG KÊ:")
@@ -212,14 +212,14 @@ tối ưu và tự động điều chỉnh kế hoạch khi có thay đổi.
 
 USP của TaskMaster Pro: AI cá nhân hóa sâu, học習 thói quen làm việc và đưa ra gợi ý proactive thay vì chỉ reminder thụ động."""
 
-    print(f"\nNgữ cảnh ban đầu: {initial_context_complete}")
+    print(f"\nNgữ cảnh ban đầu: {initial_context_unclear}")
     print_separator()
 
     # Run the agent
     print("Running Gatherer Agent workflow...\n")
 
     try:
-        result = agent.run(initial_context=initial_context_complete)
+        result = agent.run(initial_context=initial_context_unclear)
 
         print_separator()
         print("Workflow completed successfully!")
