@@ -21,6 +21,7 @@ from templates.prompts.product_owner.gatherer import (
     VALIDATE_PROMPT,
     FINALIZE_PROMPT,
     EDIT_MODE_PROMPT,
+    FORCE_GENERATE_PROMPT,
 )
 from langgraph.checkpoint.memory import MemorySaver
 
@@ -100,6 +101,17 @@ class EditModeOutput(BaseModel):
     completeness_note: str = Field(description="Ghi chú về thay đổi đã áp dụng")
 
 
+class ForceGenerateOutput(BaseModel):
+    product_name: str = Field(description="Tên sản phẩm")
+    description: str = Field(description="Mô tả chi tiết sản phẩm")
+    target_audience: list[str] = Field(description="Danh sách đối tượng mục tiêu")
+    key_features: list[str] = Field(description="Danh sách tính năng chính")
+    benefits: list[str] = Field(description="Danh sách lợi ích")
+    competitors: list[str] = Field(default_factory=list, description="Danh sách đối thủ cạnh tranh")
+    completeness_note: str = Field(description="Ghi chú về mức độ hoàn thiện và các phần suy luận")
+    incomplete_flag: bool = Field(description="Flag đánh dấu brief chưa hoàn chỉnh", default=True)
+
+
 class ValidateOutput(BaseModel):
     is_valid: bool = Field(description="True nếu brief đạt yêu cầu tối thiểu")
     confidence_score: float = Field(description="Độ tin cậy của brief", ge=0.0, le=1.0)
@@ -122,7 +134,7 @@ class State(BaseModel):
 
     messages: list[BaseMessage] = Field(default_factory=list)
     iteration_count: int = 0
-    max_iterations: int = 5
+    max_iterations: int = 3
     retry_count: int = 0
     gaps: list[str] = Field(default_factory=list)
     score: float = 0.0
@@ -182,6 +194,7 @@ class GathererAgent:
         graph_builder.add_node("increment_iteration", self.increment_iteration)
         graph_builder.add_node("wait_for_user", self.wait_for_user)
         graph_builder.add_node("generate", self.generate)
+        graph_builder.add_node("force_generate", self.force_generate)
         graph_builder.add_node("validate", self.validate)
         graph_builder.add_node("retry_decision", self.retry_decision)
         graph_builder.add_node("preview", self.preview)
@@ -198,8 +211,10 @@ class GathererAgent:
         graph_builder.add_edge("increment_iteration", "wait_for_user")
         graph_builder.add_conditional_edges("wait_for_user", self.wait_for_user_branch)
         graph_builder.add_edge("generate", "validate")
+        graph_builder.add_edge("force_generate", "validate")  # force_generate → validate
         graph_builder.add_conditional_edges("validate", self.validate_branch)
         graph_builder.add_conditional_edges("preview", self.preview_branch)
+        graph_builder.add_conditional_edges("retry_decision", self.retry_decision_branch)
         graph_builder.add_edge("edit_mode", "validate")  # edit_mode → validate để re-validate
         graph_builder.add_edge("finalize", END)
         checkpointer = MemorySaver()  # Khởi tạo MemorySaver
@@ -329,13 +344,65 @@ Chỉ trả về tóm tắt, không thêm giải thích."""
 
         return state
 
-    
-    # def force_generate(self, state: State) -> State:
-    #     prompt = f"Tạo một brief sử dụng thông tin có sẵn từ cuộc trò chuyện, ngay cả khi chưa hoàn chỉnh:\n{state.messages}"
-    #     response = self.llm.invoke(prompt)
-    #     state.brief = response.content
-    #     state.incomplete_flag = True
-    #     return state
+    def force_generate(self, state: State) -> State:
+        """Tạo brief với thông tin hiện có dù chưa đầy đủ khi đạt max_iterations.
+
+        Theo sơ đồ:
+        - Input: cuộc hội thoại khi iteration_count >= max_iterations
+        - Generate brief với available info, flag: incomplete
+        - Output: ForceGenerateOutput structured JSON
+        """
+        # Reset user_choice để tránh vòng lặp
+        state.user_choice = ""
+
+        # Format messages
+        formatted_messages = "\n".join([
+            f"[{'User' if msg.type=='human' else 'Assistant'}]: {msg.content}"
+            for msg in state.messages
+        ])
+
+        prompt = FORCE_GENERATE_PROMPT.format(messages=formatted_messages)
+
+        try:
+            # Use structured output with Pydantic model
+            structured_llm = self._llm("gpt-4.1", 0.3).with_structured_output(ForceGenerateOutput)
+            brief_output = structured_llm.invoke([HumanMessage(content=prompt)])
+
+            # Store in state.brief as dict
+            state.brief = brief_output.model_dump()
+            state.incomplete_flag = brief_output.incomplete_flag
+
+            # Print warning
+            print("\n" + "="*80)
+            print("⚠️  FORCE GENERATE - TẠO BRIEF VỚI THÔNG TIN CHƯA ĐẦY ĐỦ")
+            print("="*80)
+            print(f"⚠️  Đã đạt số lần lặp tối đa ({state.max_iterations})")
+            print(f"⚠️  Brief được tạo với thông tin hiện có, một số phần có thể được suy luận")
+            print("-"*80)
+            print(json.dumps(state.brief, ensure_ascii=False, indent=2))
+            print("="*80 + "\n")
+
+            # Print structured output
+            print("\n📊 Structured Output từ force_generate:")
+            print(json.dumps(brief_output.model_dump(), ensure_ascii=False, indent=2))
+            print()
+
+        except Exception as e:
+            print(f"❌ Lỗi khi force generate brief: {e}")
+            # Fallback: tạo brief tối thiểu
+            state.brief = {
+                "product_name": "Chưa xác định",
+                "description": f"Brief được tạo từ {len(state.messages)} messages với thông tin chưa đầy đủ",
+                "target_audience": ["Chưa xác định"],
+                "key_features": ["Chưa có thông tin đầy đủ"],
+                "benefits": ["Chưa có thông tin đầy đủ"],
+                "competitors": [],
+                "completeness_note": f"Lỗi khi force generate: {str(e)}",
+                "incomplete_flag": True
+            }
+            state.incomplete_flag = True
+
+        return state
 
     def clarify(self, state: State) -> State:
         """Làm rõ các thông tin mơ hồ hoặc không rõ ràng trong cuộc hội thoại."""
@@ -577,6 +644,9 @@ Chỉ trả về tóm tắt, không thêm giải thích."""
     
     def generate(self, state: State) -> State:
         """Tạo Product Brief hoàn chỉnh từ thông tin đã thu thập, output structured JSON."""
+        # Reset user_choice để tránh vòng lặp khi regenerate
+        state.user_choice = ""
+
         # Format messages
         formatted_messages = "\n".join([
             f"[{'User' if msg.type=='human' else 'Assistant'}]: {msg.content}"
@@ -733,6 +803,8 @@ Chỉ trả về tóm tắt, không thêm giải thích."""
                 print("✓ Bạn đã phê duyệt brief.")
             elif user_choice == "regenerate":
                 print("🔄 Sẽ tạo lại brief.")
+                # Reset retry_count để tránh vòng lặp vô hạn
+                state.retry_count = 0
 
         except Exception as e:
             print(f"❌ Lỗi khi nhận input: {e}. Mặc định chọn 'approve'.")
@@ -748,6 +820,9 @@ Chỉ trả về tóm tắt, không thêm giải thích."""
         - Apply user changes vào brief
         - Re-validate để đảm bảo brief vẫn hợp lệ
         """
+        # Reset user_choice để tránh vòng lặp
+        state.user_choice = ""
+
         # Format brief
         brief_text = json.dumps(state.brief, ensure_ascii=False, indent=2)
 
@@ -843,9 +918,19 @@ Chỉ trả về tóm tắt, không thêm giải thích."""
 
     # Conditional branches
     def evaluate_branch(self, state: State) -> str:
-        """Quyết định luồng sau evaluate node theo sơ đồ."""
-        # Priority 1: status == done OR score >= 0.8 → generate (check TRƯỚC để tránh bị override)
-        if state.status == "done" or state.score >= 0.8:
+        """Quyết định luồng sau evaluate node theo sơ đồ.
+
+        Theo sơ đồ:
+        - Nếu iteration_count >= max_iterations → force_generate
+        - Nếu status == done OR score >= 0.8 → generate
+        - Nếu confidence <= 0.6 → clarify (low confidence)
+        - Nếu có gaps AND confidence > 0.6 → suggest
+        """
+        # Priority 0: Check iteration count FIRST - nếu đạt max thì force generate
+        if state.iteration_count >= state.max_iterations:
+            return "force_generate"
+        # Priority 1: status == done OR score >= 0.8 → generate
+        elif state.status == "done" or state.score >= 0.8:
             return "generate"
         # Priority 2: low confidence → clarify
         elif state.confidence <= 0.6:
@@ -884,6 +969,22 @@ Chỉ trả về tóm tắt, không thêm giải thích."""
             # Invalid or low confidence → retry_decision
             return "retry_decision"
 
+    def retry_decision_branch(self, state: State) -> str:
+        """Quyết định luồng sau retry_decision node theo sơ đồ.
+
+        Theo sơ đồ:
+        - Nếu retry_count >= 2 → preview (dù confidence thấp, vẫn cho user xem)
+        - Nếu retry_count < 2 → generate (regenerate lại)
+        """
+        if state.retry_count >= 2:
+            # Đã retry 2 lần, force preview để user quyết định
+            print(f"\n⚠️  Đã retry {state.retry_count} lần, chuyển sang preview để user quyết định.\n")
+            return "preview"
+        else:
+            # Retry lại bằng cách regenerate
+            print(f"\n🔄 Retry lần {state.retry_count + 1}, regenerate brief...\n")
+            return "suggest"
+
     def preview_branch(self, state: State) -> str:
         """Quyết định luồng sau preview node theo sơ đồ.
 
@@ -921,7 +1022,8 @@ Chỉ trả về tóm tắt, không thêm giải thích."""
 
         config = {
             "configurable": {"thread_id": thread_id},  # Để checkpointer lưu theo thread
-            "callbacks": [self.langfuse_handler]
+            "callbacks": [self.langfuse_handler],
+            "recursion_limit": 50  # Tăng recursion limit để tránh lỗi vòng lặp
         }
 
         final_state = None

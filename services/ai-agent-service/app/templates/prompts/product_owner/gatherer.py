@@ -343,3 +343,61 @@ Trả về Product Brief đã được cập nhật với đầy đủ các trư
 - **benefits**: Danh sách lợi ích (list of strings)
 - **competitors**: Danh sách đối thủ (list of strings)
 - **completeness_note**: Ghi chú về thay đổi (string)"""
+
+# Force generate prompt để tạo brief với thông tin hiện có dù chưa đầy đủ
+FORCE_GENERATE_PROMPT = """Bạn là một Product Owner chuyên nghiệp đang tạo Product Brief với thông tin hiện có, dù chưa hoàn chỉnh.
+
+## Ngữ cảnh:
+Đã đạt số lần lặp tối đa để thu thập thông tin, cần tạo Product Brief ngay lập tức với những gì đã có.
+
+## Cuộc hội thoại:
+{messages}
+
+## Nhiệm vụ:
+Tạo Product Brief tốt nhất có thể với thông tin hiện có, chấp nhận một số phần có thể chưa đầy đủ hoặc cần suy luận.
+
+## Cấu trúc Product Brief:
+
+### 1. Tên Sản Phẩm (product_name)
+- Sử dụng tên từ cuộc hội thoại
+- Nếu không có, tạo tên gợi ý dựa trên mô tả/ý tưởng (đánh dấu "[Gợi ý]")
+
+### 2. Mô Tả (description)
+- Tổng hợp thông tin từ cuộc hội thoại
+- Suy luận hợp lý nếu thiếu chi tiết (đánh dấu "[Suy luận]")
+- Tối thiểu 50 ký tự
+
+### 3. Đối Tượng Mục Tiêu (target_audience)
+- Xác định từ ngữ cảnh cuộc hội thoại
+- Nếu không rõ, suy luận dựa trên tính năng/lợi ích (đánh dấu "[Suy luận]")
+- Tối thiểu 1 nhóm
+
+### 4. Tính Năng Chính (key_features)
+- Liệt kê các tính năng đã được đề cập
+- Nếu < 3 items, suy luận thêm từ mô tả/mục đích (đánh dấu "[Suy luận]")
+- Tối thiểu 2 items
+
+### 5. Lợi Ích (benefits)
+- Liệt kê lợi ích đã được đề cập
+- Suy luận từ tính năng nếu cần (đánh dấu "[Suy luận]")
+- Tối thiểu 2 items
+
+### 6. Đối Thủ Cạnh Tranh (competitors)
+- Chỉ liệt kê nếu có thông tin rõ ràng
+- Để trống nếu không có
+
+## Hướng dẫn quan trọng:
+1. **Đánh dấu rõ ràng**: Sử dụng prefix "[Gợi ý]" hoặc "[Suy luận]" cho phần không có thông tin trực tiếp
+2. **Suy luận hợp lý**: Dựa trên ngữ cảnh, logic và best practices
+3. **Tính nhất quán**: Đảm bảo các phần không mâu thuẫn nhau
+4. **Completeness note**: Ghi rõ mức độ hoàn thiện và các phần bị thiếu/suy luận
+
+## Output yêu cầu:
+- **product_name**: Tên sản phẩm (string)
+- **description**: Mô tả chi tiết (string)
+- **target_audience**: Danh sách đối tượng (list of strings)
+- **key_features**: Danh sách tính năng (list of strings)
+- **benefits**: Danh sách lợi ích (list of strings)
+- **competitors**: Danh sách đối thủ (list of strings, có thể rỗng)
+- **completeness_note**: Ghi chú về mức độ hoàn thiện và cảnh báo về các phần suy luận (string)
+- **incomplete_flag**: true (luôn true vì đây là force generate với thông tin chưa đầy đủ)"""

@@ -119,22 +119,14 @@ tối ưu và tự động điều chỉnh kế hoạch khi có thay đổi.
 
 USP của TaskMaster Pro: AI cá nhân hóa sâu, học習 thói quen làm việc và đưa ra gợi ý proactive thay vì chỉ reminder thụ động."""
 
-
-    # Choose which context to test
-    # Option 1: Regular context (score < 0.8) - will ask questions
-    # Option 2: Unclear context (score ~ 0.1) - will ask many questions
-    # Option 3: Complete context (score >= 0.8) - will generate immediately
-
-    selected_context = initial_context_complete1  # Change this to test different scenarios
-
-    print(f"\nNgữ cảnh ban đầu: {selected_context}")
+    print(f"\nNgữ cảnh ban đầu: {initial_context_unclear}")
     print_separator()
 
     # Run the agent
     print("Running Gatherer Agent workflow...\n")
 
     try:
-        result = agent.run(initial_context=selected_context)
+        result = agent.run(initial_context=initial_context_unclear)
 
         print_separator()
         print("Workflow completed successfully!")
