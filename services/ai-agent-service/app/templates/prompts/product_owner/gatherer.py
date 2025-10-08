@@ -302,3 +302,44 @@ Tạo một tóm tắt ngắn gọn, chuyên nghiệp và hấp dẫn từ Produ
 - **top_features**: Danh sách 3-5 tính năng nổi bật (list of strings, mỗi item ~1 câu)
 - **core_value**: Giá trị cốt lõi mang lại (string, 1-2 câu)
 - **summary_markdown**: Tóm tắt đầy đủ theo format markdown (string, kết hợp tất cả thông tin trên)"""
+
+# Edit mode prompt để áp dụng thay đổi từ user vào brief
+EDIT_MODE_PROMPT = """Bạn là một Product Owner chuyên nghiệp đang cập nhật Product Brief theo yêu cầu của user.
+
+## Brief hiện tại:
+{brief}
+
+## Thay đổi yêu cầu từ user:
+{edit_changes}
+
+## Nhiệm vụ:
+Áp dụng các thay đổi yêu cầu vào Product Brief, đảm bảo:
+1. Giữ nguyên cấu trúc và format của brief
+2. Chỉ thay đổi các phần được yêu cầu, giữ nguyên các phần khác
+3. Đảm bảo tính nhất quán và logic giữa các phần sau khi chỉnh sửa
+4. Nếu thay đổi ảnh hưởng đến các phần khác, cập nhật cho nhất quán
+
+## Cấu trúc Product Brief:
+- **product_name**: Tên sản phẩm
+- **description**: Mô tả chi tiết (50-1000 ký tự)
+- **target_audience**: Danh sách 1-3 nhóm đối tượng mục tiêu
+- **key_features**: Danh sách 3-5 tính năng chính
+- **benefits**: Danh sách 2-5 lợi ích
+- **competitors**: Danh sách 0-3 đối thủ cạnh tranh (tùy chọn)
+- **completeness_note**: Ghi chú về thay đổi đã áp dụng
+
+## Hướng dẫn:
+- Phân tích yêu cầu thay đổi cẩn thận
+- Áp dụng thay đổi một cách chính xác và đầy đủ
+- Cập nhật completeness_note để ghi nhận thay đổi
+- Giữ tone professional và nhất quán
+
+## Output yêu cầu:
+Trả về Product Brief đã được cập nhật với đầy đủ các trường:
+- **product_name**: Tên sản phẩm (string)
+- **description**: Mô tả chi tiết (string)
+- **target_audience**: Danh sách đối tượng (list of strings)
+- **key_features**: Danh sách tính năng (list of strings)
+- **benefits**: Danh sách lợi ích (list of strings)
+- **competitors**: Danh sách đối thủ (list of strings)
+- **completeness_note**: Ghi chú về thay đổi (string)"""

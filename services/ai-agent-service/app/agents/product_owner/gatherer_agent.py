@@ -20,6 +20,7 @@ from templates.prompts.product_owner.gatherer import (
     GENERATE_PROMPT,
     VALIDATE_PROMPT,
     FINALIZE_PROMPT,
+    EDIT_MODE_PROMPT,
 )
 from langgraph.checkpoint.memory import MemorySaver
 
@@ -87,6 +88,16 @@ class GenerateOutput(BaseModel):
     benefits: list[str] = Field(description="Danh sách lợi ích")
     competitors: list[str] = Field(default_factory=list, description="Danh sách đối thủ cạnh tranh")
     completeness_note: str = Field(description="Ghi chú về mức độ hoàn thiện")
+
+
+class EditModeOutput(BaseModel):
+    product_name: str = Field(description="Tên sản phẩm")
+    description: str = Field(description="Mô tả chi tiết sản phẩm")
+    target_audience: list[str] = Field(description="Danh sách đối tượng mục tiêu")
+    key_features: list[str] = Field(description="Danh sách tính năng chính")
+    benefits: list[str] = Field(description="Danh sách lợi ích")
+    competitors: list[str] = Field(default_factory=list, description="Danh sách đối thủ cạnh tranh")
+    completeness_note: str = Field(description="Ghi chú về thay đổi đã áp dụng")
 
 
 class ValidateOutput(BaseModel):
@@ -174,6 +185,8 @@ class GathererAgent:
         graph_builder.add_node("validate", self.validate)
         graph_builder.add_node("retry_decision", self.retry_decision)
         graph_builder.add_node("preview", self.preview)
+        graph_builder.add_node("edit_mode", self.edit_mode)
+        graph_builder.add_node("finalize", self.finalize)
 
         # Add edges
         graph_builder.add_edge(START, "initialize")
@@ -184,9 +197,11 @@ class GathererAgent:
         graph_builder.add_edge("ask_user", "increment_iteration")
         graph_builder.add_edge("increment_iteration", "wait_for_user")
         graph_builder.add_conditional_edges("wait_for_user", self.wait_for_user_branch)
-        graph_builder.add_edge("generate", "validate")  # generate → END để kết thúc workflow
+        graph_builder.add_edge("generate", "validate")
         graph_builder.add_conditional_edges("validate", self.validate_branch)
-        graph_builder.add_edge("preview", END)  # generate → END để kết thúc workflow
+        graph_builder.add_conditional_edges("preview", self.preview_branch)
+        graph_builder.add_edge("edit_mode", "validate")  # edit_mode → validate để re-validate
+        graph_builder.add_edge("finalize", END)
         checkpointer = MemorySaver()  # Khởi tạo MemorySaver
         return graph_builder.compile(
             checkpointer=checkpointer
@@ -725,12 +740,51 @@ Chỉ trả về tóm tắt, không thêm giải thích."""
 
         return state
 
-    # def edit_mode(self, state: State) -> State:
-    #     prompt = f"Áp dụng các thay đổi sau vào brief:\nThay đổi: {state.edit_changes}\nBrief Gốc: {state.brief}"
-    #     response = self.llm.invoke(prompt)
-    #     state.brief = response.content
-    #     state.edit_changes = ""
-    #     return state
+    def edit_mode(self, state: State) -> State:
+        """Áp dụng các thay đổi từ user vào brief và re-validate.
+
+        Theo sơ đồ:
+        - Input: edit_changes từ preview node
+        - Apply user changes vào brief
+        - Re-validate để đảm bảo brief vẫn hợp lệ
+        """
+        # Format brief
+        brief_text = json.dumps(state.brief, ensure_ascii=False, indent=2)
+
+        # Use prompt from template
+        prompt = EDIT_MODE_PROMPT.format(
+            brief=brief_text,
+            edit_changes=state.edit_changes
+        )
+
+        try:
+            # Use structured output with Pydantic model
+            structured_llm = self._llm("gpt-4.1", 0.3).with_structured_output(EditModeOutput)
+            edited_brief = structured_llm.invoke([HumanMessage(content=prompt)])
+
+            # Update brief
+            state.brief = edited_brief.model_dump()
+
+            # Clear edit_changes
+            state.edit_changes = ""
+
+            print("\n" + "="*60)
+            print("✏️ ĐÃ ÁP DỤNG THAY ĐỔI VÀO BRIEF")
+            print("="*60)
+            print(json.dumps(state.brief, ensure_ascii=False, indent=2))
+            print("="*60 + "\n")
+
+            # Print structured output
+            print("\n📊 Structured Output từ edit_mode:")
+            print(json.dumps(edited_brief.model_dump(), ensure_ascii=False, indent=2))
+            print()
+
+        except Exception as e:
+            print(f"❌ Lỗi khi áp dụng thay đổi: {e}")
+            # Không thay đổi brief nếu có lỗi
+            state.edit_changes = ""
+
+        return state
 
     def finalize(self, state: State) -> State:
         """Lưu brief và tạo summary cuối cùng với structured output.
@@ -829,6 +883,24 @@ Chỉ trả về tóm tắt, không thêm giải thích."""
         else:
             # Invalid or low confidence → retry_decision
             return "retry_decision"
+
+    def preview_branch(self, state: State) -> str:
+        """Quyết định luồng sau preview node theo sơ đồ.
+
+        Theo sơ đồ:
+        - Nếu user chọn "approve" → finalize
+        - Nếu user chọn "edit" → edit_mode
+        - Nếu user chọn "regenerate" → generate
+        """
+        if state.user_choice == "approve":
+            return "finalize"
+        elif state.user_choice == "edit":
+            return "edit_mode"
+        elif state.user_choice == "regenerate":
+            return "generate"
+        else:
+            # Default: finalize
+            return "finalize"
 
     def run(self, initial_context: str = "", thread_id: str | None = None) -> dict[str, Any]:
         """Chạy quy trình làm việc của gatherer agent.

@@ -87,12 +87,45 @@ tối ưu và tự động điều chỉnh kế hoạch khi có thay đổi.
 
 USP của TaskMaster Pro: AI cá nhân hóa sâu, học習 thói quen làm việc và đưa ra gợi ý proactive thay vì chỉ reminder thụ động."""
 
+    initial_context_complete1 = """Tôi muốn xây dựng một ứng dụng quản lý công việc tên là "TaskMaster Pro" sử dụng AI.
+
+**Mô tả sản phẩm:**
+TaskMaster Pro là ứng dụng quản lý công việc thông minh dành cho sinh viên và nhân viên văn phòng.
+Ứng dụng sử dụng AI để tự động phân loại, ưu tiên và gợi ý thời gian hoàn thành task dựa trên lịch trình cá nhân,
+deadline, và mức độ quan trọng. Điểm khác biệt là khả năng học习 thói quen làm việc của user để đưa ra đề xuất
+tối ưu và tự động điều chỉnh kế hoạch khi có thay đổi.
+
+**Đối tượng mục tiêu:**
+- Sinh viên đại học: cần quản lý deadline bài tập, project nhóm, ôn thi
+- Nhân viên văn phòng (25-35 tuổi): làm việc với nhiều task song song, cần tối ưu thời gian
+
+**Tính năng chính:**
+1. AI Auto-Priority: Tự động sắp xếp task theo độ ưu tiên dựa trên deadline, mức độ quan trọng, và thời gian cần thiết
+2. Smart Schedule: Gợi ý thời gian làm việc tối ưu dựa trên thói quen và năng suất cao nhất của user
+3. Task Breakdown: Tự động chia nhỏ task lớn thành các subtask cụ thể với timeline rõ ràng
+4. Focus Mode: Chế độ tập trung với Pomodoro timer, block notification và theo dõi năng suất
+5. Multi-platform Sync: Đồng bộ real-time trên web, mobile (iOS/Android), và desktop
+
+**Lợi ích:**
+- Tiết kiệm 30-40% thời gian lập kế hoạch công việc nhờ AI tự động phân loại và ưu tiên
+- Giảm stress do quên deadline: nhận thông báo thông minh và đề xuất điều chỉnh kế hoạch
+- Tăng năng suất làm việc 25% nhờ gợi ý thời gian làm việc hiệu quả nhất
+- Dễ dàng theo dõi tiến độ và phân tích năng suất qua dashboard trực quan
+
+**Đối thủ cạnh tranh:**
+- Todoist: mạnh về UI/UX nhưng thiếu tính năng AI phân tích thói quen
+- Notion: đa năng nhưng phức tạp, không tối ưu cho quản lý task đơn giản
+- Microsoft To Do: tích hợp tốt với Office 365 nhưng AI còn hạn chế
+
+USP của TaskMaster Pro: AI cá nhân hóa sâu, học習 thói quen làm việc và đưa ra gợi ý proactive thay vì chỉ reminder thụ động."""
+
+
     # Choose which context to test
     # Option 1: Regular context (score < 0.8) - will ask questions
     # Option 2: Unclear context (score ~ 0.1) - will ask many questions
     # Option 3: Complete context (score >= 0.8) - will generate immediately
 
-    selected_context = initial_context_complete  # Change this to test different scenarios
+    selected_context = initial_context_complete1  # Change this to test different scenarios
 
     print(f"\nNgữ cảnh ban đầu: {selected_context}")
     print_separator()
