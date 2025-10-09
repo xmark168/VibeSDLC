@@ -36,6 +36,13 @@ class FeatureRequirement(BaseModel):
     user_stories: list[str] = Field(description="Danh sách user stories cho tính năng này")
 
 
+class ValidateOutput(BaseModel):
+    is_valid: bool = Field(description="True nếu vision hợp lệ")
+    quality_score: float = Field(description="Điểm chất lượng 0.0-1.0", ge=0.0, le=1.0)
+    issues: list[str] = Field(description="Danh sách vấn đề cần sửa")
+    validation_message: str = Field(description="Thông điệp tóm tắt kết quả validation")
+
+
 class GenerateOutput(BaseModel):
     draft_vision_statement: str = Field(description="Tuyên bố tầm nhìn (solution-free)")
     experience_principles: list[str] = Field(description="3-5 nguyên tắc trải nghiệm")
@@ -120,14 +127,14 @@ class VisionAgent:
 
         graph_builder.add_node("initialize", self.initialize)
         graph_builder.add_node("generate", self.generate)
-        # graph_builder.add_node("validate", self.validate)
+        graph_builder.add_node("validate", self.validate)
         # graph_builder.add_node("preview", self.preview)
         # graph_builder.add_node("reason", self.reason)
         # graph_builder.add_node("finalize", self.finalize)
 
         graph_builder.add_edge(START, "initialize")
         graph_builder.add_edge("initialize", "generate")
-        # graph_builder.add_edge("generate", "validate")
+        graph_builder.add_edge("generate", "validate")
         # graph_builder.add_edge("validate", "preview")
         # graph_builder.add_conditional_edges("preview", self.preview_branch)
 
@@ -243,6 +250,76 @@ class VisionAgent:
             import traceback
             traceback.print_exc()
             state.status = "error_generating"
+
+        return state
+
+    def validate(self, state: VisionState) -> VisionState:
+        """Validate - Kiểm tra clarity, inspiration, solution-free, schema & completeness.
+
+        Theo sơ đồ:
+        - Kiểm tra vision statement: clarity & inspiration
+        - Kiểm tra solution-free (không nói về công nghệ cụ thể)
+        - Kiểm tra schema & completeness
+        - Tính quality_score
+        """
+        print("\n" + "="*80)
+        print("✅ VALIDATE - KIỂM TRA PRODUCT VISION")
+        print("="*80)
+
+        # Prepare vision draft for validation
+        vision_draft = {
+            "draft_vision_statement": state.draft_vision_statement,
+            "experience_principles": state.experience_principles,
+            "problem_summary": state.problem_summary,
+            "audience_segments": state.audience_segments,
+            "scope_capabilities": state.scope_capabilities,
+            "scope_non_goals": state.scope_non_goals,
+            "functional_requirements": state.functional_requirements,
+            "performance_requirements": state.performance_requirements,
+            "security_requirements": state.security_requirements,
+            "ux_requirements": state.ux_requirements,
+            "dependencies": state.dependencies,
+            "risks": state.risks,
+            "assumptions": state.assumptions,
+        }
+
+        vision_text = json.dumps(vision_draft, ensure_ascii=False, indent=2)
+        prompt = VALIDATE_PROMPT.format(vision_draft=vision_text)
+
+        try:
+            # Use structured output with Pydantic model
+            structured_llm = self._llm("gpt-4o", 0.1).with_structured_output(ValidateOutput)
+            validate_result = structured_llm.invoke([HumanMessage(content=prompt)])
+
+            # Update state
+            state.quality_score = validate_result.quality_score
+            state.validation_result = validate_result.validation_message
+
+            # Print validation result
+            print(f"\n✓ Validation completed")
+            print(f"   Valid: {'✅ Yes' if validate_result.is_valid else '❌ No'}")
+            print(f"   Quality Score: {validate_result.quality_score:.2f}")
+            print(f"   Message: {validate_result.validation_message}")
+
+            if validate_result.issues:
+                print(f"\n⚠️  Issues found ({len(validate_result.issues)}):")
+                for i, issue in enumerate(validate_result.issues, 1):
+                    print(f"   {i}. {issue}")
+
+            print("\n" + "="*80 + "\n")
+
+            # Print structured output
+            print("\n📊 Structured Output từ validate:")
+            print(json.dumps(validate_result.model_dump(), ensure_ascii=False, indent=2))
+            print()
+
+        except Exception as e:
+            print(f"❌ Lỗi khi validate vision: {e}")
+            import traceback
+            traceback.print_exc()
+            # Set low quality score on error
+            state.quality_score = 0.5
+            state.validation_result = f"Error during validation: {str(e)}"
 
         return state
 
