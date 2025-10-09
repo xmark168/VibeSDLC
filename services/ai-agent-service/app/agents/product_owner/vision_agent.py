@@ -36,6 +36,12 @@ class FeatureRequirement(BaseModel):
     user_stories: list[str] = Field(description="Danh sách user stories cho tính năng này")
 
 
+class FinalizeOutput(BaseModel):
+    product_name: str = Field(description="Tên sản phẩm")
+    vision_statement: str = Field(description="Vision statement cuối cùng")
+    summary_markdown: str = Field(description="Tóm tắt đầy đủ dạng markdown")
+
+
 class ValidateOutput(BaseModel):
     is_valid: bool = Field(description="True nếu vision hợp lệ")
     quality_score: float = Field(description="Điểm chất lượng 0.0-1.0", ge=0.0, le=1.0)
@@ -128,15 +134,17 @@ class VisionAgent:
         graph_builder.add_node("initialize", self.initialize)
         graph_builder.add_node("generate", self.generate)
         graph_builder.add_node("validate", self.validate)
-        # graph_builder.add_node("preview", self.preview)
-        # graph_builder.add_node("reason", self.reason)
-        # graph_builder.add_node("finalize", self.finalize)
+        graph_builder.add_node("preview", self.preview)
+        graph_builder.add_node("reason", self.reason)
+        graph_builder.add_node("finalize", self.finalize)
 
         graph_builder.add_edge(START, "initialize")
         graph_builder.add_edge("initialize", "generate")
         graph_builder.add_edge("generate", "validate")
-        # graph_builder.add_edge("validate", "preview")
-        # graph_builder.add_conditional_edges("preview", self.preview_branch)
+        graph_builder.add_edge("validate", "preview")
+        graph_builder.add_conditional_edges("preview", self.preview_branch)
+        graph_builder.add_edge("reason", "generate")  # Loop back to generate
+        graph_builder.add_edge("finalize", END)
 
         checkpointer = MemorySaver()
 
@@ -194,7 +202,11 @@ class VisionAgent:
         # Format product brief
         brief_text = json.dumps(state.product_brief, ensure_ascii=False, indent=2)
 
-        prompt = GENERATE_PROMPT.format(brief=brief_text)
+        # Check if there's edit feedback
+        if state.edit_reason:
+            prompt = GENERATE_PROMPT.format(brief=brief_text) + f"\n\n**EDIT FEEDBACK từ user:**\n{state.edit_reason}\n\nHãy tạo lại Product Vision với những điều chỉnh theo feedback trên."
+        else:
+            prompt = GENERATE_PROMPT.format(brief=brief_text)
 
         try:
             # Use structured output with Pydantic model
@@ -250,6 +262,23 @@ class VisionAgent:
             import traceback
             traceback.print_exc()
             state.status = "error_generating"
+
+        # Consolidate to product_vision dict for easy access
+        state.product_vision = {
+            "draft_vision_statement": state.draft_vision_statement,
+            "experience_principles": state.experience_principles,
+            "problem_summary": state.problem_summary,
+            "audience_segments": state.audience_segments,
+            "scope_capabilities": state.scope_capabilities,
+            "scope_non_goals": state.scope_non_goals,
+            "functional_requirements": state.functional_requirements,
+            "performance_requirements": state.performance_requirements,
+            "security_requirements": state.security_requirements,
+            "ux_requirements": state.ux_requirements,
+            "dependencies": state.dependencies,
+            "risks": state.risks,
+            "assumptions": state.assumptions,
+        }
 
         return state
 
@@ -320,6 +349,219 @@ class VisionAgent:
             # Set low quality score on error
             state.quality_score = 0.5
             state.validation_result = f"Error during validation: {str(e)}"
+
+        # Update product_vision with validation info
+        if state.product_vision:
+            state.product_vision["quality_score"] = state.quality_score
+            state.product_vision["validation_result"] = state.validation_result
+
+        return state
+
+    def preview(self, state: VisionState) -> VisionState:
+        """Preview - Hiển thị product vision cho user và hỏi: Approve / Edit.
+
+        Theo sơ đồ:
+        - Show đầy đủ vision cho user
+        - Hỏi user lựa chọn: Approve hoặc Edit
+        - Cập nhật user_choice vào state
+        """
+        print("\n" + "="*80)
+        print("📋 PREVIEW - XEM TRƯỚC PRODUCT VISION & PRD")
+        print("="*80)
+        print(f"🎯 Quality Score: {state.quality_score:.2f}")
+        print(f"📝 Validation: {state.validation_result}")
+        print("="*80)
+
+        # Display Vision
+        print("\n🌟 VISION STATEMENT:")
+        print(f"   {state.draft_vision_statement}")
+
+        print("\n💡 EXPERIENCE PRINCIPLES:")
+        for i, principle in enumerate(state.experience_principles, 1):
+            print(f"   {i}. {principle}")
+
+        print(f"\n🎯 PROBLEM SUMMARY:")
+        print(f"   {state.problem_summary}")
+
+        print(f"\n👥 AUDIENCE SEGMENTS ({len(state.audience_segments)}):")
+        for i, seg in enumerate(state.audience_segments, 1):
+            print(f"   {i}. {seg.get('name', 'N/A')}: {seg.get('description', 'N/A')[:80]}...")
+
+        print(f"\n⚙️  SCOPE - CAPABILITIES ({len(state.scope_capabilities)}):")
+        for i, cap in enumerate(state.scope_capabilities[:3], 1):  # Show first 3
+            print(f"   {i}. {cap[:80]}...")
+        if len(state.scope_capabilities) > 3:
+            print(f"   ... và {len(state.scope_capabilities) - 3} khả năng khác")
+
+        print(f"\n🚫 SCOPE - NON-GOALS ({len(state.scope_non_goals)}):")
+        for i, ng in enumerate(state.scope_non_goals[:3], 1):
+            print(f"   {i}. {ng[:80]}...")
+        if len(state.scope_non_goals) > 3:
+            print(f"   ... và {len(state.scope_non_goals) - 3} non-goals khác")
+
+        print(f"\n📋 FUNCTIONAL REQUIREMENTS ({len(state.functional_requirements)}):")
+        for i, req in enumerate(state.functional_requirements[:3], 1):
+            print(f"   {i}. {req.get('name', 'N/A')} ({req.get('priority', 'N/A')})")
+        if len(state.functional_requirements) > 3:
+            print(f"   ... và {len(state.functional_requirements) - 3} requirements khác")
+
+        print(f"\n⚡ PERFORMANCE REQUIREMENTS: {len(state.performance_requirements)}")
+        print(f"🔒 SECURITY REQUIREMENTS: {len(state.security_requirements)}")
+        print(f"🎨 UX REQUIREMENTS: {len(state.ux_requirements)}")
+
+        print(f"\n🔗 DEPENDENCIES: {len(state.dependencies)}")
+        print(f"⚠️  RISKS: {len(state.risks)}")
+        print(f"💭 ASSUMPTIONS: {len(state.assumptions)}")
+
+        print("\n" + "="*80)
+        print("💡 Bạn có thể:")
+        print("  1. Gõ 'approve' để phê duyệt vision")
+        print("  2. Gõ 'edit' để chỉnh sửa vision")
+        print("="*80 + "\n")
+
+        try:
+            user_choice = input("👤 Lựa chọn của bạn (approve/edit): ").strip().lower()
+
+            if user_choice not in ["approve", "edit"]:
+                print(f"⚠️  Lựa chọn không hợp lệ: '{user_choice}'. Mặc định chọn 'approve'.")
+                user_choice = "approve"
+
+            state.user_choice = user_choice
+
+            if user_choice == "approve":
+                print("✅ Bạn đã phê duyệt vision.")
+            elif user_choice == "edit":
+                print("📝 Chuyển sang chế độ chỉnh sửa...")
+
+        except Exception as e:
+            print(f"❌ Lỗi khi nhận input: {e}. Mặc định chọn 'approve'.")
+            state.user_choice = "approve"
+
+        return state
+
+    def reason(self, state: VisionState) -> VisionState:
+        """Reason - Thu thập lý do chỉnh sửa từ user.
+
+        Theo sơ đồ:
+        - User nhập lý do chỉnh sửa
+        - Lưu edit_reason vào state
+        - Sau đó quay lại generate để tạo lại với feedback
+        """
+        print("\n" + "="*80)
+        print("📝 REASON - THU THẬP LÝ DO CHỈNH SỬA")
+        print("="*80)
+        print("💡 Hãy mô tả những điểm bạn muốn chỉnh sửa trong Product Vision.")
+        print("   Ví dụ:")
+        print("   - Vision statement chưa đủ inspiring")
+        print("   - Thiếu functional requirement về authentication")
+        print("   - Performance requirement cần cụ thể hơn")
+        print("="*80 + "\n")
+
+        try:
+            edit_reason = input("👤 Lý do chỉnh sửa của bạn: ").strip()
+
+            if not edit_reason:
+                print("⚠️  Không nhận được lý do chỉnh sửa. Sử dụng lý do mặc định.")
+                edit_reason = "User requested edits without specific reason"
+
+            state.edit_reason = edit_reason
+            print(f"\n✓ Đã ghi nhận: {edit_reason}")
+
+            # Add to messages for context
+            state.messages.append(HumanMessage(content=f"Edit request: {edit_reason}"))
+
+            # Create structured output for logging
+            reason_output = {
+                "edit_reason": edit_reason,
+                "timestamp": "current",
+                "will_regenerate": True
+            }
+
+            print("\n📊 Structured Output từ reason:")
+            print(json.dumps(reason_output, ensure_ascii=False, indent=2))
+            print()
+
+            print("🔄 Sẽ tạo lại Product Vision với feedback của bạn...")
+
+        except Exception as e:
+            print(f"❌ Lỗi khi thu thập lý do: {e}")
+            state.edit_reason = "Error collecting edit reason"
+
+        return state
+
+    def preview_branch(self, state: VisionState) -> str:
+        """Quyết định luồng sau preview node.
+
+        Theo sơ đồ:
+        - Nếu user chọn "approve" → finalize
+        - Nếu user chọn "edit" → reason
+        """
+        if state.user_choice == "approve":
+            return "finalize"
+        elif state.user_choice == "edit":
+            return "reason"
+        else:
+            # Default: finalize
+            return "finalize"
+
+    def finalize(self, state: VisionState) -> VisionState:
+        """Finalize - Lưu product_vision.json và generate summary.md với structured output.
+
+        Theo sơ đồ:
+        - Lưu product_vision.json
+        - Generate summary.md (markdown format)
+        - Update status = "completed"
+        """
+        print("\n" + "="*80)
+        print("✅ FINALIZE - HOÀN TẤT PRODUCT VISION & PRD")
+        print("="*80)
+
+        # Prepare vision for finalization
+        vision_text = json.dumps(state.product_vision, ensure_ascii=False, indent=2)
+        prompt = FINALIZE_PROMPT.format(vision=vision_text)
+
+        try:
+            # Use structured output with Pydantic model
+            structured_llm = self._llm("gpt-4o", 0.3).with_structured_output(FinalizeOutput)
+            finalize_result = structured_llm.invoke([HumanMessage(content=prompt)])
+
+            # Update state
+            state.summary_markdown = finalize_result.summary_markdown
+            state.status = "completed"
+
+            # Update product_vision with final summary
+            state.product_vision["product_name"] = finalize_result.product_name
+            state.product_vision["vision_statement_final"] = finalize_result.vision_statement
+            state.product_vision["summary_markdown"] = finalize_result.summary_markdown
+
+            # Print final output
+            print(f"\n✓ Finalize completed")
+            print(f"   Product Name: {finalize_result.product_name}")
+            print(f"   Status: {state.status}")
+            print(f"\n📄 SUMMARY MARKDOWN:")
+            print("="*80)
+            print(finalize_result.summary_markdown)
+            print("="*80)
+
+            print("\n📊 Structured Output từ finalize:")
+            print(json.dumps(finalize_result.model_dump(), ensure_ascii=False, indent=2))
+            print()
+
+            # Print final product_vision JSON
+            print("\n💾 FINAL PRODUCT VISION JSON:")
+            print(json.dumps(state.product_vision, ensure_ascii=False, indent=2))
+            print()
+
+        except Exception as e:
+            print(f"❌ Lỗi khi finalize vision: {e}")
+            import traceback
+            traceback.print_exc()
+            state.status = "error_finalizing"
+            state.summary_markdown = "Error during finalization"
+
+        print("\n" + "="*80)
+        print(f"✅ HOÀN TẤT - Status: {state.status}")
+        print("="*80 + "\n")
 
         return state
 
