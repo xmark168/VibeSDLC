@@ -227,61 +227,6 @@ class GathererAgent:
         print(state)
         """Khởi tạo trạng thái."""
         return state
-    def collect_inputs(self, state: State) -> State:
-        """Thu thập thông tin bổ sung từ người dùng để điền vào các khoảng trống thông tin.
-
-        Theo sơ đồ:
-        - append last_user_input vào messages (nếu có input mới từ interrupt)
-        - update memory & context
-        - output structured JSON
-        """
-        # Check if there's new input
-        new_input_received = False
-        last_message_type = ""
-        last_message_preview = ""
-
-        if state.messages:
-            last_msg = state.messages[-1]
-            last_message_type = last_msg.type
-            last_message_preview = last_msg.content[:200] if hasattr(last_msg, 'content') else str(last_msg)[:200]
-            new_input_received = last_msg.type == "human"
-
-        # Generate context summary using LLM
-        if len(state.messages) > 0:
-            formatted_messages = "\n".join([
-                f"[{'User' if msg.type=='human' else 'Assistant'}]: {msg.content[:100]}"
-                for msg in state.messages[-5:]  # Last 5 messages for summary
-            ])
-
-            summary_prompt = f"""Tóm tắt ngắn gọn (1-2 câu) nội dung chính của cuộc hội thoại sau:
-
-{formatted_messages}
-
-Chỉ trả về tóm tắt, không thêm giải thích."""
-
-            try:
-                summary_response = self._llm("gpt-4.1", 0.1).invoke([HumanMessage(content=summary_prompt)])
-                context_summary = summary_response.content.strip()
-            except Exception:
-                context_summary = "Cuộc hội thoại đang trong quá trình thu thập thông tin"
-        else:
-            context_summary = "Chưa có thông tin được thu thập"
-
-        # Create structured output
-        output = CollectInputsOutput(
-            total_messages=len(state.messages),
-            new_input_received=new_input_received,
-            last_message_type=last_message_type or "none",
-            last_message_preview=last_message_preview or "Chưa có message",
-            context_summary=context_summary
-        )
-
-        # Print structured output
-        print(f"\n📥 Structured Output từ collect_inputs:")
-        print(json.dumps(output.model_dump(), ensure_ascii=False, indent=2))
-        print()
-
-        return state
     
     def evaluate_message(self, message: str) -> bool:
         """Đánh giá xem message cuối cùng của người dùng có unclear hay không bằng regex patterns."""
