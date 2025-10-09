@@ -178,7 +178,6 @@ class GathererAgent:
             )
             return llm
         except Exception:
-            # Avoid noisy context warnings when no active span
             return ""
 
     def _build_graph(self) -> StateGraph:

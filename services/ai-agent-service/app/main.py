@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from langfuse import Langfuse
 
 from agents.product_owner.gatherer_agent import GathererAgent
+from agents.product_owner.vision_agent import VisionAgent
 
 # Load environment variables
 load_dotenv()
@@ -252,11 +253,85 @@ USP của TaskMaster Pro: AI cá nhân hóa sâu, học習 thói quen làm việ
     return True
 
 
+def test_vision_agent():
+    """Test the vision agent with a sample product brief."""
+    print_separator()
+    print("Testing Vision Agent")
+    print_separator()
+
+    # Sample product brief (từ gatherer agent output)
+    product_brief = {
+        "product_name": "SmartTask",
+        "description": "SmartTask là ứng dụng quản lý công việc và dự án tích hợp AI, giúp người dùng tối ưu hóa hiệu suất cá nhân và nhóm. Ứng dụng cung cấp các tính năng như quản lý công việc, dự án, thông báo deadline, và chatbot AI hỗ trợ ra quyết định. Điểm khác biệt của SmartTask là sử dụng AI để tự động hóa quy trình, phân tích hiệu suất và đưa ra đề xuất thông minh, kết hợp với giao diện hiện đại, thân thiện, phù hợp cho sinh viên, nhân viên văn phòng và freelancer.",
+        "target_audience": [
+            "Sinh viên: Cần quản lý lịch học, bài tập, dự án nhóm để tối ưu thời gian học tập.",
+            "Nhân viên văn phòng: Quản lý công việc hàng ngày, dự án nhóm, giảm áp lực deadline.",
+            "Freelancer: Theo dõi nhiều dự án, khách hàng cùng lúc, cần hỗ trợ ra quyết định và nhắc nhở thông minh."
+        ],
+        "key_features": [
+            "Quản lý công việc: Tạo, sắp xếp, theo dõi tiến độ các nhiệm vụ cá nhân hoặc nhóm.",
+            "Quản lý dự án: Lập kế hoạch, phân chia công việc, theo dõi tiến độ dự án.",
+            "Thông báo deadline: Nhắc nhở thông minh về các mốc thời gian quan trọng, giúp không bỏ lỡ công việc.",
+            "Chatbot hỗ trợ: Chatbot AI tư vấn, trả lời câu hỏi, đề xuất giải pháp tối ưu cho công việc.",
+            "[Suy luận] Phân tích hiệu suất: AI đánh giá hiệu quả làm việc, đề xuất cải tiến dựa trên dữ liệu sử dụng."
+        ],
+        "benefits": [
+            "Tiết kiệm thời gian nhờ tự động hóa các tác vụ quản lý công việc và dự án.",
+            "Tăng hiệu suất làm việc thông qua nhắc nhở deadline và phân tích hiệu suất cá nhân.",
+            "Hỗ trợ ra quyết định nhanh chóng với chatbot AI tư vấn và đề xuất giải pháp.",
+            "Giảm căng thẳng quản lý nhờ giao diện trực quan, hiện đại, dễ sử dụng."
+        ],
+        "competitors": [
+            "Trello: Nền tảng quản lý dự án phổ biến với giao diện Kanban, mạnh về cộng tác nhóm nhưng chưa tích hợp sâu AI. SmartTask nổi bật nhờ tính năng AI hỗ trợ ra quyết định và giao diện hiện đại."
+        ],
+        "completeness_note": "Brief đã tổng hợp đầy đủ các phần chính dựa trên thông tin cung cấp. Một số chi tiết về công nghệ AI sử dụng và điểm khác biệt sâu hơn với đối thủ được suy luận hợp lý dựa trên ngữ cảnh. Nếu cần bổ sung chi tiết về workflow, AI engine hoặc trải nghiệm người dùng, cần thêm thông tin từ stakeholder."
+    }
+
+    # Generate session and user IDs
+    session_id = f"test-vision-{uuid.uuid4()}"
+    user_id = "test-user"
+
+    print(f"Session ID: {session_id}")
+    print(f"User ID: {user_id}")
+
+    # Initialize vision agent
+    print("\nInitializing Vision Agent...")
+    agent = VisionAgent(session_id=session_id, user_id=user_id)
+    print("Agent initialized successfully")
+
+    print_separator()
+    print("Running Vision Agent workflow...\n")
+
+    try:
+        result = agent.run(product_brief=product_brief)
+
+        print_separator()
+        print("Workflow completed successfully!")
+        print_separator()
+
+        # Print result
+        print("\n📊 VISION AGENT RESULT:")
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+
+    except Exception as e:
+        print(f"\nError during execution: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+    finally:
+        langfuse.flush()
+
+    print_separator()
+    return True
+
+
 def main():
     """Main function."""
     print("\nProduct Owner Agent Test Suite")
 
-    success = test_gatherer_agent()
+    # Test vision agent instead of gatherer
+    success = test_vision_agent()
 
     if success:
         print("\nAll tests completed successfully!")
