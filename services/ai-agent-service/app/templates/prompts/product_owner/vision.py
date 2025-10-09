@@ -50,6 +50,11 @@ Dựa trên Product Brief, hãy tạo Product Vision bao gồm:
       - description: Mô tả chi tiết
       - priority: Must-have / Should-have / Nice-to-have
       - user_stories: Danh sách user stories (As a [role], I want [feature], so that [benefit])
+      - acceptance_criteria: Tiêu chí chấp nhận cụ thể (3-5 criteria cho mỗi tính năng)
+        * Phải cụ thể, đo lường được, có thể test
+        * Ví dụ: "User có thể tạo task với title, description, due date"
+        * "Hiển thị error message nếu title trống"
+        * "Task được lưu và đồng bộ trong vòng 2 giây"
 
 11. **Non-Functional Requirements**:
     - **Performance Requirements**: Yêu cầu về hiệu năng (response time, throughput, etc.)
@@ -60,6 +65,10 @@ Dựa trên Product Brief, hãy tạo Product Vision bao gồm:
 - Vision statement phải solution-free (không nói về công nghệ/giải pháp cụ thể)
 - Functional requirements phải cụ thể, đo lường được
 - User stories phải follow format: "As a [role], I want [feature], so that [benefit]"
+- Acceptance criteria phải:
+  * Cụ thể, đo lường được, có thể test
+  * Định nghĩa điều kiện để tính năng "đúng yêu cầu nghiệp vụ"
+  * Mỗi tính năng có 3-5 acceptance criteria
 - Ưu tiên rõ ràng: Must-have (MVP), Should-have (V1.1), Nice-to-have (Future)
 - Rõ ràng, súc tích, truyền cảm hứng
 """

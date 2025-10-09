@@ -34,6 +34,7 @@ class FeatureRequirement(BaseModel):
     description: str = Field(description="Mô tả chi tiết tính năng")
     priority: str = Field(description="Độ ưu tiên: Must-have, Should-have, Nice-to-have")
     user_stories: list[str] = Field(description="Danh sách user stories cho tính năng này")
+    acceptance_criteria: list[str] = Field(description="Tiêu chí chấp nhận - điều kiện cụ thể để tính năng được coi là hoàn thành đúng yêu cầu nghiệp vụ")
 
 
 class FinalizeOutput(BaseModel):
@@ -594,5 +595,25 @@ class VisionAgent:
             config=config,
         ):
             final_state = output
+
+        # Convert messages to serializable format before returning
+        if final_state:
+            # Extract the actual state from the output (it's wrapped in a node key)
+            for node_name, state_data in final_state.items():
+                if isinstance(state_data, dict) and "messages" in state_data:
+                    # Convert BaseMessage objects to dicts
+                    serializable_messages = []
+                    for msg in state_data.get("messages", []):
+                        if hasattr(msg, "dict"):  # Pydantic v1
+                            serializable_messages.append(msg.dict())
+                        elif hasattr(msg, "model_dump"):  # Pydantic v2
+                            serializable_messages.append(msg.model_dump())
+                        else:
+                            # Fallback for plain objects
+                            serializable_messages.append({
+                                "type": msg.__class__.__name__,
+                                "content": str(msg.content) if hasattr(msg, "content") else str(msg)
+                            })
+                    state_data["messages"] = serializable_messages
 
         return final_state or {}
