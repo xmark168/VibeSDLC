@@ -73,8 +73,9 @@ Tạo Product Backlog Items (Epic, User Story, Task) theo template đã định 
    - **Task**:
      * story_points = null
      * estimated_hours: 0.5-200 (BẮT BUỘC)
-     * task_type: Feature Development/Bug Fix/Testing/etc (BẮT BUỘC)
+     * task_type: "Development" (BẮT BUỘC - CHỈ tạo Development tasks)
      * acceptance_criteria: 1-5 items
+     * **LƯU Ý**: CHỈ tạo Development tasks cho DEV role. KHÔNG tạo Testing tasks (sẽ do agent khác xử lý)
 
 6. **Acceptance Criteria Format**:
    - Given-When-Then HOẶC checklist rõ ràng
@@ -101,13 +102,16 @@ Tạo Product Backlog Items (Epic, User Story, Task) theo template đã định 
 **Tạo backlog theo thứ tự:**
 1. Tạo Epics trước (3-5 epics)
 2. Tạo User Stories cho mỗi Epic (2-3 stories/epic)
-3. Tạo Tasks cho mỗi User Story (1-2 tasks/story)
+3. Tạo Development Tasks cho mỗi User Story (1-2 tasks/story):
+   - CHỈ tạo tasks với task_type = "Development"
+   - Tasks này dành cho DEV role để implement features
+   - KHÔNG tạo Testing tasks (sẽ do QA/Test Agent tạo riêng sau)
 
 **Lưu ý:**
 - Tập trung vào MVP features (High priority từ vision)
 - Mỗi User Story phải có giá trị độc lập (có thể ship riêng)
-- Task phải cụ thể, actionable
-- Không tạo quá chi tiết, đủ để team hiểu và estimate
+- Development task phải cụ thể, actionable, mô tả rõ cần code gì
+- Không tạo quá chi tiết, đủ để DEV team hiểu và estimate
 
 **Output JSON Format:**
 {{{{
@@ -156,16 +160,16 @@ Tạo Product Backlog Items (Epic, User Story, Task) theo template đã định 
       "id": "TASK-001",
       "type": "Task",
       "parent_id": "US-001",
-      "title": "Create login API endpoint",
-      "description": "...",
+      "title": "Implement login API endpoint",
+      "description": "Create REST API endpoint for user authentication with JWT token generation",
       "priority": "Not Set",
       "status": "Backlog",
       "story_points": null,
       "estimated_hours": 8.0,
-      "acceptance_criteria": ["API endpoint works", "Tests pass"],
+      "acceptance_criteria": ["API endpoint accepts email/password", "JWT token generated on success", "Error handling implemented"],
       "dependencies": [],
-      "labels": ["backend"],
-      "task_type": "Feature Development",
+      "labels": ["backend", "authentication"],
+      "task_type": "Development",
       "business_value": null,
       "wsjf_inputs": {{{{}}}}
     }}}}
