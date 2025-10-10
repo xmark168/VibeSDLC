@@ -506,13 +506,11 @@ def test_backlog_agent():
                 epics = [i for i in items if i.get('type') == 'Epic']
                 stories = [i for i in items if i.get('type') == 'User Story']
                 tasks = [i for i in items if i.get('type') == 'Task']
-                subtasks = [i for i in items if i.get('type') == 'Sub-task']
 
                 print(f"\n📋 BACKLOG ITEMS:")
                 print(f"   - Epics: {len(epics)}")
                 print(f"   - User Stories: {len(stories)}")
                 print(f"   - Tasks: {len(tasks)}")
-                print(f"   - Sub-tasks: {len(subtasks)}")
                 print(f"   Total: {len(items)}")
 
             # Print product backlog if finalized

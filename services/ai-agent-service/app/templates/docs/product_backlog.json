@@ -16,18 +16,8 @@
         },
         "version": {
           "type": "string",
-          "description": "Phiên bản backlog, ví dụ: 'v1.0', 'v2.1-beta'.",
-          "pattern": "^v?\\d+\\.\\d+(\\.\\d+)?(-[a-zA-Z0-9]+)?$"
-        },
-        "created_at": {
-          "type": "string",
-          "description": "Thời điểm tạo backlog, format ISO 8601.",
-          "format": "date-time"
-        },
-        "last_updated": {
-          "type": "string",
-          "description": "Thời điểm cập nhật lần cuối, format ISO 8601.",
-          "format": "date-time"
+          "description": "Phiên bản backlog, ví dụ: 'v1.0', 'v2.1'.",
+          "default": "v1.0"
         },
         "total_items": {
           "type": "integer",
@@ -38,220 +28,143 @@
           "type": "number",
           "description": "Tổng story points (tính từ user stories).",
           "minimum": 0
-        },
-        "total_estimated_hours": {
-          "type": "number",
-          "description": "Tổng số giờ ước lượng (tính từ tasks).",
-          "minimum": 0
         }
       },
-      "required": ["product_name", "version", "created_at", "total_items"],
+      "required": ["product_name", "version", "total_items"],
       "additionalProperties": false
     },
     "items": {
       "type": "array",
-      "description": "Danh sách tất cả backlog items (Epic, User Story, Task, Sub-task) trong một flat list. Hierarchy được thể hiện qua parent_id.",
+      "description": "Danh sách tất cả backlog items (Epic, User Story, Task) trong một flat list. Hierarchy được thể hiện qua parent_id.",
       "items": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
-            "description": "ID duy nhất của item, ví dụ: 'EPIC-001', 'US-001', 'TASK-001', 'BUG-001', 'SUBTASK-001'.",
-            "pattern": "^(EPIC|US|TASK|BUG|TECH|DOC|INFRA|SUBTASK)-[A-Z0-9]+$"
+            "description": "ID duy nhất của item. Format: EPIC-001, US-001, TASK-001 (CHỮ HOA, số 3 chữ số).",
+            "pattern": "^(EPIC|US|TASK)-\\d{3}$"
           },
           "type": {
             "type": "string",
             "description": "Loại backlog item.",
-            "enum": ["Epic", "User Story", "Task", "Sub-task"]
+            "enum": ["Epic", "User Story", "Task"]
           },
           "parent_id": {
-            "type": "string",
-            "description": "ID của item cha (null nếu là root level). Epic không có parent. User Story có parent là Epic hoặc null. Task có parent là User Story hoặc null. Sub-task có parent là Task.",
-            "pattern": "^(EPIC|US|TASK|BUG|TECH|DOC|INFRA)-[A-Z0-9]+$"
+            "type": ["string", "null"],
+            "description": "ID của item cha. Epic: null. User Story: EPIC-xxx hoặc null. Task: US-xxx.",
+            "pattern": "^(EPIC|US|TASK)-\\d{3}$"
           },
           "title": {
             "type": "string",
-            "description": "Tiêu đề của item. User Story nên theo format: 'As a [user], I want to [action] so that [benefit]'.",
-            "minLength": 5,
+            "description": "Tiêu đề của item. User Story PHẢI theo format: 'As a [user], I want to [action] so that [benefit]'.",
+            "minLength": 10,
             "maxLength": 200
           },
           "description": {
             "type": "string",
             "description": "Mô tả chi tiết về item.",
-            "minLength": 10,
-            "maxLength": 2000
+            "minLength": 20,
+            "maxLength": 1000
           },
           "priority": {
             "type": "string",
-            "description": "Mức độ ưu tiên theo MoSCoW method (sẽ được set bởi Priority Agent). Default: 'Not Set'.",
-            "enum": ["High", "Medium", "Low"],
+            "description": "Mức độ ưu tiên (sẽ được set bởi Priority Agent). Default: 'Not Set'.",
+            "enum": ["High", "Medium", "Low", "Not Set"],
             "default": "Not Set"
           },
           "status": {
             "type": "string",
             "description": "Trạng thái hiện tại của item.",
-            "enum": ["Backlog", "Todo", "In Progress", "Done"]
+            "enum": ["Backlog", "Ready", "In Progress", "Done"],
+            "default": "Backlog"
           },
           "story_points": {
-            "type": "integer",
-            "description": "Story points (chỉ áp dụng cho User Story). Fibonacci sequence: 1, 2, 3, 5, 8, 13, 21.",
-            "enum": [1, 2, 3, 5, 8, 13, 21]
+            "type": ["integer", "null"],
+            "description": "Story points - CHỈ cho User Story. Fibonacci: 1, 2, 3, 5, 8, 13, 21. Epic/Task để null.",
+            "enum": [1, 2, 3, 5, 8, 13, 21, null]
           },
           "estimated_hours": {
-            "type": "number",
-            "description": "Ước lượng số giờ (áp dụng cho Task và Sub-task).",
-            "minimum": 0.25,
+            "type": ["number", "null"],
+            "description": "Ước lượng số giờ - CHỈ cho Task. Epic/User Story để null.",
+            "minimum": 0.5,
             "maximum": 200
-          },
-          "actual_hours": {
-            "type": "number",
-            "description": "Số giờ thực tế đã làm (optional).",
-            "minimum": 0
           },
           "acceptance_criteria": {
             "type": "array",
-            "description": "Danh sách tiêu chí chấp nhận (thường dùng cho User Story và Task). Format: Given-When-Then hoặc checklist.",
+            "description": "Tiêu chí chấp nhận (cho User Story và Task). Format: Given-When-Then hoặc checklist rõ ràng.",
             "items": {
               "type": "string",
-              "minLength": 10,
-              "maxLength": 500
+              "minLength": 15,
+              "maxLength": 300
             },
-            "minItems": 0,
-            "maxItems": 15
-          },
-          "assigned_to": {
-            "type": "string",
-            "description": "Người được assign item này.",
-            "maxLength": 100
+            "minItems": 1,
+            "maxItems": 10
           },
           "dependencies": {
             "type": "array",
-            "description": "Danh sách IDs của items mà item này phụ thuộc vào (phải hoàn thành trước).",
+            "description": "Danh sách IDs của items phụ thuộc (phải hoàn thành trước).",
             "items": {
               "type": "string",
-              "pattern": "^(EPIC|US|TASK|BUG|TECH|DOC|INFRA|SUBTASK)-[A-Z0-9]+$"
+              "pattern": "^(EPIC|US|TASK)-\\d{3}$"
             },
-            "minItems": 0,
-            "maxItems": 20
+            "default": []
           },
           "labels": {
             "type": "array",
-            "description": "Danh sách labels/tags để phân loại theo business domain hoặc feature area, ví dụ: ['authentication', 'payment', 'user-management', 'reporting', 'notification']. KHÔNG bao gồm tech stack.",
+            "description": "Labels phân loại business domain: authentication, payment, notification, etc. KHÔNG dùng tech stack.",
             "items": {
               "type": "string",
-              "minLength": 2,
-              "maxLength": 50
+              "minLength": 3,
+              "maxLength": 30
             },
-            "minItems": 0,
-            "maxItems": 15
+            "default": []
           },
           "task_type": {
-            "type": "string",
-            "description": "Loại task theo business perspective (chỉ áp dụng cho type='Task').",
-            "enum": ["Feature Development", "Bug Fix", "Testing", "UX Design", "Content", "Research", "Documentation", "Performance", "Security", "Accessibility"]
-          },
-          "severity": {
-            "type": "string",
-            "description": "Mức độ nghiêm trọng (đặc biệt cho Bug Fix tasks).",
-            "enum": ["Blocker", "Critical", "Major", "Minor", "Trivial"]
+            "type": ["string", "null"],
+            "description": "Loại task - CHỈ cho type='Task'. Để null với Epic/User Story.",
+            "enum": ["Feature Development", "Bug Fix", "Testing", "Documentation", "Performance", "Security", null]
           },
           "business_value": {
             "type": "string",
-            "description": "Giá trị kinh doanh (thường dùng cho Epic và User Story). Mô tả impact đối với users hoặc business metrics.",
-            "maxLength": 1000
+            "description": "Giá trị kinh doanh (cho Epic và User Story). Mô tả impact với users/business.",
+            "maxLength": 500
           },
-          "functional_requirements": {
-            "type": "array",
-            "description": "Yêu cầu chức năng (functional requirements) mô tả WHAT cần làm, KHÔNG nói về HOW hoặc tech stack. Ví dụ: 'System must validate user email', 'User can reset password via email link'.",
-            "items": {
-              "type": "string",
-              "minLength": 10,
-              "maxLength": 500
+          "wsjf_inputs": {
+            "type": "object",
+            "description": "WSJF inputs để tính priority (sẽ được fill bởi Priority Agent). Để empty object nếu chưa có.",
+            "properties": {
+              "business_value": {
+                "type": "integer",
+                "description": "Giá trị kinh doanh (1-10)",
+                "minimum": 1,
+                "maximum": 10
+              },
+              "time_criticality": {
+                "type": "integer",
+                "description": "Độ cấp thiết về thời gian (1-10)",
+                "minimum": 1,
+                "maximum": 10
+              },
+              "risk_reduction": {
+                "type": "integer",
+                "description": "Giảm rủi ro (1-10)",
+                "minimum": 1,
+                "maximum": 10
+              },
+              "job_size": {
+                "type": "integer",
+                "description": "Kích thước công việc (1-13, Fibonacci)",
+                "enum": [1, 2, 3, 5, 8, 13]
+              }
             },
-            "minItems": 0,
-            "maxItems": 20
-          },
-          "non_functional_requirements": {
-            "type": "array",
-            "description": "Yêu cầu phi chức năng về performance, security, usability (KHÔNG nói về tech stack cụ thể). Ví dụ: 'Response time < 200ms', 'Support 10,000 concurrent users', 'Data must be encrypted at rest'.",
-            "items": {
-              "type": "string",
-              "minLength": 10,
-              "maxLength": 500
-            },
-            "minItems": 0,
-            "maxItems": 15
-          },
-          "constraints": {
-            "type": "array",
-            "description": "Các ràng buộc về business, legal, compliance (KHÔNG phải tech constraints). Ví dụ: 'Must comply with GDPR', 'Users must be 18+', 'Available in US market only'.",
-            "items": {
-              "type": "string",
-              "minLength": 10,
-              "maxLength": 300
-            },
-            "minItems": 0,
-            "maxItems": 10
-          },
-          "notes": {
-            "type": "string",
-            "description": "Ghi chú chung, comments, discussion points.",
-            "maxLength": 2000
-          },
-          "created_at": {
-            "type": "string",
-            "description": "Thời điểm tạo item, format ISO 8601.",
-            "format": "date-time"
-          },
-          "updated_at": {
-            "type": "string",
-            "description": "Thời điểm cập nhật item, format ISO 8601.",
-            "format": "date-time"
-          },
-          "sprint": {
-            "type": "string",
-            "description": "Sprint mà item này được assign vào (sẽ được set bởi Sprint Planning Agent).",
-            "maxLength": 50
-          },
-          "order": {
-            "type": "integer",
-            "description": "Thứ tự ưu tiên trong backlog (sẽ được set bởi Priority Agent dựa trên business value, risk, dependencies). Số nhỏ hơn = ưu tiên cao hơn. Default: 999 (chưa được prioritize).",
-            "minimum": 0,
-            "default": 999
+            "default": {}
           }
         },
         "required": ["id", "type", "title", "description", "status"],
         "additionalProperties": false
       },
-      "minItems": 0,
-      "maxItems": 500
-    },
-    "backlog_notes": {
-      "type": "string",
-      "description": "Ghi chú chung về backlog: assumptions, decisions made, known issues, items cần clarify thêm.",
-      "maxLength": 3000
-    },
-    "definition_of_ready": {
-      "type": "array",
-      "description": "Tiêu chí để item (đặc biệt User Story) được coi là 'Ready' cho Sprint.",
-      "items": {
-        "type": "string",
-        "minLength": 10,
-        "maxLength": 300
-      },
-      "minItems": 0,
-      "maxItems": 15
-    },
-    "definition_of_done": {
-      "type": "array",
-      "description": "Tiêu chí để item được coi là 'Done'.",
-      "items": {
-        "type": "string",
-        "minLength": 10,
-        "maxLength": 300
-      },
-      "minItems": 0,
-      "maxItems": 15
+      "minItems": 1,
+      "maxItems": 300
     }
   },
   "required": ["metadata", "items"],

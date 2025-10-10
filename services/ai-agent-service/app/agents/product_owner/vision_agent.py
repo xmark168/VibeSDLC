@@ -40,7 +40,6 @@ class FeatureRequirement(BaseModel):
 class FinalizeOutput(BaseModel):
     product_name: str = Field(description="Tên sản phẩm")
     vision_statement: str = Field(description="Vision statement cuối cùng")
-    summary_markdown: str = Field(description="Tóm tắt đầy đủ dạng markdown")
 
 
 class ValidateOutput(BaseModel):
@@ -104,7 +103,6 @@ class VisionState(BaseModel):
 
     # Final output
     product_vision: dict = Field(default_factory=dict)
-    summary_markdown: str = ""
     status: str = "initial"
 
 class VisionAgent:
@@ -527,22 +525,17 @@ class VisionAgent:
             finalize_result = structured_llm.invoke([HumanMessage(content=prompt)])
 
             # Update state
-            state.summary_markdown = finalize_result.summary_markdown
             state.status = "completed"
 
-            # Update product_vision with final summary
+            # Update product_vision with final info
             state.product_vision["product_name"] = finalize_result.product_name
             state.product_vision["vision_statement_final"] = finalize_result.vision_statement
-            state.product_vision["summary_markdown"] = finalize_result.summary_markdown
 
             # Print final output
             print(f"\n✓ Finalize completed")
             print(f"   Product Name: {finalize_result.product_name}")
+            print(f"   Vision Statement: {finalize_result.vision_statement}")
             print(f"   Status: {state.status}")
-            print(f"\n📄 SUMMARY MARKDOWN:")
-            print("="*80)
-            print(finalize_result.summary_markdown)
-            print("="*80)
 
             print("\n📊 Structured Output từ finalize:")
             print(json.dumps(finalize_result.model_dump(), ensure_ascii=False, indent=2))
@@ -558,7 +551,6 @@ class VisionAgent:
             import traceback
             traceback.print_exc()
             state.status = "error_finalizing"
-            state.summary_markdown = "Error during finalization"
 
         print("\n" + "="*80)
         print(f"✅ HOÀN TẤT - Status: {state.status}")

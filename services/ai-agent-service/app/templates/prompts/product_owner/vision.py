@@ -127,60 +127,11 @@ FINALIZE_PROMPT = """Bạn là Product Owner, nhiệm vụ là finalize Product 
 {vision}
 
 **Nhiệm vụ:**
-1. Lưu product_vision.json (dict format)
-2. Generate summary.md (markdown format đầy đủ, đẹp mắt)
+1. Extract product_name từ vision
+2. Extract vision_statement final (có thể refine lại cho hay hơn)
 
-**Summary.md format:**
-```markdown
-# Product Vision: [Product Name]
-
-## Vision Statement
-[Vision statement]
-
-## Experience Principles
-1. [Principle 1]
-2. [Principle 2]
-...
-
-## Problem We're Solving
-[Problem summary]
-
-## Target Audience
-### [Segment 1 name]
-- **Description**: [description]
-- **Needs**: [needs]
-- **Pain Points**: [pain points]
-
-...
-
-## Scope
-### What We're Building (Capabilities)
-- [Capability 1]
-- [Capability 2]
-...
-
-### What We're NOT Building (Non-Goals)
-- [Non-goal 1]
-- [Non-goal 2]
-...
-
-## Dependencies
-- [Dependency 1]
-- [Dependency 2]
-...
-
-## Risks
-- [Risk 1]
-- [Risk 2]
-...
-
-## Assumptions
-- [Assumption 1]
-- [Assumption 2]
-...
-```
-
+**Output:**
 Trả về:
-- product_vision: dict (JSON format)
-- summary_markdown: string (markdown format)
+- product_name: str (Tên sản phẩm)
+- vision_statement: str (Vision statement cuối cùng, đã được polish)
 """
