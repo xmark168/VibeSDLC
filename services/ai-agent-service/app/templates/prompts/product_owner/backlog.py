@@ -13,7 +13,6 @@ INITIALIZE_PROMPT = """Phân tích Product Vision để chuẩn bị tạo Produ
    - >= 0.8: ready
    - 0.5-0.8: partial
    - < 0.5: not ready
-5. Ước lượng số items: epics (3-7), user_stories (15-30), tasks (30-100)
 
 **Output:**
 - validation_status: "complete"/"incomplete"/"missing_critical"
@@ -21,7 +20,6 @@ INITIALIZE_PROMPT = """Phân tích Product Vision để chuẩn bị tạo Produ
 - missing_info: list[str]
 - key_capabilities: list[str]
 - dependency_map: dict[str, list[str]]
-- estimated_items: dict
 """
 
 GENERATE_PROMPT = """Bạn là Product Owner chuyên nghiệp, nhiệm vụ là tạo Product Backlog Items từ Product Vision.
@@ -116,10 +114,7 @@ Tạo Product Backlog Items (Epic, User Story, Task) theo template đã định 
 **Output JSON Format:**
 {{{{
   "metadata": {{{{
-    "product_name": "...",
-    "version": "v1.0",
-    "total_items": 0,
-    "total_story_points": 0
+    "product_name": "..."
   }}}},
   "items": [
     {{{{
