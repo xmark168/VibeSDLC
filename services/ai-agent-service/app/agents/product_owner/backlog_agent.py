@@ -62,7 +62,7 @@ class BacklogItem(BaseModel):
     type: Literal["Epic", "User Story", "Task"] = Field(description="Loại item")
     parent_id: Optional[str] = Field(default=None, description="ID của parent item")
     title: str = Field(description="Tiêu đề item")
-    description: str = Field(description="Mô tả chi tiết")
+    description: str = Field(default="", description="Mô tả chi tiết")
     priority: Literal["High", "Medium", "Low", "Not Set"] = Field(default="Not Set")
     status: Literal["Backlog", "Ready", "In Progress", "Done"] = Field(default="Backlog")
     story_points: Optional[int] = Field(default=None, description="CHỈ cho User Story")
@@ -110,7 +110,6 @@ class BacklogState(BaseModel):
 
     # Final output
     product_backlog: dict = Field(default_factory=dict)
-    summary_markdown: str = ""
     status: str = "initial"
 
 

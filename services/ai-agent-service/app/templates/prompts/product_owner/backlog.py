@@ -51,7 +51,12 @@ Tạo Product Backlog Items (Epic, User Story, Task) theo template đã định 
    - Title: "As a [user/role], I want to [action] so that [benefit]"
    - Ví dụ: "As a user, I want to login with email so that I can access my account"
 
-4. **Fields theo Type**:
+4. **Description Field** (BẮT BUỘC cho TẤT CẢ items):
+   - Epic: Mô tả chi tiết về epic này (20-100 từ)
+   - User Story: Mô tả context, background (10-50 từ)
+   - Task: Mô tả technical approach, implementation details (10-50 từ)
+
+5. **Fields theo Type**:
    - **Epic**:
      * story_points = null
      * estimated_hours = null
@@ -71,27 +76,27 @@ Tạo Product Backlog Items (Epic, User Story, Task) theo template đã định 
      * task_type: Feature Development/Bug Fix/Testing/etc (BẮT BUỘC)
      * acceptance_criteria: 1-5 items
 
-5. **Acceptance Criteria Format**:
+6. **Acceptance Criteria Format**:
    - Given-When-Then HOẶC checklist rõ ràng
    - Cụ thể, đo lường được, có thể test
    - Ví dụ Given-When-Then: "Given user is on login page, When user enters valid credentials, Then user is redirected to dashboard"
    - Ví dụ checklist: "User can view all fields: email, password, remember me checkbox"
 
-6. **Dependencies**:
+7. **Dependencies**:
    - Dựa trên dependency_map từ initialize
    - Chỉ set dependency khi item THỰC SỰ phụ thuộc vào item khác
    - Ví dụ: US-002 (User Profile) depends on US-001 (Authentication)
 
-7. **WSJF Inputs**:
+8. **WSJF Inputs**:
    - Để empty object {{}} cho tất cả items (Priority Agent sẽ fill sau)
 
-8. **Labels**:
+9. **Labels**:
    - Phân loại theo business domain: authentication, payment, user-management, etc
    - KHÔNG dùng tech stack (không dùng react, nodejs, etc)
 
-9. **Priority & Status**:
-   - priority: "Not Set" (mặc định)
-   - status: "Backlog" (mặc định)
+10. **Priority & Status**:
+    - priority: "Not Set" (mặc định)
+    - status: "Backlog" (mặc định)
 
 **Tạo backlog theo thứ tự:**
 1. Tạo Epics trước (3-7 epics)
@@ -208,49 +213,13 @@ FINALIZE_PROMPT = """Bạn là Product Owner, nhiệm vụ là finalize Product 
 **Nhiệm vụ:**
 1. Validate lần cuối backlog structure
 2. Tính toán metadata:
-   - total_items
-   - total_story_points (sum từ User Stories)
+   - total_items: tổng số items
+   - total_story_points: sum story points từ tất cả User Stories
 3. Export backlog sang format cuối cùng
-4. Generate summary report
-
-**Summary Report Format (Markdown):**
-```markdown
-# Product Backlog Summary: [Product Name]
-
-## Overview
-- **Total Items**: [total_items]
-- **Total Story Points**: [total_story_points]
-- **Epics**: [count]
-- **User Stories**: [count]
-- **Tasks**: [count]
-
-## Epics Breakdown
-### [Epic ID] - [Epic Title]
-- **Business Value**: [value]
-- **User Stories**: [count]
-- **Total Story Points**: [points]
-
-[Repeat for each epic...]
-
-## Priority Distribution
-- **High Priority**: [count] items
-- **Medium Priority**: [count] items
-- **Low Priority**: [count] items
-- **Not Set**: [count] items
-
-## Dependencies Overview
-- Total dependency links: [count]
-- Critical path items: [list]
-
-## Next Steps
-1. Priority Agent sẽ set WSJF scores và priority
-2. Sprint Planning Agent sẽ assign items vào sprints
-3. Team sẽ estimate tasks chi tiết hơn
-```
 
 **Output:**
-Trả về:
-- product_backlog: dict (final JSON)
-- summary_markdown: str (summary report)
+Trả về final product_backlog dict với:
+- metadata: {product_name, version, total_items, total_story_points}
+- items: list of all backlog items
 - export_status: "success" / "failed"
 """
