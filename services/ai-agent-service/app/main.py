@@ -11,6 +11,7 @@ from langfuse import Langfuse
 
 from agents.product_owner.gatherer_agent import GathererAgent
 from agents.product_owner.vision_agent import VisionAgent
+from agents.product_owner.backlog_agent import BacklogAgent
 
 # Load environment variables
 load_dotenv()
@@ -326,12 +327,225 @@ def test_vision_agent():
     return True
 
 
+def test_backlog_agent():
+    """Test the backlog agent with Product Vision input."""
+    print_separator()
+    print("Testing Backlog Agent")
+    print_separator()
+
+    # Sample product vision (theo format bạn cung cấp)
+    product_vision = {
+        "draft_vision_statement": "Tạo điều kiện để mọi người đạt được hiệu suất tối ưu trong công việc và dự án thông qua sự hỗ trợ thông minh và trải nghiệm người dùng vượt trội.",
+        "experience_principles": [
+            "Đơn giản hóa quy trình quản lý công việc.",
+            "Tăng cường hiệu quả thông qua tự động hóa.",
+            "Cung cấp thông tin hữu ích một cách kịp thời.",
+            "Đảm bảo tính bảo mật và riêng tư của dữ liệu.",
+            "Tạo cảm giác thân thiện và dễ tiếp cận cho người dùng."
+        ],
+        "problem_summary": "Người dùng gặp khó khăn trong việc quản lý công việc và dự án một cách hiệu quả, dẫn đến giảm năng suất và gia tăng căng thẳng. Cần một giải pháp tích hợp AI để tối ưu hóa quy trình và cung cấp hỗ trợ thông minh.",
+        "audience_segments": [
+            {
+                "name": "Sinh viên",
+                "description": "Sinh viên cần quản lý lịch học, bài tập và dự án nhóm.",
+                "needs": [
+                    "Quản lý thời gian hiệu quả.",
+                    "Theo dõi tiến độ học tập.",
+                    "Nhận nhắc nhở về deadline."
+                ],
+                "pain_points": [
+                    "Khó khăn trong việc tổ chức công việc.",
+                    "Áp lực từ deadline.",
+                    "Thiếu công cụ hỗ trợ học tập thông minh."
+                ]
+            },
+            {
+                "name": "Nhân viên văn phòng",
+                "description": "Nhân viên văn phòng cần quản lý công việc hàng ngày và dự án nhóm.",
+                "needs": [
+                    "Quản lý công việc hiệu quả.",
+                    "Giảm áp lực từ deadline.",
+                    "Hỗ trợ ra quyết định nhanh chóng."
+                ],
+                "pain_points": [
+                    "Quá tải công việc.",
+                    "Khó khăn trong việc theo dõi tiến độ nhóm.",
+                    "Thiếu công cụ hỗ trợ thông minh."
+                ]
+            },
+            {
+                "name": "Freelancer",
+                "description": "Freelancer cần theo dõi nhiều dự án và khách hàng cùng lúc.",
+                "needs": [
+                    "Quản lý nhiều dự án hiệu quả.",
+                    "Nhận hỗ trợ ra quyết định.",
+                    "Theo dõi deadline thông minh."
+                ],
+                "pain_points": [
+                    "Khó khăn trong việc tổ chức công việc.",
+                    "Thiếu sự hỗ trợ từ công cụ thông minh.",
+                    "Áp lực từ khách hàng và deadline."
+                ]
+            }
+        ],
+        "scope_capabilities": [
+            "Tự động hóa quy trình quản lý công việc.",
+            "Phân tích hiệu suất làm việc của người dùng.",
+            "Hỗ trợ ra quyết định thông qua AI.",
+            "Cung cấp giao diện thân thiện và hiện đại."
+        ],
+        "scope_non_goals": [
+            "Không hỗ trợ tích hợp với các nền tảng quản lý công việc khác trong phiên bản đầu tiên.",
+            "Không cung cấp tính năng phân tích chuyên sâu cho các dự án lớn.",
+            "Không hỗ trợ đa ngôn ngữ ngoài tiếng Anh trong phiên bản đầu tiên."
+        ],
+        "functional_requirements": [
+            {
+                "name": "Quản lý công việc",
+                "description": "Cho phép người dùng tạo, sắp xếp và theo dõi tiến độ các nhiệm vụ cá nhân hoặc nhóm.",
+                "priority": "High",
+                "user_stories": [
+                    "As a student, I want to create tasks for my assignments, so that I can manage my deadlines.",
+                    "As an office worker, I want to organize my daily tasks, so that I can improve my productivity.",
+                    "As a freelancer, I want to track tasks for different projects, so that I can meet client expectations."
+                ],
+                "acceptance_criteria": [
+                    "Người dùng có thể tạo nhiệm vụ với tiêu đề, mô tả và ngày hoàn thành.",
+                    "Nhiệm vụ được lưu và đồng bộ hóa trong vòng 2 giây.",
+                    "Hiển thị thông báo lỗi nếu tiêu đề nhiệm vụ bị bỏ trống."
+                ]
+            },
+            {
+                "name": "Quản lý dự án",
+                "description": "Cho phép người dùng lập kế hoạch, phân chia công việc và theo dõi tiến độ dự án.",
+                "priority": "High",
+                "user_stories": [
+                    "As a student, I want to create group projects, so that I can coordinate with my teammates.",
+                    "As an office worker, I want to manage team projects, so that I can ensure deadlines are met.",
+                    "As a freelancer, I want to organize projects for different clients, so that I can deliver quality work."
+                ],
+                "acceptance_criteria": [
+                    "Người dùng có thể tạo dự án với các nhiệm vụ con.",
+                    "Dự án có thể được chia sẻ với các thành viên nhóm.",
+                    "Hiển thị tiến độ tổng quan của dự án."
+                ]
+            }
+        ],
+        "performance_requirements": [
+            "Thời gian phản hồi của hệ thống dưới 2 giây cho các thao tác cơ bản.",
+            "Hệ thống hỗ trợ tối đa 10,000 người dùng đồng thời."
+        ],
+        "security_requirements": [
+            "Dữ liệu người dùng được mã hóa cả khi truyền tải và lưu trữ.",
+            "Xác thực hai yếu tố cho tài khoản người dùng.",
+            "Hệ thống tuân thủ các tiêu chuẩn bảo mật quốc tế."
+        ],
+        "ux_requirements": [
+            "Giao diện trực quan, dễ sử dụng.",
+            "Hỗ trợ trên cả nền tảng web và di động.",
+            "Tối ưu hóa cho trải nghiệm người dùng mới."
+        ],
+        "dependencies": [
+            "Dịch vụ AI để phân tích hiệu suất.",
+            "Hệ thống lưu trữ dữ liệu đám mây.",
+            "API để tích hợp với các công cụ lịch hiện có."
+        ],
+        "risks": [
+            "Khả năng tích hợp AI không đạt kỳ vọng.",
+            "Cạnh tranh mạnh từ các sản phẩm đã có trên thị trường.",
+            "Rủi ro bảo mật dữ liệu người dùng."
+        ],
+        "assumptions": [
+            "Người dùng có kết nối internet ổn định.",
+            "Người dùng có kiến thức cơ bản về sử dụng ứng dụng quản lý công việc.",
+            "Dịch vụ AI sẽ hoạt động ổn định và chính xác."
+        ],
+        "product_name": "SmartWork"
+    }
+
+    # Generate session and user IDs
+    session_id = f"test-backlog-{uuid.uuid4()}"
+    user_id = "test-user"
+
+    print(f"Session ID: {session_id}")
+    print(f"User ID: {user_id}")
+    print(f"Product Name: {product_vision.get('product_name')}")
+
+    # Initialize backlog agent
+    print("\nInitializing Backlog Agent...")
+    agent = BacklogAgent(session_id=session_id, user_id=user_id)
+    print("Agent initialized successfully")
+
+    print_separator()
+    print("Running Backlog Agent workflow...\n")
+
+    try:
+        result = agent.run(product_vision=product_vision)
+
+        print_separator()
+        print("Workflow completed successfully!")
+        print_separator()
+
+        # Print result
+        print("\n📊 BACKLOG AGENT RESULT:")
+
+        # Extract final state
+        final_state = None
+        if isinstance(result, dict):
+            for key, value in result.items():
+                final_state = value
+
+        if final_state:
+            print(f"\n✅ STATUS: {final_state.get('status', 'unknown')}")
+            print(f"   Loops: {final_state.get('current_loop', 0)}/{final_state.get('max_loops', 0)}")
+            print(f"   Readiness Score: {final_state.get('readiness_score', 0):.2f}")
+
+            # Print backlog items count
+            if final_state.get('backlog_items'):
+                items = final_state['backlog_items']
+                epics = [i for i in items if i.get('type') == 'Epic']
+                stories = [i for i in items if i.get('type') == 'User Story']
+                tasks = [i for i in items if i.get('type') == 'Task']
+                subtasks = [i for i in items if i.get('type') == 'Sub-task']
+
+                print(f"\n📋 BACKLOG ITEMS:")
+                print(f"   - Epics: {len(epics)}")
+                print(f"   - User Stories: {len(stories)}")
+                print(f"   - Tasks: {len(tasks)}")
+                print(f"   - Sub-tasks: {len(subtasks)}")
+                print(f"   Total: {len(items)}")
+
+            # Print product backlog if finalized
+            if final_state.get('product_backlog'):
+                print("\n✅ PRODUCT BACKLOG FINALIZED:")
+                backlog = final_state['product_backlog']
+                print(json.dumps(backlog, ensure_ascii=False, indent=2))
+
+            print(f"\n📝 Full Result:")
+            print(json.dumps(final_state, ensure_ascii=False, indent=2, default=str))
+        else:
+            print("No final state found in result")
+            print("Result:", result)
+
+    except Exception as e:
+        print(f"\nError during execution: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+    finally:
+        langfuse.flush()
+
+    print_separator()
+    return True
+
+
 def main():
     """Main function."""
     print("\nProduct Owner Agent Test Suite")
 
-    # Test vision agent instead of gatherer
-    success = test_vision_agent()
+    # Test backlog agent
+    success = test_backlog_agent()
 
     if success:
         print("\nAll tests completed successfully!")

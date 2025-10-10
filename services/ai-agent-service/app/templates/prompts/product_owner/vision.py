@@ -48,7 +48,7 @@ Dựa trên Product Brief, hãy tạo Product Vision bao gồm:
     - Mỗi tính năng bao gồm:
       - name: Tên tính năng
       - description: Mô tả chi tiết
-      - priority: Must-have / Should-have / Nice-to-have
+      - priority: High / Medium / Low
       - user_stories: Danh sách user stories (As a [role], I want [feature], so that [benefit])
       - acceptance_criteria: Tiêu chí chấp nhận cụ thể (3-5 criteria cho mỗi tính năng)
         * Phải cụ thể, đo lường được, có thể test
@@ -69,7 +69,7 @@ Dựa trên Product Brief, hãy tạo Product Vision bao gồm:
   * Cụ thể, đo lường được, có thể test
   * Định nghĩa điều kiện để tính năng "đúng yêu cầu nghiệp vụ"
   * Mỗi tính năng có 3-5 acceptance criteria
-- Ưu tiên rõ ràng: Must-have (MVP), Should-have (V1.1), Nice-to-have (Future)
+- Ưu tiên rõ ràng: High (MVP), Medium (V1.1), Low (Future)
 - Rõ ràng, súc tích, truyền cảm hứng
 """
 

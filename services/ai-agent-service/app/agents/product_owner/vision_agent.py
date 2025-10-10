@@ -32,7 +32,7 @@ class AudienceSegment(BaseModel):
 class FeatureRequirement(BaseModel):
     name: str = Field(description="Tên tính năng")
     description: str = Field(description="Mô tả chi tiết tính năng")
-    priority: str = Field(description="Độ ưu tiên: Must-have, Should-have, Nice-to-have")
+    priority: str = Field(description="Độ ưu tiên: High, Medium, Low")
     user_stories: list[str] = Field(description="Danh sách user stories cho tính năng này")
     acceptance_criteria: list[str] = Field(description="Tiêu chí chấp nhận - điều kiện cụ thể để tính năng được coi là hoàn thành đúng yêu cầu nghiệp vụ")
 
