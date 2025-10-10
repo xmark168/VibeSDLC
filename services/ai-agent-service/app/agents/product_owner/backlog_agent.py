@@ -13,6 +13,13 @@ from pydantic import BaseModel, Field
 
 from langgraph.checkpoint.memory import MemorySaver
 
+from templates.prompts.product_owner.backlog import (
+    GENERATE_PROMPT,
+    EVALUATE_PROMPT,
+    REFINE_PROMPT,
+    FINALIZE_PROMPT,
+)
+
 load_dotenv()
 
 
@@ -131,5 +138,241 @@ class BacklogState(BaseModel):
 
     # Workflow status
     status: str = Field(default="initial", description="Trạng thái: initial, generating, evaluating, refining, finalizing, completed")
- 
+
+
+# ============================================================================
+# Structured Output Models for LLM
+# ============================================================================
+
+class GenerateOutput(BaseModel):
+    """Structured output từ generate node."""
+    items: list[BacklogItem] = Field(description="Danh sách backlog items đã tạo")
+    dependency_map: dict = Field(description="Map dependencies giữa các items")
+    generation_notes: str = Field(description="Ghi chú về quá trình generate")
+
+
+class EvaluateOutput(BaseModel):
+    """Structured output từ evaluate node."""
+    readiness_score: float = Field(description="Điểm đánh giá backlog (0.0-1.0)", ge=0.0, le=1.0)
+    needs_split: list[str] = Field(description="Item IDs cần split (story_points > 13)")
+    not_testable: list[str] = Field(description="Item IDs chưa testable")
+    weak_ac: list[str] = Field(description="Item IDs có AC yếu")
+    missing_cases: list[str] = Field(description="Item IDs thiếu edge cases")
+    evaluation_notes: str = Field(description="Nhận xét chi tiết")
+
+
+class RefineOutput(BaseModel):
+    """Structured output từ refine node."""
+    items: list[BacklogItem] = Field(description="Danh sách backlog items đã refine")
+    refinement_notes: str = Field(description="Ghi chú về các thay đổi")
+
+
+class FinalizeOutput(BaseModel):
+    """Structured output từ finalize node."""
+    metadata: BacklogMetadata = Field(description="Metadata backlog")
+    items: list[BacklogItem] = Field(description="Danh sách items final")
+    definition_of_ready: list[str] = Field(description="Definition of Ready")
+    definition_of_done: list[str] = Field(description="Definition of Done")
+    backlog_notes: str = Field(description="Ghi chú tổng quan")
+
+
+# ============================================================================
+# Backlog Agent Class
+# ============================================================================
+
+class BacklogAgent:
+    """Backlog Agent - Tạo Product Backlog từ Product Vision (fully automated)."""
+
+    def __init__(self, session_id: str | None = None, user_id: str | None = None):
+        """Khởi tạo backlog agent.
+
+        Args:
+            session_id: Session ID tùy chọn
+            user_id: User ID tùy chọn
+        """
+        self.session_id = session_id
+        self.user_id = user_id
+
+        # Initialize Langfuse callback handler
+        self.langfuse_handler = CallbackHandler()
+
+        self.graph = self._build_graph()
+
+    def _llm(self, model: str, temperature: float) -> ChatOpenAI:
+        """Initialize LLM instance."""
+        try:
+            llm = ChatOpenAI(
+                model=model,
+                temperature=temperature,
+                api_key=os.getenv("OPENAI_API_KEY"),
+                base_url=os.getenv("OPENAI_BASE_URL"),
+            )
+            return llm
+        except Exception:
+            return None
+
+    def _build_graph(self) -> StateGraph:
+        """Xây dựng LangGraph workflow."""
+        graph_builder = StateGraph(BacklogState)
+
+        # Add nodes
+        graph_builder.add_node("initialize", self.initialize)
+        graph_builder.add_node("generate", self.generate)
+        graph_builder.add_node("evaluate", self.evaluate)
+        graph_builder.add_node("refine", self.refine)
+        graph_builder.add_node("finalize", self.finalize)
+
+        # Add edges
+        graph_builder.add_edge(START, "initialize")
+        # graph_builder.add_edge("initialize", "generate")
+        # graph_builder.add_edge("generate", "evaluate")
+        # graph_builder.add_conditional_edges("evaluate", self.evaluate_branch)
+        # graph_builder.add_edge("refine", "generate")  # Loop back
+        # graph_builder.add_edge("finalize", END)
+
+        checkpointer = MemorySaver()
+        return graph_builder.compile(checkpointer=checkpointer)
+
+    # ========================================================================
+    # Node: Initialize
+    # ========================================================================
+
+    def initialize(self, state: BacklogState) -> BacklogState:
+        """Initialize - Load Product Vision và chuẩn bị working state.
+
+        Theo sơ đồ:
+        - Load product_vision / product_goal
+        - Set max_loops = 2
+        - Init working memory + dependency map
+        """
+        print("\n" + "="*80)
+        print("🚀 INITIALIZE - KHỞI TẠO BACKLOG AGENT")
+        print("="*80)
+
+        # Validate product_vision
+        if not state.product_vision or len(state.product_vision) == 0:
+            print("❌ Product Vision is empty!")
+            state.status = "error_no_vision"
+            return state
+
+        print(f"✓ Loaded Product Vision")
+        print(f"  - Product Name: {state.product_vision.get('product_name', 'N/A')}")
+
+        # Check required fields in product_vision
+        required_fields = ["draft_vision_statement", "functional_requirements"]
+        missing = [f for f in required_fields if f not in state.product_vision]
+
+        if missing:
+            print(f"⚠️  Product Vision thiếu fields: {', '.join(missing)}")
+
+        # Set max_loops
+        state.max_loops = 2
+        state.current_loop = 0
+
+        # Initialize dependency map
+        state.dependency_map = {}
+
+        # Initialize counters
+        state.epic_counter = 0
+        state.user_story_counter = 0
+        state.task_counter = 0
+        state.subtask_counter = 0
+
+        # Update status
+        state.status = "initialized"
+
+        print(f"✓ Initialized")
+        print(f"  - max_loops: {state.max_loops}")
+        print(f"  - Working memory ready")
+        print(f"  - Dependency map ready")
+        print("="*80 + "\n")
+
+        return state
+
+    # ========================================================================
+    # Node: Generate (to be implemented)
+    # ========================================================================
+
+    def generate(self, state: BacklogState) -> BacklogState:
+        """Generate backlog items từ Product Vision."""
+        # TODO: Implement
+        pass
+
+    # ========================================================================
+    # Node: Evaluate (to be implemented)
+    # ========================================================================
+
+    def evaluate(self, state: BacklogState) -> BacklogState:
+        """Evaluate backlog quality."""
+        # TODO: Implement
+        pass
+
+    # ========================================================================
+    # Node: Refine (to be implemented)
+    # ========================================================================
+
+    def refine(self, state: BacklogState) -> BacklogState:
+        """Refine backlog based on evaluation."""
+        # TODO: Implement
+        pass
+
+    # ========================================================================
+    # Node: Finalize (to be implemented)
+    # ========================================================================
+
+    def finalize(self, state: BacklogState) -> BacklogState:
+        """Finalize backlog."""
+        # TODO: Implement
+        pass
+
+    # ========================================================================
+    # Conditional Branch
+    # ========================================================================
+
+    def evaluate_branch(self, state: BacklogState) -> str:
+        """Branch sau evaluate node.
+
+        Logic:
+        - score < 0.8 AND loops < max_loops → refine
+        - score ≥ 0.8 OR loops ≥ max_loops → finalize
+        """
+        if state.readiness_score < 0.8 and state.current_loop < state.max_loops:
+            return "refine"
+        else:
+            return "finalize"
+
+    # ========================================================================
+    # Run Method
+    # ========================================================================
+
+    def run(self, product_vision: dict, thread_id: str | None = None) -> dict[str, Any]:
+        """Chạy Backlog Agent workflow.
+
+        Args:
+            product_vision: Product Vision từ Vision Agent
+            thread_id: Thread ID cho checkpointer
+
+        Returns:
+            dict: Final state với product_backlog
+        """
+        if thread_id is None:
+            thread_id = self.session_id or "default_backlog_thread"
+
+        initial_state = BacklogState(product_vision=product_vision)
+
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "callbacks": [self.langfuse_handler],
+            "recursion_limit": 50
+        }
+
+        final_state = None
+        for output in self.graph.stream(
+            initial_state.model_dump(),
+            config=config,
+        ):
+            final_state = output
+
+        return final_state or {}
+
     
