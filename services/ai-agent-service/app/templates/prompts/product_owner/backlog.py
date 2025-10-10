@@ -99,9 +99,9 @@ Tạo Product Backlog Items (Epic, User Story, Task) theo template đã định 
     - status: "Backlog" (mặc định)
 
 **Tạo backlog theo thứ tự:**
-1. Tạo Epics trước (3-7 epics)
-2. Tạo User Stories cho mỗi Epic (3-5 stories/epic)
-3. Tạo Tasks cho mỗi User Story (2-4 tasks/story)
+1. Tạo Epics trước (3-5 epics)
+2. Tạo User Stories cho mỗi Epic (2-3 stories/epic)
+3. Tạo Tasks cho mỗi User Story (1-2 tasks/story)
 
 **Lưu ý:**
 - Tập trung vào MVP features (High priority từ vision)
@@ -109,8 +109,70 @@ Tạo Product Backlog Items (Epic, User Story, Task) theo template đã định 
 - Task phải cụ thể, actionable
 - Không tạo quá chi tiết, đủ để team hiểu và estimate
 
-**Output:**
-Trả về Product Backlog theo format JSON schema đã định nghĩa.
+**Output JSON Format:**
+{{{{
+  "metadata": {{{{
+    "product_name": "...",
+    "version": "v1.0",
+    "total_items": 0,
+    "total_story_points": 0
+  }}}},
+  "items": [
+    {{{{
+      "id": "EPIC-001",
+      "type": "Epic",
+      "parent_id": null,
+      "title": "Authentication System",
+      "description": "...",
+      "priority": "Not Set",
+      "status": "Backlog",
+      "story_points": null,
+      "estimated_hours": null,
+      "acceptance_criteria": [],
+      "dependencies": [],
+      "labels": ["core"],
+      "task_type": null,
+      "business_value": "...",
+      "wsjf_inputs": {{{{}}}}
+    }}}},
+    {{{{
+      "id": "US-001",
+      "type": "User Story",
+      "parent_id": "EPIC-001",
+      "title": "As a user, I want to login...",
+      "description": "...",
+      "priority": "Not Set",
+      "status": "Backlog",
+      "story_points": 5,
+      "estimated_hours": null,
+      "acceptance_criteria": ["Given...", "When...", "Then..."],
+      "dependencies": [],
+      "labels": ["authentication"],
+      "task_type": null,
+      "business_value": "...",
+      "wsjf_inputs": {{{{}}}}
+    }}}},
+    {{{{
+      "id": "TASK-001",
+      "type": "Task",
+      "parent_id": "US-001",
+      "title": "Create login API endpoint",
+      "description": "...",
+      "priority": "Not Set",
+      "status": "Backlog",
+      "story_points": null,
+      "estimated_hours": 8.0,
+      "acceptance_criteria": ["API endpoint works", "Tests pass"],
+      "dependencies": [],
+      "labels": ["backend"],
+      "task_type": "Feature Development",
+      "business_value": null,
+      "wsjf_inputs": {{{{}}}}
+    }}}}
+  ]
+}}}}
+
+**IMPORTANT:** Return ONLY valid JSON matching the schema above. No markdown code blocks, no comments, no explanations.
 """
 
 EVALUATE_PROMPT = """Bạn là Product Owner reviewer, nhiệm vụ là đánh giá chất lượng Product Backlog.

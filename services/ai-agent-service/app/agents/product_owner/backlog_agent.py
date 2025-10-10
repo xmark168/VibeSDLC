@@ -338,88 +338,8 @@ class BacklogAgent:
             # Use JSON mode (compatible với API)
             llm = self._llm("gpt-4.1", 0.3)
 
-            # Simplified prompt với dependency mapping
-            dependency_map_text = json.dumps(state.dependency_map, ensure_ascii=False, indent=2)
-
-            simplified_prompt = f"""Dựa trên Product Vision, tạo Product Backlog với:
-- 3-5 Epics
-- 2-3 User Stories cho mỗi Epic
-- 1-2 Tasks cho mỗi User Story
-
-**Product Vision:**
-{json.dumps(state.product_vision, ensure_ascii=False, indent=2)}
-
-**Dependency Map (từ Initialize):**
-{dependency_map_text}
-
-Dùng dependency map này để set dependencies cho items. Ví dụ:
-- Nếu map có "User Profile" → ["Authentication"], thì EPIC về User Profile phải có dependencies = [ID của Epic Authentication]
-
-**Output JSON format:**
-{{
-  "metadata": {{
-    "product_name": "...",
-    "version": "v1.0",
-    "total_items": 0,
-    "total_story_points": 0
-  }},
-  "items": [
-    {{
-      "id": "EPIC-001",
-      "type": "Epic",
-      "parent_id": null,
-      "title": "Authentication System",
-      "description": "...",
-      "priority": "Not Set",
-      "status": "Backlog",
-      "story_points": null,
-      "estimated_hours": null,
-      "acceptance_criteria": [],
-      "dependencies": [],
-      "labels": ["core"],
-      "task_type": null,
-      "business_value": "...",
-      "wsjf_inputs": {{}}
-    }},
-    {{
-      "id": "EPIC-002",
-      "type": "Epic",
-      "parent_id": null,
-      "title": "User Profile Management",
-      "dependencies": ["EPIC-001"],  ← Phụ thuộc vào Authentication
-      ...
-    }},
-    {{
-      "id": "US-001",
-      "type": "User Story",
-      "parent_id": "EPIC-001",
-      "title": "As a user, I want to login...",
-      "dependencies": [],  ← User Story đầu tiên không dependencies
-      ...
-    }},
-    {{
-      "id": "US-002",
-      "type": "User Story",
-      "parent_id": "EPIC-002",
-      "dependencies": ["US-001"],  ← Phụ thuộc vào Login story
-      ...
-    }}
-  ]
-}}
-
-**Quy tắc QUAN TRỌNG:**
-1. ID: EPIC-001, US-001, TASK-001 (CHỮ HOA)
-2. User Story title: "As a [user], I want to [action] so that [benefit]"
-3. User Story: story_points = 1,2,3,5,8,13,21
-4. Task: estimated_hours = 0.5-200, task_type = "Feature Development"/"Bug Fix"/etc
-5. Epic/Task: story_points = null
-6. Epic/US: estimated_hours = null
-7. **Dependencies**: Dựa vào dependency_map để set đúng. Epic/US/Task phụ thuộc kỹ thuật phải khai báo dependencies = [list of IDs]
-
-Return ONLY valid JSON, no markdown, no explanations."""
-
             print("\n🤖 Calling LLM to generate backlog items...")
-            response = llm.invoke([HumanMessage(content=simplified_prompt)])
+            response = llm.invoke([HumanMessage(content=prompt)])
 
             # Parse JSON response
             response_text = response.content.strip()
@@ -434,8 +354,10 @@ Return ONLY valid JSON, no markdown, no explanations."""
                 response_text = response_text.split("```")[1].split("```")[0].strip()
 
             # Remove any trailing commas before closing braces/brackets (common LLM error)
-            import re
             response_text = re.sub(r',(\s*[}\]])', r'\1', response_text)
+
+            # Remove // comments (JSON doesn't support comments)
+            response_text = re.sub(r'//.*?$', '', response_text, flags=re.MULTILINE)
 
             # Debug: Print cleaned response samples
             print(f"📄 First 300 chars:\n{response_text[:300]}")
