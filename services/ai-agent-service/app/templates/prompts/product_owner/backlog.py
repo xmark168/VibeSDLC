@@ -280,7 +280,6 @@ FINALIZE_PROMPT = """Bạn là Product Owner, nhiệm vụ là finalize Product 
 
 **Output:**
 Trả về final product_backlog dict với:
-- metadata: {product_name, version, total_items, total_story_points}
+- metadata: {{product_name, version, total_items, total_story_points, export_status}}
 - items: list of all backlog items
-- export_status: "success" / "failed"
 """

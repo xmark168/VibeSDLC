@@ -158,9 +158,9 @@ class BacklogAgent:
         graph_builder.add_edge(START, "initialize")
         graph_builder.add_edge("initialize", "generate")
         graph_builder.add_edge("generate", "evaluate")
-        # graph_builder.add_conditional_edges("evaluate", self.evaluate_branch)
-        # graph_builder.add_edge("refine", "generate")  # Loop back
-        # graph_builder.add_edge("finalize", END)
+        graph_builder.add_conditional_edges("evaluate", self.evaluate_branch)
+        graph_builder.add_edge("refine", "evaluate")  # Loop back to evaluate (not generate)
+        graph_builder.add_edge("finalize", END)
 
         checkpointer = MemorySaver()
         return graph_builder.compile(checkpointer=checkpointer)
@@ -193,7 +193,7 @@ class BacklogAgent:
         print(f"  - Product Name: {product_name}")
 
         # Set max_loops
-        state.max_loops = 2
+        state.max_loops = 1
         state.current_loop = 0
         print(f"  - Max Loops: {state.max_loops}")
 
@@ -560,18 +560,279 @@ class BacklogAgent:
     # ========================================================================
 
     def refine(self, state: BacklogState) -> BacklogState:
-        """Refine backlog based on evaluation."""
-        # TODO: Implement
-        pass
+        """Refine backlog based on evaluation.
+
+        Theo sơ đồ:
+        - Sửa thiếu sót: chia nhỏ mục lớn, bổ sung/sửa AC (GWT)
+        - Điền đủ WSJF inputs/ ước lượng/phụ thuộc
+        - Loại bỏ mục lệch Product Goal
+        - loops++
+        """
+        print("\n" + "="*80)
+        print("🔧 REFINE - CẢI THIỆN BACKLOG")
+        print("="*80)
+
+        # Increment loop counter
+        state.current_loop += 1
+        print(f"✓ Loop: {state.current_loop}/{state.max_loops}")
+
+        if not state.backlog_items:
+            print("⚠️  Không có backlog items để refine")
+            state.status = "error_no_items"
+            return state
+
+        print(f"✓ Refining {len(state.backlog_items)} backlog items...")
+        print(f"✓ Issues to fix: {len(state.invest_issues)} INVEST + {len(state.gherkin_issues)} Gherkin")
+
+        # Prepare data for prompt
+        backlog_text = json.dumps(state.product_backlog, ensure_ascii=False, indent=2)
+        issues_text = json.dumps({
+            "invest_issues": state.invest_issues,
+            "gherkin_issues": state.gherkin_issues
+        }, ensure_ascii=False, indent=2)
+        recommendations_text = "\n".join([f"- {rec}" for rec in state.recommendations])
+
+        prompt = REFINE_PROMPT.format(
+            backlog=backlog_text,
+            issues=issues_text,
+            recommendations=recommendations_text
+        )
+
+        try:
+            llm = self._llm("gpt-4.1", 0.3)
+
+            # Add JSON instruction
+            json_prompt = prompt + "\n\nIMPORTANT: Return ONLY valid JSON with the same format as input backlog (metadata + items). No markdown, no explanations."
+
+            print("\n🤖 Calling LLM to refine backlog...")
+            response = llm.invoke([HumanMessage(content=json_prompt)])
+
+            # Parse JSON response
+            response_text = response.content.strip()
+
+            # Clean up markdown if present
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0].strip()
+
+            # Remove trailing commas and comments
+            response_text = re.sub(r',(\s*[}\]])', r'\1', response_text)
+            response_text = re.sub(r'//.*?$', '', response_text, flags=re.MULTILINE)
+
+            # Parse JSON
+            result_dict = json.loads(response_text)
+
+            # Validate structure
+            if "items" not in result_dict:
+                raise ValueError("Refined backlog missing 'items' field")
+
+            # Parse items with Pydantic validation
+            refined_items = [BacklogItem(**item) for item in result_dict["items"]]
+
+            # Count by type
+            epics = [i for i in refined_items if i.type == "Epic"]
+            stories = [i for i in refined_items if i.type == "User Story"]
+            tasks = [i for i in refined_items if i.type == "Task"]
+
+            # Recalculate metadata
+            total_items = len(refined_items)
+            total_story_points = sum(item.story_points or 0 for item in refined_items)
+
+            refined_metadata = result_dict.get("metadata", {})
+            refined_metadata.update({
+                "version": "v1.0",
+                "total_items": total_items,
+                "total_epics": len(epics),
+                "total_user_stories": len(stories),
+                "total_tasks": len(tasks),
+                "total_story_points": total_story_points
+            })
+
+            # Update state with refined backlog
+            state.backlog_items = [item.model_dump() for item in refined_items]
+            state.product_backlog = {
+                "metadata": refined_metadata,
+                "items": state.backlog_items
+            }
+
+            # Print summary
+            print(f"\n✓ Refine completed")
+            print(f"   Total Items: {total_items} (before: {len(result_dict.get('items', []))})")
+
+            print(f"\n📊 Refined Backlog Breakdown:")
+            print(f"   - Epics: {len(epics)}")
+            print(f"   - User Stories: {len(stories)}")
+            print(f"   - Tasks: {len(tasks)}")
+            print(f"   - Total Story Points: {total_story_points}")
+
+            # Show changes summary
+            print(f"\n🔄 Changes Applied:")
+            if state.invest_issues:
+                print(f"   - Fixed {len(state.invest_issues)} INVEST issues")
+            if state.gherkin_issues:
+                print(f"   - Fixed {len(state.gherkin_issues)} Gherkin issues")
+            if state.recommendations:
+                print(f"   - Applied {len(state.recommendations)} recommendations")
+
+            print("\n" + "="*80 + "\n")
+
+            # Print structured output (first 3 items only)
+            print("\n📊 Refined Backlog (sample 3 items):")
+            sample_output = {
+                "metadata": refined_metadata,
+                "items": [item.model_dump() for item in refined_items[:3]]
+            }
+            print(json.dumps(sample_output, ensure_ascii=False, indent=2))
+            print(f"... và {len(refined_items) - 3} items khác\n")
+
+            state.status = "refined"
+            print(f"✅ Backlog đã được refined, loop {state.current_loop}/{state.max_loops}")
+
+        except Exception as e:
+            print(f"❌ Lỗi khi refine backlog: {e}")
+            import traceback
+            traceback.print_exc()
+            state.status = "error_refining"
+
+        print("="*80 + "\n")
+        return state
 
     # ========================================================================
     # Node: Finalize (to be implemented)
     # ========================================================================
 
     def finalize(self, state: BacklogState) -> BacklogState:
-        """Finalize backlog."""
-        # TODO: Implement
-        pass
+        """Finalize backlog.
+
+        Theo sơ đồ:
+        - Định dạng OUTPUT: danh sách PBI CHƯA SẮP XẾP (unordered)
+        - Kiểm tra nhất quán: liên kết goal, có AC, ước lượng, phụ thuộc
+        - Export: JSON/Sheet/Jira (handoff → Priority agent để sắp xếp)
+        """
+        print("\n" + "="*80)
+        print("✅ FINALIZE - HOÀN THIỆN PRODUCT BACKLOG")
+        print("="*80)
+
+        if not state.backlog_items:
+            print("⚠️  Không có backlog items để finalize")
+            state.status = "error_no_items"
+            return state
+
+        print(f"✓ Finalizing {len(state.backlog_items)} backlog items...")
+
+        # Prepare backlog for prompt
+        backlog_text = json.dumps(state.product_backlog, ensure_ascii=False, indent=2)
+
+        prompt = FINALIZE_PROMPT.format(backlog=backlog_text)
+
+        try:
+            llm = self._llm("gpt-4.1", 0.3)
+
+            # Add JSON instruction
+            json_prompt = prompt + "\n\nIMPORTANT: Return ONLY valid JSON with metadata and items. No markdown, no explanations."
+
+            print("\n🤖 Calling LLM to finalize backlog...")
+            response = llm.invoke([HumanMessage(content=json_prompt)])
+
+            # Parse JSON response
+            response_text = response.content.strip()
+
+            # Clean up markdown if present
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0].strip()
+
+            # Remove trailing commas and comments
+            response_text = re.sub(r',(\s*[}\]])', r'\1', response_text)
+            response_text = re.sub(r'//.*?$', '', response_text, flags=re.MULTILINE)
+
+            # Parse JSON
+            result_dict = json.loads(response_text)
+
+            # Validate structure
+            if "items" not in result_dict:
+                raise ValueError("Finalized backlog missing 'items' field")
+            if "metadata" not in result_dict:
+                raise ValueError("Finalized backlog missing 'metadata' field")
+
+            # Parse items with Pydantic validation
+            final_items = [BacklogItem(**item) for item in result_dict["items"]]
+
+            # Recalculate metadata to ensure accuracy
+            epics = [i for i in final_items if i.type == "Epic"]
+            stories = [i for i in final_items if i.type == "User Story"]
+            tasks = [i for i in final_items if i.type == "Task"]
+
+            total_items = len(final_items)
+            total_story_points = sum(item.story_points or 0 for item in final_items)
+
+            final_metadata = result_dict["metadata"]
+            final_metadata.update({
+                "version": "v1.0",
+                "total_items": total_items,
+                "total_epics": len(epics),
+                "total_user_stories": len(stories),
+                "total_tasks": len(tasks),
+                "total_story_points": total_story_points,
+                "export_status": "success"
+            })
+
+            # Update state with finalized backlog
+            state.backlog_items = [item.model_dump() for item in final_items]
+            state.product_backlog = {
+                "metadata": final_metadata,
+                "items": state.backlog_items
+            }
+
+            # Print final summary
+            print(f"\n✓ Finalize completed")
+            print(f"\n📊 Final Product Backlog:")
+            print(f"   Product: {final_metadata.get('product_name', 'N/A')}")
+            print(f"   Version: {final_metadata.get('version', 'N/A')}")
+            print(f"   Total Items: {total_items}")
+            print(f"   - Epics: {len(epics)}")
+            print(f"   - User Stories: {len(stories)}")
+            print(f"   - Tasks: {len(tasks)}")
+            print(f"   Total Story Points: {total_story_points}")
+
+            # Validation summary
+            print(f"\n🔍 Validation Summary:")
+            items_with_ac = sum(1 for item in final_items if item.acceptance_criteria)
+            items_with_deps = sum(1 for item in final_items if item.dependencies)
+            stories_with_points = sum(1 for item in final_items if item.type == "User Story" and item.story_points)
+            tasks_with_hours = sum(1 for item in final_items if item.type == "Task" and item.estimated_hours)
+
+            print(f"   - Items with Acceptance Criteria: {items_with_ac}/{total_items}")
+            print(f"   - Items with Dependencies: {items_with_deps}/{total_items}")
+            print(f"   - User Stories with Story Points: {stories_with_points}/{len(stories)}")
+            print(f"   - Tasks with Estimated Hours: {tasks_with_hours}/{len(tasks)}")
+
+            print(f"\n📤 Export Status: {final_metadata.get('export_status', 'unknown')}")
+            print(f"   → Ready for handoff to Priority Agent")
+
+            print("\n" + "="*80 + "\n")
+
+            # Print metadata
+            print("\n📊 Final Metadata:")
+            print(json.dumps(final_metadata, ensure_ascii=False, indent=2))
+            print()
+
+            state.status = "completed"
+            print(f"✅ Product Backlog đã hoàn thiện! Tổng {state.current_loop} loops.")
+
+        except Exception as e:
+            print(f"❌ Lỗi khi finalize backlog: {e}")
+            import traceback
+            traceback.print_exc()
+            state.status = "error_finalizing"
+            # Still set export_status to failed in metadata
+            if state.product_backlog.get("metadata"):
+                state.product_backlog["metadata"]["export_status"] = "failed"
+
+        print("="*80 + "\n")
+        return state
 
     # ========================================================================
     # Conditional Branch
