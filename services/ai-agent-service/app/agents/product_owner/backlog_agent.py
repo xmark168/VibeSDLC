@@ -34,10 +34,10 @@ class BacklogItem(BaseModel):
     parent_id: Optional[str] = Field(default=None, description="ID của parent item")
     title: str = Field(description="Tiêu đề item")
     description: str = Field(default="", description="Mô tả chi tiết")
-    priority: Literal["High", "Medium", "Low", "Not Set"] = Field(default="Not Set")
+    rank: Optional[int] = Field(default=None, description="Thứ tự ưu tiên, Priority Agent sẽ fill")
     status: Literal["Backlog", "Ready", "In Progress", "Done"] = Field(default="Backlog")
-    story_points: Optional[int] = Field(default=None, description="CHỈ cho User Story")
-    estimated_hours: Optional[float] = Field(default=None, description="CHỈ cho Task")
+    story_point: Optional[int] = Field(default=None, description="CHỈ cho User Story")
+    estimate_value: Optional[float] = Field(default=None, description="CHỈ cho Task")
     acceptance_criteria: list[str] = Field(default_factory=list)
     dependencies: list[str] = Field(default_factory=list)
     labels: list[str] = Field(default_factory=list)
@@ -78,6 +78,7 @@ class BacklogState(BaseModel):
     # Final output
     product_backlog: dict = Field(default_factory=dict)
     status: str = "initial"
+
 
 
 # ============================================================================
@@ -253,7 +254,7 @@ class BacklogAgent:
 
             # Calculate totals
             total_items = len(generate_result.items)
-            total_story_points = sum(item.story_points or 0 for item in generate_result.items)
+            total_story_points = sum(item.story_point or 0 for item in generate_result.items)
 
             # Update metadata with calculated values
             generate_result.metadata.update({
@@ -533,7 +534,7 @@ class BacklogAgent:
 
             # Recalculate metadata
             total_items = len(refined_items)
-            total_story_points = sum(item.story_points or 0 for item in refined_items)
+            total_story_points = sum(item.story_point or 0 for item in refined_items)
 
             refined_metadata = result_dict.get("metadata", {})
             refined_metadata.update({
@@ -669,7 +670,7 @@ class BacklogAgent:
             tasks = [i for i in final_items if i.type == "Task"]
 
             total_items = len(final_items)
-            total_story_points = sum(item.story_points or 0 for item in final_items)
+            total_story_points = sum(item.story_point or 0 for item in final_items)
 
             final_metadata = result_dict["metadata"]
             final_metadata.update({
@@ -704,13 +705,13 @@ class BacklogAgent:
             print(f"\n🔍 Validation Summary:")
             items_with_ac = sum(1 for item in final_items if item.acceptance_criteria)
             items_with_deps = sum(1 for item in final_items if item.dependencies)
-            stories_with_points = sum(1 for item in final_items if item.type == "User Story" and item.story_points)
-            tasks_with_hours = sum(1 for item in final_items if item.type == "Task" and item.estimated_hours)
+            stories_with_points = sum(1 for item in final_items if item.type == "User Story" and item.story_point)
+            tasks_with_estimate = sum(1 for item in final_items if item.type == "Task" and item.estimate_value)
 
             print(f"   - Items with Acceptance Criteria: {items_with_ac}/{total_items}")
             print(f"   - Items with Dependencies: {items_with_deps}/{total_items}")
-            print(f"   - User Stories with Story Points: {stories_with_points}/{len(stories)}")
-            print(f"   - Tasks with Estimated Hours: {tasks_with_hours}/{len(tasks)}")
+            print(f"   - User Stories with Story Point: {stories_with_points}/{len(stories)}")
+            print(f"   - Tasks with Estimate Value: {tasks_with_estimate}/{len(tasks)}")
 
             print(f"\n📤 Export Status: {final_metadata.get('export_status', 'unknown')}")
             print(f"   → Ready for handoff to Priority Agent")
@@ -782,13 +783,13 @@ class BacklogAgent:
             if items_of_type:
                 sample = items_of_type[0]
                 print(f"\n   [{item_type}] {sample.get('id')}: {sample.get('title', '')[:60]}...")
-                print(f"      Priority: {sample.get('priority', 'Not Set')}")
+                print(f"      Rank: {sample.get('rank', 'Not Set')}")
                 if sample.get('acceptance_criteria'):
                     print(f"      AC: {len(sample.get('acceptance_criteria', []))} criteria")
-                if item_type == "User Story" and sample.get('story_points'):
-                    print(f"      Story Points: {sample.get('story_points')}")
-                if item_type == "Task" and sample.get('estimated_hours'):
-                    print(f"      Estimated Hours: {sample.get('estimated_hours')}")
+                if item_type == "User Story" and sample.get('story_point'):
+                    print(f"      Story Point: {sample.get('story_point')}")
+                if item_type == "Task" and sample.get('estimate_value'):
+                    print(f"      Estimate Value: {sample.get('estimate_value')}")
 
         print("\n" + "="*80)
         print("\n🔔 HUMAN INPUT REQUIRED:")
