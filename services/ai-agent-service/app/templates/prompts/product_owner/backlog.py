@@ -27,9 +27,6 @@ GENERATE_PROMPT = """Bạn là Product Owner chuyên nghiệp, nhiệm vụ là 
 **Product Vision:**
 {vision}
 
-**Dependency Map:**
-{dependency_map}
-
 **Nhiệm vụ:**
 Tạo Product Backlog Items (Epic, User Story, Task) theo template đã định nghĩa.
 
@@ -82,7 +79,7 @@ Tạo Product Backlog Items (Epic, User Story, Task) theo template đã định 
    - Ví dụ checklist: "User can view all fields: email, password, remember me checkbox"
 
 7. **Dependencies**:
-   - Dựa trên dependency_map từ initialize
+   - Phân tích vision để xác định dependencies giữa các items
    - Chỉ set dependency khi item THỰC SỰ phụ thuộc vào item khác
    - Ví dụ: US-002 (User Profile) depends on US-001 (Authentication)
 

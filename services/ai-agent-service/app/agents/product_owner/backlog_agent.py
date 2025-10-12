@@ -5,14 +5,13 @@ from typing import Any, Literal, Optional
 from datetime import datetime
 
 from dotenv import load_dotenv
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 from langfuse.langchain import CallbackHandler
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 
 from templates.prompts.product_owner.backlog import (
-    INITIALIZE_PROMPT,
     GENERATE_PROMPT,
     EVALUATE_PROMPT,
     REFINE_PROMPT,
@@ -27,30 +26,6 @@ load_dotenv()
 # ============================================================================
 # Pydantic Models for Structured Output
 # ============================================================================
-
-class InitializeOutput(BaseModel):
-    """Structured output từ initialize node."""
-    validation_status: Literal["complete", "incomplete", "missing_critical"] = Field(
-        description="Trạng thái validation của Product Vision"
-    )
-    readiness_score: float = Field(
-        description="Điểm readiness từ 0.0-1.0",
-        ge=0.0,
-        le=1.0
-    )
-    missing_info: list[str] = Field(
-        default_factory=list,
-        description="Danh sách thông tin còn thiếu"
-    )
-    key_capabilities: list[str] = Field(
-        default_factory=list,
-        description="Khả năng cốt lõi trích xuất từ vision"
-    )
-    dependency_map: dict[str, list[str]] = Field(
-        default_factory=dict,
-        description="Mapping dependencies giữa requirements"
-    )
-
 
 class BacklogItem(BaseModel):
     """Model cho một backlog item."""
@@ -80,15 +55,7 @@ class GenerateOutput(BaseModel):
 class BacklogState(BaseModel):
     """State cho Backlog Agent workflow."""
     # Input
-    messages: list[BaseMessage] = Field(default_factory=list)
     product_vision: dict = Field(default_factory=dict)
-
-    # Initialize outputs
-    validation_status: str = "pending"
-    readiness_score: float = 0.0
-    missing_info: list[str] = Field(default_factory=list)
-    key_capabilities: list[str] = Field(default_factory=list)
-    dependency_map: dict = Field(default_factory=dict)
 
     # Generate outputs
     backlog_items: list[dict] = Field(default_factory=list)
@@ -97,11 +64,16 @@ class BacklogState(BaseModel):
     invest_issues: list[dict] = Field(default_factory=list)
     gherkin_issues: list[dict] = Field(default_factory=list)
     recommendations: list[str] = Field(default_factory=list)
+    readiness_score: float = 0.0
     can_proceed: bool = False
 
     # Loop control
     max_loops: int = 2
     current_loop: int = 0
+
+    # Preview & user approval
+    user_approval: Optional[str] = Field(default=None, description="'approve' hoặc 'edit'")
+    user_feedback: Optional[str] = Field(default=None, description="Lý do/yêu cầu chỉnh sửa từ user")
 
     # Final output
     product_backlog: dict = Field(default_factory=dict)
@@ -153,6 +125,7 @@ class BacklogAgent:
         graph_builder.add_node("evaluate", self.evaluate)
         graph_builder.add_node("refine", self.refine)
         graph_builder.add_node("finalize", self.finalize)
+        graph_builder.add_node("preview", self.preview)
 
         # Add edges
         graph_builder.add_edge(START, "initialize")
@@ -160,7 +133,8 @@ class BacklogAgent:
         graph_builder.add_edge("generate", "evaluate")
         graph_builder.add_conditional_edges("evaluate", self.evaluate_branch)
         graph_builder.add_edge("refine", "evaluate")  # Loop back to evaluate (not generate)
-        graph_builder.add_edge("finalize", END)
+        graph_builder.add_edge("finalize", "preview")  # finalize → preview
+        graph_builder.add_conditional_edges("preview", self.preview_branch)  # preview → approve/edit
 
         checkpointer = MemorySaver()
         return graph_builder.compile(checkpointer=checkpointer)
@@ -170,119 +144,37 @@ class BacklogAgent:
     # ========================================================================
 
     def initialize(self, state: BacklogState) -> BacklogState:
-        """Initialize - Load Product Vision và chuẩn bị working state.
+        """Initialize - Validate và load Product Vision vào working memory.
 
-        Theo sơ đồ:
-        - Load product_vision
-        - Set max_loops = 2
-        - Init dependency map
+        Chỉ làm:
+        - Validate product_vision có tồn tại
+        - Set max_loops
+        - Set status = ready
         """
         print("\n" + "="*80)
-        print("🚀 INITIALIZE - KHỞI TẠO BACKLOG AGENT")
+        print("🚀 INITIALIZE - LOAD CONTEXT")
         print("="*80)
 
         # Validate product_vision structure
         if not state.product_vision or len(state.product_vision) == 0:
-            print("⚠ Chưa có product_vision, không thể tạo backlog")
-            state.validation_status = "missing_critical"
+            print("⚠️  Chưa có product_vision, không thể tạo backlog")
             state.status = "error"
             return state
 
-        print(f"✓ Đã load product_vision từ state")
         product_name = state.product_vision.get("product_name", "N/A")
-        print(f"  - Product Name: {product_name}")
+        print(f"✓ Đã load product_vision: {product_name}")
 
         # Set max_loops
         state.max_loops = 1
         state.current_loop = 0
-        print(f"  - Max Loops: {state.max_loops}")
 
-        # Prepare vision for prompt
-        vision_text = json.dumps(state.product_vision, ensure_ascii=False, indent=2)
+        # Set ready status
+        state.status = "ready"
 
-        prompt = INITIALIZE_PROMPT.format(vision=vision_text)
-
-        try:
-            # Use JSON mode (more compatible than structured output)
-            llm = self._llm("gpt-4.1", 0.3)
-
-            # Add JSON instruction to prompt
-            json_prompt = prompt + "\n\nIMPORTANT: Return ONLY valid JSON with the exact fields specified above. No markdown, no explanations."
-
-            response = llm.invoke([HumanMessage(content=json_prompt)])
-
-            # Parse JSON response
-            response_text = response.content.strip()
-
-            # Clean up response (remove markdown if present)
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in response_text:
-                response_text = response_text.split("```")[1].split("```")[0].strip()
-
-            # Parse and validate with Pydantic
-            result_dict = json.loads(response_text)
-            initialize_result = InitializeOutput(**result_dict)
-
-            # Update state with initialization results
-            state.validation_status = initialize_result.validation_status
-            state.readiness_score = initialize_result.readiness_score
-            state.missing_info = initialize_result.missing_info
-            state.key_capabilities = initialize_result.key_capabilities
-            state.dependency_map = initialize_result.dependency_map
-
-            # Print initialization summary
-            print(f"\n✓ Initialize completed")
-            print(f"   Validation Status: {initialize_result.validation_status}")
-            print(f"   Readiness Score: {initialize_result.readiness_score:.2f}")
-
-            if initialize_result.missing_info:
-                print(f"\n⚠️  Missing Info ({len(initialize_result.missing_info)}):")
-                for i, info in enumerate(initialize_result.missing_info, 1):
-                    print(f"   {i}. {info}")
-
-            print(f"\n🎯 Key Capabilities ({len(initialize_result.key_capabilities)}):")
-            for i, cap in enumerate(initialize_result.key_capabilities[:3], 1):
-                print(f"   {i}. {cap}")
-            if len(initialize_result.key_capabilities) > 3:
-                print(f"   ... và {len(initialize_result.key_capabilities) - 3} capabilities khác")
-
-            print(f"\n🔗 Dependency Map:")
-            if initialize_result.dependency_map:
-                for key, deps in list(initialize_result.dependency_map.items())[:3]:
-                    print(f"   {key} → {deps}")
-                if len(initialize_result.dependency_map) > 3:
-                    print(f"   ... và {len(initialize_result.dependency_map) - 3} dependencies khác")
-            else:
-                print("   (No dependencies mapped)")
-
-            print("\n" + "="*80 + "\n")
-
-            # Print structured output JSON
-            print("\n📊 Structured Output từ initialize:")
-            print(json.dumps(initialize_result.model_dump(), ensure_ascii=False, indent=2))
-            print()
-
-            # Update status
-            if initialize_result.readiness_score >= 0.8:
-                state.status = "ready"
-                print("✅ Vision đủ sẵn sàng để tạo backlog")
-            elif initialize_result.readiness_score >= 0.5:
-                state.status = "partial_ready"
-                print("⚠️  Vision thiếu một số thông tin nhưng vẫn có thể tạo backlog")
-            else:
-                state.status = "not_ready"
-                print("❌ Vision thiếu quá nhiều thông tin, cần bổ sung trước khi tạo backlog")
-
-        except Exception as e:
-            print(f"❌ Lỗi khi initialize: {e}")
-            import traceback
-            traceback.print_exc()
-            state.validation_status = "error"
-            state.status = "error"
-            state.readiness_score = 0.0
-
+        print(f"✓ Max loops: {state.max_loops}")
+        print("✅ Ready to generate backlog")
         print("="*80 + "\n")
+
         return state
 
     # ========================================================================
@@ -303,28 +195,14 @@ class BacklogAgent:
         print("✨ GENERATE - TẠO PRODUCT BACKLOG ITEMS")
         print("="*80)
 
-        # Check readiness from initialize
-        if state.readiness_score < 0.5:
-            print(f"⚠️  Readiness score quá thấp ({state.readiness_score:.2f}), không thể tạo backlog")
-            state.status = "not_ready"
-            return state
-
-        print(f"✓ Readiness Score: {state.readiness_score:.2f}")
-        print(f"✓ Key Capabilities: {len(state.key_capabilities)} capabilities")
-        print(f"✓ Dependency Map: {len(state.dependency_map)} dependencies")
-
-        # Prepare prompt với vision và dependency_map
+        # Prepare prompt với vision
         vision_text = json.dumps(state.product_vision, ensure_ascii=False, indent=2)
-        dependency_map_text = json.dumps(state.dependency_map, ensure_ascii=False, indent=2)
 
-        prompt = GENERATE_PROMPT.format(
-            vision=vision_text,
-            dependency_map=dependency_map_text
-        )
+        prompt = GENERATE_PROMPT.format(vision=vision_text)
 
         try:
             # Use JSON mode (compatible với API)
-            llm = self._llm("gpt-4.1", 0.3)
+            llm = self._llm("gpt-4.1", 0.2)
 
             print("\n🤖 Calling LLM to generate backlog items...")
             response = llm.invoke([HumanMessage(content=prompt)])
@@ -582,7 +460,13 @@ class BacklogAgent:
             return state
 
         print(f"✓ Refining {len(state.backlog_items)} backlog items...")
-        print(f"✓ Issues to fix: {len(state.invest_issues)} INVEST + {len(state.gherkin_issues)} Gherkin")
+
+        # Check if this is user-requested refine (from preview)
+        if state.user_feedback:
+            print(f"\n👤 User Feedback: {state.user_feedback}")
+            print(f"✓ Refining based on user feedback...")
+        else:
+            print(f"✓ Issues to fix: {len(state.invest_issues)} INVEST + {len(state.gherkin_issues)} Gherkin")
 
         # Prepare data for prompt
         backlog_text = json.dumps(state.product_backlog, ensure_ascii=False, indent=2)
@@ -592,11 +476,23 @@ class BacklogAgent:
         }, ensure_ascii=False, indent=2)
         recommendations_text = "\n".join([f"- {rec}" for rec in state.recommendations])
 
-        prompt = REFINE_PROMPT.format(
-            backlog=backlog_text,
-            issues=issues_text,
-            recommendations=recommendations_text
-        )
+        # Build prompt - include user_feedback if available
+        if state.user_feedback:
+            # User-driven refine: prioritize user feedback
+            prompt = REFINE_PROMPT.format(
+                backlog=backlog_text,
+                issues=issues_text,
+                recommendations=recommendations_text
+            )
+            # Append user feedback as highest priority
+            prompt += f"\n\n🚨 CRITICAL USER FEEDBACK (HIGHEST PRIORITY):\n{state.user_feedback}\n\nIMPORTANT: Address the user feedback above FIRST, then fix other issues if time permits."
+        else:
+            # Auto refine: use standard prompt
+            prompt = REFINE_PROMPT.format(
+                backlog=backlog_text,
+                issues=issues_text,
+                recommendations=recommendations_text
+            )
 
         try:
             llm = self._llm("gpt-4.1", 0.3)
@@ -668,12 +564,19 @@ class BacklogAgent:
 
             # Show changes summary
             print(f"\n🔄 Changes Applied:")
+            if state.user_feedback:
+                print(f"   - Addressed user feedback")
             if state.invest_issues:
                 print(f"   - Fixed {len(state.invest_issues)} INVEST issues")
             if state.gherkin_issues:
                 print(f"   - Fixed {len(state.gherkin_issues)} Gherkin issues")
             if state.recommendations:
                 print(f"   - Applied {len(state.recommendations)} recommendations")
+
+            # Clear user_feedback after applying
+            if state.user_feedback:
+                print(f"\n✓ User feedback đã được xử lý, clearing feedback...")
+                state.user_feedback = None
 
             print("\n" + "="*80 + "\n")
 
@@ -819,8 +722,12 @@ class BacklogAgent:
             print(json.dumps(final_metadata, ensure_ascii=False, indent=2))
             print()
 
+            # Reset loop counter for potential preview → edit flow
+            print(f"✓ Resetting loop counter (current: {state.current_loop}) để chuẩn bị cho preview...")
+            state.current_loop = 0
+
             state.status = "completed"
-            print(f"✅ Product Backlog đã hoàn thiện! Tổng {state.current_loop} loops.")
+            print(f"✅ Product Backlog đã hoàn thiện!")
 
         except Exception as e:
             print(f"❌ Lỗi khi finalize backlog: {e}")
@@ -830,6 +737,101 @@ class BacklogAgent:
             # Still set export_status to failed in metadata
             if state.product_backlog.get("metadata"):
                 state.product_backlog["metadata"]["export_status"] = "failed"
+
+        print("="*80 + "\n")
+        return state
+
+    # ========================================================================
+    # Node: Preview
+    # ========================================================================
+
+    def preview(self, state: BacklogState) -> BacklogState:
+        """Preview - Hiển thị bản nháp handoff để người dùng chọn: Approve / Edit.
+
+        Theo sơ đồ:
+        - Hiển thị bản nháp backlog (unordered)
+        - Người dùng chọn: Approve / Edit
+        - Nếu Approve → END
+        - Nếu Edit → refine
+        """
+        print("\n" + "="*80)
+        print("👀 PREVIEW - BẢN NHÁP HANDOFF")
+        print("="*80)
+
+        if not state.backlog_items:
+            print("⚠️  Không có backlog items để preview")
+            state.status = "error_no_items"
+            state.user_approval = "edit"  # Force edit nếu không có items
+            return state
+
+        print(f"✓ Previewing {len(state.backlog_items)} backlog items...")
+        print(f"\n📊 Product Backlog Summary:")
+
+        metadata = state.product_backlog.get("metadata", {})
+        print(f"   Product: {metadata.get('product_name', 'N/A')}")
+        print(f"   Total Items: {metadata.get('total_items', 0)}")
+        print(f"   - Epics: {metadata.get('total_epics', 0)}")
+        print(f"   - User Stories: {metadata.get('total_user_stories', 0)}")
+        print(f"   - Tasks: {metadata.get('total_tasks', 0)}")
+        print(f"   Total Story Points: {metadata.get('total_story_points', 0)}")
+
+        # Show sample items by type
+        print(f"\n📝 Sample Items:")
+        for item_type in ["Epic", "User Story", "Task"]:
+            items_of_type = [item for item in state.backlog_items if item.get("type") == item_type]
+            if items_of_type:
+                sample = items_of_type[0]
+                print(f"\n   [{item_type}] {sample.get('id')}: {sample.get('title', '')[:60]}...")
+                print(f"      Priority: {sample.get('priority', 'Not Set')}")
+                if sample.get('acceptance_criteria'):
+                    print(f"      AC: {len(sample.get('acceptance_criteria', []))} criteria")
+                if item_type == "User Story" and sample.get('story_points'):
+                    print(f"      Story Points: {sample.get('story_points')}")
+                if item_type == "Task" and sample.get('estimated_hours'):
+                    print(f"      Estimated Hours: {sample.get('estimated_hours')}")
+
+        print("\n" + "="*80)
+        print("\n🔔 HUMAN INPUT REQUIRED:")
+        print("   Backlog đã sẵn sàng để handoff đến Priority Agent.")
+        print("   Bạn có muốn:")
+        print("   - 'approve': Chấp nhận và kết thúc")
+        print("   - 'edit': Yêu cầu chỉnh sửa (quay lại refine)")
+        print()
+
+        # For automated testing, default to 'approve'
+        # In production, this should wait for user input via API/UI
+        user_input = input("   Your choice (approve/edit): ").strip().lower()
+
+        if user_input == "approve":
+            state.user_approval = "approve"
+            state.user_feedback = None  # Clear any previous feedback
+            state.status = "approved"
+            print("\n✅ User approved! Backlog sẽ được handoff.")
+        elif user_input == "edit":
+            state.user_approval = "edit"
+            state.status = "needs_edit"
+            print("\n🔧 User requested edit.")
+
+            # Ask for feedback/reason
+            print("\n📝 Vui lòng nhập lý do/yêu cầu chỉnh sửa:")
+            print("   (Ví dụ: 'Thêm user story cho tính năng thanh toán', 'Chia nhỏ Epic-001', 'Bổ sung AC cho US-003')")
+            print()
+            feedback = input("   Feedback: ").strip()
+
+            if feedback:
+                state.user_feedback = feedback
+                print(f"\n✓ Đã ghi nhận feedback: {feedback[:100]}...")
+            else:
+                print("\n⚠️  Không có feedback, sẽ yêu cầu refine tổng quát")
+                state.user_feedback = "Cải thiện chất lượng backlog dựa trên các recommendations hiện có."
+
+            print("\n🔧 Returning to refine...")
+        else:
+            # Default to approve if invalid input
+            print(f"\n⚠️  Invalid input '{user_input}', defaulting to 'approve'")
+            state.user_approval = "approve"
+            state.user_feedback = None
+            state.status = "approved"
 
         print("="*80 + "\n")
         return state
@@ -857,6 +859,23 @@ class BacklogAgent:
             reason = "score ≥ 0.8" if state.readiness_score >= 0.8 else "reached max_loops"
             print(f"   → Decision: FINALIZE ({reason})")
             return "finalize"
+
+    def preview_branch(self, state: BacklogState) -> str:
+        """Branch sau preview node.
+
+        Logic (theo diagram):
+        - user_approval == 'approve' → END
+        - user_approval == 'edit' → refine
+        """
+        print(f"\n🔀 Preview Branch Decision:")
+        print(f"   User Approval: {state.user_approval}")
+
+        if state.user_approval == "approve":
+            print(f"   → Decision: END (user approved)")
+            return END
+        else:
+            print(f"   → Decision: REFINE (user requested edit)")
+            return "refine"
 
     # ========================================================================
     # Run Method
