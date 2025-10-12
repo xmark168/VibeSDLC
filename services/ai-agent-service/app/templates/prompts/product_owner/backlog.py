@@ -28,7 +28,7 @@ GENERATE_PROMPT = """Bạn là Product Owner chuyên nghiệp, nhiệm vụ là 
 {vision}
 
 **Nhiệm vụ:**
-Tạo Product Backlog Items (Epic, User Story, Task) theo template đã định nghĩa.
+Tạo Product Backlog Items (Epic, User Story, Task, Sub-task) theo template đã định nghĩa.
 
 **QUY TẮC QUAN TRỌNG:**
 
@@ -36,11 +36,13 @@ Tạo Product Backlog Items (Epic, User Story, Task) theo template đã định 
    - Epic: EPIC-001, EPIC-002, ... (CHỮ HOA, 3 chữ số)
    - User Story: US-001, US-002, ... (CHỮ HOA, 3 chữ số)
    - Task: TASK-001, TASK-002, ... (CHỮ HOA, 3 chữ số)
+   - Sub-task: SUB-001, SUB-002, ... (CHỮ HOA, 3 chữ số)
 
-2. **Hierarchy Rules**:
-   - Epic: parent_id = null (root level)
-   - User Story: parent_id = EPIC-xxx HOẶC null
-   - Task: parent_id = US-xxx (BẮT BUỘC)
+2. **Hierarchy Rules (THEO JIRA)** (BẮT BUỘC):
+   - Epic: parent_id = null (root level, container cho các work items)
+   - User Story: parent_id = EPIC-xxx (standard work item, con của Epic)
+   - Task: parent_id = EPIC-xxx (standard work item, con của Epic, CÙNG CẤP với User Story)
+   - Sub-task: parent_id = US-xxx HOẶC TASK-xxx (con của User Story hoặc Task, để chia nhỏ work)
 
 3. **User Story Format** (BẮT BUỘC):
    - Title: "As a [user/role], I want to [action] so that [benefit]"
@@ -49,34 +51,45 @@ Tạo Product Backlog Items (Epic, User Story, Task) theo template đã định 
 4. **Description Field** (BẮT BUỘC cho TẤT CẢ items):
    - Epic: Mô tả chi tiết về epic này (20-100 từ)
    - User Story: Mô tả context, background (10-50 từ)
-   - Task: Mô tả technical approach, implementation details (10-50 từ)
+   - Task: Mô tả high-level technical approach (10-50 từ)
+   - Sub-task: Mô tả cụ thể implementation details (5-30 từ)
 
 5. **Fields theo Type**:
    - **Epic**:
-     * story_points = null
-     * estimated_hours = null
+     * story_point = null
+     * estimate_value = null
      * task_type = null
      * business_value: CHI TIẾT (required)
 
    - **User Story**:
-     * story_points: 1, 2, 3, 5, 8, 13, 21 (Fibonacci, BẮT BUỘC)
-     * estimated_hours = null
+     * story_point: 1, 2, 3, 5, 8, 13, 21 (Fibonacci, BẮT BUỘC)
+     * estimate_value = null
      * task_type = null
      * acceptance_criteria: 3-10 items (BẮT BUỘC)
      * business_value: mô tả impact
 
-   - **Task**:
-     * story_points = null
-     * estimated_hours: 0.5-200 (BẮT BUỘC)
-     * task_type: "Development" (BẮT BUỘC - CHỈ tạo Development tasks)
-     * acceptance_criteria: 1-5 items
-     * **LƯU Ý**: CHỈ tạo Development tasks cho DEV role. KHÔNG tạo Testing tasks (sẽ do agent khác xử lý)
+   - **Task** (Standard work item cùng cấp với User Story):
+     * story_point = null
+     * estimate_value = null (KHÔNG estimate ở Task level)
+     * task_type: "Development", "Research", "Infrastructure" (BẮT BUỘC)
+     * acceptance_criteria: 2-5 items (high-level definition of done)
+     * business_value = null
+     * **LƯU Ý**: Task là work item độc lập hoặc technical task không fit user story format
+
+   - **Sub-task** (Con của User Story hoặc Task):
+     * story_point = null
+     * estimate_value: 0.5-40 hours (BẮT BUỘC)
+     * task_type: "Development", "Testing", "Documentation" (BẮT BUỘC)
+     * acceptance_criteria: 1-3 items (specific implementation checklist)
+     * business_value = null
+     * **LƯU Ý**: Sub-task là đơn vị nhỏ nhất, cụ thể, actionable cho 1 developer
 
 6. **Acceptance Criteria Format**:
-   - Given-When-Then HOẶC checklist rõ ràng
+   - User Story & Task: Given-When-Then format (high-level)
+   - Sub-task: Checklist cụ thể (implementation steps)
    - Cụ thể, đo lường được, có thể test
    - Ví dụ Given-When-Then: "Given user is on login page, When user enters valid credentials, Then user is redirected to dashboard"
-   - Ví dụ checklist: "User can view all fields: email, password, remember me checkbox"
+   - Ví dụ checklist (Sub-task): "API endpoint accepts POST /auth/login", "JWT token generated with 24h expiry", "Error messages returned for invalid credentials"
 
 7. **Dependencies**:
    - Phân tích vision để xác định dependencies giữa các items
@@ -90,23 +103,31 @@ Tạo Product Backlog Items (Epic, User Story, Task) theo template đã định 
    - Phân loại theo business domain: authentication, payment, user-management, etc
    - KHÔNG dùng tech stack (không dùng react, nodejs, etc)
 
-10. **Priority & Status**:
-    - priority: "Not Set" (mặc định)
+10. **Rank & Status**:
+    - rank: null (Priority Agent sẽ fill)
     - status: "Backlog" (mặc định)
 
 **Tạo backlog theo thứ tự:**
-1. Tạo Epics trước (3-5 epics)
-2. Tạo User Stories cho mỗi Epic (2-3 stories/epic)
-3. Tạo Development Tasks cho mỗi User Story (1-2 tasks/story):
-   - CHỈ tạo tasks với task_type = "Development"
-   - Tasks này dành cho DEV role để implement features
-   - KHÔNG tạo Testing tasks (sẽ do QA/Test Agent tạo riêng sau)
+1. Tạo Epics trước (3-5 epics) - Container cho các work items
+2. Tạo User Stories cho mỗi Epic (2-4 stories/epic):
+   - parent_id = EPIC-xxx
+   - Có story_point
+   - Có acceptance criteria (Given-When-Then)
+3. (Optional) Tạo Tasks độc lập nếu cần (technical tasks không fit user story):
+   - parent_id = EPIC-xxx (cùng cấp với User Story)
+   - KHÔNG có estimate_value (estimate ở Sub-task level)
+4. Tạo Sub-tasks để chia nhỏ User Stories hoặc Tasks:
+   - parent_id = US-xxx hoặc TASK-xxx
+   - Có estimate_value (hours)
+   - Có task_type (Development/Testing/Documentation)
+   - CHỈ tạo Development sub-tasks, KHÔNG tạo Testing (QA Agent sẽ tạo sau)
 
 **Lưu ý:**
 - Tập trung vào MVP features (High priority từ vision)
 - Mỗi User Story phải có giá trị độc lập (có thể ship riêng)
-- Development task phải cụ thể, actionable, mô tả rõ cần code gì
-- Không tạo quá chi tiết, đủ để DEV team hiểu và estimate
+- Sub-task phải cụ thể, actionable, mô tả rõ cần code gì
+- Mỗi Sub-task nên có estimate 0.5-16 hours (không quá lớn)
+- Task (nếu tạo) dùng cho technical work không fit user story format (VD: setup infrastructure, research spike)
 
 **Output JSON Format:**
 {{{{
@@ -119,49 +140,101 @@ Tạo Product Backlog Items (Epic, User Story, Task) theo template đã định 
       "type": "Epic",
       "parent_id": null,
       "title": "Authentication System",
-      "description": "...",
-      "priority": "Not Set",
+      "description": "Complete user authentication system including login, registration, password management",
+      "rank": null,
       "status": "Backlog",
-      "story_points": null,
-      "estimated_hours": null,
+      "story_point": null,
+      "estimate_value": null,
       "acceptance_criteria": [],
       "dependencies": [],
-      "labels": ["core"],
+      "labels": ["core", "authentication"],
       "task_type": null,
-      "business_value": "...",
+      "business_value": "Enable user identification and secure access to application features",
       "wsjf_inputs": {{{{}}}}
     }}}},
     {{{{
       "id": "US-001",
       "type": "User Story",
       "parent_id": "EPIC-001",
-      "title": "As a user, I want to login...",
-      "description": "...",
-      "priority": "Not Set",
+      "title": "As a user, I want to login with email and password so that I can access my account",
+      "description": "User authentication using email/password credentials with session management",
+      "rank": null,
       "status": "Backlog",
-      "story_points": 5,
-      "estimated_hours": null,
-      "acceptance_criteria": ["Given...", "When...", "Then..."],
+      "story_point": 5,
+      "estimate_value": null,
+      "acceptance_criteria": [
+        "Given user is on login page, When user enters valid credentials, Then user is redirected to dashboard",
+        "Given user enters invalid credentials, When user submits login form, Then error message is displayed",
+        "Given user is logged in, When user closes browser and returns, Then session is maintained for 24 hours"
+      ],
       "dependencies": [],
-      "labels": ["authentication"],
+      "labels": ["authentication", "core"],
       "task_type": null,
-      "business_value": "...",
+      "business_value": "Allow users to securely access their personalized content",
+      "wsjf_inputs": {{{{}}}}
+    }}}},
+    {{{{
+      "id": "SUB-001",
+      "type": "Sub-task",
+      "parent_id": "US-001",
+      "title": "Implement login API endpoint",
+      "description": "Create POST /api/auth/login endpoint with email/password validation and JWT generation",
+      "rank": null,
+      "status": "Backlog",
+      "story_point": null,
+      "estimate_value": 8.0,
+      "acceptance_criteria": [
+        "API endpoint accepts POST /api/auth/login with email and password",
+        "Valid credentials return JWT token with 24h expiry",
+        "Invalid credentials return 401 status with error message",
+        "Password is validated using bcrypt"
+      ],
+      "dependencies": [],
+      "labels": ["backend", "authentication"],
+      "task_type": "Development",
+      "business_value": null,
+      "wsjf_inputs": {{{{}}}}
+    }}}},
+    {{{{
+      "id": "SUB-002",
+      "type": "Sub-task",
+      "parent_id": "US-001",
+      "title": "Create login form UI component",
+      "description": "Build React login form component with email, password fields and validation",
+      "rank": null,
+      "status": "Backlog",
+      "story_point": null,
+      "estimate_value": 6.0,
+      "acceptance_criteria": [
+        "Form has email and password input fields",
+        "Client-side validation for email format",
+        "Submit button disabled until form is valid",
+        "Loading state shown during API call"
+      ],
+      "dependencies": ["SUB-001"],
+      "labels": ["frontend", "authentication"],
+      "task_type": "Development",
+      "business_value": null,
       "wsjf_inputs": {{{{}}}}
     }}}},
     {{{{
       "id": "TASK-001",
       "type": "Task",
-      "parent_id": "US-001",
-      "title": "Implement login API endpoint",
-      "description": "Create REST API endpoint for user authentication with JWT token generation",
-      "priority": "Not Set",
+      "parent_id": "EPIC-001",
+      "title": "Setup authentication infrastructure",
+      "description": "Configure JWT library, session management, and security middleware",
+      "rank": null,
       "status": "Backlog",
-      "story_points": null,
-      "estimated_hours": 8.0,
-      "acceptance_criteria": ["API endpoint accepts email/password", "JWT token generated on success", "Error handling implemented"],
+      "story_point": null,
+      "estimate_value": null,
+      "acceptance_criteria": [
+        "JWT library installed and configured",
+        "Authentication middleware implemented",
+        "Environment variables configured for secrets"
+      ],
       "dependencies": [],
-      "labels": ["backend", "authentication"],
-      "task_type": "Development",
+      "labels": ["infrastructure", "authentication"],
+      "task_type": "Infrastructure",
       "business_value": null,
       "wsjf_inputs": {{{{}}}}
     }}}}

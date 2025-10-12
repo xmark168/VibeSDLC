@@ -28,21 +28,28 @@ load_dotenv()
 # ============================================================================
 
 class BacklogItem(BaseModel):
-    """Model cho một backlog item."""
-    id: str = Field(description="ID: EPIC-001, US-001, TASK-001")
-    type: Literal["Epic", "User Story", "Task"] = Field(description="Loại item")
+    """Model cho một backlog item.
+
+    Hierarchy theo Jira:
+    - Epic (parent_id=null): Container cho các stories
+    - User Story (parent_id=EPIC-xxx): Standard work item, con của Epic
+    - Task (parent_id=EPIC-xxx): Standard work item, con của Epic, cùng cấp với User Story
+    - Sub-task (parent_id=US-xxx hoặc TASK-xxx): Con của User Story hoặc Task
+    """
+    id: str = Field(description="ID: EPIC-001, US-001, TASK-001, SUB-001")
+    type: Literal["Epic", "User Story", "Task", "Sub-task"] = Field(description="Loại item")
     parent_id: Optional[str] = Field(default=None, description="ID của parent item")
     title: str = Field(description="Tiêu đề item")
     description: str = Field(default="", description="Mô tả chi tiết")
     rank: Optional[int] = Field(default=None, description="Thứ tự ưu tiên, Priority Agent sẽ fill")
     status: Literal["Backlog", "Ready", "In Progress", "Done"] = Field(default="Backlog")
     story_point: Optional[int] = Field(default=None, description="CHỈ cho User Story")
-    estimate_value: Optional[float] = Field(default=None, description="CHỈ cho Task")
+    estimate_value: Optional[float] = Field(default=None, description="CHỈ cho Task và Sub-task")
     acceptance_criteria: list[str] = Field(default_factory=list)
     dependencies: list[str] = Field(default_factory=list)
     labels: list[str] = Field(default_factory=list)
-    task_type: Optional[str] = Field(default=None, description="CHỈ cho Task")
-    business_value: Optional[str] = Field(default=None, description="Cho Epic và User Story, null cho Task")
+    task_type: Optional[str] = Field(default=None, description="CHỈ cho Task và Sub-task: Development/Testing/etc")
+    business_value: Optional[str] = Field(default=None, description="Cho Epic và User Story, null cho Task và Sub-task")
     wsjf_inputs: dict = Field(default_factory=dict, description="Empty dict, Priority Agent sẽ fill")
 
 
@@ -78,7 +85,6 @@ class BacklogState(BaseModel):
     # Final output
     product_backlog: dict = Field(default_factory=dict)
     status: str = "initial"
-
 
 
 # ============================================================================
@@ -251,10 +257,12 @@ class BacklogAgent:
             epics = [i for i in generate_result.items if i.type == "Epic"]
             stories = [i for i in generate_result.items if i.type == "User Story"]
             tasks = [i for i in generate_result.items if i.type == "Task"]
+            subtasks = [i for i in generate_result.items if i.type == "Sub-task"]
 
             # Calculate totals
             total_items = len(generate_result.items)
             total_story_points = sum(item.story_point or 0 for item in generate_result.items)
+            total_estimate_hours = sum(item.estimate_value or 0 for item in generate_result.items)
 
             # Update metadata with calculated values
             generate_result.metadata.update({
@@ -263,7 +271,9 @@ class BacklogAgent:
                 "total_epics": len(epics),
                 "total_user_stories": len(stories),
                 "total_tasks": len(tasks),
-                "total_story_points": total_story_points
+                "total_subtasks": len(subtasks),
+                "total_story_points": total_story_points,
+                "total_estimate_hours": total_estimate_hours
             })
 
             # Update state
@@ -283,14 +293,18 @@ class BacklogAgent:
             print(f"   - Epics: {len(epics)}")
             print(f"   - User Stories: {len(stories)}")
             print(f"   - Tasks: {len(tasks)}")
+            print(f"   - Sub-tasks: {len(subtasks)}")
             print(f"   - Total Story Points: {total_story_points}")
+            print(f"   - Total Estimate Hours: {total_estimate_hours}")
 
             # Show sample items
             print(f"\n📝 Sample Items:")
-            for item_type in ["Epic", "User Story", "Task"]:
+            for item_type in ["Epic", "User Story", "Task", "Sub-task"]:
                 sample = next((i for i in generate_result.items if i.type == item_type), None)
                 if sample:
                     print(f"\n   [{item_type}] {sample.id}: {sample.title[:60]}...")
+                    if sample.parent_id:
+                        print(f"      Parent: {sample.parent_id}")
                     if sample.acceptance_criteria:
                         print(f"      AC: {len(sample.acceptance_criteria)} criteria")
 
@@ -531,10 +545,12 @@ class BacklogAgent:
             epics = [i for i in refined_items if i.type == "Epic"]
             stories = [i for i in refined_items if i.type == "User Story"]
             tasks = [i for i in refined_items if i.type == "Task"]
+            subtasks = [i for i in refined_items if i.type == "Sub-task"]
 
             # Recalculate metadata
             total_items = len(refined_items)
             total_story_points = sum(item.story_point or 0 for item in refined_items)
+            total_estimate_hours = sum(item.estimate_value or 0 for item in refined_items)
 
             refined_metadata = result_dict.get("metadata", {})
             refined_metadata.update({
@@ -543,7 +559,9 @@ class BacklogAgent:
                 "total_epics": len(epics),
                 "total_user_stories": len(stories),
                 "total_tasks": len(tasks),
-                "total_story_points": total_story_points
+                "total_subtasks": len(subtasks),
+                "total_story_points": total_story_points,
+                "total_estimate_hours": total_estimate_hours
             })
 
             # Update state with refined backlog
@@ -561,7 +579,9 @@ class BacklogAgent:
             print(f"   - Epics: {len(epics)}")
             print(f"   - User Stories: {len(stories)}")
             print(f"   - Tasks: {len(tasks)}")
+            print(f"   - Sub-tasks: {len(subtasks)}")
             print(f"   - Total Story Points: {total_story_points}")
+            print(f"   - Total Estimate Hours: {total_estimate_hours}")
 
             # Show changes summary
             print(f"\n🔄 Changes Applied:")
@@ -668,9 +688,11 @@ class BacklogAgent:
             epics = [i for i in final_items if i.type == "Epic"]
             stories = [i for i in final_items if i.type == "User Story"]
             tasks = [i for i in final_items if i.type == "Task"]
+            subtasks = [i for i in final_items if i.type == "Sub-task"]
 
             total_items = len(final_items)
             total_story_points = sum(item.story_point or 0 for item in final_items)
+            total_estimate_hours = sum(item.estimate_value or 0 for item in final_items)
 
             final_metadata = result_dict["metadata"]
             final_metadata.update({
@@ -679,7 +701,9 @@ class BacklogAgent:
                 "total_epics": len(epics),
                 "total_user_stories": len(stories),
                 "total_tasks": len(tasks),
+                "total_subtasks": len(subtasks),
                 "total_story_points": total_story_points,
+                "total_estimate_hours": total_estimate_hours,
                 "export_status": "success"
             })
 
@@ -699,19 +723,21 @@ class BacklogAgent:
             print(f"   - Epics: {len(epics)}")
             print(f"   - User Stories: {len(stories)}")
             print(f"   - Tasks: {len(tasks)}")
+            print(f"   - Sub-tasks: {len(subtasks)}")
             print(f"   Total Story Points: {total_story_points}")
+            print(f"   Total Estimate Hours: {total_estimate_hours}")
 
             # Validation summary
             print(f"\n🔍 Validation Summary:")
             items_with_ac = sum(1 for item in final_items if item.acceptance_criteria)
             items_with_deps = sum(1 for item in final_items if item.dependencies)
             stories_with_points = sum(1 for item in final_items if item.type == "User Story" and item.story_point)
-            tasks_with_estimate = sum(1 for item in final_items if item.type == "Task" and item.estimate_value)
+            subtasks_with_estimate = sum(1 for item in final_items if item.type == "Sub-task" and item.estimate_value)
 
             print(f"   - Items with Acceptance Criteria: {items_with_ac}/{total_items}")
             print(f"   - Items with Dependencies: {items_with_deps}/{total_items}")
             print(f"   - User Stories with Story Point: {stories_with_points}/{len(stories)}")
-            print(f"   - Tasks with Estimate Value: {tasks_with_estimate}/{len(tasks)}")
+            print(f"   - Sub-tasks with Estimate Value: {subtasks_with_estimate}/{len(subtasks) if subtasks else 0}")
 
             print(f"\n📤 Export Status: {final_metadata.get('export_status', 'unknown')}")
             print(f"   → Ready for handoff to Priority Agent")
@@ -774,22 +800,26 @@ class BacklogAgent:
         print(f"   - Epics: {metadata.get('total_epics', 0)}")
         print(f"   - User Stories: {metadata.get('total_user_stories', 0)}")
         print(f"   - Tasks: {metadata.get('total_tasks', 0)}")
+        print(f"   - Sub-tasks: {metadata.get('total_subtasks', 0)}")
         print(f"   Total Story Points: {metadata.get('total_story_points', 0)}")
+        print(f"   Total Estimate Hours: {metadata.get('total_estimate_hours', 0)}")
 
         # Show sample items by type
         print(f"\n📝 Sample Items:")
-        for item_type in ["Epic", "User Story", "Task"]:
+        for item_type in ["Epic", "User Story", "Task", "Sub-task"]:
             items_of_type = [item for item in state.backlog_items if item.get("type") == item_type]
             if items_of_type:
                 sample = items_of_type[0]
                 print(f"\n   [{item_type}] {sample.get('id')}: {sample.get('title', '')[:60]}...")
                 print(f"      Rank: {sample.get('rank', 'Not Set')}")
+                if sample.get('parent_id'):
+                    print(f"      Parent: {sample.get('parent_id')}")
                 if sample.get('acceptance_criteria'):
                     print(f"      AC: {len(sample.get('acceptance_criteria', []))} criteria")
                 if item_type == "User Story" and sample.get('story_point'):
                     print(f"      Story Point: {sample.get('story_point')}")
-                if item_type == "Task" and sample.get('estimate_value'):
-                    print(f"      Estimate Value: {sample.get('estimate_value')}")
+                if item_type == "Sub-task" and sample.get('estimate_value'):
+                    print(f"      Estimate Value: {sample.get('estimate_value')} hours")
 
         print("\n" + "="*80)
         print("\n🔔 HUMAN INPUT REQUIRED:")
