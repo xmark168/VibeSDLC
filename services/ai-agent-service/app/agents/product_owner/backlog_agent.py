@@ -50,7 +50,6 @@ class BacklogItem(BaseModel):
     labels: list[str] = Field(default_factory=list)
     task_type: Optional[str] = Field(default=None, description="CHỈ cho Task và Sub-task: Development/Testing/etc")
     business_value: Optional[str] = Field(default=None, description="Cho Epic và User Story, null cho Task và Sub-task")
-    wsjf_inputs: dict = Field(default_factory=dict, description="Empty dict, Priority Agent sẽ fill")
 
 
 class GenerateOutput(BaseModel):

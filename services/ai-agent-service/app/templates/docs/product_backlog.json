@@ -153,36 +153,6 @@
             "type": ["string", "null"],
             "description": "Giá trị kinh doanh (cho Epic và User Story). Null cho Task/Sub-task.",
             "maxLength": 500
-          },
-          "wsjf_inputs": {
-            "type": "object",
-            "description": "WSJF inputs để tính priority (sẽ được fill bởi Priority Agent). Để empty object nếu chưa có.",
-            "properties": {
-              "business_value": {
-                "type": "integer",
-                "description": "Giá trị kinh doanh (1-10)",
-                "minimum": 1,
-                "maximum": 10
-              },
-              "time_criticality": {
-                "type": "integer",
-                "description": "Độ cấp thiết về thời gian (1-10)",
-                "minimum": 1,
-                "maximum": 10
-              },
-              "risk_reduction": {
-                "type": "integer",
-                "description": "Giảm rủi ro (1-10)",
-                "minimum": 1,
-                "maximum": 10
-              },
-              "job_size": {
-                "type": "integer",
-                "description": "Kích thước công việc (1-13, Fibonacci)",
-                "enum": [1, 2, 3, 5, 8, 13]
-              }
-            },
-            "default": {}
           }
         },
         "required": ["id", "type", "title", "description", "status"],

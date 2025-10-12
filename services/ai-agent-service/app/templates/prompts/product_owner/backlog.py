@@ -96,14 +96,11 @@ Tạo Product Backlog Items (Epic, User Story, Task, Sub-task) theo template đ�
    - Chỉ set dependency khi item THỰC SỰ phụ thuộc vào item khác
    - Ví dụ: US-002 (User Profile) depends on US-001 (Authentication)
 
-8. **WSJF Inputs**:
-   - Để empty object {{}} cho tất cả items (Priority Agent sẽ fill sau)
-
-9. **Labels**:
+8. **Labels**:
    - Phân loại theo business domain: authentication, payment, user-management, etc
    - KHÔNG dùng tech stack (không dùng react, nodejs, etc)
 
-10. **Rank & Status**:
+9. **Rank & Status**:
     - rank: null (Priority Agent sẽ fill)
     - status: "Backlog" (mặc định)
 
@@ -150,7 +147,6 @@ Tạo Product Backlog Items (Epic, User Story, Task, Sub-task) theo template đ�
       "labels": ["core", "authentication"],
       "task_type": null,
       "business_value": "Enable user identification and secure access to application features",
-      "wsjf_inputs": {{{{}}}}
     }}}},
     {{{{
       "id": "US-001",
@@ -171,7 +167,6 @@ Tạo Product Backlog Items (Epic, User Story, Task, Sub-task) theo template đ�
       "labels": ["authentication", "core"],
       "task_type": null,
       "business_value": "Allow users to securely access their personalized content",
-      "wsjf_inputs": {{{{}}}}
     }}}},
     {{{{
       "id": "SUB-001",
@@ -193,7 +188,6 @@ Tạo Product Backlog Items (Epic, User Story, Task, Sub-task) theo template đ�
       "labels": ["backend", "authentication"],
       "task_type": "Development",
       "business_value": null,
-      "wsjf_inputs": {{{{}}}}
     }}}},
     {{{{
       "id": "SUB-002",
@@ -215,7 +209,6 @@ Tạo Product Backlog Items (Epic, User Story, Task, Sub-task) theo template đ�
       "labels": ["frontend", "authentication"],
       "task_type": "Development",
       "business_value": null,
-      "wsjf_inputs": {{{{}}}}
     }}}},
     {{{{
       "id": "TASK-001",
@@ -236,7 +229,6 @@ Tạo Product Backlog Items (Epic, User Story, Task, Sub-task) theo template đ�
       "labels": ["infrastructure", "authentication"],
       "task_type": "Infrastructure",
       "business_value": null,
-      "wsjf_inputs": {{{{}}}}
     }}}}
   ]
 }}}}

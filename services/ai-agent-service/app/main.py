@@ -12,6 +12,7 @@ from langfuse import Langfuse
 from agents.product_owner.gatherer_agent import GathererAgent
 from agents.product_owner.vision_agent import VisionAgent
 from agents.product_owner.backlog_agent import BacklogAgent
+from agents.product_owner.priority_agent import PriorityAgent
 
 # Load environment variables
 load_dotenv()
@@ -538,12 +539,365 @@ def test_backlog_agent():
     return True
 
 
+def test_priority_agent():
+    """Test the priority agent with Product Backlog input."""
+    print_separator()
+    print("Testing Priority Agent")
+    print_separator()
+
+    # Sample product backlog (compact version from your data)
+    product_backlog = {
+        "metadata": {
+            "product_name": "SmartWork",
+            "version": "v1.0",
+            "total_items": 37,
+            "total_epics": 5,
+            "total_user_stories": 26,
+            "total_tasks": 2,
+            "total_subtasks": 4,
+            "total_story_points": 92,
+            "total_estimate_hours": 26.0
+        },
+        "items": [
+            # Epic 1
+            {
+                "id": "EPIC-001",
+                "type": "Epic",
+                "parent_id": None,
+                "title": "Work Management Core",
+                "description": "Enable users to create, organize, and track personal and group tasks with intuitive UI and real-time updates.",
+                "rank": None,
+                "status": "Backlog",
+                "story_point": None,
+                "estimate_value": None,
+                "acceptance_criteria": [],
+                "dependencies": [],
+                "labels": ["core", "work-management"],
+                "task_type": None,
+                "business_value": "Empower users to manage tasks efficiently, reducing stress and improving productivity."
+            },
+            # User Stories for Epic 1
+            {
+                "id": "US-001",
+                "type": "User Story",
+                "parent_id": "EPIC-001",
+                "title": "As a student, I want to create tasks for my assignments so that I can manage my deadlines",
+                "description": "Allow students to add tasks with details and deadlines to organize their study workload.",
+                "rank": None,
+                "status": "Backlog",
+                "story_point": 3,
+                "estimate_value": None,
+                "acceptance_criteria": [
+                    "Given user is on task creation page, When user enters title, description, and due date, Then task is saved and displayed in task list",
+                    "Given user leaves title empty, When user tries to save, Then error message is shown"
+                ],
+                "dependencies": [],
+                "labels": ["work-management", "student"],
+                "task_type": None,
+                "business_value": "Helps students organize assignments and reduce deadline stress."
+            },
+            {
+                "id": "US-002",
+                "type": "User Story",
+                "parent_id": "EPIC-001",
+                "title": "As an office worker, I want to organize my daily tasks so that I can improve my productivity",
+                "description": "Enable office workers to structure and prioritize daily work tasks for better focus.",
+                "rank": None,
+                "status": "Backlog",
+                "story_point": 3,
+                "estimate_value": None,
+                "acceptance_criteria": [
+                    "Given user is on dashboard, When user adds a new task, Then task appears in today's list",
+                    "Given user marks a task as complete, When user views dashboard, Then completed task is visually distinguished"
+                ],
+                "dependencies": [],
+                "labels": ["work-management", "office-worker"],
+                "task_type": None,
+                "business_value": "Enables office workers to stay organized and productive."
+            },
+            # Epic 2
+            {
+                "id": "EPIC-002",
+                "type": "Epic",
+                "parent_id": None,
+                "title": "Project Planning & Tracking",
+                "description": "Provide tools for users to plan, divide, and monitor project progress, including collaboration and progress visualization.",
+                "rank": None,
+                "status": "Backlog",
+                "story_point": None,
+                "estimate_value": None,
+                "acceptance_criteria": [],
+                "dependencies": [],
+                "labels": ["project-management", "collaboration"],
+                "task_type": None,
+                "business_value": "Facilitate effective teamwork and project delivery by enabling structured planning and tracking."
+            },
+            {
+                "id": "US-004",
+                "type": "User Story",
+                "parent_id": "EPIC-002",
+                "title": "As a student, I want to create group projects so that I can coordinate with my teammates",
+                "description": "Enable students to set up group projects and assign tasks to team members.",
+                "rank": None,
+                "status": "Backlog",
+                "story_point": 5,
+                "estimate_value": None,
+                "acceptance_criteria": [
+                    "Given user is on project creation page, When user enters project name and invites teammates, Then project is created and shared",
+                    "Given user assigns tasks, When teammate logs in, Then assigned tasks appear in their dashboard"
+                ],
+                "dependencies": [],
+                "labels": ["project-management", "student"],
+                "task_type": None,
+                "business_value": "Facilitates teamwork and improves group project outcomes for students."
+            },
+            # Epic 3
+            {
+                "id": "EPIC-003",
+                "type": "Epic",
+                "parent_id": None,
+                "title": "AI-powered Productivity Assistant",
+                "description": "Integrate AI features to analyze user performance, automate reminders, and provide smart decision support.",
+                "rank": None,
+                "status": "Backlog",
+                "story_point": None,
+                "estimate_value": None,
+                "acceptance_criteria": [],
+                "dependencies": [],
+                "labels": ["ai", "productivity"],
+                "task_type": None,
+                "business_value": "Boost user efficiency and reduce manual effort through intelligent automation and insights."
+            },
+            {
+                "id": "US-007",
+                "type": "User Story",
+                "parent_id": "EPIC-003",
+                "title": "As a user, I want to receive smart reminders about upcoming deadlines so that I never miss important tasks",
+                "description": "AI-driven reminders notify users of approaching deadlines based on task priority and history.",
+                "rank": None,
+                "status": "Backlog",
+                "story_point": 5,
+                "estimate_value": None,
+                "acceptance_criteria": [
+                    "Given user has tasks with deadlines, When deadline is approaching, Then system sends reminder notification",
+                    "Given user completes a task, When reminder is scheduled, Then reminder is cancelled"
+                ],
+                "dependencies": ["US-001", "US-002"],
+                "labels": ["ai", "reminder"],
+                "task_type": None,
+                "business_value": "Reduces missed deadlines and improves user reliability."
+            },
+            {
+                "id": "US-010",
+                "type": "User Story",
+                "parent_id": "EPIC-004",
+                "title": "As a user, I want my data to be encrypted so that my information stays secure",
+                "description": "Ensure all user data is encrypted during transmission and storage.",
+                "rank": None,
+                "status": "Backlog",
+                "story_point": 3,
+                "estimate_value": None,
+                "acceptance_criteria": [
+                    "Given user submits data, When data is stored, Then it is encrypted at rest using AES-256",
+                    "Given user accesses app, When data is transmitted, Then it is encrypted in transit using TLS 1.2+"
+                ],
+                "dependencies": [],
+                "labels": ["security", "encryption"],
+                "task_type": None,
+                "business_value": "Protects user privacy and builds trust in SmartWork."
+            },
+            # Epic 5
+            {
+                "id": "EPIC-005",
+                "type": "Epic",
+                "parent_id": None,
+                "title": "User Experience & Accessibility",
+                "description": "Deliver a modern, friendly, and accessible interface optimized for both web and mobile platforms.",
+                "rank": None,
+                "status": "Backlog",
+                "story_point": None,
+                "estimate_value": None,
+                "acceptance_criteria": [],
+                "dependencies": [],
+                "labels": ["ux", "accessibility"],
+                "task_type": None,
+                "business_value": "Increase adoption and satisfaction by making SmartWork easy to use for all user segments."
+            },
+            {
+                "id": "US-013",
+                "type": "User Story",
+                "parent_id": "EPIC-005",
+                "title": "As a user, I want an intuitive interface so that I can easily manage my work and projects",
+                "description": "Design a user-friendly UI for task and project management on web and mobile.",
+                "rank": None,
+                "status": "Backlog",
+                "story_point": 3,
+                "estimate_value": None,
+                "acceptance_criteria": [
+                    "Given user opens app, When dashboard loads, Then navigation is clear and accessible with no more than 2 clicks to any main feature",
+                    "Given user creates or edits tasks, When form is used, Then process can be completed in under 30 seconds"
+                ],
+                "dependencies": [],
+                "labels": ["ux", "interface"],
+                "task_type": None,
+                "business_value": "Improves user satisfaction and adoption across all segments."
+            },
+            # Tasks
+            {
+                "id": "TASK-001",
+                "type": "Task",
+                "parent_id": "EPIC-004",
+                "title": "Setup cloud data encryption infrastructure",
+                "description": "Configure cloud storage to encrypt user data at rest and in transit.",
+                "rank": None,
+                "status": "Backlog",
+                "story_point": None,
+                "estimate_value": None,
+                "acceptance_criteria": [
+                    "Given cloud storage is used, When data is saved, Then encryption is applied",
+                    "Given data is retrieved, When transmission occurs, Then TLS is enforced"
+                ],
+                "dependencies": [],
+                "labels": ["infrastructure", "security"],
+                "task_type": "Infrastructure",
+                "business_value": None
+            },
+            # Sub-tasks
+            {
+                "id": "SUB-001",
+                "type": "Sub-task",
+                "parent_id": "US-001",
+                "title": "Implement task creation API endpoint",
+                "description": "Develop POST /api/tasks to create new tasks with validation.",
+                "rank": None,
+                "status": "Backlog",
+                "story_point": None,
+                "estimate_value": 8,
+                "acceptance_criteria": [
+                    "API accepts POST /api/tasks with title, description, due date",
+                    "Returns 400 error if title is missing"
+                ],
+                "dependencies": [],
+                "labels": ["backend", "work-management"],
+                "task_type": "Development",
+                "business_value": None
+            },
+            {
+                "id": "SUB-002",
+                "type": "Sub-task",
+                "parent_id": "US-001",
+                "title": "Build task creation UI component",
+                "description": "Create frontend form for adding tasks with validation.",
+                "rank": None,
+                "status": "Backlog",
+                "story_point": None,
+                "estimate_value": 6,
+                "acceptance_criteria": [
+                    "Form includes title, description, due date fields",
+                    "Client-side validation for required fields"
+                ],
+                "dependencies": ["SUB-001"],
+                "labels": ["frontend", "work-management"],
+                "task_type": "Development",
+                "business_value": None
+            }
+        ]
+    }
+
+    # Generate session and user IDs
+    session_id = f"test-priority-{uuid.uuid4()}"
+    user_id = "test-user"
+
+    print(f"Session ID: {session_id}")
+    print(f"User ID: {user_id}")
+    print(f"Product Name: {product_backlog['metadata'].get('product_name')}")
+    print(f"Total Items: {product_backlog['metadata'].get('total_items')}")
+
+    # Initialize priority agent
+    print("\nInitializing Priority Agent...")
+    agent = PriorityAgent(session_id=session_id, user_id=user_id)
+    print("Agent initialized successfully")
+
+    print_separator()
+    print("Running Priority Agent workflow...\n")
+
+    try:
+        result = agent.run(product_backlog=product_backlog)
+
+        print_separator()
+        print("Workflow completed successfully!")
+        print_separator()
+
+        # Print result
+        print("\n📊 PRIORITY AGENT RESULT:")
+
+        # Extract final state
+        final_state = None
+        if isinstance(result, dict):
+            for key, value in result.items():
+                final_state = value
+
+        if final_state:
+            print(f"\n✅ STATUS: {final_state.get('status', 'unknown')}")
+            print(f"   Loops: {final_state.get('current_loop', 0)}/{final_state.get('max_loops', 0)}")
+            print(f"   Readiness Score: {final_state.get('readiness_score', 0):.2f}")
+
+            # Print prioritized backlog
+            if final_state.get('prioritized_backlog'):
+                items = final_state['prioritized_backlog']
+                print(f"\n📋 PRIORITIZED BACKLOG:")
+                print(f"   Total Items: {len(items)}")
+
+                # Show top 10 prioritized items
+                print(f"\n   Top 10 Prioritized Items:")
+                sorted_items = sorted([i for i in items if i.get('rank')], key=lambda x: x.get('rank', 999))
+                for item in sorted_items[:10]:
+                    print(f"   {item.get('rank', 'N/A')}. [{item.get('type')}] {item.get('id')}: {item.get('title', '')[:60]}...")
+
+            # Print sprints
+            if final_state.get('sprints'):
+                sprints = final_state['sprints']
+                print(f"\n🏃 SPRINT PLAN:")
+                print(f"   Total Sprints: {len(sprints)}")
+
+                for sprint in sprints:
+                    print(f"\n   Sprint {sprint.get('sprint_number')}:")
+                    print(f"      Goal: {sprint.get('sprint_goal', 'N/A')}")
+                    print(f"      Items: {len(sprint.get('assigned_items', []))}")
+                    print(f"      Velocity Plan: {sprint.get('velocity_plan', 0)} points")
+                    print(f"      Status: {sprint.get('status', 'N/A')}")
+
+            # Print sprint plan if finalized
+            if final_state.get('sprint_plan'):
+                print("\n✅ SPRINT PLAN FINALIZED:")
+                sprint_plan = final_state['sprint_plan']
+                print(json.dumps(sprint_plan, ensure_ascii=False, indent=2))
+
+            print(f"\n📝 Full Result:")
+            print(json.dumps(final_state, ensure_ascii=False, indent=2, default=str))
+        else:
+            print("No final state found in result")
+            print("Result:", result)
+
+    except Exception as e:
+        print(f"\nError during execution: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+    finally:
+        langfuse.flush()
+
+    print_separator()
+    return True
+
+
 def main():
     """Main function."""
     print("\nProduct Owner Agent Test Suite")
 
-    # Test backlog agent
-    success = test_backlog_agent()
+    # Test priority agent
+    success = test_priority_agent()
 
     if success:
         print("\nAll tests completed successfully!")
