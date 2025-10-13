@@ -238,7 +238,8 @@ USP của TaskMaster Pro: AI cá nhân hóa sâu, học習 thói quen làm việ
             print_final_summary(final_node_state)
         else:
             print("No final state found in result")
-            print("Result:", result)
+            print("\nResult:")
+            print(json.dumps(result, ensure_ascii=False, indent=2))
 
     except Exception as e:
         print(f"\nError during execution: {e}")
@@ -524,7 +525,8 @@ def test_backlog_agent():
             print(json.dumps(final_state, ensure_ascii=False, indent=2, default=str))
         else:
             print("No final state found in result")
-            print("Result:", result)
+            print("\nResult:")
+            print(json.dumps(result, ensure_ascii=False, indent=2))
 
     except Exception as e:
         print(f"\nError during execution: {e}")
@@ -877,7 +879,8 @@ def test_priority_agent():
             print(json.dumps(final_state, ensure_ascii=False, indent=2, default=str))
         else:
             print("No final state found in result")
-            print("Result:", result)
+            print("\nResult:")
+            print(json.dumps(result, ensure_ascii=False, indent=2))
 
     except Exception as e:
         print(f"\nError during execution: {e}")
