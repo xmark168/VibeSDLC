@@ -83,7 +83,7 @@
     "@biomejs/biome": "^2.2.4",
     "@hey-api/openapi-ts": "0.84.2",
     "@playwright/test": "^1.55.1",
-    "@tanstack/router-devtools": "^1.132.6",
+    "@tanstack/router-devtools": "^1.132.51",
     "@tanstack/router-plugin": "^1.132.6",
     "@types/estree": "^1.0.8",
     "@types/json-schema": "^7.0.15",
