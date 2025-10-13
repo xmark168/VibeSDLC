@@ -939,7 +939,7 @@ class BacklogAgent:
         ):
             final_state = output
 
-        # return final_state or {}
-        return None
+        # Return final state (last node output)
+        return final_state or {}
 
     

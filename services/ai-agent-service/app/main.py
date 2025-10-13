@@ -895,12 +895,238 @@ def test_priority_agent():
     return True
 
 
+def test_full_po_pipeline():
+    """Test toàn bộ Product Owner Agent pipeline: Gatherer → Vision → Backlog → Priority."""
+    print("\n" + "="*80)
+    print("🚀 TESTING FULL PRODUCT OWNER AGENT PIPELINE")
+    print("="*80)
+    print("\nPipeline: Gatherer Agent → Vision Agent → Backlog Agent → Priority Agent")
+    print("="*80 + "\n")
+
+    # Generate session and user IDs
+    session_id = f"test-full-po-{uuid.uuid4()}"
+    user_id = "test-user"
+
+    print(f"Session ID: {session_id}")
+    print(f"User ID: {user_id}\n")
+
+    # ========================================================================
+    # STAGE 1: GATHERER AGENT
+    # ========================================================================
+    print_separator()
+    print("STAGE 1: GATHERER AGENT - Thu thập Product Brief")
+    print_separator()
+
+    # Initial context - test case đầy đủ
+    initial_context = """Tôi muốn xây dựng một ứng dụng quản lý công việc tên là "TaskMaster Pro" sử dụng AI.
+
+**Mô tả sản phẩm:**
+TaskMaster Pro là ứng dụng quản lý công việc thông minh dành cho sinh viên và nhân viên văn phòng.
+Ứng dụng sử dụng AI để tự động phân loại, ưu tiên và gợi ý thời gian hoàn thành task dựa trên lịch trình cá nhân,
+deadline, và mức độ quan trọng. Điểm khác biệt là khả năng học thói quen làm việc của user để đưa ra đề xuất
+tối ưu và tự động điều chỉnh kế hoạch khi có thay đổi.
+
+**Đối tượng mục tiêu:**
+- Sinh viên đại học: cần quản lý deadline bài tập, project nhóm, ôn thi
+- Nhân viên văn phòng (25-35 tuổi): làm việc với nhiều task song song, cần tối ưu thời gian
+
+**Tính năng chính:**
+1. AI Auto-Priority: Tự động sắp xếp task theo độ ưu tiên dựa trên deadline, mức độ quan trọng, và thời gian cần thiết
+2. Smart Schedule: Gợi ý thời gian làm việc tối ưu dựa trên thói quen và năng suất cao nhất của user
+3. Task Breakdown: Tự động chia nhỏ task lớn thành các subtask cụ thể với timeline rõ ràng
+4. Focus Mode: Chế độ tập trung với Pomodoro timer, block notification và theo dõi năng suất
+5. Multi-platform Sync: Đồng bộ real-time trên web, mobile (iOS/Android), và desktop
+
+**Lợi ích:**
+- Tiết kiệm 30-40% thời gian lập kế hoạch công việc nhờ AI tự động phân loại và ưu tiên
+- Giảm stress do quên deadline: nhận thông báo thông minh và đề xuất điều chỉnh kế hoạch
+- Tăng năng suất làm việc 25% nhờ gợi ý thời gian làm việc hiệu quả nhất
+- Dễ dàng theo dõi tiến độ và phân tích năng suất qua dashboard trực quan
+
+**Đối thủ cạnh tranh:**
+- Todoist: mạnh về UI/UX nhưng thiếu tính năng AI phân tích thói quen
+- Notion: đa năng nhưng phức tạp, không tối ưu cho quản lý task đơn giản
+- Microsoft To Do: tích hợp tốt với Office 365 nhưng AI còn hạn chế
+
+USP của TaskMaster Pro: AI cá nhân hóa sâu, học thói quen làm việc và đưa ra gợi ý proactive thay vì chỉ reminder thụ động."""
+
+    print(f"Initial Context:\n{initial_context[:200]}...\n")
+
+    try:
+        # Initialize Gatherer Agent
+        print("Initializing Gatherer Agent...")
+        gatherer_agent = GathererAgent(session_id=session_id, user_id=user_id)
+        print("✓ Gatherer Agent initialized\n")
+
+        # Run Gatherer Agent
+        print("Running Gatherer Agent...\n")
+        gatherer_result = gatherer_agent.run(initial_context=initial_context)
+
+        # Extract product brief from gatherer result
+        gatherer_state = None
+        if isinstance(gatherer_result, dict):
+            for key, value in gatherer_result.items():
+                gatherer_state = value
+
+        if not gatherer_state or not gatherer_state.get('brief'):
+            print("❌ Gatherer Agent failed to produce product brief")
+            return False
+
+        product_brief = gatherer_state['brief']
+        print(f"\n✅ Gatherer Agent completed!")
+        print(f"   Product: {product_brief.get('product_name', 'N/A')}")
+        print(f"   Score: {gatherer_state.get('score', 0):.2f}")
+        print(f"   Key Features: {len(product_brief.get('key_features', []))}")
+
+        # ========================================================================
+        # STAGE 2: VISION AGENT
+        # ========================================================================
+        print_separator()
+        print("STAGE 2: VISION AGENT - Tạo Product Vision")
+        print_separator()
+
+        # Initialize Vision Agent
+        print("Initializing Vision Agent...")
+        vision_agent = VisionAgent(session_id=session_id, user_id=user_id)
+        print("✓ Vision Agent initialized\n")
+
+        # Run Vision Agent
+        print("Running Vision Agent...\n")
+        vision_result = vision_agent.run(product_brief=product_brief)
+
+        # Extract product vision
+        if not vision_result or not isinstance(vision_result, dict):
+            print("❌ Vision Agent failed to produce product vision")
+            return False
+
+        product_vision = vision_result
+        print(f"\n✅ Vision Agent completed!")
+        print(f"   Product: {product_vision.get('product_name', 'N/A')}")
+        print(f"   Vision Statement: {product_vision.get('draft_vision_statement', 'N/A')[:80]}...")
+        print(f"   Audience Segments: {len(product_vision.get('audience_segments', []))}")
+        print(f"   Functional Requirements: {len(product_vision.get('functional_requirements', []))}")
+
+        # ========================================================================
+        # STAGE 3: BACKLOG AGENT
+        # ========================================================================
+        print_separator()
+        print("STAGE 3: BACKLOG AGENT - Tạo Product Backlog")
+        print_separator()
+
+        # Initialize Backlog Agent
+        print("Initializing Backlog Agent...")
+        backlog_agent = BacklogAgent(session_id=session_id, user_id=user_id)
+        print("✓ Backlog Agent initialized\n")
+
+        # Run Backlog Agent
+        print("Running Backlog Agent...\n")
+        backlog_result = backlog_agent.run(product_vision=product_vision)
+
+        # Extract product backlog
+        backlog_state = None
+        if isinstance(backlog_result, dict):
+            for key, value in backlog_result.items():
+                backlog_state = value
+
+        if not backlog_state or not backlog_state.get('product_backlog'):
+            print("❌ Backlog Agent failed to produce product backlog")
+            return False
+
+        product_backlog = backlog_state['product_backlog']
+        print(f"\n✅ Backlog Agent completed!")
+        print(f"   Product: {product_backlog.get('metadata', {}).get('product_name', 'N/A')}")
+        print(f"   Total Items: {product_backlog.get('metadata', {}).get('total_items', 0)}")
+        print(f"   Epics: {product_backlog.get('metadata', {}).get('total_epics', 0)}")
+        print(f"   User Stories: {product_backlog.get('metadata', {}).get('total_user_stories', 0)}")
+        print(f"   Tasks: {product_backlog.get('metadata', {}).get('total_tasks', 0)}")
+        print(f"   Readiness Score: {backlog_state.get('readiness_score', 0):.2f}")
+
+        # ========================================================================
+        # STAGE 4: PRIORITY AGENT
+        # ========================================================================
+        print_separator()
+        print("STAGE 4: PRIORITY AGENT - Tạo Sprint Plan")
+        print_separator()
+
+        # Initialize Priority Agent
+        print("Initializing Priority Agent...")
+        priority_agent = PriorityAgent(session_id=session_id, user_id=user_id)
+        print("✓ Priority Agent initialized\n")
+
+        # Run Priority Agent
+        print("Running Priority Agent...\n")
+        priority_result = priority_agent.run(product_backlog=product_backlog)
+
+        # Extract sprint plan
+        if not priority_result or not isinstance(priority_result, dict):
+            print("❌ Priority Agent failed to produce sprint plan")
+            return False
+
+        sprint_plan = priority_result
+        print(f"\n✅ Priority Agent completed!")
+        print(f"   Product: {sprint_plan.get('metadata', {}).get('product_name', 'N/A')}")
+        print(f"   Total Sprints: {sprint_plan.get('metadata', {}).get('total_sprints', 0)}")
+        print(f"   Total Items Assigned: {sprint_plan.get('metadata', {}).get('total_items_assigned', 0)}")
+        print(f"   Total Story Points: {sprint_plan.get('metadata', {}).get('total_story_points', 0)}")
+        print(f"   Readiness Score: {sprint_plan.get('metadata', {}).get('readiness_score', 0):.2f}")
+
+        # ========================================================================
+        # FINAL SUMMARY
+        # ========================================================================
+        print_separator()
+        print("🎉 FULL PIPELINE COMPLETED SUCCESSFULLY!")
+        print_separator()
+
+        print("\n📊 PIPELINE SUMMARY:")
+        print(f"\n   1️⃣  Gatherer Agent:")
+        print(f"      ✓ Product Brief: {product_brief.get('product_name', 'N/A')}")
+        print(f"      ✓ Score: {gatherer_state.get('score', 0):.2f}")
+
+        print(f"\n   2️⃣  Vision Agent:")
+        print(f"      ✓ Product Vision: {product_vision.get('product_name', 'N/A')}")
+        print(f"      ✓ Audience Segments: {len(product_vision.get('audience_segments', []))}")
+        print(f"      ✓ Functional Requirements: {len(product_vision.get('functional_requirements', []))}")
+
+        print(f"\n   3️⃣  Backlog Agent:")
+        print(f"      ✓ Product Backlog: {product_backlog.get('metadata', {}).get('product_name', 'N/A')}")
+        print(f"      ✓ Total Items: {product_backlog.get('metadata', {}).get('total_items', 0)}")
+        print(f"      ✓ Epics: {product_backlog.get('metadata', {}).get('total_epics', 0)}")
+        print(f"      ✓ User Stories: {product_backlog.get('metadata', {}).get('total_user_stories', 0)}")
+
+        print(f"\n   4️⃣  Priority Agent:")
+        print(f"      ✓ Sprint Plan: {sprint_plan.get('metadata', {}).get('product_name', 'N/A')}")
+        print(f"      ✓ Total Sprints: {sprint_plan.get('metadata', {}).get('total_sprints', 0)}")
+        print(f"      ✓ Total Items Assigned: {sprint_plan.get('metadata', {}).get('total_items_assigned', 0)}")
+        print(f"      ✓ Story Points: {sprint_plan.get('metadata', {}).get('total_story_points', 0)}")
+
+        print(f"\n🎯 FINAL OUTPUT - Sprint Plan Ready for Dev Agent!")
+        print(f"   Product: {sprint_plan.get('metadata', {}).get('product_name', 'N/A')}")
+        print(f"   Status: {sprint_plan.get('metadata', {}).get('status', 'N/A')}")
+        print(f"   Created: {sprint_plan.get('metadata', {}).get('created_at', 'N/A')}")
+
+        print("\n" + "="*80)
+        print("✅ ALL STAGES COMPLETED SUCCESSFULLY!")
+        print("="*80 + "\n")
+
+        return True
+
+    except Exception as e:
+        print(f"\n❌ Error during pipeline execution: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+    finally:
+        # Flush all events to Langfuse
+        langfuse.flush()
+
+
 def main():
     """Main function."""
     print("\nProduct Owner Agent Test Suite")
 
-    # Test priority agent
-    success = test_priority_agent()
+    # Test full PO pipeline
+    success = test_full_po_pipeline()
 
     if success:
         print("\nAll tests completed successfully!")
