@@ -498,7 +498,7 @@ class PriorityAgent:
             # Update state
             state.wsjf_calculations = wsjf_calculations
             state.prioritized_backlog = prioritized_backlog
-có phải tôi bị nhầm không, là không cần phải thêm 
+
             # Print summary
             print(f"\n✓ Calculate Priority completed")
             print(f"\n📊 WSJF Scores & Rankings:")
@@ -703,43 +703,9 @@ có phải tôi bị nhầm không, là không cần phải thêm
                 "status": "Planned"
             })
 
-        # Auto-assign Sub-tasks to same sprint as their parent
-        print(f"\n🔗 Auto-assigning Sub-tasks to parent sprints...")
-
-        # Get all items including sub-tasks (from product_backlog, not prioritized_backlog)
-        all_items = state.product_backlog.get("items", [])
-        sub_tasks = [item for item in all_items if item.get("type") == "Sub-task"]
-
-        if sub_tasks:
-            for sub_task in sub_tasks:
-                sub_task_id = sub_task.get("id")
-
-                # Try parent_id field first (this is the correct parent reference)
-                parent_id = sub_task.get("parent_id")
-
-                # Fallback to dependencies[0] if parent_id not available
-                if not parent_id:
-                    dependencies = sub_task.get("dependencies", [])
-                    if dependencies:
-                        parent_id = dependencies[0]
-
-                if parent_id:
-                    # Find which sprint the parent is in
-                    if parent_id in item_to_sprint:
-                        parent_sprint = item_to_sprint[parent_id]
-
-                        # Add sub-task to same sprint as parent
-                        for sprint in sprints:
-                            if sprint["sprint_number"] == parent_sprint:
-                                if sub_task_id not in sprint["assigned_items"]:
-                                    sprint["assigned_items"].append(sub_task_id)
-                                    item_to_sprint[sub_task_id] = parent_sprint
-                                    print(f"   ✓ Assigned {sub_task_id} (Sub-task) to Sprint {parent_sprint} (follows parent {parent_id})")
-                                break
-                    else:
-                        print(f"   ⚠️  Sub-task {sub_task_id}: parent {parent_id} not assigned to any sprint")
-                else:
-                    print(f"   ⚠️  Sub-task {sub_task_id}: no parent_id or dependencies (no parent found)")
+        # NOTE: Sub-tasks are NOT assigned to sprints directly
+        # Sub-tasks are implementation details that belong to their parent User Story/Task
+        # When querying a sprint, sub-tasks can be fetched via parent_id relationship
 
         # Update state
         state.sprints = sprints
