@@ -170,8 +170,8 @@ class BacklogAgent:
         product_name = state.product_vision.get("product_name", "N/A")
         print(f"✓ Đã load product_vision: {product_name}")
 
-        # Set max_loops
-        state.max_loops = 1
+        # Set max_loops (increased to 2 to allow more refine iterations)
+        state.max_loops = 2
         state.current_loop = 0
 
         # Set ready status
@@ -563,12 +563,23 @@ class BacklogAgent:
                 "total_estimate_hours": total_estimate_hours
             })
 
+            # Store old counts for comparison
+            old_issues_count = len(state.invest_issues) + len(state.gherkin_issues)
+
             # Update state with refined backlog
             state.backlog_items = [item.model_dump() for item in refined_items]
             state.product_backlog = {
                 "metadata": refined_metadata,
                 "items": state.backlog_items
             }
+
+            # Clear old evaluation results (they will be recalculated in next evaluate)
+            # This prevents LLM from being confused by old issues
+            state.invest_issues = []
+            state.gherkin_issues = []
+            state.recommendations = []
+            state.readiness_score = 0.0
+            state.can_proceed = False
 
             # Print summary
             print(f"\n✓ Refine completed")
@@ -586,12 +597,9 @@ class BacklogAgent:
             print(f"\n🔄 Changes Applied:")
             if state.user_feedback:
                 print(f"   - Addressed user feedback")
-            if state.invest_issues:
-                print(f"   - Fixed {len(state.invest_issues)} INVEST issues")
-            if state.gherkin_issues:
-                print(f"   - Fixed {len(state.gherkin_issues)} Gherkin issues")
-            if state.recommendations:
-                print(f"   - Applied {len(state.recommendations)} recommendations")
+            if old_issues_count > 0:
+                print(f"   - Attempted to fix {old_issues_count} issues from previous evaluation")
+            print(f"   - Cleared old evaluation state (will re-evaluate)")
 
             # Clear user_feedback after applying
             if state.user_feedback:
