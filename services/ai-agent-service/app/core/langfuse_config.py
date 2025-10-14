@@ -3,8 +3,14 @@
 import logging
 from typing import Optional
 
-from langfuse import Langfuse
-from langfuse.callback import CallbackHandler
+try:
+    from langfuse import Langfuse
+    from langfuse.callback import CallbackHandler
+    LANGFUSE_AVAILABLE = True
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+    Langfuse = None
+    CallbackHandler = None
 
 from app.core.config import settings
 
@@ -23,6 +29,10 @@ class LangFuseManager:
         """Initialize LangFuse client and callback handler."""
         if self._initialized:
             return True
+
+        if not LANGFUSE_AVAILABLE:
+            logger.warning("LangFuse library not available. Tracing disabled.")
+            return False
 
         if not all([settings.LANGFUSE_SECRET_KEY, settings.LANGFUSE_PUBLIC_KEY]):
             logger.warning("LangFuse credentials not provided. Tracing disabled.")
