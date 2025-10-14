@@ -22,17 +22,10 @@ dependencies = [
     "langfuse>=2.56.0",
     # Server
     "uvicorn>=0.34.0",
+    "openagents>=0.6.12",
 ]
 
-[tool.uv]
-dev-dependencies = [
-    "pytest<8.0.0,>=7.4.3",
-    "pytest-asyncio<1.0.0,>=0.21.0",
-    "mypy<2.0.0,>=1.8.0",
-    "ruff<1.0.0,>=0.2.2",
-    "pre-commit<4.0.0,>=3.6.2",
-    "coverage<8.0.0,>=7.4.3",
-]
+
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
