@@ -13,6 +13,7 @@ from agents.product_owner.gatherer_agent import GathererAgent
 from agents.product_owner.vision_agent import VisionAgent
 from agents.product_owner.backlog_agent import BacklogAgent
 from agents.product_owner.priority_agent import PriorityAgent
+from agents.product_owner.po_agent import POAgent
 
 # Load environment variables
 load_dotenv()
@@ -188,8 +189,8 @@ USP của TaskMaster Pro: AI cá nhân hóa sâu, học習 thói quen làm việ
 **Mô tả sản phẩm:**
 TaskMaster Pro là ứng dụng quản lý công việc thông minh dành cho sinh viên và nhân viên văn phòng.
 Ứng dụng sử dụng AI để tự động phân loại, ưu tiên và gợi ý thời gian hoàn thành task dựa trên lịch trình cá nhân,
-deadline, và mức độ quan trọng. Điểm khác biệt là khả năng học习 thói quen làm việc của user để đưa ra đề xuất
-tối ưu và tự động điều chỉnh kế hoạch khi có thay đổi.
+deadline, và mức độ quan trọng. Điểm khác biệt là khả năng học thói quen làm việc của user để đưa ra đề xuất
+tối ưu và tự động điều chỉnh kế hoạch khi có thay đổi. Được thiết kế trên web
 
 **Đối tượng mục tiêu:**
 - Sinh viên đại học: cần quản lý deadline bài tập, project nhóm, ôn thi
@@ -200,7 +201,6 @@ tối ưu và tự động điều chỉnh kế hoạch khi có thay đổi.
 2. Smart Schedule: Gợi ý thời gian làm việc tối ưu dựa trên thói quen và năng suất cao nhất của user
 3. Task Breakdown: Tự động chia nhỏ task lớn thành các subtask cụ thể với timeline rõ ràng
 4. Focus Mode: Chế độ tập trung với Pomodoro timer, block notification và theo dõi năng suất
-5. Multi-platform Sync: Đồng bộ real-time trên web, mobile (iOS/Android), và desktop
 
 **Lợi ích:**
 - Tiết kiệm 30-40% thời gian lập kế hoạch công việc nhờ AI tự động phân loại và ưu tiên
@@ -211,9 +211,8 @@ tối ưu và tự động điều chỉnh kế hoạch khi có thay đổi.
 **Đối thủ cạnh tranh:**
 - Todoist: mạnh về UI/UX nhưng thiếu tính năng AI phân tích thói quen
 - Notion: đa năng nhưng phức tạp, không tối ưu cho quản lý task đơn giản
-- Microsoft To Do: tích hợp tốt với Office 365 nhưng AI còn hạn chế
 
-USP của TaskMaster Pro: AI cá nhân hóa sâu, học習 thói quen làm việc và đưa ra gợi ý proactive thay vì chỉ reminder thụ động."""
+USP của TaskMaster Pro: AI cá nhân hóa sâu, học thói quen làm việc và đưa ra gợi ý proactive thay vì chỉ reminder thụ động."""
 
     print(f"\nNgữ cảnh ban đầu: {initial_context_unclear}")
     print_separator()
@@ -1461,12 +1460,164 @@ USP của TaskMaster Pro: AI cá nhân hóa sâu, học thói quen làm việc v
         langfuse.flush()
 
 
+def test_po_agent():
+    """Test PO Agent (Deep Agent với tool-calling orchestration)."""
+    print_separator()
+    print("Testing PO Agent (Deep Agent Pattern)")
+    print_separator()
+
+    # Generate session and user IDs
+    session_id = f"test-po-agent-{uuid.uuid4()}"
+    user_id = "test-user"
+
+    print(f"Session ID: {session_id}")
+    print(f"User ID: {user_id}\n")
+
+    # User input - ý tưởng sản phẩm
+    # user_input = """
+    # Tôi muốn tạo một ứng dụng quản lý công việc cá nhân (Todo App) thông minh.
+
+    # Ứng dụng này giúp người dùng:
+    # - Tạo và quản lý tasks
+    # - Sắp xếp tasks theo priority
+    # - Set reminders cho tasks
+    # - Track progress
+
+    # Target audience: Professionals và students muốn quản lý công việc hiệu quả.
+    # """
+
+    user_input = """Tôi muốn xây dựng một ứng dụng quản lý công việc tên là "TaskMaster Pro" sử dụng AI.
+
+    **Mô tả sản phẩm:**
+    TaskMaster Pro là ứng dụng quản lý công việc thông minh dành cho sinh viên và nhân viên văn phòng.
+    Ứng dụng sử dụng AI để tự động phân loại, ưu tiên và gợi ý thời gian hoàn thành task dựa trên lịch trình cá nhân,
+    deadline, và mức độ quan trọng. Điểm khác biệt là khả năng học thói quen làm việc của user để đưa ra đề xuất
+    tối ưu và tự động điều chỉnh kế hoạch khi có thay đổi. Được thiết kế trên web
+
+    **Đối tượng mục tiêu:**
+    - Sinh viên đại học: cần quản lý deadline bài tập, project nhóm, ôn thi
+    - Nhân viên văn phòng (25-35 tuổi): làm việc với nhiều task song song, cần tối ưu thời gian
+
+    **Tính năng chính:**
+    1. AI Auto-Priority: Tự động sắp xếp task theo độ ưu tiên dựa trên deadline, mức độ quan trọng, và thời gian cần thiết
+    2. Smart Schedule: Gợi ý thời gian làm việc tối ưu dựa trên thói quen và năng suất cao nhất của user
+    3. Task Breakdown: Tự động chia nhỏ task lớn thành các subtask cụ thể với timeline rõ ràng
+    4. Focus Mode: Chế độ tập trung với Pomodoro timer, block notification và theo dõi năng suất
+
+    **Lợi ích:**
+    - Tiết kiệm 30-40% thời gian lập kế hoạch công việc nhờ AI tự động phân loại và ưu tiên
+    - Giảm stress do quên deadline: nhận thông báo thông minh và đề xuất điều chỉnh kế hoạch
+    - Tăng năng suất làm việc 25% nhờ gợi ý thời gian làm việc hiệu quả nhất
+    - Dễ dàng theo dõi tiến độ và phân tích năng suất qua dashboard trực quan
+
+    **Đối thủ cạnh tranh:**
+    - Todoist: mạnh về UI/UX nhưng thiếu tính năng AI phân tích thói quen
+    - Notion: đa năng nhưng phức tạp, không tối ưu cho quản lý task đơn giản
+
+    USP của TaskMaster Pro: AI cá nhân hóa sâu, học thói quen làm việc và đưa ra gợi ý proactive thay vì chỉ reminder thụ động."""
+
+    print(f"User Input:\n{user_input}\n")
+
+    try:
+        # Initialize PO Agent
+        print("Initializing PO Agent...")
+        po_agent = POAgent(session_id=session_id, user_id=user_id)
+        print("✓ PO Agent initialized\n")
+
+        print_separator()
+        print("Running PO Agent workflow...")
+        print("Note: PO Agent sẽ orchestrate 4 sub agents theo thứ tự:")
+        print("  1. Gatherer Agent (Product Brief)")
+        print("  2. Vision Agent (Product Vision & PRD)")
+        print("  3. Backlog Agent (Product Backlog)")
+        print("  4. Priority Agent (Sprint Plan)")
+        print_separator()
+
+        # Run PO Agent
+        result = po_agent.run(user_input=user_input)
+
+        print_separator()
+        print("PO Agent workflow completed!")
+        print_separator()
+
+        # Print result summary
+        print("\n📊 PO AGENT RESULT:")
+        if result and isinstance(result, dict):
+            messages = result.get("messages", [])
+            print(f"   Total Messages: {len(messages)}")
+
+            # Try to find final outputs in messages
+            print(f"\n💬 Message Summary:")
+            for i, msg in enumerate(messages[-5:], start=len(messages)-4):
+                msg_type = msg.get("type", "unknown") if isinstance(msg, dict) else "unknown"
+                content = msg.get("content", "") if isinstance(msg, dict) else str(msg)
+                content_preview = content[:100] + "..." if len(str(content)) > 100 else content
+                print(f"   [{i}] {msg_type}: {content_preview}")
+
+            print(f"\n✅ PO Agent đã hoàn thành workflow!")
+            print(f"   Check Langfuse để xem chi tiết traces và outputs của từng sub agent.")
+
+        else:
+            print("No result from PO Agent")
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+        return True
+
+    except Exception as e:
+        print(f"\n❌ Error during execution: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+    finally:
+        langfuse.flush()
+
+    print_separator()
+    return True
+
+
 def main():
     """Main function."""
     print("\nProduct Owner Agent Test Suite")
 
-    # Test full PO pipeline
-    success = test_full_po_pipeline()
+    # Choice menu
+    print("\nSelect test to run:")
+    print("  1. Test PO Agent (Deep Agent với tool-calling)")
+    print("  2. Test Full PO Pipeline (manual orchestration)")
+    print("  3. Test individual agents (Gatherer/Vision/Backlog/Priority)")
+
+    choice = input("\nYour choice (1/2/3): ").strip()
+
+    if choice == "1":
+        # Test PO Agent
+        success = test_po_agent()
+    elif choice == "2":
+        # Test full PO pipeline
+        success = test_full_po_pipeline()
+    elif choice == "3":
+        # Test individual agents
+        print("\nSelect agent to test:")
+        print("  1. Gatherer Agent")
+        print("  2. Vision Agent")
+        print("  3. Backlog Agent")
+        print("  4. Priority Agent")
+
+        agent_choice = input("\nYour choice (1/2/3/4): ").strip()
+
+        if agent_choice == "1":
+            success = test_gatherer_agent()
+        elif agent_choice == "2":
+            success = test_vision_agent()
+        elif agent_choice == "3":
+            success = test_backlog_agent()
+        elif agent_choice == "4":
+            success = test_priority_agent()
+        else:
+            print("Invalid choice!")
+            return 1
+    else:
+        print("Invalid choice!")
+        return 1
 
     if success:
         print("\nAll tests completed successfully!")
