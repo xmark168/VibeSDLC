@@ -444,13 +444,26 @@ class PriorityAgent:
             print("\n🤖 Calling LLM to score WSJF factors...")
             llm = self._llm("gpt-4.1", 0.3)
 
-            # Use structured output with Pydantic model
-            structured_llm = llm.with_structured_output(WSJFOutput)
+            # Call LLM without structured output (to avoid API 500 error)
+            response = llm.invoke([HumanMessage(content=prompt)])
 
-            result = structured_llm.invoke([HumanMessage(content=prompt)])
+            # Parse JSON response manually
+            response_text = response.content
 
-            # result is now a WSJFOutput instance
-            wsjf_scores = [score.model_dump() for score in result.wsjf_scores]
+            # Extract JSON from markdown code blocks if present
+            if "```json" in response_text:
+                json_start = response_text.find("```json") + 7
+                json_end = response_text.find("```", json_start)
+                response_text = response_text[json_start:json_end].strip()
+            elif "```" in response_text:
+                json_start = response_text.find("```") + 3
+                json_end = response_text.find("```", json_start)
+                response_text = response_text[json_start:json_end].strip()
+
+            result_dict = json.loads(response_text)
+
+            # Extract wsjf_scores from parsed JSON
+            wsjf_scores = result_dict.get("wsjf_scores", [])
 
             if not wsjf_scores:
                 raise ValueError("LLM returned empty wsjf_scores")
@@ -905,17 +918,30 @@ class PriorityAgent:
             print("\n🤖 Calling LLM to evaluate sprint plan...")
             llm = self._llm("gpt-4.1", 0.3)
 
-            # Use structured output with Pydantic model
-            structured_llm = llm.with_structured_output(EvaluateOutput)
+            # Call LLM without structured output (to avoid API 500 error)
+            response = llm.invoke([HumanMessage(content=prompt)])
 
-            result = structured_llm.invoke([HumanMessage(content=prompt)])
+            # Parse JSON response manually
+            response_text = response.content
 
-            # Update state with evaluation results from Pydantic model
-            state.readiness_score = result.readiness_score
-            state.can_proceed = result.can_proceed
-            state.capacity_issues = [issue.model_dump() for issue in result.capacity_issues]
-            state.dependency_issues = [issue.model_dump() for issue in result.dependency_issues]
-            state.recommendations = result.recommendations
+            # Extract JSON from markdown code blocks if present
+            if "```json" in response_text:
+                json_start = response_text.find("```json") + 7
+                json_end = response_text.find("```", json_start)
+                response_text = response_text[json_start:json_end].strip()
+            elif "```" in response_text:
+                json_start = response_text.find("```") + 3
+                json_end = response_text.find("```", json_start)
+                response_text = response_text[json_start:json_end].strip()
+
+            result_dict = json.loads(response_text)
+
+            # Update state with evaluation results from parsed JSON
+            state.readiness_score = result_dict.get("readiness_score", 0.0)
+            state.can_proceed = result_dict.get("can_proceed", False)
+            state.capacity_issues = result_dict.get("capacity_issues", [])
+            state.dependency_issues = result_dict.get("dependency_issues", [])
+            state.recommendations = result_dict.get("recommendations", [])
 
             # Print evaluation summary
             print(f"\n✓ Evaluate completed")
@@ -1041,15 +1067,28 @@ class PriorityAgent:
             print("\n🤖 Calling LLM to refine sprint plan...")
             llm = self._llm("gpt-4.1", 0.3)
 
-            # Use structured output with Pydantic model
-            structured_llm = llm.with_structured_output(RefineOutput)
+            # Call LLM without structured output (to avoid API 500 error)
+            response = llm.invoke([HumanMessage(content=prompt)])
 
-            result = structured_llm.invoke([HumanMessage(content=prompt)])
+            # Parse JSON response manually
+            response_text = response.content
 
-            # Extract results from Pydantic model
-            refined_sprints = result.refined_sprints
-            changes_made = result.changes_made
-            issues_fixed = result.issues_fixed
+            # Extract JSON from markdown code blocks if present
+            if "```json" in response_text:
+                json_start = response_text.find("```json") + 7
+                json_end = response_text.find("```", json_start)
+                response_text = response_text[json_start:json_end].strip()
+            elif "```" in response_text:
+                json_start = response_text.find("```") + 3
+                json_end = response_text.find("```", json_start)
+                response_text = response_text[json_start:json_end].strip()
+
+            result_dict = json.loads(response_text)
+
+            # Extract results from parsed JSON
+            refined_sprints = result_dict.get("refined_sprints", [])
+            changes_made = result_dict.get("changes_made", [])
+            issues_fixed = result_dict.get("issues_fixed", {})
 
             # Update state with refined sprints
             state.sprints = refined_sprints
