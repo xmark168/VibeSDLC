@@ -117,7 +117,11 @@ Tạo Product Backlog Items (Epic, User Story, Task, Sub-task) theo template đ�
    - parent_id = US-xxx hoặc TASK-xxx
    - Có estimate_value (hours)
    - Có task_type (Development/Testing/Documentation)
-   - CHỈ tạo Development sub-tasks, KHÔNG tạo Testing (QA Agent sẽ tạo sau)
+   - **BẮT BUỘC tạo CẢ Development và Testing sub-tasks** cho mỗi User Story:
+     * Development sub-tasks: Implement features/logic
+     * Testing sub-tasks: Write unit tests, integration tests, e2e tests
+   - Tỷ lệ khuyến nghị: 60-70% Development, 30-40% Testing
+   - Ví dụ: US-001 có 2 sub-tasks Development (SUB-001, SUB-002) thì cần 1-2 sub-tasks Testing (SUB-003, SUB-004)
 
 **Lưu ý:**
 - Tập trung vào MVP features (High priority từ vision)
@@ -205,9 +209,52 @@ Tạo Product Backlog Items (Epic, User Story, Task, Sub-task) theo template đ�
         "Submit button disabled until form is valid",
         "Loading state shown during API call"
       ],
-      "dependencies": ["SUB-001"],
+      "dependencies": [],
       "labels": ["frontend", "authentication"],
       "task_type": "Development",
+      "business_value": null,
+    }}}},
+    {{{{
+      "id": "SUB-003",
+      "type": "Sub-task",
+      "parent_id": "US-001",
+      "title": "Write unit tests for login API endpoint",
+      "description": "Create comprehensive unit tests for POST /api/auth/login endpoint using Jest and Supertest",
+      "rank": null,
+      "status": "Backlog",
+      "story_point": null,
+      "estimate_value": 4.0,
+      "acceptance_criteria": [
+        "Test valid credentials login returns JWT token",
+        "Test invalid credentials return 401 error",
+        "Test missing email or password returns 400 error",
+        "Test password verification with bcrypt",
+        "Test JWT token contains correct payload and expiry"
+      ],
+      "dependencies": ["SUB-001"],
+      "labels": ["testing", "backend", "authentication"],
+      "task_type": "Testing",
+      "business_value": null,
+    }}}},
+    {{{{
+      "id": "SUB-004",
+      "type": "Sub-task",
+      "parent_id": "US-001",
+      "title": "Write integration tests for login flow",
+      "description": "Create end-to-end tests for complete login flow using Cypress",
+      "rank": null,
+      "status": "Backlog",
+      "story_point": null,
+      "estimate_value": 3.0,
+      "acceptance_criteria": [
+        "Test successful login redirects to dashboard",
+        "Test login form validation shows correct error messages",
+        "Test session persistence after page refresh",
+        "Test logout functionality clears session"
+      ],
+      "dependencies": ["SUB-002"],
+      "labels": ["testing", "frontend", "e2e"],
+      "task_type": "Testing",
       "business_value": null,
     }}}},
     {{{{
@@ -313,7 +360,16 @@ Sửa các issues được chỉ ra trong evaluation:
    - Xác định lại dependencies nếu sai
    - Loại bỏ circular dependencies
 
-4. **Refine Scope**:
+4. **Ensure Testing Coverage**:
+   - **BẮT BUỘC kiểm tra mỗi User Story có đủ Testing sub-tasks chưa**
+   - Nếu thiếu Testing sub-tasks, thêm vào ngay
+   - Tỷ lệ khuyến nghị: 60-70% Development, 30-40% Testing
+   - Testing sub-tasks cần bao gồm:
+     * Unit tests (backend API, business logic)
+     * Integration tests (frontend + backend)
+     * E2E tests nếu cần
+
+5. **Refine Scope**:
    - Loại bỏ items không cần thiết
    - Thêm items bị thiếu (nếu có)
    - Điều chỉnh priority/status nếu cần
