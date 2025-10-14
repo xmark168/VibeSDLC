@@ -81,11 +81,9 @@ class POAgent:
             # Fallback if flush_at not supported in this version
             self.langfuse_handler = CallbackHandler()
 
-        # Initialize sub agents (will be called via tools)
-        self.gatherer = GathererAgent(session_id=session_id, user_id=user_id)
-        self.vision = VisionAgent(session_id=session_id, user_id=user_id)
-        self.backlog = BacklogAgent(session_id=session_id, user_id=user_id)
-        self.priority = PriorityAgent(session_id=session_id, user_id=user_id)
+        # Note: Sub agents are NOT initialized here
+        # They will be created on-demand in each tool call with separate Langfuse handlers
+        # This ensures each tool call gets its own tracing
 
         # Build tools
         self.tools = self._build_tools()
@@ -146,11 +144,17 @@ class POAgent:
             print(f"📥 Input: {user_input[:100]}...")
 
             try:
-                # Call GathererAgent
-                # Note: GathererAgent has its own Langfuse handler initialized with session_id/user_id
-                result = self.gatherer.run(
+                # Create separate session_id for this tool call to create a new trace
+                tool_session_id = f"{self.session_id}_gatherer_tool"
+
+                # Create a new GathererAgent instance with separate session_id
+                # This ensures a completely separate trace in Langfuse
+                gatherer_agent = GathererAgent(session_id=tool_session_id, user_id=self.user_id)
+
+                # Call GathererAgent - it will create its own trace via its handler
+                result = gatherer_agent.run(
                     initial_context=user_input,
-                    thread_id=f"{self.session_id}_gatherer"
+                    thread_id=f"{tool_session_id}_thread"
                 )
 
                 # Extract brief from final state
@@ -219,10 +223,16 @@ class POAgent:
             print(f"📥 Input Product Brief: {product_brief.get('product_name', 'N/A')}")
 
             try:
-                # Call VisionAgent
-                result = self.vision.run(
+                # Create separate session_id for this tool call to create a new trace
+                tool_session_id = f"{self.session_id}_vision_tool"
+
+                # Create a new VisionAgent instance with separate session_id
+                vision_agent = VisionAgent(session_id=tool_session_id, user_id=self.user_id)
+
+                # Call VisionAgent - it will create its own trace via its handler
+                result = vision_agent.run(
                     product_brief=product_brief,
-                    thread_id=f"{self.session_id}_vision"
+                    thread_id=f"{tool_session_id}_thread"
                 )
 
                 # Extract vision from final state
@@ -290,10 +300,16 @@ class POAgent:
             print(f"📥 Input Product Vision: {product_vision.get('product_name', 'N/A')}")
 
             try:
-                # Call BacklogAgent
-                result = self.backlog.run(
+                # Create separate session_id for this tool call to create a new trace
+                tool_session_id = f"{self.session_id}_backlog_tool"
+
+                # Create a new BacklogAgent instance with separate session_id
+                backlog_agent = BacklogAgent(session_id=tool_session_id, user_id=self.user_id)
+
+                # Call BacklogAgent - it will create its own trace via its handler
+                result = backlog_agent.run(
                     product_vision=product_vision,
-                    thread_id=f"{self.session_id}_backlog"
+                    thread_id=f"{tool_session_id}_thread"
                 )
 
                 # Extract backlog from final state
@@ -366,10 +382,16 @@ class POAgent:
             print(f"   Total Items: {metadata.get('total_items', 0)}")
 
             try:
-                # Call PriorityAgent
-                sprint_plan = self.priority.run(
+                # Create separate session_id for this tool call to create a new trace
+                tool_session_id = f"{self.session_id}_priority_tool"
+
+                # Create a new PriorityAgent instance with separate session_id
+                priority_agent = PriorityAgent(session_id=tool_session_id, user_id=self.user_id)
+
+                # Call PriorityAgent - it will create its own trace via its handler
+                sprint_plan = priority_agent.run(
                     product_backlog=product_backlog,
-                    thread_id=f"{self.session_id}_priority"
+                    thread_id=f"{tool_session_id}_thread"
                 )
 
                 if not sprint_plan:
