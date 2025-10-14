@@ -1,0 +1,30 @@
+network:
+  name: "VibeSDLC"
+  mode: "centralized"
+  transports:
+    - type: http
+      config: { port: 8700 }
+    - type: grpc
+      config: { port: 8600 }
+  mods:
+    - name: "openagents.mods.workspace.messaging"
+      enabled: true
+      config:
+        default_channels:
+          - name: "general"
+            description: "Chung chung"
+        max_file_size: 10485760
+        allowed_file_types: ["txt","md","pdf","png","jpg","json"]
+        file_storage_path: "./network_files"
+        max_memory_messages: 2000
+        memory_cleanup_minutes: 60
+    - name: "mods.project_channels"   
+      enabled: true
+      config:
+        autocreate_channels: ["general"]
+        enforce_membership: true
+        max_channels_per_project: 20
+        roles:
+          owner: ["create","delete","post","subscribe","invite"]
+          maintainer: ["create","post","subscribe","invite"]
+          member: ["post","subscribe"]
