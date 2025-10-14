@@ -147,6 +147,7 @@ class POAgent:
 
             try:
                 # Call GathererAgent
+                # Note: GathererAgent has its own Langfuse handler initialized with session_id/user_id
                 result = self.gatherer.run(
                     initial_context=user_input,
                     thread_id=f"{self.session_id}_gatherer"

@@ -163,7 +163,8 @@ class GathererAgent:
         self.session_id = session_id
         self.user_id = user_id
 
-        # Initialize Langfuse callback handler
+        # Initialize Langfuse callback handler (without session_id/user_id in constructor)
+        # Session/user metadata will be passed via config metadata during invoke/stream
         self.langfuse_handler = CallbackHandler()
 
         self.graph = self._build_graph()
@@ -964,9 +965,19 @@ class GathererAgent:
             messages=[HumanMessage(content=initial_context)] if initial_context else []
         )
 
+        # Build metadata for Langfuse tracing with session_id and user_id
+        metadata = {}
+        if self.session_id:
+            metadata["langfuse_session_id"] = self.session_id
+        if self.user_id:
+            metadata["langfuse_user_id"] = self.user_id
+        # Add tags
+        metadata["langfuse_tags"] = ["gatherer_agent"]
+
         config = {
             "configurable": {"thread_id": thread_id},  # Để checkpointer lưu theo thread
             "callbacks": [self.langfuse_handler],
+            "metadata": metadata,  # Pass session_id/user_id via metadata
             "recursion_limit": 50  # Tăng recursion limit để tránh lỗi vòng lặp
         }
 

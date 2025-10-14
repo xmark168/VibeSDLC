@@ -214,14 +214,14 @@ tối ưu và tự động điều chỉnh kế hoạch khi có thay đổi. Đ�
 
 USP của TaskMaster Pro: AI cá nhân hóa sâu, học thói quen làm việc và đưa ra gợi ý proactive thay vì chỉ reminder thụ động."""
 
-    print(f"\nNgữ cảnh ban đầu: {initial_context_unclear}")
+    print(f"\nNgữ cảnh ban đầu: {initial_context_complete1}")
     print_separator()
 
     # Run the agent
     print("Running Gatherer Agent workflow...\n")
 
     try:
-        result = agent.run(initial_context=initial_context_unclear)
+        result = agent.run(initial_context=initial_context_complete1)
 
         print_separator()
         print("Workflow completed successfully!")
