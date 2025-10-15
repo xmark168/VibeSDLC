@@ -1,0 +1,216 @@
+Creating network with temporary workspace
+Loaded network configuration from app\agent_network\network.yml
+Initializing WorkspaceManager at C:\Users\son16\AppData\Local\Temp\openagents_workspace_v21zxz4v
+Workspace initialized successfully at C:\Users\son16\AppData\Local\Temp\openagents_workspace_v21zxz4v
+Created temporary workspace at C:\Users\son16\AppData\Local\Temp\openagents_workspace_v21zxz4v
+AgentIdentityManager initialized with session timeout=24h
+Loading 2 network mods from NetworkConfig...
+Initializing network mod openagents.mods.workspace.messaging
+Initializing Thread Messaging network mod
+Successfully loaded network mod: openagents.mods.workspace.messaging
+Could not import network mod mods.project_channels: No module named 'mods'
+Mod openagents.mods.workspace.messaging bound to network network-b701428d
+Using file storage at C:\Users\son16\AppData\Local\Temp\openagents_workspace_v21zxz4v\mods\openagents.mods.workspace.messaging\files
+Initialized channels: ['general', 'development', 'support']
+Registered network mod: openagents.mods.workspace.messaging
+Successfully loaded 1 network mods
+Created network: VibeSDLC
+Loaded 1 network mods: ['openagents.mods.workspace.messaging']
+Workspace path: C:\Users\son16\AppData\Local\Temp\openagents_workspace_v21zxz4v
+Workspace initialized with 1 mod directories
+Failed to initialize centralized topology: [Errno 10048] error while attempting to bind on address ('0.0.0.0', 8700): [winerror 10048] only one usage of each socket address (protocol/network address/port) is normally permitted
+Failed to initialize network topology
+Failed to initialize network
+Shutting down network...
+Centralized topology shutdown
+Agent network 'VibeSDLC' shutdown successfully
+Network shutdown complete
+Creating network with temporary workspace
+Loaded network configuration from app\agent_network\network.yml
+Initializing WorkspaceManager at C:\Users\son16\AppData\Local\Temp\openagents_workspace_uislsn43
+Workspace initialized successfully at C:\Users\son16\AppData\Local\Temp\openagents_workspace_uislsn43
+Created temporary workspace at C:\Users\son16\AppData\Local\Temp\openagents_workspace_uislsn43
+AgentIdentityManager initialized with session timeout=24h
+Loading 2 network mods from NetworkConfig...
+Initializing network mod openagents.mods.workspace.messaging
+Initializing Thread Messaging network mod
+Successfully loaded network mod: openagents.mods.workspace.messaging
+Could not import network mod app.agent_network.mods.project_channels: cannot import name 'BaseMod' from 'openagents.mods' (C:\Users\son16\OneDrive\Desktop\VibeSDLC\services\ai-agent-service\.venv\Lib\site-packages\openagents\mods\__init__.py)
+Mod openagents.mods.workspace.messaging bound to network network-479271f9
+Using file storage at C:\Users\son16\AppData\Local\Temp\openagents_workspace_uislsn43\mods\openagents.mods.workspace.messaging\files
+Initialized channels: ['general', 'development', 'support']
+Registered network mod: openagents.mods.workspace.messaging
+Successfully loaded 1 network mods
+Created network: VibeSDLC
+Loaded 1 network mods: ['openagents.mods.workspace.messaging']
+Workspace path: C:\Users\son16\AppData\Local\Temp\openagents_workspace_uislsn43
+Workspace initialized with 1 mod directories
+Failed to initialize centralized topology: [Errno 10048] error while attempting to bind on address ('0.0.0.0', 8700): [winerror 10048] only one usage of each socket address (protocol/network address/port) is normally permitted
+Failed to initialize network topology
+Failed to initialize network
+Shutting down network...
+Centralized topology shutdown
+Agent network 'VibeSDLC' shutdown successfully
+Network shutdown complete
+Creating network with temporary workspace
+Loaded network configuration from app\agent_network\network.yml
+Initializing WorkspaceManager at C:\Users\son16\AppData\Local\Temp\openagents_workspace_6hud4i5x
+Workspace initialized successfully at C:\Users\son16\AppData\Local\Temp\openagents_workspace_6hud4i5x
+Created temporary workspace at C:\Users\son16\AppData\Local\Temp\openagents_workspace_6hud4i5x
+AgentIdentityManager initialized with session timeout=24h
+Loading 2 network mods from NetworkConfig...
+Initializing network mod openagents.mods.workspace.messaging
+Initializing Thread Messaging network mod
+Successfully loaded network mod: openagents.mods.workspace.messaging
+Could not import network mod app.agent_network.mods.project_channels: No module named 'app.agent_network.mods.project_channels.mod'; 'app.agent_network.mods.project_channels' is not a package
+Mod openagents.mods.workspace.messaging bound to network network-65417d5d
+Using file storage at C:\Users\son16\AppData\Local\Temp\openagents_workspace_6hud4i5x\mods\openagents.mods.workspace.messaging\files
+Initialized channels: ['general', 'development', 'support']
+Registered network mod: openagents.mods.workspace.messaging
+Successfully loaded 1 network mods
+Created network: VibeSDLC
+Loaded 1 network mods: ['openagents.mods.workspace.messaging']
+Workspace path: C:\Users\son16\AppData\Local\Temp\openagents_workspace_6hud4i5x
+Workspace initialized with 1 mod directories
+Failed to initialize centralized topology: [Errno 10048] error while attempting to bind on address ('0.0.0.0', 8700): [winerror 10048] only one usage of each socket address (protocol/network address/port) is normally permitted
+Failed to initialize network topology
+Failed to initialize network
+Shutting down network...
+Centralized topology shutdown
+Agent network 'VibeSDLC' shutdown successfully
+Network shutdown complete
+Creating network with temporary workspace
+Loaded network configuration from app\agent_network\network.yml
+Initializing WorkspaceManager at C:\Users\son16\AppData\Local\Temp\openagents_workspace_vrjjgpbr
+Workspace initialized successfully at C:\Users\son16\AppData\Local\Temp\openagents_workspace_vrjjgpbr
+Created temporary workspace at C:\Users\son16\AppData\Local\Temp\openagents_workspace_vrjjgpbr
+AgentIdentityManager initialized with session timeout=24h
+Loading 2 network mods from NetworkConfig...
+Initializing network mod openagents.mods.workspace.messaging
+Initializing Thread Messaging network mod
+Successfully loaded network mod: openagents.mods.workspace.messaging
+Could not import network mod app.agent_network.mods.project_channels: No module named 'app.agent_network.mods.project_channels.mod'; 'app.agent_network.mods.project_channels' is not a package
+Mod openagents.mods.workspace.messaging bound to network network-2d16e760
+Using file storage at C:\Users\son16\AppData\Local\Temp\openagents_workspace_vrjjgpbr\mods\openagents.mods.workspace.messaging\files
+Initialized channels: ['general', 'development', 'support']
+Registered network mod: openagents.mods.workspace.messaging
+Successfully loaded 1 network mods
+Created network: VibeSDLC
+Loaded 1 network mods: ['openagents.mods.workspace.messaging']
+Workspace path: C:\Users\son16\AppData\Local\Temp\openagents_workspace_vrjjgpbr
+Workspace initialized with 1 mod directories
+Failed to initialize centralized topology: [Errno 10048] error while attempting to bind on address ('0.0.0.0', 8700): [winerror 10048] only one usage of each socket address (protocol/network address/port) is normally permitted
+Failed to initialize network topology
+Failed to initialize network
+Shutting down network...
+Centralized topology shutdown
+Agent network 'VibeSDLC' shutdown successfully
+Network shutdown complete
+Creating network with temporary workspace
+Loaded network configuration from app\agent_network\network.yml
+Initializing WorkspaceManager at C:\Users\son16\AppData\Local\Temp\openagents_workspace_rjch498e
+Workspace initialized successfully at C:\Users\son16\AppData\Local\Temp\openagents_workspace_rjch498e
+Created temporary workspace at C:\Users\son16\AppData\Local\Temp\openagents_workspace_rjch498e
+AgentIdentityManager initialized with session timeout=24h
+Loading 2 network mods from NetworkConfig...
+Initializing network mod openagents.mods.workspace.messaging
+Initializing Thread Messaging network mod
+Successfully loaded network mod: openagents.mods.workspace.messaging
+Could not import network mod app.agent_network.mods.project_channels: No module named 'app.agent_network.mods.project_channels.mod'; 'app.agent_network.mods.project_channels' is not a package
+Mod openagents.mods.workspace.messaging bound to network network-280dd65b
+Using file storage at C:\Users\son16\AppData\Local\Temp\openagents_workspace_rjch498e\mods\openagents.mods.workspace.messaging\files
+Initialized channels: ['general', 'development', 'support']
+Registered network mod: openagents.mods.workspace.messaging
+Successfully loaded 1 network mods
+Created network: VibeSDLC
+Loaded 1 network mods: ['openagents.mods.workspace.messaging']
+Workspace path: C:\Users\son16\AppData\Local\Temp\openagents_workspace_rjch498e
+Workspace initialized with 1 mod directories
+Failed to initialize centralized topology: [Errno 10048] error while attempting to bind on address ('0.0.0.0', 8700): [winerror 10048] only one usage of each socket address (protocol/network address/port) is normally permitted
+Failed to initialize network topology
+Failed to initialize network
+Shutting down network...
+Centralized topology shutdown
+Agent network 'VibeSDLC' shutdown successfully
+Network shutdown complete
+Creating network with temporary workspace
+Loaded network configuration from app\agent_network\network.yml
+Initializing WorkspaceManager at C:\Users\son16\AppData\Local\Temp\openagents_workspace_e6j494ha
+Workspace initialized successfully at C:\Users\son16\AppData\Local\Temp\openagents_workspace_e6j494ha
+Created temporary workspace at C:\Users\son16\AppData\Local\Temp\openagents_workspace_e6j494ha
+AgentIdentityManager initialized with session timeout=24h
+Loading 2 network mods from NetworkConfig...
+Initializing network mod openagents.mods.workspace.messaging
+Initializing Thread Messaging network mod
+Successfully loaded network mod: openagents.mods.workspace.messaging
+Could not find a suitable network mod class in module app.agent_network.mods.project_channels.mod
+Mod openagents.mods.workspace.messaging bound to network network-5f7da687
+Using file storage at C:\Users\son16\AppData\Local\Temp\openagents_workspace_e6j494ha\mods\openagents.mods.workspace.messaging\files
+Initialized channels: ['general', 'development', 'support']
+Registered network mod: openagents.mods.workspace.messaging
+Successfully loaded 1 network mods
+Created network: VibeSDLC
+Loaded 1 network mods: ['openagents.mods.workspace.messaging']
+Workspace path: C:\Users\son16\AppData\Local\Temp\openagents_workspace_e6j494ha
+Workspace initialized with 1 mod directories
+Failed to initialize centralized topology: [Errno 10048] error while attempting to bind on address ('0.0.0.0', 8700): [winerror 10048] only one usage of each socket address (protocol/network address/port) is normally permitted
+Failed to initialize network topology
+Failed to initialize network
+Shutting down network...
+Centralized topology shutdown
+Agent network 'VibeSDLC' shutdown successfully
+Network shutdown complete
+Creating network with temporary workspace
+Loaded network configuration from app\agent_network\network.yml
+Initializing WorkspaceManager at C:\Users\son16\AppData\Local\Temp\openagents_workspace_v1aqjdt7
+Workspace initialized successfully at C:\Users\son16\AppData\Local\Temp\openagents_workspace_v1aqjdt7
+Created temporary workspace at C:\Users\son16\AppData\Local\Temp\openagents_workspace_v1aqjdt7
+AgentIdentityManager initialized with session timeout=24h
+Loading 2 network mods from NetworkConfig...
+Initializing network mod openagents.mods.workspace.messaging
+Initializing Thread Messaging network mod
+Successfully loaded network mod: openagents.mods.workspace.messaging
+Could not find a suitable network mod class in module app.agent_network.mods.project_channels.mod
+Mod openagents.mods.workspace.messaging bound to network network-29b4bcef
+Using file storage at C:\Users\son16\AppData\Local\Temp\openagents_workspace_v1aqjdt7\mods\openagents.mods.workspace.messaging\files
+Initialized channels: ['general', 'development', 'support']
+Registered network mod: openagents.mods.workspace.messaging
+Successfully loaded 1 network mods
+Created network: VibeSDLC
+Loaded 1 network mods: ['openagents.mods.workspace.messaging']
+Workspace path: C:\Users\son16\AppData\Local\Temp\openagents_workspace_v1aqjdt7
+Workspace initialized with 1 mod directories
+Failed to initialize centralized topology: [Errno 10048] error while attempting to bind on address ('0.0.0.0', 8700): [winerror 10048] only one usage of each socket address (protocol/network address/port) is normally permitted
+Failed to initialize network topology
+Failed to initialize network
+Shutting down network...
+Centralized topology shutdown
+Agent network 'VibeSDLC' shutdown successfully
+Network shutdown complete
+Creating network with temporary workspace
+Loaded network configuration from app\agent_network\network.yml
+Initializing WorkspaceManager at C:\Users\son16\AppData\Local\Temp\openagents_workspace__g2cz8cf
+Workspace initialized successfully at C:\Users\son16\AppData\Local\Temp\openagents_workspace__g2cz8cf
+Created temporary workspace at C:\Users\son16\AppData\Local\Temp\openagents_workspace__g2cz8cf
+AgentIdentityManager initialized with session timeout=24h
+Loading 2 network mods from NetworkConfig...
+Initializing network mod openagents.mods.workspace.messaging
+Initializing Thread Messaging network mod
+Successfully loaded network mod: openagents.mods.workspace.messaging
+Could not find a suitable network mod class in module app.agent_network.mods.project_channels.mod
+Mod openagents.mods.workspace.messaging bound to network network-00264d4f
+Using file storage at C:\Users\son16\AppData\Local\Temp\openagents_workspace__g2cz8cf\mods\openagents.mods.workspace.messaging\files
+Initialized channels: ['general', 'development', 'support']
+Registered network mod: openagents.mods.workspace.messaging
+Successfully loaded 1 network mods
+Created network: VibeSDLC
+Loaded 1 network mods: ['openagents.mods.workspace.messaging']
+Workspace path: C:\Users\son16\AppData\Local\Temp\openagents_workspace__g2cz8cf
+Workspace initialized with 1 mod directories
+Failed to initialize centralized topology: [Errno 10048] error while attempting to bind on address ('0.0.0.0', 8700): [winerror 10048] only one usage of each socket address (protocol/network address/port) is normally permitted
+Failed to initialize network topology
+Failed to initialize network
+Shutting down network...
+Centralized topology shutdown
+Agent network 'VibeSDLC' shutdown successfully
+Network shutdown complete
