@@ -1,0 +1,165 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ProductVision",
+  "description": "Template định nghĩa cấu trúc của Product Vision, giúp mô tả tầm nhìn sản phẩm một cách ngắn gọn, tập trung vào vấn đề, đối tượng, phạm vi và rủi ro cơ bản. Sử dụng để align team ở giai đoạn đầu dự án.",
+  "type": "object",
+  "properties": {
+    "vision": {
+      "type": "object",
+      "description": "Phần tầm nhìn cốt lõi của sản phẩm, bao gồm tuyên bố chính và các nguyên tắc trải nghiệm. Tuyên bố nên ngắn gọn, truyền cảm hứng, theo format: 'For [segment] facing [problem], our product will [value/outcome] unlike [current alternative] by [edge].'",
+      "properties": {
+        "statement": {
+          "type": "string",
+          "description": "Tuyên bố tầm nhìn chính, mô tả giá trị cốt lõi và sự khác biệt của sản phẩm.",
+          "minLength": 20,
+          "maxLength": 200
+        },
+        "principles": {
+          "type": "array",
+          "description": "Danh sách các nguyên tắc trải nghiệm người dùng, như 'Fast first load' hoặc 'Privacy by default'.",
+          "items": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 100
+          },
+          "minItems": 1,
+          "maxItems": 5
+        }
+      },
+      "required": ["statement", "principles"],
+      "additionalProperties": false
+    },
+    "problem": {
+      "type": "object",
+      "description": "Mô tả vấn đề mà sản phẩm giải quyết, kèm bằng chứng để chứng minh tính cấp thiết.",
+      "properties": {
+        "summary": {
+          "type": "string",
+          "description": "Tóm tắt vấn đề với bằng chứng, ví dụ: '... with evidence: [metric, link]'. Bao gồm metric cơ bản và liên kết nghiên cứu.",
+          "minLength": 30,
+          "maxLength": 500
+        }
+      },
+      "required": ["summary"],
+      "additionalProperties": false
+    },
+    "audience_objectives": {
+      "type": "object",
+      "description": "Xác định đối tượng mục tiêu và các công việc họ cần hoàn thành, giúp sản phẩm user-centric.",
+      "properties": {
+        "segments": {
+          "type": "array",
+          "description": "Danh sách các phân khúc người dùng, mỗi phân khúc bao gồm mô tả và các jobs to be done.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "segment": {
+                "type": "string",
+                "description": "Mô tả phân khúc người dùng, ví dụ: 'Busy professionals aged 25-40'.",
+                "minLength": 10,
+                "maxLength": 100
+              },
+              "jobs": {
+                "type": "array",
+                "description": "Danh sách các công việc cần làm của phân khúc này, ví dụ: ['Organize daily tasks'].",
+                "items": {
+                  "type": "string",
+                  "minLength": 10,
+                  "maxLength": 200
+                },
+                "minItems": 1,
+                "maxItems": 10
+              }
+            },
+            "required": ["segment", "jobs"],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 5
+        }
+      },
+      "required": ["segments"],
+      "additionalProperties": false
+    },
+    "scope": {
+      "type": "object",
+      "description": "Định nghĩa phạm vi sản phẩm, bao gồm các khả năng chính và những gì không làm để giữ focus.",
+      "properties": {
+        "capabilities": {
+          "type": "array",
+          "description": "Danh sách các khả năng hoặc tính năng chính sẽ triển khai, ví dụ: ['Onboarding', 'Notifications'].",
+          "items": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 100
+          },
+          "minItems": 1,
+          "maxItems": 10
+        },
+        "non_goals": {
+          "type": "array",
+          "description": "Danh sách các mục tiêu không theo đuổi, ví dụ: ['International payments'].",
+          "items": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 100
+          },
+          "minItems": 0,
+          "maxItems": 10
+        }
+      },
+      "required": ["capabilities", "non_goals"],
+      "additionalProperties": false
+    },
+    "dependencies": {
+      "type": "array",
+      "description": "Danh sách các phụ thuộc bên ngoài hoặc nội bộ cần thiết để triển khai sản phẩm, ví dụ: ['Payments API', 'CRM system'].",
+      "items": {
+        "type": "string",
+        "minLength": 5,
+        "maxLength": 100
+      },
+      "minItems": 0,
+      "maxItems": 10
+    },
+    "uncertainties": {
+      "type": "object",
+      "description": "Xác định rủi ro và giả định để quản lý kỳ vọng và lập kế hoạch ứng phó.",
+      "properties": {
+        "risks": {
+          "type": "array",
+          "description": "Danh sách các rủi ro tiềm ẩn, ví dụ: ['Low data quality'].",
+          "items": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 200
+          },
+          "minItems": 0,
+          "maxItems": 10
+        },
+        "assumptions": {
+          "type": "array",
+          "description": "Danh sách các giả định, ví dụ: ['Users accept SMS OTP'].",
+          "items": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 200
+          },
+          "minItems": 0,
+          "maxItems": 10
+        }
+      },
+      "required": ["risks", "assumptions"],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "vision",
+    "problem",
+    "audience_objectives",
+    "scope",
+    "dependencies",
+    "uncertainties"
+  ],
+  "additionalProperties": false
+}

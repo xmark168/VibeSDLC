@@ -1,78 +1,34 @@
 [project]
-name = "ai-agent-service"
-version = "0.1.0"
-description = "AI Agent service with LangChain and LangGraph"
+name = "agents-service"
+version = "0.0.1"
+description = "Scrum Agents team in a service that expose through some http routes for frontend and management services"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 dependencies = [
-    "fastapi[standard]>=0.115.0",
-    "python-multipart>=0.0.17",
-    "pydantic>=2.10.0",
-    "pydantic-settings>=2.6.0",
-    "httpx>=0.28.0",
-    # LangChain ecosystem - Latest versions
-    "langchain>=0.3.13",
-    "langchain-openai>=0.2.14",
-    "langchain-anthropic>=0.3.3",
-    "langchain-community>=0.3.13",
-    "langchain-core>=0.3.28",
-    "langgraph>=0.2.62",
-    "langsmith>=0.2.7",
-    # LangFuse for observability
-    "langfuse>=2.56.0",
-    # Server
-    "uvicorn>=0.34.0",
+    "deepagents>=0.0.5",
+    "dotenv>=0.9.9",
+    "duckduckgo-search>=8.1.1",
+    "fastapi>=0.118.0",
+    "langchain>=0.3.27",
+    "langchain-core>=0.3.77",
+    "langchain-openai>=0.3.34",
+    "langfuse>=3.6.1",
+    "langgraph>=0.6.8",
+    "langgraph-checkpoint-postgres>=2.0.24",
+    "passlib[bcrypt]>=1.7.4",
+    "pylint>=3.3.8",
+    "uvicorn>=0.37.0",
 ]
-
-[tool.uv]
-dev-dependencies = [
-    "pytest<8.0.0,>=7.4.3",
-    "pytest-asyncio<1.0.0,>=0.21.0",
-    "mypy<2.0.0,>=1.8.0",
-    "ruff<1.0.0,>=0.2.2",
-    "pre-commit<4.0.0,>=3.6.2",
-    "coverage<8.0.0,>=7.4.3",
-]
+[tool.setuptools.packages.find]
+where = ["app"]
 
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["app*"]
 
-[tool.mypy]
-strict = true
+[project.optional-dependencies]
+dev = ["ruff", "pylint", "pytest"]
 
 [tool.ruff]
-target-version = "py310"
-
-[tool.ruff.lint]
-select = [
-    "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings
-    "F",  # pyflakes
-    "I",  # isort
-    "B",  # flake8-bugbear
-    "C4",  # flake8-comprehensions
-    "UP",  # pyupgrade
-    "ARG001", # unused arguments in functions
-    "T201",   # print statements are not allowed
-]
-ignore = [
-    "E501",  # line too long
-    "B008",  # do not perform function calls in argument defaults
-    "W191",  # indentation contains tabs
-]
-
-[tool.ruff.lint.pyupgrade]
-keep-runtime-typing = true
-
-[tool.coverage.run]
-source = ["app"]
-dynamic_context = "test_function"
-
-[tool.coverage.report]
-show_missing = true
-sort = "-Cover"
+line-length = 100
