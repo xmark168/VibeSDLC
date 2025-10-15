@@ -8,33 +8,57 @@ class Role(str, Enum):
     ADMIN = "admin"
     USER = "user"
 
-# class BaseModel(SQLModel):
-    # id: User
+class BaseModel(SQLModel):
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+    updated_at: datetime = Field(
+        default_factory= lambda: datetime.now(timezone.utc),
+        sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc)},
+        nullable=False
+    )
 
 # Shared properties
-class User(SQLModel, table=True):
+class User(BaseModel, table=True):
     __tablename__ = "users"
     
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
     username: str = Field(unique=True, index=True, max_length=50)
     hashed_password: str
     email: EmailStr = Field(unique=True, index=True, max_length=255)
     role: Role = Field(default=Role.USER, nullable=True)
-    create_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # Relationship
     refresh_tokens: list["RefreshToken"] = Relationship(back_populates="user")
 
-class RefreshToken(SQLModel, table=True):
+class RefreshToken(BaseModel, table=True):
     __tablename__ = "refresh_tokens"
 
-    id: UUID = Field(default_factory=uuid4, primary_key=False)
     token: str = Field(unique=True, index=True)
     user_id: UUID = Field(foreign_key="users.id", nullable=False)
     expires_at: datetime
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_revoked: bool = Field(default=False)
 
     # Relationship
     user: User | None = Relationship(back_populates="refresh_tokens")
 
+class Project(BaseModel, table=True):
+    __tablename__ = "projects"
+
+    code: str
+    name: str
+    owner_id: UUID = Field(foreign_key="users.id", nullable=False)
+
+class Sprint(BaseModel, table=True):
+    __tablename__ = "sprints"
+
+    project_id: UUID = Field(foreign_key="projects.id", nullable=False)
+    name: str
+    number: number
+    goal: str
+    status: str
+    start_date: datetime
+    end_date: datetime
+    velocity_plan: str
+    

@@ -1,0 +1,25 @@
+Metadata-Version: 2.4
+Name: agents-service
+Version: 0.0.1
+Summary: Scrum Agents team in a service that expose through some http routes for frontend and management services
+Requires-Python: >=3.13
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi[standard]>=0.115.0
+Requires-Dist: python-multipart>=0.0.17
+Requires-Dist: pydantic>=2.10.0
+Requires-Dist: pydantic-settings>=2.6.0
+Requires-Dist: httpx>=0.28.0
+Requires-Dist: langchain>=0.3.13
+Requires-Dist: langchain-openai>=0.2.14
+Requires-Dist: langchain-anthropic>=0.3.3
+Requires-Dist: langchain-community>=0.3.13
+Requires-Dist: langchain-core>=0.3.28
+Requires-Dist: langgraph>=0.2.62
+Requires-Dist: langsmith>=0.2.7
+Requires-Dist: langfuse>=2.56.0
+Requires-Dist: uvicorn>=0.34.0
+Requires-Dist: openagents>=0.6.12
+Provides-Extra: dev
+Requires-Dist: ruff; extra == "dev"
+Requires-Dist: pylint; extra == "dev"
+Requires-Dist: pytest; extra == "dev"
