@@ -1,9 +1,9 @@
 [project]
-name = "ai-agent-service"
-version = "0.1.0"
-description = "AI Agent service with LangChain and LangGraph"
+name = "agents-service"
+version = "0.0.1"
+description = "Scrum Agents team in a service that expose through some http routes for frontend and management services"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 dependencies = [
     "fastapi[standard]>=0.115.0",
     "python-multipart>=0.0.17",
@@ -28,15 +28,12 @@ dependencies = [
 
 
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["app*"]
 
-[tool.mypy]
-strict = true
+[project.optional-dependencies]
+dev = ["ruff", "pylint", "pytest"]
 
 [tool.ruff]
 target-version = "py310"
