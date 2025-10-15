@@ -29,24 +29,30 @@ if __name__ == "__main__":
     current_dir = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, current_dir)
     from instructions import get_planner_instructions
-    from tools_deepagents import (
+    from tools import (
         grep_search_tool,
         view_file_tool,
         shell_execute_tool,
         list_directory_tool,
         take_notes_tool,
+        code_search_tool,
+        ast_parser_tool,
+        dependency_analyzer_tool,
     )
     from subagents import plan_generator_subagent, note_taker_subagent
     from state import PlannerAgentState
 else:
     # Package import - use relative imports
     from .instructions import get_planner_instructions
-    from .tools_deepagents import (
+    from .tools import (
         grep_search_tool,
         view_file_tool,
         shell_execute_tool,
         list_directory_tool,
         take_notes_tool,
+        code_search_tool,
+        ast_parser_tool,
+        dependency_analyzer_tool,
     )
     from .subagents import plan_generator_subagent, note_taker_subagent
     from .state import PlannerAgentState
@@ -98,6 +104,9 @@ def create_planner_agent(
         shell_execute_tool,
         list_directory_tool,
         take_notes_tool,
+        code_search_tool,
+        ast_parser_tool,
+        dependency_analyzer_tool,
     ]
 
     subagents = [
@@ -190,22 +199,21 @@ if __name__ == "__main__":
     async def main():
         result = await run_planner(
             user_request="Add user authentication with JWT tokens to the FastAPI application",
-            working_directory="./src",
+            working_directory="ai-agent-service/app/agents/demo",
             codebase_tree="""
-src/
-  api/
-    routes/
-    models/
-  auth/
-  services/
-  utils/
-tests/
-  test_api/
-            """,
-            custom_rules={
-                "general_rules": "Follow PEP 8 style guide. Use type hints.",
-                "testing_instructions": "Write pytest tests with 80%+ coverage"
-            }
+                src/
+                  api/
+                    routes/
+                    models/
+                  auth/
+                  services/
+                  utils/
+            """
+            ,
+            # custom_rules={
+            #     "general_rules": "Follow PEP 8 style guide. Use type hints.",
+            #     "testing_instructions": "Write pytest tests with 80%+ coverage"
+            # }
         )
 
         print("=" * 80)

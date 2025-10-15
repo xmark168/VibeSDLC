@@ -1,0 +1,239 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SprintPlan",
+  "description": "Template định nghĩa cấu trúc của Sprint Plan, output từ Priority Agent. Bao gồm prioritized backlog items và sprint assignments với capacity planning.",
+  "type": "object",
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "description": "Thông tin metadata về sprint plan.",
+      "properties": {
+        "product_name": {
+          "type": "string",
+          "description": "Tên sản phẩm.",
+          "minLength": 3,
+          "maxLength": 100
+        },
+        "version": {
+          "type": "string",
+          "description": "Phiên bản sprint plan, ví dụ: 'v1.0', 'v2.1'.",
+          "default": "v1.0"
+        },
+        "total_sprints": {
+          "type": "integer",
+          "description": "Tổng số sprints được tạo.",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "sprint_duration_weeks": {
+          "type": "integer",
+          "description": "Độ dài mỗi sprint (tuần), thường là 2 tuần.",
+          "minimum": 1,
+          "maximum": 4,
+          "default": 2
+        },
+        "total_story_points": {
+          "type": "number",
+          "description": "Tổng story points trong toàn bộ backlog.",
+          "minimum": 0
+        },
+        "total_estimate_hours": {
+          "type": "number",
+          "description": "Tổng estimate hours (từ sub-tasks).",
+          "minimum": 0
+        },
+        "planning_date": {
+          "type": "string",
+          "description": "Ngày thực hiện planning.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "product_name",
+        "version",
+        "total_sprints",
+        "sprint_duration_weeks",
+        "total_story_points"
+      ],
+      "additionalProperties": false
+    },
+    "prioritized_backlog": {
+      "type": "array",
+      "description": "Danh sách ALL backlog items (Epic, User Story, Task, Sub-task) đã được prioritize với rank field. Items được sắp xếp theo rank.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID duy nhất của item. Format: EPIC-001, US-001, TASK-001, SUB-001.",
+            "pattern": "^(EPIC|US|TASK|SUB)-\\d{3}$"
+          },
+          "type": {
+            "type": "string",
+            "description": "Loại backlog item.",
+            "enum": ["Epic", "User Story", "Task", "Sub-task"]
+          },
+          "parent_id": {
+            "type": ["string", "null"],
+            "description": "ID của item cha. Epic: null. User Story/Task: EPIC-xxx. Sub-task: US-xxx hoặc TASK-xxx.",
+            "pattern": "^(EPIC|US|TASK|SUB)-\\d{3}$"
+          },
+          "title": {
+            "type": "string",
+            "description": "Tiêu đề của item.",
+            "minLength": 5,
+            "maxLength": 200
+          },
+          "rank": {
+            "type": ["integer", "null"],
+            "description": "Thứ tự ưu tiên (1 = cao nhất). Được tính bởi Priority Agent dựa trên WSJF. Epic/User Story/Task có rank, Sub-task có thể null hoặc inherit từ parent.",
+            "minimum": 1
+          },
+          "sprint_id": {
+            "type": ["string", "null"],
+            "description": "ID của sprint được assign. Format: 'sprint-1', 'sprint-2'. Null nếu chưa được assign vào sprint nào.",
+            "pattern": "^sprint-\\d+$"
+          },
+          "story_point": {
+            "type": ["integer", "null"],
+            "description": "Story points - CHỈ cho User Story. Fibonacci: 1, 2, 3, 5, 8, 13, 21.",
+            "enum": [1, 2, 3, 5, 8, 13, 21, null]
+          },
+          "estimate_value": {
+            "type": ["number", "null"],
+            "description": "Ước lượng số giờ - CHỈ cho Sub-task.",
+            "minimum": 0.5,
+            "maximum": 200
+          },
+          "wsjf_score": {
+            "type": ["number", "null"],
+            "description": "WSJF score đã tính toán (cho Epic/User Story). WSJF = (business_value + time_criticality + risk_reduction) / job_size.",
+            "minimum": 0
+          },
+          "dependencies": {
+            "type": "array",
+            "description": "Danh sách IDs của items phụ thuộc.",
+            "items": {
+              "type": "string",
+              "pattern": "^(EPIC|US|TASK|SUB)-\\d{3}$"
+            },
+            "default": []
+          }
+        },
+        "required": ["id", "type", "title", "rank"],
+        "additionalProperties": true
+      },
+      "minItems": 1
+    },
+    "sprints": {
+      "type": "array",
+      "description": "Danh sách các sprints với assigned items và capacity planning.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "sprint_id": {
+            "type": "string",
+            "description": "ID duy nhất của sprint. Format: 'sprint-1', 'sprint-2', etc.",
+            "pattern": "^sprint-\\d+$"
+          },
+          "sprint_number": {
+            "type": "integer",
+            "description": "Số thứ tự sprint (1, 2, 3, ...).",
+            "minimum": 1
+          },
+          "sprint_goal": {
+            "type": "string",
+            "description": "Mục tiêu chính của sprint này (auto-generated dựa trên Epic/User Story quan trọng nhất).",
+            "minLength": 20,
+            "maxLength": 200
+          },
+          "start_date": {
+            "type": ["string", "null"],
+            "description": "Ngày bắt đầu sprint (có thể để null nếu chưa schedule).",
+            "format": "date"
+          },
+          "end_date": {
+            "type": ["string", "null"],
+            "description": "Ngày kết thúc sprint (có thể để null nếu chưa schedule).",
+            "format": "date"
+          },
+          "capacity": {
+            "type": "object",
+            "description": "Capacity planning cho sprint này.",
+            "properties": {
+              "total_story_points": {
+                "type": "number",
+                "description": "Tổng story points được assign vào sprint.",
+                "minimum": 0
+              },
+              "total_estimate_hours": {
+                "type": "number",
+                "description": "Tổng estimate hours từ sub-tasks trong sprint.",
+                "minimum": 0
+              },
+              "capacity_story_points": {
+                "type": "number",
+                "description": "Capacity tối đa (story points) mà team có thể handle trong sprint. Thường là 20-40 points.",
+                "minimum": 0,
+                "default": 30
+              },
+              "capacity_hours": {
+                "type": "number",
+                "description": "Capacity tối đa (hours) mà team có thể handle trong sprint. Ví dụ: 5 devs * 2 weeks * 40h = 400h.",
+                "minimum": 0,
+                "default": 400
+              },
+              "utilization_percentage": {
+                "type": "number",
+                "description": "Phần trăm capacity được sử dụng (total/capacity * 100).",
+                "minimum": 0,
+                "maximum": 150
+              }
+            },
+            "required": [
+              "total_story_points",
+              "total_estimate_hours",
+              "capacity_story_points",
+              "utilization_percentage"
+            ],
+            "additionalProperties": false
+          },
+          "assigned_items": {
+            "type": "array",
+            "description": "Danh sách IDs của backlog items được assign vào sprint này. Chỉ chứa Epic/User Story/Task (không chứa Sub-task vì Sub-task theo parent).",
+            "items": {
+              "type": "string",
+              "pattern": "^(EPIC|US|TASK)-\\d{3}$"
+            },
+            "minItems": 0
+          },
+          "status": {
+            "type": "string",
+            "description": "Trạng thái của sprint.",
+            "enum": ["Planned", "Active", "Completed"],
+            "default": "Planned"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Ghi chú về sprint, ví dụ: risks, dependencies, MVP items.",
+            "maxLength": 500,
+            "default": ""
+          }
+        },
+        "required": [
+          "sprint_id",
+          "sprint_number",
+          "sprint_goal",
+          "capacity",
+          "assigned_items",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "maxItems": 20
+    }
+  },
+  "required": ["metadata", "prioritized_backlog", "sprints"],
+  "additionalProperties": false
+}

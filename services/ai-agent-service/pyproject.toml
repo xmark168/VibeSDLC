@@ -5,19 +5,28 @@ description = "Scrum Agents team in a service that expose through some http rout
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    # Core framework
     "deepagents>=0.0.10",
-    "dotenv>=0.9.9",
-    "duckduckgo-search>=8.1.1",
+    # Web framework
     "fastapi>=0.118.0",
+    "uvicorn>=0.37.0",
+    # LangChain ecosystem
     "langchain>=0.3.27",
-    "langchain-core>=0.3.77",
-    "langchain-openai>=0.3.34",
-    "langfuse>=3.6.1",
+    "langchain-openai==0.3.20",
+    "langchain-postgres>=0.0.15",
     "langgraph>=0.6.8",
     "langgraph-checkpoint-postgres>=2.0.24",
+    "langfuse>=3.6.1",
+    # Database & Vector store
+    "psycopg[binary]>=3.0.0", # PostgreSQL driver for langchain-postgres
+    "pgvector>=0.2.5", # Vector similarity search
+    # Utilities
+    "dotenv>=0.9.9",
+    "duckduckgo-search>=8.1.1",
     "passlib[bcrypt]>=1.7.4",
     "pylint>=3.3.8",
-    "uvicorn>=0.37.0",
+    "langchain-core>=0.3.0,<0.4.0",
+    "pytest>=8.4.2",
 ]
 [tool.setuptools.packages.find]
 where = ["app"]
