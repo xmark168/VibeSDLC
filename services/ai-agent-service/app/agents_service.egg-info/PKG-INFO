@@ -21,6 +21,7 @@ Requires-Dist: passlib[bcrypt]>=1.7.4
 Requires-Dist: pylint>=3.3.8
 Requires-Dist: langchain-core<0.4.0,>=0.3.0
 Requires-Dist: pytest>=8.4.2
+Requires-Dist: gitpython>=3.1.45
 Provides-Extra: dev
 Requires-Dist: ruff; extra == "dev"
 Requires-Dist: pylint; extra == "dev"

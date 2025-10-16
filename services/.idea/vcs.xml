@@ -2,6 +2,9 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$/.." vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/ai-agent-service/app/agents/demo" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/ai-agent-service/app/agents/developer" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/ai-agent-service/app/agents/developer/implementor" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/open-swe" vcs="Git" />
   </component>
 </project>

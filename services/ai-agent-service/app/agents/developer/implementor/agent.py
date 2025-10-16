@@ -18,8 +18,9 @@ from typing import Dict, Any
 import os
 import sys
 
+
 try:
-    from langchain_openai import ChatOpenAI
+    from langchain_openai import ChatOpenAI, OpenAI
 
     LANGCHAIN_OPENAI_AVAILABLE = True
 except ImportError as e:
@@ -41,6 +42,21 @@ except ImportError as e:
             yield {"content": "Mock streaming response from ChatOpenAI"}
 
 
+# Import FlexibleLLM for more flexible LLM configuration
+try:
+    from app.utils.custom_llm import FlexibleLLM, create_flexible_llm
+    from app.utils.llm_config import get_llm_from_env, get_llm_for_provider
+
+    FLEXIBLE_LLM_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: FlexibleLLM import failed: {e}")
+    print("Falling back to standard ChatOpenAI")
+    FLEXIBLE_LLM_AVAILABLE = False
+    FlexibleLLM = ChatOpenAI
+    create_flexible_llm = None
+    get_llm_from_env = None
+
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -57,6 +73,8 @@ if __name__ == "__main__":
         load_codebase_tool,
         index_codebase_tool,
         search_similar_code_tool,
+        sync_virtual_to_disk_tool,
+        list_virtual_files_tool,
         detect_stack_tool,
         retrieve_boilerplate_tool,
         create_feature_branch_tool,
@@ -67,7 +85,7 @@ if __name__ == "__main__":
         collect_feedback_tool,
         refine_code_tool,
     )
-    from subagents import code_generator_subagent, code_reviewer_subagent
+    from subagents import code_generator_subagent
 else:
     # Package import - use relative imports
     from .instructions import get_implementor_instructions
@@ -75,6 +93,8 @@ else:
         load_codebase_tool,
         index_codebase_tool,
         search_similar_code_tool,
+        sync_virtual_to_disk_tool,
+        list_virtual_files_tool,
         detect_stack_tool,
         retrieve_boilerplate_tool,
         create_feature_branch_tool,
@@ -93,7 +113,7 @@ def create_implementor_agent(
     project_type: str = "existing",  # "new" or "existing"
     enable_pgvector: bool = True,
     boilerplate_templates_path: str = None,
-    model_name: str = "gpt-4o",
+    model_name: str = "gpt-4o-mini",
     **config,
 ):
     """
@@ -125,29 +145,38 @@ def create_implementor_agent(
         boilerplate_templates_path=boilerplate_templates_path,
     )
 
-    # Initialize LLM
+
+
     llm = ChatOpenAI(
-        model=model_name,
-        temperature=0.1,
-        max_tokens=None,
-        timeout=None,
-        max_retries=2,
-        base_url=AGENT_ROUTER_URL,
-        api_key=AGENT_ROUTER_KEY,
-    )
+            model_name=model_name,
+            base_url=AGENT_ROUTER_URL,
+            api_key=AGENT_ROUTER_KEY,
+            temperature=0.1,
+            max_tokens=None,
+            timeout=None,
+            max_retries=2,
+        )
 
     # Define tools for implementation
     tools = [
+        # Codebase analysis tools
         load_codebase_tool,
         index_codebase_tool,
         search_similar_code_tool,
+        # Virtual FS sync tools (CRITICAL for Git workflow)
+        sync_virtual_to_disk_tool,
+        list_virtual_files_tool,
+        # Stack detection & boilerplate
         detect_stack_tool,
         retrieve_boilerplate_tool,
+        # Git operations
         create_feature_branch_tool,
-        select_integration_strategy_tool,
-        generate_code_tool,
         commit_changes_tool,
         create_pull_request_tool,
+        # Code generation & strategy
+        select_integration_strategy_tool,
+        generate_code_tool,
+        # Review & feedback
         collect_feedback_tool,
         refine_code_tool,
     ]
@@ -155,7 +184,6 @@ def create_implementor_agent(
     # Define subagents for specialized tasks
     subagents = [
         code_generator_subagent,
-        code_reviewer_subagent,
     ]
 
     # Create the deep agent
@@ -169,6 +197,7 @@ def create_implementor_agent(
         instructions=instructions,
         subagents=subagents,
         model=llm,
+        checkpointer=False,  # Disable checkpointing to reduce duplicate logs
     ).with_config(
         {
             "recursion_limit": config.get("recursion_limit", 500),
@@ -185,7 +214,7 @@ async def run_implementor(
     project_type: str = "existing",
     enable_pgvector: bool = True,
     boilerplate_templates_path: str = None,
-    model_name: str = "gpt-4o",
+    model_name: str = "gpt-5",
     **config,
 ) -> Dict[str, Any]:
     """
@@ -213,6 +242,12 @@ async def run_implementor(
         )
         print(result['todos'])  # See implementation progress
     """
+
+    # Normalize working_directory to absolute path
+    from pathlib import Path
+
+    working_directory = str(Path(working_directory).resolve())
+    print(f"🔧 Normalized working directory: {working_directory}")
 
     # Create the agent
     agent = create_implementor_agent(
@@ -254,8 +289,8 @@ if __name__ == "__main__":
 
     async def main():
         result = await run_implementor(
-            user_request="Add user authentication with JWT tokens to the FastAPI application",
-            working_directory="services/ai-agent-service/app/agents/demozzz",
+            user_request="Add user profile to the FastAPI application",
+            working_directory=r"D:\capstone project\VibeSDLC\services\ai-agent-service\app\agents\demo",
             project_type="existing",
             enable_pgvector=True,
         )

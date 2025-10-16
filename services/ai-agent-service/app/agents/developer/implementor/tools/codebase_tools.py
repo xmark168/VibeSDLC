@@ -28,9 +28,10 @@ def load_codebase_tool(working_directory: str) -> str:
     Example:
         load_codebase_tool("./src")
     """
+    print("load_codebase_tool")
     try:
         working_dir = Path(working_directory).resolve()
-
+        print("working_dir", working_dir)
         if not working_dir.exists():
             return f"Error: Directory '{working_directory}' does not exist"
 
@@ -338,8 +339,8 @@ def index_codebase_tool(codebase_path: str, enable_pgvector: bool = True) -> str
                     status += " (mock mode)"
 
             except ImportError as e:
-                logger.error(f"LangChain pgvector dependencies not available: {e}")
-                logger.info("Install with: pip install langchain-postgres langchain-openai")
+                # logger.error(f"LangChain pgvector dependencies not available: {e}")
+                # logger.info("Install with: pip install langchain-postgres langchain-openai")
                 status = f"Created local index with {len(indexed_files)} files and {len(code_snippets)} code snippets (LangChain PGVector unavailable)"
         else:
             status = f"Created local index with {len(indexed_files)} files and {len(code_snippets)} code snippets"
@@ -418,7 +419,7 @@ def search_similar_code_tool(
         return json.dumps(search_results, indent=2)
 
     except ImportError as e:
-        logger.error(f"LangChain pgvector dependencies not available: {e}")
+        # logger.error(f"LangChain pgvector dependencies not available: {e}")
         return json.dumps(
             {
                 "error": "LangChain PGVector not available",
@@ -429,7 +430,7 @@ def search_similar_code_tool(
         )
 
     except Exception as e:
-        logger.error(f"Error searching similar code: {e}")
+        # logger.error(f"Error searching similar code: {e}")
         return json.dumps({"error": "Search failed", "message": str(e), "query": query}, indent=2)
 
 
