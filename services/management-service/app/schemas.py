@@ -18,3 +18,8 @@ class UserCreate(SQLModel):
     username: str
     password: str
     email: EmailStr
+
+class UserLogin(SQLModel):
+    email_or_username: str 
+    password: str
+

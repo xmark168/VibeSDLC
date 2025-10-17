@@ -108,7 +108,7 @@ result = await agent.ainvoke({
 - `retrieve_boilerplate_tool`: Get boilerplate templates
 - `create_feature_branch_tool`: Create Git feature branch
 - `select_integration_strategy_tool`: Choose integration approach
-- `generate_code_tool`: Generate code with nested subagents
+- ~~`generate_code_tool`~~: DEPRECATED - Use `task(subagent_type="code_generator")` instead
 - `commit_changes_tool`: Commit to Git
 - `create_pull_request_tool`: Create PR
 - `collect_feedback_tool`: Collect user feedback

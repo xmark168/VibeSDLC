@@ -328,10 +328,36 @@ def generate_code_tool(
     additional_context: str = ""
 ) -> str:
     """
-    Generate code based on the selected integration strategy.
+    ⚠️ DEPRECATED: This tool only returns JSON and does NOT invoke the code_generator subagent.
     
-    This tool uses the code_generator subagent to create code that implements
-    the specified task using the chosen integration strategy.
+    ✅ INSTEAD USE: task(description="...", subagent_type="code_generator")
+    
+    This tool prepares context for code generation but does not actually generate code.
+    To invoke the code_generator subagent, use DeepAgents' task() tool directly.
+    
+    Example of correct usage:
+        task(
+            description=f\"\"\"# CODE GENERATION TASK
+            
+            ## Task Description
+            {task_description}
+            
+            ## Integration Strategy
+            {strategy}
+            
+            ## Codebase Context
+            {codebase_context}
+            
+            ## Target Files
+            {target_files}
+            
+            ## Instructions
+            - Use write_file() for new files
+            - Use edit_file() for existing files
+            - Follow existing patterns
+            \"\"\",
+            subagent_type="code_generator"
+        )
     
     Args:
         strategy: Integration strategy to use
@@ -341,15 +367,7 @@ def generate_code_tool(
         additional_context: Any additional context or requirements
         
     Returns:
-        JSON string with generated code and implementation details
-        
-    Example:
-        generate_code_tool(
-            "extend_existing",
-            "Add user authentication endpoints",
-            "FastAPI app with existing user models",
-            ["app/api/routes/auth.py"]
-        )
+        JSON string with generation context (for reference only)
     """
     try:
         # This tool will delegate to the code_generator subagent

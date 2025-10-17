@@ -29,8 +29,8 @@ dependencies = [
     "pytest>=8.4.2",
     "gitpython>=3.1.45",
 ]
-[tool.setuptools.packages.find]
-where = ["app"]
+
+
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
@@ -41,4 +41,33 @@ build-backend = "setuptools.build_meta"
 dev = ["ruff", "pylint", "pytest"]
 
 [tool.ruff]
-line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "ARG001", # unused arguments in functions
+    "T201",   # print statements are not allowed
+]
+ignore = [
+    "E501",  # line too long
+    "B008",  # do not perform function calls in argument defaults
+    "W191",  # indentation contains tabs
+]
+
+[tool.ruff.lint.pyupgrade]
+keep-runtime-typing = true
+
+[tool.coverage.run]
+source = ["app"]
+dynamic_context = "test_function"
+
+[tool.coverage.report]
+show_missing = true
+sort = "-Cover"
