@@ -5,7 +5,7 @@ from typing import Optional
 
 try:
     from langfuse import Langfuse
-    from langfuse.callback import CallbackHandler
+    from langfuse.langchain import CallbackHandler
     LANGFUSE_AVAILABLE = True
 except ImportError:
     LANGFUSE_AVAILABLE = False

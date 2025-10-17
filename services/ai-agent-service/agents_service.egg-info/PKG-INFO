@@ -19,6 +19,10 @@ Requires-Dist: langsmith>=0.2.7
 Requires-Dist: langfuse>=2.56.0
 Requires-Dist: uvicorn>=0.34.0
 Requires-Dist: openagents>=0.6.12
+Requires-Dist: jwt>=1.4.0
+Requires-Dist: sqlmodel>=0.0.27
+Requires-Dist: alembic>=1.17.0
+Requires-Dist: psycopg[binary]>=3.2.10
 Provides-Extra: dev
 Requires-Dist: ruff; extra == "dev"
 Requires-Dist: pylint; extra == "dev"

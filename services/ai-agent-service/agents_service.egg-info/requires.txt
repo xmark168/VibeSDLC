@@ -13,6 +13,10 @@ langsmith>=0.2.7
 langfuse>=2.56.0
 uvicorn>=0.34.0
 openagents>=0.6.12
+jwt>=1.4.0
+sqlmodel>=0.0.27
+alembic>=1.17.0
+psycopg[binary]>=3.2.10
 
 [dev]
 ruff

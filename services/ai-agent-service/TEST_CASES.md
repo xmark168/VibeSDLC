@@ -34,3 +34,25 @@ Bạn có thể mô tả ngắn gọn cách ứng dụng SmartTask hoạt độn
 Theo bạn, điểm khác biệt nổi bật nhất của SmartTask so với Trello là gì? (Ví dụ: tính năng AI, giao diện, trải nghiệm người dùng, v.v.)
 
 -> tính năng AI, giao diện hiện đại
+
+
+ Các lệnh Alembic thường dùng:
+
+  # 1. Tạo migration mới (autogenerate từ models)
+  alembic revision --autogenerate -m "Description of changes"
+
+  # 2. Áp dụng migration
+  alembic upgrade head          # Upgrade lên version mới nhất
+  alembic upgrade +1            # Upgrade lên 1 version
+  alembic upgrade <revision>    # Upgrade đến revision cụ thể
+
+  # 3. Rollback migration
+  alembic downgrade -1          # Rollback 1 version
+  alembic downgrade base        # Rollback về trạng thái ban đầu
+
+  # 4. Xem history
+  alembic history               # Xem tất cả migrations
+  alembic current               # Xem version hiện tại
+
+  # 5. Tạo migration thủ công (không autogenerate)
+  alembic revision -m "Manual migration"

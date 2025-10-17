@@ -32,22 +32,22 @@ class User(BaseModel, table=True):
     # Relationship
     refresh_tokens: list["RefreshToken"] = Relationship(
         back_populates="user",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}  # ✅ THÊM
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
     owned_projects: list["Project"] = Relationship(
         back_populates="owner",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}  # ✅ THÊM
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"} 
     )
     comments: list["Comment"] = Relationship(
         back_populates="commenter",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}  # ✅ THÊM
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
 class RefreshToken(BaseModel, table=True):
     __tablename__ = "refresh_tokens"
 
     token: str = Field(unique=True, index=True, max_length=500)
-    user_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")  # ✅ THÊM ondelete
+    user_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE") 
     expires_at: datetime
     is_revoked: bool = Field(default=False)
 
@@ -59,18 +59,18 @@ class Project(BaseModel, table=True):
 
     code: str
     name: str
-    owner_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")  # ✅ THÊM ondelete
+    owner_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE") 
 
     owner: User = Relationship(back_populates="owned_projects")
     sprints: list["Sprint"] = Relationship(
         back_populates="project",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}  # ✅ THÊM
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
 class Sprint(BaseModel, table=True):
     __tablename__ = "sprints"
 
-    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE")  # ✅ THÊM ondelete
+    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE") 
     name: str
     number: int
     goal: str
@@ -83,20 +83,20 @@ class Sprint(BaseModel, table=True):
     project: Project = Relationship(back_populates="sprints")
     backlog_items: list["BacklogItem"] = Relationship(
         back_populates="sprint",  # ✅ SỬA từ backlog_items="sprint"
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}  # ✅ THÊM
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}  
     )
 
 class BacklogItem(BaseModel, table=True):
     __tablename__ = "backlog_items"
 
-    sprint_id: UUID = Field(foreign_key="sprints.id", nullable=False, ondelete="CASCADE")  # ✅ THÊM ondelete
-    parent_id: UUID | None = Field(default=None, foreign_key="backlog_items.id", ondelete="SET NULL")  # ✅ THÊM ondelete      
+    sprint_id: UUID = Field(foreign_key="sprints.id", nullable=False, ondelete="CASCADE") 
+    parent_id: UUID | None = Field(default=None, foreign_key="backlog_items.id", ondelete="SET NULL")
     type: str
     title: str
     description: str | None = Field(default=None)
     status: str
-    reviewer_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")  # ✅ THÊM FK và ondelete      
-    assignee_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")  # ✅ THÊM FK và ondelete      
+    reviewer_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")  
+    assignee_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL") 
     rank: int | None = Field(default=None)
     estimate_value: int | None = Field(default=None)
     story_point: int | None = Field(default=None)
@@ -111,18 +111,18 @@ class BacklogItem(BaseModel, table=True):
     children: list["BacklogItem"] = Relationship(back_populates="parent")
     comments: list["Comment"] = Relationship(
         back_populates="backlog_item",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}  # ✅ THÊM
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"} 
     )
     activities: list["IssueActivity"] = Relationship(
         back_populates="issue",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}  # ✅ THÊM
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"} 
     )
 
 class Comment(BaseModel, table=True):
     __tablename__ = "comments"
 
-    backlog_item_id: UUID = Field(foreign_key="backlog_items.id", nullable=False, ondelete="CASCADE")  # ✅ THÊM ondelete      
-    commenter_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")  # ✅ THÊM ondelete
+    backlog_item_id: UUID = Field(foreign_key="backlog_items.id", nullable=False, ondelete="CASCADE") 
+    commenter_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE") 
     content: str
 
     backlog_item: BacklogItem = Relationship(back_populates="comments")
@@ -131,8 +131,7 @@ class Comment(BaseModel, table=True):
 class IssueActivity(BaseModel, table=True):
     __tablename__ = "issue_activities"
 
-    issue_id: UUID = Field(foreign_key="backlog_items.id", nullable=False, ondelete="CASCADE")  # ✅ THÊM ondelete
-    action: str
+    issue_id: UUID = Field(foreign_key="backlog_items.id", nullable=False, ondelete="CASCADE") 
     actor_id: str | None = Field(default=None)
     actor_name: str | None = Field(default=None)
 
@@ -156,4 +155,4 @@ class IssueActivity(BaseModel, table=True):
     type_to: str | None = Field(default=None)
     note: str | None = Field(default=None)
 
-    issue: BacklogItem = Relationship(back_populates="activities")  # ✅ SỬA từ "activites"
+    issue: BacklogItem = Relationship(back_populates="activities") 
