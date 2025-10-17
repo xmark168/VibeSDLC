@@ -199,7 +199,6 @@ def create_developer_agent(
         temperature=0.1,
         max_tokens=None,
         timeout=None,
-        max_retries=2,
         callbacks=callbacks,
     )
 

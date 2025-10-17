@@ -321,59 +321,41 @@ def generate_implementation_guidance(strategy: str, task_description: str, codeb
 
 @tool
 def generate_code_tool(
-    strategy: str,
-    task_description: str,
-    codebase_context: str,
-    target_files: List[str] = None,
-    additional_context: str = ""
+        strategy: str,
+        task_description: str,
+        codebase_context: str,
+        target_files: List[str] = None,
+        additional_context: str = ""
 ) -> str:
     """
-    ⚠️ DEPRECATED: This tool only returns JSON and does NOT invoke the code_generator subagent.
-    
-    ✅ INSTEAD USE: task(description="...", subagent_type="code_generator")
-    
-    This tool prepares context for code generation but does not actually generate code.
-    To invoke the code_generator subagent, use DeepAgents' task() tool directly.
-    
-    Example of correct usage:
-        task(
-            description=f\"\"\"# CODE GENERATION TASK
-            
-            ## Task Description
-            {task_description}
-            
-            ## Integration Strategy
-            {strategy}
-            
-            ## Codebase Context
-            {codebase_context}
-            
-            ## Target Files
-            {target_files}
-            
-            ## Instructions
-            - Use write_file() for new files
-            - Use edit_file() for existing files
-            - Follow existing patterns
-            \"\"\",
-            subagent_type="code_generator"
-        )
-    
+    Generate code based on the selected integration strategy.
+
+    This tool uses the code_generator subagent to create code that implements
+    the specified task using the chosen integration strategy.
+
     Args:
         strategy: Integration strategy to use
         task_description: Description of what to implement
         codebase_context: Context about the existing codebase
         target_files: List of files to create or modify
         additional_context: Any additional context or requirements
-        
+
     Returns:
-        JSON string with generation context (for reference only)
+        JSON string with generated code and implementation details
+
+    Example:
+        generate_code_tool(
+            "extend_existing",
+            "Add user authentication endpoints",
+            "FastAPI app with existing user models",
+            ["app/api/routes/auth.py"]
+        )
     """
     try:
         # This tool will delegate to the code_generator subagent
         # For now, we'll return a structured response that indicates
         # the subagent should be called
-        
+
         generation_request = {
             "action": "generate_code",
             "strategy": strategy,
@@ -386,9 +368,9 @@ def generate_code_tool(
                 strategy, task_description, codebase_context, target_files, additional_context
             )
         }
-        
+
         return json.dumps(generation_request, indent=2)
-        
+
     except Exception as e:
         return f"Error preparing code generation: {str(e)}"
 
