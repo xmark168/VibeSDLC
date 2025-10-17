@@ -1,204 +1,193 @@
-# app/agents/developer/agent.py
+# app/agents/developer/implementor/agent.py
 """
-Main Developer Agent using DeepAgents
+Code Implementor Agent using DeepAgents
 
-This is the ONLY agent that uses create_deep_agent() in the developer module.
-It orchestrates two subagents:
-- Implementor: Handles feature implementation and code generation
-- Code Reviewer: Reviews generated code for quality and best practices
+This agent implements features based on user requirements using the deepagents library.
+It replaces the separate planner subagent by leveraging deepagents' built-in planning capabilities.
 
-Architecture:
-    Developer Agent (DeepAgent)
-    ├── Implementor Subagent (prompt-based)
-    └── Code Reviewer Subagent (prompt-based)
+Key differences from separate planner approach:
+- Uses deepagents' built-in write_todos for planning
+- No manual graph construction - DeepAgents handles workflow
+- Simpler state management with automatic persistence
+- Built-in subagent support with isolated contexts
+- Automatic human-in-the-loop support
 """
 
 from deepagents import create_deep_agent
 from typing import Dict, Any
 import os
-from dotenv import load_dotenv
+import sys
 
-# Load environment variables
-load_dotenv()
-AGENT_ROUTER_URL = os.getenv("OPENAI_BASE_URL")
-AGENT_ROUTER_KEY = os.getenv("OPENAI_API_KEY")
 
 try:
-    from langchain_openai import ChatOpenAI
+    from langchain_openai import ChatOpenAI, OpenAI
 
     LANGCHAIN_OPENAI_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: langchain_openai import failed: {e}")
+    print("Using mock ChatOpenAI for development")
     LANGCHAIN_OPENAI_AVAILABLE = False
 
-    # Mock ChatOpenAI for development
+    # Mock ChatOpenAI class for development
     class ChatOpenAI:
         def __init__(self, **kwargs):
-            self.model = kwargs.get("model", "gpt-4o")
+            self.model = kwargs.get("model", "gpt-4o-mini")
             self.temperature = kwargs.get("temperature", 0.1)
             print(f"Mock ChatOpenAI initialized with model: {self.model}")
 
         def invoke(self, messages):
             return {"content": "Mock response from ChatOpenAI"}
 
+        def stream(self, messages):
+            yield {"content": "Mock streaming response from ChatOpenAI"}
 
-def get_developer_instructions(working_directory: str = ".") -> str:
-    """
-    Generate system instructions for the main Developer Agent.
 
-    This agent orchestrates the development workflow by delegating to subagents.
-    """
-    return f"""# DEVELOPER AGENT
+from dotenv import load_dotenv
 
-You are the main Developer Agent that orchestrates software development tasks.
-You coordinate between specialized subagents to implement features and ensure code quality.
+load_dotenv()
+AGENT_ROUTER_URL = os.getenv("OPENAI_BASE_URL")
+AGENT_ROUTER_KEY = os.getenv("OPENAI_API_KEY")
 
-## YOUR ROLE
+# Import Langfuse tracing utilities
+try:
+    from app.utils.langfuse_tracer import (
+        get_callback_handler,
+        trace_span,
+        log_agent_state,
+        flush_langfuse,
+    )
 
-You are the orchestrator and decision-maker. You:
-1. Understand user requirements and break them down into tasks
-2. Delegate implementation work to the Implementor subagent
-3. Delegate code review to the Code Reviewer subagent
-4. Coordinate the overall development workflow
-5. Interact with the user for feedback and clarifications
+    LANGFUSE_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️  Langfuse tracing not available: {e}")
+    LANGFUSE_AVAILABLE = False
 
-## AVAILABLE SUBAGENTS
+    # Mock functions if import fails
+    def get_callback_handler(*args, **kwargs):
+        return None
 
-### 1. Implementor Subagent (`implementor`)
-**Use when:** You need to implement features, generate code, or modify existing code.
+    def trace_span(*args, **kwargs):
+        from contextlib import contextmanager
 
-**Capabilities:**
-- Analyzes codebase structure
-- Plan todo
-- Creates feature branches
-- Generates new code following best practices
-- Modifies existing code
-- Loop handle task 
-- Commits changes to Git
-- Creates pull requests (All done)
+        @contextmanager
+        def dummy():
+            yield None
 
-**Example delegation:**
-```
-Use the task tool to delegate to implementor:
-task(
-    description="Implement user authentication with JWT tokens",
-    subagent_type="implementor"
-)
-```
+        return dummy()
 
-### 2. Code Reviewer Subagent (`code_reviewer`)
-**Use when:** You need to review generated code for quality, security, and best practices.
+    def log_agent_state(*args, **kwargs):
+        pass
 
-**Capabilities:**
-- Reviews code quality and structure
-- Identifies security vulnerabilities
-- Checks performance implications
-- Verifies best practices adherence
-- Provides actionable feedback
+    def flush_langfuse():
+        pass
 
-**Example delegation:**
-```
-Use the task tool to delegate to code_reviewer:
-task(
-    description="Review the authentication implementation for security issues",
-    subagent_type="code_reviewer"
-)
-```
 
-## WORKFLOW PATTERN
-
-### Standard Development Flow:
-
-1. **Understand Requirements**
-   - Clarify user request
-   - Break down into specific tasks
-   - Use write_todos to create implementation plan
-
-2. **Delegate Implementation**
-   - Use task tool to delegate to `implementor` subagent
-   - Provide clear, specific instructions
-   - Include relevant context and requirements
-
-## EXAMPLE WORKFLOW
-
-```
-User: "Add user profile feature to the API"
-
-Step 1: Implementation
-task(
-    description="Implement user profile endpoints with CRUD operations. Include proper validation, error handling, and follow existing API patterns.",
-    subagent_type="implementor"
-)
-
-Step 2: Review
-task(
-    description="Review the profile endpoints implementation. Focus on security (authentication, authorization, input validation) and API consistency.",
-    subagent_type="code_reviewer"
-)
-
-```
-
-## IMPORTANT NOTES
-
-- **You don't write code directly** - delegate to implementor subagent
-- **You don't review code directly** - delegate to code_reviewer subagent
-- **You coordinate and decide** - when to implement, when to review, when to iterate
-- **Provide clear context** when delegating to subagents
-- **Iterate based on feedback** until quality standards are met
-
-## WORKING DIRECTORY
-
-Current working directory: {working_directory}
-
-When delegating to subagents, they will automatically work in this directory.
-
-## DELEGATION BEST PRACTICES
-
-1. **Be Specific**: Provide clear, detailed instructions to subagents
-2. **Include Context**: Share relevant information about the codebase
-3. **Set Expectations**: Specify what you want the subagent to focus on
-4. **Review Results**: Always review subagent output before proceeding
-5. **Iterate**: Don't hesitate to ask subagents to refine their work
-
-## TOOLS AVAILABLE
-
-You have access to:
-- **write_todos**: Plan and track implementation tasks
-- **task**: Delegate work to subagents (implementor, code_reviewer)
-- **File operations**: write_file, read_file, edit_file, ls (from DeepAgents)
-
-The subagents have access to specialized tools for their domains.
-
-Remember: You are the orchestrator. Your job is to coordinate, not to implement directly."""
+# Handle both package import and direct execution
+if __name__ == "__main__":
+    # Direct execution - add current directory to path
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, current_dir)
+    from instructions import get_implementor_instructions
+    from agents.developer.implementor.tools import (
+        load_codebase_tool,
+        index_codebase_tool,
+        search_similar_code_tool,
+        sync_virtual_to_disk_tool,
+        list_virtual_files_tool,
+        detect_stack_tool,
+        retrieve_boilerplate_tool,
+        create_feature_branch_tool,
+        select_integration_strategy_tool,
+        generate_code_tool,
+        commit_changes_tool,
+        create_pull_request_tool,
+        collect_feedback_tool,
+        refine_code_tool,
+    )
+    from agents.developer.implementor.subagents import code_generator_subagent
+else:
+    # Package import - use relative imports
+    from .instructions import get_implementor_instructions
+    from agents.developer.implementor.tools import (
+        load_codebase_tool,
+        index_codebase_tool,
+        search_similar_code_tool,
+        sync_virtual_to_disk_tool,
+        list_virtual_files_tool,
+        detect_stack_tool,
+        retrieve_boilerplate_tool,
+        create_feature_branch_tool,
+        select_integration_strategy_tool,
+        generate_code_tool,
+        commit_changes_tool,
+        create_pull_request_tool,
+        collect_feedback_tool,
+        refine_code_tool,
+    )
+    from agents.developer.implementor.subagents import code_generator_subagent
 
 
 def create_developer_agent(
     working_directory: str = ".",
-    model_name: str = "gpt-4o",
+    project_type: str = "existing",  # "new" or "existing"
+    enable_pgvector: bool = True,
+    boilerplate_templates_path: str = None,
+    model_name: str = "gpt-4o-mini",
+    session_id: str = None,
+    user_id: str = None,
     **config,
 ):
     """
-    Create the main Developer Agent with Implementor and Code Reviewer subagents.
-
-    This is the ONLY function in the developer module that calls create_deep_agent().
+    Create a DeepAgents-based implementor agent with Langfuse tracing.
 
     Args:
-        working_directory: Working directory for development tasks
+        working_directory: Working directory for the agent
+        project_type: "new" for new projects, "existing" for existing codebases
+        enable_pgvector: Whether to enable pgvector indexing
+        boilerplate_templates_path: Path to boilerplate templates
         model_name: LLM model to use
+        session_id: Optional session ID for Langfuse tracing
+        user_id: Optional user ID for Langfuse tracing
         **config: Additional configuration options
 
     Returns:
         Compiled DeepAgent ready for invocation
     """
 
-    # Import subagent configurations
-    from agents.developer.implementor import implementor_subagent
-    from agents.developer.code_reviewer import code_reviewer_subagent
+    # Set default boilerplate path if not provided
+    if boilerplate_templates_path is None:
+        boilerplate_templates_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "templates", "boilerplate"
+        )
 
-    # Get main agent instructions
-    instructions = get_developer_instructions(working_directory=working_directory)
+    # Get implementor instructions
+    instructions = get_implementor_instructions(
+        working_directory=working_directory,
+        project_type=project_type,
+        enable_pgvector=enable_pgvector,
+        boilerplate_templates_path=boilerplate_templates_path,
+    )
 
-    # Initialize LLM
+    # Create Langfuse callback handler for automatic tracing
+    langfuse_handler = None
+    if LANGFUSE_AVAILABLE:
+        langfuse_handler = get_callback_handler(
+            session_id=session_id,
+            user_id=user_id,
+            trace_name="developer_agent_execution",
+            metadata={
+                "working_directory": working_directory,
+                "project_type": project_type,
+                "model_name": model_name,
+                "enable_pgvector": enable_pgvector,
+            },
+        )
+        if langfuse_handler:
+            print(f"✅ Langfuse tracing enabled for session: {session_id or 'default'}")
+
+    # Initialize LLM with Langfuse callback
+    callbacks = [langfuse_handler] if langfuse_handler else []
+
     llm = ChatOpenAI(
         model_name=model_name,
         base_url=AGENT_ROUTER_URL,
@@ -207,20 +196,44 @@ def create_developer_agent(
         max_tokens=None,
         timeout=None,
         max_retries=2,
+        callbacks=callbacks,
     )
 
-    # Main agent tools (minimal - most work delegated to subagents)
-    # DeepAgents automatically provides: write_todos, write_file, read_file, edit_file, ls, task
-    tools = []
-
-    # Define subagents
-    subagents = [
-        implementor_subagent,
-        code_reviewer_subagent,
+    # Define tools for implementation
+    tools = [
+        # Codebase analysis tools
+        load_codebase_tool,
+        index_codebase_tool,
+        search_similar_code_tool,
+        # Virtual FS sync tools (CRITICAL for Git workflow)
+        sync_virtual_to_disk_tool,
+        list_virtual_files_tool,
+        # Stack detection & boilerplate
+        detect_stack_tool,
+        retrieve_boilerplate_tool,
+        # Git operations
+        create_feature_branch_tool,
+        commit_changes_tool,
+        create_pull_request_tool,
+        # Code generation & strategy
+        select_integration_strategy_tool,
+        generate_code_tool,
+        # Review & feedback
+        collect_feedback_tool,
+        refine_code_tool,
     ]
 
-    # Create the main Developer Agent
-    # This is the ONLY create_deep_agent() call in the developer module
+    # Define subagents for specialized tasks
+    subagents = [
+        code_generator_subagent,
+    ]
+
+    # Create the deep agent
+    # DeepAgents will automatically add:
+    # - PlanningMiddleware with write_todos tool
+    # - FilesystemMiddleware for mock file operations
+    # - SubAgentMiddleware for spawning subagents
+    # - SummarizationMiddleware for token management
     agent = create_deep_agent(
         tools=tools,
         instructions=instructions,
@@ -237,49 +250,186 @@ def create_developer_agent(
     return agent
 
 
-async def run_developer_agent(
+async def run_developer(
     user_request: str,
     working_directory: str = ".",
-    model_name: str = "gpt-4o",
+    project_type: str = "existing",
+    enable_pgvector: bool = True,
+    boilerplate_templates_path: str = None,
+    model_name: str = "gpt-4o-mini",
+    session_id: str = None,
+    user_id: str = None,
     **config,
 ) -> Dict[str, Any]:
     """
-    Run the Developer Agent with a user request.
+    Run the implementor agent with a user request and Langfuse tracing.
+
+    This is the main entry point for using the implementor.
 
     Args:
-        user_request: User's development request
-        working_directory: Working directory for development
+        user_request: The user's implementation request
+        working_directory: Working directory for the agent
+        project_type: "new" for new projects, "existing" for existing codebases
+        enable_pgvector: Whether to enable pgvector indexing
+        boilerplate_templates_path: Path to boilerplate templates
         model_name: LLM model to use
+        session_id: Optional session ID for Langfuse tracing
+        user_id: Optional user ID for Langfuse tracing
         **config: Additional configuration
 
     Returns:
-        Agent execution result
+        Final state with implementation results
+
+    Example:
+        result = await run_implementor(
+            user_request="Add user authentication with JWT",
+            working_directory="./src",
+            project_type="existing",
+            session_id="dev-session-123"
+        )
+        print(result['todos'])  # See implementation progress
     """
+    import time
+    from pathlib import Path
+
+    start_time = time.time()
+
+    # Normalize working_directory to absolute path
+    working_directory = str(Path(working_directory).resolve())
+    print(f"🔧 Normalized working directory: {working_directory}")
+
+    # Generate session_id if not provided
+    if not session_id:
+        import uuid
+
+        session_id = f"dev-{uuid.uuid4().hex[:8]}"
+
+    # Create the agent with tracing enabled
     agent = create_developer_agent(
         working_directory=working_directory,
+        project_type=project_type,
+        enable_pgvector=enable_pgvector,
+        boilerplate_templates_path=boilerplate_templates_path,
         model_name=model_name,
+        session_id=session_id,
+        user_id=user_id,
         **config,
     )
 
-    result = await agent.ainvoke(
-        {
-            "messages": [{"role": "user", "content": user_request}],
-            "working_directory": working_directory,
-        }
-    )
+    # Create initial state
+    initial_state = {
+        "messages": [{"role": "user", "content": user_request}],
+        "working_directory": working_directory,
+        "project_type": project_type,
+        "user_request": user_request,
+        "enable_pgvector": enable_pgvector,
+        "boilerplate_templates_path": boilerplate_templates_path,
+        "implementation_status": "started",
+        "generated_files": [],
+        "commit_history": [],
+    }
 
-    return result
+    # Log initial state to Langfuse
+    if LANGFUSE_AVAILABLE:
+        log_agent_state(initial_state, "initialization")
+        print(f"📊 Langfuse tracing: Session {session_id}")
+
+    # Run the agent with tracing
+    # DeepAgents will automatically handle the workflow:
+    # 1. Use write_todos to create implementation plan
+    # 2. Execute each todo task
+    # 3. Update todo status as tasks complete
+    # 4. Handle user feedback and refinements
+
+    try:
+        # Wrap agent execution in a trace span
+        with trace_span(
+            name="developer_agent_execution",
+            metadata={
+                "session_id": session_id,
+                "user_id": user_id,
+                "user_request": user_request,
+                "working_directory": working_directory,
+                "project_type": project_type,
+                "model_name": model_name,
+            },
+            input_data={"user_request": user_request, "initial_state": initial_state},
+        ) as span:
+            print("🚀 Starting developer agent execution...")
+            result = await agent.ainvoke(initial_state)
+
+            # Calculate execution time
+            execution_time = time.time() - start_time
+
+            # Log final state to Langfuse
+            if LANGFUSE_AVAILABLE:
+                log_agent_state(result, "completion")
+
+                # Update span with output
+                if span:
+                    span.end(
+                        output={
+                            "implementation_status": result.get("implementation_status"),
+                            "generated_files_count": len(result.get("generated_files", [])),
+                            "commit_count": len(result.get("commit_history", [])),
+                            "todos_completed": sum(
+                                1 for t in result.get("todos", []) if t.get("status") == "completed"
+                            ),
+                            "execution_time_seconds": execution_time,
+                        }
+                    )
+
+            print(f"✅ Developer agent execution completed in {execution_time:.2f}s")
+
+            return result
+
+    except Exception as e:
+        print(f"❌ Developer agent execution failed: {e}")
+
+        # Log error to Langfuse
+        if LANGFUSE_AVAILABLE:
+            with trace_span(
+                name="agent_error",
+                metadata={
+                    "session_id": session_id,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                },
+            ):
+                pass
+
+        raise
+
+    finally:
+        # Flush Langfuse traces
+        if LANGFUSE_AVAILABLE:
+            flush_langfuse()
 
 
-# For testing
+# Example usage for testing
 if __name__ == "__main__":
     import asyncio
 
     async def main():
-        result = await run_developer_agent(
-            user_request="Add a health check endpoint to the API",
+        result = await run_developer(
+            user_request="Add user profile to the FastAPI application",
             working_directory=r"D:\capstone project\VibeSDLC\services\ai-agent-service\app\agents\demo",
+            project_type="existing",
+            enable_pgvector=True,
         )
-        print("Result:", result)
+
+        print("=" * 80)
+        print("Implementation Results:")
+        print("=" * 80)
+        print(f"Status: {result.get('implementation_status', 'Unknown')}")
+        print(f"Generated Files: {len(result.get('generated_files', []))}")
+        print(f"Commits: {len(result.get('commit_history', []))}")
+
+        if "todos" in result:
+            print("\nTodos:")
+            for i, todo in enumerate(result["todos"], 1):
+                status = todo.get("status", "unknown")
+                content = todo.get("content", "No content")
+                print(f"{i}. [{status}] {content}")
 
     asyncio.run(main())

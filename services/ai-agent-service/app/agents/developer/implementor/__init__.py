@@ -55,7 +55,7 @@ The Implementor subagent has its own subagents:
 """
 
 from deepagents.types import SubAgent
-from .instructions import get_implementor_instructions
+from agents.developer.instructions import get_implementor_instructions
 from .tools import (
     load_codebase_tool,
     index_codebase_tool,
@@ -75,54 +75,8 @@ from .tools import (
 from .subagents import code_generator_subagent
 
 # Implementor Subagent Configuration
-implementor_subagent: SubAgent = {
-    "name": "implementor",
-    "description": (
-        "Expert implementor that handles feature implementation and code generation. "
-        "Use this subagent when you need to: "
-        "(1) Implement new features or functionality, "
-        "(2) Generate or modify code, "
-        "(3) Analyze existing codebase structure, "
-        "(4) Create feature branches and commit changes, "
-        "(5) Handle the complete implementation workflow from analysis to PR creation. "
-        "The implementor has access to codebase analysis tools, Git operations, "
-        "and nested subagents for code generation and review."
-    ),
-    "prompt": get_implementor_instructions(
-        working_directory=".",  # Will be overridden by main agent
-        project_type="new",
-        enable_pgvector=False,
-    ),
-    "tools": [
-        # Codebase analysis tools
-        load_codebase_tool,
-        index_codebase_tool,
-        search_similar_code_tool,
-        # Virtual FS sync tools (CRITICAL for Git workflow)
-        sync_virtual_to_disk_tool,
-        list_virtual_files_tool,
-        # Stack detection & boilerplate
-        detect_stack_tool,
-        retrieve_boilerplate_tool,
-        # Git operations
-        create_feature_branch_tool,
-        commit_changes_tool,
-        create_pull_request_tool,
-        # Code generation & strategy
-        select_integration_strategy_tool,
-        generate_code_tool,
-        # Review & feedback
-        collect_feedback_tool,
-        refine_code_tool,
-    ],
-    # Nested subagents for specialized tasks
-    # Note: DeepAgents doesn't support nested subagents in SubAgent type yet
-    # So we include these in the tools list instead
-}
 
-# Export tools for use by main Developer Agent if needed
 __all__ = [
-    "implementor_subagent",
     "load_codebase_tool",
     "index_codebase_tool",
     "search_similar_code_tool",

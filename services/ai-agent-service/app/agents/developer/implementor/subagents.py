@@ -4,7 +4,22 @@ Subagents for the Code Implementor Agent
 """
 
 from deepagents.types import SubAgent
-
+from .tools import (
+    load_codebase_tool,
+    index_codebase_tool,
+    search_similar_code_tool,
+    sync_virtual_to_disk_tool,
+    list_virtual_files_tool,
+    detect_stack_tool,
+    retrieve_boilerplate_tool,
+    create_feature_branch_tool,
+    select_integration_strategy_tool,
+    generate_code_tool,
+    commit_changes_tool,
+    create_pull_request_tool,
+    collect_feedback_tool,
+    refine_code_tool,
+)
 # Code Generator Subagent
 code_generator_subagent: SubAgent = {
     "name": "code_generator",
@@ -126,7 +141,22 @@ Generate code that integrates seamlessly with the existing codebase.
 5. Parent agent will sync to disk and commit
 
 DO NOT mention syncing or committing - that's handled by parent agent.""",
-    "tools": [],  # DeepAgents automatically provides write_file, edit_file, read_file
+    "tools": [
+        load_codebase_tool,
+        index_codebase_tool,
+        search_similar_code_tool,
+        sync_virtual_to_disk_tool,
+        list_virtual_files_tool,
+        detect_stack_tool,
+        retrieve_boilerplate_tool,
+        create_feature_branch_tool,
+        select_integration_strategy_tool,
+        generate_code_tool,
+        commit_changes_tool,
+        create_pull_request_tool,
+        collect_feedback_tool,
+        refine_code_tool,
+    ],
 }
 
 # Export subagents

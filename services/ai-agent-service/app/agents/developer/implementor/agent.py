@@ -68,7 +68,7 @@ if __name__ == "__main__":
     # Direct execution - add current directory to path
     current_dir = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, current_dir)
-    from instructions import get_implementor_instructions
+    from agents.developer.instructions import get_implementor_instructions
     from tools import (
         load_codebase_tool,
         index_codebase_tool,
@@ -88,7 +88,7 @@ if __name__ == "__main__":
     from subagents import code_generator_subagent
 else:
     # Package import - use relative imports
-    from .instructions import get_implementor_instructions
+    from agents.developer.instructions import get_implementor_instructions
     from .tools import (
         load_codebase_tool,
         index_codebase_tool,
@@ -105,7 +105,7 @@ else:
         collect_feedback_tool,
         refine_code_tool,
     )
-    from .subagents import code_generator_subagent, code_reviewer_subagent
+    from .subagents import code_generator_subagent
 
 
 def create_implementor_agent(
