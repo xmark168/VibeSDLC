@@ -1,231 +1,294 @@
-# app/agents/developer/planner/agent.py
 """
-Planner Agent using DeepAgents
+Planner Agent
 
-This is a reimplementation of the planner using DeepAgents instead of LangGraph.
-DeepAgents provides a simpler, higher-level abstraction for building agents.
-
-Key differences from LangGraph version:
-- No manual graph construction - DeepAgents handles workflow
-- Simpler state management
-- Built-in subagent support
-- Auto-handles planning and execution
+Main PlannerAgent class với LangGraph workflow cho 4-phase planning process.
 """
 
-from deepagents import create_deep_agent
-from typing import List, Optional, Dict, Any
 import os
-import sys
-from langchain_deepseek import ChatDeepSeek
+from typing import Any
+
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
+from langfuse.langchain import CallbackHandler
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph
 
+from .nodes import (
+    analyze_codebase,
+    finalize,
+    generate_plan,
+    initialize,
+    map_dependencies,
+    parse_task,
+    validate_plan,
+)
+from .state import PlannerState
+
+# Load environment variables
 load_dotenv()
-AGENT_ROUTER_URL = os.getenv("OPENAI_BASE_URL")
-AGENT_ROUTER_KEY = os.getenv("OPENAI_API_KEY")
-# Handle both package import and direct execution
-if __name__ == "__main__":
-    # Direct execution - add current directory to path
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    sys.path.insert(0, current_dir)
-    from instructions import get_planner_instructions
-    from tools import (
-        grep_search_tool,
-        view_file_tool,
-        shell_execute_tool,
-        list_directory_tool,
-        take_notes_tool,
-        code_search_tool,
-        ast_parser_tool,
-        dependency_analyzer_tool,
-    )
-    from subagents import plan_generator_subagent, note_taker_subagent
-    from state import PlannerAgentState
-else:
-    # Package import - use relative imports
-    from .instructions import get_planner_instructions
-    from .tools import (
-        grep_search_tool,
-        view_file_tool,
-        shell_execute_tool,
-        list_directory_tool,
-        take_notes_tool,
-        code_search_tool,
-        ast_parser_tool,
-        dependency_analyzer_tool,
-    )
-    from .subagents import plan_generator_subagent, note_taker_subagent
-    from .state import PlannerAgentState
 
 
-def create_planner_agent(
-    working_directory: str = ".",
-    custom_rules: Optional[Dict[str, Any]] = None,
-    codebase_tree: str = "",
-    model_name: str = "deepseek-chat",  # DeepSeek-V3 (supports tool calling)
-    **config
-):
+class PlannerAgent:
     """
-    Create a DeepAgents-based planner agent.
+    Planner Agent - Phân tích task requirements và tạo detailed implementation plan.
 
-    Args:
-        working_directory: Working directory for the agent
-        custom_rules: Optional custom rules for the codebase
-        codebase_tree: Optional pre-generated codebase tree
-        model_name: LLM model to use
-        **config: Additional configuration options
+    Workflow:
+    START → initialize → parse_task → analyze_codebase → map_dependencies →
+    generate_plan → validate_plan → finalize → END
 
-    Returns:
-        Compiled DeepAgent ready for invocation
+    Với validation loop: validate_plan có thể loop back đến analyze_codebase
     """
 
-    # Get planner instructions
-    instructions = get_planner_instructions(
-        working_directory=working_directory,
-        custom_rules=custom_rules,
-        codebase_tree=codebase_tree
-    )
+    def __init__(
+        self,
+        model: str | None = None,
+        session_id: str | None = None,
+        user_id: str | None = None,
+    ):
+        """
+        Initialize PlannerAgent.
 
-    # Use ChatDeepSeek for DeepSeek models (supports tool calling)
-    # Note: DeepSeek-R1 does NOT support tool calling, so we use DeepSeek-V3
-    llm = ChatOpenAI(
-        model="gpt-4o",  # DeepSeek-V3 with tool calling support
-        temperature=0,
-        max_tokens=None,
-        timeout=None,
-        max_retries=2,
-        base_url=AGENT_ROUTER_URL,
-        api_key=AGENT_ROUTER_KEY,
-    )
-    # Define tools for context gathering
-    tools = [
-        grep_search_tool,
-        view_file_tool,
-        shell_execute_tool,
-        list_directory_tool,
-        take_notes_tool,
-        code_search_tool,
-        ast_parser_tool,
-        dependency_analyzer_tool,
-    ]
+        Args:
+            model: Model name (default: gpt-4o)
+            session_id: Session ID cho Langfuse tracing
+            user_id: User ID cho Langfuse tracing
+        """
+        self.model_name = model or "gpt-4o"
+        self.session_id = session_id
+        self.user_id = user_id
 
-    subagents = [
-        plan_generator_subagent,
-        note_taker_subagent,
-    ]
+        # Setup Langfuse tracing (optional)
+        try:
+            if os.getenv("LANGFUSE_SECRET_KEY") and os.getenv("LANGFUSE_PUBLIC_KEY"):
+                self.langfuse_handler = CallbackHandler(
+                    secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
+                    public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
+                    host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com"),
+                    session_id=session_id,
+                    user_id=user_id,
+                )
+            else:
+                self.langfuse_handler = None
+        except Exception as e:
+            print(f"⚠️  Langfuse not configured: {e}")
+            self.langfuse_handler = None
 
-    # Create the deep agent
-    agent = create_deep_agent(
-        tools=tools,
-        instructions=instructions,
-        subagents=subagents,
-        model=llm,
-    ).with_config({
-        "recursion_limit": config.get("recursion_limit", 500),
-        "model_name": "gpt-4o",  # DeepSeek-V3
-    })
+        # Build LangGraph workflow
+        self.graph = self._build_graph()
 
-    return agent
-
-
-async def run_planner(
-    user_request: str,
-    working_directory: str = ".",
-    custom_rules: Optional[Dict[str, Any]] = None,
-    codebase_tree: str = "",
-    model_name: str = "gpt-4",
-    **config
-) -> Dict[str, Any]:
-    """
-    Run the planner agent with a user request.
-
-    This is the main entry point for using the planner.
-
-    Args:
-        user_request: The user's request/task description
-        working_directory: Working directory for the agent
-        custom_rules: Optional custom rules
-        codebase_tree: Optional codebase structure
-        model_name: LLM model to use
-        **config: Additional configuration
-
-    Returns:
-        Final state with proposed plan and context notes
-
-    Example:
-        result = await run_planner(
-            user_request="Add user authentication with JWT",
-            working_directory="./src",
-            custom_rules={"general_rules": "Follow PEP 8"}
-        )
-        print(result['proposed_plan'])
-    """
-
-    # Create the agent
-    agent = create_planner_agent(
-        working_directory=working_directory,
-        custom_rules=custom_rules,
-        codebase_tree=codebase_tree,
-        model_name=model_name,
-        **config
-    )
-
-    # Create initial state
-    initial_state = {
-        "messages": [{"role": "user", "content": user_request}],
-        "working_directory": working_directory,
-        "codebase_tree": codebase_tree,
-        "custom_rules": custom_rules,
-        "user_request": user_request,
-        "proposed_plan": [],
-        "context_gathering_notes": "",
-        "scratchpad_notes": [],
-    }
-
-    # Invoke the agent
-    # DeepAgents handles the entire workflow:
-    # 1. Context gathering with tools
-    # 2. Plan generation via subagent
-    # 3. Note taking via subagent
-    result = await agent.ainvoke(initial_state, config)
-
-    return result
-
-
-# Example usage
-if __name__ == "__main__":
-    import asyncio
-
-    async def main():
-        result = await run_planner(
-            user_request="Add user authentication with JWT tokens to the FastAPI application",
-            working_directory="ai-agent-service/app/agents/demo",
-            codebase_tree="""
-                src/
-                  api/
-                    routes/
-                    models/
-                  auth/
-                  services/
-                  utils/
-            """
-            ,
-            # custom_rules={
-            #     "general_rules": "Follow PEP 8 style guide. Use type hints.",
-            #     "testing_instructions": "Write pytest tests with 80%+ coverage"
-            # }
+    def _llm(self, model: str = "gpt-4o", temperature: float = 0.3) -> ChatOpenAI:
+        """Create LLM instance."""
+        return ChatOpenAI(
+            model=model,
+            temperature=temperature,
+            api_key=os.getenv("OPENAI_API_KEY"),
+            base_url=os.getenv("OPENAI_BASE_URL"),
         )
 
-        print("=" * 80)
-        print(f"Plan Title: {result.get('proposed_plan_title', 'Implementation Plan')}")
-        print("=" * 80)
-        print("\nProposed Plan:")
-        for i, step in enumerate(result.get('proposed_plan', []), 1):
-            print(f"{i}. {step}")
+    def _build_graph(self) -> StateGraph:
+        """Build LangGraph workflow cho planner."""
+        graph_builder = StateGraph(PlannerState)
+
+        # Add nodes
+        graph_builder.add_node("initialize", initialize)
+        graph_builder.add_node("parse_task", parse_task)
+        graph_builder.add_node("analyze_codebase", analyze_codebase)
+        graph_builder.add_node("map_dependencies", map_dependencies)
+        graph_builder.add_node("generate_plan", generate_plan)
+        graph_builder.add_node("validate_plan", validate_plan)
+        graph_builder.add_node("finalize", finalize)
+
+        # Add edges
+        graph_builder.add_edge(START, "initialize")
+        graph_builder.add_edge("initialize", "parse_task")
+        graph_builder.add_edge("parse_task", "analyze_codebase")
+        graph_builder.add_edge("analyze_codebase", "map_dependencies")
+        graph_builder.add_edge("map_dependencies", "generate_plan")
+        graph_builder.add_edge("generate_plan", "validate_plan")
+
+        # Conditional edges for validation loop
+        graph_builder.add_conditional_edges("validate_plan", self.validate_branch)
+        graph_builder.add_edge("finalize", END)
+
+        # Setup checkpointer
+        checkpointer = MemorySaver()
+        return graph_builder.compile(checkpointer=checkpointer)
+
+    def validate_branch(self, state: PlannerState) -> str:
+        """
+        Conditional branch sau validate_plan node.
+
+        Logic:
+        - Nếu can_proceed = True → finalize
+        - Nếu can_proceed = False và current_iteration < max_iterations → analyze_codebase (retry)
+        - Nếu can_proceed = False và current_iteration >= max_iterations → finalize (force)
+
+        Args:
+            state: PlannerState với validation results
+
+        Returns:
+            Next node name
+        """
+        print("\n🔀 Validation Branch Decision:")
+        print(f"   Can Proceed: {state.can_proceed}")
+        print(f"   Validation Score: {state.validation_score:.2f}")
+        print(f"   Current Iteration: {state.current_iteration}")
+        print(f"   Max Iterations: {state.max_iterations}")
+        print(f"   Issues: {len(state.validation_issues)}")
+
+        if state.can_proceed:
+            print("   → Decision: FINALIZE (validation passed)")
+            return "finalize"
+        elif state.current_iteration < state.max_iterations:
+            print(
+                f"   → Decision: RETRY (iteration {state.current_iteration}/{state.max_iterations})"
+            )
+            return "analyze_codebase"  # Loop back to analysis
+        else:
+            print("   → Decision: FORCE FINALIZE (max iterations reached)")
+            return "finalize"
+
+    def run(
+        self,
+        task_description: str,
+        codebase_context: str = "",
+        codebase_path: str = "",
+        thread_id: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Run planner workflow.
+
+        Args:
+            task_description: Task description từ product backlog
+            codebase_context: Additional codebase context
+            codebase_path: Path to codebase for analysis (empty = use default)
+            thread_id: Thread ID cho checkpointer (để resume)
+
+        Returns:
+            Dict với final_plan và metadata
+        """
+        if thread_id is None:
+            thread_id = self.session_id or "default"
+
+        # Create initial state
+        initial_state = PlannerState(
+            task_description=task_description,
+            codebase_context=codebase_context,
+            codebase_path=codebase_path,
+        )
+
+        # Build metadata for Langfuse tracing
+        metadata = {}
+        if self.session_id:
+            metadata["langfuse_session_id"] = self.session_id
+        if self.user_id:
+            metadata["langfuse_user_id"] = self.user_id
+        metadata["langfuse_tags"] = ["planner_agent"]
+
+        # Setup config with optional Langfuse callback
+        callbacks = []
+        if self.langfuse_handler:
+            callbacks.append(self.langfuse_handler)
+
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "callbacks": callbacks,
+            "metadata": metadata,
+            "recursion_limit": 50,
+        }
 
         print("\n" + "=" * 80)
-        print("Context Notes:")
+        print("🚀 PLANNER AGENT STARTED")
         print("=" * 80)
-        print(result.get('context_gathering_notes', 'No notes'))
+        print(f"📝 Task: {task_description[:100]}...")
+        print(f"🔗 Thread ID: {thread_id}")
+        print("=" * 80 + "\n")
 
-    asyncio.run(main())
+        try:
+            # Stream agent execution
+            final_state = None
+            step_count = 0
+
+            for output in self.graph.stream(
+                initial_state.model_dump(),
+                config=config,
+            ):
+                step_count += 1
+                final_state = output
+
+                # Log progress
+                if isinstance(output, dict):
+                    for node_name, node_output in output.items():
+                        if isinstance(node_output, dict) and "status" in node_output:
+                            print(
+                                f"📍 Step {step_count}: {node_name} - {node_output['status']}"
+                            )
+
+            # Extract final result
+            if final_state and isinstance(final_state, dict):
+                # Get the last node's output
+                last_node_output = list(final_state.values())[-1]
+
+                # Get implementation plan object
+                implementation_plan = last_node_output.get("implementation_plan")
+
+                result = {
+                    "success": True,
+                    "final_plan": last_node_output.get("final_plan", {}),
+                    "ready_for_implementation": last_node_output.get(
+                        "ready_for_implementation", False
+                    ),
+                    "task_id": implementation_plan.task_id
+                    if implementation_plan
+                    else "",
+                    "complexity_score": implementation_plan.complexity_score
+                    if implementation_plan
+                    else 0,
+                    "estimated_hours": implementation_plan.total_estimated_hours
+                    if implementation_plan
+                    else 0,
+                    "story_points": implementation_plan.story_points
+                    if implementation_plan
+                    else 0,
+                    "validation_score": last_node_output.get("validation_score", 0.0),
+                    "status": last_node_output.get("status", "unknown"),
+                    "iterations": last_node_output.get("current_iteration", 0),
+                    "metadata": {
+                        "planner_version": "1.0",
+                        "total_steps": step_count,
+                        "thread_id": thread_id,
+                    },
+                }
+
+                print("\n" + "=" * 80)
+                print("✅ PLANNER AGENT COMPLETED")
+                print("=" * 80)
+                print(f"📋 Task ID: {result['task_id']}")
+                print(f"📊 Complexity: {result['complexity_score']}/10")
+                print(
+                    f"⏱️  Estimated: {result['estimated_hours']} hours ({result['story_points']} SP)"
+                )
+                print(
+                    f"✅ Ready for Implementation: {result['ready_for_implementation']}"
+                )
+                print(f"📈 Validation Score: {result['validation_score']:.1%}")
+                print(f"🔄 Iterations: {result['iterations']}")
+                print("=" * 80 + "\n")
+
+                return result
+            else:
+                raise Exception("No final state received from workflow")
+
+        except Exception as e:
+            print(f"\n❌ PLANNER AGENT ERROR: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "final_plan": {},
+                "ready_for_implementation": False,
+                "metadata": {
+                    "planner_version": "1.0",
+                    "thread_id": thread_id,
+                    "error_occurred": True,
+                },
+            }

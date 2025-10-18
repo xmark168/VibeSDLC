@@ -1,5 +1,0 @@
-agents
-core
-models
-templates
-utils

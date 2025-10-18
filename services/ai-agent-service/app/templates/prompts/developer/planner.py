@@ -1384,3 +1384,626 @@ Your performance is measured by these key metrics:
 
 **Your plans enable Code Implementers to work efficiently. Quality and clarity are paramount.**
 """
+
+TASK_PARSING_PROMPT = """
+# PHASE 1: TASK PARSING
+
+You are analyzing a development task to extract and structure all requirements, acceptance criteria, and constraints.
+
+## Your Task:
+Parse the following task description and extract:
+1. All explicit requirements stated in the task
+2. Implicit requirements based on business context
+3. Acceptance criteria and definition of "done"
+4. Technical specifications (frameworks, databases, APIs)
+5. Business rules and validation constraints
+6. Any assumptions or ambiguities for clarification
+
+## Task Description:
+{task_description}
+
+## Context Information:
+{context}
+
+## Output Format:
+Return a JSON object with the following structure:
+```json
+{{
+  "task_id": "Generated task ID",
+  "task_title": "Clear, descriptive title",
+  "requirements": [
+    "Explicit requirement 1 with specific details",
+    "Explicit requirement 2 with acceptance threshold"
+  ],
+  "acceptance_criteria": [
+    "Given [context] when [action] then [expected result]"
+  ],
+  "business_rules": {{
+    "rule_name": "Detailed description and validation logic"
+  }},
+  "technical_specs": {{
+    "framework": "Technology stack details",
+    "database": "Database requirements",
+    "apis": ["External API requirements"]
+  }},
+  "assumptions": [
+    "Assumption requiring confirmation"
+  ],
+  "clarifications_needed": [
+    "Question for Product Owner"
+  ]
+}}
+```
+
+Be specific and measurable. Avoid vague language like "should", "might", "consider".
+"""
+
+CODEBASE_ANALYSIS_PROMPT = """
+# PHASE 2: CODEBASE ANALYSIS
+
+You are analyzing the existing codebase to understand what files, modules, and components need to be created or modified for the given task.
+
+## Your Task:
+Analyze the codebase and identify:
+1. All files requiring modification (provide exact paths)
+2. New files to be created
+3. Affected modules and their interdependencies
+4. Database schema changes required
+5. API endpoints to be created, modified, or deprecated
+6. Testing requirements and existing test infrastructure
+
+## Task Requirements:
+{task_requirements}
+
+## Codebase Context:
+{codebase_context}
+
+## Analysis Tools Available:
+- code_search_tool: Find existing patterns and implementations
+- ast_parser_tool: Analyze file structure and dependencies
+- dependency_analyzer_tool: Map component relationships
+
+## Output Format:
+Return a JSON object with the following structure:
+```json
+{{
+  "codebase_analysis": {{
+    "files_to_create": [
+      {{
+        "path": "exact/file/path.py",
+        "reason": "Why this file is needed",
+        "template": "Reference pattern to follow"
+      }}
+    ],
+    "files_to_modify": [
+      {{
+        "path": "exact/file/path.py",
+        "lines": [15, "45-52"],
+        "changes": "Specific changes needed",
+        "complexity": "low|medium|high",
+        "risk": "Assessment of change risk"
+      }}
+    ],
+    "modules_affected": [
+      "app.services.auth",
+      "app.models.user"
+    ],
+    "database_changes": [
+      {{
+        "type": "add_column|modify_column|add_table",
+        "table": "table_name",
+        "details": "Specific change details",
+        "migration_complexity": "low|medium|high"
+      }}
+    ],
+    "api_changes": [
+      {{
+        "endpoint": "POST /api/v1/endpoint",
+        "method": "POST|GET|PUT|DELETE",
+        "status": "new|modified|deprecated",
+        "changes": "What changes are needed"
+      }}
+    ]
+  }},
+  "impact_assessment": {{
+    "estimated_files_changed": 6,
+    "estimated_lines_added": 250,
+    "estimated_lines_modified": 75,
+    "backward_compatibility": "maintained|breaking",
+    "performance_impact": "negligible|low|medium|high",
+    "security_considerations": [
+      "Security aspect to consider"
+    ]
+  }}
+}}
+```
+
+Provide exact file paths and line numbers. Support all decisions with findings from codebase analysis.
+"""
+
+GENERATE_PLAN_PROMPT = """
+# PHASE 4: IMPLEMENTATION PLAN GENERATION
+
+You are an expert implementation planner. Your task is to create a detailed, actionable implementation plan based on task requirements, codebase analysis, and dependency mapping.
+
+## CRITICAL REQUIREMENTS
+
+**EVERY field in the output JSON MUST be populated with meaningful content. NO empty fields, NO empty arrays (unless explicitly empty), NO null values.**
+
+**Output MUST be valid JSON that can be parsed immediately. Wrap in ```json``` code blocks.**
+
+## INPUT ANALYSIS
+
+You will receive:
+1. **Task Requirements** - What needs to be built
+2. **Codebase Analysis** - What files need to be created/modified
+3. **Dependency Mapping** - Execution order and dependencies
+
+## COMPLEXITY SCORING RULES
+
+**1-2 (Trivial):** Single file change, < 50 lines, no new dependencies, no DB changes
+- Example: Add validation to existing function, fix typo, update constant
+
+**3-4 (Simple):** 2-3 file changes, < 150 lines, existing patterns, minor DB change
+- Example: Add new API endpoint following existing pattern, add index to DB
+
+**5-6 (Medium):** 4-6 file changes, < 400 lines, some new patterns, DB migration
+- Example: Add new feature with service + endpoint + model changes
+
+**7-8 (Complex):** 7-10 file changes, < 800 lines, new architecture, multiple DB changes
+- Example: Add authentication system, implement new integration
+
+**9-10 (Very Complex):** 10+ files, 800+ lines, architectural changes, multiple systems
+- Example: Refactor core architecture, implement distributed system component
+
+## OUTPUT SCHEMA
+
+```json
+{
+  "plan_type": "simple|complex",
+  "task_id": "TSK-XXX",
+  "description": "Clear description of what will be implemented",
+  "complexity_score": 1-10,
+  "complexity_reasoning": "Detailed explanation of complexity score based on files, DB changes, patterns",
+
+  "approach": {
+    "strategy": "High-level implementation strategy",
+    "pattern": "Design pattern or existing code pattern to follow",
+    "architecture_alignment": "How this aligns with current architecture",
+    "alternatives_considered": [
+      {
+        "approach": "Alternative approach name",
+        "rejected_reason": "Why this was not chosen"
+      }
+    ]
+  },
+
+  "implementation_steps": [
+    {
+      "step": 1,
+      "title": "Step title",
+      "description": "Detailed description of what to do",
+      "action": "Specific action to take",
+      "files": ["file1.py", "file2.py"],
+      "estimated_hours": 2.5,
+      "complexity": "low|medium|high",
+      "dependencies": [],
+      "blocking": true|false,
+      "validation": "How to validate this step is complete",
+      "error_handling": ["Error case 1", "Error case 2"],
+      "code_template": "Optional code snippet or template"
+    }
+  ],
+
+  "estimated_hours": 10.5,
+  "story_points": 5,
+
+  "requirements": {
+    "functional_requirements": [
+      "Specific functional requirement 1",
+      "Specific functional requirement 2"
+    ],
+    "acceptance_criteria": [
+      "Given X when Y then Z",
+      "Measurable criterion with success threshold"
+    ],
+    "business_rules": {
+      "rule_name": "Detailed rule description"
+    },
+    "technical_specs": {
+      "framework": "Framework and version",
+      "database": "Database and version",
+      "apis": ["API 1", "API 2"],
+      "auth": "Authentication method"
+    },
+    "constraints": [
+      "Constraint 1",
+      "Constraint 2"
+    ]
+  },
+
+  "file_changes": {
+    "files_to_create": [
+      {
+        "path": "app/services/new_service.py",
+        "reason": "Why this file needs to be created",
+        "template": "Similar existing file to use as template",
+        "estimated_lines": 150,
+        "complexity": "medium"
+      }
+    ],
+    "files_to_modify": [
+      {
+        "path": "app/models/user.py",
+        "lines": [10, 25, 50],
+        "changes": "Specific changes needed",
+        "complexity": "medium",
+        "risk": "low|medium|high"
+      }
+    ],
+    "affected_modules": [
+      "app.services",
+      "app.api.v1"
+    ]
+  },
+
+  "infrastructure": {
+    "database_changes": [
+      {
+        "type": "add_column|add_table|add_index|migration",
+        "table": "table_name",
+        "details": "Specific details of the change",
+        "migration_complexity": "low|medium|high"
+      }
+    ],
+    "api_endpoints": [
+      {
+        "endpoint": "POST /api/v1/endpoint",
+        "method": "POST|GET|PUT|DELETE",
+        "status": "new|modified",
+        "changes": "What changes are needed"
+      }
+    ],
+    "external_dependencies": [
+      {
+        "package": "package_name",
+        "version": "1.0.0",
+        "reason": "Why this dependency is needed",
+        "status": "new|existing"
+      }
+    ],
+    "internal_dependencies": [
+      {
+        "module": "app.services.auth",
+        "reason": "Why this module is needed",
+        "status": "existing|needs_modification"
+      }
+    ]
+  },
+
+  "risks": [
+    {
+      "risk": "Risk description",
+      "probability": "low|medium|high",
+      "impact": "low|medium|high",
+      "mitigation": "How to mitigate this risk"
+    }
+  ],
+
+  "assumptions": [
+    "Assumption 1",
+    "Assumption 2"
+  ],
+
+  "metadata": {
+    "planner_version": "1.0",
+    "created_by": "planner_agent",
+    "validation_passed": true
+  }
+}
+```
+
+## VALIDATION CHECKLIST
+
+Before returning JSON, verify:
+- ✅ complexity_score is between 1-10
+- ✅ plan_type is "simple" or "complex"
+- ✅ implementation_steps has at least 1 step
+- ✅ Each step has: step, title, description, files, estimated_hours, complexity, dependencies, blocking, validation
+- ✅ estimated_hours > 0
+- ✅ story_points is between 1-13
+- ✅ files_to_create and files_to_modify are populated based on codebase analysis
+- ✅ affected_modules is populated
+- ✅ database_changes is populated if DB changes exist
+- ✅ api_endpoints is populated if API changes exist
+- ✅ external_dependencies is populated if new packages needed
+- ✅ internal_dependencies is populated
+- ✅ risks has at least 1 risk
+- ✅ assumptions has at least 1 assumption
+- ✅ NO empty arrays (except when truly empty)
+- ✅ NO null values
+- ✅ NO empty strings for required fields
+
+## EXAMPLE OUTPUT (Simple Task)
+
+```json
+{
+  "plan_type": "simple",
+  "task_id": "TSK-042",
+  "description": "Add email verification to user registration flow",
+  "complexity_score": 4,
+  "complexity_reasoning": "Requires 3 file changes (models, services, endpoints), 1 DB migration, follows existing notification pattern",
+
+  "approach": {
+    "strategy": "Extend existing registration flow with email verification step",
+    "pattern": "Follow existing notification pattern in app/services/notification.py",
+    "architecture_alignment": "Aligns with service-oriented architecture in /services",
+    "alternatives_considered": [
+      {
+        "approach": "Use third-party service like Auth0",
+        "rejected_reason": "Adds external dependency and cost, team prefers in-house solution"
+      }
+    ]
+  },
+
+  "implementation_steps": [
+    {
+      "step": 1,
+      "title": "Create database migration",
+      "description": "Add email_verified and verification_token columns to users table",
+      "action": "Create Alembic migration file",
+      "files": ["alembic/versions/add_email_verification.py"],
+      "estimated_hours": 1.0,
+      "complexity": "low",
+      "dependencies": [],
+      "blocking": true,
+      "validation": "Verify columns exist in database",
+      "error_handling": ["Handle migration conflicts", "Rollback on failure"],
+      "code_template": "ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT FALSE"
+    },
+    {
+      "step": 2,
+      "title": "Update User model",
+      "description": "Add email_verified and verification_token fields to User model",
+      "action": "Modify User model in app/models/user.py",
+      "files": ["app/models/user.py"],
+      "estimated_hours": 0.5,
+      "complexity": "low",
+      "dependencies": [1],
+      "blocking": true,
+      "validation": "Run unit tests for User model",
+      "error_handling": ["Handle field validation errors"],
+      "code_template": "email_verified: bool = Field(default=False)"
+    },
+    {
+      "step": 3,
+      "title": "Create email verification service",
+      "description": "Implement email verification logic with token generation and validation",
+      "action": "Create new service file app/services/email_verification.py",
+      "files": ["app/services/email_verification.py"],
+      "estimated_hours": 3.0,
+      "complexity": "medium",
+      "dependencies": [2],
+      "blocking": true,
+      "validation": "Unit tests for all verification functions",
+      "error_handling": ["Handle expired tokens", "Handle invalid tokens", "Handle email sending failures"],
+      "code_template": "def generate_verification_token(user_id: int) -> str: ..."
+    },
+    {
+      "step": 4,
+      "title": "Add API endpoints",
+      "description": "Add verify-email endpoint and update register endpoint",
+      "action": "Modify app/api/v1/endpoints/auth.py",
+      "files": ["app/api/v1/endpoints/auth.py"],
+      "estimated_hours": 2.0,
+      "complexity": "medium",
+      "dependencies": [3],
+      "blocking": false,
+      "validation": "Integration tests for auth endpoints",
+      "error_handling": ["Handle missing tokens", "Handle verification failures"],
+      "code_template": "@router.post('/verify-email')"
+    },
+    {
+      "step": 5,
+      "title": "Write comprehensive tests",
+      "description": "Unit and integration tests for email verification feature",
+      "action": "Create test files and update existing tests",
+      "files": ["tests/unit/test_email_verification.py", "tests/integration/test_auth.py"],
+      "estimated_hours": 2.0,
+      "complexity": "medium",
+      "dependencies": [4],
+      "blocking": false,
+      "validation": "Achieve 90%+ code coverage",
+      "error_handling": ["Handle test failures", "Mock email service"],
+      "code_template": "def test_generate_token_creates_valid_token(): ..."
+    }
+  ],
+
+  "estimated_hours": 8.5,
+  "story_points": 3,
+
+  "requirements": {
+    "functional_requirements": [
+      "Users must verify their email before logging in",
+      "Verification email must be sent automatically after registration",
+      "Verification link must expire after 24 hours",
+      "Users can request a new verification email"
+    ],
+    "acceptance_criteria": [
+      "Given a user on the registration page, when they submit their email and password, then they receive a verification email",
+      "Given a user with an unverified email, when they attempt to log in, then they receive an error message",
+      "Given a user with an expired verification link, when they click the link, then they receive an error and can request a new one"
+    ],
+    "business_rules": {
+      "email_verification": "All new users must verify their email within 24 hours or their account is marked as inactive",
+      "token_expiry": "Verification tokens expire after 24 hours and cannot be reused"
+    },
+    "technical_specs": {
+      "framework": "FastAPI 0.118.0",
+      "database": "PostgreSQL with SQLModel ORM",
+      "apis": ["SMTP for email sending"],
+      "auth": "JWT token-based authentication"
+    },
+    "constraints": [
+      "Must maintain backward compatibility with existing registration flow",
+      "Must follow existing code style and patterns",
+      "Must include appropriate error handling and logging"
+    ]
+  },
+
+  "file_changes": {
+    "files_to_create": [
+      {
+        "path": "app/services/email_verification.py",
+        "reason": "Encapsulate email verification logic",
+        "template": "app/services/notification.py",
+        "estimated_lines": 120,
+        "complexity": "medium"
+      },
+      {
+        "path": "tests/unit/test_email_verification.py",
+        "reason": "Unit tests for email verification service",
+        "template": "tests/unit/test_auth.py",
+        "estimated_lines": 150,
+        "complexity": "medium"
+      }
+    ],
+    "files_to_modify": [
+      {
+        "path": "app/models/user.py",
+        "lines": [15, 20],
+        "changes": "Add email_verified and verification_token fields",
+        "complexity": "low",
+        "risk": "low"
+      },
+      {
+        "path": "app/api/v1/endpoints/auth.py",
+        "lines": [50, 100, 150],
+        "changes": "Add verify-email endpoint and update register endpoint",
+        "complexity": "medium",
+        "risk": "medium"
+      },
+      {
+        "path": "tests/integration/test_auth.py",
+        "lines": [200],
+        "changes": "Add integration tests for email verification",
+        "complexity": "medium",
+        "risk": "low"
+      }
+    ],
+    "affected_modules": [
+      "app.models",
+      "app.services",
+      "app.api.v1.endpoints",
+      "tests.unit",
+      "tests.integration"
+    ]
+  },
+
+  "infrastructure": {
+    "database_changes": [
+      {
+        "type": "add_column",
+        "table": "users",
+        "details": "Add email_verified (BOOLEAN, DEFAULT FALSE) column",
+        "migration_complexity": "low"
+      },
+      {
+        "type": "add_column",
+        "table": "users",
+        "details": "Add verification_token (VARCHAR(255), NULLABLE) column",
+        "migration_complexity": "low"
+      },
+      {
+        "type": "add_index",
+        "table": "users",
+        "details": "Add index on verification_token for faster lookups",
+        "migration_complexity": "low"
+      }
+    ],
+    "api_endpoints": [
+      {
+        "endpoint": "POST /api/v1/auth/verify-email",
+        "method": "POST",
+        "status": "new",
+        "changes": "New endpoint to verify email with token"
+      },
+      {
+        "endpoint": "POST /api/v1/auth/register",
+        "method": "POST",
+        "status": "modified",
+        "changes": "Updated to send verification email after registration"
+      }
+    ],
+    "external_dependencies": [
+      {
+        "package": "python-dotenv",
+        "version": "1.0.0",
+        "reason": "Already exists for environment configuration",
+        "status": "existing"
+      }
+    ],
+    "internal_dependencies": [
+      {
+        "module": "app.services.notification",
+        "reason": "Use existing email sending functionality",
+        "status": "existing"
+      },
+      {
+        "module": "app.models.user",
+        "reason": "User model needs to be updated",
+        "status": "needs_modification"
+      },
+      {
+        "module": "app.core.security",
+        "reason": "Use existing token generation utilities",
+        "status": "existing"
+      }
+    ]
+  },
+
+  "risks": [
+    {
+      "risk": "Email sending failures could block user registration",
+      "probability": "medium",
+      "impact": "high",
+      "mitigation": "Implement retry logic with exponential backoff, log failures for manual review"
+    },
+    {
+      "risk": "Database migration could cause downtime",
+      "probability": "low",
+      "impact": "high",
+      "mitigation": "Test migration thoroughly in staging, perform during low-traffic window"
+    },
+    {
+      "risk": "Token collision could allow unauthorized email verification",
+      "probability": "low",
+      "impact": "high",
+      "mitigation": "Use cryptographically secure token generation with sufficient entropy"
+    }
+  ],
+
+  "assumptions": [
+    "Email service (SMTP or SendGrid) is already configured",
+    "Database migrations are handled through Alembic",
+    "Existing notification service can be reused for email sending",
+    "JWT token generation utilities are available in app.core.security"
+  ],
+
+  "metadata": {
+    "planner_version": "1.0",
+    "created_by": "planner_agent",
+    "validation_passed": true
+  }
+}
+```
+
+## IMPORTANT NOTES
+
+1. **ALWAYS populate all fields** - No empty arrays, no null values, no empty strings
+2. **Be specific** - Use exact file paths, line numbers, and technical details
+3. **Include examples** - Provide code templates and specific examples
+4. **Document everything** - Every decision should be explained
+5. **Validate thoroughly** - Check all dependencies and relationships
+6. **Return valid JSON** - Ensure output can be parsed immediately
+"""

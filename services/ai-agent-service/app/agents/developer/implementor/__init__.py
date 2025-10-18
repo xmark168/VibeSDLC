@@ -54,7 +54,6 @@ The Implementor subagent has its own subagents:
 - **code_reviewer**: Reviews code for quality and security
 """
 
-from deepagents.types import SubAgent
 # from agents.developer.instructions import get_implementor_instructions
 from .tools import (
     load_codebase_tool,
