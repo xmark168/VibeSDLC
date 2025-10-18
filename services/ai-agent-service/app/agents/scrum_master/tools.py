@@ -276,7 +276,7 @@ def calculate_acceptance_criteria_and_estimates(backlog_items: list[dict]) -> di
 
     # Initialize LLM
     llm = ChatOpenAI(
-        model="gpt-4o",
+        model="gpt-4o-mini",
         temperature=0.3,
         api_key=os.getenv("OPENAI_API_KEY"),
         base_url=os.getenv("OPENAI_BASE_URL")

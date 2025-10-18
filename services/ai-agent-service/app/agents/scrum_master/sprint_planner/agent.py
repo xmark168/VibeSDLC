@@ -9,6 +9,7 @@ from typing import Annotated, Literal
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
+from langfuse.langchain import CallbackHandler
 import json
 
 from .state import SprintPlannerState
@@ -55,6 +56,16 @@ class SprintPlannerAgent:
             api_key=os.getenv("OPENAI_API_KEY"),
             base_url=os.getenv("OPENAI_BASE_URL")
         )
+
+        # Initialize Langfuse callback handler
+        try:
+            self.langfuse_handler = CallbackHandler(
+                flush_at=5,  # Flush every 5 events to avoid 413 errors
+                flush_interval=1.0
+            )
+        except Exception:
+            # Fallback for older versions without flush_at parameter
+            self.langfuse_handler = CallbackHandler()
 
         # Build LangGraph workflow
         self.graph = self._build_graph()
@@ -445,9 +456,10 @@ class SprintPlannerAgent:
         # In production, this would trigger a human-in-the-loop checkpoint
         # For now, we auto-approve if score is good OR we've exhausted loops
         if state.user_approval is None:
-            if state.plan_score >= 0.8:
+            # Threshold reduced from 0.8 to 0.7 for consistency with evaluate_branch
+            if state.plan_score >= 0.7:
                 state.user_approval = "approve"
-                print("[Preview] Auto-approved (score >= 0.8)")
+                print("[Preview] Auto-approved (score >= 0.7)")
             elif state.current_loop >= state.max_loops:
                 # Force approve if we've reached max loops
                 state.user_approval = "approve"
@@ -455,7 +467,7 @@ class SprintPlannerAgent:
             else:
                 state.user_approval = "edit"
                 state.user_feedback = "Plan score too low, please refine"
-                print(f"[Preview] Auto-edit (score {state.plan_score} < 0.8, loop {state.current_loop}/{state.max_loops})")
+                print(f"[Preview] Auto-edit (score {state.plan_score} < 0.7, loop {state.current_loop}/{state.max_loops})")
 
         state.status = "preview"
         return state
@@ -473,7 +485,8 @@ class SprintPlannerAgent:
         """
         # Refine if score is low and we have loops left
         # Note: current_loop is already incremented in evaluate_node
-        if state.plan_score < 0.8 and state.current_loop < state.max_loops:
+        # Threshold reduced from 0.8 to 0.7 for better performance
+        if state.plan_score < 0.7 and state.current_loop < state.max_loops:
             print(f"[Branch] -> refine (score: {state.plan_score}, loop: {state.current_loop}/{state.max_loops})")
             return "refine"
 
@@ -539,12 +552,25 @@ class SprintPlannerAgent:
         print(f"Starting Sprint Planner: {sprint_id}")
         print(f"{'='*60}\n")
 
-        # Configure recursion limit (default 25, we set to 50 for safety)
+        # Configure recursion limit and Langfuse tracing
         config = {
-            "recursion_limit": 50
+            "recursion_limit": 50,
+            "callbacks": [self.langfuse_handler],
+            "metadata": {
+                "langfuse_session_id": self.session_id,
+                "langfuse_user_id": self.user_id,
+                "langfuse_tags": ["sprint_planner_agent", f"sprint_{sprint_id}"]
+            }
         }
 
-        final_state = self.graph.invoke(initial_state, config=config)
+        try:
+            final_state = self.graph.invoke(initial_state, config=config)
+        finally:
+            # Flush Langfuse to ensure all traces are sent
+            try:
+                self.langfuse_handler.langfuse.flush()
+            except Exception:
+                pass  # Ignore flush errors
 
         # LangGraph returns dict, not SprintPlannerState object
         if isinstance(final_state, dict):
@@ -574,3 +600,171 @@ class SprintPlannerAgent:
             "resource_allocation": resource_allocation,
             "enriched_tasks": enriched_tasks
         }
+
+    # ==================== PROCESS PO OUTPUT METHOD ====================
+
+    def process_po_output(self, po_output: dict, team: dict = None) -> dict:
+        """Process Product Owner output end-to-end.
+
+        This method owns the complete planning workflow:
+        1. Receive and transform PO output
+        2. Calculate acceptance criteria and estimates
+        3. Check Definition of Ready
+        4. Run sprint planning for each sprint
+        5. Assign tasks to team
+
+        Args:
+            po_output: PO output with metadata, prioritized_backlog, sprints
+            team: Team members dict (optional)
+
+        Returns:
+            dict: Complete processed output with sprints, items, assignments
+        """
+        from .tools import (
+            receive_po_output,
+            calculate_acceptance_criteria_and_estimates,
+            check_definition_of_ready,
+            assign_tasks_to_team
+        )
+        from ..models import ScrumMasterOutput
+        from datetime import datetime
+        import json
+
+        print("\n" + "="*80)
+        print("🎯 SPRINT PLANNER: Process PO Output (End-to-End)")
+        print("="*80)
+
+        try:
+            # Step 1: Receive and transform
+            print("\n📥 Step 1: Transform PO Output...")
+            transform_result = receive_po_output.invoke({"sprint_plan": po_output})
+
+            if not transform_result["success"]:
+                return {
+                    "success": False,
+                    "error": transform_result.get("error"),
+                    "step": "transform"
+                }
+
+            backlog_items = transform_result["backlog_items"]
+            sprints = transform_result["sprints"]
+
+            # Step 2: Calculate AC & Estimates
+            print("\n🧮 Step 2: Calculate Acceptance Criteria & Estimates...")
+            calc_result = calculate_acceptance_criteria_and_estimates.invoke({"backlog_items": backlog_items})
+            backlog_items = calc_result["updated_items"]
+
+            # Step 3: Run sprint planning for each sprint (enrich with rank, SP, deadline)
+            print("\n📅 Step 3: Run Sprint Planning Workflow...")
+            enriched_items = []
+
+            for sprint in sprints:
+                sprint_id = sprint.get("id")
+                sprint_goal = sprint.get("goal", "")
+                sprint_duration = sprint.get("duration_days", 14)
+
+                sprint_backlog = [
+                    item for item in backlog_items
+                    if item.get("sprint_id") == sprint_id
+                ]
+
+                if sprint_backlog:
+                    print(f"\n   📋 Planning {sprint_id}: {len(sprint_backlog)} tasks")
+
+                    # Convert datetime to string
+                    sprint_backlog_serializable = []
+                    for item in sprint_backlog:
+                        item_copy = item.copy()
+                        for key, value in item_copy.items():
+                            if isinstance(value, datetime):
+                                item_copy[key] = value.isoformat()
+                        sprint_backlog_serializable.append(item_copy)
+
+                    # Run planning workflow
+                    planner_result = self.run(
+                        sprint_id=sprint_id,
+                        sprint_goal=sprint_goal,
+                        sprint_backlog_items=sprint_backlog_serializable,
+                        sprint_duration_days=sprint_duration,
+                        team_capacity={"dev_hours": 80, "qa_hours": 40}
+                    )
+
+                    # Merge enriched data
+                    enriched_tasks = planner_result.get("enriched_tasks", [])
+
+                    for item in sprint_backlog:
+                        enriched = next(
+                            (t for t in enriched_tasks if t.get("task_id") == item.get("id")),
+                            None
+                        )
+
+                        if enriched:
+                            item["rank"] = enriched.get("rank")
+                            item["story_point"] = enriched.get("story_point")
+                            item["deadline"] = enriched.get("deadline")
+                            item["status"] = enriched.get("status", "TODO")
+                            print(f"      ✅ {item['id']}: rank={item['rank']}, sp={item['story_point']}")
+
+                        enriched_items.append(item)
+
+            if enriched_items:
+                backlog_items = enriched_items
+
+            # Step 4: Check DoR
+            print("\n✅ Step 4: Check Definition of Ready...")
+            dor_result = check_definition_of_ready.invoke({"backlog_items": backlog_items})
+
+            # Step 5: Assign tasks
+            print("\n👥 Step 5: Assign Tasks to Team...")
+            assignment_result = assign_tasks_to_team.invoke({
+                "backlog_items": backlog_items,
+                "team": team
+            })
+
+            updated_items = assignment_result["updated_items"]
+
+            # Create output
+            output = ScrumMasterOutput(
+                sprints=sprints,
+                backlog_items=updated_items,
+                assignments=assignment_result["assignments"],
+                dor_results=dor_result["results"],
+                summary={
+                    **transform_result["summary"],
+                    "dor_pass_rate": dor_result["pass_rate"],
+                    "total_assigned": assignment_result["total_assigned"],
+                    "processed_at": datetime.now().isoformat()
+                }
+            )
+
+            # Save to file
+            output_file = f"sprint_planner_output_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            with open(output_file, 'w', encoding='utf-8') as f:
+                json.dump(output.model_dump(), f, indent=2, ensure_ascii=False, default=str)
+
+            print("\n" + "="*80)
+            print("✅ SPRINT PLANNER: Processing Complete")
+            print("="*80)
+            print(f"\n📊 Summary:")
+            print(f"  - Sprints: {len(sprints)}")
+            print(f"  - Items: {len(updated_items)}")
+            print(f"  - Assigned: {assignment_result['total_assigned']}")
+            print(f"  - DoR Pass: {dor_result['pass_rate']:.1%}")
+            print(f"\n💾 Output: {output_file}")
+
+            return {
+                "success": True,
+                "output": output.model_dump(),
+                "output_file": output_file,
+                "summary": output.summary
+            }
+
+        except Exception as e:
+            print(f"\n❌ Error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {
+                "success": False,
+                "error": str(e),
+                "step": "unknown"
+            }

@@ -57,7 +57,7 @@ class SprintPlannerState(BaseModel):
     can_proceed: bool = False
 
     # Loop control
-    max_loops: int = 2
+    max_loops: int = 1  # Reduced from 2 to 1 for better performance
     current_loop: int = 0
 
     # Preview & user approval

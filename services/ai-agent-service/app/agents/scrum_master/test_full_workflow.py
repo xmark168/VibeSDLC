@@ -53,98 +53,146 @@ MOCK_TEAM = {
 
 # Mock Product Owner output (Sprint Plan đã được tạo)
 MOCK_PO_OUTPUT = {
-    "metadata": {
-        "project_name": "E-commerce Platform",
-        "created_at": "2025-01-16T10:00:00Z",
-        "created_by": "Product Owner Agent"
+  "metadata": {
+    "project_name": "E-commerce Platform",
+    "created_at": "2025-01-16T10:00:00Z",
+    "created_by": "Product Owner Agent"
+  },
+  "prioritized_backlog": [
+    {
+      "id": "EPIC-001",
+      "type": "Epic",
+      "title": "User Authentication System",
+      "priority": 1
     },
-    "prioritized_backlog": [
-        {
-            "id": "EPIC-001",
-            "type": "Epic",
-            "title": "User Authentication System",
-            "priority": 1
-        },
-        {
-            "id": "US-001",
-            "type": "User Story",
-            "title": "As a user, I want to login to the system",
-            "parent_id": "EPIC-001",
-            "priority": 1
-        },
-        {
-            "id": "TASK-001",
-            "type": "Task",
-            "title": "Implement login API endpoint",
-            "parent_id": "US-001",
-            "task_type": "Development",
-            "description": "Create POST /api/auth/login endpoint with JWT token generation",
-            "effort_estimate": 5
-        },
-        {
-            "id": "TASK-002",
-            "type": "Task",
-            "title": "Create login UI component",
-            "parent_id": "US-001",
-            "task_type": "Development",
-            "description": "Build React login form with email and password fields",
-            "effort_estimate": 3
-        },
-        {
-            "id": "TASK-003",
-            "type": "Task",
-            "title": "Write API integration tests",
-            "parent_id": "US-001",
-            "task_type": "Testing",
-            "description": "Test login API with valid and invalid credentials",
-            "effort_estimate": 2
-        },
-        {
-            "id": "TASK-004",
-            "type": "Task",
-            "title": "Design login page mockup",
-            "parent_id": "US-001",
-            "task_type": "Design",
-            "description": "Create UI/UX design for login page",
-            "effort_estimate": 3
-        },
-        {
-            "id": "US-002",
-            "type": "User Story",
-            "title": "As a user, I want to reset my password",
-            "parent_id": "EPIC-001",
-            "priority": 2
-        },
-        {
-            "id": "TASK-005",
-            "type": "Task",
-            "title": "Implement password reset API",
-            "parent_id": "US-002",
-            "task_type": "Development",
-            "description": "Create POST /api/auth/reset-password endpoint",
-            "effort_estimate": 4
-        },
-        {
-            "id": "TASK-006",
-            "type": "Task",
-            "title": "Write E2E tests for login flow",
-            "parent_id": "US-001",
-            "task_type": "Testing",
-            "description": "Automated E2E tests using Playwright",
-            "effort_estimate": 3
-        }
-    ],
-    "sprints": [
-        {
-            "sprint_id": "SPRINT-001",
-            "sprint_name": "Sprint 1 - Authentication Foundation",
-            "sprint_goal": "Implement basic user authentication",
-            "start_date": "2025-01-20",
-            "end_date": "2025-02-03",
-            "assigned_items": ["TASK-001", "TASK-002", "TASK-003", "TASK-004", "TASK-005", "TASK-006"]
-        }
-    ]
+    {
+      "id": "US-001",
+      "type": "User Story",
+      "title": "As a user, I want to login to the system",
+      "parent_id": "EPIC-001",
+      "priority": 1
+    },
+    {
+      "id": "TASK-001",
+      "type": "Task",
+      "title": "Implement login API endpoint",
+      "parent_id": "US-001",
+      "task_type": "Development",
+      "description": "Create POST /api/auth/login endpoint with JWT token generation",
+      "effort_estimate": 5
+    },
+    {
+      "id": "TASK-002",
+      "type": "Task",
+      "title": "Create login UI component",
+      "parent_id": "US-001",
+      "task_type": "Development",
+      "description": "Build React login form with email and password fields",
+      "effort_estimate": 3
+    },
+    {
+      "id": "TASK-003",
+      "type": "Task",
+      "title": "Write API integration tests",
+      "parent_id": "US-001",
+      "task_type": "Testing",
+      "description": "Test login API with valid and invalid credentials",
+      "effort_estimate": 2
+    },
+    {
+      "id": "TASK-004",
+      "type": "Task",
+      "title": "Design login page mockup",
+      "parent_id": "US-001",
+      "task_type": "Design",
+      "description": "Create UI/UX design for login page",
+      "effort_estimate": 3
+    },
+    {
+      "id": "US-002",
+      "type": "User Story",
+      "title": "As a user, I want to reset my password",
+      "parent_id": "EPIC-001",
+      "priority": 2
+    },
+    {
+      "id": "TASK-005",
+      "type": "Task",
+      "title": "Implement password reset API",
+      "parent_id": "US-002",
+      "task_type": "Development",
+      "description": "Create POST /api/auth/reset-password endpoint",
+      "effort_estimate": 4
+    },
+    {
+      "id": "TASK-006",
+      "type": "Task",
+      "title": "Write E2E tests for login flow",
+      "parent_id": "US-001",
+      "task_type": "Testing",
+      "description": "Automated E2E tests using Playwright",
+      "effort_estimate": 3
+    },
+    {
+      "id": "TASK-007",
+      "type": "Task",
+      "title": "Validate user input on login form",
+      "parent_id": "US-001",
+      "task_type": "Development",
+      "description": "Implement client-side and server-side validation for email and password fields",
+      "effort_estimate": 2
+    },
+    {
+      "id": "TASK-008",
+      "type": "Task",
+      "title": "Create password reset UI component",
+      "parent_id": "US-002",
+      "task_type": "Development",
+      "description": "Build React form for entering email to receive password reset link",
+      "effort_estimate": 3
+    },
+    {
+      "id": "TASK-009",
+      "type": "Task",
+      "title": "Test password reset flow",
+      "parent_id": "US-002",
+      "task_type": "Testing",
+      "description": "Write integration and E2E tests for the password reset process",
+      "effort_estimate": 3
+    },
+    {
+      "id": "TASK-010",
+      "type": "Task",
+      "title": "Reset Password feature",
+      "parent_id": "EPIC-001",
+      "task_type": "Design",
+      "description": "Perform heuristic evaluation of UI for login and password reset pages, suggest improvements",
+      "effort_estimate": 2
+    }
+  ],
+  "sprints": [
+    {
+      "sprint_id": "SPRINT-001",
+      "sprint_name": "Sprint 1 - Authentication Foundation",
+      "sprint_goal": "Implement basic user authentication",
+      "start_date": "2025-01-20",
+      "end_date": "2025-02-03",
+      "assigned_items": [
+        "TASK-001",
+        "TASK-002",
+        "TASK-003",
+        "TASK-004",
+        "TASK-005",
+        "TASK-006",
+        "TASK-007",
+        "TASK-008",
+        "TASK-009",
+        "TASK-010"
+      ]
+    }
+  ]
 }
+
 
 
 def test_full_workflow():

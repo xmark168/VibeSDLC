@@ -44,6 +44,12 @@ Sprint Information:
 Sprint Backlog Items (đã được prioritized):
 {sprint_backlog_items}
 
+⚠️ **QUAN TRỌNG**:
+- CHỈ được làm việc với các tasks đã có trong Sprint Backlog Items ở trên
+- KHÔNG ĐƯỢC tự ý tạo thêm tasks mới
+- KHÔNG ĐƯỢC thêm hoặc bỏ bất kỳ task nào
+- CHỈ được enrich metadata cho các tasks hiện có
+
 Nhiệm vụ của bạn:
 1. **Daily Breakdown**: Phân phối tasks trên các ngày sprint
    - Consider dependencies giữa các tasks
@@ -55,11 +61,12 @@ Nhiệm vụ của bạn:
    - Respect capacity limits
    - Consider parallel work nếu có thể
 
-3. **Task Enrichment**: Tính toán thêm các fields cho mỗi task
+3. **Task Enrichment**: Tính toán thêm các fields cho mỗi task HIỆN CÓ
    - **rank**: Thứ tự ưu tiên (1, 2, 3, ...) dựa trên dependencies và priority
    - **story_point**: Độ phức tạp (Fibonacci: 1, 2, 3, 5, 8, 13, 21)
    - **deadline**: Deadline cụ thể (YYYY-MM-DD) dựa trên daily breakdown
    - **status**: Initial status ("TODO", "READY", "BACKLOG")
+   - ⚠️ enriched_tasks PHẢI chứa TẤT CẢ và CHỈ các task_id từ Sprint Backlog Items
 
 4. **Risk Identification**: Xác định potential risks
    - Complex tasks có thể overflow
