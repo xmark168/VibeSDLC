@@ -38,9 +38,9 @@ def test_backward_compatibility():
         )
 
         # Verify codebase_path is empty string (default)
-        assert state.codebase_path == "", (
-            f"Expected empty string, got: {state.codebase_path}"
-        )
+        assert (
+            state.codebase_path == ""
+        ), f"Expected empty string, got: {state.codebase_path}"
         assert state.task_description == "Test task"
         assert state.codebase_context == "Test context"
 
@@ -72,9 +72,9 @@ def test_custom_codebase_path():
         )
 
         # Verify codebase_path is set correctly
-        assert state.codebase_path == custom_path, (
-            f"Expected {custom_path}, got: {state.codebase_path}"
-        )
+        assert (
+            state.codebase_path == custom_path
+        ), f"Expected {custom_path}, got: {state.codebase_path}"
 
         print("✅ State created successfully with custom codebase_path")
         print(f"   - task_description: {state.task_description}")

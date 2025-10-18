@@ -29,11 +29,15 @@ load_dotenv()
 # Pydantic Models for State Management
 # ============================================================================
 
+
 class WSJFScore(BaseModel):
     """Model cho WSJF score của một item."""
+
     item_id: str = Field(description="ID của item")
     business_value: int = Field(description="Business Value score (1-10)", ge=1, le=10)
-    time_criticality: int = Field(description="Time Criticality score (1-10)", ge=1, le=10)
+    time_criticality: int = Field(
+        description="Time Criticality score (1-10)", ge=1, le=10
+    )
     risk_reduction: int = Field(description="Risk Reduction score (1-10)", ge=1, le=10)
     job_size: int = Field(description="Job Size (1-13 Fibonacci)", ge=1, le=13)
     reasoning: str = Field(description="Lý do scoring")
@@ -41,170 +45,201 @@ class WSJFScore(BaseModel):
 
 class WSJFOutput(BaseModel):
     """Structured output cho WSJF scoring."""
+
     wsjf_scores: list[WSJFScore] = Field(description="Danh sách WSJF scores")
 
 
 class Sprint(BaseModel):
     """Model cho một Sprint."""
+
     sprint_id: str = Field(description="ID: sprint-1, sprint-2, ...")
     sprint_number: int = Field(description="Số thứ tự sprint (1, 2, 3, ...)")
     sprint_goal: str = Field(description="Mục tiêu chính của sprint")
-    start_date: Optional[str] = Field(default=None, description="Ngày bắt đầu (YYYY-MM-DD)")
-    end_date: Optional[str] = Field(default=None, description="Ngày kết thúc (YYYY-MM-DD)")
+    start_date: Optional[str] = Field(
+        default=None, description="Ngày bắt đầu (YYYY-MM-DD)"
+    )
+    end_date: Optional[str] = Field(
+        default=None, description="Ngày kết thúc (YYYY-MM-DD)"
+    )
     velocity_plan: int = Field(default=0, description="Planned velocity (story points)")
-    velocity_actual: int = Field(default=0, description="Actual velocity (story points)")
-    assigned_items: list[str] = Field(default_factory=list, description="IDs của items được assign")
+    velocity_actual: int = Field(
+        default=0, description="Actual velocity (story points)"
+    )
+    assigned_items: list[str] = Field(
+        default_factory=list, description="IDs của items được assign"
+    )
     status: Literal["Planned", "Active", "Completed"] = Field(default="Planned")
 
 
 class CapacityIssue(BaseModel):
     """Model cho capacity issue."""
+
     sprint_id: str = Field(description="ID của sprint có issue")
     issue_type: str = Field(description="Loại issue: overload, underload")
     description: str = Field(description="Mô tả chi tiết issue")
-    severity: str = Field(description="Mức độ nghiêm trọng: critical, high, medium, low")
+    severity: str = Field(
+        description="Mức độ nghiêm trọng: critical, high, medium, low"
+    )
 
 
 class DependencyIssue(BaseModel):
     """Model cho dependency issue."""
+
     item_id: str = Field(description="ID của item có issue")
     sprint_id: str = Field(description="ID của sprint chứa item")
-    issue_type: str = Field(description="Loại issue: dependency_not_met, circular_dependency")
+    issue_type: str = Field(
+        description="Loại issue: dependency_not_met, circular_dependency"
+    )
     description: str = Field(description="Mô tả chi tiết issue")
-    severity: str = Field(description="Mức độ nghiêm trọng: critical, high, medium, low")
+    severity: str = Field(
+        description="Mức độ nghiêm trọng: critical, high, medium, low"
+    )
 
 
 class EvaluateOutput(BaseModel):
     """Structured output cho evaluate node."""
-    readiness_score: float = Field(description="Điểm readiness (0.0-1.0)", ge=0.0, le=1.0)
+
+    readiness_score: float = Field(
+        description="Điểm readiness (0.0-1.0)", ge=0.0, le=1.0
+    )
     can_proceed: bool = Field(description="Sprint plan có đạt yêu cầu không")
-    capacity_issues: list[CapacityIssue] = Field(default_factory=list, description="Danh sách capacity issues")
-    dependency_issues: list[DependencyIssue] = Field(default_factory=list, description="Danh sách dependency issues")
-    recommendations: list[str] = Field(default_factory=list, description="Recommendations để cải thiện")
+    capacity_issues: list[CapacityIssue] = Field(
+        default_factory=list, description="Danh sách capacity issues"
+    )
+    dependency_issues: list[DependencyIssue] = Field(
+        default_factory=list, description="Danh sách dependency issues"
+    )
+    recommendations: list[str] = Field(
+        default_factory=list, description="Recommendations để cải thiện"
+    )
 
 
 class RefineOutput(BaseModel):
     """Structured output cho refine node."""
+
     refined_sprints: list[dict] = Field(description="Danh sách sprints đã được refine")
-    changes_made: list[str] = Field(default_factory=list, description="Danh sách changes đã apply")
-    issues_fixed: dict = Field(default_factory=dict, description="Số lượng issues đã fix")
+    changes_made: list[str] = Field(
+        default_factory=list, description="Danh sách changes đã apply"
+    )
+    issues_fixed: dict = Field(
+        default_factory=dict, description="Số lượng issues đã fix"
+    )
 
 
 class AdjustSprintPlanOutput(BaseModel):
     """Structured output cho adjust sprint plan (when user edits)."""
-    adjusted_sprints: list[dict] = Field(description="Danh sách sprints đã được adjust theo user feedback")
-    changes_made: list[str] = Field(default_factory=list, description="Danh sách changes đã apply")
+
+    adjusted_sprints: list[dict] = Field(
+        description="Danh sách sprints đã được adjust theo user feedback"
+    )
+    changes_made: list[str] = Field(
+        default_factory=list, description="Danh sách changes đã apply"
+    )
 
 
 class Sprint(BaseModel):
     """Model cho một Sprint."""
+
     sprint_id: str = Field(description="ID: sprint-1, sprint-2, ...")
     sprint_number: int = Field(description="Số thứ tự sprint (1, 2, 3, ...)")
     sprint_goal: str = Field(description="Mục tiêu chính của sprint")
-    start_date: Optional[str] = Field(default=None, description="Ngày bắt đầu (YYYY-MM-DD)")
-    end_date: Optional[str] = Field(default=None, description="Ngày kết thúc (YYYY-MM-DD)")
+    start_date: Optional[str] = Field(
+        default=None, description="Ngày bắt đầu (YYYY-MM-DD)"
+    )
+    end_date: Optional[str] = Field(
+        default=None, description="Ngày kết thúc (YYYY-MM-DD)"
+    )
     velocity_plan: int = Field(default=0, description="Planned velocity (story points)")
-    velocity_actual: int = Field(default=0, description="Actual velocity (story points)")
-    assigned_items: list[str] = Field(default_factory=list, description="IDs của items được assign")
+    velocity_actual: int = Field(
+        default=0, description="Actual velocity (story points)"
+    )
+    assigned_items: list[str] = Field(
+        default_factory=list, description="IDs của items được assign"
+    )
     status: Literal["Planned", "Active", "Completed"] = Field(default="Planned")
 
 
 class PriorityState(BaseModel):
     """State cho Priority Agent workflow."""
+
     # Input
     product_backlog: dict = Field(
         default_factory=dict,
-        description="Product Backlog từ Backlog Agent (metadata + items)"
+        description="Product Backlog từ Backlog Agent (metadata + items)",
     )
 
     # Configuration
     sprint_duration_weeks: int = Field(
-        default=2,
-        description="Độ dài mỗi sprint (tuần) - sprint cycle for review/demo"
+        default=2, description="Độ dài mỗi sprint (tuần) - sprint cycle for review/demo"
     )
     sprint_capacity_story_points: int = Field(
         default=30,
-        description="Max story points per sprint (AI throughput limit for review process)"
+        description="Max story points per sprint (AI throughput limit for review process)",
     )
 
     # Calculate Priority Outputs
     prioritized_backlog: list[dict] = Field(
         default_factory=list,
-        description="Backlog items đã được prioritize (có rank field)"
+        description="Backlog items đã được prioritize (có rank field)",
     )
     wsjf_calculations: dict = Field(
         default_factory=dict,
-        description="WSJF calculations cho từng item {item_id: wsjf_data}"
+        description="WSJF calculations cho từng item {item_id: wsjf_data}",
     )
 
     # ========================================================================
     # Plan Sprints Outputs
     # ========================================================================
     sprints: list[dict] = Field(
-        default_factory=list,
-        description="Danh sách sprints với assigned items"
+        default_factory=list, description="Danh sách sprints với assigned items"
     )
 
     # ========================================================================
     # Evaluate Outputs
     # ========================================================================
     capacity_issues: list[dict] = Field(
-        default_factory=list,
-        description="Issues về capacity (overload, underload)"
+        default_factory=list, description="Issues về capacity (overload, underload)"
     )
     dependency_issues: list[dict] = Field(
         default_factory=list,
-        description="Issues về dependencies (sprint order conflicts)"
+        description="Issues về dependencies (sprint order conflicts)",
     )
     recommendations: list[str] = Field(
-        default_factory=list,
-        description="Recommendations để cải thiện sprint plan"
+        default_factory=list, description="Recommendations để cải thiện sprint plan"
     )
     readiness_score: float = Field(
-        default=0.0,
-        description="Điểm readiness của sprint plan (0.0-1.0)"
+        default=0.0, description="Điểm readiness của sprint plan (0.0-1.0)"
     )
     can_proceed: bool = Field(
-        default=False,
-        description="Sprint plan có đạt yêu cầu để finalize không"
+        default=False, description="Sprint plan có đạt yêu cầu để finalize không"
     )
 
     # Loop Control
-    max_loops: int = Field(
-        default=1,
-        description="Số lần refine tối đa"
-    )
-    current_loop: int = Field(
-        default=0,
-        description="Số lần refine hiện tại"
-    )
+    max_loops: int = Field(default=1, description="Số lần refine tối đa")
+    current_loop: int = Field(default=0, description="Số lần refine hiện tại")
 
     # ========================================================================
     # Preview & User Approval
     # ========================================================================
     user_approval: Optional[str] = Field(
-        default=None,
-        description="User choice: 'approve', 'edit', hoặc 'reprioritize'"
+        default=None, description="User choice: 'approve', 'edit', hoặc 'reprioritize'"
     )
     user_feedback: Optional[str] = Field(
-        default=None,
-        description="Lý do/yêu cầu chỉnh sửa từ user"
+        default=None, description="Lý do/yêu cầu chỉnh sửa từ user"
     )
 
     # Final Output
     sprint_plan: dict = Field(
         default_factory=dict,
-        description="Final sprint plan (metadata + prioritized_backlog + sprints)"
+        description="Final sprint plan (metadata + prioritized_backlog + sprints)",
     )
-    status: str = Field(
-        default="initial",
-        description="Trạng thái workflow"
-    )
+    status: str = Field(default="initial", description="Trạng thái workflow")
 
 
 # ============================================================================
 # Priority Agent Class
 # ============================================================================
+
 
 class PriorityAgent:
     """Priority Agent - Tạo Sprint Plan từ Product Backlog.
@@ -287,9 +322,9 @@ class PriorityAgent:
         3. Count số lượng items theo type (Epic, User Story, Task, Sub-task)
         4. Set status = "initialized"
         """
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("🔧 INITIALIZE NODE - Load & Validate Product Backlog")
-        print("="*80)
+        print("=" * 80)
 
         # Validate product_backlog structure
         if not state.product_backlog:
@@ -313,12 +348,7 @@ class PriorityAgent:
             raise ValueError("❌ product_backlog.items is empty")
 
         # Count items by type
-        type_counts = {
-            "Epic": 0,
-            "User Story": 0,
-            "Task": 0,
-            "Sub-task": 0
-        }
+        type_counts = {"Epic": 0, "User Story": 0, "Task": 0, "Sub-task": 0}
 
         invalid_items = []
         for item in items:
@@ -332,7 +362,9 @@ class PriorityAgent:
                 continue
 
             if item["type"] not in type_counts:
-                invalid_items.append(f"Item {item.get('id')} has invalid type: {item['type']}")
+                invalid_items.append(
+                    f"Item {item.get('id')} has invalid type: {item['type']}"
+                )
                 continue
 
             if "title" not in item or not item["title"]:
@@ -353,7 +385,9 @@ class PriorityAgent:
                 print(f"  - {invalid}")
             if len(invalid_items) > 5:
                 print(f"  ... and {len(invalid_items) - 5} more")
-            raise ValueError(f"❌ Product backlog contains {len(invalid_items)} invalid items")
+            raise ValueError(
+                f"❌ Product backlog contains {len(invalid_items)} invalid items"
+            )
 
         # Print type counts
         print(f"\n📈 Items by Type:")
@@ -364,10 +398,14 @@ class PriorityAgent:
 
         # Validate có ít nhất Epic hoặc User Story để prioritize
         if type_counts["Epic"] == 0 and type_counts["User Story"] == 0:
-            raise ValueError("❌ Product backlog must contain at least one Epic or User Story")
+            raise ValueError(
+                "❌ Product backlog must contain at least one Epic or User Story"
+            )
 
         print(f"\n✅ Product backlog validated successfully")
-        print(f"✅ Ready to calculate priority for {type_counts['Epic']} Epics and {type_counts['User Story']} User Stories")
+        print(
+            f"✅ Ready to calculate priority for {type_counts['Epic']} Epics and {type_counts['User Story']} User Stories"
+        )
 
         # Update state
         state.status = "initialized"
@@ -384,9 +422,9 @@ class PriorityAgent:
         4. Rank items theo WSJF (cao → thấp)
         5. Update prioritized_backlog với rank
         """
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("📊 CALCULATE PRIORITY NODE - Tính WSJF & Rank Items")
-        print("="*80)
+        print("=" * 80)
 
         items = state.product_backlog.get("items", [])
         if not items:
@@ -396,14 +434,15 @@ class PriorityAgent:
 
         # Filter Epic, User Story, và Task (chỉ prioritize 3 loại này, không rank Sub-task)
         prioritizable_items = [
-            item for item in items
-            if item.get("type") in ["Epic", "User Story", "Task"]
+            item for item in items if item.get("type") in ["Epic", "User Story", "Task"]
         ]
 
         print(f"\n📋 Items to Prioritize:")
         print(f"   - Total items: {len(items)}")
         print(f"   - Epics + User Stories + Tasks: {len(prioritizable_items)}")
-        print(f"   - Sub-tasks (not prioritized): {len([i for i in items if i.get('type') == 'Sub-task'])}")
+        print(
+            f"   - Sub-tasks (not prioritized): {len([i for i in items if i.get('type') == 'Sub-task'])}"
+        )
 
         if not prioritizable_items:
             print("⚠️  No Epic, User Story, or Task to prioritize")
@@ -413,15 +452,17 @@ class PriorityAgent:
         # Prepare prompt for LLM to score WSJF factors
         items_for_scoring = []
         for item in prioritizable_items:
-            items_for_scoring.append({
-                "id": item.get("id"),
-                "type": item.get("type"),
-                "title": item.get("title"),
-                "description": item.get("description"),
-                "business_value": item.get("business_value"),
-                "story_point": item.get("story_point"),  # for User Story
-                "dependencies": item.get("dependencies", [])
-            })
+            items_for_scoring.append(
+                {
+                    "id": item.get("id"),
+                    "type": item.get("type"),
+                    "title": item.get("title"),
+                    "description": item.get("description"),
+                    "business_value": item.get("business_value"),
+                    "story_point": item.get("story_point"),  # for User Story
+                    "dependencies": item.get("dependencies", []),
+                }
+            )
 
         # Check if user provided feedback for reprioritization
         user_feedback_section = ""
@@ -436,9 +477,11 @@ class PriorityAgent:
 
         # Format prompt
         prompt = CALCULATE_PRIORITY_PROMPT.format(
-            product_name=state.product_backlog.get('metadata', {}).get('product_name', 'N/A'),
+            product_name=state.product_backlog.get("metadata", {}).get(
+                "product_name", "N/A"
+            ),
             items_json=json.dumps(items_for_scoring, ensure_ascii=False, indent=2),
-            user_feedback_section=user_feedback_section
+            user_feedback_section=user_feedback_section,
         )
 
         try:
@@ -491,7 +534,7 @@ class PriorityAgent:
                     "risk_reduction": rr,
                     "job_size": job_size,
                     "wsjf_score": round(wsjf_score, 2),
-                    "reasoning": score_data.get("reasoning", "")
+                    "reasoning": score_data.get("reasoning", ""),
                 }
 
                 # Find original item
@@ -520,7 +563,9 @@ class PriorityAgent:
             print(f"   {'-'*6} {'-'*12} {'-'*12} {'-'*8} {'-'*50}")
 
             for item in prioritized_backlog[:10]:  # Show top 10
-                print(f"   {item.get('rank', 'N/A'):<6} {item.get('id', 'N/A'):<12} {item.get('type', 'N/A'):<12} {item.get('wsjf_score', 0):<8.2f} {item.get('title', 'N/A')[:50]}")
+                print(
+                    f"   {item.get('rank', 'N/A'):<6} {item.get('id', 'N/A'):<12} {item.get('type', 'N/A'):<12} {item.get('wsjf_score', 0):<8.2f} {item.get('title', 'N/A')[:50]}"
+                )
 
             if len(prioritized_backlog) > 10:
                 print(f"   ... and {len(prioritized_backlog) - 10} more items")
@@ -537,24 +582,31 @@ class PriorityAgent:
                     print(f"   Time Criticality: {calc['time_criticality']}")
                     print(f"   Risk Reduction: {calc['risk_reduction']}")
                     print(f"   Job Size: {calc['job_size']}")
-                    print(f"   WSJF Score: ({calc['business_value']} + {calc['time_criticality']} + {calc['risk_reduction']}) / {calc['job_size']} = {calc['wsjf_score']}")
+                    print(
+                        f"   WSJF Score: ({calc['business_value']} + {calc['time_criticality']} + {calc['risk_reduction']}) / {calc['job_size']} = {calc['wsjf_score']}"
+                    )
                     print(f"   Reasoning: {calc['reasoning'][:100]}...")
 
             # Clear user_feedback after processing to avoid reapplying in next iteration
             if state.user_feedback:
-                print(f"\n✓ User feedback applied successfully, clearing feedback state")
+                print(
+                    f"\n✓ User feedback applied successfully, clearing feedback state"
+                )
                 state.user_feedback = None
 
             state.status = "priority_calculated"
-            print(f"\n✅ Priority calculation complete - {len(prioritized_backlog)} items ranked")
+            print(
+                f"\n✅ Priority calculation complete - {len(prioritized_backlog)} items ranked"
+            )
 
         except Exception as e:
             print(f"❌ Error calculating priority: {e}")
             import traceback
+
             traceback.print_exc()
             state.status = "error_calculating_priority"
 
-        print("="*80 + "\n")
+        print("=" * 80 + "\n")
         return state
 
     def plan_sprints(self, state: PriorityState) -> PriorityState:
@@ -568,9 +620,9 @@ class PriorityAgent:
         5. Calculate velocity_plan cho mỗi sprint
         6. Set sprint dates
         """
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("🏃 PLAN SPRINTS NODE - Pack Items into Sprints")
-        print("="*80)
+        print("=" * 80)
 
         prioritized_backlog = state.prioritized_backlog
         if not prioritized_backlog:
@@ -645,7 +697,9 @@ class PriorityAgent:
                     # because they were assigned earlier in the priority order
 
                 if not can_assign:
-                    print(f"   ⏭️  Deferring {item_id}: waiting for dependencies {unmet_deps}")
+                    print(
+                        f"   ⏭️  Deferring {item_id}: waiting for dependencies {unmet_deps}"
+                    )
                     continue
 
                 # Check capacity
@@ -655,7 +709,9 @@ class PriorityAgent:
                     current_sprint_items.append(item_id)
                     item_to_sprint[item_id] = sprint_num
                     items_assigned_this_pass += 1
-                    print(f"   ✓ Assigned {item_id} ({item_type}) to Sprint {sprint_num}")
+                    print(
+                        f"   ✓ Assigned {item_id} ({item_type}) to Sprint {sprint_num}"
+                    )
 
                 elif item_type == "User Story":
                     # User Story has story_point
@@ -665,25 +721,33 @@ class PriorityAgent:
                         current_sprint_points += story_point
                         item_to_sprint[item_id] = sprint_num
                         items_assigned_this_pass += 1
-                        print(f"   ✓ Assigned {item_id} ({story_point} pts) to Sprint {sprint_num} (total: {current_sprint_points}/{capacity})")
+                        print(
+                            f"   ✓ Assigned {item_id} ({story_point} pts) to Sprint {sprint_num} (total: {current_sprint_points}/{capacity})"
+                        )
                     else:
                         # Doesn't fit, create new sprint
                         if current_sprint_items:
                             # Finalize current sprint
-                            sprint_start = start_date + timedelta(weeks=(sprint_num - 1) * sprint_duration_weeks)
-                            sprint_end = sprint_start + timedelta(weeks=sprint_duration_weeks)
+                            sprint_start = start_date + timedelta(
+                                weeks=(sprint_num - 1) * sprint_duration_weeks
+                            )
+                            sprint_end = sprint_start + timedelta(
+                                weeks=sprint_duration_weeks
+                            )
 
-                            sprints.append({
-                                "sprint_id": f"sprint-{sprint_num}",
-                                "sprint_number": sprint_num,
-                                "sprint_goal": f"Sprint {sprint_num} deliverables",
-                                "start_date": sprint_start.strftime("%Y-%m-%d"),
-                                "end_date": sprint_end.strftime("%Y-%m-%d"),
-                                "velocity_plan": current_sprint_points,
-                                "velocity_actual": 0,
-                                "assigned_items": current_sprint_items.copy(),
-                                "status": "Planned"
-                            })
+                            sprints.append(
+                                {
+                                    "sprint_id": f"sprint-{sprint_num}",
+                                    "sprint_number": sprint_num,
+                                    "sprint_goal": f"Sprint {sprint_num} deliverables",
+                                    "start_date": sprint_start.strftime("%Y-%m-%d"),
+                                    "end_date": sprint_end.strftime("%Y-%m-%d"),
+                                    "velocity_plan": current_sprint_points,
+                                    "velocity_actual": 0,
+                                    "assigned_items": current_sprint_items.copy(),
+                                    "status": "Planned",
+                                }
+                            )
 
                         # Start new sprint
                         sprint_num += 1
@@ -691,31 +755,41 @@ class PriorityAgent:
                         current_sprint_points = story_point
                         item_to_sprint[item_id] = sprint_num
                         items_assigned_this_pass += 1
-                        print(f"   ✓ Assigned {item_id} ({story_point} pts) to Sprint {sprint_num} (new sprint)")
+                        print(
+                            f"   ✓ Assigned {item_id} ({story_point} pts) to Sprint {sprint_num} (new sprint)"
+                        )
 
             # Check if any items were assigned in this pass
-            print(f"   📊 Pass {pass_num} summary: {items_assigned_this_pass} items assigned")
+            print(
+                f"   📊 Pass {pass_num} summary: {items_assigned_this_pass} items assigned"
+            )
 
             if items_assigned_this_pass == 0:
-                print(f"   ✅ No more items can be assigned (dependencies resolved or capacity full)")
+                print(
+                    f"   ✅ No more items can be assigned (dependencies resolved or capacity full)"
+                )
                 break
 
         # Add last sprint if it has items
         if current_sprint_items:
-            sprint_start = start_date + timedelta(weeks=(sprint_num - 1) * sprint_duration_weeks)
+            sprint_start = start_date + timedelta(
+                weeks=(sprint_num - 1) * sprint_duration_weeks
+            )
             sprint_end = sprint_start + timedelta(weeks=sprint_duration_weeks)
 
-            sprints.append({
-                "sprint_id": f"sprint-{sprint_num}",
-                "sprint_number": sprint_num,
-                "sprint_goal": f"Sprint {sprint_num} deliverables",
-                "start_date": sprint_start.strftime("%Y-%m-%d"),
-                "end_date": sprint_end.strftime("%Y-%m-%d"),
-                "velocity_plan": current_sprint_points,
-                "velocity_actual": 0,
-                "assigned_items": current_sprint_items.copy(),
-                "status": "Planned"
-            })
+            sprints.append(
+                {
+                    "sprint_id": f"sprint-{sprint_num}",
+                    "sprint_number": sprint_num,
+                    "sprint_goal": f"Sprint {sprint_num} deliverables",
+                    "start_date": sprint_start.strftime("%Y-%m-%d"),
+                    "end_date": sprint_end.strftime("%Y-%m-%d"),
+                    "velocity_plan": current_sprint_points,
+                    "velocity_actual": 0,
+                    "assigned_items": current_sprint_items.copy(),
+                    "status": "Planned",
+                }
+            )
 
         # NOTE: Sub-tasks are NOT assigned to sprints directly
         # Sub-tasks are implementation details that belong to their parent User Story/Task
@@ -736,17 +810,25 @@ class PriorityAgent:
             print(f"      Dates: {sprint['start_date']} to {sprint['end_date']}")
             print(f"      Velocity Plan: {sprint['velocity_plan']} points")
             print(f"      Assigned Items: {len(sprint['assigned_items'])} items")
-            print(f"      Items: {', '.join(sprint['assigned_items'][:5])}{' ...' if len(sprint['assigned_items']) > 5 else ''}")
+            print(
+                f"      Items: {', '.join(sprint['assigned_items'][:5])}{' ...' if len(sprint['assigned_items']) > 5 else ''}"
+            )
 
         # Check for unassigned items
         assigned_ids = set(item_to_sprint.keys())
-        all_ids = set(item.get("id") for item in prioritized_backlog if item.get("type") != "Sub-task")
+        all_ids = set(
+            item.get("id")
+            for item in prioritized_backlog
+            if item.get("type") != "Sub-task"
+        )
         unassigned_ids = all_ids - assigned_ids
 
         if unassigned_ids:
             print(f"\n⚠️  Unassigned items ({len(unassigned_ids)}):")
             for item_id in list(unassigned_ids)[:5]:
-                item = next((i for i in prioritized_backlog if i.get("id") == item_id), None)
+                item = next(
+                    (i for i in prioritized_backlog if i.get("id") == item_id), None
+                )
                 if item:
                     deps = item.get("dependencies", [])
                     print(f"      - {item_id}: dependencies {deps}")
@@ -755,7 +837,7 @@ class PriorityAgent:
 
         state.status = "sprints_planned"
         print(f"\n✅ Sprints planned successfully - {len(sprints)} sprints created")
-        print("="*80 + "\n")
+        print("=" * 80 + "\n")
 
         return state
 
@@ -767,18 +849,22 @@ class PriorityAgent:
         # Prepare simplified backlog data (only essential fields to reduce token usage)
         simplified_backlog = []
         for item in state.prioritized_backlog:
-            simplified_backlog.append({
-                "id": item.get("id"),
-                "type": item.get("type"),
-                "title": item.get("title"),
-                "rank": item.get("rank"),
-                "story_point": item.get("story_point", 0),
-                "dependencies": item.get("dependencies", [])
-            })
+            simplified_backlog.append(
+                {
+                    "id": item.get("id"),
+                    "type": item.get("type"),
+                    "title": item.get("title"),
+                    "rank": item.get("rank"),
+                    "story_point": item.get("story_point", 0),
+                    "dependencies": item.get("dependencies", []),
+                }
+            )
 
         # Prepare data for LLM
         sprint_plan_json = json.dumps(state.sprints, ensure_ascii=False, indent=2)
-        prioritized_backlog_json = json.dumps(simplified_backlog, ensure_ascii=False, indent=2)
+        prioritized_backlog_json = json.dumps(
+            simplified_backlog, ensure_ascii=False, indent=2
+        )
 
         # Format prompt
         prompt = ADJUST_SPRINT_PLAN_PROMPT.format(
@@ -786,7 +872,7 @@ class PriorityAgent:
             prioritized_backlog_json=prioritized_backlog_json,
             sprint_duration_weeks=state.sprint_duration_weeks,
             sprint_capacity=state.sprint_capacity_story_points,
-            user_feedback=state.user_feedback
+            user_feedback=state.user_feedback,
         )
 
         try:
@@ -848,19 +934,24 @@ class PriorityAgent:
                 else:
                     status_icon = "🟢"  # Good
 
-                print(f"   Sprint {sprint_num}: {status_icon} {velocity}/{capacity} pts ({utilization:.0f}%) - {items_count} items ({start_date} to {end_date})")
+                print(
+                    f"   Sprint {sprint_num}: {status_icon} {velocity}/{capacity} pts ({utilization:.0f}%) - {items_count} items ({start_date} to {end_date})"
+                )
 
             # Clear user_feedback after processing
             print(f"\n✓ User feedback applied successfully, clearing feedback state")
             state.user_feedback = None
             state.status = "sprints_planned"
 
-            print(f"\n✅ Sprint plan adjusted successfully - {len(adjusted_sprints)} sprints created")
-            print("="*80 + "\n")
+            print(
+                f"\n✅ Sprint plan adjusted successfully - {len(adjusted_sprints)} sprints created"
+            )
+            print("=" * 80 + "\n")
 
         except Exception as e:
             print(f"❌ Error adjusting sprint plan: {e}")
             import traceback
+
             traceback.print_exc()
             state.status = "error_adjusting_sprints"
 
@@ -876,9 +967,9 @@ class PriorityAgent:
         4. Calculate readiness_score (0.0-1.0)
         5. Set can_proceed flag (score >= 0.8)
         """
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("🔍 EVALUATE NODE - Validate Sprint Plan")
-        print("="*80)
+        print("=" * 80)
 
         if not state.sprints:
             print("⚠️  No sprints to evaluate")
@@ -903,7 +994,7 @@ class PriorityAgent:
         sprint_plan_data = {
             "sprints": state.sprints,
             "prioritized_backlog": state.prioritized_backlog,
-            "wsjf_calculations": state.wsjf_calculations
+            "wsjf_calculations": state.wsjf_calculations,
         }
 
         sprint_plan_json = json.dumps(sprint_plan_data, ensure_ascii=False, indent=2)
@@ -912,7 +1003,7 @@ class PriorityAgent:
         prompt = EVALUATE_SPRINT_PLAN_PROMPT.format(
             sprint_plan_json=sprint_plan_json,
             sprint_duration_weeks=state.sprint_duration_weeks,
-            sprint_capacity=state.sprint_capacity_story_points
+            sprint_capacity=state.sprint_capacity_story_points,
         )
 
         try:
@@ -952,18 +1043,30 @@ class PriorityAgent:
             if state.capacity_issues:
                 print(f"\n⚠️  Capacity Issues ({len(state.capacity_issues)}):")
                 for i, issue in enumerate(state.capacity_issues[:5], 1):
-                    severity = issue.get('severity', 'unknown')
-                    severity_icon = "🔴" if severity == "critical" else "🟡" if severity == "high" else "🟢"
-                    print(f"   {i}. {severity_icon} [{issue.get('sprint_id')}] {issue.get('issue_type')}: {issue.get('description')[:60]}...")
+                    severity = issue.get("severity", "unknown")
+                    severity_icon = (
+                        "🔴"
+                        if severity == "critical"
+                        else "🟡" if severity == "high" else "🟢"
+                    )
+                    print(
+                        f"   {i}. {severity_icon} [{issue.get('sprint_id')}] {issue.get('issue_type')}: {issue.get('description')[:60]}..."
+                    )
                 if len(state.capacity_issues) > 5:
                     print(f"   ... và {len(state.capacity_issues) - 5} issues khác")
 
             if state.dependency_issues:
                 print(f"\n⚠️  Dependency Issues ({len(state.dependency_issues)}):")
                 for i, issue in enumerate(state.dependency_issues[:5], 1):
-                    severity = issue.get('severity', 'unknown')
-                    severity_icon = "🔴" if severity == "critical" else "🟡" if severity == "high" else "🟢"
-                    print(f"   {i}. {severity_icon} [{issue.get('item_id')}] {issue.get('issue_type')}: {issue.get('description')[:60]}...")
+                    severity = issue.get("severity", "unknown")
+                    severity_icon = (
+                        "🔴"
+                        if severity == "critical"
+                        else "🟡" if severity == "high" else "🟢"
+                    )
+                    print(
+                        f"   {i}. {severity_icon} [{issue.get('item_id')}] {issue.get('issue_type')}: {issue.get('description')[:60]}..."
+                    )
                 if len(state.dependency_issues) > 5:
                     print(f"   ... và {len(state.dependency_issues) - 5} issues khác")
 
@@ -972,7 +1075,9 @@ class PriorityAgent:
                 for i, rec in enumerate(state.recommendations[:3], 1):
                     print(f"   {i}. {rec}")
                 if len(state.recommendations) > 3:
-                    print(f"   ... và {len(state.recommendations) - 3} recommendations khác")
+                    print(
+                        f"   ... và {len(state.recommendations) - 3} recommendations khác"
+                    )
 
             # Print structured output
             print(f"\n📊 Evaluation Result:")
@@ -981,7 +1086,7 @@ class PriorityAgent:
                 "can_proceed": state.can_proceed,
                 "capacity_issues_count": len(state.capacity_issues),
                 "dependency_issues_count": len(state.dependency_issues),
-                "recommendations_count": len(state.recommendations)
+                "recommendations_count": len(state.recommendations),
             }
             print(json.dumps(eval_output, ensure_ascii=False, indent=2))
             print()
@@ -997,12 +1102,13 @@ class PriorityAgent:
         except Exception as e:
             print(f"❌ Error evaluating sprint plan: {e}")
             import traceback
+
             traceback.print_exc()
             state.can_proceed = False
             state.readiness_score = 0.0
             state.status = "error_evaluating"
 
-        print("="*80 + "\n")
+        print("=" * 80 + "\n")
         return state
 
     def refine(self, state: PriorityState) -> PriorityState:
@@ -1015,9 +1121,9 @@ class PriorityAgent:
         4. Balance sprint workload
         5. Update sprints with refined assignments
         """
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("🔧 REFINE NODE - Adjust Sprint Assignments")
-        print("="*80)
+        print("=" * 80)
 
         # Increment loop counter
         state.current_loop += 1
@@ -1043,12 +1149,12 @@ class PriorityAgent:
         sprint_plan_data = {
             "sprints": state.sprints,
             "prioritized_backlog": state.prioritized_backlog,
-            "wsjf_calculations": state.wsjf_calculations
+            "wsjf_calculations": state.wsjf_calculations,
         }
 
         issues_data = {
             "capacity_issues": state.capacity_issues,
-            "dependency_issues": state.dependency_issues
+            "dependency_issues": state.dependency_issues,
         }
 
         sprint_plan_json = json.dumps(sprint_plan_data, ensure_ascii=False, indent=2)
@@ -1061,7 +1167,7 @@ class PriorityAgent:
             sprint_duration_weeks=state.sprint_duration_weeks,
             sprint_capacity=state.sprint_capacity_story_points,
             issues_json=issues_json,
-            recommendations=recommendations_text
+            recommendations=recommendations_text,
         )
 
         try:
@@ -1132,18 +1238,26 @@ class PriorityAgent:
                 else:
                     status_icon = "🟢"  # Good
 
-                print(f"   Sprint {sprint_num}: {status_icon} {velocity}/{capacity} pts ({utilization:.0f}%) - {items_count} items")
+                print(
+                    f"   Sprint {sprint_num}: {status_icon} {velocity}/{capacity} pts ({utilization:.0f}%) - {items_count} items"
+                )
 
             # Check for unassigned items after refine
             assigned_ids = set()
             for sprint in refined_sprints:
                 assigned_ids.update(sprint.get("assigned_items", []))
 
-            all_ids = set(item.get("id") for item in state.prioritized_backlog if item.get("type") != "Sub-task")
+            all_ids = set(
+                item.get("id")
+                for item in state.prioritized_backlog
+                if item.get("type") != "Sub-task"
+            )
             unassigned_ids = all_ids - assigned_ids
 
             if unassigned_ids:
-                print(f"\n⚠️  Still {len(unassigned_ids)} unassigned items after refine:")
+                print(
+                    f"\n⚠️  Still {len(unassigned_ids)} unassigned items after refine:"
+                )
                 for item_id in list(unassigned_ids)[:5]:
                     print(f"      - {item_id}")
                 if len(unassigned_ids) > 5:
@@ -1151,15 +1265,18 @@ class PriorityAgent:
 
             # Update status
             state.status = "refined"
-            print(f"\n✅ Sprint plan refined successfully (loop {state.current_loop}/{state.max_loops})")
+            print(
+                f"\n✅ Sprint plan refined successfully (loop {state.current_loop}/{state.max_loops})"
+            )
 
         except Exception as e:
             print(f"❌ Error refining sprint plan: {e}")
             import traceback
+
             traceback.print_exc()
             state.status = "error_refining"
 
-        print("="*80 + "\n")
+        print("=" * 80 + "\n")
         return state
 
     def finalize(self, state: PriorityState) -> PriorityState:
@@ -1172,9 +1289,9 @@ class PriorityAgent:
         4. Format sprint plan thành final output
         5. Prepare handoff cho Dev Agent
         """
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("✅ FINALIZE NODE - Finalize Sprint Plan")
-        print("="*80)
+        print("=" * 80)
 
         if not state.sprints:
             print("⚠️  No sprints to finalize")
@@ -1206,7 +1323,11 @@ class PriorityAgent:
         for sprint in state.sprints:
             assigned_ids.update(sprint.get("assigned_items", []))
 
-        all_ids = set(item.get("id") for item in state.prioritized_backlog if item.get("type") != "Sub-task")
+        all_ids = set(
+            item.get("id")
+            for item in state.prioritized_backlog
+            if item.get("type") != "Sub-task"
+        )
         unassigned_ids = all_ids - assigned_ids
 
         print(f"\n📈 Sprint Plan Statistics:")
@@ -1220,7 +1341,9 @@ class PriorityAgent:
         validation_warnings = []
 
         if len(unassigned_ids) > 0:
-            validation_warnings.append(f"{len(unassigned_ids)} items remain unassigned (possible circular dependencies or capacity constraints)")
+            validation_warnings.append(
+                f"{len(unassigned_ids)} items remain unassigned (possible circular dependencies or capacity constraints)"
+            )
 
         if total_items_assigned == 0:
             validation_warnings.append("No items have been assigned to any sprint")
@@ -1248,23 +1371,28 @@ class PriorityAgent:
             "total_story_points": total_story_points,
             "total_unassigned_items": len(unassigned_ids),
             "readiness_score": state.readiness_score,
-            "status": "finalized"
+            "status": "finalized",
         }
 
         # Add unassigned items info if any
         unassigned_items_data = []
         if unassigned_ids:
             for item_id in unassigned_ids:
-                item = next((i for i in state.prioritized_backlog if i.get("id") == item_id), None)
+                item = next(
+                    (i for i in state.prioritized_backlog if i.get("id") == item_id),
+                    None,
+                )
                 if item:
-                    unassigned_items_data.append({
-                        "id": item_id,
-                        "type": item.get("type"),
-                        "title": item.get("title"),
-                        "rank": item.get("rank"),
-                        "dependencies": item.get("dependencies", []),
-                        "reason": "Dependencies not met or capacity exceeded"
-                    })
+                    unassigned_items_data.append(
+                        {
+                            "id": item_id,
+                            "type": item.get("type"),
+                            "title": item.get("title"),
+                            "rank": item.get("rank"),
+                            "dependencies": item.get("dependencies", []),
+                            "reason": "Dependencies not met or capacity exceeded",
+                        }
+                    )
 
         # Build final sprint plan
         state.sprint_plan = {
@@ -1272,7 +1400,7 @@ class PriorityAgent:
             "prioritized_backlog": state.prioritized_backlog,
             "wsjf_calculations": state.wsjf_calculations,
             "sprints": state.sprints,
-            "unassigned_items": unassigned_items_data
+            "unassigned_items": unassigned_items_data,
         }
 
         # Print final summary
@@ -1281,7 +1409,9 @@ class PriorityAgent:
         print(f"   Version: {sprint_plan_metadata['version']}")
         print(f"   Created: {sprint_plan_metadata['created_at']}")
         print(f"   Total Sprints: {sprint_plan_metadata['total_sprints']}")
-        print(f"   Total Items Assigned: {sprint_plan_metadata['total_items_assigned']}")
+        print(
+            f"   Total Items Assigned: {sprint_plan_metadata['total_items_assigned']}"
+        )
         print(f"   Total Story Points: {sprint_plan_metadata['total_story_points']}")
         print(f"   Readiness Score: {sprint_plan_metadata['readiness_score']:.2f}")
 
@@ -1292,12 +1422,16 @@ class PriorityAgent:
             velocity = sprint.get("velocity_plan", 0)
             items_count = len(sprint.get("assigned_items", []))
             dates = f"{sprint.get('start_date')} to {sprint.get('end_date')}"
-            print(f"   Sprint {sprint_num}: {velocity} pts, {items_count} items ({dates})")
+            print(
+                f"   Sprint {sprint_num}: {velocity} pts, {items_count} items ({dates})"
+            )
 
         if unassigned_items_data:
             print(f"\n⚠️  Unassigned Items ({len(unassigned_items_data)}):")
             for item in unassigned_items_data[:5]:
-                print(f"      - {item['id']}: {item['title'][:50]} (dependencies: {item['dependencies']})")
+                print(
+                    f"      - {item['id']}: {item['title'][:50]} (dependencies: {item['dependencies']})"
+                )
             if len(unassigned_items_data) > 5:
                 print(f"      ... and {len(unassigned_items_data) - 5} more")
 
@@ -1308,7 +1442,7 @@ class PriorityAgent:
         # Update state status
         state.status = "finalized"
 
-        print("="*80 + "\n")
+        print("=" * 80 + "\n")
         return state
 
     def preview(self, state: PriorityState) -> PriorityState:
@@ -1320,9 +1454,9 @@ class PriorityAgent:
         3. Prompt user để approve/edit/reprioritize
         4. Set user_approval và user_feedback
         """
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("👀 PREVIEW NODE - Sprint Plan Preview & Approval")
-        print("="*80)
+        print("=" * 80)
 
         if not state.sprint_plan:
             print("⚠️  No sprint plan to preview")
@@ -1340,7 +1474,9 @@ class PriorityAgent:
         print(f"   Version: {metadata.get('version', 'N/A')}")
         print(f"   Created: {metadata.get('created_at', 'N/A')}")
         print(f"   Sprint Duration: {metadata.get('sprint_duration_weeks', 2)} weeks")
-        print(f"   Sprint Capacity: {metadata.get('sprint_capacity_story_points', 30)} points")
+        print(
+            f"   Sprint Capacity: {metadata.get('sprint_capacity_story_points', 30)} points"
+        )
         print(f"   Total Sprints: {metadata.get('total_sprints', 0)}")
         print(f"   Total Items Assigned: {metadata.get('total_items_assigned', 0)}")
         print(f"   Total Story Points: {metadata.get('total_story_points', 0)}")
@@ -1375,7 +1511,11 @@ class PriorityAgent:
 
             # Show top 5 items in this sprint
             assigned_item_ids = sprint.get("assigned_items", [])
-            sprint_items = [item for item in prioritized_backlog if item.get("id") in assigned_item_ids]
+            sprint_items = [
+                item
+                for item in prioritized_backlog
+                if item.get("id") in assigned_item_ids
+            ]
 
             if sprint_items:
                 print(f"      Top Items:")
@@ -1387,9 +1527,13 @@ class PriorityAgent:
                     story_point = item.get("story_point", 0)
 
                     if item_type == "User Story":
-                        print(f"         {i}. [{item_id}] {item_title} (Rank: {rank}, {story_point} pts)")
+                        print(
+                            f"         {i}. [{item_id}] {item_title} (Rank: {rank}, {story_point} pts)"
+                        )
                     else:
-                        print(f"         {i}. [{item_id}] {item_title} (Rank: {rank}, {item_type})")
+                        print(
+                            f"         {i}. [{item_id}] {item_title} (Rank: {rank}, {item_type})"
+                        )
 
                 if len(sprint_items) > 5:
                     print(f"         ... and {len(sprint_items) - 5} more items")
@@ -1409,19 +1553,25 @@ class PriorityAgent:
                 print(f"   ... and {len(unassigned_items) - 5} more")
 
         # Prompt for user approval
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("🔔 HUMAN INPUT REQUIRED:")
         print("   Sprint plan đã sẵn sàng để handoff đến Dev Agent.")
         print("   Bạn có muốn:")
         print("   - 'approve': Chấp nhận và kết thúc")
-        print("   - 'edit': Yêu cầu chỉnh sửa sprint assignments (quay lại plan_sprints)")
-        print("   - 'reprioritize': Yêu cầu tính lại priority (quay lại calculate_priority)")
+        print(
+            "   - 'edit': Yêu cầu chỉnh sửa sprint assignments (quay lại plan_sprints)"
+        )
+        print(
+            "   - 'reprioritize': Yêu cầu tính lại priority (quay lại calculate_priority)"
+        )
         print()
 
         # For automated testing/production, get user input
         # In production API, this should be handled via callback or interrupt
         try:
-            user_input = input("   Your choice (approve/edit/reprioritize): ").strip().lower()
+            user_input = (
+                input("   Your choice (approve/edit/reprioritize): ").strip().lower()
+            )
         except EOFError:
             # For automated environments without stdin
             print("   ⚠️  No stdin available, defaulting to 'approve'")
@@ -1440,7 +1590,9 @@ class PriorityAgent:
 
             # Ask for feedback
             print("\n📝 Vui lòng nhập lý do/yêu cầu reprioritize:")
-            print("   (Ví dụ: 'Thay đổi business value của US-001', 'Tăng priority cho Epic-002')")
+            print(
+                "   (Ví dụ: 'Thay đổi business value của US-001', 'Tăng priority cho Epic-002')"
+            )
             print()
             try:
                 feedback = input("   Feedback: ").strip()
@@ -1463,7 +1615,9 @@ class PriorityAgent:
 
             # Ask for feedback
             print("\n📝 Vui lòng nhập lý do/yêu cầu chỉnh sửa:")
-            print("   (Ví dụ: 'Di chuyển US-007 từ Sprint 2 sang Sprint 1', 'Tạo thêm sprint mới')")
+            print(
+                "   (Ví dụ: 'Di chuyển US-007 từ Sprint 2 sang Sprint 1', 'Tạo thêm sprint mới')"
+            )
             print()
             try:
                 feedback = input("   Feedback: ").strip()
@@ -1486,7 +1640,7 @@ class PriorityAgent:
             state.user_feedback = None
             state.status = "approved"
 
-        print("="*80 + "\n")
+        print("=" * 80 + "\n")
         return state
 
     # ========================================================================
@@ -1539,7 +1693,9 @@ class PriorityAgent:
     # Run Method
     # ========================================================================
 
-    def run(self, product_backlog: dict, thread_id: str | None = None) -> dict[str, Any]:
+    def run(
+        self, product_backlog: dict, thread_id: str | None = None
+    ) -> dict[str, Any]:
         """Chạy Priority Agent workflow.
 
         Args:
@@ -1567,7 +1723,7 @@ class PriorityAgent:
             "configurable": {"thread_id": thread_id},
             "callbacks": [self.langfuse_handler],
             "metadata": metadata,  # Pass session_id/user_id via metadata
-            "recursion_limit": 50
+            "recursion_limit": 50,
         }
 
         final_state = None
@@ -1587,15 +1743,23 @@ class PriorityAgent:
             if state_dict.get("sprint_plan"):
                 sprint_plan = state_dict["sprint_plan"]
 
-                print("\n" + "="*80)
+                print("\n" + "=" * 80)
                 print("📤 PRIORITY AGENT - FINAL OUTPUT")
-                print("="*80)
+                print("=" * 80)
                 print(f"✅ Sprint plan ready for handoff to Dev Agent")
-                print(f"   Product: {sprint_plan.get('metadata', {}).get('product_name', 'N/A')}")
-                print(f"   Total Sprints: {sprint_plan.get('metadata', {}).get('total_sprints', 0)}")
-                print(f"   Total Items: {sprint_plan.get('metadata', {}).get('total_items_assigned', 0)}")
-                print(f"   Status: {sprint_plan.get('metadata', {}).get('status', 'N/A')}")
-                print("="*80 + "\n")
+                print(
+                    f"   Product: {sprint_plan.get('metadata', {}).get('product_name', 'N/A')}"
+                )
+                print(
+                    f"   Total Sprints: {sprint_plan.get('metadata', {}).get('total_sprints', 0)}"
+                )
+                print(
+                    f"   Total Items: {sprint_plan.get('metadata', {}).get('total_items_assigned', 0)}"
+                )
+                print(
+                    f"   Status: {sprint_plan.get('metadata', {}).get('status', 'N/A')}"
+                )
+                print("=" * 80 + "\n")
 
                 return sprint_plan
 

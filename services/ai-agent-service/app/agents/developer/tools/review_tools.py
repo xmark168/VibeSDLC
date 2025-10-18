@@ -11,24 +11,22 @@ from datetime import datetime
 
 @tool
 def collect_feedback_tool(
-    generated_code: str,
-    implementation_summary: str,
-    request_type: str = "review"
+    generated_code: str, implementation_summary: str, request_type: str = "review"
 ) -> str:
     """
     Collect user feedback on generated code.
-    
+
     This tool presents the generated code to the user and collects
     their feedback for improvements or approval.
-    
+
     Args:
         generated_code: The code that was generated
         implementation_summary: Summary of what was implemented
         request_type: Type of feedback request ("review", "approval", "specific")
-        
+
     Returns:
         JSON string with user feedback and next steps
-        
+
     Example:
         collect_feedback_tool(
             "def authenticate_user(username, password): ...",
@@ -48,42 +46,42 @@ def collect_feedback_tool(
             "review_criteria": get_review_criteria(),
             "user_prompt": create_user_feedback_prompt(
                 generated_code, implementation_summary, request_type
-            )
+            ),
         }
-        
+
         return json.dumps(feedback_request, indent=2)
-        
+
     except Exception as e:
         return f"Error collecting feedback: {str(e)}"
 
 
 def generate_feedback_questions(request_type: str) -> List[str]:
     """Generate appropriate feedback questions based on request type"""
-    
+
     base_questions = [
         "Does the generated code meet your requirements?",
         "Are there any issues with the implementation?",
-        "Would you like any changes or improvements?"
+        "Would you like any changes or improvements?",
     ]
-    
+
     if request_type == "review":
         return base_questions + [
             "Is the code style consistent with your project?",
             "Are there any security concerns?",
             "Is the error handling appropriate?",
-            "Are there any performance considerations?"
+            "Are there any performance considerations?",
         ]
     elif request_type == "approval":
         return [
             "Do you approve this implementation?",
             "Should I proceed with committing these changes?",
-            "Are there any final adjustments needed?"
+            "Are there any final adjustments needed?",
         ]
     elif request_type == "specific":
         return base_questions + [
             "What specific aspects would you like me to focus on?",
             "Are there particular patterns or conventions to follow?",
-            "Do you have specific requirements I should address?"
+            "Do you have specific requirements I should address?",
         ]
     else:
         return base_questions
@@ -95,38 +93,36 @@ def get_review_criteria() -> Dict[str, List[str]]:
         "functionality": [
             "Does the code solve the intended problem?",
             "Are all requirements addressed?",
-            "Does it handle edge cases appropriately?"
+            "Does it handle edge cases appropriately?",
         ],
         "code_quality": [
             "Is the code readable and well-structured?",
             "Are naming conventions consistent?",
-            "Is the code properly documented?"
+            "Is the code properly documented?",
         ],
         "security": [
             "Are there any security vulnerabilities?",
             "Is input validation implemented?",
-            "Are sensitive data handled properly?"
+            "Are sensitive data handled properly?",
         ],
         "performance": [
             "Is the code efficient?",
             "Are there any performance bottlenecks?",
-            "Is resource usage optimized?"
+            "Is resource usage optimized?",
         ],
         "maintainability": [
             "Is the code easy to understand and modify?",
             "Are dependencies managed properly?",
-            "Is the code testable?"
-        ]
+            "Is the code testable?",
+        ],
     }
 
 
 def create_user_feedback_prompt(
-    generated_code: str,
-    implementation_summary: str,
-    request_type: str
+    generated_code: str, implementation_summary: str, request_type: str
 ) -> str:
     """Create a user-friendly prompt for feedback collection"""
-    
+
     prompt = f"""# CODE REVIEW REQUEST
 
 ## Implementation Summary
@@ -188,23 +184,23 @@ def refine_code_tool(
     original_code: str,
     user_feedback: str,
     implementation_context: str,
-    refinement_focus: str = "general"
+    refinement_focus: str = "general",
 ) -> str:
     """
     Refine code based on user feedback.
-    
+
     This tool takes user feedback and uses it to improve the generated code,
     addressing specific concerns and requirements.
-    
+
     Args:
         original_code: The original generated code
         user_feedback: Feedback from the user
         implementation_context: Context about the implementation
         refinement_focus: Specific area to focus on ("security", "performance", "style", "general")
-        
+
     Returns:
         JSON string with refinement request for code_reviewer subagent
-        
+
     Example:
         refine_code_tool(
             "def authenticate_user(username, password): ...",
@@ -216,7 +212,7 @@ def refine_code_tool(
     try:
         # Parse and categorize feedback
         feedback_analysis = analyze_feedback(user_feedback)
-        
+
         # Create refinement request
         refinement_request = {
             "action": "refine_code",
@@ -228,66 +224,105 @@ def refine_code_tool(
             "feedback_analysis": feedback_analysis,
             "subagent_required": "code_reviewer",
             "refinement_prompt": create_refinement_prompt(
-                original_code, user_feedback, implementation_context, 
-                refinement_focus, feedback_analysis
+                original_code,
+                user_feedback,
+                implementation_context,
+                refinement_focus,
+                feedback_analysis,
             ),
-            "expected_improvements": generate_expected_improvements(feedback_analysis)
+            "expected_improvements": generate_expected_improvements(feedback_analysis),
         }
-        
+
         return json.dumps(refinement_request, indent=2)
-        
+
     except Exception as e:
         return f"Error refining code: {str(e)}"
 
 
 def analyze_feedback(user_feedback: str) -> Dict[str, Any]:
     """Analyze user feedback to categorize and prioritize changes"""
-    
+
     feedback_lower = user_feedback.lower()
-    
+
     analysis = {
         "sentiment": "neutral",
         "categories": [],
         "priority": "medium",
         "specific_requests": [],
-        "approval_status": "pending"
+        "approval_status": "pending",
     }
-    
+
     # Determine approval status
-    if any(word in feedback_lower for word in ["approve", "good", "looks good", "lgtm", "ship it"]):
+    if any(
+        word in feedback_lower
+        for word in ["approve", "good", "looks good", "lgtm", "ship it"]
+    ):
         analysis["approval_status"] = "approved"
         analysis["sentiment"] = "positive"
-    elif any(word in feedback_lower for word in ["reject", "no", "not good", "needs work"]):
+    elif any(
+        word in feedback_lower for word in ["reject", "no", "not good", "needs work"]
+    ):
         analysis["approval_status"] = "rejected"
         analysis["sentiment"] = "negative"
-    
+
     # Categorize feedback
     categories = {
-        "security": ["security", "validation", "sanitize", "vulnerability", "auth", "permission"],
-        "performance": ["performance", "slow", "optimize", "efficient", "speed", "memory"],
+        "security": [
+            "security",
+            "validation",
+            "sanitize",
+            "vulnerability",
+            "auth",
+            "permission",
+        ],
+        "performance": [
+            "performance",
+            "slow",
+            "optimize",
+            "efficient",
+            "speed",
+            "memory",
+        ],
         "style": ["style", "format", "naming", "convention", "readable", "clean"],
-        "functionality": ["bug", "error", "wrong", "fix", "issue", "problem", "feature"],
+        "functionality": [
+            "bug",
+            "error",
+            "wrong",
+            "fix",
+            "issue",
+            "problem",
+            "feature",
+        ],
         "documentation": ["comment", "document", "explain", "unclear", "confusing"],
-        "testing": ["test", "testing", "coverage", "unit test", "integration"]
+        "testing": ["test", "testing", "coverage", "unit test", "integration"],
     }
-    
+
     for category, keywords in categories.items():
         if any(keyword in feedback_lower for keyword in keywords):
             analysis["categories"].append(category)
-    
+
     # Determine priority
-    if any(word in feedback_lower for word in ["critical", "urgent", "important", "must", "required"]):
+    if any(
+        word in feedback_lower
+        for word in ["critical", "urgent", "important", "must", "required"]
+    ):
         analysis["priority"] = "high"
-    elif any(word in feedback_lower for word in ["minor", "small", "nice to have", "optional"]):
+    elif any(
+        word in feedback_lower
+        for word in ["minor", "small", "nice to have", "optional"]
+    ):
         analysis["priority"] = "low"
-    
+
     # Extract specific requests (simplified)
-    sentences = user_feedback.split('.')
+    sentences = user_feedback.split(".")
     for sentence in sentences:
         sentence = sentence.strip()
-        if any(word in sentence.lower() for word in ["add", "remove", "change", "fix", "improve", "update"]):
+        if any(
+            word in sentence.lower()
+            for word in ["add", "remove", "change", "fix", "improve", "update"]
+        ):
             analysis["specific_requests"].append(sentence)
-    
+
     return analysis
 
 
@@ -296,10 +331,10 @@ def create_refinement_prompt(
     user_feedback: str,
     implementation_context: str,
     refinement_focus: str,
-    feedback_analysis: Dict[str, Any]
+    feedback_analysis: Dict[str, Any],
 ) -> str:
     """Create a detailed prompt for code refinement"""
-    
+
     prompt = f"""# CODE REFINEMENT REQUEST
 
 ## Original Code
@@ -324,7 +359,7 @@ def create_refinement_prompt(
 ## Specific Requests
 """
 
-    for request in feedback_analysis.get('specific_requests', []):
+    for request in feedback_analysis.get("specific_requests", []):
         prompt += f"- {request}\n"
 
     prompt += f"""
@@ -393,58 +428,62 @@ Ensure the refined code addresses all user feedback while maintaining or improvi
 
 def generate_expected_improvements(feedback_analysis: Dict[str, Any]) -> List[str]:
     """Generate list of expected improvements based on feedback analysis"""
-    
+
     improvements = []
-    categories = feedback_analysis.get('categories', [])
-    
-    if 'security' in categories:
-        improvements.extend([
-            "Enhanced input validation",
-            "Improved error handling",
-            "Security vulnerability fixes"
-        ])
-    
-    if 'performance' in categories:
-        improvements.extend([
-            "Algorithm optimization",
-            "Memory usage improvements",
-            "Reduced computational complexity"
-        ])
-    
-    if 'style' in categories:
-        improvements.extend([
-            "Better code formatting",
-            "Consistent naming conventions",
-            "Improved readability"
-        ])
-    
-    if 'functionality' in categories:
-        improvements.extend([
-            "Bug fixes",
-            "Feature enhancements",
-            "Requirement compliance"
-        ])
-    
-    if 'documentation' in categories:
-        improvements.extend([
-            "Better code comments",
-            "Clearer documentation",
-            "Usage examples"
-        ])
-    
-    if 'testing' in categories:
-        improvements.extend([
-            "Test coverage improvements",
-            "Better test cases",
-            "Testing recommendations"
-        ])
-    
+    categories = feedback_analysis.get("categories", [])
+
+    if "security" in categories:
+        improvements.extend(
+            [
+                "Enhanced input validation",
+                "Improved error handling",
+                "Security vulnerability fixes",
+            ]
+        )
+
+    if "performance" in categories:
+        improvements.extend(
+            [
+                "Algorithm optimization",
+                "Memory usage improvements",
+                "Reduced computational complexity",
+            ]
+        )
+
+    if "style" in categories:
+        improvements.extend(
+            [
+                "Better code formatting",
+                "Consistent naming conventions",
+                "Improved readability",
+            ]
+        )
+
+    if "functionality" in categories:
+        improvements.extend(
+            ["Bug fixes", "Feature enhancements", "Requirement compliance"]
+        )
+
+    if "documentation" in categories:
+        improvements.extend(
+            ["Better code comments", "Clearer documentation", "Usage examples"]
+        )
+
+    if "testing" in categories:
+        improvements.extend(
+            [
+                "Test coverage improvements",
+                "Better test cases",
+                "Testing recommendations",
+            ]
+        )
+
     # Add general improvements if no specific categories
     if not improvements:
         improvements = [
             "Code quality improvements",
             "Best practices implementation",
-            "General refinements based on feedback"
+            "General refinements based on feedback",
         ]
-    
+
     return improvements

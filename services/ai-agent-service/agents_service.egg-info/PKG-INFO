@@ -23,7 +23,9 @@ Requires-Dist: pytest>=8.4.2
 Requires-Dist: pytest-asyncio>=0.24.0
 Requires-Dist: gitpython>=3.1.45
 Requires-Dist: tavily-python>=0.7.12
+Requires-Dist: langchain-tavily>=0.2.0
 Requires-Dist: langchain-google-genai>=2.1.12
+Requires-Dist: daytona>=0.111.0
 Provides-Extra: dev
 Requires-Dist: ruff; extra == "dev"
 Requires-Dist: pylint; extra == "dev"

@@ -57,12 +57,24 @@ def analyze_codebase(state: PlannerState) -> PlannerState:
         )
 
         # Analyze actual codebase for context
-        # Use dynamic codebase_path from state, or fall back to default
+        # Priority: sandbox path > explicit codebase_path > default local path
         default_codebase_path = (
             r"D:\capstone project\VibeSDLC\services\ai-agent-service\app\agents\demo"
         )
-        codebase_path = state.codebase_path or default_codebase_path
-        print(f"🔍 Analyzing codebase at: {codebase_path}")
+
+        if state.sandbox_id and state.codebase_path:
+            # Using Daytona sandbox with cloned repository
+            codebase_path = state.codebase_path
+            print(f"🏗️  Using Daytona sandbox: {state.sandbox_id}")
+            print(f"🔍 Analyzing codebase at: {codebase_path}")
+        elif state.codebase_path:
+            # Using explicit local codebase path
+            codebase_path = state.codebase_path
+            print(f"📁 Using local codebase path: {codebase_path}")
+        else:
+            # Fallback to default local path
+            codebase_path = default_codebase_path
+            print(f"🏠 Using default codebase path: {codebase_path}")
 
         try:
             codebase_context = analyze_codebase_context(codebase_path)

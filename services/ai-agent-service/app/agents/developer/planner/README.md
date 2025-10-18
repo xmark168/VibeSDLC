@@ -154,6 +154,55 @@ result = planner.run(
 )
 ```
 
+### Using Daytona Sandbox with GitHub Repository (NEW!)
+
+```python
+# Analyze GitHub repository using Daytona sandbox
+result = planner.run(
+    task_description="Implement user authentication with JWT tokens",
+    codebase_context="FastAPI application with PostgreSQL database",
+    github_repo_url="https://github.com/your-org/your-repo.git",  # GitHub repository
+    thread_id="thread_003"
+)
+
+# For private repositories, ensure GitHub credentials are configured
+result = planner.run(
+    task_description="Add new feature to private repository",
+    codebase_context="Private company codebase",
+    github_repo_url="https://github.com/private-org/private-repo.git",
+    thread_id="thread_004"
+)
+
+# Check if sandbox was used
+if result.get("sandbox_id"):
+    print(f"Used Daytona sandbox: {result['sandbox_id']}")
+    print(f"Repository cloned to: {result.get('codebase_path', 'N/A')}")
+else:
+    print("Used local codebase analysis")
+```
+
+### Fallback Behavior
+
+The planner supports multiple modes with automatic fallback:
+
+1. **Daytona Sandbox Mode**: If `github_repo_url` is provided and Daytona is configured
+2. **Local Path Mode**: If `codebase_path` is provided
+3. **Default Mode**: Falls back to default local path
+
+```python
+# Priority order:
+# 1. Daytona sandbox (if github_repo_url provided and Daytona available)
+# 2. Custom local path (if codebase_path provided)
+# 3. Default local path (fallback)
+
+result = planner.run(
+    task_description="Implement feature",
+    github_repo_url="https://github.com/user/repo.git",  # Highest priority
+    codebase_path="/custom/local/path",  # Ignored if sandbox succeeds
+    # Falls back to default if both fail
+)
+```
+
 ### Integration with Implementor
 
 ```python
@@ -183,6 +232,15 @@ OPENAI_API_KEY=your_openai_key
 LANGFUSE_SECRET_KEY=your_langfuse_secret
 LANGFUSE_PUBLIC_KEY=your_langfuse_public
 LANGFUSE_HOST=https://cloud.langfuse.com
+
+# Optional: Daytona Sandbox Configuration (for GitHub repository analysis)
+DAYTONA_API_KEY=your_daytona_api_key
+DAYTONA_API_URL=https://app.daytona.io/api
+DAYTONA_TARGET=us
+
+# Optional: GitHub Authentication (for private repositories)
+GITHUB_USERNAME=your_github_username
+GITHUB_TOKEN=your_github_personal_access_token
 ```
 
 ### Model Configuration

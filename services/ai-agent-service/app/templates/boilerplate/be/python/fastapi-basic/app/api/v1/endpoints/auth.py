@@ -16,20 +16,16 @@ security = HTTPBearer()
 
 
 @router.post("/login", response_model=UserToken)
-async def login(
-    user_login: UserLogin,
-    db: AsyncSession = Depends(get_db)
-):
+async def login(user_login: UserLogin, db: AsyncSession = Depends(get_db)):
     """
     User login endpoint.
-    
+
     Returns access and refresh tokens for valid credentials.
     """
     try:
         auth_service = AuthService(db)
         tokens = await auth_service.authenticate_user(
-            email=user_login.email,
-            password=user_login.password
+            email=user_login.email, password=user_login.password
         )
         return tokens
     except AuthenticationException as e:
@@ -42,8 +38,7 @@ async def login(
 
 @router.post("/refresh", response_model=UserToken)
 async def refresh_token(
-    token_refresh: UserTokenRefresh,
-    db: AsyncSession = Depends(get_db)
+    token_refresh: UserTokenRefresh, db: AsyncSession = Depends(get_db)
 ):
     """
     Refresh access token using refresh token.
@@ -63,13 +58,10 @@ async def refresh_token(
 
 
 @router.post("/logout")
-async def logout(
-    token: str = Depends(security),
-    db: AsyncSession = Depends(get_db)
-):
+async def logout(token: str = Depends(security), db: AsyncSession = Depends(get_db)):
     """
     User logout endpoint.
-    
+
     Invalidates the current access token.
     """
     try:
@@ -85,8 +77,7 @@ async def logout(
 
 @router.post("/verify-token")
 async def verify_token(
-    token: str = Depends(security),
-    db: AsyncSession = Depends(get_db)
+    token: str = Depends(security), db: AsyncSession = Depends(get_db)
 ):
     """
     Verify if the provided token is valid.
@@ -94,10 +85,6 @@ async def verify_token(
     try:
         auth_service = AuthService(db)
         user = await auth_service.get_current_user(token.credentials)
-        return {
-            "valid": True,
-            "user_id": user.id,
-            "email": user.email
-        }
+        return {"valid": True, "user_id": user.id, "email": user.email}
     except AuthenticationException:
         return {"valid": False}

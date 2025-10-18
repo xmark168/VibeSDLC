@@ -228,9 +228,11 @@ class JavaScriptTypeScriptAnalyzer(LanguageAnalyzer):
             )
 
             return {
-                "language": Language.TYPESCRIPT.value
-                if file_path.suffix in [".ts", ".tsx"]
-                else Language.JAVASCRIPT.value,
+                "language": (
+                    Language.TYPESCRIPT.value
+                    if file_path.suffix in [".ts", ".tsx"]
+                    else Language.JAVASCRIPT.value
+                ),
                 "path": str(file_path),
                 "classes": classes,
                 "functions": functions,
@@ -241,9 +243,11 @@ class JavaScriptTypeScriptAnalyzer(LanguageAnalyzer):
 
         except Exception as e:
             return {
-                "language": Language.TYPESCRIPT.value
-                if file_path.suffix in [".ts", ".tsx"]
-                else Language.JAVASCRIPT.value,
+                "language": (
+                    Language.TYPESCRIPT.value
+                    if file_path.suffix in [".ts", ".tsx"]
+                    else Language.JAVASCRIPT.value
+                ),
                 "path": str(file_path),
                 "error": str(e),
                 "classes": [],

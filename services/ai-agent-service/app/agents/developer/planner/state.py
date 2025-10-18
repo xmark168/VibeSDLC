@@ -73,6 +73,18 @@ class ImplementationPlan(BaseModel):
     assumptions: list[str] = Field(default_factory=list)
 
 
+class WebSearchResults(BaseModel):
+    """Kết quả web search từ Tavily."""
+
+    performed: bool = False
+    queries: list[str] = Field(default_factory=list)
+    results: list[dict[str, Any]] = Field(default_factory=list)
+    summary: str = ""
+    search_time: float = 0.0
+    reason_for_search: str = ""
+    reason_for_skip: str = ""
+
+
 class PlannerState(BaseModel):
     """State cho Planner Agent workflow."""
 
@@ -81,8 +93,13 @@ class PlannerState(BaseModel):
     codebase_context: str = ""
     codebase_path: str = ""  # Dynamic codebase path for analysis (empty = use default)
 
+    # Daytona Sandbox Integration
+    sandbox_id: str = ""  # ID của Daytona sandbox instance
+    github_repo_url: str = ""  # URL của GitHub repository cần clone vào sandbox
+
     # Phase outputs
     task_requirements: TaskRequirements = Field(default_factory=TaskRequirements)
+    websearch_results: WebSearchResults = Field(default_factory=WebSearchResults)
     codebase_analysis: CodebaseAnalysis = Field(default_factory=CodebaseAnalysis)
     dependency_mapping: DependencyMapping = Field(default_factory=DependencyMapping)
     implementation_plan: ImplementationPlan = Field(default_factory=ImplementationPlan)
@@ -91,6 +108,7 @@ class PlannerState(BaseModel):
     current_phase: Literal[
         "initialize",
         "parse_task",
+        "websearch",
         "analyze_codebase",
         "map_dependencies",
         "generate_plan",

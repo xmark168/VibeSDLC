@@ -25,6 +25,7 @@ langfuse = Langfuse(
     host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com"),
 )
 
+
 def print_separator():
     """Print a visual separator."""
     print("\n" + "=" * 80 + "\n")
@@ -34,21 +35,25 @@ def print_final_summary(state_data: Dict[str, Any]) -> None:
     """In tóm tắt kết quả cuối cùng với format dễ đọc."""
     import textwrap
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("📊 KẾT QUẢ CUỐI CÙNG - GATHERER AGENT")
-    print("="*80)
+    print("=" * 80)
 
     # Brief info
     if "brief" in state_data and state_data["brief"]:
         brief = state_data["brief"]
         print(f"\n✅ PRODUCT BRIEF: {brief.get('product_name', 'N/A')}")
-        print(f"   Status: {'⚠️  Chưa hoàn chỉnh' if state_data.get('incomplete_flag') else '✓ Hoàn chỉnh'}")
+        print(
+            f"   Status: {'⚠️  Chưa hoàn chỉnh' if state_data.get('incomplete_flag') else '✓ Hoàn chỉnh'}"
+        )
         print(f"   Confidence: {state_data.get('confidence', 0):.2f}")
         print(f"   Score: {state_data.get('score', 0):.2f}")
 
     # Statistics
     print(f"\n📈 THỐNG KÊ:")
-    print(f"   • Số lần lặp: {state_data.get('iteration_count', 0)}/{state_data.get('max_iterations', 0)}")
+    print(
+        f"   • Số lần lặp: {state_data.get('iteration_count', 0)}/{state_data.get('max_iterations', 0)}"
+    )
     print(f"   • Số lần retry: {state_data.get('retry_count', 0)}")
     print(f"   • Tổng messages: {len(state_data.get('messages', []))}")
     print(f"   • Số gaps còn lại: {len(state_data.get('gaps', []))}")
@@ -61,12 +66,12 @@ def print_final_summary(state_data: Dict[str, Any]) -> None:
         print(f"\n   🏷️  Tên sản phẩm: {brief.get('product_name', 'N/A')}")
 
         print(f"\n   📝 Mô tả:")
-        desc = brief.get('description', 'N/A')
+        desc = brief.get("description", "N/A")
         for line in textwrap.wrap(desc, width=70):
             print(f"      {line}")
 
         print(f"\n   👥 Đối tượng mục tiêu ({len(brief.get('target_audience', []))}):")
-        for i, audience in enumerate(brief.get('target_audience', []), 1):
+        for i, audience in enumerate(brief.get("target_audience", []), 1):
             wrapped_lines = textwrap.wrap(audience, width=70)
             for j, line in enumerate(wrapped_lines):
                 if j == 0:
@@ -75,7 +80,7 @@ def print_final_summary(state_data: Dict[str, Any]) -> None:
                     print(f"         {line}")
 
         print(f"\n   ⚙️  Tính năng chính ({len(brief.get('key_features', []))}):")
-        for i, feature in enumerate(brief.get('key_features', []), 1):
+        for i, feature in enumerate(brief.get("key_features", []), 1):
             wrapped_lines = textwrap.wrap(feature, width=70)
             for j, line in enumerate(wrapped_lines):
                 if j == 0:
@@ -84,7 +89,7 @@ def print_final_summary(state_data: Dict[str, Any]) -> None:
                     print(f"         {line}")
 
         print(f"\n   💡 Lợi ích ({len(brief.get('benefits', []))}):")
-        for i, benefit in enumerate(brief.get('benefits', []), 1):
+        for i, benefit in enumerate(brief.get("benefits", []), 1):
             wrapped_lines = textwrap.wrap(benefit, width=70)
             for j, line in enumerate(wrapped_lines):
                 if j == 0:
@@ -92,9 +97,9 @@ def print_final_summary(state_data: Dict[str, Any]) -> None:
                 else:
                     print(f"         {line}")
 
-        if brief.get('competitors'):
+        if brief.get("competitors"):
             print(f"\n   🏆 Đối thủ cạnh tranh ({len(brief.get('competitors', []))}):")
-            for i, competitor in enumerate(brief.get('competitors', []), 1):
+            for i, competitor in enumerate(brief.get("competitors", []), 1):
                 wrapped_lines = textwrap.wrap(competitor, width=70)
                 for j, line in enumerate(wrapped_lines):
                     if j == 0:
@@ -102,15 +107,15 @@ def print_final_summary(state_data: Dict[str, Any]) -> None:
                     else:
                         print(f"         {line}")
 
-        if brief.get('completeness_note'):
+        if brief.get("completeness_note"):
             print(f"\n   ℹ️  Ghi chú:")
-            for line in textwrap.wrap(brief.get('completeness_note', ''), width=70):
+            for line in textwrap.wrap(brief.get("completeness_note", ""), width=70):
                 print(f"      {line}")
 
     # Gaps remaining
-    if state_data.get('gaps'):
+    if state_data.get("gaps"):
         print(f"\n⚠️  CÁC GAPS CÒN THIẾU ({len(state_data['gaps'])}):")
-        for i, gap in enumerate(state_data['gaps'], 1):
+        for i, gap in enumerate(state_data["gaps"], 1):
             wrapped_lines = textwrap.wrap(gap, width=70)
             for j, line in enumerate(wrapped_lines):
                 if j == 0:
@@ -118,9 +123,9 @@ def print_final_summary(state_data: Dict[str, Any]) -> None:
                 else:
                     print(f"      {line}")
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print(f"✅ HOÀN THÀNH - Workflow status: {state_data.get('status', 'unknown')}")
-    print("="*80 + "\n")
+    print("=" * 80 + "\n")
 
 
 def test_gatherer_agent():
@@ -268,25 +273,25 @@ def test_vision_agent():
         "target_audience": [
             "Sinh viên: Cần quản lý lịch học, bài tập, dự án nhóm để tối ưu thời gian học tập.",
             "Nhân viên văn phòng: Quản lý công việc hàng ngày, dự án nhóm, giảm áp lực deadline.",
-            "Freelancer: Theo dõi nhiều dự án, khách hàng cùng lúc, cần hỗ trợ ra quyết định và nhắc nhở thông minh."
+            "Freelancer: Theo dõi nhiều dự án, khách hàng cùng lúc, cần hỗ trợ ra quyết định và nhắc nhở thông minh.",
         ],
         "key_features": [
             "Quản lý công việc: Tạo, sắp xếp, theo dõi tiến độ các nhiệm vụ cá nhân hoặc nhóm.",
             "Quản lý dự án: Lập kế hoạch, phân chia công việc, theo dõi tiến độ dự án.",
             "Thông báo deadline: Nhắc nhở thông minh về các mốc thời gian quan trọng, giúp không bỏ lỡ công việc.",
             "Chatbot hỗ trợ: Chatbot AI tư vấn, trả lời câu hỏi, đề xuất giải pháp tối ưu cho công việc.",
-            "[Suy luận] Phân tích hiệu suất: AI đánh giá hiệu quả làm việc, đề xuất cải tiến dựa trên dữ liệu sử dụng."
+            "[Suy luận] Phân tích hiệu suất: AI đánh giá hiệu quả làm việc, đề xuất cải tiến dựa trên dữ liệu sử dụng.",
         ],
         "benefits": [
             "Tiết kiệm thời gian nhờ tự động hóa các tác vụ quản lý công việc và dự án.",
             "Tăng hiệu suất làm việc thông qua nhắc nhở deadline và phân tích hiệu suất cá nhân.",
             "Hỗ trợ ra quyết định nhanh chóng với chatbot AI tư vấn và đề xuất giải pháp.",
-            "Giảm căng thẳng quản lý nhờ giao diện trực quan, hiện đại, dễ sử dụng."
+            "Giảm căng thẳng quản lý nhờ giao diện trực quan, hiện đại, dễ sử dụng.",
         ],
         "competitors": [
             "Trello: Nền tảng quản lý dự án phổ biến với giao diện Kanban, mạnh về cộng tác nhóm nhưng chưa tích hợp sâu AI. SmartTask nổi bật nhờ tính năng AI hỗ trợ ra quyết định và giao diện hiện đại."
         ],
-        "completeness_note": "Brief đã tổng hợp đầy đủ các phần chính dựa trên thông tin cung cấp. Một số chi tiết về công nghệ AI sử dụng và điểm khác biệt sâu hơn với đối thủ được suy luận hợp lý dựa trên ngữ cảnh. Nếu cần bổ sung chi tiết về workflow, AI engine hoặc trải nghiệm người dùng, cần thêm thông tin từ stakeholder."
+        "completeness_note": "Brief đã tổng hợp đầy đủ các phần chính dựa trên thông tin cung cấp. Một số chi tiết về công nghệ AI sử dụng và điểm khác biệt sâu hơn với đối thủ được suy luận hợp lý dựa trên ngữ cảnh. Nếu cần bổ sung chi tiết về workflow, AI engine hoặc trải nghiệm người dùng, cần thêm thông tin từ stakeholder.",
     }
 
     # Generate session and user IDs
@@ -318,6 +323,7 @@ def test_vision_agent():
     except Exception as e:
         print(f"\nError during execution: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -342,7 +348,7 @@ def test_backlog_agent():
             "Tăng cường hiệu quả thông qua tự động hóa.",
             "Cung cấp thông tin hữu ích một cách kịp thời.",
             "Đảm bảo tính bảo mật và riêng tư của dữ liệu.",
-            "Tạo cảm giác thân thiện và dễ tiếp cận cho người dùng."
+            "Tạo cảm giác thân thiện và dễ tiếp cận cho người dùng.",
         ],
         "problem_summary": "Người dùng gặp khó khăn trong việc quản lý công việc và dự án một cách hiệu quả, dẫn đến giảm năng suất và gia tăng căng thẳng. Cần một giải pháp tích hợp AI để tối ưu hóa quy trình và cung cấp hỗ trợ thông minh.",
         "audience_segments": [
@@ -352,13 +358,13 @@ def test_backlog_agent():
                 "needs": [
                     "Quản lý thời gian hiệu quả.",
                     "Theo dõi tiến độ học tập.",
-                    "Nhận nhắc nhở về deadline."
+                    "Nhận nhắc nhở về deadline.",
                 ],
                 "pain_points": [
                     "Khó khăn trong việc tổ chức công việc.",
                     "Áp lực từ deadline.",
-                    "Thiếu công cụ hỗ trợ học tập thông minh."
-                ]
+                    "Thiếu công cụ hỗ trợ học tập thông minh.",
+                ],
             },
             {
                 "name": "Nhân viên văn phòng",
@@ -366,13 +372,13 @@ def test_backlog_agent():
                 "needs": [
                     "Quản lý công việc hiệu quả.",
                     "Giảm áp lực từ deadline.",
-                    "Hỗ trợ ra quyết định nhanh chóng."
+                    "Hỗ trợ ra quyết định nhanh chóng.",
                 ],
                 "pain_points": [
                     "Quá tải công việc.",
                     "Khó khăn trong việc theo dõi tiến độ nhóm.",
-                    "Thiếu công cụ hỗ trợ thông minh."
-                ]
+                    "Thiếu công cụ hỗ trợ thông minh.",
+                ],
             },
             {
                 "name": "Freelancer",
@@ -380,25 +386,25 @@ def test_backlog_agent():
                 "needs": [
                     "Quản lý nhiều dự án hiệu quả.",
                     "Nhận hỗ trợ ra quyết định.",
-                    "Theo dõi deadline thông minh."
+                    "Theo dõi deadline thông minh.",
                 ],
                 "pain_points": [
                     "Khó khăn trong việc tổ chức công việc.",
                     "Thiếu sự hỗ trợ từ công cụ thông minh.",
-                    "Áp lực từ khách hàng và deadline."
-                ]
-            }
+                    "Áp lực từ khách hàng và deadline.",
+                ],
+            },
         ],
         "scope_capabilities": [
             "Tự động hóa quy trình quản lý công việc.",
             "Phân tích hiệu suất làm việc của người dùng.",
             "Hỗ trợ ra quyết định thông qua AI.",
-            "Cung cấp giao diện thân thiện và hiện đại."
+            "Cung cấp giao diện thân thiện và hiện đại.",
         ],
         "scope_non_goals": [
             "Không hỗ trợ tích hợp với các nền tảng quản lý công việc khác trong phiên bản đầu tiên.",
             "Không cung cấp tính năng phân tích chuyên sâu cho các dự án lớn.",
-            "Không hỗ trợ đa ngôn ngữ ngoài tiếng Anh trong phiên bản đầu tiên."
+            "Không hỗ trợ đa ngôn ngữ ngoài tiếng Anh trong phiên bản đầu tiên.",
         ],
         "functional_requirements": [
             {
@@ -408,13 +414,13 @@ def test_backlog_agent():
                 "user_stories": [
                     "As a student, I want to create tasks for my assignments, so that I can manage my deadlines.",
                     "As an office worker, I want to organize my daily tasks, so that I can improve my productivity.",
-                    "As a freelancer, I want to track tasks for different projects, so that I can meet client expectations."
+                    "As a freelancer, I want to track tasks for different projects, so that I can meet client expectations.",
                 ],
                 "acceptance_criteria": [
                     "Người dùng có thể tạo nhiệm vụ với tiêu đề, mô tả và ngày hoàn thành.",
                     "Nhiệm vụ được lưu và đồng bộ hóa trong vòng 2 giây.",
-                    "Hiển thị thông báo lỗi nếu tiêu đề nhiệm vụ bị bỏ trống."
-                ]
+                    "Hiển thị thông báo lỗi nếu tiêu đề nhiệm vụ bị bỏ trống.",
+                ],
             },
             {
                 "name": "Quản lý dự án",
@@ -423,45 +429,45 @@ def test_backlog_agent():
                 "user_stories": [
                     "As a student, I want to create group projects, so that I can coordinate with my teammates.",
                     "As an office worker, I want to manage team projects, so that I can ensure deadlines are met.",
-                    "As a freelancer, I want to organize projects for different clients, so that I can deliver quality work."
+                    "As a freelancer, I want to organize projects for different clients, so that I can deliver quality work.",
                 ],
                 "acceptance_criteria": [
                     "Người dùng có thể tạo dự án với các nhiệm vụ con.",
                     "Dự án có thể được chia sẻ với các thành viên nhóm.",
-                    "Hiển thị tiến độ tổng quan của dự án."
-                ]
-            }
+                    "Hiển thị tiến độ tổng quan của dự án.",
+                ],
+            },
         ],
         "performance_requirements": [
             "Thời gian phản hồi của hệ thống dưới 2 giây cho các thao tác cơ bản.",
-            "Hệ thống hỗ trợ tối đa 10,000 người dùng đồng thời."
+            "Hệ thống hỗ trợ tối đa 10,000 người dùng đồng thời.",
         ],
         "security_requirements": [
             "Dữ liệu người dùng được mã hóa cả khi truyền tải và lưu trữ.",
             "Xác thực hai yếu tố cho tài khoản người dùng.",
-            "Hệ thống tuân thủ các tiêu chuẩn bảo mật quốc tế."
+            "Hệ thống tuân thủ các tiêu chuẩn bảo mật quốc tế.",
         ],
         "ux_requirements": [
             "Giao diện trực quan, dễ sử dụng.",
             "Hỗ trợ trên cả nền tảng web và di động.",
-            "Tối ưu hóa cho trải nghiệm người dùng mới."
+            "Tối ưu hóa cho trải nghiệm người dùng mới.",
         ],
         "dependencies": [
             "Dịch vụ AI để phân tích hiệu suất.",
             "Hệ thống lưu trữ dữ liệu đám mây.",
-            "API để tích hợp với các công cụ lịch hiện có."
+            "API để tích hợp với các công cụ lịch hiện có.",
         ],
         "risks": [
             "Khả năng tích hợp AI không đạt kỳ vọng.",
             "Cạnh tranh mạnh từ các sản phẩm đã có trên thị trường.",
-            "Rủi ro bảo mật dữ liệu người dùng."
+            "Rủi ro bảo mật dữ liệu người dùng.",
         ],
         "assumptions": [
             "Người dùng có kết nối internet ổn định.",
             "Người dùng có kiến thức cơ bản về sử dụng ứng dụng quản lý công việc.",
-            "Dịch vụ AI sẽ hoạt động ổn định và chính xác."
+            "Dịch vụ AI sẽ hoạt động ổn định và chính xác.",
         ],
-        "product_name": "SmartWork"
+        "product_name": "SmartWork",
     }
 
     # Generate session and user IDs
@@ -498,15 +504,17 @@ def test_backlog_agent():
 
         if final_state:
             print(f"\n✅ STATUS: {final_state.get('status', 'unknown')}")
-            print(f"   Loops: {final_state.get('current_loop', 0)}/{final_state.get('max_loops', 0)}")
+            print(
+                f"   Loops: {final_state.get('current_loop', 0)}/{final_state.get('max_loops', 0)}"
+            )
             print(f"   Readiness Score: {final_state.get('readiness_score', 0):.2f}")
 
             # Print backlog items count
-            if final_state.get('backlog_items'):
-                items = final_state['backlog_items']
-                epics = [i for i in items if i.get('type') == 'Epic']
-                stories = [i for i in items if i.get('type') == 'User Story']
-                tasks = [i for i in items if i.get('type') == 'Task']
+            if final_state.get("backlog_items"):
+                items = final_state["backlog_items"]
+                epics = [i for i in items if i.get("type") == "Epic"]
+                stories = [i for i in items if i.get("type") == "User Story"]
+                tasks = [i for i in items if i.get("type") == "Task"]
 
                 print(f"\n📋 BACKLOG ITEMS:")
                 print(f"   - Epics: {len(epics)}")
@@ -515,9 +523,9 @@ def test_backlog_agent():
                 print(f"   Total: {len(items)}")
 
             # Print product backlog if finalized
-            if final_state.get('product_backlog'):
+            if final_state.get("product_backlog"):
                 print("\n✅ PRODUCT BACKLOG FINALIZED:")
-                backlog = final_state['product_backlog']
+                backlog = final_state["product_backlog"]
                 print(json.dumps(backlog, ensure_ascii=False, indent=2))
 
             print(f"\n📝 Full Result:")
@@ -530,6 +538,7 @@ def test_backlog_agent():
     except Exception as e:
         print(f"\nError during execution: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -557,7 +566,7 @@ def test_priority_agent():
             "total_tasks": 2,
             "total_subtasks": 4,
             "total_story_points": 92,
-            "total_estimate_hours": 26.0
+            "total_estimate_hours": 26.0,
         },
         "items": [
             # Epic 1
@@ -575,7 +584,7 @@ def test_priority_agent():
                 "dependencies": [],
                 "labels": ["core", "ai", "scheduling"],
                 "task_type": None,
-                "business_value": "Delivers the main value proposition of TaskMaster Pro by saving users time and boosting productivity through intelligent automation."
+                "business_value": "Delivers the main value proposition of TaskMaster Pro by saving users time and boosting productivity through intelligent automation.",
             },
             {
                 "id": "EPIC-002",
@@ -591,7 +600,7 @@ def test_priority_agent():
                 "dependencies": [],
                 "labels": ["core", "task-management"],
                 "task_type": None,
-                "business_value": "Empowers users to manage their workload efficiently and avoid missing deadlines by structuring tasks clearly."
+                "business_value": "Empowers users to manage their workload efficiently and avoid missing deadlines by structuring tasks clearly.",
             },
             {
                 "id": "EPIC-003",
@@ -607,7 +616,7 @@ def test_priority_agent():
                 "dependencies": [],
                 "labels": ["productivity", "focus"],
                 "task_type": None,
-                "business_value": "Helps users stay focused, reduce stress, and improve work efficiency through guided work sessions."
+                "business_value": "Helps users stay focused, reduce stress, and improve work efficiency through guided work sessions.",
             },
             {
                 "id": "EPIC-004",
@@ -623,7 +632,7 @@ def test_priority_agent():
                 "dependencies": [],
                 "labels": ["sync", "multi-platform"],
                 "task_type": None,
-                "business_value": "Ensures users always have access to their latest tasks and schedules, regardless of device."
+                "business_value": "Ensures users always have access to their latest tasks and schedules, regardless of device.",
             },
             {
                 "id": "EPIC-005",
@@ -639,7 +648,7 @@ def test_priority_agent():
                 "dependencies": [],
                 "labels": ["security", "authentication"],
                 "task_type": None,
-                "business_value": "Builds user trust and meets compliance requirements by safeguarding sensitive data."
+                "business_value": "Builds user trust and meets compliance requirements by safeguarding sensitive data.",
             },
             # User Stories for Epic 1
             {
@@ -657,12 +666,12 @@ def test_priority_agent():
                     "Given a new task is added, When it has a closer deadline than others, Then it appears higher in the list",
                     "Given user marks a task as important, When viewing the list, Then the important task is prioritized accordingly",
                     "Given multiple tasks have the same priority or deadline, When viewing the list, Then tasks are sorted by creation time or user preference",
-                    "Given user overrides AI prioritization, When viewing the list, Then the user-defined order is respected"
+                    "Given user overrides AI prioritization, When viewing the list, Then the user-defined order is respected",
                 ],
                 "dependencies": [],
                 "labels": ["ai", "scheduling", "student"],
                 "task_type": None,
-                "business_value": "Helps students avoid missing deadlines and focus on high-priority work."
+                "business_value": "Helps students avoid missing deadlines and focus on high-priority work.",
             },
             {
                 "id": "US-009",
@@ -677,12 +686,12 @@ def test_priority_agent():
                 "acceptance_criteria": [
                     "Given user wants to change task order, When user drags and drops a task, Then the new order is saved and reflected in the list",
                     "Given user overrides AI, When viewing the list, Then AI suggestions are not applied to overridden tasks",
-                    "Given user resets overrides, When confirmed, Then AI prioritization is restored"
+                    "Given user resets overrides, When confirmed, Then AI prioritization is restored",
                 ],
                 "dependencies": [],
                 "labels": ["ai", "scheduling", "student"],
                 "task_type": None,
-                "business_value": "Gives users control over their workflow and increases trust in the system."
+                "business_value": "Gives users control over their workflow and increases trust in the system.",
             },
             {
                 "id": "US-002",
@@ -699,12 +708,12 @@ def test_priority_agent():
                     "Given user accepts a suggested time, When the time arrives, Then a notification is sent to start the task",
                     "Given user ignores a suggestion, When rescheduling, Then AI adapts future suggestions accordingly",
                     "Given user has no activity history, When viewing suggestions, Then system prompts user to manually set preferred times or uses default recommendations",
-                    "Given user repeatedly rejects all suggestions, When viewing future suggestions, Then AI reduces frequency or asks for feedback"
+                    "Given user repeatedly rejects all suggestions, When viewing future suggestions, Then AI reduces frequency or asks for feedback",
                 ],
                 "dependencies": [],
                 "labels": ["ai", "scheduling", "office-worker"],
                 "task_type": None,
-                "business_value": "Boosts productivity by aligning work with user’s natural high-performance periods."
+                "business_value": "Boosts productivity by aligning work with user’s natural high-performance periods.",
             },
             {
                 "id": "US-003",
@@ -722,12 +731,12 @@ def test_priority_agent():
                     "Given user deletes a task, When confirmed, Then the task is removed from the list",
                     "Given user tries to create a task with missing required fields, When submitting, Then an error message is shown",
                     "Given user organizes tasks, When moving a task to a different list or category, Then the change is reflected in the UI",
-                    "Given server error occurs during task creation, When user submits, Then user is notified and can retry"
+                    "Given server error occurs during task creation, When user submits, Then user is notified and can retry",
                 ],
                 "dependencies": ["US-001", "US-002"],
                 "labels": ["ai", "reminder"],
                 "task_type": None,
-                "business_value": "Enables users to keep track of all their responsibilities in one place."
+                "business_value": "Enables users to keep track of all their responsibilities in one place.",
             },
             {
                 "id": "US-004",
@@ -743,12 +752,12 @@ def test_priority_agent():
                     "Given user creates a large task, When AI detects complexity, Then subtasks are generated automatically",
                     "Given subtasks are created, When user views the task, Then subtasks are displayed with individual deadlines",
                     "Given user completes a subtask, When progress is updated, Then parent task progress reflects the change",
-                    "Given AI cannot analyze the task, When breakdown fails, Then user is notified of the failure"
+                    "Given AI cannot analyze the task, When breakdown fails, Then user is notified of the failure",
                 ],
                 "dependencies": ["US-003"],
                 "labels": ["ai", "task-management"],
                 "task_type": None,
-                "business_value": "Reduces overwhelm and increases completion rates for complex projects."
+                "business_value": "Reduces overwhelm and increases completion rates for complex projects.",
             },
             {
                 "id": "US-012",
@@ -763,12 +772,12 @@ def test_priority_agent():
                 "acceptance_criteria": [
                     "Given AI fails to generate subtasks, When user is notified, Then user can manually create subtasks",
                     "Given user creates or edits subtasks manually, When saved, Then changes are reflected in the parent task",
-                    "Given user ignores notification, When returning later, Then manual subtask creation is still available"
+                    "Given user ignores notification, When returning later, Then manual subtask creation is still available",
                 ],
                 "dependencies": ["US-004"],
                 "labels": ["task-management", "notification"],
                 "task_type": None,
-                "business_value": "Ensures users can organize their work even when AI fails, improving reliability."
+                "business_value": "Ensures users can organize their work even when AI fails, improving reliability.",
             },
             {
                 "id": "US-010",
@@ -783,12 +792,12 @@ def test_priority_agent():
                 "acceptance_criteria": [
                     "Given subtasks are generated by AI, When user edits a subtask, Then changes are saved and reflected in the parent task",
                     "Given user deletes a subtask, When confirmed, Then subtask is removed and progress is updated",
-                    "Given user adds a new subtask, When saved, Then it appears in the list with a deadline"
+                    "Given user adds a new subtask, When saved, Then it appears in the list with a deadline",
                 ],
                 "dependencies": ["US-004"],
                 "labels": ["task-management", "ai"],
                 "task_type": None,
-                "business_value": "Allows users to personalize their workflow and increases flexibility."
+                "business_value": "Allows users to personalize their workflow and increases flexibility.",
             },
             {
                 "id": "US-005",
@@ -803,12 +812,12 @@ def test_priority_agent():
                 "acceptance_criteria": [
                     "Given user starts focus mode, When timer is running, Then notifications are blocked",
                     "Given focus session ends, When timer completes, Then user receives a break notification",
-                    "Given user pauses focus mode, When resumed, Then timer continues from where it left off"
+                    "Given user pauses focus mode, When resumed, Then timer continues from where it left off",
                 ],
                 "dependencies": ["US-004"],
                 "labels": ["focus", "productivity"],
                 "task_type": None,
-                "business_value": "Improves user concentration and helps maintain work-life balance."
+                "business_value": "Improves user concentration and helps maintain work-life balance.",
             },
             {
                 "id": "US-006",
@@ -824,12 +833,12 @@ def test_priority_agent():
                     "Given user accesses dashboard, When data is loaded, Then completed tasks and focus sessions are displayed visually as bar charts",
                     "Given user completes tasks, When dashboard is refreshed, Then stats update in real-time",
                     "Given data fails to load, When accessing dashboard, Then user is notified and can retry",
-                    "Given user views dashboard, When selecting a time range, Then data is filtered accordingly"
+                    "Given user views dashboard, When selecting a time range, Then data is filtered accordingly",
                 ],
                 "dependencies": [],
                 "labels": ["productivity", "dashboard"],
                 "task_type": None,
-                "business_value": "Motivates users to improve by providing actionable insights."
+                "business_value": "Motivates users to improve by providing actionable insights.",
             },
             {
                 "id": "US-013",
@@ -845,12 +854,12 @@ def test_priority_agent():
                     "Given user views trends, When selecting a time range, Then line charts display productivity over time",
                     "Given data fails to refresh, When user requests update, Then user is notified and can retry",
                     "Given user selects chart type, When switching between bar and line charts, Then data is displayed accordingly",
-                    "Given server error occurs, When loading trends, Then user receives error message"
+                    "Given server error occurs, When loading trends, Then user receives error message",
                 ],
                 "dependencies": ["US-006"],
                 "labels": ["dashboard", "analytics"],
                 "task_type": None,
-                "business_value": "Helps users understand and improve productivity patterns."
+                "business_value": "Helps users understand and improve productivity patterns.",
             },
             {
                 "id": "US-007",
@@ -868,12 +877,12 @@ def test_priority_agent():
                     "Given a conflict occurs, When syncing, Then user is prompted to resolve the conflict",
                     "Given sync fails partially, When retry is attempted, Then user is notified of which items failed and can retry",
                     "Given sync latency occurs, When syncing, Then user sees a loading indicator until sync completes",
-                    "Given user is offline for an extended period, When reconnecting, Then system merges changes and prompts for conflict resolution if needed"
+                    "Given user is offline for an extended period, When reconnecting, Then system merges changes and prompts for conflict resolution if needed",
                 ],
                 "dependencies": [],
                 "labels": ["sync", "multi-platform"],
                 "task_type": None,
-                "business_value": "Ensures seamless workflow regardless of device or location."
+                "business_value": "Ensures seamless workflow regardless of device or location.",
             },
             {
                 "id": "US-011",
@@ -891,12 +900,12 @@ def test_priority_agent():
                     "Given user is offline for a long time, When reconnecting, Then system ensures all changes are merged and no data is lost",
                     "Given sync fails partially, When retry is attempted, Then user is notified of which items failed and can retry",
                     "Given sync latency occurs, When syncing, Then user sees a loading indicator until sync completes",
-                    "Given user is offline for an extended period, When reconnecting, Then system merges changes and prompts for conflict resolution if needed"
+                    "Given user is offline for an extended period, When reconnecting, Then system merges changes and prompts for conflict resolution if needed",
                 ],
                 "dependencies": ["US-007"],
                 "labels": ["sync", "error-handling"],
                 "task_type": None,
-                "business_value": "Protects user data integrity and improves trust in multi-platform sync."
+                "business_value": "Protects user data integrity and improves trust in multi-platform sync.",
             },
             {
                 "id": "US-008",
@@ -914,12 +923,12 @@ def test_priority_agent():
                     "Given user logs out, When action is confirmed, Then session is terminated and access is revoked",
                     "Given sync fails partially, When retry is attempted, Then user is notified of which items failed and can retry",
                     "Given sync latency occurs, When syncing, Then user sees a loading indicator until sync completes",
-                    "Given user is offline for an extended period, When reconnecting, Then system merges changes and prompts for conflict resolution if needed"
+                    "Given user is offline for an extended period, When reconnecting, Then system merges changes and prompts for conflict resolution if needed",
                 ],
                 "dependencies": [],
                 "labels": ["authentication", "security"],
                 "task_type": None,
-                "business_value": "Protects user data and builds trust in the application."
+                "business_value": "Protects user data and builds trust in the application.",
             },
             {
                 "id": "TASK-001",
@@ -934,12 +943,12 @@ def test_priority_agent():
                 "acceptance_criteria": [
                     "All sensitive user data is encrypted at rest",
                     "Data transmitted between client and server uses HTTPS/TLS",
-                    "Encryption keys are securely managed"
+                    "Encryption keys are securely managed",
                 ],
                 "dependencies": [],
                 "labels": ["infrastructure", "security"],
                 "task_type": "Infrastructure",
-                "business_value": None
+                "business_value": None,
             },
             {
                 "id": "TASK-002",
@@ -954,12 +963,12 @@ def test_priority_agent():
                 "acceptance_criteria": [
                     "Cloud storage is provisioned and accessible",
                     "Sync API endpoints are available for CRUD operations",
-                    "API supports real-time updates via websockets or similar"
+                    "API supports real-time updates via websockets or similar",
                 ],
                 "dependencies": [],
                 "labels": ["infrastructure", "sync"],
                 "task_type": "Infrastructure",
-                "business_value": None
+                "business_value": None,
             },
             {
                 "id": "SUB-001",
@@ -974,12 +983,12 @@ def test_priority_agent():
                 "acceptance_criteria": [
                     "Algorithm calculates priority score for each task",
                     "Tasks are sorted by score in UI",
-                    "Priority adapts as deadlines or importance change"
+                    "Priority adapts as deadlines or importance change",
                 ],
                 "dependencies": [],
                 "labels": ["ai", "backend"],
                 "task_type": "Development",
-                "business_value": None
+                "business_value": None,
             },
             {
                 "id": "SUB-002",
@@ -994,12 +1003,12 @@ def test_priority_agent():
                 "acceptance_criteria": [
                     "Module analyzes user task completion history",
                     "Suggests time slots for new tasks",
-                    "Learns and adapts suggestions over time"
+                    "Learns and adapts suggestions over time",
                 ],
                 "dependencies": [],
                 "labels": ["ai", "backend"],
                 "task_type": "Development",
-                "business_value": None
+                "business_value": None,
             },
             {
                 "id": "SUB-003",
@@ -1015,12 +1024,12 @@ def test_priority_agent():
                     "POST /tasks creates a new task",
                     "GET /tasks returns all tasks for user",
                     "PUT /tasks/:id updates task details",
-                    "DELETE /tasks/:id removes task"
+                    "DELETE /tasks/:id removes task",
                 ],
                 "dependencies": [],
                 "labels": ["ai", "backend"],
                 "task_type": "Development",
-                "business_value": None
+                "business_value": None,
             },
             {
                 "id": "SUB-004",
@@ -1035,12 +1044,12 @@ def test_priority_agent():
                 "acceptance_criteria": [
                     "AI detects large/complex tasks",
                     "Subtasks are generated with clear descriptions",
-                    "Each subtask has an assigned deadline" 
+                    "Each subtask has an assigned deadline",
                 ],
                 "dependencies": [],
                 "labels": ["ai", "backend"],
                 "task_type": "Development",
-                "business_value": None
+                "business_value": None,
             },
             {
                 "id": "SUB-005",
@@ -1055,12 +1064,12 @@ def test_priority_agent():
                 "acceptance_criteria": [
                     "UI displays timer and session controls",
                     "Notifications are blocked during session",
-                    "Break alerts are shown after session ends"
+                    "Break alerts are shown after session ends",
                 ],
                 "dependencies": [],
                 "labels": ["frontend", "focus"],
                 "task_type": "Development",
-                "business_value": None
+                "business_value": None,
             },
             {
                 "id": "SUB-006",
@@ -1075,12 +1084,12 @@ def test_priority_agent():
                 "acceptance_criteria": [
                     "Dashboard displays completed tasks and focus sessions",
                     "Trends are shown with charts/graphs",
-                    "Data updates in real-time"
+                    "Data updates in real-time",
                 ],
                 "dependencies": [],
                 "labels": ["frontend", "dashboard"],
                 "task_type": "Development",
-                "business_value": None
+                "business_value": None,
             },
             {
                 "id": "SUB-007",
@@ -1095,12 +1104,12 @@ def test_priority_agent():
                 "acceptance_criteria": [
                     "Frontend receives updates via websockets",
                     "Changes are reflected instantly across devices",
-                    "Handles offline/online transitions gracefully"
+                    "Handles offline/online transitions gracefully",
                 ],
                 "dependencies": ["TASK-002"],
-                "labels": ["frontend", "sync"]  ,
+                "labels": ["frontend", "sync"],
                 "task_type": "Development",
-                "business_value": None
+                "business_value": None,
             },
             {
                 "id": "SUB-008",
@@ -1115,12 +1124,12 @@ def test_priority_agent():
                 "acceptance_criteria": [
                     "POST /auth/register creates new user with encrypted password",
                     "POST /auth/login authenticates user and returns session token",
-                    "Sessions expire after configurable period"
+                    "Sessions expire after configurable period",
                 ],
                 "dependencies": [],
                 "labels": ["backend", "authentication"],
                 "task_type": "Development",
-                "business_value": None
+                "business_value": None,
             },
             {
                 "id": "SUB-009",
@@ -1135,14 +1144,14 @@ def test_priority_agent():
                 "acceptance_criteria": [
                     "Sensitive fields are encrypted in database",
                     "Encryption keys are stored securely",
-                    "Data is decrypted only for authenticated sessions"
+                    "Data is decrypted only for authenticated sessions",
                 ],
                 "dependencies": [],
                 "labels": ["backend", "security"],
                 "task_type": "Development",
-                "business_value": None
+                "business_value": None,
             },
-        ]
+        ],
     }
 
     # Generate session and user IDs
@@ -1180,24 +1189,31 @@ def test_priority_agent():
 
         if final_state:
             print(f"\n✅ STATUS: {final_state.get('status', 'unknown')}")
-            print(f"   Loops: {final_state.get('current_loop', 0)}/{final_state.get('max_loops', 0)}")
+            print(
+                f"   Loops: {final_state.get('current_loop', 0)}/{final_state.get('max_loops', 0)}"
+            )
             print(f"   Readiness Score: {final_state.get('readiness_score', 0):.2f}")
 
             # Print prioritized backlog
-            if final_state.get('prioritized_backlog'):
-                items = final_state['prioritized_backlog']
+            if final_state.get("prioritized_backlog"):
+                items = final_state["prioritized_backlog"]
                 print(f"\n📋 PRIORITIZED BACKLOG:")
                 print(f"   Total Items: {len(items)}")
 
                 # Show top 10 prioritized items
                 print(f"\n   Top 10 Prioritized Items:")
-                sorted_items = sorted([i for i in items if i.get('rank')], key=lambda x: x.get('rank', 999))
+                sorted_items = sorted(
+                    [i for i in items if i.get("rank")],
+                    key=lambda x: x.get("rank", 999),
+                )
                 for item in sorted_items[:10]:
-                    print(f"   {item.get('rank', 'N/A')}. [{item.get('type')}] {item.get('id')}: {item.get('title', '')[:60]}...")
+                    print(
+                        f"   {item.get('rank', 'N/A')}. [{item.get('type')}] {item.get('id')}: {item.get('title', '')[:60]}..."
+                    )
 
             # Print sprints
-            if final_state.get('sprints'):
-                sprints = final_state['sprints']
+            if final_state.get("sprints"):
+                sprints = final_state["sprints"]
                 print(f"\n🏃 SPRINT PLAN:")
                 print(f"   Total Sprints: {len(sprints)}")
 
@@ -1205,13 +1221,15 @@ def test_priority_agent():
                     print(f"\n   Sprint {sprint.get('sprint_number')}:")
                     print(f"      Goal: {sprint.get('sprint_goal', 'N/A')}")
                     print(f"      Items: {len(sprint.get('assigned_items', []))}")
-                    print(f"      Velocity Plan: {sprint.get('velocity_plan', 0)} points")
+                    print(
+                        f"      Velocity Plan: {sprint.get('velocity_plan', 0)} points"
+                    )
                     print(f"      Status: {sprint.get('status', 'N/A')}")
 
             # Print sprint plan if finalized
-            if final_state.get('sprint_plan'):
+            if final_state.get("sprint_plan"):
                 print("\n✅ SPRINT PLAN FINALIZED:")
-                sprint_plan = final_state['sprint_plan']
+                sprint_plan = final_state["sprint_plan"]
                 print(json.dumps(sprint_plan, ensure_ascii=False, indent=2))
 
             print(f"\n📝 Full Result:")
@@ -1224,6 +1242,7 @@ def test_priority_agent():
     except Exception as e:
         print(f"\nError during execution: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -1236,11 +1255,11 @@ def test_priority_agent():
 
 def test_full_po_pipeline():
     """Test toàn bộ Product Owner Agent pipeline: Gatherer → Vision → Backlog → Priority."""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("🚀 TESTING FULL PRODUCT OWNER AGENT PIPELINE")
-    print("="*80)
+    print("=" * 80)
     print("\nPipeline: Gatherer Agent → Vision Agent → Backlog Agent → Priority Agent")
-    print("="*80 + "\n")
+    print("=" * 80 + "\n")
 
     # Generate session and user IDs
     session_id = f"test-full-po-{uuid.uuid4()}"
@@ -1307,11 +1326,11 @@ USP của TaskMaster Pro: AI cá nhân hóa sâu, học thói quen làm việc v
             for key, value in gatherer_result.items():
                 gatherer_state = value
 
-        if not gatherer_state or not gatherer_state.get('brief'):
+        if not gatherer_state or not gatherer_state.get("brief"):
             print("❌ Gatherer Agent failed to produce product brief")
             return False
 
-        product_brief = gatherer_state['brief']
+        product_brief = gatherer_state["brief"]
         print(f"\n✅ Gatherer Agent completed!")
         print(f"   Product: {product_brief.get('product_name', 'N/A')}")
         print(f"   Score: {gatherer_state.get('score', 0):.2f}")
@@ -1341,9 +1360,15 @@ USP của TaskMaster Pro: AI cá nhân hóa sâu, học thói quen làm việc v
         product_vision = vision_result
         print(f"\n✅ Vision Agent completed!")
         print(f"   Product: {product_vision.get('product_name', 'N/A')}")
-        print(f"   Vision Statement: {product_vision.get('draft_vision_statement', 'N/A')[:80]}...")
-        print(f"   Audience Segments: {len(product_vision.get('audience_segments', []))}")
-        print(f"   Functional Requirements: {len(product_vision.get('functional_requirements', []))}")
+        print(
+            f"   Vision Statement: {product_vision.get('draft_vision_statement', 'N/A')[:80]}..."
+        )
+        print(
+            f"   Audience Segments: {len(product_vision.get('audience_segments', []))}"
+        )
+        print(
+            f"   Functional Requirements: {len(product_vision.get('functional_requirements', []))}"
+        )
 
         # ========================================================================
         # STAGE 3: BACKLOG AGENT
@@ -1367,16 +1392,22 @@ USP của TaskMaster Pro: AI cá nhân hóa sâu, học thói quen làm việc v
             for key, value in backlog_result.items():
                 backlog_state = value
 
-        if not backlog_state or not backlog_state.get('product_backlog'):
+        if not backlog_state or not backlog_state.get("product_backlog"):
             print("❌ Backlog Agent failed to produce product backlog")
             return False
 
-        product_backlog = backlog_state['product_backlog']
+        product_backlog = backlog_state["product_backlog"]
         print(f"\n✅ Backlog Agent completed!")
-        print(f"   Product: {product_backlog.get('metadata', {}).get('product_name', 'N/A')}")
-        print(f"   Total Items: {product_backlog.get('metadata', {}).get('total_items', 0)}")
+        print(
+            f"   Product: {product_backlog.get('metadata', {}).get('product_name', 'N/A')}"
+        )
+        print(
+            f"   Total Items: {product_backlog.get('metadata', {}).get('total_items', 0)}"
+        )
         print(f"   Epics: {product_backlog.get('metadata', {}).get('total_epics', 0)}")
-        print(f"   User Stories: {product_backlog.get('metadata', {}).get('total_user_stories', 0)}")
+        print(
+            f"   User Stories: {product_backlog.get('metadata', {}).get('total_user_stories', 0)}"
+        )
         print(f"   Tasks: {product_backlog.get('metadata', {}).get('total_tasks', 0)}")
         print(f"   Readiness Score: {backlog_state.get('readiness_score', 0):.2f}")
 
@@ -1403,11 +1434,21 @@ USP của TaskMaster Pro: AI cá nhân hóa sâu, học thói quen làm việc v
 
         sprint_plan = priority_result
         print(f"\n✅ Priority Agent completed!")
-        print(f"   Product: {sprint_plan.get('metadata', {}).get('product_name', 'N/A')}")
-        print(f"   Total Sprints: {sprint_plan.get('metadata', {}).get('total_sprints', 0)}")
-        print(f"   Total Items Assigned: {sprint_plan.get('metadata', {}).get('total_items_assigned', 0)}")
-        print(f"   Total Story Points: {sprint_plan.get('metadata', {}).get('total_story_points', 0)}")
-        print(f"   Readiness Score: {sprint_plan.get('metadata', {}).get('readiness_score', 0):.2f}")
+        print(
+            f"   Product: {sprint_plan.get('metadata', {}).get('product_name', 'N/A')}"
+        )
+        print(
+            f"   Total Sprints: {sprint_plan.get('metadata', {}).get('total_sprints', 0)}"
+        )
+        print(
+            f"   Total Items Assigned: {sprint_plan.get('metadata', {}).get('total_items_assigned', 0)}"
+        )
+        print(
+            f"   Total Story Points: {sprint_plan.get('metadata', {}).get('total_story_points', 0)}"
+        )
+        print(
+            f"   Readiness Score: {sprint_plan.get('metadata', {}).get('readiness_score', 0):.2f}"
+        )
 
         # ========================================================================
         # FINAL SUMMARY
@@ -1423,35 +1464,58 @@ USP của TaskMaster Pro: AI cá nhân hóa sâu, học thói quen làm việc v
 
         print(f"\n   2️⃣  Vision Agent:")
         print(f"      ✓ Product Vision: {product_vision.get('product_name', 'N/A')}")
-        print(f"      ✓ Audience Segments: {len(product_vision.get('audience_segments', []))}")
-        print(f"      ✓ Functional Requirements: {len(product_vision.get('functional_requirements', []))}")
+        print(
+            f"      ✓ Audience Segments: {len(product_vision.get('audience_segments', []))}"
+        )
+        print(
+            f"      ✓ Functional Requirements: {len(product_vision.get('functional_requirements', []))}"
+        )
 
         print(f"\n   3️⃣  Backlog Agent:")
-        print(f"      ✓ Product Backlog: {product_backlog.get('metadata', {}).get('product_name', 'N/A')}")
-        print(f"      ✓ Total Items: {product_backlog.get('metadata', {}).get('total_items', 0)}")
-        print(f"      ✓ Epics: {product_backlog.get('metadata', {}).get('total_epics', 0)}")
-        print(f"      ✓ User Stories: {product_backlog.get('metadata', {}).get('total_user_stories', 0)}")
+        print(
+            f"      ✓ Product Backlog: {product_backlog.get('metadata', {}).get('product_name', 'N/A')}"
+        )
+        print(
+            f"      ✓ Total Items: {product_backlog.get('metadata', {}).get('total_items', 0)}"
+        )
+        print(
+            f"      ✓ Epics: {product_backlog.get('metadata', {}).get('total_epics', 0)}"
+        )
+        print(
+            f"      ✓ User Stories: {product_backlog.get('metadata', {}).get('total_user_stories', 0)}"
+        )
 
         print(f"\n   4️⃣  Priority Agent:")
-        print(f"      ✓ Sprint Plan: {sprint_plan.get('metadata', {}).get('product_name', 'N/A')}")
-        print(f"      ✓ Total Sprints: {sprint_plan.get('metadata', {}).get('total_sprints', 0)}")
-        print(f"      ✓ Total Items Assigned: {sprint_plan.get('metadata', {}).get('total_items_assigned', 0)}")
-        print(f"      ✓ Story Points: {sprint_plan.get('metadata', {}).get('total_story_points', 0)}")
+        print(
+            f"      ✓ Sprint Plan: {sprint_plan.get('metadata', {}).get('product_name', 'N/A')}"
+        )
+        print(
+            f"      ✓ Total Sprints: {sprint_plan.get('metadata', {}).get('total_sprints', 0)}"
+        )
+        print(
+            f"      ✓ Total Items Assigned: {sprint_plan.get('metadata', {}).get('total_items_assigned', 0)}"
+        )
+        print(
+            f"      ✓ Story Points: {sprint_plan.get('metadata', {}).get('total_story_points', 0)}"
+        )
 
         print(f"\n🎯 FINAL OUTPUT - Sprint Plan Ready for Dev Agent!")
-        print(f"   Product: {sprint_plan.get('metadata', {}).get('product_name', 'N/A')}")
+        print(
+            f"   Product: {sprint_plan.get('metadata', {}).get('product_name', 'N/A')}"
+        )
         print(f"   Status: {sprint_plan.get('metadata', {}).get('status', 'N/A')}")
         print(f"   Created: {sprint_plan.get('metadata', {}).get('created_at', 'N/A')}")
 
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("✅ ALL STAGES COMPLETED SUCCESSFULLY!")
-        print("="*80 + "\n")
+        print("=" * 80 + "\n")
 
         return True
 
     except Exception as e:
         print(f"\n❌ Error during pipeline execution: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -1548,14 +1612,20 @@ def test_po_agent():
 
             # Try to find final outputs in messages
             print(f"\n💬 Message Summary:")
-            for i, msg in enumerate(messages[-5:], start=len(messages)-4):
-                msg_type = msg.get("type", "unknown") if isinstance(msg, dict) else "unknown"
+            for i, msg in enumerate(messages[-5:], start=len(messages) - 4):
+                msg_type = (
+                    msg.get("type", "unknown") if isinstance(msg, dict) else "unknown"
+                )
                 content = msg.get("content", "") if isinstance(msg, dict) else str(msg)
-                content_preview = content[:100] + "..." if len(str(content)) > 100 else content
+                content_preview = (
+                    content[:100] + "..." if len(str(content)) > 100 else content
+                )
                 print(f"   [{i}] {msg_type}: {content_preview}")
 
             print(f"\n✅ PO Agent đã hoàn thành workflow!")
-            print(f"   Check Langfuse để xem chi tiết traces và outputs của từng sub agent.")
+            print(
+                f"   Check Langfuse để xem chi tiết traces và outputs của từng sub agent."
+            )
 
         else:
             print("No result from PO Agent")
@@ -1566,6 +1636,7 @@ def test_po_agent():
     except Exception as e:
         print(f"\n❌ Error during execution: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 

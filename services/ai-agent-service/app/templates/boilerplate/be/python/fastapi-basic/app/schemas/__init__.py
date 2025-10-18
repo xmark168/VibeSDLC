@@ -19,7 +19,7 @@ from app.schemas.user import (
 
 __all__ = [
     "UserBase",
-    "UserCreate", 
+    "UserCreate",
     "UserUpdate",
     "UserUpdatePassword",
     "UserResponse",

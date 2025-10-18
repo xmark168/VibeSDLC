@@ -6,7 +6,7 @@ These wrappers add detailed metadata and timing information for better observabi
 
 Usage:
     Instead of importing tools directly, import from this module to get traced versions:
-    
+
     from .traced_tools import (
         traced_load_codebase_tool,
         traced_create_feature_branch_tool,
@@ -21,11 +21,12 @@ from langchain_core.tools import BaseTool
 
 try:
     from app.utils.langfuse_tracer import trace_span
+
     LANGFUSE_AVAILABLE = True
 except ImportError:
     LANGFUSE_AVAILABLE = False
     from contextlib import contextmanager
-    
+
     @contextmanager
     def trace_span(*args, **kwargs):
         yield None
@@ -34,25 +35,26 @@ except ImportError:
 def trace_tool_execution(tool_name: str, tool_type: str = "tool"):
     """
     Decorator to add Langfuse tracing to tool executions.
-    
+
     Args:
         tool_name: Name of the tool for tracing
         tool_type: Type of tool (e.g., "codebase", "git", "generation")
     """
+
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             if not LANGFUSE_AVAILABLE:
                 return func(*args, **kwargs)
-            
+
             start_time = time.time()
-            
+
             # Extract meaningful parameters for logging
             input_data = {
                 "args": [str(arg)[:100] for arg in args],  # Truncate long args
                 "kwargs": {k: str(v)[:100] for k, v in kwargs.items()},
             }
-            
+
             with trace_span(
                 name=f"tool_{tool_name}",
                 metadata={
@@ -65,7 +67,7 @@ def trace_tool_execution(tool_name: str, tool_type: str = "tool"):
                 try:
                     result = func(*args, **kwargs)
                     execution_time = time.time() - start_time
-                    
+
                     # Log success
                     if span:
                         # Try to extract meaningful output info
@@ -74,20 +76,20 @@ def trace_tool_execution(tool_name: str, tool_type: str = "tool"):
                             output_info["result_preview"] = result[:200]
                         elif isinstance(result, dict):
                             output_info["result_keys"] = list(result.keys())
-                        
+
                         span.end(
                             output=output_info,
                             metadata={
                                 "execution_time_seconds": execution_time,
                                 "status": "success",
-                            }
+                            },
                         )
-                    
+
                     return result
-                    
+
                 except Exception as e:
                     execution_time = time.time() - start_time
-                    
+
                     # Log error
                     if span:
                         span.end(
@@ -98,12 +100,13 @@ def trace_tool_execution(tool_name: str, tool_type: str = "tool"):
                                 "status": "error",
                                 "error_type": type(e).__name__,
                                 "error_message": str(e),
-                            }
+                            },
                         )
-                    
+
                     raise
-        
+
         return wrapper
+
     return decorator
 
 
@@ -138,6 +141,7 @@ from .stack_tools import (
 
 # Create traced versions of critical tools
 # These wrap the original tools with Langfuse tracing
+
 
 # Codebase tools
 @trace_tool_execution("load_codebase", "codebase")
@@ -262,4 +266,3 @@ __all__ = [
     "detect_stack_tool",
     "retrieve_boilerplate_tool",
 ]
-

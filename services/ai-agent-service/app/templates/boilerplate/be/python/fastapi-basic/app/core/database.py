@@ -30,25 +30,23 @@ AsyncSessionLocal = async_sessionmaker(
 
 class Base(DeclarativeBase):
     """Base class for all database models."""
-    
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     created_at: Mapped[DateTime] = mapped_column(
-        DateTime(timezone=True), 
-        server_default=func.now(),
-        nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
-        nullable=False
+        nullable=False,
     )
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
     Dependency to get database session.
-    
+
     Usage:
         @app.get("/users/")
         async def get_users(db: AsyncSession = Depends(get_db)):
@@ -70,7 +68,7 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         # Import all models here to ensure they are registered
         from app.models import user  # noqa: F401
-        
+
         # Create all tables
         await conn.run_sync(Base.metadata.create_all)
 

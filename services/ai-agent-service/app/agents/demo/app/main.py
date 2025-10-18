@@ -25,32 +25,41 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     print("🚀 Starting FastAPI application...")
     await init_db()
     print("✅ Database initialized")
-    
+
     yield
-    
+
     # Shutdown
     print("🛑 Shutting down FastAPI application...")
 
 
 def create_app() -> FastAPI:
     """Create and configure FastAPI application."""
-    
+
     app = FastAPI(
         title=settings.PROJECT_NAME,
         description="FastAPI Basic Application Template",
         version="0.1.0",
-        openapi_url=f"{settings.API_V1_STR}/openapi.json" if settings.ENVIRONMENT != "production" else None,
-        docs_url=f"{settings.API_V1_STR}/docs" if settings.ENVIRONMENT != "production" else None,
-        redoc_url=f"{settings.API_V1_STR}/redoc" if settings.ENVIRONMENT != "production" else None,
+        openapi_url=(
+            f"{settings.API_V1_STR}/openapi.json"
+            if settings.ENVIRONMENT != "production"
+            else None
+        ),
+        docs_url=(
+            f"{settings.API_V1_STR}/docs"
+            if settings.ENVIRONMENT != "production"
+            else None
+        ),
+        redoc_url=(
+            f"{settings.API_V1_STR}/redoc"
+            if settings.ENVIRONMENT != "production"
+            else None
+        ),
         lifespan=lifespan,
     )
 
     # Security middleware
     if settings.ALLOWED_HOSTS:
-        app.add_middleware(
-            TrustedHostMiddleware, 
-            allowed_hosts=settings.ALLOWED_HOSTS
-        )
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.ALLOWED_HOSTS)
 
     # CORS middleware
     app.add_middleware(
@@ -66,7 +75,9 @@ def create_app() -> FastAPI:
 
     # Exception handlers
     @app.exception_handler(AppException)
-    async def app_exception_handler(request: Request, exc: AppException) -> JSONResponse:
+    async def app_exception_handler(
+        request: Request, exc: AppException
+    ) -> JSONResponse:
         return JSONResponse(
             status_code=exc.status_code,
             content={
@@ -77,7 +88,9 @@ def create_app() -> FastAPI:
         )
 
     @app.exception_handler(HTTPException)
-    async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    async def http_exception_handler(
+        request: Request, exc: HTTPException
+    ) -> JSONResponse:
         return JSONResponse(
             status_code=exc.status_code,
             content={
@@ -94,7 +107,7 @@ def create_app() -> FastAPI:
         return {
             "status": "healthy",
             "environment": settings.ENVIRONMENT,
-            "version": "0.1.0"
+            "version": "0.1.0",
         }
 
     return app

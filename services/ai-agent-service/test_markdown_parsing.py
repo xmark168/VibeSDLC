@@ -21,9 +21,9 @@ def clean_llm_output(llm_output: str) -> str:
 
 def test_markdown_parsing():
     """Test các trường hợp khác nhau của LLM response"""
-    
+
     # Test case 1: JSON wrapped trong ```json
-    test1 = '''```json
+    test1 = """```json
 {
     "functional_requirements": [
         "User-facing functionality required",
@@ -43,10 +43,10 @@ def test_markdown_parsing():
     "assumptions": ["Development environment is set up"],
     "constraints": ["Must follow existing patterns"]
 }
-```'''
+```"""
 
     # Test case 2: JSON wrapped trong ```
-    test2 = '''```
+    test2 = """```
 {
     "files_to_create": [
         {
@@ -73,10 +73,10 @@ def test_markdown_parsing():
         }
     ]
 }
-```'''
+```"""
 
     # Test case 3: Plain JSON (không có markdown)
-    test3 = '''{
+    test3 = """{
     "complexity_score": 8,
     "plan_type": "complex",
     "approach": {
@@ -95,11 +95,11 @@ def test_markdown_parsing():
     ],
     "estimated_hours": 12.5,
     "story_points": 8
-}'''
+}"""
 
     print("🧪 Testing markdown parsing logic...")
     print("=" * 60)
-    
+
     # Test case 1
     print("\n📝 Test Case 1: JSON wrapped in ```json")
     print(f"Raw input: {test1[:50]}...")
@@ -107,12 +107,14 @@ def test_markdown_parsing():
     print(f"Cleaned: {cleaned1[:50]}...")
     try:
         parsed1 = json.loads(cleaned1)
-        print(f"✅ SUCCESS: Parsed {len(parsed1.get('functional_requirements', []))} requirements")
+        print(
+            f"✅ SUCCESS: Parsed {len(parsed1.get('functional_requirements', []))} requirements"
+        )
         print(f"   - Requirements: {parsed1.get('functional_requirements', [])}")
         print(f"   - Criteria: {len(parsed1.get('acceptance_criteria', []))} items")
     except json.JSONDecodeError as e:
         print(f"❌ FAILED: {e}")
-    
+
     # Test case 2
     print("\n📝 Test Case 2: JSON wrapped in ```")
     print(f"Raw input: {test2[:50]}...")
@@ -120,13 +122,15 @@ def test_markdown_parsing():
     print(f"Cleaned: {cleaned2[:50]}...")
     try:
         parsed2 = json.loads(cleaned2)
-        print(f"✅ SUCCESS: Parsed {len(parsed2.get('files_to_create', []))} files to create")
+        print(
+            f"✅ SUCCESS: Parsed {len(parsed2.get('files_to_create', []))} files to create"
+        )
         print(f"   - Files to create: {len(parsed2.get('files_to_create', []))}")
         print(f"   - Files to modify: {len(parsed2.get('files_to_modify', []))}")
         print(f"   - API endpoints: {len(parsed2.get('api_endpoints', []))}")
     except json.JSONDecodeError as e:
         print(f"❌ FAILED: {e}")
-    
+
     # Test case 3
     print("\n📝 Test Case 3: Plain JSON (no markdown)")
     print(f"Raw input: {test3[:50]}...")
@@ -141,7 +145,7 @@ def test_markdown_parsing():
         print(f"   - Story points: {parsed3.get('story_points')}")
     except json.JSONDecodeError as e:
         print(f"❌ FAILED: {e}")
-    
+
     print("\n" + "=" * 60)
     print("🎯 All test cases completed!")
 

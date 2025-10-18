@@ -76,19 +76,6 @@ def finalize(state: PlannerState) -> PlannerState:
                 "external_dependencies": codebase_analysis.external_dependencies,
                 "internal_dependencies": codebase_analysis.internal_dependencies,
             },
-            # Testing & Quality
-            "quality_assurance": {
-                "testing_requirements": implementation_plan.testing_requirements,
-                "validation_score": state.validation_score,
-                "rollback_plan": implementation_plan.rollback_plan,
-            },
-            # Project Management
-            "project_info": {
-                "estimated_hours": implementation_plan.total_estimated_hours,
-                "story_points": implementation_plan.story_points,
-                "risks": implementation_plan.risks,
-                "assumptions": implementation_plan.assumptions,
-            },
             # Metadata
             "metadata": {
                 "planner_version": "1.0",
@@ -101,9 +88,9 @@ def finalize(state: PlannerState) -> PlannerState:
         # Add subtasks for complex plans
         if implementation_plan.plan_type == "complex":
             final_plan["implementation"]["subtasks"] = implementation_plan.subtasks
-            final_plan["implementation"]["execution_strategy"] = (
-                implementation_plan.execution_strategy
-            )
+            final_plan["implementation"][
+                "execution_strategy"
+            ] = implementation_plan.execution_strategy
 
         # Update state
         state.final_plan = final_plan

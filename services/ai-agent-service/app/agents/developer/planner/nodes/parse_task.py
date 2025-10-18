@@ -128,9 +128,11 @@ def parse_task(state: PlannerState) -> PlannerState:
         # Create TaskRequirements object
         task_requirements = TaskRequirements(
             task_id=task_id,
-            task_title=task_description[:100] + "..."
-            if len(task_description) > 100
-            else task_description,
+            task_title=(
+                task_description[:100] + "..."
+                if len(task_description) > 100
+                else task_description
+            ),
             requirements=requirements,
             acceptance_criteria=acceptance_criteria,
             business_rules=business_rules,

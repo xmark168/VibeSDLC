@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 
 class AppException(Exception):
     """Base application exception."""
-    
+
     def __init__(
         self,
         message: str,
@@ -25,7 +25,7 @@ class AppException(Exception):
 
 class ValidationException(AppException):
     """Validation error exception."""
-    
+
     def __init__(
         self,
         message: str = "Validation failed",
@@ -41,7 +41,7 @@ class ValidationException(AppException):
 
 class AuthenticationException(AppException):
     """Authentication error exception."""
-    
+
     def __init__(
         self,
         message: str = "Authentication failed",
@@ -57,7 +57,7 @@ class AuthenticationException(AppException):
 
 class AuthorizationException(AppException):
     """Authorization error exception."""
-    
+
     def __init__(
         self,
         message: str = "Access denied",
@@ -73,7 +73,7 @@ class AuthorizationException(AppException):
 
 class NotFoundException(AppException):
     """Resource not found exception."""
-    
+
     def __init__(
         self,
         message: str = "Resource not found",
@@ -89,7 +89,7 @@ class NotFoundException(AppException):
 
 class ConflictException(AppException):
     """Resource conflict exception."""
-    
+
     def __init__(
         self,
         message: str = "Resource conflict",
@@ -105,7 +105,7 @@ class ConflictException(AppException):
 
 class RateLimitException(AppException):
     """Rate limit exceeded exception."""
-    
+
     def __init__(
         self,
         message: str = "Rate limit exceeded",
@@ -121,7 +121,7 @@ class RateLimitException(AppException):
 
 class ExternalServiceException(AppException):
     """External service error exception."""
-    
+
     def __init__(
         self,
         message: str = "External service error",

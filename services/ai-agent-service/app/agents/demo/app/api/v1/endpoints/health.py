@@ -19,21 +19,21 @@ async def health_check():
         "status": "healthy",
         "service": settings.PROJECT_NAME,
         "version": "0.1.0",
-        "environment": settings.ENVIRONMENT
+        "environment": settings.ENVIRONMENT,
     }
 
 
 @router.get("/detailed")
 async def detailed_health_check(db: AsyncSession = Depends(get_db)):
     """Detailed health check with database connectivity."""
-    
+
     # Check database connection
     try:
         result = await db.execute(text("SELECT 1"))
         db_status = "healthy" if result.scalar() == 1 else "unhealthy"
     except Exception as e:
         db_status = f"unhealthy: {str(e)}"
-    
+
     return {
         "status": "healthy" if db_status == "healthy" else "degraded",
         "service": settings.PROJECT_NAME,
@@ -41,7 +41,7 @@ async def detailed_health_check(db: AsyncSession = Depends(get_db)):
         "environment": settings.ENVIRONMENT,
         "checks": {
             "database": db_status,
-        }
+        },
     }
 
 

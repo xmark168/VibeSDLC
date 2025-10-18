@@ -25,6 +25,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing_extensions import Self
 from dotenv import load_dotenv
 
+
 # HELPER FUNCTIONS
 def parse_cors(v: Any) -> list[str] | str:
     """Parse CORS origins from various formats."""
@@ -33,6 +34,7 @@ def parse_cors(v: Any) -> list[str] | str:
     elif isinstance(v, list | str):
         return v
     raise ValueError(v)
+
 
 def load_env_file():
     """Load environment-specific .env file with priority."""
@@ -51,15 +53,18 @@ def load_env_file():
             load_dotenv(dotenv_path=env_file)
             print(f"Loaded environment from {env_file}")
             return str(env_file)
-        
+
     return None
+
 
 # Load env file before settings initialization
 ENV_FILE = load_env_file()
 
+
 # SETTINGS CLASS
 class Settings(BaseSettings):
     """Unified application settings with pydantic validation."""
+
     model_config = SettingsConfigDict(
         env_file="../.env",
         env_ignore_empty=True,
@@ -71,7 +76,9 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     DESCRIPTION: str = "VibeSDLC unified services"
     API_V1_STR: str = "/api/v1"
-    ENVIRONMENT: Literal["local", "development", "staging", "production", "test"] = "local"
+    ENVIRONMENT: Literal["local", "development", "staging", "production", "test"] = (
+        "local"
+    )
     DEBUG: bool = False
 
     # SECURITY SETTINGS
@@ -80,9 +87,7 @@ class Settings(BaseSettings):
 
     # CORS SETTINGS
     FRONTEND_HOST: str = "http://localhost:5173"
-    BACKEND_CORS_ORGINS: Annotated[
-        list[AnyUrl] | str, BeforeValidator(parse_cors)
-    ] = []
+    BACKEND_CORS_ORGINS: Annotated[list[AnyUrl] | str, BeforeValidator(parse_cors)] = []
 
     @computed_field
     @property
@@ -91,7 +96,7 @@ class Settings(BaseSettings):
         return [str(origin).rstrip("/") for origin in self.BACKEND_CORS_ORGINS] + [
             self.FRONTEND_HOST
         ]
-    
+
     # DATABASE SETTINGS (from management-service)
     POSTGRES_SERVER: str
     POSTGRES_PORT: int = 5432
@@ -111,7 +116,7 @@ class Settings(BaseSettings):
             port=self.POSTGRES_PORT,
             path=self.POSTGRES_DB,
         )
-    
+
     # EMAIL SETTINGS (from management-service)
     SMTP_TLS: bool = True
     SMTP_SSL: bool = False
@@ -157,7 +162,7 @@ class Settings(BaseSettings):
         if not self.EMAILS_FROM_NAME:
             self.EMAILS_FROM_NAME = self.PROJECT_NAME
         return self
-    
+
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
         """Check if default secrets are being used in production."""
         if value == "changethis":
@@ -169,7 +174,7 @@ class Settings(BaseSettings):
                 warnings.warn(message, stacklevel=1)
             else:
                 raise ValueError(message)
-            
+
     @model_validator(mode="after")
     def _enforce_non_default_secrets(self) -> Self:
         """Enforce that default secrets are not used in production."""
@@ -179,6 +184,7 @@ class Settings(BaseSettings):
             "FIRST_SUPERUSER_PASSWORD", self.FIRST_SUPERUSER_PASSWORD
         )
         return self
-    
+
+
 # SINGLETON INSTANCE
 settings = Settings()

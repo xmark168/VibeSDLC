@@ -20,11 +20,18 @@ from pydantic import BaseModel, Field
 
 class SyncVirtualToDiskInput(BaseModel):
     """Input schema
-     for sync_virtual_to_disk_tool."""
+    for sync_virtual_to_disk_tool."""
+
     working_directory: str = Field(..., description="Root directory to sync files to")
-    file_patterns: List[str] | None = Field(None, description="Optional list of file patterns to sync")
-    overwrite_existing: bool = Field(True, description="Whether to overwrite existing files on disk")
-    create_backup: bool = Field(False, description="Whether to create .bak backup of existing files")
+    file_patterns: List[str] | None = Field(
+        None, description="Optional list of file patterns to sync"
+    )
+    overwrite_existing: bool = Field(
+        True, description="Whether to overwrite existing files on disk"
+    )
+    create_backup: bool = Field(
+        False, description="Whether to create .bak backup of existing files"
+    )
 
 
 @tool(args_schema=SyncVirtualToDiskInput)
@@ -82,9 +89,10 @@ def sync_virtual_to_disk_tool(
         try:
             # Try to get state from DeepAgents context
             import contextvars
+
             # DeepAgents stores state in context vars
             for var in contextvars.copy_context().items():
-                if hasattr(var[1], 'get') and 'files' in var[1]:
+                if hasattr(var[1], "get") and "files" in var[1]:
                     state = var[1]
                     break
         except Exception:
@@ -94,6 +102,7 @@ def sync_virtual_to_disk_tool(
         if state is None:
             try:
                 from deepagents.state import get_current_state
+
                 state = get_current_state()
             except (ImportError, RuntimeError, AttributeError):
                 state = {}
@@ -178,7 +187,9 @@ def sync_virtual_to_disk_tool(
                         )
                     except Exception as backup_error:
                         # Log backup error but continue with sync
-                        print(f"Warning: Failed to create backup for {file_path}: {backup_error}")
+                        print(
+                            f"Warning: Failed to create backup for {file_path}: {backup_error}"
+                        )
 
                 # Create parent directories if needed
                 full_path.parent.mkdir(parents=True, exist_ok=True)
@@ -191,11 +202,15 @@ def sync_virtual_to_disk_tool(
                 total_size_bytes += len(content.encode("utf-8"))
 
             except PermissionError as e:
-                failed_files.append({"file": file_path, "error": f"Permission denied: {str(e)}"})
+                failed_files.append(
+                    {"file": file_path, "error": f"Permission denied: {str(e)}"}
+                )
             except OSError as e:
                 failed_files.append({"file": file_path, "error": f"OS error: {str(e)}"})
             except Exception as e:
-                failed_files.append({"file": file_path, "error": f"Unexpected error: {str(e)}"})
+                failed_files.append(
+                    {"file": file_path, "error": f"Unexpected error: {str(e)}"}
+                )
 
         # Determine overall status
         if failed_files:
@@ -215,13 +230,17 @@ def sync_virtual_to_disk_tool(
 
         # Add summary message
         if status == "success":
-            result["message"] = f"Successfully synced {len(synced_files)} file(s) to disk"
+            result["message"] = (
+                f"Successfully synced {len(synced_files)} file(s) to disk"
+            )
         elif status == "partial":
             result["message"] = (
                 f"Synced {len(synced_files)} file(s), but {len(failed_files)} failed"
             )
         else:
-            result["message"] = f"Failed to sync files. {len(failed_files)} error(s) occurred"
+            result["message"] = (
+                f"Failed to sync files. {len(failed_files)} error(s) occurred"
+            )
 
         return json.dumps(result, indent=2)
 
@@ -268,8 +287,13 @@ def _matches_patterns(file_path: str, patterns: List[str]) -> bool:
 
 class ListVirtualFilesInput(BaseModel):
     """Input schema for list_virtual_files_tool."""
-    show_content: bool = Field(False, description="Whether to show file content preview")
-    max_content_length: int = Field(100, description="Maximum characters to show per file")
+
+    show_content: bool = Field(
+        False, description="Whether to show file content preview"
+    )
+    max_content_length: int = Field(
+        100, description="Maximum characters to show per file"
+    )
 
 
 @tool(args_schema=ListVirtualFilesInput)
@@ -299,9 +323,10 @@ def list_virtual_files_tool(
         try:
             # Try to get state from DeepAgents context
             import contextvars
+
             # DeepAgents stores state in context vars
             for var in contextvars.copy_context().items():
-                if hasattr(var[1], 'get') and 'files' in var[1]:
+                if hasattr(var[1], "get") and "files" in var[1]:
                     state = var[1]
                     break
         except Exception:
@@ -311,6 +336,7 @@ def list_virtual_files_tool(
         if state is None:
             try:
                 from deepagents.state import get_current_state
+
                 state = get_current_state()
             except (ImportError, RuntimeError, AttributeError):
                 state = {}

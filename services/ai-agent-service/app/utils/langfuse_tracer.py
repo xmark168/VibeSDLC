@@ -312,7 +312,9 @@ def log_agent_state(
         if "todos" in state:
             todos = state["todos"]
             metadata["todos_total"] = len(todos)
-            metadata["todos_completed"] = sum(1 for t in todos if t.get("status") == "completed")
+            metadata["todos_completed"] = sum(
+                1 for t in todos if t.get("status") == "completed"
+            )
 
         with trace_span(
             name=f"agent_state_{phase}",

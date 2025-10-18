@@ -18,6 +18,7 @@ from .nodes import (
     finalize,
     generate_plan,
     initialize,
+    initialize_sandbox,
     map_dependencies,
     parse_task,
     validate_plan,
@@ -33,8 +34,8 @@ class PlannerAgent:
     Planner Agent - Phân tích task requirements và tạo detailed implementation plan.
 
     Workflow:
-    START → initialize → parse_task → analyze_codebase → map_dependencies →
-    generate_plan → validate_plan → finalize → END
+    START → initialize → initialize_sandbox → parse_task → analyze_codebase →
+    map_dependencies → generate_plan → validate_plan → finalize → END
 
     Với validation loop: validate_plan có thể loop back đến analyze_codebase
     """
@@ -91,7 +92,11 @@ class PlannerAgent:
 
         # Add nodes
         graph_builder.add_node("initialize", initialize)
+        graph_builder.add_node("initialize_sandbox", initialize_sandbox)
         graph_builder.add_node("parse_task", parse_task)
+        from .nodes.websearch import websearch
+
+        graph_builder.add_node("websearch", websearch)
         graph_builder.add_node("analyze_codebase", analyze_codebase)
         graph_builder.add_node("map_dependencies", map_dependencies)
         graph_builder.add_node("generate_plan", generate_plan)
@@ -100,8 +105,13 @@ class PlannerAgent:
 
         # Add edges
         graph_builder.add_edge(START, "initialize")
-        graph_builder.add_edge("initialize", "parse_task")
-        graph_builder.add_edge("parse_task", "analyze_codebase")
+        graph_builder.add_edge("initialize", "initialize_sandbox")
+        graph_builder.add_edge("initialize_sandbox", "parse_task")
+
+        # Conditional edge từ parse_task
+        graph_builder.add_conditional_edges("parse_task", self.websearch_branch)
+
+        graph_builder.add_edge("websearch", "analyze_codebase")
         graph_builder.add_edge("analyze_codebase", "map_dependencies")
         graph_builder.add_edge("map_dependencies", "generate_plan")
         graph_builder.add_edge("generate_plan", "validate_plan")
@@ -113,6 +123,38 @@ class PlannerAgent:
         # Setup checkpointer
         checkpointer = MemorySaver()
         return graph_builder.compile(checkpointer=checkpointer)
+
+    def websearch_branch(self, state: PlannerState) -> str:
+        """
+        Conditional branch sau parse_task node.
+
+        Logic:
+        - Đánh giá xem có cần web search hay không
+        - Nếu cần → websearch
+        - Nếu không cần → analyze_codebase
+        """
+        from .tools.tavily_search import should_perform_websearch
+
+        task_description = state.task_description
+        task_requirements = state.task_requirements.model_dump()
+        codebase_context = state.codebase_context
+
+        should_search, reason = should_perform_websearch(
+            task_description=task_description,
+            task_requirements=task_requirements,
+            codebase_context=codebase_context,
+        )
+
+        print("\n🔀 WebSearch Branch Decision:")
+        print(f"   Should Search: {should_search}")
+        print(f"   Reason: {reason}")
+
+        if should_search:
+            print("   → Decision: WEBSEARCH")
+            return "websearch"
+        else:
+            print("   → Decision: ANALYZE_CODEBASE (skip websearch)")
+            return "analyze_codebase"
 
     def validate_branch(self, state: PlannerState) -> str:
         """
@@ -153,6 +195,7 @@ class PlannerAgent:
         task_description: str,
         codebase_context: str = "",
         codebase_path: str = "",
+        github_repo_url: str = "",
         thread_id: str | None = None,
     ) -> dict[str, Any]:
         """
@@ -162,6 +205,7 @@ class PlannerAgent:
             task_description: Task description từ product backlog
             codebase_context: Additional codebase context
             codebase_path: Path to codebase for analysis (empty = use default)
+            github_repo_url: GitHub repository URL to clone into Daytona sandbox (empty = use local path)
             thread_id: Thread ID cho checkpointer (để resume)
 
         Returns:
@@ -175,6 +219,7 @@ class PlannerAgent:
             task_description=task_description,
             codebase_context=codebase_context,
             codebase_path=codebase_path,
+            github_repo_url=github_repo_url,
         )
 
         # Build metadata for Langfuse tracing
@@ -238,18 +283,22 @@ class PlannerAgent:
                     "ready_for_implementation": last_node_output.get(
                         "ready_for_implementation", False
                     ),
-                    "task_id": implementation_plan.task_id
-                    if implementation_plan
-                    else "",
-                    "complexity_score": implementation_plan.complexity_score
-                    if implementation_plan
-                    else 0,
-                    "estimated_hours": implementation_plan.total_estimated_hours
-                    if implementation_plan
-                    else 0,
-                    "story_points": implementation_plan.story_points
-                    if implementation_plan
-                    else 0,
+                    "task_id": (
+                        implementation_plan.task_id if implementation_plan else ""
+                    ),
+                    "complexity_score": (
+                        implementation_plan.complexity_score
+                        if implementation_plan
+                        else 0
+                    ),
+                    "estimated_hours": (
+                        implementation_plan.total_estimated_hours
+                        if implementation_plan
+                        else 0
+                    ),
+                    "story_points": (
+                        implementation_plan.story_points if implementation_plan else 0
+                    ),
                     "validation_score": last_node_output.get("validation_score", 0.0),
                     "status": last_node_output.get("status", "unknown"),
                     "iterations": last_node_output.get("current_iteration", 0),

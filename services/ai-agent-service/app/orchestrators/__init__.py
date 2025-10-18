@@ -18,4 +18,3 @@ __all__ = [
     "filter_development_tasks",
     "format_task_as_request",
 ]
-

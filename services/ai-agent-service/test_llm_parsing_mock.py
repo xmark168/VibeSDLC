@@ -8,14 +8,15 @@ import sys
 import os
 
 # Add the app directory to Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '.'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "."))
+
 
 def test_parse_task_logic():
     """Test logic parsing trong parse_task node"""
     print("🧪 Testing parse_task logic...")
-    
+
     # Mock LLM response với markdown wrapper
-    mock_llm_output = '''```json
+    mock_llm_output = """```json
 {
     "functional_requirements": [
         "User-facing functionality required",
@@ -38,7 +39,7 @@ def test_parse_task_logic():
     "assumptions": ["Development environment is properly set up"],
     "constraints": ["Must follow existing patterns", "Performance requirements"]
 }
-```'''
+```"""
 
     # Test cleaning logic
     cleaned_output = mock_llm_output.strip()
@@ -49,7 +50,7 @@ def test_parse_task_logic():
     if cleaned_output.endswith("```"):
         cleaned_output = cleaned_output[:-3]  # Remove trailing ```
     cleaned_output = cleaned_output.strip()
-    
+
     try:
         parsed_data = json.loads(cleaned_output)
         requirements = parsed_data.get("functional_requirements", [])
@@ -58,8 +59,10 @@ def test_parse_task_logic():
         technical_specs = parsed_data.get("technical_specs", {})
         assumptions = parsed_data.get("assumptions", [])
         constraints = parsed_data.get("constraints", [])
-        
-        print(f"✅ parse_task: {len(requirements)} requirements, {len(acceptance_criteria)} criteria")
+
+        print(
+            f"✅ parse_task: {len(requirements)} requirements, {len(acceptance_criteria)} criteria"
+        )
         print(f"   - Business rules: {len(business_rules)} items")
         print(f"   - Technical specs: {len(technical_specs)} items")
         return True
@@ -71,9 +74,9 @@ def test_parse_task_logic():
 def test_analyze_codebase_logic():
     """Test logic parsing trong analyze_codebase node"""
     print("\n🧪 Testing analyze_codebase logic...")
-    
+
     # Mock LLM response với nested structure
-    mock_llm_output = '''```json
+    mock_llm_output = """```json
 {
   "codebase_analysis": {
     "files_to_create": [
@@ -112,7 +115,7 @@ def test_analyze_codebase_logic():
     "internal_dependencies": []
   }
 }
-```'''
+```"""
 
     # Test cleaning logic
     cleaned_output = mock_llm_output.strip()
@@ -123,22 +126,24 @@ def test_analyze_codebase_logic():
     if cleaned_output.endswith("```"):
         cleaned_output = cleaned_output[:-3]
     cleaned_output = cleaned_output.strip()
-    
+
     try:
         parsed_data = json.loads(cleaned_output)
-        
+
         # Handle nested structure if LLM wraps data in "codebase_analysis"
         if "codebase_analysis" in parsed_data:
             analysis_data = parsed_data["codebase_analysis"]
         else:
             analysis_data = parsed_data
-        
+
         files_to_create = analysis_data.get("files_to_create", [])
         files_to_modify = analysis_data.get("files_to_modify", [])
         api_endpoints = analysis_data.get("api_endpoints", [])
         affected_modules = analysis_data.get("affected_modules", [])
-        
-        print(f"✅ analyze_codebase: {len(files_to_create)} files to create, {len(files_to_modify)} files to modify")
+
+        print(
+            f"✅ analyze_codebase: {len(files_to_create)} files to create, {len(files_to_modify)} files to modify"
+        )
         print(f"   - API endpoints: {len(api_endpoints)} items")
         print(f"   - Affected modules: {len(affected_modules)} items")
         return True
@@ -150,9 +155,9 @@ def test_analyze_codebase_logic():
 def test_generate_plan_logic():
     """Test logic parsing trong generate_plan node"""
     print("\n🧪 Testing generate_plan logic...")
-    
+
     # Mock LLM response với approach as string (problematic case)
-    mock_llm_output = '''```json
+    mock_llm_output = """```json
 {
   "complexity_score": 7,
   "plan_type": "complex",
@@ -176,7 +181,7 @@ def test_generate_plan_logic():
   "estimated_hours": 15.5,
   "story_points": 8
 }
-```'''
+```"""
 
     # Test cleaning logic
     cleaned_output = mock_llm_output.strip()
@@ -187,12 +192,12 @@ def test_generate_plan_logic():
     if cleaned_output.endswith("```"):
         cleaned_output = cleaned_output[:-3]
     cleaned_output = cleaned_output.strip()
-    
+
     try:
         parsed_plan = json.loads(cleaned_output)
         complexity_score = parsed_plan.get("complexity_score", 5)
         plan_type = parsed_plan.get("plan_type", "simple")
-        
+
         # Handle approach field - ensure it's a dictionary
         approach_raw = parsed_plan.get("approach", {})
         if isinstance(approach_raw, str):
@@ -210,12 +215,14 @@ def test_generate_plan_logic():
                 "pattern": "Follow existing patterns in codebase",
                 "architecture_alignment": "Aligns with current service-oriented architecture",
             }
-        
+
         llm_steps = parsed_plan.get("implementation_steps", [])
         estimated_hours = parsed_plan.get("estimated_hours", 0)
         story_points = parsed_plan.get("story_points", 0)
-        
-        print(f"✅ generate_plan: complexity {complexity_score}/10, {len(llm_steps)} steps, {estimated_hours}h")
+
+        print(
+            f"✅ generate_plan: complexity {complexity_score}/10, {len(llm_steps)} steps, {estimated_hours}h"
+        )
         print(f"   - Plan type: {plan_type}")
         print(f"   - Approach strategy: {approach['strategy']}")
         print(f"   - Story points: {story_points}")
@@ -229,16 +236,16 @@ def main():
     """Run all tests"""
     print("🚀 Testing LLM parsing logic in planner nodes...")
     print("=" * 60)
-    
+
     results = []
     results.append(test_parse_task_logic())
     results.append(test_analyze_codebase_logic())
     results.append(test_generate_plan_logic())
-    
+
     print("\n" + "=" * 60)
     passed = sum(results)
     total = len(results)
-    
+
     if passed == total:
         print(f"🎉 ALL TESTS PASSED! ({passed}/{total})")
         print("✅ LLM parsing logic is working correctly")
@@ -247,7 +254,7 @@ def main():
         print("✅ Type conversion issues are resolved")
     else:
         print(f"⚠️  SOME TESTS FAILED: {passed}/{total} passed")
-    
+
     return passed == total
 
 

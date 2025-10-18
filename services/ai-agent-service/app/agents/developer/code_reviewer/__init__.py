@@ -33,7 +33,7 @@ agent = create_developer_agent(working_directory="./src")
 # Main agent delegates to code_reviewer:
 result = await agent.ainvoke({
     "messages": [{
-        "role": "user", 
+        "role": "user",
         "content": "Review the authentication implementation"
     }]
 })
@@ -70,4 +70,3 @@ code_reviewer_subagent: SubAgent = {
 }
 
 __all__ = ["code_reviewer_subagent"]
-

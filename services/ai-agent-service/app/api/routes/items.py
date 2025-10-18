@@ -17,7 +17,7 @@ def read_items(
     session: SessionDep, current_user: CurrentUser, skip: int = 0, limit: int = 100
 ) -> Any:
     """
-    
+
     Retrieve items.
     """
 
@@ -78,7 +78,7 @@ async def create_item(
             "description": item.description,
             "owner_id": str(item.owner_id),
             "created_at": datetime.utcnow().isoformat(),
-        }
+        },
     )
 
     return item

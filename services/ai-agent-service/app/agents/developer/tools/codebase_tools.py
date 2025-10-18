@@ -50,7 +50,9 @@ def load_codebase_tool(working_directory: str) -> str:
         }
 
         # Scan directory structure
-        def scan_directory(path: Path, max_depth: int = 3, current_depth: int = 0) -> Dict:
+        def scan_directory(
+            path: Path, max_depth: int = 3, current_depth: int = 0
+        ) -> Dict:
             if current_depth >= max_depth:
                 return {"...": "truncated"}
 
@@ -88,7 +90,9 @@ def load_codebase_tool(working_directory: str) -> str:
                             ".rs",
                         ]:
                             try:
-                                with open(item, "r", encoding="utf-8", errors="ignore") as f:
+                                with open(
+                                    item, "r", encoding="utf-8", errors="ignore"
+                                ) as f:
                                     lines = len(f.readlines())
                                     analysis["total_lines"] += lines
                             except:
@@ -124,7 +128,11 @@ def load_codebase_tool(working_directory: str) -> str:
             key_file = working_dir / pattern
             if key_file.exists():
                 analysis["key_files"].append(
-                    {"file": pattern, "description": description, "size": key_file.stat().st_size}
+                    {
+                        "file": pattern,
+                        "description": description,
+                        "size": key_file.stat().st_size,
+                    }
                 )
 
         # Analyze languages by file extensions
@@ -133,7 +141,8 @@ def load_codebase_tool(working_directory: str) -> str:
             dirs[:] = [
                 d
                 for d in dirs
-                if not d.startswith(".") and d not in ["node_modules", "__pycache__", "venv"]
+                if not d.startswith(".")
+                and d not in ["node_modules", "__pycache__", "venv"]
             ]
 
             for file in files:
@@ -172,7 +181,9 @@ def load_codebase_tool(working_directory: str) -> str:
                 pass
 
         # Check for Python frameworks
-        if (working_dir / "requirements.txt").exists() or (working_dir / "pyproject.toml").exists():
+        if (working_dir / "requirements.txt").exists() or (
+            working_dir / "pyproject.toml"
+        ).exists():
             try:
                 req_files = []
                 if (working_dir / "requirements.txt").exists():
@@ -281,7 +292,9 @@ def index_codebase_tool(codebase_path: str, enable_pgvector: bool = True) -> str
 
                 if file_path.suffix.lower() in code_extensions:
                     try:
-                        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                        with open(
+                            file_path, "r", encoding="utf-8", errors="ignore"
+                        ) as f:
                             content = f.read()
 
                         # Extract meaningful code snippets
@@ -302,7 +315,9 @@ def index_codebase_tool(codebase_path: str, enable_pgvector: bool = True) -> str
             "indexed_files": len(indexed_files),
             "code_snippets": len(code_snippets),
             "files": indexed_files[:10],  # Show first 10 files
-            "sample_snippets": [snippet["content"][:100] + "..." for snippet in code_snippets[:3]],
+            "sample_snippets": [
+                snippet["content"][:100] + "..." for snippet in code_snippets[:3]
+            ],
         }
 
         if enable_pgvector:
@@ -312,7 +327,8 @@ def index_codebase_tool(codebase_path: str, enable_pgvector: bool = True) -> str
 
                 # Initialize LangChain PGVector client
                 client = LangChainPgVectorClient(
-                    collection_name="code_snippets", embedding_model="text-embedding-3-large"
+                    collection_name="code_snippets",
+                    embedding_model="text-embedding-3-large",
                 )
 
                 # Index code snippets using LangChain Documents
@@ -431,7 +447,9 @@ def search_similar_code_tool(
 
     except Exception as e:
         # logger.error(f"Error searching similar code: {e}")
-        return json.dumps({"error": "Search failed", "message": str(e), "query": query}, indent=2)
+        return json.dumps(
+            {"error": "Search failed", "message": str(e), "query": query}, indent=2
+        )
 
 
 def extract_python_snippets(content: str, file_path: str) -> List[Dict[str, Any]]:
@@ -491,7 +509,14 @@ def extract_generic_snippets(content: str, file_path: str) -> List[Dict[str, Any
         # Look for function/class-like patterns
         if any(
             keyword in line.lower()
-            for keyword in ["function", "class", "def ", "public ", "private ", "protected "]
+            for keyword in [
+                "function",
+                "class",
+                "def ",
+                "public ",
+                "private ",
+                "protected ",
+            ]
         ):
             if len(current_snippet) > 1:
                 snippets.append(

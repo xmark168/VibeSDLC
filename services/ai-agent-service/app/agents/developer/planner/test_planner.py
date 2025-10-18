@@ -4,12 +4,16 @@ Test Planner Agent
 Simple test để verify planner agent hoạt động correctly.
 """
 
-import asyncio
+import sys
+from pathlib import Path
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
 from app.agents.developer.planner.agent import PlannerAgent
 
 
-async def test_planner_basic():
+def test_planner_basic():
     """Test basic planner functionality."""
     print("🧪 Testing Planner Agent - Basic Functionality")
     print("=" * 60)
@@ -22,20 +26,20 @@ async def test_planner_basic():
     # Test task description
     task_description = """
     Implement user authentication system with email verification.
-    
+
     Requirements:
     - Users can register with email and password
     - Email verification required before account activation
     - Login with email/password after verification
     - Password reset functionality
-    
+
     Acceptance Criteria:
     - Registration endpoint accepts email, password, confirm_password
     - Verification email sent automatically after registration
     - Users cannot login until email is verified
     - Password reset sends secure reset link to email
     - All endpoints return appropriate error messages
-    
+
     Technical Specs:
     - Use FastAPI for API endpoints
     - PostgreSQL database with SQLModel
@@ -43,13 +47,8 @@ async def test_planner_basic():
     - Email service integration (SMTP or SendGrid)
     """
 
-    codebase_context = (
-        "D:\\capstone project\\VibeSDLC\\services\ai-agent-service\app\agents\\demo"
-    )
-
     try:
         print(f"📝 Task: {task_description[:100]}...")
-        print(f"🏗️  Context: {len(codebase_context)} characters")
         print("\n🚀 Starting planner workflow...")
 
         # Run planner with optional codebase_path
@@ -57,8 +56,7 @@ async def test_planner_basic():
         # codebase_path = r"D:\path\to\your\codebase"
         result = planner.run(
             task_description=task_description,
-            codebase_context=codebase_context,
-            codebase_path="",  # Empty = use default path
+            codebase_path=r"D:\\capstone project\\VibeSDLC\\services\ai-agent-service\app\agents\\demo",  # Empty = use default path
             thread_id="test_thread_001",
         )
 
@@ -114,16 +112,19 @@ async def test_planner_basic():
 
     except Exception as e:
         print(f"❌ Test failed with exception: {e}")
+        import traceback
+
+        traceback.print_exc()
         return {"success": False, "error": str(e)}
 
 
-async def main():
+def main():
     """Run all tests."""
     print("🚀 PLANNER AGENT TESTING SUITE")
     print("=" * 80)
 
     # Test 1: Basic functionality
-    result1 = await test_planner_basic()
+    result1 = test_planner_basic()
 
     # Summary
     print("\n" + "=" * 80)
@@ -131,7 +132,7 @@ async def main():
     print("=" * 80)
 
     tests_passed = 0
-    total_tests = 2
+    total_tests = 1
 
     if result1.get("success"):
         print("✅ Test 1 (Basic): PASSED")
@@ -151,5 +152,5 @@ async def main():
 
 if __name__ == "__main__":
     # Run tests
-    success = asyncio.run(main())
+    success = main()
     exit(0 if success else 1)
