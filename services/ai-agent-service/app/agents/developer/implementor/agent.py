@@ -18,6 +18,7 @@ from typing import Dict, Any
 import os
 import sys
 
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 try:
     from langchain_openai import ChatOpenAI, OpenAI
@@ -68,7 +69,7 @@ if __name__ == "__main__":
     # Direct execution - add current directory to path
     current_dir = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, current_dir)
-    from agents.developer.instructions import get_implementor_instructions
+    # from agents.developer.instructions import get_implementor_instructions
     from tools import (
         load_codebase_tool,
         index_codebase_tool,
@@ -88,7 +89,7 @@ if __name__ == "__main__":
     from subagents import code_generator_subagent
 else:
     # Package import - use relative imports
-    from agents.developer.instructions import get_implementor_instructions
+    # from agents.developer.instructions import get_implementor_instructions
     from .tools import (
         load_codebase_tool,
         index_codebase_tool,
@@ -138,19 +139,19 @@ def create_implementor_agent(
         )
 
     # Get implementor instructions
-    instructions = get_implementor_instructions(
-        working_directory=working_directory,
-        project_type=project_type,
-        enable_pgvector=enable_pgvector,
-        boilerplate_templates_path=boilerplate_templates_path,
-    )
+    # instructions = get_implementor_instructions(
+    #     working_directory=working_directory,
+    #     project_type=project_type,
+    #     enable_pgvector=enable_pgvector,
+    #     boilerplate_templates_path=boilerplate_templates_path,
+    # )
 
 
 
-    llm = ChatOpenAI(
-            model_name=model_name,
-            base_url=AGENT_ROUTER_URL,
-            api_key=AGENT_ROUTER_KEY,
+    llm = ChatGoogleGenerativeAI(
+            model_name="gemini-2.5-flash",
+            # base_url=AGENT_ROUTER_URL,
+            # api_key=AGENT_ROUTER_KEY,
             temperature=0.1,
             max_tokens=None,
             timeout=None,

@@ -90,8 +90,8 @@ if __name__ == "__main__":
     # Direct execution - add current directory to path
     current_dir = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, current_dir)
-    from agents.developer.implementor.subagents import code_generator_subagent
-    from agents.developer.implementor.tools import (
+    from implementor.subagents import code_generator_subagent
+    from implementor.tools import (
         collect_feedback_tool,
         commit_changes_tool,
         create_feature_branch_tool,
@@ -99,19 +99,18 @@ if __name__ == "__main__":
         detect_stack_tool,
         generate_code_tool,
         index_codebase_tool,
-        list_virtual_files_tool,
         load_codebase_tool,
         refine_code_tool,
         retrieve_boilerplate_tool,
         search_similar_code_tool,
         select_integration_strategy_tool,
-        sync_virtual_to_disk_tool,
     )
     from instructions import get_implementor_instructions
+    from instructions_orchestrator import get_developer_orchestrator_instructions
 else:
     # Package import - use relative imports
-    from agents.developer.implementor.subagents import code_generator_subagent
-    from agents.developer.implementor.tools import (
+    from implementor.subagents import code_generator_subagent
+    from implementor.tools import (
         collect_feedback_tool,
         commit_changes_tool,
         create_feature_branch_tool,
@@ -119,13 +118,11 @@ else:
         detect_stack_tool,
         generate_code_tool,
         index_codebase_tool,
-        list_virtual_files_tool,
         load_codebase_tool,
         refine_code_tool,
         retrieve_boilerplate_tool,
         search_similar_code_tool,
         select_integration_strategy_tool,
-        sync_virtual_to_disk_tool,
     )
 
     from .instructions import get_implementor_instructions
@@ -208,9 +205,6 @@ def create_developer_agent(
         load_codebase_tool,
         index_codebase_tool,
         search_similar_code_tool,
-        # Virtual FS sync tools (CRITICAL for Git workflow)
-        sync_virtual_to_disk_tool,
-        list_virtual_files_tool,
         # Stack detection & boilerplate
         detect_stack_tool,
         retrieve_boilerplate_tool,
@@ -239,7 +233,7 @@ def create_developer_agent(
     # - SummarizationMiddleware for token management
     agent = create_deep_agent(
         tools=tools,
-        instructions=instructions,
+        instructions=get_developer_orchestrator_instructions(),
         subagents=subagents,
         model=llm,
         checkpointer=False,

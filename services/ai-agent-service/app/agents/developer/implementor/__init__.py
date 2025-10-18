@@ -55,13 +55,13 @@ The Implementor subagent has its own subagents:
 """
 
 from deepagents.types import SubAgent
-from agents.developer.instructions import get_implementor_instructions
+# from agents.developer.instructions import get_implementor_instructions
 from .tools import (
     load_codebase_tool,
     index_codebase_tool,
     search_similar_code_tool,
-    sync_virtual_to_disk_tool,
-    list_virtual_files_tool,
+    # sync_virtual_to_disk_tool,
+    # list_virtual_files_tool,
     detect_stack_tool,
     retrieve_boilerplate_tool,
     create_feature_branch_tool,
@@ -72,7 +72,7 @@ from .tools import (
     collect_feedback_tool,
     refine_code_tool,
 )
-from .subagents import code_generator_subagent
+# from .subagents import code_generator_subagent
 
 # Implementor Subagent Configuration
 
@@ -80,8 +80,8 @@ __all__ = [
     "load_codebase_tool",
     "index_codebase_tool",
     "search_similar_code_tool",
-    "sync_virtual_to_disk_tool",
-    "list_virtual_files_tool",
+    # "sync_virtual_to_disk_tool",
+    # "list_virtual_files_tool",
     "detect_stack_tool",
     "retrieve_boilerplate_tool",
     "create_feature_branch_tool",
@@ -91,5 +91,5 @@ __all__ = [
     "create_pull_request_tool",
     "collect_feedback_tool",
     "refine_code_tool",
-    "code_generator_subagent",
+    # "code_generator_subagent",
 ]
