@@ -163,10 +163,10 @@ MOCK_PO_OUTPUT = {
     {
       "id": "TASK-010",
       "type": "Task",
-      "title": "Reset Password feature",
+      "title": "View Home Page",
       "parent_id": "EPIC-001",
       "task_type": "Design",
-      "description": "Perform heuristic evaluation of UI for login and password reset pages, suggest improvements",
+      "description": "Design home page layout and components",
       "effort_estimate": 2
     }
   ],
@@ -229,196 +229,54 @@ def test_full_workflow():
         )
         
         print("   ✅ Scrum Master Agent initialized")
-        
-        print("\n🧠 Step 3: Scrum Master calls process_po_output tool")
-        print("   - This will trigger Sprint Planner subagent for task assignment...")
-        
-        # Call agent with PO output
-        thread_id = f"{session_id}_thread"
-        
-        # Create message to trigger process_po_output
-        message = f"""Tôi đã nhận được Sprint Plan từ Product Owner. Hãy giao việc cho team members.
 
-Sprint Plan:
-{json.dumps(MOCK_PO_OUTPUT, indent=2, ensure_ascii=False)}
+        print("\n🧠 Step 3: Scrum Master processes PO output")
+        print("   - Delegating to Sprint Planner...")
 
-Team:
-{json.dumps(MOCK_TEAM, indent=2, ensure_ascii=False)}
-
-Hãy sử dụng tool process_po_output để xử lý và giao việc."""
-        
-        print("\n   Calling Scrum Master Agent...")
-        response = agent.run(
-            user_message=message,
-            thread_id=thread_id
+        # Call process_po_output directly (no more Deep Agent)
+        result = agent.process_po_output(
+            po_output=MOCK_PO_OUTPUT,
+            team=MOCK_TEAM
         )
 
-        print("\n📊 Step 4: Sprint Planner assigns tasks")
+        print("\n📊 Step 4: Results")
         print("="*80)
 
         # Format response nicely
-        if isinstance(response, dict):
-            messages = response.get("messages", [])
-            if messages:
-                print(f"\n💬 Agent Messages ({len(messages)} total):\n")
-                for i, msg in enumerate(messages, 1):
-                    msg_type = type(msg).__name__
-                    print(f"[{i}] {msg_type}:")
+        if isinstance(result, dict):
+            if result.get("success"):
+                output = result.get("output", {})
+                summary = result.get("summary", {})
 
-                    # Extract content
-                    if hasattr(msg, 'content'):
-                        content = msg.content
-                        if content:
-                            # Truncate long content
-                            if len(content) > 500:
-                                print(f"   {content[:500]}...")
-                            else:
-                                print(f"   {content}")
+                print(f"\n✅ Processing successful!")
+                print(f"\n📈 Summary:")
+                print(f"   - Sprints: {summary.get('total_sprints', 0)}")
+                print(f"   - Items: {summary.get('total_items', 0)}")
+                print(f"   - Assigned: {summary.get('total_assigned', 0)}")
+                print(f"   - DoR Pass Rate: {summary.get('dor_pass_rate', 0):.1%}")
 
-                    # Show tool calls if any
-                    if hasattr(msg, 'tool_calls') and msg.tool_calls:
-                        print(f"   🔧 Tool Calls: {len(msg.tool_calls)}")
-                        for tc in msg.tool_calls:
-                            print(f"      - {tc.get('name', 'unknown')}")
-
-                    print()
+                # Show assignments
+                assignments = output.get("assignments", [])
+                if assignments:
+                    print(f"\n👥 Task Assignments ({len(assignments)} total):")
+                    for assignment in assignments[:10]:  # Show first 10
+                        print(f"   - {assignment.get('item_id')}: {assignment.get('assignee_name')} ({assignment.get('assignee_role')})")
+                    if len(assignments) > 10:
+                        print(f"   ... and {len(assignments) - 10} more")
             else:
-                print(json.dumps(response, indent=2, ensure_ascii=False))
-        else:
-            print(response)
+                print(f"\n❌ Processing failed: {result.get('error')}")
 
+        print("\n" + "="*80)
+        print("✅ WORKFLOW COMPLETED!")
         print("="*80)
 
-        # Try to extract assignments from response
-        print("\n✅ WORKFLOW COMPLETED!")
-        print("\nCheck the agent messages above for task assignments.")
-        
-    except ImportError as e:
-        print(f"\n❌ Failed to import Scrum Master Agent: {e}")
-        print("\nThis is expected due to deepagents version conflict.")
-        print("Let me create a simplified version without deepagents...")
-        
-        # Fallback: Use direct OpenAI API
-        test_simplified_workflow()
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
 
 
-def test_simplified_workflow():
-    """Simplified workflow without deepagents (direct OpenAI API)."""
-    
-    from openai import OpenAI
-    import re
-    
-    print("\n" + "="*80)
-    print("🔄 SIMPLIFIED WORKFLOW (Direct OpenAI API)")
-    print("="*80)
-    
-    # Initialize OpenAI client
-    client = OpenAI(
-        api_key=os.getenv("OPENAI_API_KEY"),
-        base_url=os.getenv("OPENAI_BASE_URL")
-    )
-    
-    # Extract tasks from PO output
-    backlog_items = MOCK_PO_OUTPUT.get("prioritized_backlog", [])
-    tasks = [item for item in backlog_items if item["type"] in ["Task", "Sub-task"]]
-    
-    print(f"\n📋 Found {len(tasks)} tasks to assign")
-    
-    # Prepare team info
-    team_info = "## Team Members:\n"
-    for role, members in MOCK_TEAM.items():
-        if isinstance(members, list):
-            team_info += f"\n### {role.upper()}:\n"
-            for member in members:
-                team_info += f"- {member['name']} ({member['id']}): {member.get('specialty', 'General')}\n"
-    
-    # Prepare tasks info
-    tasks_info = "## Tasks to Assign:\n"
-    for task in tasks:
-        tasks_info += f"- {task['id']}: {task['title']} (Type: {task.get('task_type', 'General')})\n"
-        if 'description' in task:
-            tasks_info += f"  Description: {task['description']}\n"
-    
-    # Create prompt (simulating Sprint Planner subagent)
-    prompt = f"""Bạn là Sprint Planner subagent của Scrum Master. 
-Nhiệm vụ: Phân tích kỹ năng team và giao việc cho developer agent instances.
 
-{team_info}
-
-{tasks_info}
-
-Hãy giao việc dựa trên:
-1. Kỹ năng (specialty) của từng thành viên
-2. Loại công việc (Development, Testing, Design)
-3. Cân bằng khối lượng công việc
-
-Trả lời dưới dạng JSON:
-{{
-  "assignments": [
-    {{"item_id": "TASK-001", "assignee_id": "dev-001", "reason": "Backend task matches Backend developer"}},
-    ...
-  ]
-}}"""
-    
-    print("\n🧠 Sprint Planner subagent analyzing and assigning tasks...")
-    
-    # Call OpenAI API
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.2
-    )
-    
-    response_text = response.choices[0].message.content
-    
-    print("\n🤖 Sprint Planner Response:")
-    print("="*80)
-    print(response_text)
-    print("="*80)
-    
-    # Extract JSON and apply assignments
-    json_match = re.search(r'\{[\s\S]*\}', response_text)
-    if json_match:
-        assignments_data = json.loads(json_match.group())
-        assignments = assignments_data.get("assignments", [])
-        
-        # Apply assignments
-        reviewer = MOCK_TEAM["reviewers"][0]
-        assignment_map = {a["item_id"]: a for a in assignments}
-        
-        print("\n✅ Task Assignments:")
-        print("="*80)
-        for task in tasks:
-            if task["id"] in assignment_map:
-                assignment = assignment_map[task["id"]]
-                
-                # Find assignee name
-                assignee_name = None
-                for role, members in MOCK_TEAM.items():
-                    if isinstance(members, list):
-                        for member in members:
-                            if member["id"] == assignment["assignee_id"]:
-                                assignee_name = member["name"]
-                                break
-                
-                print(f"\n{task['id']} → {assignee_name} ({assignment['assignee_id']})")
-                print(f"  Reviewer: {reviewer['name']}")
-                print(f"  Reason: {assignment['reason']}")
-        
-        # Save output
-        output_file = f"workflow_output_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        output = {
-            "metadata": MOCK_PO_OUTPUT.get("metadata", {}),
-            "sprints": MOCK_PO_OUTPUT.get("sprints", []),
-            "assignments": assignments,
-            "assigned_at": datetime.now().isoformat()
-        }
-        
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(output, f, indent=2, ensure_ascii=False)
-        
-        print(f"\n💾 Output saved to: {output_file}")
-        print("\n✅ WORKFLOW COMPLETED!")
 
 
 if __name__ == "__main__":
