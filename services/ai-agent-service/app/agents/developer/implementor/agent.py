@@ -29,6 +29,8 @@ from .state import ImplementorState
 # Load environment variables
 load_dotenv()
 
+# Import install_dependencies separately
+
 # Import generate_code separately to avoid auto-formatter issues
 
 
@@ -37,10 +39,11 @@ class ImplementorAgent:
     Implementor Agent - Thực hiện implementation plan từ Planner Agent.
 
     Workflow:
-    START → initialize → setup_branch → [copy_boilerplate] → generate_code →
-    implement_files → run_tests → commit_changes → create_pr → finalize → END
+    START → initialize → setup_branch → [copy_boilerplate] → install_dependencies →
+    generate_code → implement_files → run_tests → commit_changes → create_pr → finalize → END
 
     Với conditional branch: copy_boilerplate chỉ chạy cho new projects với template
+    install_dependencies luôn chạy để cài đặt external dependencies từ plan
     generate_code luôn chạy để tạo actual code content
     """
 
@@ -95,7 +98,9 @@ class ImplementorAgent:
 
         # Import generate_code here to avoid auto-formatter issues
         from .nodes.generate_code import generate_code
+        from .nodes.install_dependencies import install_dependencies
 
+        graph_builder.add_node("install_dependencies", install_dependencies)
         graph_builder.add_node("generate_code", generate_code)
 
         graph_builder.add_node("implement_files", implement_files)
@@ -113,7 +118,8 @@ class ImplementorAgent:
         graph_builder.add_conditional_edges("setup_branch", self.after_setup_branch)
 
         # Continue workflow
-        graph_builder.add_edge("copy_boilerplate", "generate_code")
+        graph_builder.add_edge("copy_boilerplate", "install_dependencies")
+        graph_builder.add_edge("install_dependencies", "generate_code")
         graph_builder.add_edge("generate_code", "implement_files")
         graph_builder.add_edge("implement_files", "run_tests")
         graph_builder.add_edge("run_tests", "run_and_verify")
@@ -133,7 +139,7 @@ class ImplementorAgent:
         Logic:
         - Nếu có error → END (terminate workflow)
         - Nếu is_new_project = True và có boilerplate_template → copy_boilerplate
-        - Ngược lại → generate_code
+        - Ngược lại → install_dependencies
 
         Args:
             state: ImplementorState với project type info
@@ -155,8 +161,10 @@ class ImplementorAgent:
             print("   → Decision: COPY_BOILERPLATE (new project with template)")
             return "copy_boilerplate"
         else:
-            print("   → Decision: GENERATE_CODE (existing project or no template)")
-            return "generate_code"
+            print(
+                "   → Decision: INSTALL_DEPENDENCIES (existing project or no template)"
+            )
+            return "install_dependencies"
 
     def run(
         self,

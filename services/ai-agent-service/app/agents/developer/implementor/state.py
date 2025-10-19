@@ -50,6 +50,20 @@ class RunExecution(BaseModel):
     max_retries: int = 3
 
 
+class DependencyInstallation(BaseModel):
+    """Kết quả dependency installation."""
+
+    package: str = ""
+    version: str = ""
+    install_command: str = ""
+    exit_code: int = 0
+    stdout: str = ""
+    stderr: str = ""
+    success: bool = False
+    already_installed: bool = False
+    error_message: str = ""
+
+
 class GitOperation(BaseModel):
     """Thông tin về Git operations."""
 
@@ -94,6 +108,10 @@ class ImplementorState(BaseModel):
     files_created: list[str] = Field(default_factory=list)
     files_modified: list[str] = Field(default_factory=list)
 
+    # Dependencies
+    dependency_installations: list[DependencyInstallation] = Field(default_factory=list)
+    dependencies_installed: bool = False
+
     # Testing
     test_execution: TestExecution = Field(default_factory=TestExecution)
     tests_passed: bool = False
@@ -108,6 +126,7 @@ class ImplementorState(BaseModel):
         "initialize",
         "setup_branch",
         "copy_boilerplate",
+        "install_dependencies",
         "generate_code",
         "implement_files",
         "run_tests",

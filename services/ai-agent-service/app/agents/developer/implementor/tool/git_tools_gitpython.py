@@ -5,17 +5,16 @@ Refactored from subprocess-based implementation for better performance and maint
 """
 
 import json
-from pathlib import Path
-from typing import List, Optional
-from langchain_core.tools import tool
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 # GitPython imports
-from git import Repo, GitCommandError, InvalidGitRepositoryError
-from typing import Dict, Any
+from git import GitCommandError, InvalidGitRepositoryError, Repo
+from langchain_core.tools import tool
 
 
-def create_initial_commit(repo: Repo, working_dir: Path) -> Dict[str, Any]:
+def create_initial_commit(repo: Repo, working_dir: Path) -> dict[str, Any]:
     """
     Create initial commit with all existing untracked files and ensure 'main' branch exists.
 
@@ -54,9 +53,20 @@ def create_initial_commit(repo: Repo, working_dir: Path) -> Dict[str, Any]:
 
     # Check if there are files to commit
     if not untracked_files:
-        raise Exception(
-            "No files to commit for initial commit. Please add files to the repository first."
-        )
+        # Create a README.md file for initial commit if no files exist
+        readme_path = working_dir / "README.md"
+        readme_content = "# Project Repository\n\nThis repository was initialized by Developer Agent.\n"
+
+        with open(readme_path, "w", encoding="utf-8") as f:
+            f.write(readme_content)
+
+        # Refresh untracked files list
+        untracked_files = repo.untracked_files
+
+        if not untracked_files:
+            raise Exception(
+                "Failed to create initial files for commit. Repository state is inconsistent."
+            )
 
     # Stage all untracked files
     repo.index.add(untracked_files)
@@ -221,6 +231,24 @@ def create_feature_branch_tool(
                 # Continue even if fetch fails (might be offline or no remote)
                 pass
 
+            # Check if working tree is dirty (has uncommitted changes)
+            stash_created = False
+            stash_message = f"Auto-stash before creating branch '{safe_branch_name}'"
+
+            if repo.is_dirty(untracked_files=True):
+                try:
+                    # Stash uncommitted changes including untracked files
+                    repo.git.stash("push", "-u", "-m", stash_message)
+                    stash_created = True
+                    print(f"📦 Stashed uncommitted changes: {stash_message}")
+                except GitCommandError as e:
+                    return json.dumps(
+                        {
+                            "status": "error",
+                            "message": f"Failed to stash uncommitted changes: {str(e)}",
+                        }
+                    )
+
             # Switch to base branch
             try:
                 base_head = repo.heads[base_branch]
@@ -230,6 +258,23 @@ def create_feature_branch_tool(
                     {
                         "status": "error",
                         "message": f"Base branch '{base_branch}' does not exist",
+                    }
+                )
+            except GitCommandError as e:
+                # If stash was created, try to restore it
+                if stash_created:
+                    try:
+                        repo.git.stash("pop")
+                        print("🔄 Restored stashed changes due to checkout failure")
+                    except Exception:
+                        print(
+                            "⚠️ Failed to restore stash - please check 'git stash list'"
+                        )
+
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "message": f"Failed to checkout base branch '{base_branch}': {str(e)}",
                     }
                 )
 
@@ -249,19 +294,26 @@ def create_feature_branch_tool(
             base_commit = repo.head.commit
             commit_info = f"{base_commit.hexsha[:8]} {base_commit.summary}"
 
-            return json.dumps(
-                {
-                    "status": "success",
-                    "message": f"Created and switched to branch '{safe_branch_name}'",
-                    "branch_name": safe_branch_name,
-                    "base_branch": base_branch,
-                    "previous_branch": current_branch,
-                    "base_commit": commit_info,
-                    "commit_hash": base_commit.hexsha,
-                    "timestamp": datetime.now().isoformat(),
-                },
-                indent=2,
-            )
+            # Include stash information in response
+            response_data = {
+                "status": "success",
+                "message": f"Created and switched to branch '{safe_branch_name}'",
+                "branch_name": safe_branch_name,
+                "base_branch": base_branch,
+                "previous_branch": current_branch,
+                "base_commit": commit_info,
+                "commit_hash": base_commit.hexsha,
+                "timestamp": datetime.now().isoformat(),
+                "stash_created": stash_created,
+            }
+
+            if stash_created:
+                response_data["stash_message"] = stash_message
+                response_data["note"] = (
+                    "Uncommitted changes were stashed. Use 'git stash pop' to restore them."
+                )
+
+            return json.dumps(response_data, indent=2)
 
     except GitCommandError as e:
         return json.dumps({"status": "error", "message": f"Git error: {str(e)}"})
@@ -273,7 +325,7 @@ def create_feature_branch_tool(
 
 @tool
 def commit_changes_tool(
-    message: str, files: Optional[List[str]] = None, working_directory: str = "."
+    message: str, files: list[str] | None = None, working_directory: str = "."
 ) -> str:
     """
     Commit changes to the current Git branch using GitPython.

@@ -16,6 +16,11 @@ from app.core.config import settings
 from app.core.database import init_db
 from app.api.v1.router import api_router
 from app.core.exceptions import AppException
+from app.api.v1.test_router import test_router
+
+    # Include routers
+    app.include_router(api_router, prefix=settings.API_V1_STR)
+    app.include_router(test_router, prefix=settings.API_V1_STR)
 
 
 @asynccontextmanager

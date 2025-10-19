@@ -389,6 +389,9 @@ dependency_analyzer_tool(
 5. Identify infrastructure requirements (database, cache, message queue)
 6. Note environment configuration needs (env vars, secrets)
 7. Document API version compatibility requirements
+8. Analyze tech stack to determine package manager (pip, npm, yarn, etc.)
+9. Check existing package files (pyproject.toml, package.json, requirements.txt)
+10. Verify package compatibility with current project versions
 </phase_description>
 
 **Dependency Categories:**
@@ -404,14 +407,18 @@ Libraries and packages from PyPI, npm, etc.
     "version": ">=3.3.0",
     "purpose": "JWT token generation and validation",
     "already_installed": false,
-    "installation": "Add to pyproject.toml dependencies"
+    "installation_method": "pip",
+    "install_command": "pip install python-jose[cryptography]>=3.3.0",
+    "package_file": "pyproject.toml",
+    "section": "dependencies"
   },
   {
     "package": "passlib[bcrypt]",
     "version": ">=1.7.4",
     "purpose": "Password hashing with bcrypt",
     "already_installed": true,
-    "location": "pyproject.toml:21"
+    "location": "pyproject.toml:21",
+    "install_command": "Already installed"
   }
 ]
 </good_example>
@@ -420,7 +427,7 @@ Libraries and packages from PyPI, npm, etc.
 "external_dependencies": ["jose", "passlib"]
 </bad_example>
 
-This bad example lacks versions, purposes, and installation verification.
+This bad example lacks versions, purposes, installation verification, and installation commands.
 </example>
 
 ### Internal Dependencies
@@ -480,7 +487,10 @@ The sequence in which implementation steps must occur.
         "version": ">=X.Y.Z",
         "purpose": "Specific use case",
         "already_installed": true/false,
-        "installation_method": "pip install / npm install / etc"
+        "installation_method": "pip|npm|yarn|poetry",
+        "install_command": "pip install package-name>=X.Y.Z",
+        "package_file": "pyproject.toml|package.json|requirements.txt",
+        "section": "dependencies|devDependencies"
       }
     ],
     "internal": [
@@ -533,6 +543,10 @@ The sequence in which implementation steps must occur.
 - ✅ Execution order has no circular dependencies
 - ✅ Blocking dependencies have resolution strategies
 - ✅ Infrastructure requirements are documented and verified
+- ✅ Installation commands are provided for all new packages
+- ✅ Package manager is correctly identified (pip, npm, yarn, poetry)
+- ✅ Package file location is specified (pyproject.toml, package.json, etc.)
+- ✅ Dependencies section is specified (dependencies, devDependencies, etc.)
 
 ---
 
@@ -1451,6 +1465,8 @@ Analyze the codebase and identify:
 4. Database schema changes required
 5. API endpoints to be created, modified, or deprecated
 6. Testing requirements and existing test infrastructure
+7. External packages/dependencies required for implementation
+8. Package manager and installation commands for new dependencies
 
 ## Task Requirements:
 {task_requirements}
@@ -1462,6 +1478,60 @@ Analyze the codebase and identify:
 - code_search_tool: Find existing patterns and implementations
 - ast_parser_tool: Analyze file structure and dependencies
 - dependency_analyzer_tool: Map component relationships
+
+## EXTERNAL DEPENDENCIES ANALYSIS GUIDELINES
+
+When analyzing external dependencies, you MUST:
+
+### 1. Identify All Required Packages
+- Scan task requirements for technology mentions (JWT, bcrypt, email, AI, etc.)
+- Map technologies to specific Python packages:
+  * JWT authentication → python-jose[cryptography]
+  * Password hashing → passlib[bcrypt]
+  * Email sending → python-multipart, aiosmtplib
+  * AI/LLM features → openai, langchain, anthropic
+  * Data validation → pydantic
+  * Async operations → httpx, aiohttp
+  * Database ORM → sqlalchemy, sqlmodel
+  * Testing → pytest, pytest-asyncio
+  * API documentation → fastapi, pydantic
+
+### 2. For Each Dependency, Determine:
+- **package**: Exact package name as it appears on PyPI/npm registry
+- **version**: Version constraint (e.g., ">=3.3.0", "~1.0.0", "1.0.0")
+  * Use minimum compatible version that supports required features
+  * Include security patches in version constraint
+- **purpose**: Specific reason this package is needed for the task
+- **already_installed**: Check if package exists in current pyproject.toml/package.json
+  * Search for package name in existing dependencies
+  * Mark as true if found, false if new
+- **installation_method**: pip (Python), npm/yarn/pnpm (JavaScript)
+  * Default to pip for Python projects
+  * Check project's package manager preference
+- **install_command**: Complete command to install the package
+  * Format: "{method} install {package}[extras]>={version}"
+  * Example: "pip install python-jose[cryptography]>=3.3.0"
+  * Include extras in square brackets if needed (e.g., [cryptography], [async])
+- **package_file**: Target configuration file
+  * Python: pyproject.toml (preferred), requirements.txt, setup.py
+  * JavaScript: package.json
+- **section**: Where to add the dependency
+  * Python: dependencies (production), devDependencies (testing/dev)
+  * JavaScript: dependencies, devDependencies, optionalDependencies
+
+### 3. Dependency Classification
+- **Production Dependencies**: Required for runtime (JWT, email, database, API clients)
+- **Development Dependencies**: Only for development/testing (pytest, black, mypy)
+- **Optional Dependencies**: Nice-to-have but not critical
+
+### 4. Validation Checklist for Each Dependency
+- ✅ Package name is correct and matches PyPI/npm registry
+- ✅ Version constraint is compatible with Python/Node version
+- ✅ Installation method matches project's package manager
+- ✅ Install command is syntactically correct
+- ✅ Package file path exists in codebase
+- ✅ Section (dependencies vs devDependencies) is appropriate
+- ✅ Purpose clearly explains why this package is needed
 
 ## Output Format:
 Return a JSON object with the following structure:
@@ -1505,6 +1575,28 @@ Return a JSON object with the following structure:
       }}
     ]
   }},
+    "external_dependencies": [
+      {{
+        "package": "package-name",
+        "version": ">=X.Y.Z",
+        "purpose": "Why this package is needed for the task",
+        "already_installed": false,
+        "installation_method": "pip|npm|yarn|poetry",
+        "install_command": "pip install package-name[extras]>=X.Y.Z",
+        "package_file": "pyproject.toml|package.json|requirements.txt",
+        "section": "dependencies|devDependencies"
+      }},
+      {{
+        "package": "pytest",
+        "version": ">=7.0.0",
+        "purpose": "Testing framework for unit and integration tests",
+        "already_installed": true,
+        "installation_method": "pip",
+        "install_command": "Already installed",
+        "package_file": "pyproject.toml",
+        "section": "devDependencies"
+      }}
+    ],
   "impact_assessment": {{
     "estimated_files_changed": 6,
     "estimated_lines_added": 250,
@@ -1518,7 +1610,15 @@ Return a JSON object with the following structure:
 }}
 ```
 
-Provide exact file paths and line numbers. Support all decisions with findings from codebase analysis.
+## CRITICAL REQUIREMENTS
+
+- ✅ EVERY external_dependencies entry MUST have all 8 fields populated
+- ✅ NO empty strings for required fields
+- ✅ NO null values
+- ✅ install_command MUST be executable (e.g., "pip install package>=1.0.0")
+- ✅ Provide exact file paths and line numbers
+- ✅ Support all decisions with findings from codebase analysis
+- ✅ Include both new and already-installed dependencies in the list
 """
 
 GENERATE_PLAN_PROMPT = """
@@ -1667,9 +1767,13 @@ You will receive:
     "external_dependencies": [
       {
         "package": "package_name",
-        "version": "1.0.0",
+        "version": ">=1.0.0",
         "reason": "Why this dependency is needed",
-        "status": "new|existing"
+        "already_installed": false,
+        "installation_method": "pip|npm|yarn|poetry",
+        "install_command": "pip install package_name>=1.0.0",
+        "package_file": "pyproject.toml|package.json|requirements.txt",
+        "section": "dependencies|devDependencies"
       }
     ],
     "internal_dependencies": [
@@ -1703,6 +1807,54 @@ You will receive:
 }
 ```
 
+## EXTERNAL DEPENDENCIES HANDLING
+
+When populating external_dependencies in the infrastructure section:
+
+### 1. Include All Required Packages
+- List EVERY external package needed for implementation
+- Include both new packages AND already-installed packages
+- Mark already-installed packages with "already_installed": true
+
+### 2. Complete Package Information
+For each dependency, ensure ALL 8 fields are populated:
+- **package**: Exact package name (e.g., "python-jose[cryptography]")
+- **version**: Version constraint (e.g., ">=3.3.0")
+- **purpose**: Why this package is needed (e.g., "JWT token generation and validation")
+- **already_installed**: Boolean indicating if package exists in current dependencies
+- **installation_method**: "pip", "npm", "yarn", or "poetry"
+- **install_command**: Complete executable command (e.g., "pip install python-jose[cryptography]>=3.3.0")
+  * If already_installed=true, use "Already installed"
+  * Otherwise, use "{method} install {package}[extras]>={version}"
+- **package_file**: Target file (e.g., "pyproject.toml", "package.json")
+- **section**: "dependencies" or "devDependencies"
+
+### 3. Dependency Classification
+- **Production Dependencies**: Required for runtime functionality
+  * Examples: JWT libraries, email clients, database drivers, API clients
+  * Section: "dependencies"
+- **Development Dependencies**: Only needed for development/testing
+  * Examples: pytest, black, mypy, faker
+  * Section: "devDependencies"
+
+### 4. Version Constraints
+- Use semantic versioning (e.g., ">=1.0.0", "~1.0.0", "1.0.0")
+- Include security patches in minimum version
+- Be compatible with project's Python/Node version
+- Example versions:
+  * ">=3.3.0" - minimum version 3.3.0 or higher
+  * "~1.0.0" - compatible with 1.0.x but not 2.0.0
+  * "1.0.0" - exact version
+
+### 5. Installation Commands
+- Must be syntactically correct and executable
+- Include package extras in square brackets if needed
+- Examples:
+  * "pip install python-jose[cryptography]>=3.3.0"
+  * "pip install passlib[bcrypt]>=1.7.4"
+  * "npm install jsonwebtoken@^9.0.0"
+  * "Already installed" (for already-installed packages)
+
 ## VALIDATION CHECKLIST
 
 Before returning JSON, verify:
@@ -1716,7 +1868,13 @@ Before returning JSON, verify:
 - ✅ affected_modules is populated
 - ✅ database_changes is populated if DB changes exist
 - ✅ api_endpoints is populated if API changes exist
-- ✅ external_dependencies is populated if new packages needed
+- ✅ external_dependencies is populated with COMPLETE package information:
+  * ✅ EVERY dependency has all 8 fields: package, version, purpose, already_installed, installation_method, install_command, package_file, section
+  * ✅ install_command is executable (e.g., "pip install package>=1.0.0" or "Already installed")
+  * ✅ version constraint is valid semantic versioning
+  * ✅ purpose explains why the package is needed
+  * ✅ already_installed is accurate based on codebase analysis
+  * ✅ section is "dependencies" or "devDependencies"
 - ✅ internal_dependencies is populated
 - ✅ risks has at least 1 risk
 - ✅ assumptions has at least 1 assumption
@@ -1938,9 +2096,23 @@ Before returning JSON, verify:
     "external_dependencies": [
       {
         "package": "python-dotenv",
-        "version": "1.0.0",
+        "version": ">=1.0.0",
         "reason": "Already exists for environment configuration",
-        "status": "existing"
+        "already_installed": true,
+        "installation_method": "pip",
+        "install_command": "Already installed",
+        "package_file": "pyproject.toml",
+        "section": "dependencies"
+      },
+      {
+        "package": "python-jose[cryptography]",
+        "version": ">=3.3.0",
+        "purpose": "JWT token generation and validation for email verification",
+        "already_installed": false,
+        "installation_method": "pip",
+        "install_command": "pip install python-jose[cryptography]>=3.3.0",
+        "package_file": "pyproject.toml",
+        "section": "dependencies"
       }
     ],
     "internal_dependencies": [

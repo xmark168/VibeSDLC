@@ -640,7 +640,11 @@ def validate_and_complete_plan(
     if not infra.get("api_endpoints"):
         infra["api_endpoints"] = codebase_analysis.api_endpoints or []
     if not infra.get("external_dependencies"):
-        infra["external_dependencies"] = codebase_analysis.external_dependencies or []
+        # Ensure external dependencies have complete information
+        external_deps = complete_external_dependencies(
+            codebase_analysis.external_dependencies or []
+        )
+        infra["external_dependencies"] = external_deps
     if not infra.get("internal_dependencies"):
         infra["internal_dependencies"] = codebase_analysis.internal_dependencies or []
 
@@ -691,3 +695,100 @@ def create_steps_from_dependencies(
         steps.append(step)
 
     return steps
+
+
+def complete_external_dependencies(
+    external_deps: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Complete external dependencies with all required fields.
+
+    Ensures each dependency has:
+    - package: Package name
+    - version: Version constraint
+    - purpose: Why this package is needed
+    - already_installed: Boolean flag
+    - installation_method: pip/npm/yarn/poetry
+    - install_command: Executable installation command
+    - package_file: Target configuration file
+    - section: dependencies or devDependencies
+
+    Args:
+        external_deps: List of dependency dictionaries from codebase analysis
+
+    Returns:
+        List of completed dependency dictionaries with all required fields
+    """
+    completed_deps = []
+
+    for dep in external_deps:
+        completed_dep = {
+            # Required fields
+            "package": dep.get("package", "unknown-package"),
+            "version": dep.get("version", ">=1.0.0"),
+            "purpose": dep.get(
+                "purpose", dep.get("reason", "Required for implementation")
+            ),
+            "already_installed": dep.get("already_installed", False),
+            "installation_method": dep.get("installation_method", "pip"),
+            "install_command": "",  # Will be set below
+            "package_file": dep.get("package_file", "pyproject.toml"),
+            "section": dep.get("section", "dependencies"),
+        }
+
+        # Generate install_command based on already_installed flag
+        if completed_dep["already_installed"]:
+            completed_dep["install_command"] = "Already installed"
+        else:
+            # Build install command with proper formatting
+            package_spec = completed_dep["package"]
+            version = completed_dep["version"]
+
+            # Ensure version constraint is properly formatted
+            if version and not version.startswith((">=", "<=", "==", "~", "^")):
+                version = f">={version}"
+
+            if version:
+                package_spec = f"{package_spec}{version}"
+
+            method = completed_dep["installation_method"]
+            completed_dep["install_command"] = f"{method} install {package_spec}"
+
+        # Validate all required fields are populated
+        required_fields = [
+            "package",
+            "version",
+            "purpose",
+            "already_installed",
+            "installation_method",
+            "install_command",
+            "package_file",
+            "section",
+        ]
+
+        for field in required_fields:
+            if not completed_dep.get(field):
+                # Set sensible defaults for missing fields
+                if field == "package":
+                    completed_dep[field] = "unknown-package"
+                elif field == "version":
+                    completed_dep[field] = ">=1.0.0"
+                elif field == "purpose":
+                    completed_dep[field] = "Required for implementation"
+                elif field == "already_installed":
+                    completed_dep[field] = False
+                elif field == "installation_method":
+                    completed_dep[field] = "pip"
+                elif field == "install_command":
+                    completed_dep[field] = (
+                        f"{completed_dep.get('installation_method', 'pip')} install "
+                        f"{completed_dep.get('package', 'unknown-package')}"
+                    )
+                elif field == "package_file":
+                    completed_dep[field] = "pyproject.toml"
+                elif field == "section":
+                    completed_dep[field] = "dependencies"
+
+        completed_deps.append(completed_dep)
+
+    return completed_deps

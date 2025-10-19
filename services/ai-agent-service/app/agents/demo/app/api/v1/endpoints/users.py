@@ -27,7 +27,7 @@ async def create_user(
     try:
         # Validate passwords match
         user_create.validate_passwords_match()
-        
+
         user_service = UserService(db)
         user = await user_service.create_user(user_create)
         return user
@@ -85,7 +85,7 @@ async def update_current_user_password(
     try:
         # Validate passwords match
         password_update.validate_passwords_match()
-        
+
         user_service = UserService(db)
         await user_service.update_user_password(
             user_id=current_user.id,
@@ -133,3 +133,14 @@ async def get_users(
     user_service = UserService(db)
     users = await user_service.get_users(skip=skip, limit=limit)
     return users
+
+@router.post("/test", status_code=status.HTTP_200_OK)
+async def trigger_test_feature(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Trigger the test feature for the Developer Agent.
+    """
+    # Implement the logic to trigger the test feature here
+    return {"message": "Test feature triggered successfully"}
