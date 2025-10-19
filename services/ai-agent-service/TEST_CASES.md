@@ -56,3 +56,45 @@ Theo bạn, điểm khác biệt nổi bật nhất của SmartTask so với Tre
 
   # 5. Tạo migration thủ công (không autogenerate)
   alembic revision -m "Manual migration"
+
+================================================================
+
+  1. API Comments (comments.py) - ƯU TIÊN CAO
+
+  Kanban board cần comment cho từng card/item:
+  - GET /api/v1/comments?backlog_item_id={id} - Lấy comments của item
+  - POST /api/v1/comments - Tạo comment mới
+  - PATCH /api/v1/comments/{id} - Sửa comment
+  - DELETE /api/v1/comments/{id} - Xóa comment
+
+  2. API Sprints (sprints.py) - ƯU TIÊN CAO
+
+  Kanban board phụ thuộc vào sprint:
+  - GET /api/v1/projects/{project_id}/sprints - Lấy danh sách sprints
+  - GET /api/v1/sprints/{id} - Chi tiết sprint
+  - POST /api/v1/sprints - Tạo sprint mới
+  - PATCH /api/v1/sprints/{id} - Cập nhật sprint
+  - DELETE /api/v1/sprints/{id} - Xóa sprint
+
+  3. API Projects (projects.py) - ƯU TIÊN TRUNG BÌNH
+
+  Để quản lý projects chứa sprints:
+  - GET /api/v1/projects - Lấy danh sách projects
+  - GET /api/v1/projects/{id} - Chi tiết project
+  - POST /api/v1/projects - Tạo project mới
+  - PATCH /api/v1/projects/{id} - Cập nhật project
+  - DELETE /api/v1/projects/{id} - Xóa project
+  - GET /api/v1/projects/{id}/members - Lấy members (cho assign)
+
+  4. API Issue Activities (issue_activities.py) - ƯU TIÊN THẤP
+
+  Để xem lịch sử thay đổi của items:
+  - GET /api/v1/backlog-items/{item_id}/activities - Lấy lịch sử
+
+  ---
+  Khuyến nghị thứ tự làm:
+
+  1. Sprints API       (Vì backlog_items đã depend vào sprint)
+  2. Comments API      (Để có thể comment trong kanban cards)
+  3. Projects API      (Để quản lý projects và members)
+  4. Issue Activities  (Để xem history - optional)

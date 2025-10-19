@@ -4,7 +4,9 @@ from pydantic import EmailStr
 from sqlmodel import Field, SQLModel
 from .models import Role
 from typing import Optional
+from enum import Enum
 
+# user
 class UserPublic(SQLModel):
     id: UUID
     username: str
@@ -23,6 +25,47 @@ class UserCreate(SQLModel):
 class UserLogin(SQLModel):
     email_or_username: str 
     password: str
+
+class UserUpdate(SQLModel):
+    username: Optional[str] = None
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
+
+class UserUpdateMe(SQLModel):
+    username: Optional[str] = None
+    email: Optional[EmailStr] = None
+
+class UpdatePassword(SQLModel):
+    current_password: str = Field(min_length=8)
+    new_password: str = Field(min_length=8)
+
+class UserRegister(SQLModel):
+    username: str = Field(min_length=3, max_length=50)
+    email: EmailStr
+    password: str = Field(min_length=8)
+
+class Token(SQLModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    
+class TokenData(SQLModel):
+    user_id: Optional[str] = None
+
+class TokenPayload(SQLModel):
+    sub: Optional[str] = None  # subject - user ID in JWT standard
+
+class RefreshTokenRequest(SQLModel):
+    refresh_token: str
+
+class Message(SQLModel):
+    message: str
+
+class NewPassword(SQLModel):
+    token: str
+    new_password: str = Field(min_length=8)
+
+# backlog
 
 class BacklogItemBase(SQLModel):
     title: str = Field(min_length=1, max_length=255)
@@ -65,6 +108,18 @@ class BacklogItemPublic(BacklogItemBase):
 class BacklogItemsPublic(SQLModel):
     data: list[BacklogItemPublic]
     count: int
+
+class BacklogItemType(str, Enum):
+    EPIC = "Epic"
+    USER_STORY = "User story"
+    TASK = "Task"
+    SUB_TASK = "Sub-task"
+
+class BacklogItemsStatus(str, Enum):
+    BACKLOG = "Backlog"
+    TODO = "Todo"
+    DOING = "Doing"
+    DONE = "Done"
 
 class IssueActivityBase(SQLModel):
     action: Optional[str] = None 

@@ -27,6 +27,10 @@ dependencies = [
     "sqlmodel>=0.0.27",
     "alembic>=1.17.0",
     "psycopg[binary]>=3.2.10",
+    "pyjwt>=2.10.1",
+    "passlib[bcrypt]>=1.7.4",
+    "bcrypt>=4.0.0,<4.1.0",
+    "emails>=0.6",
 ]
 
 

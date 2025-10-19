@@ -77,6 +77,7 @@ class Settings(BaseSettings):
     # SECURITY SETTINGS
     SECRET_KEY: str = secrets.token_urlsafe(32)
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7  # 7 days
 
     # CORS SETTINGS
     FRONTEND_HOST: str = "http://localhost:5173"

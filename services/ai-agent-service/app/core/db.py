@@ -2,7 +2,8 @@ from sqlmodel import Session, create_engine, select
 
 from app import crud
 from app.core.config import settings
-from app.models import User, UserCreate
+from app.models import User, Role
+from app.schemas import UserCreate
 
 engine = create_engine(str(settings.SQLALCHEMY_DATABASE_URI))
 
@@ -26,8 +27,13 @@ def init_db(session: Session) -> None:
     ).first()
     if not user:
         user_in = UserCreate(
+            username="admin",  # Default admin username
             email=settings.FIRST_SUPERUSER,
             password=settings.FIRST_SUPERUSER_PASSWORD,
-            is_superuser=True,
         )
         user = crud.create_user(session=session, user_create=user_in)
+        # Set role to ADMIN after creation
+        user.role = Role.ADMIN
+        session.add(user)
+        session.commit()
+        session.refresh(user)

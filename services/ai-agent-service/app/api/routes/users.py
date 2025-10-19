@@ -2,7 +2,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import col, delete, func, select
+from sqlmodel import func, select
 
 from app import crud
 from app.api.deps import (
@@ -12,11 +12,10 @@ from app.api.deps import (
 )
 from app.core.config import settings
 from app.core.security import get_password_hash, verify_password
-from app.models import (
-    Item,
+from app.models import User, Role
+from app.schemas import (
     Message,
     UpdatePassword,
-    User,
     UserCreate,
     UserPublic,
     UserRegister,
@@ -130,9 +129,9 @@ def delete_user_me(session: SessionDep, current_user: CurrentUser) -> Any:
     """
     Delete own user.
     """
-    if current_user.is_superuser:
+    if current_user.role == Role.ADMIN:
         raise HTTPException(
-            status_code=403, detail="Super users are not allowed to delete themselves"
+            status_code=403, detail="Admin users are not allowed to delete themselves"
         )
     session.delete(current_user)
     session.commit()
@@ -165,7 +164,7 @@ def read_user_by_id(
     user = session.get(User, user_id)
     if user == current_user:
         return user
-    if not current_user.is_superuser:
+    if current_user.role != Role.ADMIN:
         raise HTTPException(
             status_code=403,
             detail="The user doesn't have enough privileges",
@@ -219,8 +218,7 @@ def delete_user(
         raise HTTPException(
             status_code=403, detail="Super users are not allowed to delete themselves"
         )
-    statement = delete(Item).where(col(Item.owner_id) == user_id)
-    session.exec(statement)  # type: ignore
+    # Note: User deletion will cascade to related entities via foreign key constraints
     session.delete(user)
     session.commit()
     return Message(message="User deleted successfully")

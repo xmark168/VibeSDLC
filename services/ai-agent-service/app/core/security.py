@@ -23,4 +23,11 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def get_password_hash(password: str) -> str:
+    # Truncate password to 72 bytes max for bcrypt compatibility
+    password_bytes = password.encode('utf-8')
+    if len(password_bytes) > 72:
+        # Truncate at byte level and decode back to string
+        password_bytes = password_bytes[:72]
+        # Handle potential incomplete UTF-8 characters at the end
+        password = password_bytes.decode('utf-8', errors='ignore')
     return pwd_context.hash(password)

@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 from enum import Enum
 from pydantic import EmailStr
 from sqlmodel import Field, SQLModel, Relationship
+from typing import Optional
 
 class Role(str, Enum):
     ADMIN = "admin"
@@ -104,7 +105,7 @@ class BacklogItem(BaseModel, table=True):
     deadline: datetime | None = Field(default=None)
 
     sprint: Sprint = Relationship(back_populates="backlog_items")
-    parent: "BacklogItem | None" = Relationship(
+    parent: Optional["BacklogItem"] = Relationship(
         back_populates="children",
         sa_relationship_kwargs={"remote_side": "BacklogItem.id"}
     )
