@@ -53,10 +53,14 @@ def commit_changes(state: ImplementorState) -> ImplementorState:
         print(f"  📄 Files to commit: {len(files_to_commit)}")
 
         # Commit changes using Git tools
-        result = commit_changes_tool(
-            message=commit_message,
-            files=files_to_commit if files_to_commit else None,  # None = commit all
-            working_directory=working_dir,
+        result = commit_changes_tool.invoke(
+            {
+                "message": commit_message,
+                "files": files_to_commit
+                if files_to_commit
+                else None,  # None = commit all
+                "working_directory": working_dir,
+            }
         )
 
         # Parse result

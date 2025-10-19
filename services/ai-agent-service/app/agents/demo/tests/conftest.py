@@ -44,11 +44,11 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     # Create tables
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-
+    
     # Create session
     async with TestSessionLocal() as session:
         yield session
-
+    
     # Drop tables
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
@@ -57,10 +57,9 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 @pytest.fixture(scope="function")
 def override_get_db(db_session: AsyncSession):
     """Override the get_db dependency."""
-
     async def _override_get_db():
         yield db_session
-
+    
     app.dependency_overrides[get_db] = _override_get_db
     yield
     app.dependency_overrides.clear()
@@ -74,5 +73,5 @@ def test_user_data():
         "username": "testuser",
         "full_name": "Test User",
         "password": "testpassword123",
-        "confirm_password": "testpassword123",
+        "confirm_password": "testpassword123"
     }

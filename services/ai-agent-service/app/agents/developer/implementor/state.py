@@ -108,6 +108,7 @@ class ImplementorState(BaseModel):
         "initialize",
         "setup_branch",
         "copy_boilerplate",
+        "generate_code",
         "implement_files",
         "run_tests",
         "run_and_verify",

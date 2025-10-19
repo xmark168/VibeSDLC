@@ -6,6 +6,7 @@ These tools interact directly with the real filesystem, replacing DeepAgents' Vi
 Based on OpenSWE's text-editor, view, grep, and shell tools.
 """
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -173,7 +174,12 @@ def write_file_tool(
         # Security check
         working_dir_resolved = Path(working_directory).resolve()
         if not str(full_path).startswith(str(working_dir_resolved)):
-            return "Error: Access denied - path outside working directory"
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": "Access denied - path outside working directory",
+                }
+            )
 
         # Create parent directories if needed
         if create_dirs:
@@ -185,12 +191,24 @@ def write_file_tool(
         lines_count = content.count("\n") + 1
         bytes_count = len(content.encode("utf-8"))
 
-        return f"Successfully wrote {lines_count} lines ({bytes_count} bytes) to '{file_path}'"
+        return json.dumps(
+            {
+                "status": "success",
+                "message": f"Successfully wrote {lines_count} lines ({bytes_count} bytes) to '{file_path}'",
+            }
+        )
 
     except PermissionError:
-        return f"Error: Permission denied writing to '{file_path}'"
+        return json.dumps(
+            {
+                "status": "error",
+                "message": f"Permission denied writing to '{file_path}'",
+            }
+        )
     except Exception as e:
-        return f"Error writing file: {str(e)}"
+        return json.dumps(
+            {"status": "error", "message": f"Error writing file: {str(e)}"}
+        )
 
 
 @tool
@@ -229,25 +247,40 @@ def edit_file_tool(
         # Security check
         working_dir_resolved = Path(working_directory).resolve()
         if not str(full_path).startswith(str(working_dir_resolved)):
-            return "Error: Access denied - path outside working directory"
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": "Access denied - path outside working directory",
+                }
+            )
 
         # Check file exists
         if not full_path.exists():
-            return f"Error: File '{file_path}' does not exist"
+            return json.dumps(
+                {"status": "error", "message": f"File '{file_path}' does not exist"}
+            )
 
         # Read current content
         content = full_path.read_text(encoding="utf-8")
 
         # Check if old_str exists
         if old_str not in content:
-            return f"Error: String not found in file: '{old_str[:100]}...'"
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": f"String not found in file: '{old_str[:100]}...'",
+                }
+            )
 
         # Check for multiple occurrences if not replace_all
         occurrences = content.count(old_str)
         if not replace_all and occurrences > 1:
-            return (
-                f"Error: String appears {occurrences} times in file. "
-                f"Use replace_all=True to replace all instances, or provide a more specific string."
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": f"String appears {occurrences} times in file. "
+                    f"Use replace_all=True to replace all instances, or provide a more specific string.",
+                }
             )
 
         # Perform replacement
@@ -263,12 +296,16 @@ def edit_file_tool(
         # Write back
         full_path.write_text(new_content, encoding="utf-8")
 
-        return result_msg
+        return json.dumps({"status": "success", "message": result_msg})
 
     except PermissionError:
-        return f"Error: Permission denied editing '{file_path}'"
+        return json.dumps(
+            {"status": "error", "message": f"Permission denied editing '{file_path}'"}
+        )
     except Exception as e:
-        return f"Error editing file: {str(e)}"
+        return json.dumps(
+            {"status": "error", "message": f"Error editing file: {str(e)}"}
+        )
 
 
 # ============================================================================

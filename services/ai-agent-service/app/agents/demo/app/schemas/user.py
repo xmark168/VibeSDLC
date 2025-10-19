@@ -2,8 +2,7 @@
 User Pydantic schemas for request/response validation.
 """
 
-from typing import Optional
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class UserBase(BaseModel):
@@ -11,9 +10,9 @@ class UserBase(BaseModel):
 
     email: EmailStr
     username: str = Field(..., min_length=3, max_length=50, pattern=r"^[a-zA-Z0-9_-]+$")
-    full_name: Optional[str] = Field(None, max_length=100)
-    bio: Optional[str] = Field(None, max_length=500)
-    avatar_url: Optional[str] = Field(None, max_length=500)
+    full_name: str | None = Field(None, max_length=100)
+    bio: str | None = Field(None, max_length=500)
+    avatar_url: str | None = Field(None, max_length=500)
 
 
 class UserCreate(UserBase):
@@ -32,9 +31,9 @@ class UserCreate(UserBase):
 class UserUpdate(BaseModel):
     """Schema for user updates."""
 
-    full_name: Optional[str] = Field(None, max_length=100)
-    bio: Optional[str] = Field(None, max_length=500)
-    avatar_url: Optional[str] = Field(None, max_length=500)
+    full_name: str | None = Field(None, max_length=100)
+    bio: str | None = Field(None, max_length=500)
+    avatar_url: str | None = Field(None, max_length=500)
 
 
 class UserUpdatePassword(BaseModel):
@@ -108,3 +107,9 @@ class UserVerifyEmail(BaseModel):
     """Schema for email verification."""
 
     token: str
+
+
+class UserPasswordResetRequest(BaseModel):
+    """Schema for password reset request."""
+
+    email: EmailStr

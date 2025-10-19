@@ -34,12 +34,14 @@ def create_pr(state: ImplementorState) -> ImplementorState:
         print(f"  📋 PR Title: {pr_title}")
 
         # Create PR using Git tools
-        result = create_pull_request_tool(
-            title=pr_title,
-            description=pr_description,
-            base_branch=state.base_branch,
-            working_directory=working_dir,
-            draft=False,  # Create as ready for review
+        result = create_pull_request_tool.invoke(
+            {
+                "title": pr_title,
+                "description": pr_description,
+                "base_branch": state.base_branch,
+                "working_directory": working_dir,
+                "draft": False,
+            }
         )
 
         # Parse result

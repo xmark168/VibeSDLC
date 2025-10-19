@@ -72,7 +72,7 @@ You MUST follow this exact 4-phase sequence for every task:
 {
   "task_id": "TSK-042",
   "task_title": "Clear, descriptive title",
-  "requirements": [
+  "functional_requirements": [
     "Explicit requirement 1 with specific details",
     "Explicit requirement 2 with acceptance threshold",
     "Implicit requirement inferred from context"
@@ -1411,7 +1411,7 @@ Return a JSON object with the following structure:
 {{
   "task_id": "Generated task ID",
   "task_title": "Clear, descriptive title",
-  "requirements": [
+  "functional_requirements": [
     "Explicit requirement 1 with specific details",
     "Explicit requirement 2 with acceptance threshold"
   ],

@@ -29,16 +29,19 @@ from .state import ImplementorState
 # Load environment variables
 load_dotenv()
 
+# Import generate_code separately to avoid auto-formatter issues
+
 
 class ImplementorAgent:
     """
     Implementor Agent - Thực hiện implementation plan từ Planner Agent.
 
     Workflow:
-    START → initialize → setup_branch → [copy_boilerplate] → implement_files →
-    run_tests → commit_changes → create_pr → finalize → END
+    START → initialize → setup_branch → [copy_boilerplate] → generate_code →
+    implement_files → run_tests → commit_changes → create_pr → finalize → END
 
-    Với conditional branch: copy_boilerplate chỉ chạy cho new projects
+    Với conditional branch: copy_boilerplate chỉ chạy cho new projects với template
+    generate_code luôn chạy để tạo actual code content
     """
 
     def __init__(
@@ -62,13 +65,7 @@ class ImplementorAgent:
         # Setup Langfuse tracing (optional)
         try:
             if os.getenv("LANGFUSE_SECRET_KEY") and os.getenv("LANGFUSE_PUBLIC_KEY"):
-                self.langfuse_handler = CallbackHandler(
-                    secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
-                    public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
-                    host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com"),
-                    session_id=session_id,
-                    user_id=user_id,
-                )
+                self.langfuse_handler = CallbackHandler()
             else:
                 self.langfuse_handler = None
         except Exception as e:
@@ -95,6 +92,12 @@ class ImplementorAgent:
         graph_builder.add_node("initialize", initialize)
         graph_builder.add_node("setup_branch", setup_branch)
         graph_builder.add_node("copy_boilerplate", copy_boilerplate)
+
+        # Import generate_code here to avoid auto-formatter issues
+        from .nodes.generate_code import generate_code
+
+        graph_builder.add_node("generate_code", generate_code)
+
         graph_builder.add_node("implement_files", implement_files)
         graph_builder.add_node("run_tests", run_tests)
         graph_builder.add_node("run_and_verify", run_and_verify)
@@ -110,7 +113,8 @@ class ImplementorAgent:
         graph_builder.add_conditional_edges("setup_branch", self.after_setup_branch)
 
         # Continue workflow
-        graph_builder.add_edge("copy_boilerplate", "implement_files")
+        graph_builder.add_edge("copy_boilerplate", "generate_code")
+        graph_builder.add_edge("generate_code", "implement_files")
         graph_builder.add_edge("implement_files", "run_tests")
         graph_builder.add_edge("run_tests", "run_and_verify")
         graph_builder.add_edge("run_and_verify", "commit_changes")
@@ -127,25 +131,32 @@ class ImplementorAgent:
         Conditional branch sau setup_branch node.
 
         Logic:
+        - Nếu có error → END (terminate workflow)
         - Nếu is_new_project = True và có boilerplate_template → copy_boilerplate
-        - Ngược lại → implement_files
+        - Ngược lại → generate_code
 
         Args:
             state: ImplementorState với project type info
 
         Returns:
-            Next node name
+            Next node name hoặc END
         """
         print("\n🔀 Branch Decision after setup_branch:")
+        print(f"   Status: {state.status}")
         print(f"   Is New Project: {state.is_new_project}")
         print(f"   Boilerplate Template: {state.boilerplate_template}")
+
+        # Check for errors first
+        if state.status == "error":
+            print("   → Decision: END (error occurred)")
+            return END
 
         if state.is_new_project and state.boilerplate_template:
             print("   → Decision: COPY_BOILERPLATE (new project with template)")
             return "copy_boilerplate"
         else:
-            print("   → Decision: IMPLEMENT_FILES (existing project or no template)")
-            return "implement_files"
+            print("   → Decision: GENERATE_CODE (existing project or no template)")
+            return "generate_code"
 
     def run(
         self,
@@ -155,6 +166,7 @@ class ImplementorAgent:
         codebase_path: str = "",
         github_repo_url: str = "",
         thread_id: str | None = None,
+        test_mode: bool = False,
     ) -> dict[str, Any]:
         """
         Run implementor workflow.
@@ -166,6 +178,7 @@ class ImplementorAgent:
             codebase_path: Path to codebase
             github_repo_url: GitHub repository URL
             thread_id: Thread ID cho conversation tracking
+            test_mode: If True, skip branch creation for testing
 
         Returns:
             Implementation results
@@ -182,6 +195,10 @@ class ImplementorAgent:
                 github_repo_url=github_repo_url,
             )
 
+            # Add test mode if specified
+            if test_mode:
+                initial_state.test_mode = test_mode
+
             # Setup thread config
             thread_config = {"configurable": {"thread_id": thread_id or "default"}}
 
@@ -195,33 +212,64 @@ class ImplementorAgent:
 
                 print(f"  ✓ Completed: {node_name}")
 
-                # Check for errors
-                if node_state.status == "error":
-                    print(f"  ❌ Error in {node_name}: {node_state.error_message}")
-                    break
+                # Check for errors - node_state is dict, not object
+                if isinstance(node_state, dict):
+                    status = node_state.get("status", "")
+                    if status == "error":
+                        error_msg = node_state.get("error_message", "Unknown error")
+                        print(f"  ❌ Error in {node_name}: {error_msg}")
+                        break
+                else:
+                    # If it's an object, access attributes directly
+                    if hasattr(node_state, "status") and node_state.status == "error":
+                        print(f"  ❌ Error in {node_name}: {node_state.error_message}")
+                        break
 
                 final_state = node_state
 
             if final_state is None:
                 raise Exception("Workflow failed to complete")
 
-            # Prepare results
-            results = {
-                "status": final_state.status,
-                "implementation_complete": final_state.implementation_complete,
-                "task_id": final_state.task_id,
-                "task_description": final_state.task_description,
-                "feature_branch": final_state.feature_branch,
-                "final_commit_hash": final_state.final_commit_hash,
-                "files_created": final_state.files_created,
-                "files_modified": final_state.files_modified,
-                "tests_passed": final_state.tests_passed,
-                "summary": final_state.summary,
-                "error_message": final_state.error_message,
-                "messages": [msg.content for msg in final_state.messages],
-            }
+            # Prepare results - handle both dict and object final_state
+            if isinstance(final_state, dict):
+                results = {
+                    "status": final_state.get("status", "unknown"),
+                    "implementation_complete": final_state.get(
+                        "implementation_complete", False
+                    ),
+                    "task_id": final_state.get("task_id", ""),
+                    "task_description": final_state.get("task_description", ""),
+                    "feature_branch": final_state.get("feature_branch", ""),
+                    "final_commit_hash": final_state.get("final_commit_hash", ""),
+                    "files_created": final_state.get("files_created", []),
+                    "files_modified": final_state.get("files_modified", []),
+                    "tests_passed": final_state.get("tests_passed", False),
+                    "summary": final_state.get("summary", {}),
+                    "error_message": final_state.get("error_message", ""),
+                    "messages": [
+                        msg.get("content", "") if isinstance(msg, dict) else msg.content
+                        for msg in final_state.get("messages", [])
+                    ],
+                }
+                status = final_state.get("status", "unknown")
+            else:
+                results = {
+                    "status": final_state.status,
+                    "implementation_complete": final_state.implementation_complete,
+                    "task_id": final_state.task_id,
+                    "task_description": final_state.task_description,
+                    "feature_branch": final_state.feature_branch,
+                    "final_commit_hash": final_state.final_commit_hash,
+                    "files_created": final_state.files_created,
+                    "files_modified": final_state.files_modified,
+                    "tests_passed": final_state.tests_passed,
+                    "summary": final_state.summary,
+                    "error_message": final_state.error_message,
+                    "messages": [msg.content for msg in final_state.messages],
+                }
+                status = final_state.status
 
-            print(f"🎉 Implementor completed: {final_state.status}")
+            print(f"🎉 Implementor completed: {status}")
             return results
 
         except Exception as e:

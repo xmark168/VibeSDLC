@@ -83,7 +83,10 @@ def parse_task(state: PlannerState) -> PlannerState:
             print(f"🧹 Cleaned LLM output: {cleaned_output[:100]}...")
 
             parsed_data = json.loads(cleaned_output)
-            requirements = parsed_data.get("functional_requirements", [])
+            # Support both "requirements" and "functional_requirements" keys
+            requirements = parsed_data.get(
+                "functional_requirements"
+            ) or parsed_data.get("requirements", [])
             acceptance_criteria = parsed_data.get("acceptance_criteria", [])
             business_rules = parsed_data.get("business_rules", {})
             technical_specs = parsed_data.get("technical_specs", {})

@@ -4,14 +4,13 @@ Implementor Validators
 Validation utilities cho implementor workflow.
 """
 
-from typing import Dict, Any, List, Tuple
 import re
-from pathlib import Path
+from typing import Any
 
 
 def validate_implementation_plan(
-    implementation_plan: Dict[str, Any],
-) -> Tuple[bool, List[str]]:
+    implementation_plan: dict[str, Any],
+) -> tuple[bool, list[str]]:
     """
     Validate implementation plan completeness và quality.
 
@@ -23,16 +22,31 @@ def validate_implementation_plan(
     """
     issues = []
 
-    # Check required fields
-    required_fields = ["task_id", "description"]
-    for field in required_fields:
-        if not implementation_plan.get(field):
-            issues.append(f"Missing required field: {field}")
+    # Check required fields - support both nested and flat formats
+    # Try nested format first
+    if "task_info" in implementation_plan:
+        task_info = implementation_plan["task_info"]
+        task_id = task_info.get("task_id", "")
+        description = task_info.get("description", "")
+    else:
+        # Fall back to flat format
+        task_id = implementation_plan.get("task_id", "")
+        description = implementation_plan.get("description", "")
 
-    # Validate file operations
-    files_to_create = implementation_plan.get("files_to_create", [])
-    files_to_modify = implementation_plan.get("files_to_modify", [])
-    
+    if not task_id:
+        issues.append("Missing required field: task_id")
+    if not description:
+        issues.append("Missing required field: description")
+
+    # Validate file operations - support both nested and flat formats
+    if "file_changes" in implementation_plan:
+        file_changes = implementation_plan["file_changes"]
+        files_to_create = file_changes.get("files_to_create", [])
+        files_to_modify = file_changes.get("files_to_modify", [])
+    else:
+        files_to_create = implementation_plan.get("files_to_create", [])
+        files_to_modify = implementation_plan.get("files_to_modify", [])
+
     if not files_to_create and not files_to_modify:
         issues.append("No file operations specified - nothing to implement")
 
@@ -50,9 +64,8 @@ def validate_implementation_plan(
 
 
 def validate_file_changes(
-    files_to_create: List[Dict[str, Any]],
-    files_to_modify: List[Dict[str, Any]]
-) -> Tuple[bool, List[str]]:
+    files_to_create: list[dict[str, Any]], files_to_modify: list[dict[str, Any]]
+) -> tuple[bool, list[str]]:
     """
     Validate file change specifications.
 
@@ -67,7 +80,7 @@ def validate_file_changes(
 
     # Check for duplicate file paths
     all_paths = []
-    
+
     for file_spec in files_to_create:
         path = file_spec.get("file_path", "")
         if path in all_paths:
@@ -88,10 +101,8 @@ def validate_file_changes(
 
 
 def validate_git_operations(
-    branch_name: str,
-    commit_message: str = "",
-    base_branch: str = "main"
-) -> Tuple[bool, List[str]]:
+    branch_name: str, commit_message: str = "", base_branch: str = "main"
+) -> tuple[bool, list[str]]:
     """
     Validate Git operation parameters.
 
@@ -110,31 +121,31 @@ def validate_git_operations(
         issues.append("Branch name is required")
     else:
         # Git branch name rules
-        invalid_chars = r'[~^:?*\[\]\\]'
+        invalid_chars = r"[~^:?*\[\]\\]"
         if re.search(invalid_chars, branch_name):
             issues.append(f"Branch name contains invalid characters: {branch_name}")
-        
-        if branch_name.startswith('.') or branch_name.endswith('.'):
+
+        if branch_name.startswith(".") or branch_name.endswith("."):
             issues.append("Branch name cannot start or end with '.'")
-        
-        if '//' in branch_name:
+
+        if "//" in branch_name:
             issues.append("Branch name cannot contain consecutive slashes")
-        
+
         if len(branch_name) > 250:
             issues.append("Branch name too long (max 250 characters)")
 
     # Validate commit message if provided
     if commit_message:
-        if len(commit_message.split('\n')[0]) > 72:
+        if len(commit_message.split("\n")[0]) > 72:
             issues.append("Commit message first line too long (max 72 characters)")
-        
+
         if not commit_message.strip():
             issues.append("Commit message cannot be empty")
 
     return len(issues) == 0, issues
 
 
-def validate_tech_stack(tech_stack: str) -> Tuple[bool, List[str]]:
+def validate_tech_stack(tech_stack: str) -> tuple[bool, list[str]]:
     """
     Validate tech stack specification.
 
@@ -148,13 +159,25 @@ def validate_tech_stack(tech_stack: str) -> Tuple[bool, List[str]]:
 
     # Supported tech stacks
     supported_stacks = {
-        "fastapi", "python", "django", "flask",
-        "nextjs", "react", "react-vite", "vue", "angular",
-        "nodejs", "express", "nestjs",
-        "spring", "java",
-        "dotnet", "csharp",
-        "go", "golang",
-        "rust"
+        "fastapi",
+        "python",
+        "django",
+        "flask",
+        "nextjs",
+        "react",
+        "react-vite",
+        "vue",
+        "angular",
+        "nodejs",
+        "express",
+        "nestjs",
+        "spring",
+        "java",
+        "dotnet",
+        "csharp",
+        "go",
+        "golang",
+        "rust",
     }
 
     if tech_stack and tech_stack.lower() not in supported_stacks:
@@ -165,10 +188,8 @@ def validate_tech_stack(tech_stack: str) -> Tuple[bool, List[str]]:
 
 
 def validate_test_execution(
-    test_command: str,
-    exit_code: int,
-    duration: float
-) -> Tuple[bool, List[str]]:
+    test_command: str, exit_code: int, duration: float
+) -> tuple[bool, list[str]]:
     """
     Validate test execution results.
 
@@ -200,10 +221,8 @@ def validate_test_execution(
 
 
 def _validate_file_spec(
-    file_spec: Dict[str, Any],
-    operation: str,
-    index: int
-) -> List[str]:
+    file_spec: dict[str, Any], operation: str, index: int
+) -> list[str]:
     """
     Validate individual file specification.
 
@@ -217,15 +236,17 @@ def _validate_file_spec(
     """
     issues = []
 
-    # Check required fields
-    if not file_spec.get("file_path"):
-        issues.append(f"File {operation} #{index}: missing file_path")
+    # Check required fields - support both nested and flat formats
+    file_path = file_spec.get("file_path") or file_spec.get("path", "")
+    if not file_path:
+        issues.append(f"File {operation} #{index}: missing file_path or path")
 
-    if operation == "create" and not file_spec.get("content"):
-        issues.append(f"File creation #{index}: missing content")
+    # Content will be generated by generate_code node, so don't require it here
+    # if operation == "create" and not file_spec.get("content"):
+    #     issues.append(f"File creation #{index}: missing content")
 
-    # Validate file path
-    file_path = file_spec.get("file_path", "")
+    # Validate file path - use the mapped file_path
+    # file_path already extracted above with fallback
     if file_path:
         path_issues = _validate_file_path(file_path)
         for issue in path_issues:
@@ -241,7 +262,7 @@ def _validate_file_spec(
     return issues
 
 
-def _validate_file_path(file_path: str) -> List[str]:
+def _validate_file_path(file_path: str) -> list[str]:
     """
     Validate file path for security và correctness.
 
@@ -257,14 +278,14 @@ def _validate_file_path(file_path: str) -> List[str]:
         return ["Empty file path"]
 
     # Security checks
-    if '..' in file_path:
+    if ".." in file_path:
         issues.append("File path contains '..' (directory traversal)")
 
-    if file_path.startswith('/'):
+    if file_path.startswith("/"):
         issues.append("File path should be relative, not absolute")
 
     # Windows drive letters
-    if re.match(r'^[A-Za-z]:', file_path):
+    if re.match(r"^[A-Za-z]:", file_path):
         issues.append("File path should be relative, not absolute")
 
     # Invalid characters
@@ -279,7 +300,7 @@ def _validate_file_path(file_path: str) -> List[str]:
     return issues
 
 
-def _validate_file_content_security(content: str) -> List[str]:
+def _validate_file_content_security(content: str) -> list[str]:
     """
     Validate file content for basic security issues.
 
@@ -296,8 +317,8 @@ def _validate_file_content_security(content: str) -> List[str]:
         (r'password\s*=\s*["\'][^"\']+["\']', "Hardcoded password detected"),
         (r'api[_-]?key\s*=\s*["\'][^"\']+["\']', "Hardcoded API key detected"),
         (r'secret\s*=\s*["\'][^"\']+["\']', "Hardcoded secret detected"),
-        (r'eval\s*\(', "Use of eval() function (potential security risk)"),
-        (r'exec\s*\(', "Use of exec() function (potential security risk)"),
+        (r"eval\s*\(", "Use of eval() function (potential security risk)"),
+        (r"exec\s*\(", "Use of exec() function (potential security risk)"),
     ]
 
     for pattern, message in security_patterns:

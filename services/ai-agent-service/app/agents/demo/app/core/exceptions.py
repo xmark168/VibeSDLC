@@ -3,7 +3,7 @@ Custom exception classes for the application.
 Provides structured error handling with proper HTTP status codes.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class AppException(Exception):
@@ -14,7 +14,7 @@ class AppException(Exception):
         message: str,
         status_code: int = 500,
         error_code: str = "INTERNAL_ERROR",
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ):
         self.message = message
         self.status_code = status_code
@@ -29,7 +29,7 @@ class ValidationException(AppException):
     def __init__(
         self,
         message: str = "Validation failed",
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ):
         super().__init__(
             message=message,
@@ -45,7 +45,7 @@ class AuthenticationException(AppException):
     def __init__(
         self,
         message: str = "Authentication failed",
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ):
         super().__init__(
             message=message,
@@ -61,7 +61,7 @@ class AuthorizationException(AppException):
     def __init__(
         self,
         message: str = "Access denied",
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ):
         super().__init__(
             message=message,
@@ -77,7 +77,7 @@ class NotFoundException(AppException):
     def __init__(
         self,
         message: str = "Resource not found",
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ):
         super().__init__(
             message=message,
@@ -93,7 +93,7 @@ class ConflictException(AppException):
     def __init__(
         self,
         message: str = "Resource conflict",
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ):
         super().__init__(
             message=message,
@@ -109,7 +109,7 @@ class RateLimitException(AppException):
     def __init__(
         self,
         message: str = "Rate limit exceeded",
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ):
         super().__init__(
             message=message,
@@ -125,11 +125,42 @@ class ExternalServiceException(AppException):
     def __init__(
         self,
         message: str = "External service error",
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ):
         super().__init__(
             message=message,
             status_code=502,
             error_code="EXTERNAL_SERVICE_ERROR",
+            details=details,
+        )
+
+class EmailVerificationException(AppException):
+    """Email verification error exception."""
+
+    def __init__(
+        self,
+        message: str = "Email verification failed",
+        details: dict[str, Any] | None = None,
+    ):
+        super().__init__(
+            message=message,
+            status_code=400,
+            error_code="EMAIL_VERIFICATION_ERROR",
+            details=details,
+        )
+
+
+class PasswordResetException(AppException):
+    """Password reset error exception."""
+
+    def __init__(
+        self,
+        message: str = "Password reset failed",
+        details: dict[str, Any] | None = None,
+    ):
+        super().__init__(
+            message=message,
+            status_code=400,
+            error_code="PASSWORD_RESET_ERROR",
             details=details,
         )

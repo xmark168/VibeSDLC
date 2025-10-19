@@ -7,6 +7,7 @@ Khởi tạo Implementor workflow và validate input từ Planner Agent.
 from langchain_core.messages import AIMessage
 
 from ..state import FileChange, ImplementorState
+from ..utils.validators import validate_implementation_plan, validate_tech_stack
 
 
 def initialize(state: ImplementorState) -> ImplementorState:
@@ -45,14 +46,35 @@ def initialize(state: ImplementorState) -> ImplementorState:
             return state
 
         # Extract task information từ implementation plan
+        # Support both flat format (backward compatibility) and nested format
         plan = state.implementation_plan
-        state.task_id = plan.get("task_id", "")
-        state.task_description = plan.get("description", "")
+
+        # Try nested format first, then fall back to flat format
+        if "task_info" in plan:
+            # Nested format from Planner Agent
+            task_info = plan["task_info"]
+            state.task_id = task_info.get("task_id", "")
+            state.task_description = task_info.get("description", "")
+        else:
+            # Flat format (backward compatibility)
+            state.task_id = plan.get("task_id", "")
+            state.task_description = plan.get("description", "")
+
+        # Extract file operations - support both nested and flat formats
+        if "file_changes" in plan:
+            # Nested format from Planner Agent
+            file_changes = plan["file_changes"]
+            files_to_create_raw = file_changes.get("files_to_create", [])
+            files_to_modify_raw = file_changes.get("files_to_modify", [])
+        else:
+            # Flat format (backward compatibility)
+            files_to_create_raw = plan.get("files_to_create", [])
+            files_to_modify_raw = plan.get("files_to_modify", [])
 
         # Determine project type
-        if "files_to_create" in plan and plan["files_to_create"]:
+        if files_to_create_raw:
             # Check if this looks like a new project
-            create_files = plan["files_to_create"]
+            create_files = files_to_create_raw
             has_main_files = any(
                 file_info.get("file_path", "").endswith(
                     ("main.py", "app.py", "index.js", "package.json")
@@ -109,29 +131,41 @@ def initialize(state: ImplementorState) -> ImplementorState:
             }
             state.boilerplate_template = template_mapping.get(tech_stack, "")
 
-        # Parse file changes từ implementation plan
+        # Parse file changes từ implementation plan với field mapping
         files_to_create = []
         files_to_modify = []
 
-        for file_info in plan.get("files_to_create", []):
+        for file_info in files_to_create_raw:
+            # Map fields from nested format to FileChange model
+            file_path = file_info.get("file_path") or file_info.get("path", "")
+            description = file_info.get("description") or file_info.get("reason", "")
+
             file_change = FileChange(
-                file_path=file_info.get("file_path", ""),
+                file_path=file_path,
                 operation="create",
-                content=file_info.get("content", ""),
+                content=file_info.get(
+                    "content", ""
+                ),  # Will be populated by generate_code
                 change_type="full_file",
-                description=file_info.get("description", ""),
+                description=description,
             )
             files_to_create.append(file_change)
 
-        for file_info in plan.get("files_to_modify", []):
+        for file_info in files_to_modify_raw:
+            # Map fields from nested format to FileChange model
+            file_path = file_info.get("file_path") or file_info.get("path", "")
+            description = file_info.get("description") or file_info.get("changes", "")
+
             file_change = FileChange(
-                file_path=file_info.get("file_path", ""),
+                file_path=file_path,
                 operation="modify",
-                content=file_info.get("content", ""),
+                content=file_info.get(
+                    "content", ""
+                ),  # Will be populated by generate_code
                 change_type=file_info.get("change_type", "incremental"),
                 target_function=file_info.get("target_function", ""),
                 target_class=file_info.get("target_class", ""),
-                description=file_info.get("description", ""),
+                description=description,
             )
             files_to_modify.append(file_change)
 

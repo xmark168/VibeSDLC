@@ -70,30 +70,49 @@ def implement_files(state: ImplementorState) -> ImplementorState:
                 # Create parent directories if needed
                 file_path = Path(file_change.file_path)
                 if file_path.parent != Path("."):
-                    create_result = create_directory_tool(
-                        directory_path=str(file_path.parent),
-                        working_directory=working_dir,
+                    create_result = create_directory_tool.invoke(
+                        {
+                            "directory_path": str(file_path.parent),
+                            "working_directory": working_dir,
+                        }
                     )
                     print(f"    📁 Directory: {file_path.parent}")
 
                 # Write file content
-                result = write_file_tool(
-                    file_path=file_change.file_path,
-                    content=file_change.content,
-                    working_directory=working_dir,
-                    create_dirs=True,
+                result = write_file_tool.invoke(
+                    {
+                        "file_path": file_change.file_path,
+                        "content": file_change.content,
+                        "working_directory": working_dir,
+                        "create_dirs": True,
+                    }
                 )
 
-                result_data = json.loads(result)
-                if result_data.get("status") == "success":
-                    files_created.append(file_change.file_path)
-                    print(f"    ✅ Created: {file_change.file_path}")
-                else:
-                    error_msg = result_data.get("message", "Unknown error")
+                # Parse result with error handling
+                try:
+                    if not result or result.strip() == "":
+                        print("    ❌ Error: Empty response from file creation tool")
+                        errors.append(
+                            f"Failed to create {file_change.file_path}: Empty response"
+                        )
+                        continue
+
+                    result_data = json.loads(result)
+                    if result_data.get("status") == "success":
+                        files_created.append(file_change.file_path)
+                        print(f"    ✅ Created: {file_change.file_path}")
+                    else:
+                        error_msg = result_data.get("message", "Unknown error")
+                        errors.append(
+                            f"Failed to create {file_change.file_path}: {error_msg}"
+                        )
+                        print(f"    ❌ Failed: {error_msg}")
+                except json.JSONDecodeError as e:
+                    print(f"    ❌ Error: Invalid JSON response - {e}")
+                    print(f"    Raw response: {result[:200] if result else 'None'}...")
                     errors.append(
-                        f"Failed to create {file_change.file_path}: {error_msg}"
+                        f"Failed to create {file_change.file_path}: Invalid response format"
                     )
-                    print(f"    ❌ Failed: {error_msg}")
 
             except Exception as e:
                 error_msg = f"Error creating {file_change.file_path}: {str(e)}"
@@ -119,22 +138,43 @@ def implement_files(state: ImplementorState) -> ImplementorState:
 
                 else:
                     # Full file replacement (use sparingly)
-                    result = write_file_tool(
-                        file_path=file_change.file_path,
-                        content=file_change.content,
-                        working_directory=working_dir,
+                    result = write_file_tool.invoke(
+                        {
+                            "file_path": file_change.file_path,
+                            "content": file_change.content,
+                            "working_directory": working_dir,
+                        }
                     )
 
-                    result_data = json.loads(result)
-                    if result_data.get("status") == "success":
-                        files_modified.append(file_change.file_path)
-                        print(f"    ✅ Modified: {file_change.file_path}")
-                    else:
-                        error_msg = result_data.get("message", "Unknown error")
-                        errors.append(
-                            f"Failed to modify {file_change.file_path}: {error_msg}"
+                    # Parse result with error handling
+                    try:
+                        if not result or result.strip() == "":
+                            print(
+                                "    ❌ Error: Empty response from file modification tool"
+                            )
+                            errors.append(
+                                f"Failed to modify {file_change.file_path}: Empty response"
+                            )
+                            continue
+
+                        result_data = json.loads(result)
+                        if result_data.get("status") == "success":
+                            files_modified.append(file_change.file_path)
+                            print(f"    ✅ Modified: {file_change.file_path}")
+                        else:
+                            error_msg = result_data.get("message", "Unknown error")
+                            errors.append(
+                                f"Failed to modify {file_change.file_path}: {error_msg}"
+                            )
+                            print(f"    ❌ Failed: {error_msg}")
+                    except json.JSONDecodeError as e:
+                        print(f"    ❌ Error: Invalid JSON response - {e}")
+                        print(
+                            f"    Raw response: {result[:200] if result else 'None'}..."
                         )
-                        print(f"    ❌ Failed: {error_msg}")
+                        errors.append(
+                            f"Failed to modify {file_change.file_path}: Invalid response format"
+                        )
 
             except Exception as e:
                 error_msg = f"Error modifying {file_change.file_path}: {str(e)}"
@@ -192,6 +232,104 @@ def implement_files(state: ImplementorState) -> ImplementorState:
         return state
 
 
+def _extract_actual_content(formatted_content: str) -> str:
+    """
+    Extract actual file content from read_file_tool output (cat -n format).
+
+    Args:
+        formatted_content: Content with line numbers from read_file_tool
+
+    Returns:
+        Actual file content without line numbers
+    """
+    lines = formatted_content.splitlines()
+    actual_lines = []
+
+    for line in lines:
+        # Skip empty lines
+        if not line.strip():
+            actual_lines.append("")
+            continue
+
+        # Extract content after line number and tab
+        # Format: "     1\tclass UserService:"
+        if "\t" in line:
+            actual_content = line.split("\t", 1)[1]
+            actual_lines.append(actual_content)
+        else:
+            # Fallback for lines without tab
+            actual_lines.append(line)
+
+    return "\n".join(actual_lines)
+
+
+def _find_best_insertion_point(formatted_content: str) -> dict | None:
+    """
+    Find the best insertion point in file content using line-by-line analysis.
+
+    Args:
+        formatted_content: File content from read_file_tool (with line numbers)
+
+    Returns:
+        Dict with insertion point info or None if not found
+    """
+    # Extract actual content without line numbers
+    actual_content = _extract_actual_content(formatted_content)
+    lines = actual_content.splitlines()
+
+    # Priority order for insertion points
+    insertion_patterns = [
+        {"pattern": "pass", "type": "pass"},
+        {"pattern": "# TODO: Implement", "type": "todo_implement"},
+        {"pattern": "# TODO", "type": "todo"},
+        {"pattern": "...", "type": "ellipsis"},
+        {"pattern": "# Add implementation here", "type": "add_implementation"},
+        {"pattern": "# Implementation goes here", "type": "implementation_here"},
+    ]
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+
+        for pattern_info in insertion_patterns:
+            pattern = pattern_info["pattern"]
+
+            # Check for exact match or standalone keyword
+            if pattern == "pass":
+                # For 'pass', check if it's a standalone statement
+                if stripped == "pass" or (
+                    stripped.startswith("pass ") and "#" in stripped
+                ):
+                    return {
+                        "type": pattern_info["type"],
+                        "line": i + 1,
+                        "original_line": line,
+                        "indentation": len(line) - len(line.lstrip()),
+                        "pattern": pattern,
+                    }
+            elif pattern == "...":
+                # For ellipsis, check if it's standalone
+                if stripped == "..." or stripped.startswith("... "):
+                    return {
+                        "type": pattern_info["type"],
+                        "line": i + 1,
+                        "original_line": line,
+                        "indentation": len(line) - len(line.lstrip()),
+                        "pattern": pattern,
+                    }
+            else:
+                # For comment patterns, check if line contains the pattern
+                if pattern in stripped:
+                    return {
+                        "type": pattern_info["type"],
+                        "line": i + 1,
+                        "original_line": line,
+                        "indentation": len(line) - len(line.lstrip()),
+                        "pattern": pattern,
+                    }
+
+    return None
+
+
 def _apply_incremental_change(file_change: FileChange, working_dir: str) -> bool:
     """
     Apply incremental change to a file using appropriate tool.
@@ -209,61 +347,119 @@ def _apply_incremental_change(file_change: FileChange, working_dir: str) -> bool
             # Function-level modification
             if file_change.content.strip().startswith("def "):
                 # Adding new function
-                result = add_function_tool(
-                    file_path=file_change.file_path,
-                    function_code=file_change.content,
-                    after_function=file_change.target_function,
-                    working_directory=working_dir,
+                result = add_function_tool.invoke(
+                    {
+                        "file_path": file_change.file_path,
+                        "function_code": file_change.content,
+                        "after_function": file_change.target_function,
+                        "working_directory": working_dir,
+                    }
                 )
             else:
                 # Modifying existing function
                 changes = [{"type": "replace", "content": file_change.content}]
-                result = modify_function_tool(
-                    file_path=file_change.file_path,
-                    function_name=file_change.target_function,
-                    changes=changes,
-                    working_directory=working_dir,
+                result = modify_function_tool.invoke(
+                    {
+                        "file_path": file_change.file_path,
+                        "function_name": file_change.target_function,
+                        "changes": changes,
+                        "working_directory": working_dir,
+                    }
                 )
 
         elif file_change.target_class:
             # Class-level modification (add method)
-            result = create_method_tool(
-                file_path=file_change.file_path,
-                class_name=file_change.target_class,
-                method_code=file_change.content,
-                working_directory=working_dir,
+            result = create_method_tool.invoke(
+                {
+                    "file_path": file_change.file_path,
+                    "class_name": file_change.target_class,
+                    "method_code": file_change.content,
+                    "working_directory": working_dir,
+                }
             )
 
         elif file_change.content.strip().startswith(("import ", "from ")):
             # Import statement
-            result = add_import_tool(
-                file_path=file_change.file_path,
-                import_statement=file_change.content.strip(),
-                working_directory=working_dir,
+            result = add_import_tool.invoke(
+                {
+                    "file_path": file_change.file_path,
+                    "import_statement": file_change.content.strip(),
+                    "working_directory": working_dir,
+                }
             )
 
         else:
-            # Generic string replacement
-            # Read file first to determine what to replace
-            read_result = read_file_tool(
-                file_path=file_change.file_path, working_directory=working_dir
+            # Generic incremental modification - try to find insertion points
+            # Read file first to analyze content
+            read_result = read_file_tool.invoke(
+                {"file_path": file_change.file_path, "working_directory": working_dir}
             )
 
-            if "File not found" in read_result:
+            if "File not found" in read_result or "Error:" in read_result:
                 return False
 
-            # Use edit_file_tool for generic replacement
-            # This is a fallback - ideally the plan should specify what to replace
-            result = edit_file_tool(
-                file_path=file_change.file_path,
-                old_str="# TODO: Implement",  # Common placeholder
-                new_str=file_change.content,
-                working_directory=working_dir,
-            )
+            # Find proper insertion points using line-by-line analysis
+            insertion_point = _find_best_insertion_point(read_result)
 
-        # Check result
-        result_data = json.loads(result)
-        return result_data.get("status") == "success"
+            result = None
+            if insertion_point:
+                print(
+                    f"    🎯 Found insertion point: '{insertion_point['type']}' at line {insertion_point['line']}"
+                )
+
+                # Use the exact line content for replacement
+                old_str = insertion_point["original_line"]
+
+                # Preserve indentation when replacing
+                indentation = " " * insertion_point["indentation"]
+                new_content_lines = file_change.content.split("\n")
+
+                # Apply indentation to all non-empty lines
+                indented_lines = []
+                for line in new_content_lines:
+                    if line.strip():  # Non-empty line
+                        indented_lines.append(indentation + line)
+                    else:  # Empty line
+                        indented_lines.append("")
+
+                indented_content = "\n".join(indented_lines)
+
+                result = edit_file_tool.invoke(
+                    {
+                        "file_path": file_change.file_path,
+                        "old_str": old_str,
+                        "new_str": indented_content,
+                        "working_directory": working_dir,
+                    }
+                )
+
+            # If no insertion point found, try to append to end of file
+            if not result:
+                print("    ⚠️ No insertion point found, appending to end of file")
+                # Extract actual content from formatted read_result (remove line numbers)
+                current_content = _extract_actual_content(read_result)
+                new_content = current_content + "\n\n" + file_change.content
+
+                result = write_file_tool.invoke(
+                    {
+                        "file_path": file_change.file_path,
+                        "content": new_content,
+                        "working_directory": working_dir,
+                    }
+                )
+
+        # Check result with error handling
+        try:
+            if not result or result.strip() == "":
+                print("Error in incremental change: Empty response")
+                return False
+
+            result_data = json.loads(result)
+            return result_data.get("status") == "success"
+        except json.JSONDecodeError as e:
+            print(f"Error in incremental change: {e}")
+            print(f"Raw response: {result[:200] if result else 'None'}...")
+            return False
 
     except Exception as e:
         print(f"Error in incremental change: {e}")

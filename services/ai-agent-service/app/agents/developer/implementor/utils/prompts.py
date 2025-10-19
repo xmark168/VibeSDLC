@@ -49,6 +49,13 @@ Guidelines:
    - Consider scalability implications
    - Optimize for readability first, performance second
 
+IMPORTANT OUTPUT FORMAT:
+- Return ONLY the complete file content
+- Do NOT include any explanations, descriptions, or markdown formatting
+- Do NOT wrap the code in ```python``` or any other code blocks
+- Do NOT add any text before or after the code
+- Start directly with the code (imports, class definitions, etc.)
+
 Generate the complete file content that meets these requirements.
 """
 
@@ -89,6 +96,13 @@ Guidelines:
    - CLASS: Add/modify methods within specific classes
    - IMPORT: Add necessary import statements
    - CONFIG: Update configuration or constants
+
+IMPORTANT OUTPUT FORMAT:
+- Return ONLY the modified file content or specific code changes
+- Do NOT include any explanations, descriptions, or markdown formatting
+- Do NOT wrap the code in ```python``` or any other code blocks
+- Do NOT add any text before or after the code
+- Start directly with the code
 
 Generate only the specific changes needed, not the entire file.
 """

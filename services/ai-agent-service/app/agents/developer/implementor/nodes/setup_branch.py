@@ -10,6 +10,7 @@ from langchain_core.messages import AIMessage
 
 from ..state import GitOperation, ImplementorState
 from ..tool.git_tools_gitpython import create_feature_branch_tool
+from ..utils.validators import validate_git_operations
 
 
 def setup_branch(state: ImplementorState) -> ImplementorState:
@@ -25,6 +26,22 @@ def setup_branch(state: ImplementorState) -> ImplementorState:
     try:
         print(f"🌿 Setting up feature branch: {state.feature_branch}")
 
+        # Check if we're in test mode (skip branch creation if requested)
+        test_mode = getattr(state, "test_mode", False)
+        if test_mode:
+            print("🧪 Test mode: Skipping branch creation")
+            state.current_branch = state.feature_branch
+            state.current_phase = "generate_code"
+            state.status = "branch_ready"
+
+            message = AIMessage(
+                content=f"🧪 Test mode: Branch setup skipped\n"
+                f"- Branch: {state.feature_branch}\n"
+                f"- Next: Generate code"
+            )
+            state.messages.append(message)
+            return state
+
         # Validate Git operations
         git_valid, git_issues = validate_git_operations(
             branch_name=state.feature_branch, base_branch=state.base_branch
@@ -38,14 +55,26 @@ def setup_branch(state: ImplementorState) -> ImplementorState:
         working_dir = state.codebase_path or "."
 
         # Create feature branch using Git tools
-        result = create_feature_branch_tool(
-            branch_name=state.feature_branch,
-            base_branch=state.base_branch,
-            working_directory=working_dir,
+        result = create_feature_branch_tool.invoke(
+            {
+                "branch_name": state.feature_branch,
+                "base_branch": state.base_branch,
+                "working_directory": working_dir,
+            }
         )
 
-        # Parse result
-        result_data = json.loads(result)
+        # Parse result with error handling
+        try:
+            if not result or result.strip() == "":
+                state.error_message = "Empty response from branch creation tool"
+                state.status = "error"
+                return state
+
+            result_data = json.loads(result)
+        except json.JSONDecodeError as e:
+            state.error_message = f"Invalid JSON response from branch creation: {e}"
+            state.status = "error"
+            return state
 
         if result_data.get("status") == "success":
             state.current_branch = state.feature_branch
@@ -80,18 +109,42 @@ def setup_branch(state: ImplementorState) -> ImplementorState:
             print(f"✅ Feature branch '{state.feature_branch}' created successfully")
 
         else:
-            # Handle error
+            # Handle error - check if it's just branch already exists
             error_msg = result_data.get("message", "Unknown error creating branch")
-            state.error_message = f"Branch creation failed: {error_msg}"
-            state.status = "error"
 
-            # Add error message
-            message = AIMessage(
-                content=f"❌ Failed to create feature branch: {error_msg}"
-            )
-            state.messages.append(message)
+            if "already exists" in error_msg:
+                # Branch already exists - try to checkout to it instead
+                print(
+                    f"⚠️ Branch already exists, attempting to checkout: {state.feature_branch}"
+                )
 
-            print(f"❌ Branch creation failed: {error_msg}")
+                # For now, just continue with existing branch
+                state.current_branch = state.feature_branch
+                state.current_phase = "generate_code"
+                state.status = "branch_ready"
+
+                # Add warning message
+                message = AIMessage(
+                    content=f"⚠️ Branch already exists, using existing branch\n"
+                    f"- Branch: {state.feature_branch}\n"
+                    f"- Next: Generate code"
+                )
+                state.messages.append(message)
+
+                print(f"✅ Using existing branch '{state.feature_branch}'")
+
+            else:
+                # Real error - fail the workflow
+                state.error_message = f"Branch creation failed: {error_msg}"
+                state.status = "error"
+
+                # Add error message
+                message = AIMessage(
+                    content=f"❌ Failed to create feature branch: {error_msg}"
+                )
+                state.messages.append(message)
+
+                print(f"❌ Branch creation failed: {error_msg}")
 
         return state
 

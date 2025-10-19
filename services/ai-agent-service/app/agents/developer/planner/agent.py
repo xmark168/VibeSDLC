@@ -61,13 +61,7 @@ class PlannerAgent:
         # Setup Langfuse tracing (optional)
         try:
             if os.getenv("LANGFUSE_SECRET_KEY") and os.getenv("LANGFUSE_PUBLIC_KEY"):
-                self.langfuse_handler = CallbackHandler(
-                    secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
-                    public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
-                    host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com"),
-                    session_id=session_id,
-                    user_id=user_id,
-                )
+                self.langfuse_handler = CallbackHandler()
             else:
                 self.langfuse_handler = None
         except Exception as e:

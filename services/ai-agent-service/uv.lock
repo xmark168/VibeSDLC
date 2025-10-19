@@ -23,7 +23,6 @@ dependencies = [
     { name = "langchain-google-genai" },
     { name = "langchain-openai" },
     { name = "langchain-postgres" },
-    { name = "langchain-tavily" },
     { name = "langfuse" },
     { name = "langgraph" },
     { name = "langgraph-checkpoint-postgres" },
@@ -56,7 +55,6 @@ requires-dist = [
     { name = "langchain-google-genai", specifier = ">=2.1.12" },
     { name = "langchain-openai", specifier = ">=0.3.0,<1.0.0" },
     { name = "langchain-postgres", specifier = ">=0.0.15" },
-    { name = "langchain-tavily", specifier = ">=0.2.0" },
     { name = "langfuse", specifier = ">=3.6.1,<4.0.0" },
     { name = "langgraph", specifier = ">=0.6.8" },
     { name = "langgraph-checkpoint-postgres", specifier = ">=2.0.24" },
@@ -69,6 +67,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pytest-asyncio", specifier = ">=0.24.0" },
     { name = "ruff", marker = "extra == 'dev'" },
+    { name = "tavily-python", specifier = ">=0.3.0" },
     { name = "tavily-python", specifier = ">=0.7.12" },
     { name = "uvicorn", specifier = ">=0.37.0" },
 ]
@@ -974,21 +973,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/1f/b9/b9eb61d2f2679bacea0bea02e71e715c18f02c9f72f6c3d523fe7f7f65be/langchain_postgres-0.0.15.tar.gz", hash = "sha256:d6be01ab3a802881e7dcd16439a4efda5a8eba15c368e04fe9a96134ad90854e", size = 198495, upload-time = "2025-06-24T14:19:21.324Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/15/5e/572c90fce17462bfcb7e7b7ac2e24bbdbaced338fb271172c7b96a24ccee/langchain_postgres-0.0.15-py3-none-any.whl", hash = "sha256:dc3d083f6e2ac08fe918f658b63886586be62c057cab0ad30c1c6b38023d99b7", size = 45059, upload-time = "2025-06-24T14:19:19.781Z" },
-]
-
-[[package]]
-name = "langchain-tavily"
-version = "0.2.12"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "aiohttp" },
-    { name = "langchain" },
-    { name = "langchain-core" },
-    { name = "requests" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/f8/b7/03f62ffc504990712cefdc722a46c3be80d6e0407833edb0f3a785f840c3/langchain_tavily-0.2.12.tar.gz", hash = "sha256:e73ef2149b7a4e751fce75c47003d04628222b12d073dae4af2dc7f58d589e30", size = 21744, upload-time = "2025-10-06T22:06:40.427Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/19/e1/71774530175512c49f7004790b669726c07ad7f797ebc0166ee99ea16d63/langchain_tavily-0.2.12-py3-none-any.whl", hash = "sha256:d243a53f60048a18b55f5a7efd5e2dcdde6a9dbc9f84c45e5f349210303e95a3", size = 25864, upload-time = "2025-10-06T22:06:39.354Z" },
 ]
 
 [[package]]

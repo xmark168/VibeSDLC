@@ -7,28 +7,38 @@ cho việc tạo implementation plan.
 
 import json
 import os
+import time
 from typing import Any
 
-from langchain_tavily import TavilySearch
+try:
+    from tavily import TavilyClient
+except ImportError:
+    TavilyClient = None
+
 from pydantic import BaseModel
 
 
-def create_tavily_search_tool(max_results: int = 5, topic: str = "general"):
+def create_tavily_client(api_key: str | None = None) -> TavilyClient | None:
     """
-    Tạo Tavily Search Tool theo hướng dẫn LangChain.
+    Tạo Tavily Client để sử dụng Python SDK.
 
     Args:
-        max_results: Số lượng kết quả tối đa (default: 5)
-        topic: Chủ đề tìm kiếm (default: "general")
+        api_key: Tavily API key (optional, sẽ lấy từ env nếu không có)
 
     Returns:
-        TavilySearch tool instance hoặc None nếu không available
+        TavilyClient instance hoặc None nếu không available
     """
+    if TavilyClient is None:
+        return None
+
     try:
-        return TavilySearch(
-            max_results=max_results,
-            topic=topic,
-        )
+        if api_key is None:
+            api_key = os.getenv("TAVILY_API_KEY")
+
+        if not api_key:
+            return None
+
+        return TavilyClient(api_key=api_key)
     except Exception:
         return None
 
@@ -41,6 +51,15 @@ class SearchResult(BaseModel):
     content: str = ""
     score: float = 0.0
     published_date: str | None = None
+    raw_content: str | None = None  # Thêm raw_content từ crawl
+
+
+class CrawlResult(BaseModel):
+    """Model cho kết quả crawl từ Tavily."""
+
+    url: str = ""
+    raw_content: str = ""
+    favicon: str | None = None
 
 
 class WebSearchResults(BaseModel):
@@ -48,8 +67,10 @@ class WebSearchResults(BaseModel):
 
     query: str = ""
     results: list[SearchResult] = []
+    crawl_result: CrawlResult | None = None  # Thêm crawl result
     total_results: int = 0
     search_time: float = 0.0
+    crawl_time: float = 0.0  # Thêm crawl time
     summary: str = ""
 
 
@@ -58,22 +79,27 @@ def tavily_search_tool(
     max_results: int = 5,
     search_depth: str = "basic",
     include_answer: bool = True,
-    include_raw_content: bool = False,
+    include_raw_content: bool = True,
     include_images: bool = False,
 ) -> str:
     """
-    Tìm kiếm web sử dụng Tavily Search API.
+    Tìm kiếm web sử dụng Tavily Python SDK với workflow search + crawl.
+
+    Workflow:
+    1. Search để lấy top URLs với summary content
+    2. Crawl URL đầu tiên (highest score) để lấy raw_content chi tiết
+    3. Kết hợp cả summary và raw_content để có thông tin đầy đủ
 
     Args:
         query: Search query string
         max_results: Số lượng kết quả tối đa (default: 5)
         search_depth: Độ sâu tìm kiếm - "basic" hoặc "advanced" (default: "basic")
         include_answer: Có bao gồm AI-generated answer không (default: True)
-        include_raw_content: Có bao gồm raw content không (default: False)
+        include_raw_content: Có crawl để lấy raw content hay không (default: True)
         include_images: Có bao gồm images không (default: False)
 
     Returns:
-        JSON string với kết quả tìm kiếm
+        JSON string với kết quả tìm kiếm và crawl
     """
     try:
         print(f"🔍 Searching web for: {query}")
@@ -91,68 +117,100 @@ def tavily_search_tool(
                 indent=2,
             )
 
-        # Khởi tạo Tavily search tool theo hướng dẫn LangChain
-        search_tool = create_tavily_search_tool(max_results=max_results)
-
-        if search_tool is None:
+        # Tạo Tavily client
+        client = create_tavily_client()
+        if client is None:
             return json.dumps(
                 {
                     "status": "error",
-                    "message": "TavilySearch not available. Please install langchain-tavily package.",
+                    "message": "Tavily client not available. Please install tavily-python package and set TAVILY_API_KEY.",
                     "query": query,
                     "results": [],
                 },
                 indent=2,
             )
 
-        # Thực hiện tìm kiếm
-        import time
-
+        # Bước 1: Search để lấy URLs và summary content
         start_time = time.time()
 
-        raw_results = search_tool.invoke({"query": query})
+        search_response = client.search(
+            query=query,
+            search_depth=search_depth,
+            max_results=max_results,
+            include_answer=include_answer,
+            include_images=include_images,
+            include_raw_content=False,  # Không lấy raw_content trong search
+        )
 
         search_time = time.time() - start_time
 
         print(
-            f"📊 Found {len(raw_results) if isinstance(raw_results, list) else 0} results in {search_time:.2f}s"
+            f"📊 Found {len(search_response.get('results', []))} results in {search_time:.2f}s"
         )
 
-        # Parse và format kết quả
+        # Parse search results
         search_results = []
+        crawl_result = None
+        crawl_time = 0.0
 
-        if isinstance(raw_results, list):
-            for result in raw_results:
-                if isinstance(result, dict):
-                    search_result = SearchResult(
-                        title=result.get("title", ""),
-                        url=result.get("url", ""),
-                        content=result.get("content", ""),
-                        score=result.get("score", 0.0),
-                        published_date=result.get("published_date"),
+        if search_response.get("results"):
+            for result in search_response["results"]:
+                search_result = SearchResult(
+                    title=result.get("title", ""),
+                    url=result.get("url", ""),
+                    content=result.get("content", ""),
+                    score=result.get("score", 0.0),
+                    published_date=result.get("published_date"),
+                )
+                search_results.append(search_result)
+
+            # Bước 2: Crawl URL đầu tiên (highest score) để lấy raw_content
+            if include_raw_content and search_results:
+                try:
+                    top_result = search_results[0]  # URL có score cao nhất
+                    print(f"🕷️ Crawling top result: {top_result.url}")
+
+                    crawl_start_time = time.time()
+                    crawl_response = client.crawl(
+                        url=top_result.url,
+                        instructions=f"Extract detailed information about: {query}",
+                        max_depth=2,
+                        max_breadth=10,
+                        extract_depth="advanced",
                     )
-                    search_results.append(search_result)
+                    crawl_time = time.time() - crawl_start_time
 
-        # Tạo summary từ kết quả
-        summary = _generate_search_summary(query, search_results)
+                    print(f"🕷️ Crawl completed in {crawl_time:.2f}s")
 
-        # Tạo WebSearchResults object
-        web_results = WebSearchResults(
-            query=query,
-            results=search_results,
-            total_results=len(search_results),
-            search_time=search_time,
-            summary=summary,
-        )
+                    if crawl_response.get("results"):
+                        crawl_data = crawl_response["results"][0]
+                        crawl_result = CrawlResult(
+                            url=crawl_data.get("url", top_result.url),
+                            raw_content=crawl_data.get("raw_content", ""),
+                            favicon=crawl_data.get("favicon"),
+                        )
 
-        # Return JSON
+                        # Cập nhật search result đầu tiên với raw_content
+                        search_results[0].raw_content = crawl_result.raw_content
+
+                except Exception as crawl_error:
+                    print(f"⚠️ Crawl failed: {crawl_error}")
+                    # Tiếp tục với search results, không fail toàn bộ
+
+        # Tạo summary từ search results và crawl content
+        summary = _generate_enhanced_search_summary(query, search_results, crawl_result)
+
+        # Tạo response dict
         result_dict = {
             "status": "success",
             "query": query,
             "total_results": len(search_results),
             "search_time": search_time,
+            "crawl_time": crawl_time,
+            "has_crawl_content": crawl_result is not None,
             "summary": summary,
             "results": [result.model_dump() for result in search_results],
+            "crawl_result": crawl_result.model_dump() if crawl_result else None,
         }
 
         print("✅ Web search completed successfully")
@@ -169,6 +227,70 @@ def tavily_search_tool(
             },
             indent=2,
         )
+
+
+def _generate_enhanced_search_summary(
+    query: str, results: list[SearchResult], crawl_result: CrawlResult | None = None
+) -> str:
+    """
+    Tạo enhanced summary từ kết quả search và crawl.
+
+    Args:
+        query: Original search query
+        results: List of search results
+        crawl_result: Crawl result với raw content (optional)
+
+    Returns:
+        Enhanced summary string
+    """
+    if not results:
+        return f"No search results found for query: '{query}'"
+
+    summary_parts = []
+
+    # Phần 1: Tổng quan từ search results
+    summary_parts.append(f"Search Results for '{query}':")
+    summary_parts.append(f"Found {len(results)} relevant sources:")
+
+    for i, result in enumerate(results[:3], 1):  # Top 3 results
+        summary_parts.append(f"{i}. {result.title}")
+        if result.content:
+            content_preview = (
+                result.content[:200] + "..."
+                if len(result.content) > 200
+                else result.content
+            )
+            summary_parts.append(f"   Summary: {content_preview}")
+        summary_parts.append(f"   Source: {result.url}")
+        if result.score > 0:
+            summary_parts.append(f"   Relevance: {result.score:.2f}")
+        summary_parts.append("")
+
+    # Phần 2: Detailed content từ crawl (nếu có)
+    if crawl_result and crawl_result.raw_content:
+        summary_parts.append("--- Detailed Content (from crawl) ---")
+        raw_content = crawl_result.raw_content
+
+        # Truncate raw content nếu quá dài
+        if len(raw_content) > 2000:
+            raw_content = raw_content[:2000] + "\n... (content truncated)"
+
+        summary_parts.append(raw_content)
+        summary_parts.append("")
+        summary_parts.append(f"Full content source: {crawl_result.url}")
+
+    # Phần 3: Key insights
+    summary_parts.append("--- Key Insights ---")
+    if crawl_result and crawl_result.raw_content:
+        summary_parts.append(
+            "✅ Detailed implementation information available from crawled content"
+        )
+    else:
+        summary_parts.append("ℹ️ Summary information available from search results")
+
+    summary_parts.append(f"📊 Total sources analyzed: {len(results)}")
+
+    return "\n".join(summary_parts)
 
 
 def _generate_search_summary(query: str, results: list[SearchResult]) -> str:

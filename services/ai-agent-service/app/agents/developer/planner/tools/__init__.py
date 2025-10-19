@@ -16,7 +16,7 @@ from .planning_tools import (
     task_parser_tool,
 )
 from .tavily_search import (
-    create_tavily_search_tool,
+    create_tavily_client,
     generate_search_queries,
     should_perform_websearch,
     tavily_search_tool,
@@ -33,7 +33,7 @@ __all__ = [
     "risk_assessment_tool",
     "CodebaseAnalyzer",
     "analyze_codebase_context",
-    "create_tavily_search_tool",
+    "create_tavily_client",
     "tavily_search_tool",
     "should_perform_websearch",
     "generate_search_queries",

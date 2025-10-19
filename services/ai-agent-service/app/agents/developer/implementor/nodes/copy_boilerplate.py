@@ -41,12 +41,20 @@ def copy_boilerplate(state: ImplementorState) -> ImplementorState:
         source_path = str(template_base / state.boilerplate_template)
 
         # Copy boilerplate template to working directory
-        result = copy_directory_from_external_tool(
-            source_path=source_path,
-            destination_path=".",  # Copy to root of working directory
-            working_directory=working_dir,
-            overwrite=False,  # Don't overwrite existing files
-            exclude_patterns=[".git", "__pycache__", "*.pyc", ".env", "node_modules"],
+        result = copy_directory_from_external_tool.invoke(
+            {
+                "source_path": source_path,
+                "destination_path": ".",  # Copy to root of working directory
+                "working_directory": working_dir,
+                "overwrite": False,  # Don't overwrite existing files
+                "exclude_patterns": [
+                    ".git",
+                    "__pycache__",
+                    "*.pyc",
+                    ".env",
+                    "node_modules",
+                ],
+            }
         )
 
         # Parse result
