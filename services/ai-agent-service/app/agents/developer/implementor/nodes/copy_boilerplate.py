@@ -1,5 +1,8 @@
 """
-Copy Boilerplate Node
+Copy Boilerplate Node - DEPRECATED
+
+DEPRECATED: Node này không còn được sử dụng.
+Repository creation từ template giờ được xử lý bởi GitHub Template Repository API.
 
 Copy boilerplate template cho new projects sử dụng external file tools.
 """
@@ -24,11 +27,11 @@ def copy_boilerplate(state: ImplementorState) -> ImplementorState:
         Updated ImplementorState với boilerplate copy status
     """
     try:
-        # Skip if not a new project or no template specified
-        if not state.is_new_project or not state.boilerplate_template:
-            print("⏭️  Skipping boilerplate copy - not a new project or no template")
-            state.current_phase = "implement_files"
-            return state
+        # DEPRECATED: Always skip boilerplate copy
+        # Repository creation from template handled by GitHub Template Repository API
+        print("⏭️  Skipping boilerplate copy - using GitHub Template Repository API")
+        state.current_phase = "install_dependencies"
+        return state
 
         print(f"📋 Copying boilerplate template: {state.boilerplate_template}")
 

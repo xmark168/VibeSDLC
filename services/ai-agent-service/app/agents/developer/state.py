@@ -33,6 +33,9 @@ class TaskResult(BaseModel):
     duration_seconds: float | None = None
     error_message: str | None = None
 
+    # Git metadata (for Option A: Auto-commit)
+    auto_commit_hash: str | None = None
+
 
 class SprintExecutionSummary(BaseModel):
     """Summary of sprint execution."""
@@ -81,6 +84,9 @@ class DeveloperState(BaseModel):
     # Task processing state
     current_task_index: int = 0
     eligible_tasks: list[dict[str, Any]] = Field(default_factory=list)
+
+    # Sequential branching support
+    source_branch: str | None = None  # Previous task's branch for sequential branching
 
     # Execution results
     execution_summary: SprintExecutionSummary = Field(

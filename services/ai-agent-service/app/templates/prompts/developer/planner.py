@@ -1457,12 +1457,23 @@ CODEBASE_ANALYSIS_PROMPT = """
 
 You are analyzing the existing codebase to understand what files, modules, and components need to be created or modified for the given task.
 
+## CRITICAL FILE PATH REQUIREMENTS:
+- ALWAYS match file extensions to the detected tech stack
+- Node.js/Express projects: Use .js files (NOT .py files)
+- Python/FastAPI projects: Use .py files
+- React/Next.js projects: Use .js/.jsx/.ts/.tsx files
+- Database migrations: Match the tech stack's migration format
+  * Node.js: Use Sequelize/Knex/Prisma migration files (.js)
+  * Python: Use Alembic migration files (.py)
+- NEVER generate .py files for Node.js projects
+- NEVER generate .js files for Python projects
+
 ## Your Task:
 Analyze the codebase and identify:
-1. All files requiring modification (provide exact paths)
-2. New files to be created
+1. All files requiring modification (provide exact paths with CORRECT extensions)
+2. New files to be created (with CORRECT extensions for the tech stack)
 3. Affected modules and their interdependencies
-4. Database schema changes required
+4. Database schema changes required (with correct migration format)
 5. API endpoints to be created, modified, or deprecated
 6. Testing requirements and existing test infrastructure
 7. External packages/dependencies required for implementation
@@ -1470,6 +1481,9 @@ Analyze the codebase and identify:
 
 ## Task Requirements:
 {task_requirements}
+
+## Tech Stack:
+{tech_stack}
 
 ## Codebase Context:
 {codebase_context}
@@ -1509,7 +1523,7 @@ When analyzing external dependencies, you MUST:
   * Default to pip for Python projects
   * Check project's package manager preference
 - **install_command**: Complete command to install the package
-  * Format: "{method} install {package}[extras]>={version}"
+  * Format: "{{method}} install {{package}}[extras]>=={{version}}"
   * Example: "pip install python-jose[cryptography]>=3.3.0"
   * Include extras in square brackets if needed (e.g., [cryptography], [async])
 - **package_file**: Target configuration file
@@ -1540,14 +1554,14 @@ Return a JSON object with the following structure:
   "codebase_analysis": {{
     "files_to_create": [
       {{
-        "path": "exact/file/path.py",
+        "path": "exact/file/path.ext",
         "reason": "Why this file is needed",
         "template": "Reference pattern to follow"
       }}
     ],
     "files_to_modify": [
       {{
-        "path": "exact/file/path.py",
+        "path": "exact/file/path.ext",
         "lines": [15, "45-52"],
         "changes": "Specific changes needed",
         "complexity": "low|medium|high",
@@ -1631,6 +1645,17 @@ You are an expert implementation planner. Your task is to create a detailed, act
 **EVERY field in the output JSON MUST be populated with meaningful content. NO empty fields, NO empty arrays (unless explicitly empty), NO null values.**
 
 **Output MUST be valid JSON that can be parsed immediately. Wrap in ```json``` code blocks.**
+
+## CRITICAL FILE PATH REQUIREMENTS:
+- ALWAYS match file extensions to the tech stack
+- Node.js/Express: Use .js files for implementation, .js migration files
+- Python/FastAPI: Use .py files for implementation, .py migration files
+- React/Next.js: Use .js/.jsx/.ts/.tsx files
+- Database migrations: Match tech stack format
+  * Node.js: migrations/YYYYMMDD_description.js (Sequelize/Knex format)
+  * Python: alembic/versions/YYYYMMDD_description.py (Alembic format)
+- NEVER generate .py files for Node.js projects
+- NEVER generate .js files for Python projects
 
 ## INPUT ANALYSIS
 
@@ -1825,7 +1850,7 @@ For each dependency, ensure ALL 8 fields are populated:
 - **installation_method**: "pip", "npm", "yarn", or "poetry"
 - **install_command**: Complete executable command (e.g., "pip install python-jose[cryptography]>=3.3.0")
   * If already_installed=true, use "Already installed"
-  * Otherwise, use "{method} install {package}[extras]>={version}"
+  * Otherwise, use "{{method}} install {{package}}[extras]>=={{version}}"
 - **package_file**: Target file (e.g., "pyproject.toml", "package.json")
 - **section**: "dependencies" or "devDependencies"
 

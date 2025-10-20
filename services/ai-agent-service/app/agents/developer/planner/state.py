@@ -93,6 +93,9 @@ class PlannerState(BaseModel):
     codebase_context: str = ""
     codebase_path: str = ""  # Dynamic codebase path for analysis (empty = use default)
 
+    # Tech stack detection
+    tech_stack: str = ""  # e.g., "nodejs", "fastapi", "react-vite"
+
     # Daytona Sandbox Integration
     sandbox_id: str = ""  # ID của Daytona sandbox instance
     github_repo_url: str = ""  # URL của GitHub repository cần clone vào sandbox

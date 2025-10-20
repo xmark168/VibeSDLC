@@ -1,0 +1,27 @@
+{
+  "success": true,
+  "final_plan": {
+    "task_info": {
+      "task_id": "TASK-001",
+      "description": "Implement user registration functionality",
+      "complexity_score": 5,
+      "plan_type": "simple"
+    },
+    "file_changes": {
+      "files_to_create": [],
+      "files_to_modify": [],
+      "affected_modules": []
+    },
+    "implementation": {
+      "approach": {
+        "strategy": "Create new registration endpoint"
+      },
+      "steps": [
+        {
+          "step": 1,
+          "title": "Create registration endpoint"
+        }
+      ]
+    }
+  }
+}

@@ -36,7 +36,7 @@ run_tests → run_and_verify → commit_changes → create_pr → finalize → E
 #### Workflow Nodes
 - **`initialize`**: Validate input và setup initial state
 - **`setup_branch`**: Tạo feature branch
-- **`copy_boilerplate`**: Copy template cho new projects (conditional)
+- **`install_dependencies`**: Install external dependencies from plan
 - **`implement_files`**: Thực hiện file changes
 - **`run_tests`**: Chạy tests để verify
 - **`run_and_verify`**: Chạy chương trình để verify implementation (NEW)

@@ -15,7 +15,6 @@ from langgraph.graph import END, START, StateGraph
 
 from .nodes import (
     commit_changes,
-    copy_boilerplate,
     create_pr,
     finalize,
     implement_files,
@@ -39,12 +38,12 @@ class ImplementorAgent:
     Implementor Agent - Thực hiện implementation plan từ Planner Agent.
 
     Workflow:
-    START → initialize → setup_branch → [copy_boilerplate] → install_dependencies →
+    START → initialize → setup_branch → install_dependencies →
     generate_code → implement_files → run_tests → commit_changes → create_pr → finalize → END
 
-    Với conditional branch: copy_boilerplate chỉ chạy cho new projects với template
     install_dependencies luôn chạy để cài đặt external dependencies từ plan
     generate_code luôn chạy để tạo actual code content
+    Repository creation từ template được xử lý bởi GitHub Template Repository API
     """
 
     def __init__(
@@ -94,7 +93,6 @@ class ImplementorAgent:
         # Add nodes
         graph_builder.add_node("initialize", initialize)
         graph_builder.add_node("setup_branch", setup_branch)
-        graph_builder.add_node("copy_boilerplate", copy_boilerplate)
 
         # Import generate_code here to avoid auto-formatter issues
         from .nodes.generate_code import generate_code
@@ -114,11 +112,10 @@ class ImplementorAgent:
         graph_builder.add_edge(START, "initialize")
         graph_builder.add_edge("initialize", "setup_branch")
 
-        # Conditional edge after setup_branch
-        graph_builder.add_conditional_edges("setup_branch", self.after_setup_branch)
+        # Direct edge from setup_branch to install_dependencies
+        graph_builder.add_edge("setup_branch", "install_dependencies")
 
         # Continue workflow
-        graph_builder.add_edge("copy_boilerplate", "install_dependencies")
         graph_builder.add_edge("install_dependencies", "generate_code")
         graph_builder.add_edge("generate_code", "implement_files")
         graph_builder.add_edge("implement_files", "run_tests")
@@ -132,40 +129,6 @@ class ImplementorAgent:
         checkpointer = MemorySaver()
         return graph_builder.compile(checkpointer=checkpointer)
 
-    def after_setup_branch(self, state: ImplementorState) -> str:
-        """
-        Conditional branch sau setup_branch node.
-
-        Logic:
-        - Nếu có error → END (terminate workflow)
-        - Nếu is_new_project = True và có boilerplate_template → copy_boilerplate
-        - Ngược lại → install_dependencies
-
-        Args:
-            state: ImplementorState với project type info
-
-        Returns:
-            Next node name hoặc END
-        """
-        print("\n🔀 Branch Decision after setup_branch:")
-        print(f"   Status: {state.status}")
-        print(f"   Is New Project: {state.is_new_project}")
-        print(f"   Boilerplate Template: {state.boilerplate_template}")
-
-        # Check for errors first
-        if state.status == "error":
-            print("   → Decision: END (error occurred)")
-            return END
-
-        if state.is_new_project and state.boilerplate_template:
-            print("   → Decision: COPY_BOILERPLATE (new project with template)")
-            return "copy_boilerplate"
-        else:
-            print(
-                "   → Decision: INSTALL_DEPENDENCIES (existing project or no template)"
-            )
-            return "install_dependencies"
-
     def run(
         self,
         implementation_plan: dict[str, Any],
@@ -175,6 +138,7 @@ class ImplementorAgent:
         github_repo_url: str = "",
         thread_id: str | None = None,
         test_mode: bool = False,
+        source_branch: str = None,  # New parameter for sequential branching
     ) -> dict[str, Any]:
         """
         Run implementor workflow.
@@ -187,6 +151,7 @@ class ImplementorAgent:
             github_repo_url: GitHub repository URL
             thread_id: Thread ID cho conversation tracking
             test_mode: If True, skip branch creation for testing
+            source_branch: Source branch for sequential branching (optional)
 
         Returns:
             Implementation results
@@ -206,6 +171,10 @@ class ImplementorAgent:
             # Add test mode if specified
             if test_mode:
                 initial_state.test_mode = test_mode
+
+            # Add source branch for sequential branching
+            if source_branch:
+                initial_state.source_branch = source_branch
 
             # Setup thread config
             thread_config = {"configurable": {"thread_id": thread_id or "default"}}

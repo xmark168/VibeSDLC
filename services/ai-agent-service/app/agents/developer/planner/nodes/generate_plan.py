@@ -61,6 +61,8 @@ def generate_plan(state: PlannerState) -> PlannerState:
 
 ## TASK CONTEXT
 
+Tech Stack: {state.tech_stack or "unknown"}
+
 Task Requirements:
 {task_requirements.model_dump_json(indent=2)}
 

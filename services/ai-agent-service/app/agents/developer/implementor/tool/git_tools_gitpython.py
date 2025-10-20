@@ -98,24 +98,36 @@ def create_initial_commit(repo: Repo, working_dir: Path) -> dict[str, Any]:
 
 @tool
 def create_feature_branch_tool(
-    branch_name: str, base_branch: str = "main", working_directory: str = "."
+    branch_name: str,
+    base_branch: str = "main",
+    working_directory: str = ".",
+    source_branch: str = None,  # New parameter for sequential branching
 ) -> str:
     """
     Create a new feature branch for implementation using GitPython.
 
-    This tool creates a new Git branch from the specified base branch
+    Supports two branching strategies:
+    1. Independent branching: Create from base_branch (default)
+    2. Sequential branching: Create from source_branch (preserves files from previous task)
+
+    This tool creates a new Git branch from the specified base branch or source branch
     and switches to it for development work.
 
     Args:
         branch_name: Name of the new feature branch (e.g., "feature/add-auth")
         base_branch: Base branch to create from (default: "main")
         working_directory: Git repository directory
+        source_branch: Source branch for sequential branching (optional)
 
     Returns:
         JSON string with branch creation status
 
-    Example:
+    Examples:
+        # Independent branching (default)
         create_feature_branch_tool("feature/add-user-auth", "main")
+
+        # Sequential branching (preserve files from previous task)
+        create_feature_branch_tool("feature/task-2", "main", ".", "feature/task-1")
     """
 
     try:
@@ -249,69 +261,148 @@ def create_feature_branch_tool(
                         }
                     )
 
-            # Switch to base branch
-            try:
-                base_head = repo.heads[base_branch]
-                base_head.checkout()
-            except IndexError:
-                return json.dumps(
-                    {
-                        "status": "error",
-                        "message": f"Base branch '{base_branch}' does not exist",
-                    }
+            # Check if we should preserve current working directory
+            # If there are uncommitted files from previous tasks, create branch from current HEAD
+            # instead of switching to base branch (which would lose uncommitted changes)
+            preserve_working_dir = (
+                repo.is_dirty(untracked_files=True) and not stash_created
+            )
+
+            if preserve_working_dir:
+                print(
+                    "🔄 Preserving working directory with uncommitted changes from previous task"
                 )
-            except GitCommandError as e:
-                # If stash was created, try to restore it
-                if stash_created:
+                # Create new branch from current HEAD without switching to base branch
+                new_branch = repo.create_head(safe_branch_name)
+                new_branch.checkout()
+
+                # Get current commit info
+                current_commit = repo.head.commit
+                commit_info = f"{current_commit.hexsha[:8]} {current_commit.summary}"
+
+                response_data = {
+                    "status": "success",
+                    "message": f"Created branch '{safe_branch_name}' preserving working directory",
+                    "branch_name": safe_branch_name,
+                    "base_branch": current_branch,  # Use current branch as base
+                    "previous_branch": current_branch,
+                    "base_commit": commit_info,
+                    "commit_hash": current_commit.hexsha,
+                    "timestamp": datetime.now().isoformat(),
+                    "preserved_working_dir": True,
+                }
+            else:
+                # Determine which branch to checkout to
+                target_branch = source_branch if source_branch else base_branch
+
+                # Sequential branching: checkout to source branch if specified
+                if source_branch:
+                    print(
+                        f"🔗 Sequential branching: Creating from '{source_branch}' instead of '{base_branch}'"
+                    )
                     try:
-                        repo.git.stash("pop")
-                        print("🔄 Restored stashed changes due to checkout failure")
-                    except Exception:
+                        if source_branch in [head.name for head in repo.heads]:
+                            source_head = repo.heads[source_branch]
+                            source_head.checkout()
+                            print(f"✅ Checked out to source branch: {source_branch}")
+                        else:
+                            print(
+                                f"⚠️ Source branch '{source_branch}' not found, falling back to base branch"
+                            )
+                            target_branch = base_branch
+                            base_head = repo.heads[base_branch]
+                            base_head.checkout()
+                    except (IndexError, GitCommandError) as e:
                         print(
-                            "⚠️ Failed to restore stash - please check 'git stash list'"
+                            f"⚠️ Failed to checkout source branch '{source_branch}': {e}"
+                        )
+                        print(f"🔄 Falling back to base branch: {base_branch}")
+                        target_branch = base_branch
+                        base_head = repo.heads[base_branch]
+                        base_head.checkout()
+                else:
+                    # Normal flow: switch to base branch first
+                    try:
+                        base_head = repo.heads[base_branch]
+                        base_head.checkout()
+                    except IndexError:
+                        return json.dumps(
+                            {
+                                "status": "error",
+                                "message": f"Base branch '{base_branch}' does not exist",
+                            }
+                        )
+                    except GitCommandError as e:
+                        # If stash was created, try to restore it
+                        if stash_created:
+                            try:
+                                repo.git.stash("pop")
+                                print(
+                                    "🔄 Restored stashed changes due to checkout failure"
+                                )
+                            except Exception:
+                                print(
+                                    "⚠️ Failed to restore stash - please check 'git stash list'"
+                                )
+
+                        return json.dumps(
+                            {
+                                "status": "error",
+                                "message": f"Failed to checkout base branch '{base_branch}': {str(e)}",
+                            }
                         )
 
-                return json.dumps(
-                    {
-                        "status": "error",
-                        "message": f"Failed to checkout base branch '{base_branch}': {str(e)}",
-                    }
-                )
+                # Pull latest changes from base branch
+                try:
+                    origin = repo.remote("origin")
+                    origin.pull(base_branch)
+                except Exception:
+                    # Continue even if pull fails
+                    pass
 
-            # Pull latest changes from base branch
-            try:
-                origin = repo.remote("origin")
-                origin.pull(base_branch)
-            except Exception:
-                # Continue even if pull fails
-                pass
+                # Create new branch from current HEAD
+                new_branch = repo.create_head(safe_branch_name)
+                new_branch.checkout()
 
-            # Create new branch from current HEAD
-            new_branch = repo.create_head(safe_branch_name)
-            new_branch.checkout()
+                # Get base commit info
+                base_commit = repo.head.commit
+                commit_info = f"{base_commit.hexsha[:8]} {base_commit.summary}"
 
-            # Get base commit info
-            base_commit = repo.head.commit
-            commit_info = f"{base_commit.hexsha[:8]} {base_commit.summary}"
+                response_data = {
+                    "status": "success",
+                    "message": f"Created and switched to branch '{safe_branch_name}'",
+                    "branch_name": safe_branch_name,
+                    "base_branch": target_branch,  # Use actual target branch (could be source_branch)
+                    "source_branch": source_branch,  # Track source branch for sequential branching
+                    "previous_branch": current_branch,
+                    "base_commit": commit_info,
+                    "commit_hash": base_commit.hexsha,
+                    "timestamp": datetime.now().isoformat(),
+                    "preserved_working_dir": False,
+                    "sequential_branching": source_branch is not None,
+                }
 
-            # Include stash information in response
-            response_data = {
-                "status": "success",
-                "message": f"Created and switched to branch '{safe_branch_name}'",
-                "branch_name": safe_branch_name,
-                "base_branch": base_branch,
-                "previous_branch": current_branch,
-                "base_commit": commit_info,
-                "commit_hash": base_commit.hexsha,
-                "timestamp": datetime.now().isoformat(),
-                "stash_created": stash_created,
-            }
+            # Add stash information to response
+            if "stash_created" not in response_data:
+                response_data["stash_created"] = stash_created
 
             if stash_created:
                 response_data["stash_message"] = stash_message
-                response_data["note"] = (
-                    "Uncommitted changes were stashed. Use 'git stash pop' to restore them."
-                )
+
+                # Auto-restore stash to preserve changes from previous task
+                try:
+                    repo.git.stash("pop")
+                    print("🔄 Auto-restored stashed changes from previous task")
+                    response_data["note"] = (
+                        "Uncommitted changes from previous task were preserved."
+                    )
+                    response_data["stash_restored"] = True
+                except GitCommandError as e:
+                    print(f"⚠️ Failed to restore stash: {e}")
+                    response_data["note"] = (
+                        "Uncommitted changes were stashed. Use 'git stash pop' to restore them."
+                    )
+                    response_data["stash_restored"] = False
 
             return json.dumps(response_data, indent=2)
 

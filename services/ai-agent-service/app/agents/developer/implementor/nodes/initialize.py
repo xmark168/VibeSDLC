@@ -71,22 +71,60 @@ def initialize(state: ImplementorState) -> ImplementorState:
             files_to_create_raw = plan.get("files_to_create", [])
             files_to_modify_raw = plan.get("files_to_modify", [])
 
-        # Determine project type
-        if files_to_create_raw:
-            # Check if this looks like a new project
-            create_files = files_to_create_raw
-            has_main_files = any(
-                file_info.get("file_path", "").endswith(
-                    ("main.py", "app.py", "index.js", "package.json")
-                )
-                for file_info in create_files
-            )
-            state.is_new_project = has_main_files
+        # Note: Source code is always cloned to sandbox before workflow runs
+        # No need to determine project type - always working with existing codebase
 
-        # Extract tech stack từ plan hoặc từ file patterns
+        # Extract tech stack từ plan hoặc detect từ codebase
         tech_stack = plan.get("tech_stack", "")
+        if not tech_stack and state.codebase_path:
+            # Use detect_stack_tool để phân tích codebase thực tế
+            try:
+                import json
+
+                from ..tool.stack_tools import detect_stack_tool
+
+                print(f"🔍 Detecting tech stack from codebase: {state.codebase_path}")
+                stack_result = detect_stack_tool.invoke(
+                    {"project_path": state.codebase_path}
+                )
+
+                if stack_result and not stack_result.startswith("Error"):
+                    stack_info = json.loads(stack_result)
+                    primary_language = stack_info.get("primary_language", "").lower()
+                    frameworks = stack_info.get("frameworks", [])
+
+                    # Map detected info to tech stack
+                    if primary_language == "javascript":
+                        if "Express.js" in frameworks:
+                            tech_stack = "nodejs"
+                        elif "Next.js" in frameworks:
+                            tech_stack = "nextjs"
+                        elif "React" in frameworks:
+                            tech_stack = "react-vite"
+                        else:
+                            tech_stack = "nodejs"  # Default for JavaScript
+                    elif primary_language == "python":
+                        if "FastAPI" in frameworks:
+                            tech_stack = "fastapi"
+                        elif "Django" in frameworks:
+                            tech_stack = "django"
+                        elif "Flask" in frameworks:
+                            tech_stack = "flask"
+                        else:
+                            tech_stack = "python"
+                    else:
+                        tech_stack = primary_language or "unknown"
+
+                    print(
+                        f"✅ Detected tech stack: {tech_stack} (language: {primary_language}, frameworks: {frameworks})"
+                    )
+                else:
+                    print(f"⚠️ Stack detection failed: {stack_result}")
+            except Exception as e:
+                print(f"⚠️ Error detecting stack: {e}")
+
+        # Fallback: Infer từ file patterns nếu vẫn không có tech stack
         if not tech_stack:
-            # Infer từ file patterns
             files_to_create = plan.get("files_to_create", [])
             files_to_modify = plan.get("files_to_modify", [])
             all_files = files_to_create + files_to_modify
@@ -118,18 +156,8 @@ def initialize(state: ImplementorState) -> ImplementorState:
             if not tech_valid:
                 print(f"⚠️  Tech stack validation issues: {'; '.join(tech_issues)}")
 
-        # Set boilerplate template path for new projects
-        if state.is_new_project and tech_stack:
-            template_mapping = {
-                "fastapi": "be/python/fastapi-basic",
-                "python": "be/python/fastapi-basic",
-                "nextjs": "fe/nextjs/nextjs-basic",
-                "react-vite": "fe/react/react-vite",
-                "react": "fe/react/react-vite",
-                "nodejs": "be/nodejs/express-basic",
-                "express": "be/nodejs/express-basic",
-            }
-            state.boilerplate_template = template_mapping.get(tech_stack, "")
+        # Note: Boilerplate templates no longer used
+        # Repository creation from template handled by GitHub Template Repository API
 
         # Parse file changes từ implementation plan với field mapping
         files_to_create = []
@@ -186,11 +214,11 @@ def initialize(state: ImplementorState) -> ImplementorState:
         message = AIMessage(
             content=f"✅ Implementor initialized successfully\n"
             f"- Task ID: {state.task_id}\n"
-            f"- Project Type: {'New Project' if state.is_new_project else 'Existing Project'}\n"
             f"- Tech Stack: {state.tech_stack}\n"
             f"- Files to Create: {len(state.files_to_create)}\n"
             f"- Files to Modify: {len(state.files_to_modify)}\n"
-            f"- Feature Branch: {state.feature_branch}"
+            f"- Feature Branch: {state.feature_branch}\n"
+            f"- Working with existing codebase in sandbox"
         )
         state.messages.append(message)
 

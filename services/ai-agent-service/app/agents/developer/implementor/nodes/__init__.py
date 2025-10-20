@@ -5,7 +5,6 @@ Các nodes cho Implementor Agent workflow.
 """
 
 from .commit_changes import commit_changes
-from .copy_boilerplate import copy_boilerplate
 from .create_pr import create_pr
 from .finalize import finalize
 from .generate_code import generate_code
@@ -19,7 +18,6 @@ from .setup_branch import setup_branch
 __all__ = [
     "initialize",
     "setup_branch",
-    "copy_boilerplate",
     "install_dependencies",
     "generate_code",
     "implement_files",

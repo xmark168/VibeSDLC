@@ -54,14 +54,22 @@ def setup_branch(state: ImplementorState) -> ImplementorState:
         # Determine working directory
         working_dir = state.codebase_path or "."
 
+        # Determine source branch for sequential branching
+        source_branch = getattr(state, "source_branch", None)
+
         # Create feature branch using Git tools
-        result = create_feature_branch_tool.invoke(
-            {
-                "branch_name": state.feature_branch,
-                "base_branch": state.base_branch,
-                "working_directory": working_dir,
-            }
-        )
+        branch_params = {
+            "branch_name": state.feature_branch,
+            "base_branch": state.base_branch,
+            "working_directory": working_dir,
+        }
+
+        # Add source_branch for sequential branching if specified
+        if source_branch:
+            branch_params["source_branch"] = source_branch
+            print(f"🔗 Sequential branching: Creating from '{source_branch}'")
+
+        result = create_feature_branch_tool.invoke(branch_params)
 
         # Parse result with error handling
         try:
@@ -91,10 +99,7 @@ def setup_branch(state: ImplementorState) -> ImplementorState:
             state.tools_output["branch_creation"] = result_data
 
             # Update status
-            if state.is_new_project and state.boilerplate_template:
-                state.current_phase = "copy_boilerplate"
-            else:
-                state.current_phase = "implement_files"
+            state.current_phase = "install_dependencies"
             state.status = "branch_created"
 
             # Add message
@@ -102,7 +107,7 @@ def setup_branch(state: ImplementorState) -> ImplementorState:
                 content=f"✅ Feature branch created successfully\n"
                 f"- Branch: {state.feature_branch}\n"
                 f"- Base: {state.base_branch}\n"
-                f"- Next: {'Copy boilerplate' if state.is_new_project else 'Implement files'}"
+                f"- Next: Install dependencies"
             )
             state.messages.append(message)
 
@@ -120,14 +125,14 @@ def setup_branch(state: ImplementorState) -> ImplementorState:
 
                 # For now, just continue with existing branch
                 state.current_branch = state.feature_branch
-                state.current_phase = "generate_code"
+                state.current_phase = "install_dependencies"
                 state.status = "branch_ready"
 
                 # Add warning message
                 message = AIMessage(
                     content=f"⚠️ Branch already exists, using existing branch\n"
                     f"- Branch: {state.feature_branch}\n"
-                    f"- Next: Generate code"
+                    f"- Next: Install dependencies"
                 )
                 state.messages.append(message)
 

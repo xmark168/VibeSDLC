@@ -64,6 +64,18 @@ class DependencyInstallation(BaseModel):
     error_message: str = ""
 
 
+class SandboxDeletion(BaseModel):
+    """Kết quả Daytona sandbox deletion."""
+
+    sandbox_id: str = ""
+    success: bool = False
+    message: str = ""
+    retries_used: int = 0
+    error: str = ""
+    skipped: bool = False
+    skip_reason: str = ""
+
+
 class GitOperation(BaseModel):
     """Thông tin về Git operations."""
 
@@ -91,10 +103,8 @@ class ImplementorState(BaseModel):
     codebase_path: str = ""
     github_repo_url: str = ""
 
-    # Project type và tech stack
-    is_new_project: bool = False
+    # Tech stack
     tech_stack: str = ""  # e.g., "fastapi", "nextjs", "react-vite"
-    boilerplate_template: str = ""  # Path to boilerplate template
 
     # Git workflow
     base_branch: str = "main"
@@ -112,6 +122,9 @@ class ImplementorState(BaseModel):
     dependency_installations: list[DependencyInstallation] = Field(default_factory=list)
     dependencies_installed: bool = False
 
+    # Sandbox Management
+    sandbox_deletion: SandboxDeletion | None = None
+
     # Testing
     test_execution: TestExecution = Field(default_factory=TestExecution)
     tests_passed: bool = False
@@ -125,7 +138,6 @@ class ImplementorState(BaseModel):
     current_phase: Literal[
         "initialize",
         "setup_branch",
-        "copy_boilerplate",
         "install_dependencies",
         "generate_code",
         "implement_files",

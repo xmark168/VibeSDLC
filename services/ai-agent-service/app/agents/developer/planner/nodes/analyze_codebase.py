@@ -90,6 +90,7 @@ def analyze_codebase(state: PlannerState) -> PlannerState:
         # Format prompt with context
         formatted_prompt = CODEBASE_ANALYSIS_PROMPT.format(
             task_requirements=task_requirements.model_dump_json(indent=2),
+            tech_stack=state.tech_stack or "unknown",
             codebase_context=codebase_context,
         )
 
@@ -159,6 +160,18 @@ def analyze_codebase(state: PlannerState) -> PlannerState:
             external_dependencies = []
             internal_dependencies = []
 
+        # 🔧 FALLBACK: Extract files from implementation steps if LLM didn't provide file operations
+        if not files_to_create and not files_to_modify:
+            print(
+                "⚠️ LLM didn't provide file operations, extracting from implementation steps..."
+            )
+            files_to_create, files_to_modify = _extract_files_from_implementation_steps(
+                state
+            )
+            print(
+                f"🔧 Extracted: {len(files_to_create)} files to create, {len(files_to_modify)} files to modify"
+            )
+
         # Create CodebaseAnalysis object
         codebase_analysis = CodebaseAnalysis(
             files_to_create=files_to_create,
@@ -219,7 +232,195 @@ Ready to proceed to Phase 3: Dependency Mapping."""
         return state
 
     except Exception as e:
-        print(f"ERROR: Error in codebase analysis: {e}")
-        state.status = "error_codebase_analysis"
-        state.error_message = f"Codebase analysis failed: {str(e)}"
+        print(f"❌ ERROR in analyze_codebase: {e}")
+        import traceback
+
+        traceback.print_exc()
+        # Return state with error status
+        state.status = "codebase_analysis_failed"
+        state.error_message = str(e)
+        # Keep current_phase as "analyze_codebase" since "error" is not a valid enum value
         return state
+
+
+def _extract_files_from_implementation_steps(state):
+    """
+    Extract file operations from implementation steps when LLM fails to provide them.
+
+    Args:
+        state: PlannerState with implementation_plan containing steps
+
+    Returns:
+        tuple: (files_to_create, files_to_modify)
+    """
+    files_to_create = []
+    files_to_modify = []
+
+    if not hasattr(state, "implementation_plan") or not state.implementation_plan:
+        print("❌ No implementation plan found in state")
+        return files_to_create, files_to_modify
+
+    implementation_steps = state.implementation_plan.implementation_steps
+    if not implementation_steps:
+        print("❌ No implementation steps found")
+        return files_to_create, files_to_modify
+
+    print(f"🔍 Processing {len(implementation_steps)} implementation steps...")
+
+    seen_files = set()  # Track files we've already processed
+
+    for i, step in enumerate(implementation_steps):
+        step_files = step.get("files", [])
+        step_title = step.get("title", f"Step {i + 1}")
+
+        print(f"  Step {i + 1}: {step_title} -> {len(step_files)} files")
+
+        for file_path in step_files:
+            # If we've seen this file before, it should be a modification
+            if file_path in seen_files:
+                file_spec = {
+                    "path": file_path,
+                    "changes": step.get("description", step_title),
+                    "complexity": step.get("complexity", "medium"),
+                    "risk": "low",
+                }
+                files_to_modify.append(file_spec)
+                print(f"    ✏️  MODIFY: {file_path} (already seen)")
+            else:
+                # New file - determine if create or modify based on patterns
+                if _is_new_file(file_path, step):
+                    file_spec = {
+                        "path": file_path,
+                        "reason": step.get("description", step_title),
+                        "template": f"Implement {step_title}",
+                        "estimated_lines": _estimate_file_size(file_path, step),
+                        "complexity": step.get("complexity", "medium"),
+                    }
+                    files_to_create.append(file_spec)
+                    print(f"    ✅ CREATE: {file_path}")
+                else:
+                    file_spec = {
+                        "path": file_path,
+                        "changes": step.get("description", step_title),
+                        "complexity": step.get("complexity", "medium"),
+                        "risk": "low",
+                    }
+                    files_to_modify.append(file_spec)
+                    print(f"    ✏️  MODIFY: {file_path}")
+
+                seen_files.add(file_path)
+
+    print(
+        f"🎯 Final extraction result: {len(files_to_create)} create, {len(files_to_modify)} modify"
+    )
+    return files_to_create, files_to_modify
+
+
+def _is_new_file(file_path, step):
+    """
+    Determine if a file should be created or modified based on path and step context.
+
+    Args:
+        file_path: Path to the file
+        step: Implementation step containing context
+
+    Returns:
+        bool: True if file should be created, False if modified
+    """
+    # Check step action/description for creation keywords
+    action = step.get("action", "").lower()
+    description = step.get("description", "").lower()
+    title = step.get("title", "").lower()
+
+    creation_keywords = ["create", "add", "implement", "new", "generate", "build"]
+    modification_keywords = [
+        "update",
+        "modify",
+        "change",
+        "edit",
+        "integrate",
+        "include",
+    ]
+
+    # Check for explicit creation keywords
+    for keyword in creation_keywords:
+        if keyword in action or keyword in description or keyword in title:
+            return True
+
+    # Check for explicit modification keywords
+    for keyword in modification_keywords:
+        if keyword in action or keyword in description or keyword in title:
+            return False
+
+    # Special handling for documentation files
+    if file_path.endswith((".md", ".txt", ".doc", ".rst")):
+        # Documentation files with "update" in title/action are usually modifications
+        if "update" in title or "update" in action or "document" in action:
+            return False
+
+    # Default heuristics based on file type and common patterns
+    if file_path.endswith((".js", ".py", ".java", ".ts", ".go", ".rs")):
+        # New source files are usually created
+        if any(
+            pattern in file_path
+            for pattern in ["controller", "service", "model", "route", "middleware"]
+        ):
+            return True
+
+    if file_path.endswith((".test.js", ".test.py", ".spec.js", ".spec.py")):
+        # Test files are usually created
+        return True
+
+    if file_path in [
+        "app/main.py",
+        "app/main.js",
+        "main.py",
+        "main.js",
+        "requirements.txt",
+        "package.json",
+    ]:
+        # Main files and config files are usually modified
+        return False
+
+    # Default to creation for new files
+    return True
+
+
+def _estimate_file_size(file_path, step):
+    """
+    Estimate file size based on file type and step complexity.
+
+    Args:
+        file_path: Path to the file
+        step: Implementation step containing context
+
+    Returns:
+        int: Estimated number of lines
+    """
+    complexity = step.get("complexity", "medium")
+    estimated_hours = step.get("estimated_hours", 1.0)
+
+    # Base estimates by file type
+    if file_path.endswith((".test.js", ".test.py", ".spec.js", ".spec.py")):
+        base_lines = 200  # Test files tend to be longer
+    elif file_path.endswith((".md", ".txt", ".doc")):
+        base_lines = 50  # Documentation files
+    elif "controller" in file_path or "route" in file_path:
+        base_lines = 150  # API controllers/routes
+    elif "model" in file_path:
+        base_lines = 80  # Data models
+    elif "service" in file_path:
+        base_lines = 120  # Business logic services
+    else:
+        base_lines = 100  # Default
+
+    # Adjust by complexity
+    complexity_multiplier = {"low": 0.7, "medium": 1.0, "high": 1.5}
+
+    # Adjust by estimated hours
+    hours_multiplier = min(estimated_hours / 2.0, 2.0)  # Cap at 2x
+
+    final_estimate = int(
+        base_lines * complexity_multiplier.get(complexity, 1.0) * hours_multiplier
+    )
+    return max(final_estimate, 20)  # Minimum 20 lines

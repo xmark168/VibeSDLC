@@ -135,7 +135,12 @@ def generate_code(state: ImplementorState) -> ImplementorState:
                 print(f"  ✏️  Modifying: {file_change.file_path}")
 
                 generated_content = _generate_file_modification(
-                    llm, file_change, task_context, codebase_context, working_dir
+                    llm,
+                    file_change,
+                    task_context,
+                    codebase_context,
+                    working_dir,
+                    state.tech_stack,
                 )
 
                 if generated_content:
@@ -196,16 +201,99 @@ def generate_code(state: ImplementorState) -> ImplementorState:
         return state
 
 
+def _select_prompt_based_on_tech_stack(tech_stack: str, prompt_type: str) -> str:
+    """
+    Select appropriate prompt based on tech stack and prompt type.
+
+    Args:
+        tech_stack: Technology stack (e.g., "fastapi", "react", "nextjs")
+        prompt_type: Type of prompt ("creation" or "modification")
+
+    Returns:
+        Selected prompt string
+    """
+    if not tech_stack:
+        # Fallback to generic prompts
+        if prompt_type == "creation":
+            from ..utils.prompts import GENERIC_FILE_CREATION_PROMPT
+
+            return GENERIC_FILE_CREATION_PROMPT
+        else:
+            from ..utils.prompts import GENERIC_FILE_MODIFICATION_PROMPT
+
+            return GENERIC_FILE_MODIFICATION_PROMPT
+
+    tech_stack_lower = tech_stack.lower()
+
+    # Backend tech stacks
+    backend_stacks = [
+        "fastapi",
+        "django",
+        "express",
+        "nodejs",
+        "python",
+        "flask",
+        "rails",
+        "spring",
+        "laravel",
+        "asp.net",
+    ]
+
+    # Frontend tech stacks
+    frontend_stacks = [
+        "react",
+        "nextjs",
+        "next.js",
+        "vue",
+        "react-vite",
+        "angular",
+        "svelte",
+        "nuxt",
+        "gatsby",
+        "vite",
+    ]
+
+    # Determine if backend or frontend
+    is_backend = any(stack in tech_stack_lower for stack in backend_stacks)
+    is_frontend = any(stack in tech_stack_lower for stack in frontend_stacks)
+
+    if is_backend:
+        if prompt_type == "creation":
+            from ..utils.prompts import BACKEND_FILE_CREATION_PROMPT
+
+            return BACKEND_FILE_CREATION_PROMPT
+        else:
+            from ..utils.prompts import BACKEND_FILE_MODIFICATION_PROMPT
+
+            return BACKEND_FILE_MODIFICATION_PROMPT
+    elif is_frontend:
+        if prompt_type == "creation":
+            from ..utils.prompts import FRONTEND_FILE_CREATION_PROMPT
+
+            return FRONTEND_FILE_CREATION_PROMPT
+        else:
+            from ..utils.prompts import FRONTEND_FILE_MODIFICATION_PROMPT
+
+            return FRONTEND_FILE_MODIFICATION_PROMPT
+    else:
+        # Fallback to generic prompts for unknown tech stacks
+        if prompt_type == "creation":
+            from ..utils.prompts import GENERIC_FILE_CREATION_PROMPT
+
+            return GENERIC_FILE_CREATION_PROMPT
+        else:
+            from ..utils.prompts import GENERIC_FILE_MODIFICATION_PROMPT
+
+            return GENERIC_FILE_MODIFICATION_PROMPT
+
+
 def _prepare_task_context(state: ImplementorState) -> str:
     """Prepare comprehensive task context for code generation from nested plan."""
     context = f"Task: {state.task_description}\n"
     context += f"Tech Stack: {state.tech_stack}\n"
 
-    if state.is_new_project:
-        context += "Project Type: New project\n"
-
-    if state.boilerplate_template:
-        context += f"Boilerplate: {state.boilerplate_template}\n"
+    # Note: Always working with existing project in sandbox
+    context += "Project Type: Existing project (in sandbox)\n"
 
     # Extract rich context from nested implementation plan
     plan = state.implementation_plan
@@ -289,27 +377,50 @@ def _generate_new_file_content(
         if template_info:
             enhanced_context += f"\nTemplate/Pattern Reference:\n{template_info}\n"
 
-        # Look for similar files as templates
+        # Look for similar files as templates based on file extension
+        template_file = None
         if file_ext == ".py":
             # Look for similar Python files
-            similar_files = ["app/services/", "app/models/", "app/api/"]
-            for pattern in similar_files:
+            similar_patterns = [
+                "app/services/",
+                "app/models/",
+                "app/api/",
+                "src/",
+                "lib/",
+            ]
+            for pattern in similar_patterns:
                 if pattern in file_path:
-                    # Try to find a template file
+                    template_file = f"Similar files in {pattern}"
+                    break
+        elif file_ext in [".js", ".ts"]:
+            # Look for similar JavaScript/TypeScript files
+            similar_patterns = [
+                "src/",
+                "lib/",
+                "components/",
+                "services/",
+                "controllers/",
+                "routes/",
+            ]
+            for pattern in similar_patterns:
+                if pattern in file_path:
                     template_file = f"Similar files in {pattern}"
                     break
 
-        # Format prompt
-        # Import prompt locally to avoid auto-formatter issues
-        from ..utils.prompts import FILE_CREATION_PROMPT
+        # Select appropriate prompt based on tech stack
+        tech_stack = (
+            task_context.split("\n")[1].replace("Tech Stack: ", "")
+            if "\n" in task_context
+            else "Unknown"
+        )
+        selected_prompt = _select_prompt_based_on_tech_stack(tech_stack, "creation")
 
-        prompt = FILE_CREATION_PROMPT.format(
+        # Format prompt
+        prompt = selected_prompt.format(
             implementation_plan=task_context,
             file_path=file_path,
             file_specs=file_change.description or "New file implementation",
-            tech_stack=task_context.split("\n")[1].replace("Tech Stack: ", "")
-            if "\n" in task_context
-            else "Unknown",
+            tech_stack=tech_stack,
             project_type="existing_project",
         )
 
@@ -338,6 +449,7 @@ def _generate_file_modification(
     task_context: str,
     codebase_context: str,
     working_dir: str,
+    tech_stack: str = "Unknown",
 ) -> str | None:
     """Generate modification for an existing file."""
     try:
@@ -356,16 +468,18 @@ def _generate_file_modification(
         except:
             pass
 
-        # Format prompt
-        from ..utils.prompts import FILE_MODIFICATION_PROMPT
+        # Select appropriate prompt based on tech stack
+        selected_prompt = _select_prompt_based_on_tech_stack(tech_stack, "modification")
 
-        prompt = FILE_MODIFICATION_PROMPT.format(
+        # Format prompt
+        prompt = selected_prompt.format(
             current_content=existing_content or "File not found - will be created",
             modification_specs=file_change.description or "File modification",
             change_type=file_change.change_type,
             target_element=f"{file_change.target_class or ''}.{file_change.target_function or ''}".strip(
                 "."
             ),
+            tech_stack=tech_stack,
         )
 
         # Call LLM
