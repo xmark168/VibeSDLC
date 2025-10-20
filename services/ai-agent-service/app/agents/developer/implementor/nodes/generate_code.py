@@ -453,6 +453,12 @@ def _generate_file_modification(
 ) -> str | None:
     """Generate modification for an existing file."""
     try:
+        print(
+            f"    🔍 DEBUG: Starting _generate_file_modification for {file_change.file_path}"
+        )
+        print(f"    🔍 DEBUG: Change type: {file_change.change_type}")
+        print(f"    🔍 DEBUG: Tech stack: {tech_stack}")
+
         # Read existing file content
         existing_content = ""
         try:
@@ -469,35 +475,146 @@ def _generate_file_modification(
             pass
 
         # Select appropriate prompt based on tech stack
+        print("    🔍 DEBUG: Selecting prompt based on tech stack...")
         selected_prompt = _select_prompt_based_on_tech_stack(tech_stack, "modification")
+        print("    🔍 DEBUG: Prompt selection completed")
+
+        # Determine language based on file extension
+        file_ext = Path(file_change.file_path).suffix
+        language_map = {
+            ".py": "python",
+            ".js": "javascript",
+            ".ts": "typescript",
+            ".jsx": "jsx",
+            ".tsx": "tsx",
+            ".java": "java",
+            ".cpp": "cpp",
+            ".c": "c",
+            ".go": "go",
+            ".rs": "rust",
+            ".php": "php",
+            ".rb": "ruby",
+        }
+        language = language_map.get(file_ext, "text")
+
+        # Debug: Log current file content being passed to LLM
+        print(
+            f"    🔍 DEBUG: Current file content length: {len(existing_content)} chars"
+        )
+        if existing_content:
+            print(f"    🔍 DEBUG: First 200 chars: {existing_content[:200]}...")
+            print(f"    🔍 DEBUG: Last 200 chars: ...{existing_content[-200:]}")
+            # Check for key patterns to verify file state
+            if "/register" in existing_content:
+                print("    🔍 DEBUG: Register endpoint found in current content")
+            if "/login" in existing_content:
+                print("    🔍 DEBUG: Login endpoint found in current content")
+        else:
+            print("    🔍 DEBUG: No existing content found")
+
+        # Enhanced prompt formatting với sequential task context
+        current_content_display = existing_content or "File not found - will be created"
+
+        # Add sequential task context if file has existing content
+        if existing_content and len(existing_content.strip()) > 0:
+            lines = existing_content.split("\n")
+            current_content_display = f"""
+📋 FILE ANALYSIS:
+- Total lines: {len(lines)}
+- File size: {len(existing_content)} characters
+- Contains existing code from previous tasks
+
+{existing_content}
+
+🎯 REMEMBER: This file already has functionality. ADD to it, don't replace it!
+"""
 
         # Format prompt
-        prompt = selected_prompt.format(
-            current_content=existing_content or "File not found - will be created",
-            modification_specs=file_change.description or "File modification",
-            change_type=file_change.change_type,
-            target_element=f"{file_change.target_class or ''}.{file_change.target_function or ''}".strip(
-                "."
-            ),
-            tech_stack=tech_stack,
-        )
+        print("    🔍 DEBUG: Formatting prompt...")
+        print(f"    🔍 DEBUG: Prompt template length: {len(selected_prompt)} chars")
+        try:
+            prompt = selected_prompt.format(
+                current_content=current_content_display,
+                modification_specs=file_change.description or "File modification",
+                change_type=file_change.change_type,
+                target_element=f"{file_change.target_class or ''}.{file_change.target_function or ''}".strip(
+                    "."
+                ),
+                tech_stack=tech_stack,
+                file_path=file_change.file_path,  # Add missing file_path parameter
+                language=language,  # Add missing language parameter
+            )
+            print("    🔍 DEBUG: Prompt formatting completed")
+            print(f"    🔍 DEBUG: Final prompt length: {len(prompt)} chars")
+        except Exception as format_error:
+            print(f"    ❌ DEBUG: Error in prompt formatting: {format_error}")
+            raise
 
         # Call LLM
-        response = llm.invoke(prompt)
-        raw_response = response.content.strip()
-
-        # Clean LLM response to extract pure code
-        generated_code = _clean_llm_response(raw_response)
-
-        # Basic validation
-        file_ext = Path(file_change.file_path).suffix
-        if generated_code and _validate_generated_code(generated_code, file_ext):
-            return generated_code
-        else:
+        print("    🔍 DEBUG: Calling LLM...")
+        try:
+            response = llm.invoke(prompt)
+            print("    🔍 DEBUG: LLM call completed")
+            raw_response = response.content.strip()
             print(
-                f"    ⚠️ Generated modification failed validation for {file_change.file_path}"
+                f"    🔍 DEBUG: Raw response extracted, length: {len(raw_response)} chars"
             )
-            return None
+        except Exception as llm_error:
+            print(f"    ❌ DEBUG: Error in LLM call: {llm_error}")
+            raise
+
+        # Debug: Log LLM response
+        print(f"    🔍 DEBUG: LLM response length: {len(raw_response)} chars")
+        print(f"    🔍 DEBUG: LLM response first 500 chars: {repr(raw_response[:500])}")
+        print(f"    🔍 DEBUG: LLM response last 200 chars: {repr(raw_response[-200:])}")
+
+        # Check for error patterns in LLM response
+        if "error" in raw_response.lower() or "failed" in raw_response.lower():
+            print("    ⚠️ DEBUG: LLM response contains error keywords")
+
+        # Check for specific error string
+        if "existing register logic" in raw_response:
+            print("    🎯 DEBUG: LLM response contains 'existing register logic'")
+            print(f"    🔍 DEBUG: Full response: {repr(raw_response)}")
+
+        # Check if LLM response is actually an error message
+        if (
+            raw_response.strip() == "\n  // existing register logic\n"
+            or raw_response.strip() == "// existing register logic"
+        ):
+            print("    🚨 DEBUG: LLM response IS the error string!")
+            print("    💡 DEBUG: LLM generated error message instead of code")
+            raise Exception(raw_response.strip())
+
+        if "MODIFICATION #" in raw_response:
+            print("    🔍 DEBUG: Structured modifications format detected")
+        else:
+            print("    🔍 DEBUG: Non-structured format detected")
+
+        # Check if response is structured modifications format
+        if "MODIFICATION #" in raw_response and "OLD_CODE:" in raw_response:
+            print("    🔍 DEBUG: Structured modifications format detected")
+            print(f"    🔍 DEBUG: Raw response length: {len(raw_response)} chars")
+            print(f"    🔍 DEBUG: First 300 chars: {repr(raw_response[:300])}")
+            print(f"    🔍 DEBUG: Contains OLD_CODE: {'OLD_CODE:' in raw_response}")
+            print(f"    🔍 DEBUG: Contains NEW_CODE: {'NEW_CODE:' in raw_response}")
+
+            # Store structured modifications in file_change for later processing
+            file_change.structured_modifications = raw_response
+            return "STRUCTURED_MODIFICATIONS"  # Signal that we have structured format
+        else:
+            # Fallback to old behavior for backward compatibility
+            generated_code = _clean_llm_response(raw_response)
+
+            # Basic validation
+            file_ext = Path(file_change.file_path).suffix
+            if generated_code and _validate_generated_code(generated_code, file_ext):
+                return generated_code
+            else:
+                print(
+                    f"    ⚠️ Generated modification failed validation for {file_change.file_path}"
+                )
+                return None
 
     except Exception as e:
         print(f"    ❌ Error generating file modification: {e}")

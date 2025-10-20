@@ -22,6 +22,7 @@ class FileChange(BaseModel):
     target_class: str = ""  # For incremental changes
     line_range: tuple[int, int] | None = None  # For specific line modifications
     description: str = ""
+    structured_modifications: str = ""  # For structured OLD_CODE/NEW_CODE format
 
 
 class TestExecution(BaseModel):

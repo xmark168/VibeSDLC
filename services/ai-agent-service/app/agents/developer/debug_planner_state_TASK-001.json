@@ -2,15 +2,15 @@
     "success": true,
     "final_plan": {
         "task_info": {
-            "task_id": "TSK-7627",
+            "task_id": "TSK-5344",
             "description": "Task: Implement user registration functionality\nTask Description: Create user registration API endpo...",
-            "complexity_score": 7,
+            "complexity_score": 6,
             "plan_type": "complex"
         },
         "requirements": {
             "functional_requirements": [
-                "Create a POST /api/auth/register endpoint that accepts email, password, and confirm_password.",
-                "Implement password validation that requires a minimum of 8 characters, at least one uppercase letter, one lowercase letter, one number, and one special character.",
+                "Create a user registration API endpoint at /api/auth/register that accepts email, password, and confirm_password.",
+                "Implement password validation that requires a minimum of 8 characters, including at least one uppercase letter, one lowercase letter, one number, and one special character.",
                 "Ensure email validation checks for proper format and uniqueness in the database.",
                 "Hash the password using bcrypt before storing it in the database.",
                 "Store user data in the database with a created_at timestamp.",
@@ -20,19 +20,19 @@
                 "Update API documentation with details of the /api/auth/register endpoint."
             ],
             "acceptance_criteria": [
-                "Given a valid email, password, and confirm_password when a POST request is made to /api/auth/register then a JWT token is returned and user data is stored in the database.",
-                "Given an invalid email format when a POST request is made to /api/auth/register then an appropriate error message is returned.",
-                "Given a password that does not meet the validation criteria when a POST request is made to /api/auth/register then an appropriate error message is returned.",
-                "Given a duplicate email when a POST request is made to /api/auth/register then an appropriate error message is returned.",
-                "Given valid input when a POST request is made to /api/auth/register then the created_at timestamp is stored correctly in the database."
+                "Given a valid email and password, when a POST request is made to /api/auth/register, then a JWT token is returned and user data is stored in the database.",
+                "Given an invalid email format, when a POST request is made to /api/auth/register, then an appropriate error message is returned.",
+                "Given a password that does not meet the validation criteria, when a POST request is made to /api/auth/register, then an appropriate error message is returned.",
+                "Given a duplicate email, when a POST request is made to /api/auth/register, then an appropriate error message is returned.",
+                "Given valid input, when a POST request is made to /api/auth/register, then the user data is stored with a created_at timestamp."
             ],
             "business_rules": {
-                "email_uniqueness": "Email must be unique in the database; if a duplicate email is detected, return an error message indicating the email is already in use.",
-                "password_complexity": "Password must meet complexity requirements: minimum 8 characters, at least one uppercase letter, one lowercase letter, one number, and one special character."
+                "Email Validation": "Email must be unique in the database and follow standard email format (e.g., user@example.com).",
+                "Password Security": "Passwords must be at least 8 characters long and include at least one uppercase letter, one lowercase letter, one number, and one special character."
             },
             "technical_specs": {
-                "framework": "Node.js with Express framework",
-                "database": "MongoDB for user data storage",
+                "framework": "Node.js with Express framework for the API.",
+                "database": "MongoDB for storing user data.",
                 "apis": []
             },
             "constraints": [
@@ -43,151 +43,112 @@
         },
         "implementation": {
             "approach": {
-                "strategy": "Develop a user registration API that includes validation, password hashing, and JWT token generation.",
-                "pattern": "Follow existing MVC architecture and middleware patterns in the codebase.",
-                "architecture_alignment": "Aligns with the current Express.js architecture and MongoDB usage."
+                "strategy": "Develop a user registration API with validation and JWT token generation, following existing code patterns.",
+                "pattern": "Utilize MVC pattern for structuring the registration functionality.",
+                "architecture_alignment": "Aligns with the current Express-based architecture and MongoDB usage."
             },
             "steps": [
                 {
                     "step": 1,
                     "title": "Create database migration",
-                    "description": "Create a users table with fields: email, password, created_at.",
-                    "action": "Create migration file for users table.",
+                    "description": "Create a migration file to set up the users collection in MongoDB.",
+                    "action": "Implement migration logic in a new migration file.",
                     "files": [
-                        "migrations/add_users_table.js"
+                        "migrations/20231001_create_users_collection.js"
                     ],
                     "estimated_hours": 1.0,
                     "complexity": "medium",
                     "dependencies": [],
                     "blocking": true,
-                    "validation": "Verify users table is created in the database.",
+                    "validation": "Verify the users collection exists in the database with the correct fields.",
                     "error_handling": [
-                        "Handle migration conflicts",
+                        "Handle migration errors",
                         "Rollback on failure"
                     ],
-                    "code_template": "db.createCollection('users');"
+                    "code_template": "db.createCollection('users'); db.users.createIndex({ email: 1 }, { unique: true });"
                 },
                 {
                     "step": 2,
-                    "title": "Implement user model",
-                    "description": "Define the user schema for MongoDB including email, password, and created_at fields.",
-                    "action": "Create user model file.",
+                    "title": "Implement service layer",
+                    "description": "Create the authService to handle user registration logic including password hashing and JWT generation.",
+                    "action": "Develop the service logic in src/services/authService.js.",
                     "files": [
-                        "src/models/userModel.js"
+                        "src/services/authService.js"
                     ],
-                    "estimated_hours": 1.5,
+                    "estimated_hours": 2.0,
                     "complexity": "medium",
                     "dependencies": [
                         1
                     ],
                     "blocking": true,
-                    "validation": "Run unit tests to ensure model validation works.",
+                    "validation": "Unit tests for all service functions should pass.",
                     "error_handling": [
-                        "Handle schema validation errors"
+                        "Handle password hashing errors",
+                        "Handle JWT generation errors"
                     ],
-                    "code_template": "const userSchema = new mongoose.Schema({ email: String, password: String, created_at: { type: Date, default: Date.now } });"
+                    "code_template": "const bcrypt = require('bcrypt'); const jwt = require('jsonwebtoken');"
                 },
                 {
                     "step": 3,
-                    "title": "Create validation middleware",
-                    "description": "Implement validation logic for email and password.",
-                    "action": "Create validation middleware file.",
+                    "title": "Create user registration API endpoint",
+                    "description": "Implement the /api/auth/register endpoint to handle user registration requests.",
+                    "action": "Define the endpoint in src/routes/auth.js.",
                     "files": [
-                        "src/middleware/validationMiddleware.js"
+                        "src/routes/auth.js"
                     ],
-                    "estimated_hours": 2.0,
+                    "estimated_hours": 2.5,
                     "complexity": "medium",
                     "dependencies": [
                         2
                     ],
                     "blocking": true,
-                    "validation": "Test middleware with various input cases.",
+                    "validation": "Test the endpoint with valid and invalid data to ensure correct responses.",
                     "error_handling": [
-                        "Handle validation errors gracefully"
+                        "Handle duplicate email errors",
+                        "Handle validation errors"
                     ],
-                    "code_template": "const validateUserInput = (req, res, next) => { /* validation logic */ };"
+                    "code_template": "router.post('/register', async (req, res) => { ... });"
                 },
                 {
                     "step": 4,
-                    "title": "Implement authentication controller",
-                    "description": "Handle user registration logic including password hashing and JWT generation.",
-                    "action": "Create authentication controller file.",
-                    "files": [
-                        "src/controllers/authController.js"
-                    ],
-                    "estimated_hours": 3.0,
-                    "complexity": "medium",
-                    "dependencies": [
-                        3
-                    ],
-                    "blocking": true,
-                    "validation": "Unit tests for registration logic must pass.",
-                    "error_handling": [
-                        "Handle duplicate email errors",
-                        "Handle password hashing errors"
-                    ],
-                    "code_template": "const registerUser = async (req, res) => { /* registration logic */ };"
-                },
-                {
-                    "step": 5,
-                    "title": "Define authentication routes",
-                    "description": "Set up API routes for user registration.",
-                    "action": "Create authentication routes file.",
-                    "files": [
-                        "src/routes/authRoutes.js"
-                    ],
-                    "estimated_hours": 1.0,
-                    "complexity": "low",
-                    "dependencies": [
-                        4
-                    ],
-                    "blocking": true,
-                    "validation": "Test routes with Postman or similar tool.",
-                    "error_handling": [
-                        "Handle route not found errors"
-                    ],
-                    "code_template": "router.post('/register', validateUserInput, registerUser);"
-                },
-                {
-                    "step": 6,
-                    "title": "Update main application file",
-                    "description": "Integrate the new authentication routes into the main application.",
-                    "action": "Modify app.js to include authentication routes.",
+                    "title": "Update app.js to include routes",
+                    "description": "Modify app.js to include the new auth routes for user registration.",
+                    "action": "Add the auth routes to the Express app in src/app.js.",
                     "files": [
                         "src/app.js"
                     ],
                     "estimated_hours": 0.5,
                     "complexity": "low",
                     "dependencies": [
-                        5
+                        3
                     ],
                     "blocking": false,
-                    "validation": "Check if routes are accessible via API.",
+                    "validation": "Ensure the application starts without errors and routes are accessible.",
                     "error_handling": [
-                        "Handle application initialization errors"
+                        "Handle route registration errors"
                     ],
-                    "code_template": "app.use('/api/auth', authRoutes);"
+                    "code_template": "const authRoutes = require('./routes/auth'); app.use('/api/auth', authRoutes);"
                 },
                 {
-                    "step": 7,
-                    "title": "Write unit tests for registration functionality",
-                    "description": "Create comprehensive unit tests for user registration scenarios.",
-                    "action": "Create test file for authentication.",
+                    "step": 5,
+                    "title": "Create unit tests for registration functionality",
+                    "description": "Write comprehensive unit tests for the registration service and endpoint.",
+                    "action": "Develop tests in src/tests/auth.test.js.",
                     "files": [
                         "src/tests/auth.test.js"
                     ],
-                    "estimated_hours": 2.5,
+                    "estimated_hours": 2.0,
                     "complexity": "medium",
                     "dependencies": [
-                        6
+                        3
                     ],
                     "blocking": false,
-                    "validation": "Achieve 90%+ code coverage for registration logic.",
+                    "validation": "Achieve 90%+ code coverage for registration functionality.",
                     "error_handling": [
                         "Handle test failures",
-                        "Mock database interactions"
+                        "Mock external dependencies"
                     ],
-                    "code_template": "describe('User Registration', () => { /* test cases */ });"
+                    "code_template": "describe('POST /api/auth/register', () => { ... });"
                 }
             ],
             "execution_order": [
@@ -200,6 +161,18 @@
                     "files": [
                         "migrations/add_new_feature_tables.py"
                     ]
+                },
+                {
+                    "step": 2,
+                    "action": "Implement service layer",
+                    "reason": "Business logic implementation",
+                    "blocking": true,
+                    "depends_on": [
+                        1
+                    ],
+                    "files": [
+                        "src/services/authService.js"
+                    ]
                 }
             ],
             "parallel_opportunities": [],
@@ -207,16 +180,16 @@
                 {
                     "subtask_id": "SUB-001",
                     "title": "Create database migration",
-                    "description": "Create a users table with fields: email, password, created_at.",
+                    "description": "Create a migration file to set up the users collection in MongoDB.",
                     "estimated_hours": 1.0,
                     "priority": "high",
                     "dependencies": []
                 },
                 {
                     "subtask_id": "SUB-002",
-                    "title": "Implement user model",
-                    "description": "Define the user schema for MongoDB including email, password, and created_at fields.",
-                    "estimated_hours": 1.5,
+                    "title": "Implement service layer",
+                    "description": "Create the authService to handle user registration logic including password hashing and JWT generation.",
+                    "estimated_hours": 2.0,
                     "priority": "high",
                     "dependencies": [
                         1
@@ -224,9 +197,9 @@
                 },
                 {
                     "subtask_id": "SUB-003",
-                    "title": "Create validation middleware",
-                    "description": "Implement validation logic for email and password.",
-                    "estimated_hours": 2.0,
+                    "title": "Create user registration API endpoint",
+                    "description": "Implement the /api/auth/register endpoint to handle user registration requests.",
+                    "estimated_hours": 2.5,
                     "priority": "high",
                     "dependencies": [
                         2
@@ -234,42 +207,22 @@
                 },
                 {
                     "subtask_id": "SUB-004",
-                    "title": "Implement authentication controller",
-                    "description": "Handle user registration logic including password hashing and JWT generation.",
-                    "estimated_hours": 3.0,
-                    "priority": "high",
+                    "title": "Update app.js to include routes",
+                    "description": "Modify app.js to include the new auth routes for user registration.",
+                    "estimated_hours": 0.5,
+                    "priority": "medium",
                     "dependencies": [
                         3
                     ]
                 },
                 {
                     "subtask_id": "SUB-005",
-                    "title": "Define authentication routes",
-                    "description": "Set up API routes for user registration.",
-                    "estimated_hours": 1.0,
-                    "priority": "high",
-                    "dependencies": [
-                        4
-                    ]
-                },
-                {
-                    "subtask_id": "SUB-006",
-                    "title": "Update main application file",
-                    "description": "Integrate the new authentication routes into the main application.",
-                    "estimated_hours": 0.5,
+                    "title": "Create unit tests for registration functionality",
+                    "description": "Write comprehensive unit tests for the registration service and endpoint.",
+                    "estimated_hours": 2.0,
                     "priority": "medium",
                     "dependencies": [
-                        5
-                    ]
-                },
-                {
-                    "subtask_id": "SUB-007",
-                    "title": "Write unit tests for registration functionality",
-                    "description": "Create comprehensive unit tests for user registration scenarios.",
-                    "estimated_hours": 2.5,
-                    "priority": "medium",
-                    "dependencies": [
-                        6
+                        3
                     ]
                 }
             ],
@@ -297,9 +250,7 @@
                         "phase": 3,
                         "name": "Integration",
                         "subtasks": [
-                            "SUB-005",
-                            "SUB-006",
-                            "SUB-007"
+                            "SUB-005"
                         ],
                         "blocking": false
                     }
@@ -309,33 +260,23 @@
         "file_changes": {
             "files_to_create": [
                 {
-                    "path": "src/controllers/authController.js",
-                    "reason": "To handle user registration logic and validation.",
-                    "template": "Follow existing controller patterns in the codebase."
+                    "path": "src/routes/auth.js",
+                    "reason": "To implement the user registration API endpoint.",
+                    "template": "Follow existing API patterns in app.js"
                 },
                 {
-                    "path": "src/models/userModel.js",
-                    "reason": "To define the user schema for MongoDB.",
-                    "template": "Follow existing model patterns in the codebase."
+                    "path": "src/models/user.js",
+                    "reason": "To define the User model for MongoDB.",
+                    "template": "Use Mongoose schema patterns for user data."
                 },
                 {
-                    "path": "src/routes/authRoutes.js",
-                    "reason": "To define the API routes for authentication, including user registration.",
-                    "template": "Follow existing route patterns in the codebase."
-                },
-                {
-                    "path": "src/middleware/validationMiddleware.js",
-                    "reason": "To implement validation logic for email and password.",
-                    "template": "Follow existing middleware patterns in the codebase."
-                },
-                {
-                    "path": "src/utils/tokenUtil.js",
-                    "reason": "To handle JWT token generation.",
-                    "template": "Follow existing utility patterns in the codebase."
+                    "path": "src/services/authService.js",
+                    "reason": "To handle authentication logic, including password hashing and JWT generation.",
+                    "template": "Reference existing service patterns."
                 },
                 {
                     "path": "src/tests/auth.test.js",
-                    "reason": "To add unit tests for user registration functionality.",
+                    "reason": "To create unit tests for the user registration functionality.",
                     "template": "Follow existing test patterns in the codebase."
                 }
             ],
@@ -345,7 +286,7 @@
                     "lines": [
                         67
                     ],
-                    "changes": "Add the new authentication routes.",
+                    "changes": "Add route for user registration endpoint.",
                     "complexity": "low",
                     "risk": "low"
                 }
@@ -373,10 +314,10 @@
         }
     },
     "ready_for_implementation": true,
-    "task_id": "TSK-7627",
-    "complexity_score": 7,
-    "estimated_hours": 11.5,
-    "story_points": 8,
+    "task_id": "TSK-5344",
+    "complexity_score": 6,
+    "estimated_hours": 8.0,
+    "story_points": 5,
     "validation_score": 0.925,
     "status": "finalized",
     "iterations": 3,

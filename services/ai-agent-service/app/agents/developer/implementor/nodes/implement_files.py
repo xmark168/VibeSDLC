@@ -22,6 +22,10 @@ from ..tool.incremental_tools import (
     create_method_tool,
     modify_function_tool,
 )
+from ..utils.incremental_modifications import (
+    IncrementalModificationValidator,
+    parse_structured_modifications,
+)
 from ..utils.validators import validate_file_changes
 
 
@@ -125,8 +129,15 @@ def implement_files(state: ImplementorState) -> ImplementorState:
                 print(f"  ✏️  Modifying: {file_change.file_path}")
 
                 if file_change.change_type == "incremental":
-                    # Use incremental tools for precise changes
-                    success = _apply_incremental_change(file_change, working_dir)
+                    # Check if we have structured modifications
+                    if file_change.structured_modifications:
+                        success = _apply_structured_modifications(
+                            file_change, working_dir
+                        )
+                    else:
+                        # Use legacy incremental tools for precise changes
+                        success = _apply_incremental_change(file_change, working_dir)
+
                     if success:
                         files_modified.append(file_change.file_path)
                         print(f"    ✅ Modified: {file_change.file_path}")
@@ -328,6 +339,89 @@ def _find_best_insertion_point(formatted_content: str) -> dict | None:
                     }
 
     return None
+
+
+def _apply_structured_modifications(file_change: FileChange, working_dir: str) -> bool:
+    """
+    Apply structured incremental modifications using OLD_CODE/NEW_CODE pairs.
+
+    Args:
+        file_change: FileChange with structured_modifications content
+        working_dir: Working directory
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Debug: Log structured modifications content
+        print(
+            f"    🔍 DEBUG: Structured modifications length: {len(file_change.structured_modifications)} chars"
+        )
+        print(
+            f"    🔍 DEBUG: First 300 chars: {file_change.structured_modifications[:300]}..."
+        )
+
+        # Parse structured modifications from LLM output
+        print("    🔍 DEBUG: Starting parse_structured_modifications...")
+        modifications = parse_structured_modifications(
+            file_change.structured_modifications
+        )
+        print(
+            f"    🔍 DEBUG: Parsing completed, got {len(modifications)} modifications"
+        )
+
+        if not modifications:
+            print("    ⚠️ No valid modifications found in structured output")
+            print("    💡 This is expected when LLM generates placeholder OLD_CODE")
+            return False
+
+        print(f"    🔍 DEBUG: Parsed {len(modifications)} modifications")
+
+        # Read current file content
+        read_result = read_file_tool.invoke(
+            {"file_path": file_change.file_path, "working_directory": working_dir}
+        )
+
+        if "File not found" in read_result or "Error:" in read_result:
+            print(f"    ❌ Could not read file: {file_change.file_path}")
+            return False
+
+        # Extract actual content (remove line numbers if present)
+        current_content = _extract_actual_content(read_result)
+
+        # Apply modifications using validator
+        validator = IncrementalModificationValidator(current_content)
+        result = validator.apply_multiple_modifications(modifications)
+
+        if result.success:
+            # Write modified content back to file
+            write_result = write_file_tool.invoke(
+                {
+                    "file_path": file_change.file_path,
+                    "content": result.final_content,
+                    "working_directory": working_dir,
+                }
+            )
+
+            if "successfully" in write_result.lower():
+                print(
+                    f"    ✅ Applied {result.modifications_applied} structured modifications"
+                )
+                for warning in result.warnings:
+                    print(f"    {warning}")
+                return True
+            else:
+                print(f"    ❌ Failed to write modified file: {write_result}")
+                return False
+        else:
+            print("    ❌ Structured modifications failed:")
+            for error in result.errors:
+                print(f"      {error}")
+            return False
+
+    except Exception as e:
+        print(f"    ❌ Error applying structured modifications: {e}")
+        return False
 
 
 def _apply_incremental_change(file_change: FileChange, working_dir: str) -> bool:
