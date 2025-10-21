@@ -17,6 +17,53 @@ from ..tool.filesystem_tools import read_file_tool
 # Helper function to extract actual content from read_file_tool output
 
 
+def _validate_old_code_size(llm_response: str, existing_content: str) -> dict:
+    """
+    Validate that OLD_CODE in LLM response is not too large (prevents full file replacement).
+
+    Args:
+        llm_response: Raw LLM response containing MODIFICATION blocks
+        existing_content: Current file content
+
+    Returns:
+        Dict with 'valid' (bool) and 'reason' (str) keys
+    """
+    import re
+
+    # Extract all OLD_CODE blocks
+    old_code_blocks = re.findall(
+        r"OLD_CODE:\s*```\w*\n(.*?)\n```", llm_response, re.DOTALL
+    )
+
+    if not old_code_blocks:
+        return {"valid": True, "reason": "No OLD_CODE blocks found"}
+
+    existing_size = len(existing_content)
+
+    for i, old_code in enumerate(old_code_blocks):
+        old_code_size = len(old_code.strip())
+
+        # Calculate percentage of file being replaced
+        replacement_ratio = old_code_size / existing_size if existing_size > 0 else 0
+
+        # ⚠️ If OLD_CODE is more than 30% of file, it's likely full replacement
+        if replacement_ratio > 0.3:
+            return {
+                "valid": False,
+                "reason": f"OLD_CODE block #{i + 1} is {replacement_ratio * 100:.1f}% of file ({old_code_size}/{existing_size} chars). Max allowed: 30%",
+            }
+
+        # ⚠️ Also check if OLD_CODE contains too many lines (>50 lines is suspicious)
+        old_code_lines = len(old_code.strip().split("\n"))
+        if old_code_lines > 50:
+            return {
+                "valid": False,
+                "reason": f"OLD_CODE block #{i + 1} has {old_code_lines} lines (max: 50). Use smaller, targeted modifications",
+            }
+
+    return {"valid": True, "reason": "OLD_CODE size validation passed"}
+
+
 def _extract_actual_content(formatted_content: str) -> str:
     """
     Extract actual file content from read_file_tool output (cat -n format).
@@ -92,7 +139,7 @@ def generate_code(state: ImplementorState) -> ImplementorState:
 
         # Initialize LLM
         llm = ChatOpenAI(
-            model="gpt-4o-mini",
+            model="gpt-4.1",
             temperature=0.3,
             api_key=os.getenv("OPENAI_API_KEY"),
             base_url=os.getenv("OPENAI_BASE_URL"),
@@ -599,22 +646,40 @@ def _generate_file_modification(
             print(f"    🔍 DEBUG: Contains OLD_CODE: {'OLD_CODE:' in raw_response}")
             print(f"    🔍 DEBUG: Contains NEW_CODE: {'NEW_CODE:' in raw_response}")
 
+            # ✅ Validate OLD_CODE size to prevent full file replacement
+            if existing_content:
+                validation_result = _validate_old_code_size(
+                    raw_response, existing_content
+                )
+                if not validation_result["valid"]:
+                    print(
+                        f"    ⚠️ OLD_CODE validation failed: {validation_result['reason']}"
+                    )
+                    print(
+                        "    💡 Hint: LLM should only replace the specific section being modified"
+                    )
+                    return None
+
             # Store structured modifications in file_change for later processing
             file_change.structured_modifications = raw_response
             return "STRUCTURED_MODIFICATIONS"  # Signal that we have structured format
         else:
-            # Fallback to old behavior for backward compatibility
-            generated_code = _clean_llm_response(raw_response)
+            # ❌ CRITICAL: For file modifications, NEVER allow full replacement
+            # This prevents sequential task overwriting
+            print(
+                "    ❌ CRITICAL: LLM did not generate structured modifications format"
+            )
+            print("    💡 Expected format: MODIFICATION #1 with OLD_CODE/NEW_CODE blocks")
+            print(
+                "    ⚠️ Refusing to apply full file replacement to prevent data loss"
+            )
 
-            # Basic validation
-            file_ext = Path(file_change.file_path).suffix
-            if generated_code and _validate_generated_code(generated_code, file_ext):
-                return generated_code
-            else:
-                print(
-                    f"    ⚠️ Generated modification failed validation for {file_change.file_path}"
-                )
-                return None
+            # Log the response for debugging
+            print(
+                f"    🔍 LLM response (first 500 chars): {repr(raw_response[:500])}"
+            )
+
+            return None  # Reject non-structured modifications
 
     except Exception as e:
         print(f"    ❌ Error generating file modification: {e}")

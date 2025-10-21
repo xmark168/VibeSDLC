@@ -150,6 +150,20 @@ class IncrementalModificationValidator:
         current_content = self.original_content
 
         for i, modification in enumerate(modifications):
+            # ✅ Check for potential duplicates BEFORE applying
+            duplicate_check = self._check_for_duplicates(
+                current_content, modification.new_code
+            )
+            if not duplicate_check["safe"]:
+                result.errors.append(
+                    f"⚠️ Modification {i + 1} may create duplicate: {duplicate_check['reason']}"
+                )
+                result.warnings.append(
+                    f"💡 Hint: Check if functionality already exists in file"
+                )
+                result.success = False
+                continue  # Skip this modification
+
             # Update validator with current content
             validator = IncrementalModificationValidator(current_content)
 
@@ -167,6 +181,71 @@ class IncrementalModificationValidator:
 
         result.final_content = current_content
         return result
+
+    def _check_for_duplicates(self, current_content: str, new_code: str) -> dict:
+        """
+        Check if NEW_CODE would create duplicate routes, functions, or exports.
+
+        Args:
+            current_content: Current file content
+            new_code: New code to be added
+
+        Returns:
+            Dict with 'safe' (bool) and 'reason' (str)
+        """
+        import re
+
+        # Pattern for route definitions: router.post('/path'), app.get('/path'), etc.
+        route_patterns = [
+            r"router\.(get|post|put|delete|patch)\(['\"]([^'\"]+)['\"]",
+            r"app\.(get|post|put|delete|patch)\(['\"]([^'\"]+)['\"]",
+            r"@(Get|Post|Put|Delete|Patch)\(['\"]([^'\"]+)['\"]",  # NestJS decorators
+        ]
+
+        for pattern in route_patterns:
+            # Find routes in new code
+            new_routes = re.findall(pattern, new_code)
+            # Find routes in current content
+            existing_routes = re.findall(pattern, current_content)
+
+            for route_info in new_routes:
+                # Extract method and path (handle different capture group structures)
+                if len(route_info) >= 2:
+                    method = route_info[0].upper()
+                    path = route_info[1]
+
+                    # Check if this route already exists
+                    for existing_route in existing_routes:
+                        existing_method = existing_route[0].upper()
+                        existing_path = existing_route[1]
+
+                        if method == existing_method and path == existing_path:
+                            return {
+                                "safe": False,
+                                "reason": f"Route {method} {path} already exists in file",
+                            }
+
+        # Pattern for function definitions: def function_name(), function function_name()
+        function_patterns = [
+            r"def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(",  # Python
+            r"function\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(",  # JavaScript
+            r"const\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(?:async\s+)?\([^)]*\)\s*=>",  # Arrow functions
+            r"export\s+(?:async\s+)?function\s+([a-zA-Z_][a-zA-Z0-9_]*)",  # Exports
+        ]
+
+        for pattern in function_patterns:
+            new_functions = re.findall(pattern, new_code)
+            existing_functions = re.findall(pattern, current_content)
+
+            for func_name in new_functions:
+                if func_name in existing_functions:
+                    return {
+                        "safe": False,
+                        "reason": f"Function '{func_name}' already exists in file",
+                    }
+
+        # All checks passed
+        return {"safe": True, "reason": "No duplicates detected"}
 
 
 def parse_structured_modifications(llm_output: str) -> list[CodeModification]:

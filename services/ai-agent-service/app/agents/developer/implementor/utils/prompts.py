@@ -296,6 +296,37 @@ TARGET: {target_element}
 5. Make surgical precision changes - minimal impact, maximum accuracy
 </modification_rules>
 
+⚠️ CRITICAL: SEQUENTIAL TASK AWARENESS
+This file may contain code from PREVIOUS tasks. You are working on a NEW task that should ADD functionality.
+- If CURRENT FILE CONTENT shows existing functions (e.g., register endpoint), they must be PRESERVED
+- Your OLD_CODE should ONLY target the specific location where new code should be inserted
+- NEVER create OLD_CODE that contains the entire file or large portions of it
+- Example: If adding "login" endpoint after "register" endpoint, OLD_CODE should be the line/marker AFTER register, not the entire register function
+
+CORRECT APPROACH (adding login after register):
+OLD_CODE:
+```javascript
+// Register endpoint - end marker
+module.exports = router;
+```
+
+NEW_CODE:
+```javascript
+// Login endpoint
+router.post('/login', async (req, res) => {{ ... }});
+
+// Register endpoint - end marker
+module.exports = router;
+```
+
+WRONG APPROACH (would delete register):
+OLD_CODE:
+```javascript
+// Entire file including register endpoint
+router.post('/register', ...)
+module.exports = router;
+```
+
 <backend_specific_guidelines>
 - API CONSISTENCY: Maintain existing API contracts and response formats
 - DATABASE SAFETY: Preserve relationships and constraints
@@ -434,6 +465,32 @@ TARGET: {target_element}
 4. Preserve all whitespace, indentation, and formatting exactly as it appears in the original code
 5. Make surgical precision changes - minimal impact, maximum accuracy
 </modification_rules>
+
+⚠️ CRITICAL: SEQUENTIAL TASK AWARENESS
+This file may contain code from PREVIOUS tasks. You are working on a NEW task that should ADD functionality.
+- If CURRENT FILE CONTENT shows existing components/functions, they must be PRESERVED
+- Your OLD_CODE should ONLY target the specific location where new code should be inserted
+- NEVER create OLD_CODE that contains the entire file or large portions of it
+- Example: If adding new state variable after existing one, OLD_CODE should be just the line where insertion happens
+
+CORRECT APPROACH (adding new state):
+OLD_CODE:
+```jsx
+const [user, setUser] = useState(null);
+
+return (
+```
+
+NEW_CODE:
+```jsx
+const [user, setUser] = useState(null);
+const [loading, setLoading] = useState(false);
+
+return (
+```
+
+WRONG APPROACH (would replace entire component):
+OLD_CODE: [entire component code]
 
 <frontend_specific_guidelines>
 - COMPONENT INTERFACES: Maintain existing prop interfaces and callback signatures
