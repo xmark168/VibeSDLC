@@ -9,11 +9,11 @@ from typing import Any, Dict
 from dotenv import load_dotenv
 from langfuse import Langfuse
 
-from agents.product_owner.gatherer_agent import GathererAgent
-from agents.product_owner.vision_agent import VisionAgent
-from agents.product_owner.backlog_agent import BacklogAgent
-from agents.product_owner.priority_agent import PriorityAgent
-from agents.product_owner.po_agent import POAgent
+from app.agents.product_owner.gatherer_agent import GathererAgent
+from app.agents.product_owner.vision_agent import VisionAgent
+from app.agents.product_owner.backlog_agent import BacklogAgent
+from app.agents.product_owner.priority_agent import PriorityAgent
+from app.agents.product_owner.po_agent import POAgent
 
 # Load environment variables
 load_dotenv()

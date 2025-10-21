@@ -22,13 +22,13 @@ from langfuse.langchain import CallbackHandler
 from deepagents import create_deep_agent
 from langgraph.checkpoint.memory import MemorySaver
 
-from agents.product_owner.gatherer_agent import GathererAgent
-from agents.product_owner.vision_agent import VisionAgent
-from agents.product_owner.backlog_agent import BacklogAgent
-from agents.product_owner.priority_agent import PriorityAgent
+from app.agents.product_owner.gatherer_agent import GathererAgent
+from app.agents.product_owner.vision_agent import VisionAgent
+from app.agents.product_owner.backlog_agent import BacklogAgent
+from app.agents.product_owner.priority_agent import PriorityAgent
 
 # Import prompts for PO Agent
-from templates.prompts.product_owner.po_agent import (
+from app.templates.prompts.product_owner.po_agent import (
     SYSTEM_PROMPT,
     GATHERER_SUBAGENT_PROMPT,
     VISION_SUBAGENT_PROMPT,

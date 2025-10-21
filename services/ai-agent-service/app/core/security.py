@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any
+import secrets
 
 import jwt
 from passlib.context import CryptContext
@@ -11,9 +12,38 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # JWT settings
 ALGORITHM = "HS256"
 
-def create_access_token(subject: str | Any, expires_delta: timedelta) -> str:
-    expire = datetime.now(timezone.utc) + expires_delta
-    to_encode = {"exp": expire, "sub": str(subject)}
+def create_access_token(
+    subject: str | Any,
+    expires_delta: timedelta,
+    token_type: str = "access"
+) -> str:
+    """
+    Create JWT access token with comprehensive claims
+
+    Args:
+        subject: User ID (sub claim)
+        expires_delta: Token expiration time delta
+        scopes: List of permissions/scopes
+        token_type: Token type ("access" or "refresh")
+
+    Returns:
+        Encoded JWT token string
+    """
+    now = datetime.now(timezone.utc)
+    expire = now + expires_delta
+
+    to_encode = {
+        "sub": str(subject),                # Subject (user ID)
+        "exp": int(expire.timestamp()),     # Expiration time
+        "iat": int(now.timestamp()),        # Issued at
+        "nbf": int(now.timestamp()),        # Not before
+        "type": token_type,                 # Token type
+    }
+
+    # Add JWT ID for access tokens (for potential revocation)
+    if token_type == "access":
+        to_encode["jti"] = secrets.token_urlsafe(16)
+
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 

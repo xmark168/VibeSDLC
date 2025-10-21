@@ -19,7 +19,7 @@ dependencies = [
     "langgraph>=0.2.62",
     "langsmith>=0.2.7",
     # LangFuse for observability
-    "langfuse>=2.56.0",
+    "langfuse>=2.50.0",
     # Server
     "uvicorn>=0.34.0",
     "openagents>=0.6.12",
@@ -31,6 +31,10 @@ dependencies = [
     "passlib[bcrypt]>=1.7.4",
     "bcrypt>=4.0.0,<4.1.0",
     "emails>=0.6",
+    "slowapi>=0.1.9",
+    "authlib>=1.6.5",
+    "httpx-oauth>=0.16.1",
+    "deepagents>=0.1.2",
 ]
 
 

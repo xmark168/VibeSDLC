@@ -51,7 +51,7 @@ const useAuth = () => {
   const loginMutation = useMutation({
     mutationFn: login,
     onSuccess: () => {
-      navigate({ to: "/" })
+      navigate({ to: "/chat/$chatId", params: { chatId: "abc" } })
     },
     onError: (err: ApiError) => {
       // handleError(err)

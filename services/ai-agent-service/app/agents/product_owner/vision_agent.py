@@ -10,7 +10,7 @@ from langfuse.langchain import CallbackHandler
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 
-from templates.prompts.product_owner.vision import (
+from app.templates.prompts.product_owner.vision import (
     GENERATE_PROMPT,
     VALIDATE_PROMPT,
     REASON_PROMPT,

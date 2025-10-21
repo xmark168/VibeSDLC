@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from token import OP
 from uuid import UUID, uuid4
 from pydantic import EmailStr
 from sqlmodel import Field, SQLModel
@@ -42,18 +43,18 @@ class UpdatePassword(SQLModel):
 class UserRegister(SQLModel):
     username: str = Field(min_length=3, max_length=50)
     email: EmailStr
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=3)
 
 class Token(SQLModel):
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
-    
+
 class TokenData(SQLModel):
     user_id: Optional[str] = None
 
 class TokenPayload(SQLModel):
     sub: Optional[str] = None  # subject - user ID in JWT standard
+    type: Optional[str] = None  # token type (access/refresh)
 
 class RefreshTokenRequest(SQLModel):
     refresh_token: str
@@ -194,3 +195,26 @@ class CommentPublic(CommentBase):
 class CommentsPublic(SQLModel):
     data: list[CommentPublic]
     count: int
+
+# project
+class ProjectBase(SQLModel):
+    code: str = Field(min_length=1, max_length=50)
+    name: str = Field(min_length=1, max_length=255)
+    is_init: bool = False
+
+class ProjectCreate(ProjectBase):
+    owner_id: UUID
+
+class ProjectUpdate(SQLModel):
+    code: Optional[str] = None
+    name: Optional[str] = None
+    is_init: Optional[bool] = None
+
+class ProjectPublic(ProjectBase):
+    id: UUID
+    owner_id: UUID
+
+class ProjectsPublic(SQLModel):
+    data: list[ProjectPublic]
+    count: int
+

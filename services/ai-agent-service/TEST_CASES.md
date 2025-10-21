@@ -98,3 +98,5 @@ Theo bạn, điểm khác biệt nổi bật nhất của SmartTask so với Tre
   2. Comments API      (Để có thể comment trong kanban cards)
   3. Projects API      (Để quản lý projects và members)
   4. Issue Activities  (Để xem history - optional)
+
+  uvicorn app.main:app --reload --host 0.0.0.0 --port 8000

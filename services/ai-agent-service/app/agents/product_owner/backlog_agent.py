@@ -11,7 +11,7 @@ from langfuse.langchain import CallbackHandler
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 
-from templates.prompts.product_owner.backlog import (
+from app.templates.prompts.product_owner.backlog import (
     GENERATE_PROMPT,
     EVALUATE_PROMPT,
     REFINE_PROMPT,
