@@ -94,10 +94,16 @@ class GitOperation(BaseModel):
 class ImplementorState(BaseModel):
     """State cho Implementor Agent workflow."""
 
-    # Input từ Planner Agent
+    # Input từ Planner Agent (simplified structure)
     task_id: str = ""
     task_description: str = ""
     implementation_plan: dict[str, Any] = Field(default_factory=dict)
+
+    # Parsed plan data (from simplified structure)
+    plan_steps: list[dict[str, Any]] = Field(default_factory=list)
+    current_step_index: int = 0
+    current_sub_step_index: int = 0
+    execution_order: list[str] = Field(default_factory=list)
 
     # Sandbox và codebase info
     sandbox_id: str = ""
@@ -141,6 +147,7 @@ class ImplementorState(BaseModel):
         "setup_branch",
         "install_dependencies",
         "generate_code",
+        "execute_step",
         "implement_files",
         "run_tests",
         "run_and_verify",

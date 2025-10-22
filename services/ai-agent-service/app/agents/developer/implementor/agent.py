@@ -39,10 +39,11 @@ class ImplementorAgent:
 
     Workflow:
     START → initialize → setup_branch → install_dependencies →
-    generate_code → implement_files → run_tests → commit_changes → create_pr → finalize → END
+    generate_code → execute_step → implement_files → run_tests → commit_changes → create_pr → finalize → END
 
     install_dependencies luôn chạy để cài đặt external dependencies từ plan
     generate_code luôn chạy để tạo actual code content
+    execute_step executes steps và sub_steps sequentially từ simplified plan
     Repository creation từ template được xử lý bởi GitHub Template Repository API
     """
 
@@ -94,12 +95,14 @@ class ImplementorAgent:
         graph_builder.add_node("initialize", initialize)
         graph_builder.add_node("setup_branch", setup_branch)
 
-        # Import generate_code here to avoid auto-formatter issues
+        # Import nodes here to avoid auto-formatter issues
+        from .nodes.execute_step import execute_step
         from .nodes.generate_code import generate_code
         from .nodes.install_dependencies import install_dependencies
 
         graph_builder.add_node("install_dependencies", install_dependencies)
         graph_builder.add_node("generate_code", generate_code)
+        graph_builder.add_node("execute_step", execute_step)
 
         graph_builder.add_node("implement_files", implement_files)
         graph_builder.add_node("run_tests", run_tests)
@@ -115,9 +118,10 @@ class ImplementorAgent:
         # Direct edge from setup_branch to install_dependencies
         graph_builder.add_edge("setup_branch", "install_dependencies")
 
-        # Continue workflow
+        # Continue workflow with execute_step for sequential execution
         graph_builder.add_edge("install_dependencies", "generate_code")
-        graph_builder.add_edge("generate_code", "implement_files")
+        graph_builder.add_edge("generate_code", "execute_step")
+        graph_builder.add_edge("execute_step", "implement_files")
         graph_builder.add_edge("implement_files", "run_tests")
         graph_builder.add_edge("run_tests", "run_and_verify")
         graph_builder.add_edge("run_and_verify", "commit_changes")

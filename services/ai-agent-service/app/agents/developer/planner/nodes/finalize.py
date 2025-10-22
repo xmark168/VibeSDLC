@@ -34,63 +34,60 @@ def finalize(state: PlannerState) -> PlannerState:
     try:
         implementation_plan = state.implementation_plan
         task_requirements = state.task_requirements
-        codebase_analysis = state.codebase_analysis
         dependency_mapping = state.dependency_mapping
 
         print(f"🎯 Finalizing plan for: {implementation_plan.task_id}")
 
-        # Create comprehensive final plan
-        final_plan = {
-            # Task Information
-            "task_info": {
-                "task_id": implementation_plan.task_id,
-                "description": implementation_plan.description,
-                "complexity_score": implementation_plan.complexity_score,
-                "plan_type": implementation_plan.plan_type,
-            },
-            # Requirements Summary
-            "requirements": {
-                "functional_requirements": task_requirements.requirements,
-                "acceptance_criteria": task_requirements.acceptance_criteria,
-                "business_rules": task_requirements.business_rules,
-                "technical_specs": task_requirements.technical_specs,
-                "constraints": task_requirements.constraints,
-            },
-            # Implementation Guidance
-            "implementation": {
-                "approach": implementation_plan.approach,
-                "steps": implementation_plan.implementation_steps,
-                "execution_order": dependency_mapping.execution_order,
-                "parallel_opportunities": dependency_mapping.parallel_opportunities,
-            },
-            # File Changes
-            "file_changes": {
-                "files_to_create": codebase_analysis.files_to_create,
-                "files_to_modify": codebase_analysis.files_to_modify,
-                "affected_modules": codebase_analysis.affected_modules,
-            },
-            # Database & API Changes
-            "infrastructure": {
-                "database_changes": codebase_analysis.database_changes,
-                "api_endpoints": codebase_analysis.api_endpoints,
-                "external_dependencies": codebase_analysis.external_dependencies,
-                "internal_dependencies": codebase_analysis.internal_dependencies,
-            },
-            # Metadata
-            "metadata": {
-                "planner_version": "1.0",
-                "planning_iterations": state.current_iteration,
-                "validation_passed": state.can_proceed,
-                "created_by": "planner_subagent",
-            },
-        }
+        # Validate implementation_plan before creating final_plan
+        if not implementation_plan.task_id or not implementation_plan.description:
+            print("❌ ERROR: Empty or invalid implementation_plan detected")
+            print(f"   Task ID: '{implementation_plan.task_id}'")
+            print(f"   Description: '{implementation_plan.description}'")
+            print(f"   Steps: {len(implementation_plan.steps)}")
+            print("   This indicates generate_plan node failed to create valid plan")
 
-        # Add subtasks for complex plans
-        if implementation_plan.plan_type == "complex":
-            final_plan["implementation"]["subtasks"] = implementation_plan.subtasks
-            final_plan["implementation"][
-                "execution_strategy"
-            ] = implementation_plan.execution_strategy
+            state.status = "error_empty_implementation_plan"
+            state.error_message = "Cannot finalize: implementation_plan is empty or invalid. Check generate_plan node for errors."
+            state.ready_for_implementation = False
+
+            # Create empty final_plan to indicate failure
+            state.final_plan = {}
+
+            print("❌ FINALIZE FAILED: Empty implementation plan")
+            return state
+
+        # Create simplified final plan with flat structure
+        final_plan = {
+            # Top-level simplified structure
+            "task_id": implementation_plan.task_id,
+            "description": implementation_plan.description,
+            "complexity_score": implementation_plan.complexity_score,
+            "plan_type": implementation_plan.plan_type,
+            # Functional requirements
+            "functional_requirements": implementation_plan.functional_requirements,
+            # Implementation steps with simplified structure
+            "steps": [
+                {
+                    "step": step.step,
+                    "title": step.title,
+                    "description": step.description,
+                    "category": step.category,
+                    "sub_steps": step.sub_steps,
+                    "dependencies": step.dependencies,
+                    "estimated_hours": step.estimated_hours,
+                    "complexity": step.complexity,
+                }
+                for step in implementation_plan.steps
+            ],
+            # Infrastructure changes as simple objects
+            "database_changes": implementation_plan.database_changes,
+            "external_dependencies": implementation_plan.external_dependencies,
+            "internal_dependencies": implementation_plan.internal_dependencies,
+            # Metadata
+            "total_estimated_hours": implementation_plan.total_estimated_hours,
+            "story_points": implementation_plan.story_points,
+            "execution_order": implementation_plan.execution_order,
+        }
 
         # Update state
         state.final_plan = final_plan
@@ -100,50 +97,41 @@ def finalize(state: PlannerState) -> PlannerState:
 
         # Create summary statistics
         summary_stats = {
-            "total_files_affected": len(codebase_analysis.files_to_create)
-            + len(codebase_analysis.files_to_modify),
-            "implementation_steps": len(implementation_plan.implementation_steps),
+            "implementation_steps": len(implementation_plan.steps),
             "estimated_effort": f"{implementation_plan.total_estimated_hours} hours ({implementation_plan.story_points} story points)",
             "complexity_level": get_complexity_level(
                 implementation_plan.complexity_score
             ),
-            "risk_level": get_risk_level(implementation_plan.risks),
             "validation_score": f"{state.validation_score:.1%}",
         }
 
         # Add final AI message
         ai_message = AIMessage(
-            content=f"""🎯 PLANNING COMPLETED - Ready for Implementation
+            content=f"""🎯 CHAIN OF VIBE PLANNING COMPLETED - Ready for Implementation
 
 Plan Summary:
 {json.dumps(summary_stats, indent=2)}
 
-Implementation Approach:
-{implementation_plan.approach.get("strategy", "Standard implementation approach") if isinstance(implementation_plan.approach, dict) else "Standard implementation approach"}
+Key Implementation Steps (Chain of Vibe):
+{chr(10).join(f"{step.step}. {step.title}" for step in implementation_plan.steps[:5]) if implementation_plan.steps else "No implementation steps defined"}
+{f"... and {len(implementation_plan.steps) - 5} more steps" if len(implementation_plan.steps) > 5 else ""}
 
-Key Implementation Steps:
-{chr(10).join(f"{i + 1}. {step.get('title', step.get('action', f'Step {i + 1}'))}" for i, step in enumerate(implementation_plan.implementation_steps[:5])) if implementation_plan.implementation_steps else "No implementation steps defined"}
-{f"... and {len(implementation_plan.implementation_steps) - 5} more steps" if len(implementation_plan.implementation_steps) > 5 else ""}
-
-Files to be Changed:
-- Create: {len(codebase_analysis.files_to_create)} files
-- Modify: {len(codebase_analysis.files_to_modify)} files
+Infrastructure Changes:
+- Database: {len(implementation_plan.database_changes)} changes
+- Dependencies: {len(implementation_plan.external_dependencies)} external
 
 Effort Estimate: {implementation_plan.total_estimated_hours} hours ({implementation_plan.story_points} story points)
 
-SUCCESS: Plan is ready for handoff to Implementor Agent"""
+SUCCESS: Chain of Vibe plan is ready for handoff to Implementor Agent"""
         )
 
         state.messages.append(ai_message)
 
-        print("SUCCESS: Plan finalization completed successfully")
+        print("SUCCESS: Chain of Vibe plan finalization completed successfully")
         print(
             f"INFO: Complexity: {implementation_plan.complexity_score}/10 ({get_complexity_level(implementation_plan.complexity_score)})"
         )
-        print(f"📁 Files affected: {summary_stats['total_files_affected']}")
-        print(
-            f"PLAN: Implementation steps: {len(implementation_plan.implementation_steps)}"
-        )
+        print(f"PLAN: Implementation steps: {len(implementation_plan.steps)}")
         print(f"TIME:  Estimated effort: {summary_stats['estimated_effort']}")
         print(f"🎯 Ready for Implementation: {state.ready_for_implementation}")
         print("=" * 80 + "\n")
@@ -171,19 +159,4 @@ def get_complexity_level(complexity_score: int) -> str:
         return "High"
 
 
-def get_risk_level(risks: list) -> str:
-    """Get overall risk level assessment."""
-    if not risks:
-        return "Low"
-
-    high_impact_risks = [r for r in risks if r.get("impact") == "high"]
-    if high_impact_risks:
-        return "High"
-
-    medium_impact_risks = [r for r in risks if r.get("impact") == "medium"]
-    if len(medium_impact_risks) > 1:
-        return "Medium-High"
-    elif medium_impact_risks:
-        return "Medium"
-
-    return "Low"
+# Removed get_risk_level function - not used in simplified Chain of Vibe structure

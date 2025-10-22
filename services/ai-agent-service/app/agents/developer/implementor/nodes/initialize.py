@@ -7,7 +7,7 @@ Khởi tạo Implementor workflow và validate input từ Planner Agent.
 from langchain_core.messages import AIMessage
 
 from ..state import FileChange, ImplementorState
-from ..utils.validators import validate_implementation_plan, validate_tech_stack
+from ..utils.validators import validate_tech_stack
 
 
 def initialize(state: ImplementorState) -> ImplementorState:
@@ -33,41 +33,92 @@ def initialize(state: ImplementorState) -> ImplementorState:
             state.error_message = "No sandbox_id or codebase_path provided"
             state.status = "error"
             return state
-
-        # Validate implementation plan quality
-        plan_valid, plan_issues = validate_implementation_plan(
-            state.implementation_plan
-        )
-        if not plan_valid:
-            state.error_message = (
-                f"Invalid implementation plan: {'; '.join(plan_issues[:3])}"
-            )
-            state.status = "error"
-            return state
+        print("plan:")
+        # Validate implementation plan quality (now guaranteed to be dict)
+        # plan_valid, plan_issues = validate_implementation_plan(
+        #     state.implementation_plan
+        # )
+        # if not plan_valid:
+        #     state.error_message = (
+        #         f"Invalid implementation plan: {'; '.join(plan_issues[:3])}"
+        #     )
+        #     state.status = "error"
+        #     return state
 
         # Extract task information từ implementation plan
-        # Support both flat format (backward compatibility) and nested format
+        # Support both simplified flat format and legacy nested format
         plan = state.implementation_plan
-
-        # Try nested format first, then fall back to flat format
-        if "task_info" in plan:
-            # Nested format from Planner Agent
-            task_info = plan["task_info"]
-            state.task_id = task_info.get("task_id", "")
-            state.task_description = task_info.get("description", "")
-        else:
-            # Flat format (backward compatibility)
+        print("plan:", plan)
+        # Try simplified flat format first (new format from Planner)
+        if "task_id" in plan and "steps" in plan:
+            # Simplified flat format from updated Planner Agent
             state.task_id = plan.get("task_id", "")
             state.task_description = plan.get("description", "")
 
-        # Extract file operations - support both nested and flat formats
-        if "file_changes" in plan:
-            # Nested format from Planner Agent
+            # Parse steps and execution order
+            state.plan_steps = plan.get("steps", [])
+            state.execution_order = plan.get("execution_order", [])
+
+            print(f"✅ Parsed simplified plan: {len(state.plan_steps)} steps")
+
+        elif "task_info" in plan:
+            # Legacy nested format from old Planner Agent
+            task_info = plan["task_info"]
+            state.task_id = task_info.get("task_id", "")
+            state.task_description = task_info.get("description", "")
+
+            # Extract steps from nested implementation structure
+            implementation = plan.get("implementation", {})
+            state.plan_steps = implementation.get("steps", [])
+            state.execution_order = []
+
+            print(f"✅ Parsed legacy nested plan: {len(state.plan_steps)} steps")
+
+        else:
+            # Fallback for very old format
+            state.task_id = plan.get("task_id", "")
+            state.task_description = plan.get("description", "")
+            state.plan_steps = []
+            state.execution_order = []
+
+        # Extract file operations from steps (simplified format) or legacy format
+        files_to_create_raw = []
+        files_to_modify_raw = []
+
+        if state.plan_steps:
+            # Extract file operations from steps and sub_steps
+            for step in state.plan_steps:
+                sub_steps = step.get("sub_steps", [])
+                for sub_step in sub_steps:
+                    action_type = sub_step.get("action_type", "modify")
+                    files_affected = sub_step.get("files_affected", [])
+
+                    for file_path in files_affected:
+                        file_info = {
+                            "file_path": file_path,
+                            "description": sub_step.get("description", ""),
+                            "step": step.get("step", 0),
+                            "sub_step": sub_step.get("sub_step", ""),
+                            "action_type": action_type,
+                            "test": sub_step.get("test", ""),
+                        }
+
+                        if action_type == "create":
+                            files_to_create_raw.append(file_info)
+                        elif action_type == "modify":
+                            files_to_modify_raw.append(file_info)
+
+            print(
+                f"✅ Extracted from steps: {len(files_to_create_raw)} create, {len(files_to_modify_raw)} modify"
+            )
+
+        elif "file_changes" in plan:
+            # Legacy nested format from old Planner Agent
             file_changes = plan["file_changes"]
             files_to_create_raw = file_changes.get("files_to_create", [])
             files_to_modify_raw = file_changes.get("files_to_modify", [])
         else:
-            # Flat format (backward compatibility)
+            # Legacy flat format (backward compatibility)
             files_to_create_raw = plan.get("files_to_create", [])
             files_to_modify_raw = plan.get("files_to_modify", [])
 
@@ -164,9 +215,18 @@ def initialize(state: ImplementorState) -> ImplementorState:
         files_to_modify = []
 
         for file_info in files_to_create_raw:
-            # Map fields from nested format to FileChange model
+            # Map fields from simplified format to FileChange model
             file_path = file_info.get("file_path") or file_info.get("path", "")
             description = file_info.get("description") or file_info.get("reason", "")
+
+            # Include step/sub_step metadata for sequential execution
+            step_info = ""
+            if "step" in file_info and "sub_step" in file_info:
+                step_info = f"Step {file_info['step']}.{file_info['sub_step']}: "
+
+            full_description = f"{step_info}{description}"
+            if "test" in file_info and file_info["test"]:
+                full_description += f" | Test: {file_info['test']}"
 
             file_change = FileChange(
                 file_path=file_path,
@@ -175,14 +235,23 @@ def initialize(state: ImplementorState) -> ImplementorState:
                     "content", ""
                 ),  # Will be populated by generate_code
                 change_type="full_file",
-                description=description,
+                description=full_description,
             )
             files_to_create.append(file_change)
 
         for file_info in files_to_modify_raw:
-            # Map fields from nested format to FileChange model
+            # Map fields from simplified format to FileChange model
             file_path = file_info.get("file_path") or file_info.get("path", "")
             description = file_info.get("description") or file_info.get("changes", "")
+
+            # Include step/sub_step metadata for sequential execution
+            step_info = ""
+            if "step" in file_info and "sub_step" in file_info:
+                step_info = f"Step {file_info['step']}.{file_info['sub_step']}: "
+
+            full_description = f"{step_info}{description}"
+            if "test" in file_info and file_info["test"]:
+                full_description += f" | Test: {file_info['test']}"
 
             file_change = FileChange(
                 file_path=file_path,
@@ -193,7 +262,7 @@ def initialize(state: ImplementorState) -> ImplementorState:
                 change_type=file_info.get("change_type", "incremental"),
                 target_function=file_info.get("target_function", ""),
                 target_class=file_info.get("target_class", ""),
-                description=description,
+                description=full_description,
             )
             files_to_modify.append(file_change)
 

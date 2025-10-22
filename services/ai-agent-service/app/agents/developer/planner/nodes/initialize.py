@@ -4,6 +4,9 @@ Initialize Node
 Setup initial state, validate input và chuẩn bị cho planning workflow.
 """
 
+import json
+import os
+
 from langchain_core.messages import HumanMessage
 
 from ..state import PlannerState

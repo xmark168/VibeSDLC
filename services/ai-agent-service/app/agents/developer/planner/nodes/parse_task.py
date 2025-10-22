@@ -146,7 +146,7 @@ def parse_task(state: PlannerState) -> PlannerState:
 
         # Update state
         state.task_requirements = task_requirements
-        state.current_phase = "analyze_codebase"
+        state.current_phase = "websearch"
         state.status = "task_parsed"
 
         # Store in tools_output for reference

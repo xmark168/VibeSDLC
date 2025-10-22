@@ -38,6 +38,33 @@ def validate_plan(state: PlannerState) -> PlannerState:
 
         print(f"🎯 Validating plan for: {implementation_plan.task_id}")
 
+        # Early validation: Check if implementation_plan is empty/invalid
+        if not implementation_plan.task_id or not implementation_plan.description:
+            print(
+                "❌ WARNING: Empty or invalid implementation_plan detected in validation"
+            )
+            print(f"   Task ID: '{implementation_plan.task_id}'")
+            print(f"   Description: '{implementation_plan.description}'")
+            print(f"   Steps: {len(implementation_plan.steps)}")
+            print(
+                "   This indicates generate_plan node failed - cannot validate empty plan"
+            )
+
+            # Set validation to fail immediately
+            state.validation_score = 0.0
+            state.validation_issues = [
+                "Empty implementation plan - generate_plan node failed",
+                "Cannot validate plan with empty task_id or description",
+                "Check generate_plan node for errors",
+            ]
+            state.can_proceed = False
+            state.status = "error_empty_plan_validation"
+            state.current_phase = "finalize"  # Force to finalize to handle error
+
+            print("❌ VALIDATION FAILED: Empty implementation plan")
+            print("🔄 Forcing to finalize to handle error properly")
+            return state
+
         validation_issues = []
         validation_score = 0.0
 
@@ -139,7 +166,7 @@ def validate_completeness(implementation_plan, validation_issues: list[str]) -> 
         validation_issues.append("Missing plan description")
         score -= 0.2
 
-    if not implementation_plan.implementation_steps:
+    if not implementation_plan.steps:
         validation_issues.append("No implementation steps defined")
         score -= 0.3
 
@@ -157,13 +184,15 @@ def validate_completeness(implementation_plan, validation_issues: list[str]) -> 
         validation_issues.append("Invalid complexity score format")
         score -= 0.1
 
-    if not implementation_plan.approach:
-        validation_issues.append("Implementation approach not defined")
+    # Check functional requirements (simplified structure)
+    if not implementation_plan.functional_requirements:
+        validation_issues.append("Functional requirements not defined")
         score -= 0.2
 
-    if not implementation_plan.testing_requirements:
-        validation_issues.append("Testing requirements not specified")
-        score -= 0.2
+    # Check execution order
+    if not implementation_plan.execution_order:
+        validation_issues.append("Execution order not specified")
+        score -= 0.1
 
     return max(score, 0.0)
 
@@ -175,7 +204,7 @@ def validate_consistency(
     score = 1.0
 
     # Check step count consistency
-    plan_steps = len(implementation_plan.implementation_steps)
+    plan_steps = len(implementation_plan.steps)
     dependency_steps = len(dependency_mapping.execution_order)
 
     if plan_steps != dependency_steps:
@@ -185,12 +214,12 @@ def validate_consistency(
         score -= 0.3
 
     # Check dependency references
-    for step in implementation_plan.implementation_steps:
-        dependencies = step.get("dependencies", [])
+    for step in implementation_plan.steps:
+        dependencies = step.dependencies if hasattr(step, "dependencies") else []
         for dep in dependencies:
             if dep > plan_steps:
                 validation_issues.append(
-                    f"Step {step['step']} references non-existent dependency {dep}"
+                    f"Step {step.step} references non-existent dependency {dep}"
                 )
                 score -= 0.2
 
@@ -205,7 +234,7 @@ def validate_effort_estimates(
 
     # Check if estimates are reasonable
     total_hours = implementation_plan.total_estimated_hours
-    step_count = len(implementation_plan.implementation_steps)
+    step_count = len(implementation_plan.steps)
 
     if total_hours == 0:
         validation_issues.append("No effort estimates provided")
@@ -228,21 +257,25 @@ def validate_effort_estimates(
 def validate_risk_assessment(
     implementation_plan, validation_issues: list[str]
 ) -> float:
-    """Validate risk assessment."""
+    """Validate risk assessment (simplified for new structure)."""
     score = 1.0
 
-    # Check if risks are identified for complex tasks
-    if implementation_plan.complexity_score >= 7 and not implementation_plan.risks:
-        validation_issues.append("High complexity task should have identified risks")
-        score -= 0.3
-
-    # Check risk structure
-    for risk in implementation_plan.risks:
-        if not all(
-            key in risk for key in ["risk", "probability", "impact", "mitigation"]
-        ):
-            validation_issues.append("Risk assessment missing required fields")
+    # For simplified structure, we validate based on complexity and step count
+    if implementation_plan.complexity_score >= 7:
+        step_count = len(implementation_plan.steps)
+        if step_count < 3:
+            validation_issues.append(
+                "High complexity task should have at least 3 implementation steps"
+            )
             score -= 0.2
-            break
+
+        # Check if high complexity steps have proper sub-steps
+        for step in implementation_plan.steps:
+            if hasattr(step, "sub_steps") and len(step.sub_steps) < 2:
+                validation_issues.append(
+                    f"Complex step {step.step} should have multiple sub-steps"
+                )
+                score -= 0.1
+                break
 
     return max(score, 0.0)

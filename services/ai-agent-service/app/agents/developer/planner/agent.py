@@ -14,7 +14,6 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from .nodes import (
-    analyze_codebase,
     finalize,
     generate_plan,
     initialize,
@@ -34,7 +33,7 @@ class PlannerAgent:
     Planner Agent - Phân tích task requirements và tạo detailed implementation plan.
 
     Workflow:
-    START → initialize → initialize_sandbox → parse_task → analyze_codebase →
+    START → initialize → initialize_sandbox → parse_task → websearch → analyze_codebase →
     map_dependencies → generate_plan → validate_plan → finalize → END
 
     Với validation loop: validate_plan có thể loop back đến analyze_codebase
@@ -88,6 +87,7 @@ class PlannerAgent:
         graph_builder.add_node("initialize", initialize)
         graph_builder.add_node("initialize_sandbox", initialize_sandbox)
         graph_builder.add_node("parse_task", parse_task)
+        from .nodes.analyze_codebase import analyze_codebase
         from .nodes.websearch import websearch
 
         graph_builder.add_node("websearch", websearch)
@@ -105,6 +105,7 @@ class PlannerAgent:
         # Conditional edge từ parse_task
         graph_builder.add_conditional_edges("parse_task", self.websearch_branch)
 
+        # Include analyze_codebase in workflow
         graph_builder.add_edge("websearch", "analyze_codebase")
         graph_builder.add_edge("analyze_codebase", "map_dependencies")
         graph_builder.add_edge("map_dependencies", "generate_plan")
@@ -171,8 +172,19 @@ class PlannerAgent:
         print(f"   Current Iteration: {state.current_iteration}")
         print(f"   Max Iterations: {state.max_iterations}")
         print(f"   Issues: {len(state.validation_issues)}")
+        print(f"   Status: {state.status}")
 
-        if state.can_proceed:
+        # Check for error states that should go directly to finalize
+        error_states = [
+            "error_plan_generation",
+            "error_empty_plan_validation",
+            "error_empty_implementation_plan",
+        ]
+
+        if state.status in error_states:
+            print(f"   → Decision: FINALIZE (error state: {state.status})")
+            return "finalize"
+        elif state.can_proceed:
             print("   → Decision: FINALIZE (validation passed)")
             return "finalize"
         elif state.current_iteration < state.max_iterations:

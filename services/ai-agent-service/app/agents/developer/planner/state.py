@@ -25,16 +25,15 @@ class TaskRequirements(BaseModel):
 
 
 class CodebaseAnalysis(BaseModel):
-    """Structured codebase analysis từ analysis phase."""
+    """Codebase analysis results từ analyze_codebase phase."""
 
     files_to_create: list[dict[str, Any]] = Field(default_factory=list)
     files_to_modify: list[dict[str, Any]] = Field(default_factory=list)
     affected_modules: list[str] = Field(default_factory=list)
     database_changes: list[dict[str, Any]] = Field(default_factory=list)
     api_endpoints: list[dict[str, Any]] = Field(default_factory=list)
-    testing_requirements: dict[str, Any] = Field(default_factory=dict)
-    external_dependencies: list[dict[str, Any]] = Field(default_factory=list)
-    internal_dependencies: list[dict[str, Any]] = Field(default_factory=list)
+    external_dependencies: list[str] = Field(default_factory=list)
+    internal_dependencies: list[str] = Field(default_factory=list)
 
 
 class DependencyMapping(BaseModel):
@@ -46,31 +45,47 @@ class DependencyMapping(BaseModel):
     parallel_opportunities: list[list[int]] = Field(default_factory=list)
 
 
-class ImplementationPlan(BaseModel):
-    """Final implementation plan output."""
+class ImplementationStep(BaseModel):
+    """Individual implementation step with Chain of Vibe decomposition."""
 
-    plan_type: Literal["simple", "complex"] = "simple"
+    step: int
+    title: str
+    description: str
+    category: str = "backend"  # backend, frontend, integration, testing
+    sub_steps: list[dict[str, Any]] = Field(
+        default_factory=list
+    )  # For hierarchical breakdown with simplified structure
+    dependencies: list[int] = Field(
+        default_factory=list
+    )  # Step numbers this depends on (optional)
+    estimated_hours: float = 0.0  # Optional
+    complexity: Literal["low", "medium", "high"] = "medium"  # Optional
+
+
+class ImplementationPlan(BaseModel):
+    """Simplified implementation plan output for Chain of Vibe methodology."""
+
+    # Task Information
     task_id: str = ""
     description: str = ""
     complexity_score: int = 0
-    complexity_reasoning: str = ""
+    plan_type: Literal["simple", "complex"] = "simple"
 
-    approach: dict[str, Any] = Field(default_factory=dict)
-    implementation_steps: list[dict[str, Any]] = Field(default_factory=list)
-    subtasks: list[dict[str, Any]] = Field(default_factory=list)  # For complex plans
-    execution_strategy: dict[str, Any] = Field(
-        default_factory=dict
-    )  # For complex plans
+    # Requirements (simplified)
+    functional_requirements: list[str] = Field(default_factory=list)
 
-    testing_requirements: dict[str, Any] = Field(default_factory=dict)
-    rollback_plan: dict[str, Any] = Field(default_factory=dict)
+    # Implementation Steps (Chain of Vibe format)
+    steps: list[ImplementationStep] = Field(default_factory=list)
 
+    # Infrastructure Changes (simplified objects)
+    database_changes: list[dict[str, Any]] = Field(default_factory=list)
+    external_dependencies: list[dict[str, Any]] = Field(default_factory=list)
+    internal_dependencies: list[dict[str, Any]] = Field(default_factory=list)
+
+    # Metadata
     total_estimated_hours: float = 0.0
-    optimized_duration: str | None = None
     story_points: int = 0
-
-    risks: list[dict[str, Any]] = Field(default_factory=list)
-    assumptions: list[str] = Field(default_factory=list)
+    execution_order: list[str] = Field(default_factory=list)
 
 
 class WebSearchResults(BaseModel):
@@ -107,7 +122,7 @@ class PlannerState(BaseModel):
     dependency_mapping: DependencyMapping = Field(default_factory=DependencyMapping)
     implementation_plan: ImplementationPlan = Field(default_factory=ImplementationPlan)
 
-    # Workflow control
+    # Workflow control (with analyze_codebase phase restored)
     current_phase: Literal[
         "initialize",
         "parse_task",

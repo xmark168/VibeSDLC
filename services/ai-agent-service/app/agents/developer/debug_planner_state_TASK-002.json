@@ -1,338 +1,253 @@
 {
     "success": true,
     "final_plan": {
-        "task_info": {
-            "task_id": "TSK-7502",
-            "description": "Task: Implement user login functionality\nTask Description: Create user login API endpoint with authe...",
-            "complexity_score": 6,
-            "plan_type": "complex"
-        },
-        "requirements": {
-            "functional_requirements": [
-                "Create a POST /api/auth/login endpoint to accept user email and password.",
-                "Validate user credentials against the database.",
-                "Compare the hashed password using bcrypt for security.",
-                "Return a JWT token containing user ID, email, and expiration time upon successful login.",
-                "Implement rate limiting to prevent brute force attacks on the login endpoint.",
-                "Log failed login attempts for security monitoring purposes.",
-                "Return appropriate error messages for invalid credentials."
-            ],
-            "acceptance_criteria": [
-                "Given a valid email and password when a POST request is made to /api/auth/login then a JWT token is returned with user information.",
-                "Given an invalid email or password when a POST request is made to /api/auth/login then an appropriate error message is returned.",
-                "Given multiple failed login attempts when the rate limit is reached then further login attempts are temporarily blocked."
-            ],
-            "business_rules": {
-                "UserCredentialValidation": "User credentials must be validated against the database. If the email does not exist or the password does not match the hashed password, an error message is returned."
-            },
-            "technical_specs": {
-                "framework": "Node.js with Express for the API development.",
-                "database": "MongoDB for storing user credentials.",
-                "apis": []
-            },
-            "constraints": [
-                "Must maintain backward compatibility",
-                "Must follow existing code style and patterns",
-                "Must include appropriate error handling"
-            ]
-        },
-        "implementation": {
-            "approach": {
-                "strategy": "Develop a secure login endpoint that validates user credentials and implements rate limiting to prevent brute force attacks.",
-                "pattern": "Follow existing patterns in the codebase for defining routes and services.",
-                "architecture_alignment": "Aligns with the existing Express architecture and service-oriented design."
-            },
-            "steps": [
-                {
-                    "step": 1,
-                    "title": "Update User Model",
-                    "description": "Ensure the user model has the necessary fields for authentication, including email and hashed password.",
-                    "action": "Modify the user model to confirm it contains the required fields.",
-                    "files": [
-                        "src/models/user.js"
-                    ],
-                    "estimated_hours": 1.0,
-                    "complexity": "low",
-                    "dependencies": [],
-                    "blocking": true,
-                    "validation": "Verify that the user model has the required fields for authentication.",
-                    "error_handling": [
-                        "Handle missing fields in user model"
-                    ],
-                    "code_template": "Ensure fields like email and password are defined in the user schema."
-                },
-                {
-                    "step": 2,
-                    "title": "Implement Authentication Service",
-                    "description": "Create logic for validating user credentials and generating JWT tokens.",
-                    "action": "Develop the authentication service to handle login logic.",
-                    "files": [
-                        "src/services/authService.js"
-                    ],
-                    "estimated_hours": 3.0,
-                    "complexity": "high",
-                    "dependencies": [
-                        1
-                    ],
-                    "blocking": true,
-                    "validation": "Run unit tests to ensure login functionality works as expected.",
-                    "error_handling": [
-                        "Handle invalid email/password",
-                        "Handle JWT generation errors"
-                    ],
-                    "code_template": "async function login(email, password) { ... }"
-                },
-                {
-                    "step": 3,
-                    "title": "Add Login API Endpoint",
-                    "description": "Create a new POST /api/auth/login endpoint to accept user credentials.",
-                    "action": "Modify the routes file to include the new login endpoint.",
-                    "files": [
-                        "src/routes/auth.js"
-                    ],
-                    "estimated_hours": 1.5,
-                    "complexity": "medium",
-                    "dependencies": [
-                        2
-                    ],
-                    "blocking": false,
-                    "validation": "Test the endpoint using Postman or similar tools to ensure it returns the correct JWT token.",
-                    "error_handling": [
-                        "Handle rate limiting errors",
-                        "Handle invalid requests"
-                    ],
-                    "code_template": "router.post('/auth/login', authService.login);"
-                },
-                {
-                    "step": 4,
-                    "title": "Implement Rate Limiting Middleware",
-                    "description": "Create middleware to limit the number of login attempts to prevent brute force attacks.",
-                    "action": "Develop a rate limiter middleware and apply it to the login endpoint.",
-                    "files": [
-                        "src/middleware/rateLimiter.js"
-                    ],
-                    "estimated_hours": 1.0,
-                    "complexity": "medium",
-                    "dependencies": [],
-                    "blocking": false,
-                    "validation": "Verify that the rate limiter works by testing multiple login attempts.",
-                    "error_handling": [
-                        "Handle exceeding rate limit"
-                    ],
-                    "code_template": "const rateLimiter = (req, res, next) => { ... };"
-                },
-                {
-                    "step": 5,
-                    "title": "Write Tests for Login Functionality",
-                    "description": "Create unit and integration tests for the login functionality.",
-                    "action": "Develop test cases to ensure the login functionality works as expected.",
-                    "files": [
-                        "src/tests/auth.test.js"
-                    ],
-                    "estimated_hours": 2.0,
-                    "complexity": "medium",
-                    "dependencies": [
-                        3,
-                        4
-                    ],
-                    "blocking": false,
-                    "validation": "Achieve at least 80% code coverage for the login functionality.",
-                    "error_handling": [
-                        "Handle test failures"
-                    ],
-                    "code_template": "describe('Login API', () => { ... });"
-                }
-            ],
-            "execution_order": [
-                {
-                    "step": 1,
-                    "action": "Update data models",
-                    "reason": "Services depend on updated models",
-                    "blocking": true,
-                    "depends_on": [],
-                    "files": [
-                        "src/models/user.js"
-                    ]
-                },
-                {
-                    "step": 2,
-                    "action": "Implement service layer",
-                    "reason": "Business logic implementation",
-                    "blocking": true,
-                    "depends_on": [
-                        1
-                    ],
-                    "files": [
-                        "src/services/authService.js"
-                    ]
-                },
-                {
-                    "step": 3,
-                    "action": "Add API endpoints",
-                    "reason": "External interface implementation",
-                    "blocking": false,
-                    "depends_on": [
-                        2
-                    ],
-                    "files": [
-                        "src/routes/auth.js"
-                    ]
-                }
-            ],
-            "parallel_opportunities": [],
-            "subtasks": [
-                {
-                    "subtask_id": "SUB-001",
-                    "title": "Update User Model",
-                    "description": "Ensure the user model has the necessary fields for authentication, including email and hashed password.",
-                    "estimated_hours": 1.0,
-                    "priority": "high",
-                    "dependencies": []
-                },
-                {
-                    "subtask_id": "SUB-002",
-                    "title": "Implement Authentication Service",
-                    "description": "Create logic for validating user credentials and generating JWT tokens.",
-                    "estimated_hours": 3.0,
-                    "priority": "high",
-                    "dependencies": [
-                        1
-                    ]
-                },
-                {
-                    "subtask_id": "SUB-003",
-                    "title": "Add Login API Endpoint",
-                    "description": "Create a new POST /api/auth/login endpoint to accept user credentials.",
-                    "estimated_hours": 1.5,
-                    "priority": "medium",
-                    "dependencies": [
-                        2
-                    ]
-                },
-                {
-                    "subtask_id": "SUB-004",
-                    "title": "Implement Rate Limiting Middleware",
-                    "description": "Create middleware to limit the number of login attempts to prevent brute force attacks.",
-                    "estimated_hours": 1.0,
-                    "priority": "medium",
-                    "dependencies": []
-                },
-                {
-                    "subtask_id": "SUB-005",
-                    "title": "Write Tests for Login Functionality",
-                    "description": "Create unit and integration tests for the login functionality.",
-                    "estimated_hours": 2.0,
-                    "priority": "medium",
-                    "dependencies": [
-                        3,
-                        4
-                    ]
-                }
-            ],
-            "execution_strategy": {
-                "phases": [
+        "task_id": "TSK-4126",
+        "description": "Task: Implement user login functionality\nTask Description: Create user login API endpoint with authe...",
+        "complexity_score": 7,
+        "plan_type": "complex",
+        "functional_requirements": [
+            "Create a POST /api/auth/login API endpoint that accepts email and password.",
+            "Validate user credentials against the database.",
+            "Compare the hashed password using bcrypt.",
+            "Return a JWT token containing user ID, email, and expiration time upon successful login.",
+            "Implement rate limiting to prevent brute force attacks.",
+            "Log failed login attempts for security monitoring.",
+            "Return appropriate error messages for invalid credentials.",
+            "Include comprehensive unit tests for all authentication scenarios.",
+            "Update API documentation with details of the /api/auth/login endpoint."
+        ],
+        "steps": [
+            {
+                "step": 1,
+                "title": "Setup JWT authentication foundation",
+                "description": "Install dependencies and configure JWT infrastructure",
+                "category": "backend",
+                "sub_steps": [
                     {
-                        "phase": 1,
-                        "name": "Foundation",
-                        "subtasks": [
-                            "SUB-001",
-                            "SUB-002"
+                        "sub_step": "1.1",
+                        "title": "Install jsonwebtoken and bcrypt libraries",
+                        "description": "Add JWT and password hashing libraries to package.json",
+                        "action_type": "setup",
+                        "files_affected": [
+                            "package.json"
                         ],
-                        "blocking": true
+                        "test": "Run npm install and verify jsonwebtoken and bcrypt are installed correctly"
                     },
                     {
-                        "phase": 2,
-                        "name": "Implementation",
-                        "subtasks": [
-                            "SUB-003",
-                            "SUB-004"
+                        "sub_step": "1.2",
+                        "title": "Create JWT utility functions",
+                        "description": "Implement signToken() and verifyToken() helper functions",
+                        "action_type": "create",
+                        "files_affected": [
+                            "src/utils/jwt.js"
                         ],
-                        "blocking": true
+                        "test": "Import and call signToken() with test payload, verify it returns valid JWT string"
                     },
                     {
-                        "phase": 3,
-                        "name": "Integration",
-                        "subtasks": [
-                            "SUB-005"
+                        "sub_step": "1.3",
+                        "title": "Add JWT_SECRET to environment config",
+                        "description": "Add JWT_SECRET variable to .env and config loader",
+                        "action_type": "modify",
+                        "files_affected": [
+                            ".env.example",
+                            "src/config/environment.js"
                         ],
-                        "blocking": false
+                        "test": "Start application and verify JWT_SECRET is loaded correctly from environment"
                     }
-                ]
+                ],
+                "dependencies": [],
+                "estimated_hours": 0.0,
+                "complexity": "medium"
+            },
+            {
+                "step": 2,
+                "title": "Implement login API endpoint",
+                "description": "Create authentication endpoint with credential validation",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "2.1",
+                        "title": "Create auth router and login route",
+                        "description": "Setup POST /api/auth/login route with Express router",
+                        "action_type": "create",
+                        "files_affected": [
+                            "src/routes/authRoutes.js"
+                        ],
+                        "test": "Send POST request to /api/auth/login and verify route is accessible (404 → 400/500)"
+                    },
+                    {
+                        "sub_step": "2.2",
+                        "title": "Implement login controller logic",
+                        "description": "Create controller to validate credentials and generate JWT",
+                        "action_type": "create",
+                        "files_affected": [
+                            "src/controllers/authController.js"
+                        ],
+                        "test": "Call login controller with test credentials and verify JWT token is generated"
+                    },
+                    {
+                        "sub_step": "2.3",
+                        "title": "Add request validation middleware",
+                        "description": "Validate email format and password presence",
+                        "action_type": "create",
+                        "files_affected": [
+                            "src/middleware/validation.js"
+                        ],
+                        "test": "Send invalid request (missing email/password) and verify 400 validation error"
+                    },
+                    {
+                        "sub_step": "2.4",
+                        "title": "Implement bcrypt password comparison",
+                        "description": "Add logic to compare hashed passwords using bcrypt",
+                        "action_type": "modify",
+                        "files_affected": [
+                            "src/controllers/authController.js"
+                        ],
+                        "test": "Call login controller with valid email and invalid password, verify it fails authentication"
+                    },
+                    {
+                        "sub_step": "2.5",
+                        "title": "Implement rate limiting middleware",
+                        "description": "Add rate limiting to prevent brute force attacks",
+                        "action_type": "create",
+                        "files_affected": [
+                            "src/middleware/rateLimitMiddleware.js"
+                        ],
+                        "test": "Send multiple requests in a short time frame and verify rate limit response"
+                    },
+                    {
+                        "sub_step": "2.6",
+                        "title": "Log failed login attempts",
+                        "description": "Implement logging for failed login attempts for security monitoring",
+                        "action_type": "modify",
+                        "files_affected": [
+                            "src/controllers/authController.js"
+                        ],
+                        "test": "Attempt to login with invalid credentials and verify log entry is created"
+                    }
+                ],
+                "dependencies": [],
+                "estimated_hours": 0.0,
+                "complexity": "medium"
+            },
+            {
+                "step": 3,
+                "title": "Create unit tests for login functionality",
+                "description": "Write unit tests for all authentication scenarios",
+                "category": "testing",
+                "sub_steps": [
+                    {
+                        "sub_step": "3.1",
+                        "title": "Test successful login",
+                        "description": "Verify successful login returns JWT token and user data",
+                        "action_type": "test",
+                        "files_affected": [
+                            "src/tests/auth.test.js"
+                        ],
+                        "test": "Run unit tests and verify successful login returns expected results"
+                    },
+                    {
+                        "sub_step": "3.2",
+                        "title": "Test invalid credentials",
+                        "description": "Verify handling of invalid email or password",
+                        "action_type": "test",
+                        "files_affected": [
+                            "src/tests/auth.test.js"
+                        ],
+                        "test": "Run unit tests and verify appropriate error messages for invalid credentials"
+                    },
+                    {
+                        "sub_step": "3.3",
+                        "title": "Test rate limiting behavior",
+                        "description": "Verify that rate limiting blocks further login attempts after threshold",
+                        "action_type": "test",
+                        "files_affected": [
+                            "src/tests/auth.test.js"
+                        ],
+                        "test": "Run unit tests and verify rate limiting response after multiple failed attempts"
+                    }
+                ],
+                "dependencies": [],
+                "estimated_hours": 0.0,
+                "complexity": "medium"
+            },
+            {
+                "step": 4,
+                "title": "Update API documentation",
+                "description": "Document the /api/auth/login endpoint and its usage",
+                "category": "documentation",
+                "sub_steps": [
+                    {
+                        "sub_step": "4.1",
+                        "title": "Add endpoint details to API documentation",
+                        "description": "Include details of the /api/auth/login endpoint in the API docs",
+                        "action_type": "modify",
+                        "files_affected": [
+                            "docs/api.md"
+                        ],
+                        "test": "Review API documentation and verify /api/auth/login endpoint is documented correctly"
+                    }
+                ],
+                "dependencies": [],
+                "estimated_hours": 0.0,
+                "complexity": "medium"
             }
-        },
-        "file_changes": {
-            "files_to_create": [
-                {
-                    "path": "src/routes/auth.js",
-                    "reason": "To implement the new login API endpoint.",
-                    "template": "Follow existing patterns in src/routes/auth.js for defining routes."
-                },
-                {
-                    "path": "src/services/authService.js",
-                    "reason": "To add the logic for validating user credentials and generating JWT tokens.",
-                    "template": "Reference existing service functions like registerUser."
-                },
-                {
-                    "path": "src/middleware/rateLimiter.js",
-                    "reason": "To implement rate limiting for the login endpoint.",
-                    "template": "Follow existing middleware patterns."
-                },
-                {
-                    "path": "src/tests/auth.test.js",
-                    "reason": "To create tests for the new login functionality.",
-                    "template": "Reference existing tests in src/tests/auth.test.js."
-                }
-            ],
-            "files_to_modify": [
-                {
-                    "path": "src/routes/auth.js",
-                    "lines": [
-                        6
-                    ],
-                    "changes": "Add a new POST /api/auth/login endpoint.",
-                    "complexity": "medium",
-                    "risk": "medium"
-                },
-                {
-                    "path": "src/services/authService.js",
-                    "lines": [
-                        1
-                    ],
-                    "changes": "Import bcrypt and jsonwebtoken; implement login logic.",
-                    "complexity": "high",
-                    "risk": "medium"
-                },
-                {
-                    "path": "src/models/user.js",
-                    "lines": [
-                        1
-                    ],
-                    "changes": "Ensure user model has necessary fields for authentication.",
-                    "complexity": "low",
-                    "risk": "low"
-                }
-            ],
-            "affected_modules": []
-        },
-        "infrastructure": {
-            "database_changes": [],
-            "api_endpoints": [],
-            "external_dependencies": [],
-            "internal_dependencies": []
-        },
-        "metadata": {
-            "planner_version": "1.0",
-            "planning_iterations": 3,
-            "validation_passed": false,
-            "created_by": "planner_subagent"
-        }
+        ],
+        "database_changes": [
+            {
+                "change": "Add users collection",
+                "fields": [
+                    "_id",
+                    "email",
+                    "password_hash",
+                    "created_at",
+                    "updated_at"
+                ],
+                "affected_step": 1
+            }
+        ],
+        "external_dependencies": [
+            {
+                "package": "jsonwebtoken",
+                "version": "^9.0.0",
+                "purpose": "JWT token generation"
+            },
+            {
+                "package": "bcrypt",
+                "version": "^5.1.0",
+                "purpose": "Password hashing"
+            },
+            {
+                "package": "express-rate-limit",
+                "version": "^5.3.0",
+                "purpose": "Rate limiting middleware"
+            }
+        ],
+        "internal_dependencies": [
+            {
+                "module": "User model",
+                "required_by_step": 2
+            },
+            {
+                "module": "Validation middleware",
+                "required_by_step": 2
+            }
+        ],
+        "total_estimated_hours": 6.5,
+        "story_points": 8,
+        "execution_order": [
+            "Execute steps sequentially: 1 → 2 → 3 → 4",
+            "Within each step, execute sub-steps in order",
+            "Test after each sub-step before proceeding",
+            "Commit code after each completed sub-step"
+        ]
     },
     "ready_for_implementation": true,
-    "task_id": "TSK-7502",
-    "complexity_score": 6,
-    "estimated_hours": 8.5,
-    "story_points": 5,
-    "validation_score": 0.925,
+    "task_id": "TSK-4126",
+    "complexity_score": 7,
+    "estimated_hours": 6.5,
+    "story_points": 8,
+    "validation_score": 0.9,
     "status": "finalized",
     "iterations": 3,
     "metadata": {

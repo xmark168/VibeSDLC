@@ -4,8 +4,6 @@ Generate Plan Node
 PHASE 4: Implementation Planning - Create detailed implementation plan
 """
 
-from typing import Any
-
 from langchain_core.messages import AIMessage
 
 from ..state import ImplementationPlan, PlannerState
@@ -35,18 +33,19 @@ def generate_plan(state: PlannerState) -> PlannerState:
 
     try:
         task_requirements = state.task_requirements
-        codebase_analysis = state.codebase_analysis
         dependency_mapping = state.dependency_mapping
+        codebase_analysis = state.codebase_analysis
 
         print(f"🎯 Generating implementation plan for: {task_requirements.task_id}")
+        print(f"📁 Files to create: {len(codebase_analysis.files_to_create)}")
+        print(f"✏️  Files to modify: {len(codebase_analysis.files_to_modify)}")
+        print(f"📦 Affected modules: {len(codebase_analysis.affected_modules)}")
 
-        # Use LLM for plan generation
+        # Use LLM for plan generation with Chain of Vibe methodology
         import json
         import os
 
         from langchain_openai import ChatOpenAI
-
-        from app.templates.prompts.developer.planner import GENERATE_PLAN_PROMPT
 
         # Initialize LLM
         llm = ChatOpenAI(
@@ -56,29 +55,349 @@ def generate_plan(state: PlannerState) -> PlannerState:
             base_url=os.getenv("OPENAI_BASE_URL"),
         )
 
-        # Create prompt for plan generation using template
-        plan_prompt = f"""{GENERATE_PLAN_PROMPT}
+        # Create Chain of Vibe prompt for plan generation
+        plan_prompt = f"""# CHAIN OF VIBE IMPLEMENTATION PLANNING
+
+You are an expert implementation planner using the "Chain of Vibe" methodology for hierarchical, incremental task decomposition.
+
+## METHODOLOGY: Chain of Vibe Task Decomposition
+
+**Core Principles:**
+1. **Hierarchical Breakdown**: Each major step decomposes into atomic sub-steps
+2. **Logical Dependencies**: Steps ordered by technical dependencies (data → logic → UI)
+3. **Actionable Granularity**: Each sub-step is a single, testable change (~15-30 minutes)
+4. **Incremental Execution**: Each sub-step produces working code that can be committed
+5. **Full-Stack Coverage**: Unified plan covering backend → frontend → integration
 
 ## TASK CONTEXT
 
 Tech Stack: {state.tech_stack or "unknown"}
+Task ID: {task_requirements.task_id}
+Task Title: {task_requirements.task_title}
 
-Task Requirements:
-{task_requirements.model_dump_json(indent=2)}
+Requirements:
+{json.dumps(task_requirements.requirements, indent=2)}
+
+Acceptance Criteria:
+{json.dumps(task_requirements.acceptance_criteria, indent=2)}
+
+Technical Specs:
+{json.dumps(task_requirements.technical_specs, indent=2)}
 
 Codebase Analysis:
-{codebase_analysis.model_dump_json(indent=2)}
+Files to Create: {len(codebase_analysis.files_to_create)}
+{json.dumps([f["path"] for f in codebase_analysis.files_to_create], indent=2)}
+
+Files to Modify: {len(codebase_analysis.files_to_modify)}
+{json.dumps([f["path"] for f in codebase_analysis.files_to_modify], indent=2)}
+
+Affected Modules:
+{json.dumps(codebase_analysis.affected_modules, indent=2)}
+
+API Endpoints:
+{json.dumps(codebase_analysis.api_endpoints, indent=2)}
+
+Database Changes:
+{json.dumps(codebase_analysis.database_changes, indent=2)}
 
 Dependency Mapping:
 {dependency_mapping.model_dump_json(indent=2)}
 
-## INSTRUCTIONS
+## OUTPUT FORMAT
 
-Based on the above analysis, generate a detailed implementation plan in JSON format.
-Remember: EVERY field must be populated with meaningful content. NO empty fields, NO empty arrays (unless truly empty), NO null values.
+Generate a detailed implementation plan in JSON format:
+
+```json
+{{
+            "task_id": "{task_requirements.task_id}",
+  "description": "Clear description of what will be implemented",
+  "complexity_score": 1-10,
+  "plan_type": "simple|complex",
+
+  "functional_requirements": [
+    "Requirement 1 extracted from task",
+    "Requirement 2 extracted from task"
+  ],
+
+  "steps": [
+    {{
+                "step": 1,
+      "title": "Setup JWT authentication foundation",
+      "description": "Install dependencies and configure JWT infrastructure",
+      "category": "backend",
+      "sub_steps": [
+        {{
+                    "sub_step": "1.1",
+          "title": "Install jsonwebtoken and bcrypt libraries",
+          "description": "Add JWT and password hashing libraries to package.json",
+          "action_type": "setup|create|modify|test",
+          "files_affected": ["package.json"],
+          "test":"Run npm install and verify jsonwebtoken and bcrypt are installed correctly"
+        }},
+        {{
+                    "sub_step": "1.2",
+          "title": "Create JWT utility functions",
+          "description": "Implement signToken() and verifyToken() helper functions",
+          "action_type": "create",
+          "files_affected": ["src/utils/jwt.js"],
+          "test": "Import and call signToken() with test payload, verify it returns valid JWT string"
+        }},
+        {{
+                    "sub_step": "1.3",
+          "title": "Add JWT_SECRET to environment config",
+          "description": "Add JWT_SECRET variable to .env and config loader",
+          "action_type": "modify",
+          "files_affected": [".env.example", "src/config/environment.js"],
+          "test": "Start application and verify JWT_SECRET is loaded correctly from environment"
+        }}
+      ],
+    }},
+    {{
+                "step": 2,
+      "title": "Implement login API endpoint",
+      "description": "Create authentication endpoint with credential validation",
+      "category": "backend",
+      "sub_steps": [
+        {{
+                    "sub_step": "2.1",
+          "title": "Create auth router and login route",
+          "description": "Setup POST /api/auth/login route with Express router",
+          "action_type": "create",
+          "files_affected": ["src/routes/auth.routes.js", "src/app.js"],
+          "test": "Send POST request to /api/auth/login and verify route is accessible (404 → 400/500)"
+        }},
+        {{
+                    "sub_step": "2.2",
+          "title": "Implement login controller logic",
+          "description": "Create controller to validate credentials and generate JWT",
+          "action_type": "create",
+          "files_affected": ["src/controllers/auth.controller.js"],
+          "test": "Call login controller with test credentials and verify JWT token is generated"
+        }},
+        {{
+                    "sub_step": "2.3",
+          "title": "Add request validation middleware",
+          "description": "Validate email format and password presence",
+          "action_type": "create",
+          "files_affected": ["src/middleware/validation.js"],
+          "test": "Send invalid request (missing email/password) and verify 400 validation error"
+        }}
+      ],
+    }},
+    {{
+                "step": 3,
+      "title": "Create frontend Login Form component",
+      "description": "Build React login form with validation and state management",
+      "category": "frontend",
+      "sub_steps": [
+        {{
+                    "sub_step": "3.1",
+          "title": "Create LoginForm component structure",
+          "description": "Setup functional component with form fields and basic styling",
+          "action_type": "create",
+          "files_affected": ["src/components/LoginForm.jsx"],
+          "test": "Import and render LoginForm component, verify form fields are displayed correctly"
+        }},
+        {{
+                    "sub_step": "3.2",
+          "title": "Add form validation logic",
+          "description": "Implement client-side validation with error messages",
+          "action_type": "modify",
+          "files_affected": ["src/components/LoginForm.jsx"],
+          "test": "Submit form with invalid data and verify validation error messages appear"
+        }},
+        {{
+                    "sub_step": "3.3",
+          "title": "Add loading and error states",
+          "description": "Implement loading spinner and API error display",
+          "action_type": "modify",
+          "files_affected": ["src/components/LoginForm.jsx"],
+          "test": "Trigger loading state and verify spinner appears, trigger error and verify error message displays"
+        }}
+      ],
+    }},
+    {{
+                "step": 4,
+      "title": "Implement authentication state management",
+      "description": "Create custom hook and API service for auth flow",
+      "category": "frontend",
+      "sub_steps": [
+        {{
+                    "sub_step": "4.1",
+          "title": "Create auth API service",
+          "description": "Implement API client for authentication endpoints",
+          "action_type": "create",
+          "files_affected": ["src/services/auth.service.js"],
+          "test": "Call auth service login method with test data and verify API request is made correctly"
+        }},
+        {{
+                    "sub_step": "4.2",
+          "title": "Create useAuth custom hook",
+          "description": "Build hook managing auth state and login function",
+          "action_type": "create",
+          "files_affected": ["src/hooks/useAuth.js"],
+          "test": "Use useAuth hook in test component and verify auth state and login function work"
+        }},
+        {{
+                    "sub_step": "4.3",
+          "title": "Add token storage logic",
+          "description": "Implement localStorage for JWT persistence",
+          "action_type": "modify",
+          "files_affected": ["src/hooks/useAuth.js", "src/services/auth.service.js"],
+          "test": "Login and verify JWT token is stored in localStorage, refresh page and verify token persists"
+        }}
+      ],
+    }},
+    {{
+                "step": 5,
+      "title": "End-to-end integration testing",
+      "description": "Test complete authentication flow from UI to backend",
+      "category": "integration",
+      "sub_steps": [
+        {{
+                    "sub_step": "5.1",
+          "title": "Test successful login flow",
+          "description": "Verify complete flow with valid credentials",
+          "action_type": "test",
+          "files_affected": ["tests/integration/auth.test.js"],
+          "test": "Run integration test and verify successful login returns JWT token and user data"
+        }},
+        {{
+                    "sub_step": "5.2",
+          "title": "Test error scenarios",
+          "description": "Verify handling of invalid credentials and network errors",
+          "action_type": "test",
+          "files_affected": ["tests/integration/auth.test.js"],
+          "test": "Run error scenario tests and verify proper error handling and user feedback"
+        }}
+      ],
+      "dependencies": [4],
+      "estimated_hours": 0.7,
+      "complexity": "low"
+    }}
+  ],
+
+  "database_changes": [
+    {{
+                "change": "Add users table",
+      "fields": ["id", "email", "password_hash", "created_at", "updated_at"],
+      "affected_step": 1
+    }}
+  ],
+
+  "external_dependencies": [
+    {{"package": "jsonwebtoken", "version": "^9.0.0", "purpose": "JWT token generation"}},
+    {{"package": "bcrypt", "version": "^5.1.0", "purpose": "Password hashing"}}
+  ],
+
+  "internal_dependencies": [
+    {{"module": "User model", "required_by_step": 2}},
+    {{"module": "Validation middleware", "required_by_step": 2}}
+  ],
+
+  "total_estimated_hours": 4.4,
+  "story_points": 5,
+
+  "execution_order": [
+    "Execute steps sequentially: 1 → 2 → 3 → 4 → 5",
+    "Within each step, execute sub-steps in order",
+    "Test after each sub-step before proceeding",
+    "Commit code after each completed sub-step"
+  ]
+}}
+```
+
+## CRITICAL REQUIREMENTS FOR INCREMENTAL EXECUTION
+
+### Sub-Step Design Rules:
+1. **Atomic Changes**: Each sub-step modifies 1-3 files maximum
+2. **Single Responsibility**: One clear action per sub-step
+3. **Testable**: Each sub-step has a verification method
+4. **Committable**: Code should compile/run after each sub-step
+5. **Time-Boxed**: 15-30 minutes per sub-step (never exceed 45 min)
+
+### Action Types:
+- `setup`: Install dependencies, configure environment
+- `create`: Create new files/functions/components
+- `modify`: Edit existing code incrementally
+- `test`: Write or run tests
+
+### Code Changes Format:
+Each sub-step must specify `code_changes` with:
+- `type`: What kind of change (create_file, modify_function, add_route, etc.)
+- `specifics`: Exact functions/components/endpoints being added/modified
+- `template`: (optional) Reference to code template to use
+
+### Test Field Requirements:
+Each sub-step must include a "test" field with immediate verification:
+- **Specific and actionable**: Clear instructions for verifying completion
+- **Quick verification**: Should take 1-3 minutes to execute
+- **Immediate feedback**: Verify the sub-step works before proceeding
+- **Examples**:
+  - Setup: "Run npm install and verify package is installed correctly"
+  - Create: "Import function and call with test data, verify expected output"
+  - Modify: "Start application and verify new configuration is loaded"
+  - Test: "Run test suite and verify all tests pass"
+
+## DEPENDENCY ORDERING RULES
+
+**Backend Execution Order:**
+1. Database/Schema setup
+2. Models and data access layer
+3. Service layer (business logic)
+4. Controllers
+5. Routes and middleware
+6. API documentation
+
+**Frontend Execution Order:**
+1. API service layer
+2. Custom hooks/state management
+3. Component structure (presentational)
+4. Component logic (interactive)
+5. Form validation
+6. Integration with backend
+
+**Cross-Stack Dependencies:**
+- Frontend steps CANNOT start until their backend API dependencies are complete
+- Example: LoginForm (step 3) requires login endpoint (step 2)
+
+## EXAMPLES
+
+### Good Sub-Step (Atomic, Testable):
+```json
+{{
+            "sub_step": "2.1",
+  "title": "Create login route handler",
+  "description": "Add POST /api/auth/login route to Express router",
+  "action_type": "create",
+  "files_affected": ["src/routes/auth.routes.js"],
+  "test": "Send POST to /api/auth/login and verify route is accessible (404 → 400/500)"
+}}
+```
+
+### Bad Sub-Step (Too Vague):
+```json
+{{
+            "sub_step": "2.1",
+  "title": "Setup authentication",
+  "description": "Create authentication system",
+  // ❌ Too broad, multiple files, no clear verification
+}}
+```
+
+## GENERATE PLAN NOW
+
+Analyze the task requirements and generate a complete Chain of Vibe implementation plan with:
+- Clear step hierarchy (major steps → atomic sub-steps)
+- Logical dependency ordering
+- Specific file changes for each sub-step
+- **"test" field for each sub-step** with immediate verification instructions
+- Realistic time estimates (sub-steps: 15-30 min, steps: 0.5-2 hours)
+
+Output valid JSON following the exact format above.
 """
 
-        print("🤖 Calling LLM for plan generation...")
+        print("🤖 Calling LLM for Chain of Vibe plan generation...")
 
         # Call LLM
         response = llm.invoke(plan_prompt)
@@ -102,51 +421,40 @@ Remember: EVERY field must be populated with meaningful content. NO empty fields
 
             parsed_plan = json.loads(cleaned_output)
 
-            # Validate and complete the plan
-            parsed_plan = validate_and_complete_plan(
-                parsed_plan, task_requirements, codebase_analysis, dependency_mapping
-            )
-
+            # Extract simplified plan data
             complexity_score = parsed_plan.get("complexity_score", 5)
             plan_type = parsed_plan.get("plan_type", "simple")
 
-            # Handle approach field - ensure it's a dictionary
-            approach_raw = parsed_plan.get("approach", {})
-            if isinstance(approach_raw, str):
-                # If approach is a string, convert to proper dictionary
-                approach = {
-                    "strategy": approach_raw,
-                    "pattern": "Follow existing patterns in codebase",
-                    "architecture_alignment": "Aligns with current service-oriented architecture",
-                }
-            elif isinstance(approach_raw, dict):
-                # Ensure all required fields exist
-                approach = {
-                    "strategy": approach_raw.get(
-                        "strategy", "Create new components following existing patterns"
-                    ),
-                    "pattern": approach_raw.get(
-                        "pattern", "Follow existing patterns in codebase"
-                    ),
-                    "architecture_alignment": approach_raw.get(
-                        "architecture_alignment",
-                        "Aligns with current service-oriented architecture",
-                    ),
-                }
-            else:
-                # Default approach
-                approach = {
-                    "strategy": "Create new components following existing patterns",
-                    "pattern": "Follow existing patterns in codebase",
-                    "architecture_alignment": "Aligns with current service-oriented architecture",
-                }
+            # Convert steps to ImplementationStep objects
+            from ..state import ImplementationStep
 
-            llm_steps = parsed_plan.get("implementation_steps", [])
-            estimated_hours = parsed_plan.get("estimated_hours", 0)
+            steps_data = parsed_plan.get("steps", [])
+            implementation_steps = []
+
+            for step_data in steps_data:
+                step = ImplementationStep(
+                    step=step_data.get("step", 0),
+                    title=step_data.get("title", ""),
+                    description=step_data.get("description", ""),
+                    category=step_data.get("category", "backend"),
+                    sub_steps=step_data.get("sub_steps", []),
+                    dependencies=step_data.get("dependencies", []),
+                    estimated_hours=step_data.get("estimated_hours", 0.0),
+                    complexity=step_data.get("complexity", "medium"),
+                )
+                implementation_steps.append(step)
+
+            # Extract other simplified fields
+            functional_requirements = parsed_plan.get("functional_requirements", [])
+            database_changes = parsed_plan.get("database_changes", [])
+            external_dependencies = parsed_plan.get("external_dependencies", [])
+            internal_dependencies = parsed_plan.get("internal_dependencies", [])
+            execution_order = parsed_plan.get("execution_order", [])
+            total_estimated_hours = parsed_plan.get("total_estimated_hours", 0.0)
             story_points = parsed_plan.get("story_points", 0)
 
             print(
-                f"✅ Successfully parsed LLM plan with complexity {complexity_score}/10, {len(llm_steps)} steps, {estimated_hours}h"
+                f"✅ Successfully parsed Chain of Vibe plan with complexity {complexity_score}/10, {len(implementation_steps)} steps, {total_estimated_hours}h"
             )
 
         except json.JSONDecodeError as e:
@@ -155,106 +463,62 @@ Remember: EVERY field must be populated with meaningful content. NO empty fields
             print(
                 f"Cleaned output: {cleaned_output[:200] if 'cleaned_output' in locals() else 'N/A'}..."
             )
-            # NO FALLBACK - Return default values if LLM fails
+            # Fallback for JSON parsing failure
             complexity_score = 5
             plan_type = "simple"
-            approach = {
-                "strategy": "Create new components following existing patterns",
-                "pattern": "Follow existing patterns in codebase",
-                "architecture_alignment": "Aligns with current service-oriented architecture",
-            }
-            llm_steps = []
-            estimated_hours = 0
-            story_points = 0
+            implementation_steps = []
+            functional_requirements = task_requirements.requirements or []
+            database_changes = []
+            external_dependencies = []
+            internal_dependencies = []
+            execution_order = []
+            total_estimated_hours = 4.0
+            story_points = 3
 
         print(f"INFO: Complexity Score: {complexity_score}/10")
 
         # Use implementation steps from LLM if available, otherwise create minimal fallback
-        if llm_steps:
-            implementation_steps = llm_steps
-            print(f"✅ Using {len(llm_steps)} implementation steps from LLM")
-        else:
+        if not implementation_steps:
             print("⚠️ No implementation steps from LLM, using minimal fallback")
-            implementation_steps = [
-                {
-                    "step": 1,
-                    "title": "Implement feature",
-                    "description": "Complete the requested feature implementation",
-                    "files": [],
-                    "estimated_hours": estimated_hours or 4.0,
-                    "complexity": "medium",
-                    "dependencies": [],
-                    "blocking": False,
-                    "type": "implementation",
-                }
-            ]
+            from ..state import ImplementationStep
 
-        # NO MORE FALLBACK LOGIC - All steps should come from LLM
+            fallback_step = ImplementationStep(
+                step=1,
+                title="Implement feature",
+                description="Complete the requested feature implementation",
+                category="backend",
+                sub_steps=[],
+                dependencies=[],
+                estimated_hours=total_estimated_hours,
+                complexity="medium",
+            )
+            implementation_steps = [fallback_step]
 
-        # Use totals from LLM or calculate from steps
-        if estimated_hours > 0:
-            total_hours = estimated_hours
-        else:
-            total_hours = sum(
-                step.get("estimated_hours", 0) for step in implementation_steps
+        # Calculate totals if not provided
+        if total_estimated_hours == 0:
+            total_estimated_hours = sum(
+                step.estimated_hours for step in implementation_steps
             )
 
         if story_points == 0:
-            story_points = estimate_story_points(complexity_score, total_hours)
+            story_points = estimate_story_points(
+                complexity_score, total_estimated_hours
+            )
 
-        # Create testing requirements
-        testing_requirements = {
-            "unit_tests": codebase_analysis.testing_requirements.get("unit_tests", {}),
-            "integration_tests": codebase_analysis.testing_requirements.get(
-                "integration_tests", {}
-            ),
-            "coverage_target": "90%",
-        }
-
-        # Create rollback plan
-        rollback_plan = {
-            "database": "Use migration rollback if database changes exist",
-            "code": "Revert commits in reverse order of implementation",
-            "data": "No data migration needed for new features",
-        }
-
-        # Identify risks
-        risks = identify_risks(task_requirements, codebase_analysis, complexity_score)
-
-        # Create assumptions
-        assumptions = [
-            "Development environment is properly set up",
-            "All required dependencies are available",
-            "Database access is configured correctly",
-        ] + task_requirements.assumptions
-
-        # Create subtasks for complex plans
-        subtasks = []
-        execution_strategy = {}
-
-        if plan_type == "complex":
-            subtasks = create_subtasks(implementation_steps)
-            execution_strategy = create_execution_strategy(subtasks, dependency_mapping)
-
-        # Create ImplementationPlan object
+        # Create simplified ImplementationPlan object
         implementation_plan = ImplementationPlan(
-            plan_type=plan_type,
             task_id=task_requirements.task_id,
             description=task_requirements.task_title,
             complexity_score=complexity_score,
-            complexity_reasoning=f"Score based on {len(codebase_analysis.files_to_create)} new files, "
-            f"{len(codebase_analysis.files_to_modify)} modified files, "
-            f"{len(dependency_mapping.execution_order)} implementation steps",
-            approach=approach,
-            implementation_steps=implementation_steps,
-            subtasks=subtasks,
-            execution_strategy=execution_strategy,
-            testing_requirements=testing_requirements,
-            rollback_plan=rollback_plan,
-            total_estimated_hours=total_hours,
+            plan_type=plan_type,
+            functional_requirements=functional_requirements,
+            steps=implementation_steps,
+            database_changes=database_changes,
+            external_dependencies=external_dependencies,
+            internal_dependencies=internal_dependencies,
+            execution_order=execution_order,
+            total_estimated_hours=total_estimated_hours,
             story_points=story_points,
-            risks=risks,
-            assumptions=assumptions,
         )
 
         # Update state
@@ -267,35 +531,35 @@ Remember: EVERY field must be populated with meaningful content. NO empty fields
 
         # Add AI message
         plan_result = {
-            "phase": "Implementation Planning",
+            "phase": "Chain of Vibe Implementation Planning",
             "plan_type": plan_type,
             "complexity_score": complexity_score,
             "total_steps": len(implementation_steps),
-            "estimated_hours": total_hours,
+            "estimated_hours": total_estimated_hours,
             "story_points": story_points,
             "status": "completed",
         }
 
         ai_message = AIMessage(
-            content=f"""Phase 4: Implementation Planning - COMPLETED
+            content=f"""Phase 3: Chain of Vibe Implementation Planning - COMPLETED
 
 Plan Results:
 {json.dumps(plan_result, indent=2)}
 
 Implementation Steps:
-{chr(10).join(f"{step['step']}. {step['title']} ({step['estimated_hours']}h)" for step in implementation_steps)}
+{chr(10).join(f"{step.step}. {step.title} ({step.estimated_hours}h)" for step in implementation_steps)}
 
-Total Effort: {total_hours} hours ({story_points} story points)
+Total Effort: {total_estimated_hours} hours ({story_points} story points)
 
 Ready to proceed to Plan Validation."""
         )
 
         state.messages.append(ai_message)
 
-        print("SUCCESS: Implementation plan generated successfully")
+        print("SUCCESS: Chain of Vibe implementation plan generated successfully")
         print(f"PLAN: Plan Type: {plan_type}")
         print(f"INFO: Complexity: {complexity_score}/10")
-        print(f"TIME:  Total Hours: {total_hours}")
+        print(f"TIME:  Total Hours: {total_estimated_hours}")
         print(f"SCORE: Story Points: {story_points}")
         print(f"ITER: Next Phase: {state.current_phase}")
         print("=" * 80 + "\n")
@@ -304,493 +568,51 @@ Ready to proceed to Plan Validation."""
 
     except Exception as e:
         print(f"ERROR: Error in plan generation: {e}")
+        print("🔍 DEBUG: Exception details:")
+        import traceback
+
+        traceback.print_exc()
+
+        # Set error status
         state.status = "error_plan_generation"
         state.error_message = f"Plan generation failed: {str(e)}"
+
+        # Ensure implementation_plan is set to empty but valid structure
+        # This prevents downstream nodes from accessing uninitialized fields
+        state.implementation_plan = ImplementationPlan()
+
+        # Set phase to finalize để handle error properly
+        state.current_phase = "finalize"
+
+        print(
+            "❌ GENERATE PLAN FAILED: Set empty implementation_plan and routing to finalize"
+        )
+        print(f"   Error status: {state.status}")
+        print(f"   Error message: {state.error_message}")
+
         return state
 
 
-def calculate_complexity_score(
-    task_requirements, codebase_analysis, dependency_mapping
-) -> int:
-    """Calculate complexity score based on various factors."""
-    score = 0
-
-    # Base complexity from requirements
-    score += min(len(task_requirements.requirements), 3)
-
-    # File changes complexity
-    score += len(codebase_analysis.files_to_create) * 0.5
-    score += len(codebase_analysis.files_to_modify) * 0.3
-
-    # Database changes add complexity
-    if codebase_analysis.database_changes:
-        score += 2
-
-    # API changes add complexity
-    if codebase_analysis.api_endpoints:
-        score += 1
-
-    # Dependency complexity
-    score += len(dependency_mapping.blocking_steps) * 0.5
-
-    return min(int(score), 10)
-
-
-def determine_strategy(task_requirements, codebase_analysis) -> str:
-    """Determine implementation strategy based on analysis."""
-    if codebase_analysis.files_to_create:
-        return "Create new components following existing patterns"
-    elif codebase_analysis.files_to_modify:
-        return "Extend existing components with new functionality"
-    else:
-        return "Configuration or minor changes to existing code"
-
-
-def estimate_step_hours(step: dict[str, Any]) -> float:
-    """Estimate hours for implementation step."""
-    base_hours = 2.0
-
-    if step.get("blocking", False):
-        base_hours *= 1.5
-
-    file_count = len(step.get("files", []))
-    if file_count > 1:
-        base_hours += (file_count - 1) * 0.5
-
-    return round(base_hours, 1)
-
-
 def estimate_story_points(complexity_score: int, total_hours: float) -> int:
-    """Estimate story points using Fibonacci sequence."""
-    if complexity_score <= 2:
+    """Estimate story points using Fibonacci sequence based on complexity and hours."""
+    # Fibonacci sequence: 1, 2, 3, 5, 8, 13, 21
+    fibonacci = [1, 2, 3, 5, 8, 13, 21]
+
+    # Base estimation on complexity score and hours
+    if complexity_score <= 2 and total_hours <= 4:
         return 1
-    elif complexity_score <= 4:
+    elif complexity_score <= 4 and total_hours <= 8:
         return 2
-    elif complexity_score <= 6:
+    elif complexity_score <= 6 and total_hours <= 16:
         return 3
-    elif complexity_score <= 8:
+    elif complexity_score <= 7 and total_hours <= 24:
         return 5
-    else:
+    elif complexity_score <= 8 and total_hours <= 40:
         return 8
+    elif complexity_score <= 9 and total_hours <= 60:
+        return 13
+    else:
+        return 21
 
 
-def identify_risks(
-    task_requirements, codebase_analysis, complexity_score: int
-) -> list[dict[str, Any]]:
-    """Identify potential risks."""
-    risks = []
-
-    if complexity_score >= 7:
-        risks.append(
-            {
-                "risk": "High complexity may lead to implementation delays",
-                "probability": "medium",
-                "impact": "medium",
-                "mitigation": "Break down into smaller subtasks and review frequently",
-            }
-        )
-
-    if codebase_analysis.database_changes:
-        risks.append(
-            {
-                "risk": "Database migration may cause downtime",
-                "probability": "low",
-                "impact": "high",
-                "mitigation": "Test migration thoroughly in staging environment",
-            }
-        )
-
-    return risks
-
-
-def create_subtasks(implementation_steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Create subtasks for complex plans."""
-    subtasks = []
-    for i, step in enumerate(implementation_steps):
-        subtasks.append(
-            {
-                "subtask_id": f"SUB-{i + 1:03d}",
-                "title": step["title"],
-                "description": step["description"],
-                "estimated_hours": step["estimated_hours"],
-                "priority": "high" if step["blocking"] else "medium",
-                "dependencies": step["dependencies"],
-            }
-        )
-    return subtasks
-
-
-def create_execution_strategy(
-    subtasks: list[dict[str, Any]], dependency_mapping
-) -> dict[str, Any]:
-    """Create execution strategy for complex plans."""
-    return {
-        "phases": [
-            {
-                "phase": 1,
-                "name": "Foundation",
-                "subtasks": [
-                    st["subtask_id"] for st in subtasks if st["priority"] == "high"
-                ][:2],
-                "blocking": True,
-            },
-            {
-                "phase": 2,
-                "name": "Implementation",
-                "subtasks": [st["subtask_id"] for st in subtasks[2:4]],
-                "blocking": True,
-            },
-            {
-                "phase": 3,
-                "name": "Integration",
-                "subtasks": [st["subtask_id"] for st in subtasks[4:]],
-                "blocking": False,
-            },
-        ]
-    }
-
-
-def estimate_file_creation_hours(file_info) -> float:
-    """Estimate hours for creating a new file."""
-    complexity = file_info.get("complexity", "medium")
-    estimated_lines = file_info.get("estimated_lines", 100)
-
-    base_hours = {"low": 1.0, "medium": 2.0, "high": 4.0}.get(complexity, 2.0)
-
-    # Adjust based on file size
-    if estimated_lines > 200:
-        base_hours *= 1.5
-    elif estimated_lines < 50:
-        base_hours *= 0.7
-
-    return round(base_hours, 1)
-
-
-def estimate_file_modification_hours(file_info) -> float:
-    """Estimate hours for modifying an existing file."""
-    complexity = file_info.get("complexity", "medium")
-    risk = file_info.get("risk", "low")
-
-    base_hours = {"low": 0.5, "medium": 1.0, "high": 2.0}.get(complexity, 1.0)
-
-    # Adjust based on risk
-    if risk == "high":
-        base_hours *= 1.5
-    elif risk == "medium":
-        base_hours *= 1.2
-
-    return round(base_hours, 1)
-
-
-def validate_and_complete_plan(
-    plan: dict[str, Any],
-    task_requirements,
-    codebase_analysis,
-    dependency_mapping,
-) -> dict[str, Any]:
-    """
-    Validate and complete the plan by filling missing fields with intelligent defaults.
-
-    Ensures NO empty fields, NO empty arrays (unless truly empty), NO null values.
-    """
-
-    # Ensure all top-level fields exist
-    if not plan.get("plan_type"):
-        plan["plan_type"] = "simple"
-
-    if not plan.get("task_id"):
-        plan["task_id"] = task_requirements.task_id or "TSK-UNKNOWN"
-
-    if not plan.get("description"):
-        plan["description"] = task_requirements.task_title or "Implementation plan"
-
-    if not plan.get("complexity_score"):
-        plan["complexity_score"] = calculate_complexity_score(
-            task_requirements, codebase_analysis, dependency_mapping
-        )
-
-    if not plan.get("complexity_reasoning"):
-        plan["complexity_reasoning"] = (
-            f"Score based on {len(codebase_analysis.files_to_create)} new files, "
-            f"{len(codebase_analysis.files_to_modify)} modified files, "
-            f"{len(dependency_mapping.execution_order)} implementation steps"
-        )
-
-    # Ensure approach is complete
-    if not plan.get("approach") or not isinstance(plan.get("approach"), dict):
-        plan["approach"] = {}
-
-    approach = plan["approach"]
-    if not approach.get("strategy"):
-        approach["strategy"] = determine_strategy(task_requirements, codebase_analysis)
-    if not approach.get("pattern"):
-        approach["pattern"] = "Follow existing patterns in codebase"
-    if not approach.get("architecture_alignment"):
-        approach["architecture_alignment"] = (
-            "Aligns with current service-oriented architecture"
-        )
-    if not approach.get("alternatives_considered"):
-        approach["alternatives_considered"] = []
-
-    # Ensure implementation_steps is populated
-    if not plan.get("implementation_steps") or not isinstance(
-        plan.get("implementation_steps"), list
-    ):
-        plan["implementation_steps"] = []
-
-    if not plan["implementation_steps"]:
-        # Create steps from dependency mapping if LLM didn't provide them
-        plan["implementation_steps"] = create_steps_from_dependencies(
-            dependency_mapping, codebase_analysis
-        )
-
-    # Ensure each step has all required fields
-    for i, step in enumerate(plan["implementation_steps"]):
-        if not step.get("step"):
-            step["step"] = i + 1
-        if not step.get("title"):
-            step["title"] = f"Step {i + 1}"
-        if not step.get("description"):
-            step["description"] = "Implementation step"
-        if not step.get("files"):
-            step["files"] = []
-        if not step.get("estimated_hours"):
-            step["estimated_hours"] = 2.0
-        if not step.get("complexity"):
-            step["complexity"] = "medium"
-        if not step.get("dependencies"):
-            step["dependencies"] = []
-        if "blocking" not in step:
-            step["blocking"] = False
-        if not step.get("validation"):
-            step["validation"] = "Verify step is complete"
-        if not step.get("error_handling"):
-            step["error_handling"] = []
-
-    # Ensure estimated_hours
-    if not plan.get("estimated_hours") or plan.get("estimated_hours") == 0:
-        plan["estimated_hours"] = sum(
-            step.get("estimated_hours", 2.0)
-            for step in plan.get("implementation_steps", [])
-        )
-
-    # Ensure story_points
-    if not plan.get("story_points") or plan.get("story_points") == 0:
-        plan["story_points"] = estimate_story_points(
-            plan.get("complexity_score", 5), plan.get("estimated_hours", 0)
-        )
-
-    # Ensure requirements
-    if not plan.get("requirements"):
-        plan["requirements"] = {}
-
-    req = plan["requirements"]
-    if not req.get("functional_requirements"):
-        req["functional_requirements"] = task_requirements.requirements or [
-            "Implement requested feature"
-        ]
-    if not req.get("acceptance_criteria"):
-        req["acceptance_criteria"] = task_requirements.acceptance_criteria or [
-            "Feature works as specified"
-        ]
-    if not req.get("business_rules"):
-        req["business_rules"] = task_requirements.business_rules or {}
-    if not req.get("technical_specs"):
-        req["technical_specs"] = task_requirements.technical_specs or {}
-    if not req.get("constraints"):
-        req["constraints"] = task_requirements.constraints or []
-
-    # Ensure file_changes
-    if not plan.get("file_changes"):
-        plan["file_changes"] = {}
-
-    fc = plan["file_changes"]
-    if not fc.get("files_to_create"):
-        fc["files_to_create"] = [
-            {
-                "path": f.get("path", "new_file.py"),
-                "reason": f.get("reason", "New file needed"),
-                "template": f.get("template", ""),
-                "estimated_lines": f.get("estimated_lines", 100),
-                "complexity": f.get("complexity", "medium"),
-            }
-            for f in codebase_analysis.files_to_create
-        ]
-
-    if not fc.get("files_to_modify"):
-        fc["files_to_modify"] = [
-            {
-                "path": f.get("path", "existing_file.py"),
-                "lines": f.get("lines", []),
-                "changes": f.get("changes", "Modifications needed"),
-                "complexity": f.get("complexity", "medium"),
-                "risk": f.get("risk", "low"),
-            }
-            for f in codebase_analysis.files_to_modify
-        ]
-
-    if not fc.get("affected_modules"):
-        fc["affected_modules"] = codebase_analysis.affected_modules or []
-
-    # Ensure infrastructure
-    if not plan.get("infrastructure"):
-        plan["infrastructure"] = {}
-
-    infra = plan["infrastructure"]
-    if not infra.get("database_changes"):
-        infra["database_changes"] = codebase_analysis.database_changes or []
-    if not infra.get("api_endpoints"):
-        infra["api_endpoints"] = codebase_analysis.api_endpoints or []
-    if not infra.get("external_dependencies"):
-        # Ensure external dependencies have complete information
-        external_deps = complete_external_dependencies(
-            codebase_analysis.external_dependencies or []
-        )
-        infra["external_dependencies"] = external_deps
-    if not infra.get("internal_dependencies"):
-        infra["internal_dependencies"] = codebase_analysis.internal_dependencies or []
-
-    # Ensure risks
-    if not plan.get("risks"):
-        plan["risks"] = identify_risks(
-            task_requirements, codebase_analysis, plan.get("complexity_score", 5)
-        )
-
-    # Ensure assumptions
-    if not plan.get("assumptions"):
-        plan["assumptions"] = task_requirements.assumptions or [
-            "Development environment is properly set up"
-        ]
-
-    # Ensure metadata
-    if not plan.get("metadata"):
-        plan["metadata"] = {}
-
-    meta = plan["metadata"]
-    meta["planner_version"] = "1.0"
-    meta["created_by"] = "planner_agent"
-    meta["validation_passed"] = True
-
-    return plan
-
-
-def create_steps_from_dependencies(
-    dependency_mapping, codebase_analysis
-) -> list[dict[str, Any]]:
-    """Create implementation steps from dependency mapping."""
-    steps = []
-
-    for i, exec_step in enumerate(dependency_mapping.execution_order, 1):
-        step = {
-            "step": i,
-            "title": exec_step.get("action", f"Step {i}"),
-            "description": exec_step.get("reason", "Implementation step"),
-            "action": exec_step.get("action", ""),
-            "files": exec_step.get("files", []),
-            "estimated_hours": estimate_step_hours(exec_step),
-            "complexity": "medium",
-            "dependencies": exec_step.get("depends_on", []),
-            "blocking": exec_step.get("blocking", False),
-            "validation": f"Verify step {i} is complete",
-            "error_handling": [],
-        }
-        steps.append(step)
-
-    return steps
-
-
-def complete_external_dependencies(
-    external_deps: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """
-    Complete external dependencies with all required fields.
-
-    Ensures each dependency has:
-    - package: Package name
-    - version: Version constraint
-    - purpose: Why this package is needed
-    - already_installed: Boolean flag
-    - installation_method: pip/npm/yarn/poetry
-    - install_command: Executable installation command
-    - package_file: Target configuration file
-    - section: dependencies or devDependencies
-
-    Args:
-        external_deps: List of dependency dictionaries from codebase analysis
-
-    Returns:
-        List of completed dependency dictionaries with all required fields
-    """
-    completed_deps = []
-
-    for dep in external_deps:
-        completed_dep = {
-            # Required fields
-            "package": dep.get("package", "unknown-package"),
-            "version": dep.get("version", ">=1.0.0"),
-            "purpose": dep.get(
-                "purpose", dep.get("reason", "Required for implementation")
-            ),
-            "already_installed": dep.get("already_installed", False),
-            "installation_method": dep.get("installation_method", "pip"),
-            "install_command": "",  # Will be set below
-            "package_file": dep.get("package_file", "pyproject.toml"),
-            "section": dep.get("section", "dependencies"),
-        }
-
-        # Generate install_command based on already_installed flag
-        if completed_dep["already_installed"]:
-            completed_dep["install_command"] = "Already installed"
-        else:
-            # Build install command with proper formatting
-            package_spec = completed_dep["package"]
-            version = completed_dep["version"]
-
-            # Ensure version constraint is properly formatted
-            if version and not version.startswith((">=", "<=", "==", "~", "^")):
-                version = f">={version}"
-
-            if version:
-                package_spec = f"{package_spec}{version}"
-
-            method = completed_dep["installation_method"]
-            completed_dep["install_command"] = f"{method} install {package_spec}"
-
-        # Validate all required fields are populated
-        required_fields = [
-            "package",
-            "version",
-            "purpose",
-            "already_installed",
-            "installation_method",
-            "install_command",
-            "package_file",
-            "section",
-        ]
-
-        for field in required_fields:
-            if not completed_dep.get(field):
-                # Set sensible defaults for missing fields
-                if field == "package":
-                    completed_dep[field] = "unknown-package"
-                elif field == "version":
-                    completed_dep[field] = ">=1.0.0"
-                elif field == "purpose":
-                    completed_dep[field] = "Required for implementation"
-                elif field == "already_installed":
-                    completed_dep[field] = False
-                elif field == "installation_method":
-                    completed_dep[field] = "pip"
-                elif field == "install_command":
-                    completed_dep[field] = (
-                        f"{completed_dep.get('installation_method', 'pip')} install "
-                        f"{completed_dep.get('package', 'unknown-package')}"
-                    )
-                elif field == "package_file":
-                    completed_dep[field] = "pyproject.toml"
-                elif field == "section":
-                    completed_dep[field] = "dependencies"
-
-        completed_deps.append(completed_dep)
-
-    return completed_deps
+# Chain of Vibe methodology implementation complete

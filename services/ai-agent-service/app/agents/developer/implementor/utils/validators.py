@@ -38,8 +38,26 @@ def validate_implementation_plan(
     if not description:
         issues.append("Missing required field: description")
 
-    # Validate file operations - support both nested and flat formats
-    if "file_changes" in implementation_plan:
+    # Validate file operations - support simplified structure with steps
+    files_to_create = []
+    files_to_modify = []
+
+    # Check for simplified structure with steps
+    if "steps" in implementation_plan:
+        steps = implementation_plan["steps"]
+        for step in steps:
+            sub_steps = step.get("sub_steps", [])
+            for sub_step in sub_steps:
+                action_type = sub_step.get("action_type", "")
+                files_affected = sub_step.get("files_affected", [])
+
+                if action_type == "create":
+                    files_to_create.extend(files_affected)
+                elif action_type == "modify":
+                    files_to_modify.extend(files_affected)
+
+    # Fall back to legacy formats
+    elif "file_changes" in implementation_plan:
         file_changes = implementation_plan["file_changes"]
         files_to_create = file_changes.get("files_to_create", [])
         files_to_modify = file_changes.get("files_to_modify", [])
