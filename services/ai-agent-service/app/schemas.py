@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from token import OP
 from uuid import UUID, uuid4
 from pydantic import EmailStr
@@ -158,24 +158,7 @@ class IssueActivitiesPublic(SQLModel):
     data: list[IssueActivityPublic]
     count: int
 
-class SprintPublic(SQLModel):
-    id: UUID
-    project_id: UUID
-    name: str
-    number: int
-    goal: str
-    status: str
-    start_date: datetime
-    end_date: datetime
-    velocity_plan: str
-    velocity_actual: str
-    created_at: datetime
-    updated_at: datetime
-
-class SprintsPublic(SQLModel):
-    data: list[SprintPublic]
-    count: int
-
+# comment
 class CommentBase(SQLModel):
     content: str = Field(min_length=1)
 
@@ -218,3 +201,36 @@ class ProjectsPublic(SQLModel):
     data: list[ProjectPublic]
     count: int
 
+#sprint
+class SprintBase(SQLModel):
+    name: str = Field(min_length=1, max_length=255)
+    number: int = Field(ge=1, description="Sprint number (1, 2, 3...)")
+    goal: str = Field(min_length=1, max_length=1000)
+    status: str = Field(description="Status: Planning, Active, Completed, Cancelled")
+    start_date: datetime
+    end_date: datetime
+    velocity_plan: str = Field(default="0", description="Planned velocity")
+    velocity_actual: str = Field(default="0", description="Actual velocity")
+
+class SprintCreate(SprintBase):
+    project_id: UUID
+
+class SprintUpdate(SQLModel):
+    name: Optional[str] = None
+    number: Optional[int] = Field(None, ge=1)
+    goal: Optional[str] = None
+    status: Optional[str] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    velocity_plan: Optional[str] = None
+    velocity_actual: Optional[str] = None
+
+class SprintPublic(SprintBase):
+    id: UUID
+    project_id: UUID
+    created_at: datetime
+    updated_at: datetime
+
+class SprintsPublic(SQLModel):
+    data: list[SprintPublic]
+    count: int
