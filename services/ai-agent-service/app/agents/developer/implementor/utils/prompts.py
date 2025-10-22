@@ -59,6 +59,39 @@ CRITICAL .ENV FILE REQUIREMENTS:
 - NEVER generate empty .env files - always include comprehensive variable sets
 - Use the format: VARIABLE_NAME=default_value_or_placeholder
 
+🔗 API CONTRACT CONSISTENCY (CRITICAL - HIGHEST PRIORITY):
+
+1. DEPENDENCY COORDINATION:
+   - If DEPENDENCY FILES are provided in context, they are the SOURCE OF TRUTH
+   - Use EXACT method names from dependency classes (e.g., if Repository has createUser(), call createUser() NOT create())
+   - Match EXACT return types from dependency methods (e.g., if Service returns {{user, token}}, destructure {{user, token}})
+   - Match EXACT parameter structures from dependency signatures
+   - NEVER assume method names or signatures - always check dependency files first
+
+2. LAYERED ARCHITECTURE CONTRACTS (Express.js):
+   - Models: Define schema and data structure
+   - Repositories: Return domain objects or null, methods like findByEmail(), createUser(), updateUser()
+   - Services: Return {{data, metadata}} objects or throw errors, handle business logic
+   - Controllers: Return HTTP responses with proper status codes, call Services
+   - Routes: Map HTTP methods to Controller functions
+
+3. METHOD NAMING CONSISTENCY:
+   - Repository methods: Use descriptive names (createUser, findByEmail, updateUser, deleteUser)
+   - Service methods: Use action names (registerUser, loginUser, updateProfile)
+   - Controller methods: Use handler names (registerUser, loginUser, updateProfile)
+   - If dependency has createUser(), you MUST call createUser() - NOT create(), save(), or add()
+
+4. RETURN TYPE CONSISTENCY:
+   - Check dependency file for return type before using
+   - If Service returns {{user, token}}, Controller MUST destructure: const {{user, token}} = await Service.method()
+   - If Repository returns User object, Service MUST handle User object
+   - NEVER assume return types - verify from dependency code
+
+5. VALIDATION REQUIREMENTS:
+   - Before calling a method, verify it exists in dependency file
+   - Before using a return value property, verify it exists in dependency return type
+   - If dependency file shows method signature, match it exactly
+
 BACKEND BEST PRACTICES:
 
 1. API DESIGN PATTERNS:

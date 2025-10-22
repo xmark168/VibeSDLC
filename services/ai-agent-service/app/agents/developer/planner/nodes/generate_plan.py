@@ -275,21 +275,34 @@ src/
     if architecture_layers["has_routes"]:
         guidelines_text += "\n**EXISTING ROUTES DETECTED** - Follow existing route patterns and middleware usage."
 
-    # Add AGENTS.md content if available
+    # Add FULL AGENTS.md content if available
     if architecture_guidelines["has_agents_md"]:
-        guidelines_text += """
+        agents_md_content = architecture_guidelines.get("architecture_content", "")
 
-**ADDITIONAL GUIDELINES FROM AGENTS.md:**
-The project has a comprehensive AGENTS.md file with detailed architecture guidelines.
-Key sections include:
-- Layered Architecture (Routes → Controllers → Services → Repositories → Models)
-- Coding Conventions (naming, style, async/await patterns)
-- Common Patterns (route definition, controller pattern, service pattern)
-- Feature Development Process (step-by-step implementation guide)
-- Testing Guidelines (unit and integration test patterns)
-- Security Practices (authentication, validation, error handling)
+        # Truncate if too long (keep first 8000 chars to fit in prompt)
+        if len(agents_md_content) > 8000:
+            agents_md_content = (
+                agents_md_content[:8000] + "\n\n... (truncated for brevity)"
+            )
 
-**FOLLOW THE EXACT PATTERNS AND CONVENTIONS DEFINED IN AGENTS.MD**
+        guidelines_text += f"""
+
+**CRITICAL: FULL AGENTS.md ARCHITECTURE GUIDELINES**
+
+The following are the COMPLETE architecture guidelines from AGENTS.md.
+YOU MUST FOLLOW THESE GUIDELINES EXACTLY when generating the implementation plan.
+
+---
+{agents_md_content}
+---
+
+**MANDATORY REQUIREMENTS:**
+1. Follow the EXACT implementation order: Models → Repositories → Services → Controllers → Routes
+2. Use the EXACT code patterns shown in AGENTS.md
+3. Follow the EXACT naming conventions (camelCase for files, PascalCase for models)
+4. Create ALL layers even if some don't exist yet (e.g., if no services/ folder, create it)
+5. NEVER put business logic in controllers - always use services layer
+6. NEVER query database in controllers - always use repositories layer
 """
 
     return guidelines_text
@@ -497,6 +510,20 @@ def generate_plan(state: PlannerState) -> PlannerState:
             f"   Existing Layers: {[k for k, v in architecture_layers.items() if v and k.startswith('has_')]}"
         )
 
+        # Load detailed codebase context (existing files, functions, classes)
+        from app.agents.developer.planner.tools.codebase_analyzer import (
+            analyze_codebase_context,
+        )
+
+        try:
+            detailed_codebase_context = analyze_codebase_context(codebase_path)
+            print(
+                f"✅ Loaded detailed codebase context ({len(detailed_codebase_context)} chars)"
+            )
+        except Exception as e:
+            print(f"⚠️ Failed to load detailed codebase context: {e}")
+            detailed_codebase_context = "Detailed codebase analysis not available"
+
         # Use LLM for plan generation with Chain of Vibe methodology
         import json
         import os
@@ -524,6 +551,7 @@ You are an expert implementation planner using the "Chain of Vibe" methodology f
 3. **Actionable Granularity**: Each sub-step is a single, testable change (~15-30 minutes)
 4. **Incremental Execution**: Each sub-step produces working code that can be committed
 5. **Full-Stack Coverage**: Unified plan covering backend → frontend → integration
+6. **NO DUPLICATES**: NEVER create files/functions that already exist - MODIFY them instead
 
 ## TASK CONTEXT
 
@@ -558,6 +586,14 @@ Database Changes:
 
 Dependency Mapping:
 {dependency_mapping.model_dump_json(indent=2)}
+
+## DETAILED CODEBASE CONTEXT
+
+**CRITICAL**: The following shows EXISTING files, classes, and functions in the codebase.
+DO NOT create duplicate files or functions that already exist.
+If a file already exists with similar functionality, MODIFY it instead of creating a new one.
+
+{detailed_codebase_context}
 
 ## ARCHITECTURE GUIDELINES
 

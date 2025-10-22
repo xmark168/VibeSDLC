@@ -612,6 +612,22 @@ def _build_file_context(
             context += f"- {created_file}\n"
         context += "\n"
 
+    # ✅ NEW: Add dependency files content for API contract coordination
+    dependency_files = _identify_dependency_files(file_path, state.files_created)
+    if dependency_files:
+        context += "=" * 80 + "\n"
+        context += "📚 DEPENDENCY FILES (API CONTRACT REFERENCE)\n"
+        context += "=" * 80 + "\n\n"
+        context += "⚠️ CRITICAL: Use EXACT method names, return types, and signatures from these files.\n\n"
+
+        for dep_file in dependency_files:
+            dep_content = _read_dependency_file_content(dep_file, state.codebase_path)
+            if dep_content:
+                context += f"📄 File: {dep_file}\n"
+                context += f"```\n{dep_content}\n```\n\n"
+
+        context += "=" * 80 + "\n\n"
+
     # Add existing content for modifications
     if not is_creation and existing_content:
         lines_count = len(existing_content.split("\n"))
@@ -620,6 +636,103 @@ def _build_file_context(
         context += "⚠️ IMPORTANT: This file already has content. Use INCREMENTAL modifications (OLD_CODE/NEW_CODE format).\n\n"
 
     return context
+
+
+def _identify_dependency_files(current_file: str, created_files: list) -> list:
+    """
+    Identify which previously created files are dependencies of current file.
+
+    Express.js layered architecture:
+    - Routes depend on Controllers
+    - Controllers depend on Services
+    - Services depend on Repositories
+    - Repositories depend on Models
+
+    Args:
+        current_file: File being generated
+        created_files: List of files already created
+
+    Returns:
+        List of dependency file paths
+    """
+    dependencies = []
+
+    # Normalize path separators
+    current_file = current_file.replace("\\", "/")
+    created_files = [f.replace("\\", "/") for f in created_files]
+
+    # Extract file name without extension
+    from pathlib import Path
+
+    current_name = Path(current_file).stem
+
+    # Controllers depend on Services
+    if "/controllers/" in current_file:
+        # authController.js -> authService.js
+        service_name = current_name.replace("Controller", "Service")
+        for created in created_files:
+            if "/services/" in created and service_name in created:
+                dependencies.append(created)
+
+    # Services depend on Repositories
+    elif "/services/" in current_file:
+        # authService.js -> userRepository.js
+        # Try multiple patterns
+        base_name = current_name.replace("Service", "")
+        for created in created_files:
+            if "/repositories/" in created:
+                # Check if repository name matches (e.g., userRepository for authService)
+                if base_name.lower() in created.lower() or "Repository" in created:
+                    dependencies.append(created)
+
+    # Repositories depend on Models
+    elif "/repositories/" in current_file:
+        # userRepository.js -> User.js
+        base_name = current_name.replace("Repository", "")
+        for created in created_files:
+            if "/models/" in created:
+                # Check if model name matches (case-insensitive)
+                if base_name.lower() in created.lower():
+                    dependencies.append(created)
+
+    # Routes depend on Controllers
+    elif "/routes/" in current_file:
+        # auth.js (route) -> authController.js
+        for created in created_files:
+            if "/controllers/" in created and current_name in created.lower():
+                dependencies.append(created)
+
+    return dependencies
+
+
+def _read_dependency_file_content(file_path: str, working_dir: str) -> str | None:
+    """
+    Read content of a dependency file.
+
+    Args:
+        file_path: Path to dependency file
+        working_dir: Working directory
+
+    Returns:
+        File content or None if failed
+    """
+    try:
+        read_result = read_file_tool.invoke(
+            {"file_path": file_path, "working_directory": working_dir}
+        )
+
+        if "File not found" in read_result:
+            return None
+
+        # Extract actual content (remove line numbers if present)
+        from .generate_code import _extract_actual_content
+
+        content = _extract_actual_content(read_result)
+
+        return content
+    except Exception as e:
+        print(f"      ⚠️ Could not read dependency file {file_path}: {e}")
+        return None
 
 
 def _generate_new_file_content(

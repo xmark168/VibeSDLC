@@ -50,7 +50,7 @@ def analyze_codebase(state: PlannerState) -> PlannerState:
 
         # Initialize LLM
         llm = ChatOpenAI(
-            model="gpt-4o-mini",
+            model="gpt-4.1",
             temperature=0.3,
             api_key=os.getenv("OPENAI_API_KEY"),
             base_url=os.getenv("OPENAI_BASE_URL"),
@@ -205,19 +205,19 @@ def analyze_codebase(state: PlannerState) -> PlannerState:
         ai_message = AIMessage(
             content=f"""Phase 2: Codebase Analysis - COMPLETED
 
-Analysis Results:
-{json.dumps(analysis_result, indent=2)}
+        Analysis Results:
+        {json.dumps(analysis_result, indent=2)}
 
-Files to Create:
-{chr(10).join(f"- {file['path']}: {file.get('purpose', file.get('reason', 'New file'))}" for file in files_to_create)}
+        Files to Create:
+        {chr(10).join(f"- {file['path']}: {file.get('purpose', file.get('reason', 'New file'))}" for file in files_to_create)}
 
-Files to Modify:
-{chr(10).join(f"- {file['path']}: {file['changes']}" for file in files_to_modify)}
+        Files to Modify:
+        {chr(10).join(f"- {file['path']}: {file['changes']}" for file in files_to_modify)}
 
-Affected Modules:
-{chr(10).join(f"- {module}" for module in affected_modules)}
+        Affected Modules:
+        {chr(10).join(f"- {module}" for module in affected_modules)}
 
-Ready to proceed to Phase 3: Dependency Mapping."""
+        Ready to proceed to Phase 3: Dependency Mapping."""
         )
 
         state.messages.append(ai_message)
