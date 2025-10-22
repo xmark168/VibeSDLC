@@ -1,7 +1,12 @@
 """
-Implement Files Node
+Implement Files Module
 
-Thực hiện file changes sử dụng incremental tools và filesystem tools.
+Provides file implementation functionality as both:
+1. Helper functions for single file operations (used by execute_step)
+2. Node function for batch file operations (legacy/optional)
+
+This refactored module supports Option 1 flow where execute_step
+generates and implements files sequentially per sub-step.
 """
 
 import json
@@ -27,6 +32,159 @@ from ..utils.incremental_modifications import (
     parse_structured_modifications,
 )
 from ..utils.validators import validate_file_changes
+
+# ========================================
+# HELPER FUNCTIONS (for execute_step)
+# ========================================
+
+
+def implement_single_file(
+    file_change: FileChange,
+    working_dir: str,
+) -> tuple[bool, str]:
+    """
+    Implement a single file change (create or modify).
+
+    This is the main helper function used by execute_step for
+    sequential file implementation.
+
+    Args:
+        file_change: File change to implement
+        working_dir: Working directory path
+
+    Returns:
+        (success: bool, error_message: str)
+    """
+    try:
+        if file_change.operation == "create":
+            return _create_single_file(file_change, working_dir)
+        elif file_change.operation == "modify":
+            return _modify_single_file(file_change, working_dir)
+        else:
+            return False, f"Unknown operation: {file_change.operation}"
+    except Exception as e:
+        return False, f"Error implementing {file_change.file_path}: {str(e)}"
+
+
+def _create_single_file(
+    file_change: FileChange,
+    working_dir: str,
+) -> tuple[bool, str]:
+    """
+    Create a new file.
+
+    Args:
+        file_change: File change with create operation
+        working_dir: Working directory
+
+    Returns:
+        (success, error_message)
+    """
+    try:
+        print(f"  📄 Creating: {file_change.file_path}")
+
+        # Create parent directories if needed
+        file_path = Path(file_change.file_path)
+        if file_path.parent != Path("."):
+            create_directory_tool.invoke(
+                {
+                    "directory_path": str(file_path.parent),
+                    "working_directory": working_dir,
+                }
+            )
+            print(f"    📁 Directory: {file_path.parent}")
+
+        # Write file content
+        result = write_file_tool.invoke(
+            {
+                "file_path": file_change.file_path,
+                "content": file_change.content,
+                "working_directory": working_dir,
+                "create_dirs": True,
+            }
+        )
+
+        # Parse result
+        if not result or result.strip() == "":
+            return False, "Empty response from file creation tool"
+
+        try:
+            result_data = json.loads(result)
+            if result_data.get("status") == "success":
+                print(f"    ✅ Created: {file_change.file_path}")
+                return True, ""
+            else:
+                error_msg = result_data.get("message", "Unknown error")
+                print(f"    ❌ Failed: {error_msg}")
+                return False, error_msg
+        except json.JSONDecodeError as e:
+            print(f"    ❌ Error: Invalid JSON response - {e}")
+            return False, f"Invalid response format: {str(e)}"
+
+    except Exception as e:
+        print(f"    ❌ Error: {e}")
+        return False, str(e)
+
+
+def _modify_single_file(
+    file_change: FileChange,
+    working_dir: str,
+) -> tuple[bool, str]:
+    """
+    Modify an existing file.
+
+    Args:
+        file_change: File change with modify operation
+        working_dir: Working directory
+
+    Returns:
+        (success, error_message)
+    """
+    try:
+        print(f"  ✏️  Modifying: {file_change.file_path}")
+
+        # ✅ NEW APPROACH: Always use full-file regeneration
+        # file_change.content should contain the complete regenerated file
+        if not file_change.content or len(file_change.content.strip()) == 0:
+            print("    ❌ No content to write")
+            return False, "No content generated for file modification"
+
+        print(f"    📝 Writing complete file ({len(file_change.content)} chars)")
+
+        # Write the complete file content
+        result = write_file_tool.invoke(
+            {
+                "file_path": file_change.file_path,
+                "content": file_change.content,
+                "working_directory": working_dir,
+            }
+        )
+
+        # Parse result
+        if not result or result.strip() == "":
+            return False, "Empty response from file modification tool"
+
+        try:
+            result_data = json.loads(result)
+            if result_data.get("status") == "success":
+                print(f"    ✅ Modified: {file_change.file_path}")
+                return True, ""
+            else:
+                error_msg = result_data.get("message", "Unknown error")
+                print(f"    ❌ Failed: {error_msg}")
+                return False, error_msg
+        except json.JSONDecodeError as e:
+            print(f"    ❌ Error: Invalid JSON response - {e}")
+            return False, f"Invalid response format: {str(e)}"
+
+    except Exception as e:
+        print(f"    ❌ Error: {e}")
+        return False, str(e)
+
+
+# ========================================
+# NODE FUNCTION (for batch operations)
+# ========================================
 
 
 def implement_files(state: ImplementorState) -> ImplementorState:
@@ -128,64 +286,52 @@ def implement_files(state: ImplementorState) -> ImplementorState:
             try:
                 print(f"  ✏️  Modifying: {file_change.file_path}")
 
-                if file_change.change_type == "incremental":
-                    # Check if we have structured modifications
-                    if file_change.structured_modifications:
-                        success = _apply_structured_modifications(
-                            file_change, working_dir
-                        )
-                    else:
-                        # Use legacy incremental tools for precise changes
-                        success = _apply_incremental_change(file_change, working_dir)
+                # ✅ NEW APPROACH: Always use full-file regeneration
+                if not file_change.content or len(file_change.content.strip()) == 0:
+                    print("    ❌ No content to write")
+                    errors.append(f"No content generated for {file_change.file_path}")
+                    continue
 
-                    if success:
+                print(
+                    f"    📝 Writing complete file ({len(file_change.content)} chars)"
+                )
+
+                # Write the complete file content
+                result = write_file_tool.invoke(
+                    {
+                        "file_path": file_change.file_path,
+                        "content": file_change.content,
+                        "working_directory": working_dir,
+                    }
+                )
+
+                # Parse result with error handling
+                try:
+                    if not result or result.strip() == "":
+                        print(
+                            "    ❌ Error: Empty response from file modification tool"
+                        )
+                        errors.append(
+                            f"Failed to modify {file_change.file_path}: Empty response"
+                        )
+                        continue
+
+                    result_data = json.loads(result)
+                    if result_data.get("status") == "success":
                         files_modified.append(file_change.file_path)
                         print(f"    ✅ Modified: {file_change.file_path}")
                     else:
+                        error_msg = result_data.get("message", "Unknown error")
                         errors.append(
-                            f"Failed incremental modification of {file_change.file_path}"
+                            f"Failed to modify {file_change.file_path}: {error_msg}"
                         )
-                        print("    ❌ Failed incremental modification")
-
-                else:
-                    # Full file replacement (use sparingly)
-                    result = write_file_tool.invoke(
-                        {
-                            "file_path": file_change.file_path,
-                            "content": file_change.content,
-                            "working_directory": working_dir,
-                        }
+                        print(f"    ❌ Failed: {error_msg}")
+                except json.JSONDecodeError as e:
+                    print(f"    ❌ Error: Invalid JSON response - {e}")
+                    print(f"    Raw response: {result[:200] if result else 'None'}...")
+                    errors.append(
+                        f"Failed to modify {file_change.file_path}: Invalid response format"
                     )
-
-                    # Parse result with error handling
-                    try:
-                        if not result or result.strip() == "":
-                            print(
-                                "    ❌ Error: Empty response from file modification tool"
-                            )
-                            errors.append(
-                                f"Failed to modify {file_change.file_path}: Empty response"
-                            )
-                            continue
-
-                        result_data = json.loads(result)
-                        if result_data.get("status") == "success":
-                            files_modified.append(file_change.file_path)
-                            print(f"    ✅ Modified: {file_change.file_path}")
-                        else:
-                            error_msg = result_data.get("message", "Unknown error")
-                            errors.append(
-                                f"Failed to modify {file_change.file_path}: {error_msg}"
-                            )
-                            print(f"    ❌ Failed: {error_msg}")
-                    except json.JSONDecodeError as e:
-                        print(f"    ❌ Error: Invalid JSON response - {e}")
-                        print(
-                            f"    Raw response: {result[:200] if result else 'None'}..."
-                        )
-                        errors.append(
-                            f"Failed to modify {file_change.file_path}: Invalid response format"
-                        )
 
             except Exception as e:
                 error_msg = f"Error modifying {file_change.file_path}: {str(e)}"
@@ -341,6 +487,166 @@ def _find_best_insertion_point(formatted_content: str) -> dict | None:
     return None
 
 
+def _verify_file_content_for_modifications(
+    file_path: str, current_content: str, modifications: list
+) -> dict:
+    """
+    Verify that file content is appropriate for the planned modifications.
+
+    Args:
+        file_path: Path to the file being modified
+        current_content: Current file content
+        modifications: List of CodeModification objects
+
+    Returns:
+        Dict with 'valid' (bool), 'reason' (str), and 'suggestions' (list) keys
+    """
+    try:
+        # Analyze file type and content
+        file_analysis = _analyze_file_type_and_content(file_path, current_content)
+
+        # Check each modification for compatibility
+        for i, modification in enumerate(modifications):
+            old_code = modification.old_code.strip()
+
+            # Check if OLD_CODE exists in file
+            if old_code not in current_content:
+                # Try to find similar code or suggest alternatives
+                suggestions = _suggest_alternatives_for_missing_code(
+                    old_code, current_content, file_analysis
+                )
+
+                return {
+                    "valid": False,
+                    "reason": f"Modification #{i + 1}: OLD_CODE not found in {file_path}",
+                    "suggestions": suggestions,
+                }
+
+            # Check if modification makes sense for this file type
+            compatibility_check = _check_modification_compatibility(
+                modification, file_analysis
+            )
+
+            if not compatibility_check["compatible"]:
+                return {
+                    "valid": False,
+                    "reason": f"Modification #{i + 1}: {compatibility_check['reason']}",
+                    "suggestions": compatibility_check.get("suggestions", []),
+                }
+
+        return {"valid": True, "reason": "All modifications are valid"}
+
+    except Exception as e:
+        return {
+            "valid": False,
+            "reason": f"Verification error: {str(e)}",
+            "suggestions": ["Check file path and content format"],
+        }
+
+
+def _analyze_file_type_and_content(file_path: str, content: str) -> dict:
+    """Analyze file type and content to understand its purpose."""
+    import os
+
+    file_ext = os.path.splitext(file_path)[1].lower()
+    file_name = os.path.basename(file_path).lower()
+
+    analysis = {
+        "extension": file_ext,
+        "file_name": file_name,
+        "content_type": "unknown",
+        "patterns": [],
+        "line_count": len(content.splitlines()),
+    }
+
+    # Detect content patterns
+    if "mongoose" in content.lower() and "schema" in content.lower():
+        analysis["content_type"] = "mongoose_model"
+        analysis["patterns"].append("database_model")
+    elif "router" in content.lower() or "app.get" in content or "app.post" in content:
+        analysis["content_type"] = "express_routes"
+        analysis["patterns"].append("route_handlers")
+    elif "req.body" in content and "res." in content:
+        analysis["content_type"] = "controller"
+        analysis["patterns"].append("request_handlers")
+    elif "module.exports" in content:
+        analysis["patterns"].append("node_module")
+
+    return analysis
+
+
+def _suggest_alternatives_for_missing_code(
+    old_code: str, content: str, file_analysis: dict
+) -> list:
+    """Suggest alternatives when OLD_CODE is not found."""
+    suggestions = []
+
+    # Check if this looks like route handler code in a model file
+    if "req.body" in old_code and file_analysis["content_type"] == "mongoose_model":
+        suggestions.extend(
+            [
+                "You're trying to modify a Mongoose model file with route handler code",
+                "Consider modifying a controller or route file instead",
+                "Look for files in src/controllers/ or src/routes/ directories",
+            ]
+        )
+
+    # Check if code exists in similar form
+    old_code_keywords = old_code.split()
+    for keyword in old_code_keywords:
+        if len(keyword) > 3 and keyword in content:
+            suggestions.append(
+                f"Found keyword '{keyword}' in file - check for similar patterns"
+            )
+
+    # Suggest checking file structure
+    if file_analysis["line_count"] < 50:
+        suggestions.append("File is small - verify you're modifying the correct file")
+
+    # File type specific suggestions
+    if file_analysis["content_type"] == "mongoose_model":
+        suggestions.append(
+            "This appears to be a database model file - consider if modification belongs here"
+        )
+
+    return suggestions
+
+
+def _check_modification_compatibility(modification, file_analysis: dict) -> dict:
+    """Check if modification is compatible with file type."""
+    old_code = modification.old_code
+    new_code = modification.new_code
+
+    # Check for route handler code in model files
+    if file_analysis["content_type"] == "mongoose_model":
+        if any(
+            pattern in old_code
+            for pattern in ["req.body", "res.", "app.get", "app.post"]
+        ):
+            return {
+                "compatible": False,
+                "reason": "Trying to add route handler logic to a database model file",
+                "suggestions": [
+                    "Move this modification to a controller or route file",
+                    "Model files should only contain schema definitions",
+                ],
+            }
+
+    # Check for model definitions in route files
+    if file_analysis["content_type"] == "express_routes":
+        if "Schema" in new_code and "mongoose" in new_code:
+            return {
+                "compatible": False,
+                "reason": "Trying to add model schema to a route file",
+                "suggestions": [
+                    "Move schema definitions to a model file",
+                    "Import the model instead of defining it here",
+                ],
+            }
+
+    return {"compatible": True, "reason": "Modification is compatible"}
+
+
 def _apply_structured_modifications(file_change: FileChange, working_dir: str) -> bool:
     """
     Apply structured incremental modifications using OLD_CODE/NEW_CODE pairs.
@@ -388,6 +694,23 @@ def _apply_structured_modifications(file_change: FileChange, working_dir: str) -
 
         # Extract actual content (remove line numbers if present)
         current_content = _extract_actual_content(read_result)
+
+        # ✅ Pre-validation: Verify file content matches expectations
+        print("    🔍 DEBUG: Starting file content verification...")
+        verification_result = _verify_file_content_for_modifications(
+            file_change.file_path, current_content, modifications
+        )
+
+        if not verification_result["valid"]:
+            print(
+                f"    ❌ File content verification failed: {verification_result['reason']}"
+            )
+            print("    💡 Suggestions:")
+            for suggestion in verification_result.get("suggestions", []):
+                print(f"       • {suggestion}")
+            return False
+
+        print("    ✅ File content verification passed")
 
         # Apply modifications using validator
         validator = IncrementalModificationValidator(current_content)

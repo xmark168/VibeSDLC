@@ -275,56 +275,85 @@ IMPORTANT OUTPUT FORMAT:
 Generate the complete file content that meets these requirements.
 """
 
-# Backend File Modification Prompt
+# Backend File Modification Prompt - FULL FILE REGENERATION
 BACKEND_FILE_MODIFICATION_PROMPT = """
-You are an expert code editor that makes precise, incremental modifications to existing {tech_stack} backend code.
+You are an expert {tech_stack} developer that regenerates complete files with precise modifications.
 
 CURRENT FILE CONTENT:
 {current_content}
 
 MODIFICATION REQUIREMENTS:
-{modification_specs}
+Task: {modification_specs}
 
 CHANGE TYPE: {change_type}
 TARGET: {target_element}
 
-<modification_rules>
-1. NEVER rewrite entire files or functions unless explicitly requested
-2. ONLY return the specific code segments that need to change
-3. Each modification must use the EXACT format specified below
-4. Preserve all whitespace, indentation, and formatting exactly as it appears in the original code
-5. Make surgical precision changes - minimal impact, maximum accuracy
-</modification_rules>
+<critical_rules>
+⚠️ CRITICAL: FULL FILE REGENERATION WITH PRESERVATION
 
-⚠️ CRITICAL: SEQUENTIAL TASK AWARENESS
+You MUST regenerate the COMPLETE file with the following strict rules:
+
+1. PRESERVE ALL EXISTING CODE
+   - Keep ALL existing functions, classes, imports, and logic
+   - Do NOT remove or modify any existing functionality unless the task explicitly requires it
+   - Existing code from previous tasks MUST remain intact
+
+2. ADD ONLY WHAT'S REQUIRED
+   - Only add/modify code directly related to the task description
+   - Insert new code in the appropriate location (maintain logical flow)
+   - Follow existing code patterns and conventions
+
+3. NO BREAKING CHANGES
+   - Do NOT change function signatures unless explicitly required
+   - Do NOT remove existing endpoints, routes, or API methods
+   - Do NOT alter existing database models or schemas
+   - Maintain backward compatibility
+
+4. MAINTAIN CODE QUALITY
+   - Preserve existing formatting, indentation, and style
+   - Keep existing comments and documentation
+   - Follow the same coding patterns as existing code
+   - Ensure proper error handling and validation
+
+5. COMPLETE FILE OUTPUT
+   - Return the ENTIRE file content from start to finish
+   - Include ALL imports, ALL functions, ALL classes
+   - Do NOT use placeholders like "... existing code ..." or "// rest unchanged"
+   - The output must be a valid, complete, runnable file
+</critical_rules>
+
+⚠️ SEQUENTIAL TASK AWARENESS
 This file may contain code from PREVIOUS tasks. You are working on a NEW task that should ADD functionality.
-- If CURRENT FILE CONTENT shows existing functions (e.g., register endpoint), they must be PRESERVED
-- Your OLD_CODE should ONLY target the specific location where new code should be inserted
-- NEVER create OLD_CODE that contains the entire file or large portions of it
-- Example: If adding "login" endpoint after "register" endpoint, OLD_CODE should be the line/marker AFTER register, not the entire register function
+- If CURRENT FILE CONTENT shows existing functions (e.g., register endpoint), they MUST be PRESERVED in your output
+- Add new functionality alongside existing code
+- Example: If adding "login" endpoint after "register" endpoint, your output should contain BOTH endpoints
 
 CORRECT APPROACH (adding login after register):
-OLD_CODE:
 ```javascript
-// Register endpoint - end marker
-module.exports = router;
-```
+// ... existing imports ...
 
-NEW_CODE:
-```javascript
-// Login endpoint
-router.post('/login', async (req, res) => {{ ... }});
+// Register endpoint (PRESERVED from previous task)
+router.post('/register', async (req, res) => {{
+  // ... existing register logic ...
+}});
 
-// Register endpoint - end marker
+// Login endpoint (NEW - added by this task)
+router.post('/login', async (req, res) => {{
+  // ... new login logic ...
+}});
+
 module.exports = router;
 ```
 
 WRONG APPROACH (would delete register):
-OLD_CODE:
 ```javascript
-// Entire file including register endpoint
-router.post('/register', ...)
+// Login endpoint
+router.post('/login', async (req, res) => {{
+  // ... login logic ...
+}});
+
 module.exports = router;
+// ❌ Missing register endpoint - BREAKS EXISTING FUNCTIONALITY
 ```
 
 <backend_specific_guidelines>
@@ -336,62 +365,46 @@ module.exports = router;
 </backend_specific_guidelines>
 
 <output_format>
-For each code change, you must provide:
+IMPORTANT: Return the COMPLETE file content with your modifications.
 
-MODIFICATION #1:
-FILE: {file_path}
-DESCRIPTION: Brief explanation of what this change does
+DO NOT use the OLD_CODE/NEW_CODE format.
+DO NOT use MODIFICATION blocks.
+DO NOT use placeholders or ellipsis (...).
 
-OLD_CODE:
-```{language}
-[exact code to be replaced, including ALL whitespace and indentation]
-```
+Simply return the ENTIRE file from start to finish, including:
+- All imports
+- All existing functions/classes/routes (preserved)
+- Your new additions/modifications
+- All exports
 
-NEW_CODE:
-```{language}
-[new code with same indentation level]
-```
-
-MODIFICATION #2:
-[repeat format if multiple changes needed]
+The output should be valid, complete {language} code that can directly replace the file.
 </output_format>
 
-<critical_requirements>
-1. UNIQUENESS: The OLD_CODE block must appear EXACTLY ONCE in the target file
-   - If a code pattern repeats, include enough surrounding context to make it unique
-   - Include function signatures or class names if needed for uniqueness
+<verification_checklist>
+Before submitting your output, verify:
 
-2. EXACTNESS: Match the original code EXACTLY
-   - Every space, tab, and newline must match
-   - Copy-paste directly from the original, don't retype
-   - Common errors: wrong indentation (spaces vs tabs), missing/extra blank lines
+✅ Does the output contain ALL existing imports?
+✅ Does the output contain ALL existing functions/classes/routes?
+✅ Does the output contain the NEW functionality required by the task?
+✅ Is the code syntactically valid and complete?
+✅ Are there NO placeholders, ellipsis, or "existing code" comments?
+✅ Does the code follow the same style/patterns as the original?
+✅ Will this output work as a direct file replacement?
 
-3. CONTEXT: Include minimal but sufficient context
-   - Too little context → not unique
-   - Too much context → hard to maintain
-   - Good practice: include the full statement/expression being modified
-
-4. COMPLETENESS: The NEW_CODE must be syntactically complete
-   - Don't use "..." or "# rest of code unchanged"
-   - If modifying inside a function, include the complete modified section
-   - Maintain proper indentation for the context level
-
-5. MULTIPLE CHANGES: If you need to make multiple changes in the same file:
-   - List them in the order they appear in the file (top to bottom)
-   - Each change must be independent (non-overlapping)
-   - Don't nest modifications
-</critical_requirements>
+If you answer NO to any question, revise your output.
+</verification_checklist>
 
 <backend_examples>
 <example_add_route>
-User: "Add error handling to the user creation endpoint"
+Task: "Add error handling to the user creation endpoint"
 
-MODIFICATION #1:
-FILE: routes/users.py
-DESCRIPTION: Add try-except block around user creation
-
-OLD_CODE:
+CURRENT FILE:
 ```python
+from fastapi import FastAPI, HTTPException
+from models import User, UserCreate
+
+app = FastAPI()
+
 @app.post("/users")
 def create_user(user_data: UserCreate):
     user = User(**user_data.dict())
@@ -400,8 +413,14 @@ def create_user(user_data: UserCreate):
     return user
 ```
 
-NEW_CODE:
+YOUR OUTPUT (complete file with error handling added):
 ```python
+from fastapi import FastAPI, HTTPException
+from sqlalchemy.exc import IntegrityError
+from models import User, UserCreate
+
+app = FastAPI()
+
 @app.post("/users")
 def create_user(user_data: UserCreate):
     try:
@@ -418,31 +437,46 @@ def create_user(user_data: UserCreate):
 ```
 </example_add_route>
 
-<example_add_middleware>
-User: "Add rate limiting middleware before authentication"
+<example_add_endpoint>
+Task: "Add login endpoint after register endpoint"
 
-MODIFICATION #1:
-FILE: app.py
-DESCRIPTION: Add rate limiting middleware
-
-OLD_CODE:
+CURRENT FILE:
 ```javascript
-// Authentication middleware
-app.use('/api', authMiddleware);
+const express = require('express');
+const router = express.Router();
+
+// Register endpoint
+router.post('/register', async (req, res) => {{
+  // registration logic
+  res.json({{ success: true }});
+}});
+
+module.exports = router;
 ```
 
-NEW_CODE:
+YOUR OUTPUT (complete file with login endpoint added):
 ```javascript
-// Rate limiting middleware
-app.use('/api', rateLimitMiddleware);
+const express = require('express');
+const router = express.Router();
 
-// Authentication middleware
-app.use('/api', authMiddleware);
+// Register endpoint (PRESERVED)
+router.post('/register', async (req, res) => {{
+  // registration logic
+  res.json({{ success: true }});
+}});
+
+// Login endpoint (NEW)
+router.post('/login', async (req, res) => {{
+  // login logic
+  res.json({{ success: true, token: 'jwt-token' }});
+}});
+
+module.exports = router;
 ```
-</example_add_middleware>
+</example_add_endpoint>
 </backend_examples>
 
-Remember: Your goal is surgical precision. Make the smallest possible change that accomplishes the user's request. When in doubt, ask for clarification rather than guessing.
+Remember: Return the COMPLETE file. Preserve ALL existing code. Add ONLY what's required by the task.
 """
 
 # Frontend File Modification Prompt

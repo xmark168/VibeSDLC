@@ -1,19 +1,19 @@
 {
     "success": true,
     "final_plan": {
-        "task_id": "TSK-4126",
+        "task_id": "TSK-1957",
         "description": "Task: Implement user login functionality\nTask Description: Create user login API endpoint with authe...",
         "complexity_score": 7,
         "plan_type": "complex",
         "functional_requirements": [
-            "Create a POST /api/auth/login API endpoint that accepts email and password.",
+            "Create a POST API endpoint at /api/auth/login that accepts email and password.",
             "Validate user credentials against the database.",
-            "Compare the hashed password using bcrypt.",
+            "Compare hashed password using bcrypt for authentication.",
             "Return a JWT token containing user ID, email, and expiration time upon successful login.",
             "Implement rate limiting to prevent brute force attacks.",
             "Log failed login attempts for security monitoring.",
             "Return appropriate error messages for invalid credentials.",
-            "Include comprehensive unit tests for all authentication scenarios.",
+            "Include comprehensive unit tests for various authentication scenarios.",
             "Update API documentation with details of the /api/auth/login endpoint."
         ],
         "steps": [
@@ -71,7 +71,8 @@
                         "description": "Setup POST /api/auth/login route with Express router",
                         "action_type": "create",
                         "files_affected": [
-                            "src/routes/authRoutes.js"
+                            "src/routes/auth.js",
+                            "src/app.js"
                         ],
                         "test": "Send POST request to /api/auth/login and verify route is accessible (404 → 400/500)"
                     },
@@ -81,7 +82,7 @@
                         "description": "Create controller to validate credentials and generate JWT",
                         "action_type": "create",
                         "files_affected": [
-                            "src/controllers/authController.js"
+                            "src/controllers/loginController.js"
                         ],
                         "test": "Call login controller with test credentials and verify JWT token is generated"
                     },
@@ -97,33 +98,23 @@
                     },
                     {
                         "sub_step": "2.4",
-                        "title": "Implement bcrypt password comparison",
-                        "description": "Add logic to compare hashed passwords using bcrypt",
-                        "action_type": "modify",
+                        "title": "Implement rate limiting middleware",
+                        "description": "Add rate limiting to prevent brute force attacks on login",
+                        "action_type": "create",
                         "files_affected": [
-                            "src/controllers/authController.js"
+                            "src/middleware/rateLimiter.js"
                         ],
-                        "test": "Call login controller with valid email and invalid password, verify it fails authentication"
+                        "test": "Send multiple requests to /api/auth/login and verify rate limit is enforced"
                     },
                     {
                         "sub_step": "2.5",
-                        "title": "Implement rate limiting middleware",
-                        "description": "Add rate limiting to prevent brute force attacks",
-                        "action_type": "create",
-                        "files_affected": [
-                            "src/middleware/rateLimitMiddleware.js"
-                        ],
-                        "test": "Send multiple requests in a short time frame and verify rate limit response"
-                    },
-                    {
-                        "sub_step": "2.6",
                         "title": "Log failed login attempts",
                         "description": "Implement logging for failed login attempts for security monitoring",
                         "action_type": "modify",
                         "files_affected": [
-                            "src/controllers/authController.js"
+                            "src/controllers/loginController.js"
                         ],
-                        "test": "Attempt to login with invalid credentials and verify log entry is created"
+                        "test": "Attempt login with invalid credentials and verify log entry is created"
                     }
                 ],
                 "dependencies": [],
@@ -133,38 +124,38 @@
             {
                 "step": 3,
                 "title": "Create unit tests for login functionality",
-                "description": "Write unit tests for all authentication scenarios",
+                "description": "Write comprehensive unit tests for various authentication scenarios.",
                 "category": "testing",
                 "sub_steps": [
                     {
                         "sub_step": "3.1",
-                        "title": "Test successful login",
+                        "title": "Test successful login scenario",
                         "description": "Verify successful login returns JWT token and user data",
-                        "action_type": "test",
+                        "action_type": "create",
                         "files_affected": [
-                            "src/tests/auth.test.js"
+                            "src/tests/login.test.js"
                         ],
-                        "test": "Run unit tests and verify successful login returns expected results"
+                        "test": "Run test suite and verify successful login test passes"
                     },
                     {
                         "sub_step": "3.2",
-                        "title": "Test invalid credentials",
-                        "description": "Verify handling of invalid email or password",
-                        "action_type": "test",
+                        "title": "Test invalid credentials scenario",
+                        "description": "Verify handling of invalid email/password returns appropriate error",
+                        "action_type": "create",
                         "files_affected": [
-                            "src/tests/auth.test.js"
+                            "src/tests/login.test.js"
                         ],
-                        "test": "Run unit tests and verify appropriate error messages for invalid credentials"
+                        "test": "Run test suite and verify invalid credentials test passes"
                     },
                     {
                         "sub_step": "3.3",
-                        "title": "Test rate limiting behavior",
+                        "title": "Test rate limiting scenario",
                         "description": "Verify that rate limiting blocks further login attempts after threshold",
-                        "action_type": "test",
+                        "action_type": "create",
                         "files_affected": [
-                            "src/tests/auth.test.js"
+                            "src/tests/login.test.js"
                         ],
-                        "test": "Run unit tests and verify rate limiting response after multiple failed attempts"
+                        "test": "Run test suite and verify rate limiting test passes"
                     }
                 ],
                 "dependencies": [],
@@ -174,18 +165,18 @@
             {
                 "step": 4,
                 "title": "Update API documentation",
-                "description": "Document the /api/auth/login endpoint and its usage",
+                "description": "Document the /api/auth/login endpoint in API documentation.",
                 "category": "documentation",
                 "sub_steps": [
                     {
                         "sub_step": "4.1",
-                        "title": "Add endpoint details to API documentation",
-                        "description": "Include details of the /api/auth/login endpoint in the API docs",
+                        "title": "Update API documentation",
+                        "description": "Add details for /api/auth/login endpoint including request/response examples",
                         "action_type": "modify",
                         "files_affected": [
                             "docs/api.md"
                         ],
-                        "test": "Review API documentation and verify /api/auth/login endpoint is documented correctly"
+                        "test": "Review docs to ensure /api/auth/login is documented correctly"
                     }
                 ],
                 "dependencies": [],
@@ -231,6 +222,10 @@
             {
                 "module": "Validation middleware",
                 "required_by_step": 2
+            },
+            {
+                "module": "Rate limiter middleware",
+                "required_by_step": 2
             }
         ],
         "total_estimated_hours": 6.5,
@@ -243,7 +238,7 @@
         ]
     },
     "ready_for_implementation": true,
-    "task_id": "TSK-4126",
+    "task_id": "TSK-1957",
     "complexity_score": 7,
     "estimated_hours": 6.5,
     "story_points": 8,

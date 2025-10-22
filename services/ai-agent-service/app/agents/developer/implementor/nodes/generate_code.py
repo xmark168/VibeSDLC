@@ -638,48 +638,43 @@ def _generate_file_modification(
         else:
             print("    🔍 DEBUG: Non-structured format detected")
 
-        # Check if response is structured modifications format
-        if "MODIFICATION #" in raw_response and "OLD_CODE:" in raw_response:
-            print("    🔍 DEBUG: Structured modifications format detected")
-            print(f"    🔍 DEBUG: Raw response length: {len(raw_response)} chars")
-            print(f"    🔍 DEBUG: First 300 chars: {repr(raw_response[:300])}")
-            print(f"    🔍 DEBUG: Contains OLD_CODE: {'OLD_CODE:' in raw_response}")
-            print(f"    🔍 DEBUG: Contains NEW_CODE: {'NEW_CODE:' in raw_response}")
+        # ✅ NEW APPROACH: Full-file regeneration
+        # LLM should return complete file content, not OLD_CODE/NEW_CODE blocks
+        print("    ✅ Using full-file regeneration approach")
 
-            # ✅ Validate OLD_CODE size to prevent full file replacement
-            if existing_content:
-                validation_result = _validate_old_code_size(
-                    raw_response, existing_content
+        # Clean the response to extract pure code
+        cleaned_response = _clean_llm_response(raw_response)
+
+        if not cleaned_response or len(cleaned_response.strip()) == 0:
+            print("    ❌ LLM response is empty after cleaning")
+            return None
+
+        # Validate that response looks like complete file content
+        if existing_content:
+            # Check if response preserves key elements from existing file
+            existing_lines = existing_content.split("\n")
+            response_lines = cleaned_response.split("\n")
+
+            # Basic validation: new file should have reasonable length
+            if len(response_lines) < len(existing_lines) * 0.5:
+                print(
+                    f"    ⚠️ Warning: Generated file ({len(response_lines)} lines) is significantly shorter than original ({len(existing_lines)} lines)"
                 )
-                if not validation_result["valid"]:
-                    print(
-                        f"    ⚠️ OLD_CODE validation failed: {validation_result['reason']}"
-                    )
-                    print(
-                        "    💡 Hint: LLM should only replace the specific section being modified"
-                    )
-                    return None
+                print(
+                    "    💡 This might indicate LLM didn't preserve all existing code"
+                )
+                # Don't reject, but log warning
 
-            # Store structured modifications in file_change for later processing
-            file_change.structured_modifications = raw_response
-            return "STRUCTURED_MODIFICATIONS"  # Signal that we have structured format
+            print(
+                f"    ✅ Generated complete file: {len(response_lines)} lines (original: {len(existing_lines)} lines)"
+            )
         else:
-            # ❌ CRITICAL: For file modifications, NEVER allow full replacement
-            # This prevents sequential task overwriting
             print(
-                "    ❌ CRITICAL: LLM did not generate structured modifications format"
-            )
-            print("    💡 Expected format: MODIFICATION #1 with OLD_CODE/NEW_CODE blocks")
-            print(
-                "    ⚠️ Refusing to apply full file replacement to prevent data loss"
+                f"    ✅ Generated new file: {len(cleaned_response.split(chr(10)))} lines"
             )
 
-            # Log the response for debugging
-            print(
-                f"    🔍 LLM response (first 500 chars): {repr(raw_response[:500])}"
-            )
-
-            return None  # Reject non-structured modifications
+        # Return the complete file content
+        return cleaned_response
 
     except Exception as e:
         print(f"    ❌ Error generating file modification: {e}")

@@ -88,7 +88,7 @@ class ImplementorAgent:
         )
 
     def _build_graph(self) -> StateGraph:
-        """Build LangGraph workflow cho implementor."""
+        """Build LangGraph workflow cho implementor (Option 1 Flow)."""
         graph_builder = StateGraph(ImplementorState)
 
         # Add nodes
@@ -97,32 +97,41 @@ class ImplementorAgent:
 
         # Import nodes here to avoid auto-formatter issues
         from .nodes.execute_step import execute_step
-        from .nodes.generate_code import generate_code
         from .nodes.install_dependencies import install_dependencies
 
         graph_builder.add_node("install_dependencies", install_dependencies)
-        graph_builder.add_node("generate_code", generate_code)
-        graph_builder.add_node("execute_step", execute_step)
+        graph_builder.add_node("execute_step", execute_step)  # Now includes generation + implementation
 
-        graph_builder.add_node("implement_files", implement_files)
+        # Legacy nodes (not used in Option 1 main flow)
+        # from .nodes.generate_code import generate_code
+        # graph_builder.add_node("generate_code", generate_code)
+        # graph_builder.add_node("implement_files", implement_files)
+
         graph_builder.add_node("run_tests", run_tests)
         graph_builder.add_node("run_and_verify", run_and_verify)
         graph_builder.add_node("commit_changes", commit_changes)
         graph_builder.add_node("create_pr", create_pr)
         graph_builder.add_node("finalize", finalize)
 
-        # Add edges
+        # Add edges - Option 1 Flow
         graph_builder.add_edge(START, "initialize")
         graph_builder.add_edge("initialize", "setup_branch")
-
-        # Direct edge from setup_branch to install_dependencies
         graph_builder.add_edge("setup_branch", "install_dependencies")
 
-        # Continue workflow with execute_step for sequential execution
-        graph_builder.add_edge("install_dependencies", "generate_code")
-        graph_builder.add_edge("generate_code", "execute_step")
-        graph_builder.add_edge("execute_step", "implement_files")
-        graph_builder.add_edge("implement_files", "run_tests")
+        # Option 1: Direct flow to execute_step (skips generate_code and implement_files)
+        graph_builder.add_edge("install_dependencies", "execute_step")
+
+        # Conditional edge: execute_step loops back if more sub-steps, or proceeds to run_tests
+        graph_builder.add_conditional_edges(
+            "execute_step",
+            self._should_continue_execution,
+            {
+                "continue": "execute_step",  # Loop back for next sub-step
+                "done": "run_tests",  # All sub-steps completed
+            },
+        )
+
+        # Rest of the workflow remains the same
         graph_builder.add_edge("run_tests", "run_and_verify")
         graph_builder.add_edge("run_and_verify", "commit_changes")
         graph_builder.add_edge("commit_changes", "create_pr")
@@ -132,6 +141,50 @@ class ImplementorAgent:
         # Setup checkpointer
         checkpointer = MemorySaver()
         return graph_builder.compile(checkpointer=checkpointer)
+
+    def _should_continue_execution(self, state: ImplementorState) -> str:
+        """
+        Determine if execute_step should continue or proceed to next phase.
+        
+        Returns:
+            "continue" if there are more sub-steps to execute
+            "done" if all steps completed or error occurred
+        """
+        # ✅ CHECK ERROR STATUS FIRST (prevent infinite loop on failures)
+        if state.status == "step_execution_failed":
+            print("❌ Stopping execution due to sub-step failure")
+            print(f"   Error: {state.error_message}")
+            return "done"  # Exit loop to prevent infinite retry
+        
+        # Check if we have steps to execute
+        if not state.plan_steps:
+            return "done"
+        
+        # Check if all steps completed
+        if state.current_step_index >= len(state.plan_steps):
+            print("✅ All steps completed!")
+            return "done"
+        
+        # Get current step
+        current_step = state.plan_steps[state.current_step_index]
+        sub_steps = current_step.get("sub_steps", [])
+        
+        # Check if all sub_steps in current step completed
+        if state.current_sub_step_index >= len(sub_steps):
+            # Move to next step
+            state.current_step_index += 1
+            state.current_sub_step_index = 0
+            
+            # Check if that was the last step
+            if state.current_step_index >= len(state.plan_steps):
+                print("✅ All steps completed!")
+                return "done"
+            else:
+                print(f"📋 Moving to Step {state.current_step_index + 1}...")
+                return "continue"
+        else:
+            # More sub-steps in current step
+            return "continue"
 
     def run(
         self,

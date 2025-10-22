@@ -67,18 +67,36 @@ class IncrementalModificationValidator:
         """
         old_code = modification.old_code.strip()
 
+        # Debug logging for troubleshooting
+        print(f"DEBUG: Validating modification for file: {modification.file_path}")
+        print(f"DEBUG: OLD_CODE raw: {repr(old_code[:200])}...")
+        print(f"DEBUG: File content length: {len(self.original_content)}")
+        print(f"DEBUG: File content hash: {hash(self.original_content)}")
+
         # Check if old_code exists in file
         if old_code not in self.original_content:
-            return False, f"OLD_CODE not found in file: {old_code[:50]}..."
+            # Enhanced error message with file content preview
+            file_preview = self._get_file_content_preview()
+            return False, (
+                f"❌ OLD_CODE not found in target file:\n"
+                f"🔍 Looking for: {repr(old_code[:100])}...\n"
+                f"📄 File content preview:\n{file_preview}\n"
+                f"💡 Hint: Check if you're modifying the correct file or if the code has changed"
+            )
 
         # Check uniqueness - old_code should appear exactly once
         count = self.original_content.count(old_code)
         if count == 0:
             return False, f"OLD_CODE not found: {old_code[:50]}..."
         elif count > 1:
+            # Enhanced error with line numbers where duplicates appear
+            duplicate_locations = self._find_code_locations(old_code)
             return (
                 False,
-                f"OLD_CODE appears {count} times, need more context: {old_code[:50]}...",
+                f"❌ OLD_CODE appears {count} times, need more context:\n"
+                f"🔍 Code: {repr(old_code[:50])}...\n"
+                f"📍 Found at lines: {duplicate_locations}\n"
+                f"💡 Hint: Add more surrounding context to make OLD_CODE unique",
             )
 
         # Check if old_code spans multiple lines correctly
@@ -87,6 +105,7 @@ class IncrementalModificationValidator:
             old_lines = old_code.split("\n")
             found_start = -1
 
+            # First try exact match
             for i in range(len(self.lines) - len(old_lines) + 1):
                 match = True
                 for j, old_line in enumerate(old_lines):
@@ -97,10 +116,162 @@ class IncrementalModificationValidator:
                     found_start = i
                     break
 
+            # If exact match fails, try fuzzy match for minor indentation differences
             if found_start == -1:
-                return False, "OLD_CODE line boundaries don't match file structure"
+                found_start = self._try_fuzzy_line_match(old_lines)
+
+            if found_start == -1:
+                # Enhanced error with detailed line boundary analysis and OLD_CODE debug info
+                line_analysis = self._analyze_line_boundaries(old_lines)
+                old_code_debug = self._debug_old_code_content(old_code)
+                return False, (
+                    f"❌ OLD_CODE line boundaries don't match file structure:\n"
+                    f"🔍 Expected lines: {len(old_lines)}\n"
+                    f"📄 Line analysis:\n{line_analysis}\n"
+                    f"🐛 OLD_CODE debug info:\n{old_code_debug}\n"
+                    f"💡 Hint: Check for whitespace differences, indentation, or line ending issues"
+                )
 
         return True, ""
+
+    def _get_file_content_preview(self, max_lines: int = 10) -> str:
+        """Get a preview of file content for error messages."""
+        if len(self.lines) <= max_lines:
+            # Show entire file if it's small
+            preview_lines = [f"{i + 1:3}: {line}" for i, line in enumerate(self.lines)]
+        else:
+            # Show first few lines and last few lines
+            first_lines = [
+                f"{i + 1:3}: {line}"
+                for i, line in enumerate(self.lines[: max_lines // 2])
+            ]
+            last_lines = [
+                f"{i + 1:3}: {line}"
+                for i, line in enumerate(
+                    self.lines[-max_lines // 2 :], len(self.lines) - max_lines // 2
+                )
+            ]
+            preview_lines = first_lines + ["..."] + last_lines
+
+        return "\n".join(preview_lines)
+
+    def _find_code_locations(self, code: str) -> list[int]:
+        """Find line numbers where code appears in the file."""
+        locations = []
+        lines_to_search = code.split("\n")
+
+        for i in range(len(self.lines) - len(lines_to_search) + 1):
+            match = True
+            for j, search_line in enumerate(lines_to_search):
+                if (
+                    i + j >= len(self.lines)
+                    or search_line.strip() not in self.lines[i + j]
+                ):
+                    match = False
+                    break
+            if match:
+                locations.append(i + 1)  # 1-based line numbers
+
+        return locations
+
+    def _try_fuzzy_line_match(self, old_lines: list[str]) -> int:
+        """
+        Try fuzzy matching for line boundaries with minor indentation differences.
+
+        Returns:
+            Starting line index if found, -1 if not found
+        """
+        for i in range(len(self.lines) - len(old_lines) + 1):
+            match = True
+
+            for j, old_line in enumerate(old_lines):
+                file_line_idx = i + j
+                if file_line_idx >= len(self.lines):
+                    match = False
+                    break
+
+                file_line = self.lines[file_line_idx]
+
+                # Try exact match first
+                if file_line == old_line:
+                    continue
+
+                # Try content match (ignoring leading/trailing whitespace)
+                if file_line.strip() == old_line.strip():
+                    # Check if it's just a leading whitespace difference
+                    file_content = file_line.strip()
+                    old_content = old_line.strip()
+
+                    if (
+                        file_content == old_content and file_content
+                    ):  # Non-empty content match
+                        continue
+
+                # Try empty line match
+                if not file_line.strip() and not old_line.strip():
+                    continue
+
+                # No match found for this line
+                match = False
+                break
+
+            if match:
+                return i
+
+        return -1
+
+    def _debug_old_code_content(self, old_code: str) -> str:
+        """Generate debug information about OLD_CODE content."""
+        debug_info = []
+        debug_info.append(f"Raw OLD_CODE: {repr(old_code)}")
+        debug_info.append(f"Length: {len(old_code)} characters")
+
+        # Check for special characters
+        has_crlf = "\r\n" in old_code
+        has_lf = "\n" in old_code
+        has_tab = "\t" in old_code
+
+        debug_info.append(f"Line endings: CRLF={has_crlf}, LF={has_lf}")
+        debug_info.append(f"Contains tabs: {has_tab}")
+
+        # Show first and last 50 chars
+        if len(old_code) > 100:
+            debug_info.append(f"First 50 chars: {repr(old_code[:50])}")
+            debug_info.append(f"Last 50 chars: {repr(old_code[-50:])}")
+
+        return "\n".join(debug_info)
+
+    def _analyze_line_boundaries(self, expected_lines: list[str]) -> str:
+        """Analyze why line boundaries don't match."""
+        analysis = []
+        analysis.append(f"Expected {len(expected_lines)} lines:")
+
+        for i, expected_line in enumerate(expected_lines):
+            analysis.append(f"  Line {i + 1}: {repr(expected_line)}")
+
+        analysis.append("\nActual file lines (first 10):")
+        for i, actual_line in enumerate(self.lines[:10]):
+            analysis.append(f"  Line {i + 1}: {repr(actual_line)}")
+
+        # Try to find partial matches
+        analysis.append("\nPartial match analysis:")
+        for i, expected_line in enumerate(expected_lines):
+            found_similar = []
+            for j, actual_line in enumerate(self.lines):
+                if (
+                    expected_line.strip() in actual_line
+                    or actual_line.strip() in expected_line
+                ):
+                    found_similar.append(f"Line {j + 1}")
+
+            if found_similar:
+                analysis.append(
+                    f"  Expected line {i + 1} similar to: {', '.join(found_similar)}"
+                )
+            else:
+                analysis.append(f"  Expected line {i + 1}: No similar lines found")
+
+        return "\n".join(analysis)
 
     def apply_modification(
         self, modification: CodeModification
@@ -159,7 +330,7 @@ class IncrementalModificationValidator:
                     f"⚠️ Modification {i + 1} may create duplicate: {duplicate_check['reason']}"
                 )
                 result.warnings.append(
-                    f"💡 Hint: Check if functionality already exists in file"
+                    "💡 Hint: Check if functionality already exists in file"
                 )
                 result.success = False
                 continue  # Skip this modification
@@ -340,17 +511,92 @@ def validate_modifications_batch(
     errors = []
     validator = IncrementalModificationValidator(file_content)
 
+    # Debug logging
+    print(
+        f"DEBUG: validate_modifications_batch called with {len(modifications)} modifications"
+    )
+    print(f"DEBUG: File content length: {len(file_content)} chars")
+    print(f"DEBUG: File content preview: {repr(file_content[:100])}...")
+
     # Check each modification individually
     for i, mod in enumerate(modifications):
+        print(f"DEBUG: Validating modification {i + 1}")
+        print(f"DEBUG: OLD_CODE length: {len(mod.old_code)} chars")
+        print(f"DEBUG: OLD_CODE preview: {repr(mod.old_code[:100])}...")
+
         is_valid, error = validator.validate_modification(mod)
         if not is_valid:
+            print(f"DEBUG: Modification {i + 1} failed: {error}")
             errors.append(f"Modification {i + 1}: {error}")
+        else:
+            print(f"DEBUG: Modification {i + 1} passed")
 
-    # Check for overlapping modifications
+    # Check for overlapping modifications with improved logic
     old_codes = [mod.old_code for mod in modifications]
     for i, old_code_1 in enumerate(old_codes):
         for j, old_code_2 in enumerate(old_codes[i + 1 :], i + 1):
-            if old_code_1 in old_code_2 or old_code_2 in old_code_1:
-                errors.append(f"Modifications {i + 1} and {j + 1} overlap")
+            # Check for actual overlapping ranges in file content, not just substring containment
+            overlap_detected = _check_modification_overlap(
+                file_content, old_code_1, old_code_2
+            )
+            if overlap_detected:
+                errors.append(
+                    f"Modifications {i + 1} and {j + 1} overlap in file content"
+                )
 
     return len(errors) == 0, errors
+
+
+def _check_modification_overlap(
+    file_content: str, old_code_1: str, old_code_2: str
+) -> bool:
+    """
+    Check if two OLD_CODE patterns actually overlap in the file content.
+
+    This is more sophisticated than simple substring checking - it looks at
+    actual positions in the file to determine if modifications would conflict.
+
+    Args:
+        file_content: The original file content
+        old_code_1: First OLD_CODE pattern
+        old_code_2: Second OLD_CODE pattern
+
+    Returns:
+        True if modifications would overlap, False otherwise
+    """
+    # Find all positions where each OLD_CODE appears
+    positions_1 = _find_all_positions(file_content, old_code_1)
+    positions_2 = _find_all_positions(file_content, old_code_2)
+
+    # If either pattern doesn't exist, no overlap possible
+    if not positions_1 or not positions_2:
+        return False
+
+    # Check if any ranges overlap
+    for start_1, end_1 in positions_1:
+        for start_2, end_2 in positions_2:
+            # Check for range overlap: ranges overlap if one starts before the other ends
+            if start_1 < end_2 and start_2 < end_1:
+                return True
+
+    return False
+
+
+def _find_all_positions(content: str, pattern: str) -> list[tuple[int, int]]:
+    """
+    Find all positions where a pattern appears in content.
+
+    Returns:
+        List of (start_pos, end_pos) tuples
+    """
+    positions = []
+    start = 0
+
+    while True:
+        pos = content.find(pattern, start)
+        if pos == -1:
+            break
+        positions.append((pos, pos + len(pattern)))
+        start = pos + 1
+
+    return positions

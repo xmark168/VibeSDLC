@@ -4,9 +4,452 @@ Generate Plan Node
 PHASE 4: Implementation Planning - Create detailed implementation plan
 """
 
+import json
+import os
+
 from langchain_core.messages import AIMessage
 
 from ..state import ImplementationPlan, PlannerState
+
+
+def load_architecture_guidelines(codebase_path: str = "") -> dict:
+    """
+    Load architecture guidelines from AGENTS.md file.
+
+    Args:
+        codebase_path: Path to codebase root
+
+    Returns:
+        Dict containing architecture guidelines and project info
+    """
+    guidelines = {
+        "has_agents_md": False,
+        "is_express_project": False,
+        "architecture_content": "",
+        "project_type": "unknown",
+    }
+
+    # Try to find AGENTS.md in various locations
+    possible_paths = []
+
+    if codebase_path:
+        # Direct path provided
+        possible_paths.append(os.path.join(codebase_path, "AGENTS.md"))
+        # Check if it's in a subdirectory
+        for root, dirs, files in os.walk(codebase_path):
+            if "AGENTS.md" in files:
+                possible_paths.append(os.path.join(root, "AGENTS.md"))
+                break
+
+    # Default paths relative to current working directory
+    default_paths = [
+        "AGENTS.md",
+        "services/ai-agent-service/app/agents/demo/be/nodejs/express-basic/AGENTS.md",
+        "../../../demo/be/nodejs/express-basic/AGENTS.md",
+        "ai-agent-service/app/agents/demo/be/nodejs/express-basic/AGENTS.md",
+    ]
+    possible_paths.extend(default_paths)
+
+    # Try to load AGENTS.md
+    for agents_path in possible_paths:
+        try:
+            if os.path.exists(agents_path):
+                with open(agents_path, encoding="utf-8") as f:
+                    content = f.read()
+                    guidelines["has_agents_md"] = True
+                    guidelines["architecture_content"] = content
+
+                    # Detect project type from AGENTS.md content
+                    if "Express.js" in content and "MongoDB" in content:
+                        guidelines["is_express_project"] = True
+                        guidelines["project_type"] = "express_mongodb"
+
+                    print(f"✅ Loaded AGENTS.md from: {agents_path}")
+                    break
+        except Exception as e:
+            print(f"⚠️ Error loading {agents_path}: {e}")
+            continue
+
+    # Detect Express.js project structure if AGENTS.md not found
+    if not guidelines["has_agents_md"] and codebase_path:
+        package_json_path = os.path.join(codebase_path, "package.json")
+        if os.path.exists(package_json_path):
+            try:
+                with open(package_json_path) as f:
+                    package_data = json.load(f)
+                    dependencies = package_data.get("dependencies", {})
+                    if "express" in dependencies:
+                        guidelines["is_express_project"] = True
+                        guidelines["project_type"] = "express"
+                        print("✅ Detected Express.js project from package.json")
+            except Exception as e:
+                print(f"⚠️ Error reading package.json: {e}")
+
+    return guidelines
+
+
+def detect_express_architecture_layers(codebase_path: str = "") -> dict:
+    """
+    Detect existing Express.js architecture layers in the codebase.
+
+    Returns:
+        Dict with information about existing layers and structure
+    """
+    layers = {
+        "has_models": False,
+        "has_repositories": False,
+        "has_services": False,
+        "has_controllers": False,
+        "has_routes": False,
+        "has_middleware": False,
+        "src_structure": "unknown",
+    }
+
+    if not codebase_path:
+        return layers
+
+    # Check for common Express.js folder structures
+    src_path = os.path.join(codebase_path, "src")
+    if os.path.exists(src_path):
+        layers["src_structure"] = "src_based"
+        base_path = src_path
+    else:
+        layers["src_structure"] = "root_based"
+        base_path = codebase_path
+
+    # Check for architecture layers
+    layer_folders = {
+        "models": "has_models",
+        "repositories": "has_repositories",
+        "services": "has_services",
+        "controllers": "has_controllers",
+        "routes": "has_routes",
+        "middleware": "has_middleware",
+        "middlewares": "has_middleware",
+    }
+
+    for folder, key in layer_folders.items():
+        folder_path = os.path.join(base_path, folder)
+        if os.path.exists(folder_path):
+            layers[key] = True
+
+    return layers
+
+
+def _get_architecture_guidelines_text(
+    architecture_guidelines: dict, architecture_layers: dict
+) -> str:
+    """
+    Generate architecture guidelines text for the prompt based on project type.
+
+    Args:
+        architecture_guidelines: Guidelines loaded from AGENTS.md
+        architecture_layers: Detected architecture layers
+
+    Returns:
+        Formatted architecture guidelines text
+    """
+    if not architecture_guidelines["is_express_project"]:
+        return """
+### GENERAL ARCHITECTURE GUIDELINES
+
+Since this is not an Express.js project or AGENTS.md is not available, follow these general principles:
+- Maintain separation of concerns
+- Follow existing code patterns in the codebase
+- Ensure proper error handling
+- Add appropriate tests for new functionality
+"""
+
+    # Express.js specific guidelines
+    guidelines_text = """
+### EXPRESS.JS ARCHITECTURE GUIDELINES (from AGENTS.md)
+
+**CRITICAL: Follow the Express.js Layered Architecture Pattern**
+
+**Architecture Flow (Request → Response):**
+```
+Routes (API Endpoints)
+  ↓ Map to controller methods
+Controllers (Request Handlers)
+  ↓ Parse request, validate input, call service
+Services (Business Logic)
+  ↓ Implement business rules, orchestrate repositories
+Repositories (Data Access)
+  ↓ Abstract database operations, query builders
+Models (Database Schemas)
+  ↓ Mongoose schemas, model methods, virtuals
+```
+
+**IMPLEMENTATION ORDER (Bottom-Up):**
+1. **Models** (Database Schemas) - Define data structure first
+2. **Repositories** (Data Access) - Abstract database operations
+3. **Services** (Business Logic) - Implement business rules
+4. **Controllers** (Request Handlers) - Handle HTTP requests/responses
+5. **Routes** (API Endpoints) - Define URL mappings and middleware
+6. **Validation** (Joi Schemas) - Add request validation
+7. **Tests** (Integration/Unit) - Verify functionality
+8. **Registration** (app.js) - Register routes in main app
+
+**NAMING CONVENTIONS:**
+- Files: camelCase (userController.js, authService.js)
+- Models: PascalCase (User.js, Product.js)
+- Tests: kebab-case (user-controller.test.js)
+- Variables/Functions: camelCase (getUserById, userName)
+- Classes: PascalCase (UserService, ProductRepository)
+- Constants: UPPER_SNAKE_CASE (MAX_LOGIN_ATTEMPTS)
+
+**FILE STRUCTURE:**
+```
+src/
+├── models/           # Mongoose models (User.js, Product.js)
+├── repositories/     # Data access layer (userRepository.js)
+├── services/         # Business logic (userService.js, authService.js)
+├── controllers/      # Request handlers (userController.js)
+├── routes/           # API routes (users.js, auth.js)
+├── middleware/       # Express middleware (auth.js, validate.js)
+├── utils/            # Utilities (validators.js, logger.js)
+└── tests/            # Test files (unit/, integration/)
+```
+
+**IMPLEMENTATION PATTERNS:**
+
+1. **Model Pattern** (Mongoose Schema):
+   - Define schema with validation rules
+   - Add indexes for performance
+   - Use instance/static methods
+   - Enable timestamps
+
+2. **Repository Pattern** (Data Access):
+   - One class per model
+   - Abstract Mongoose operations
+   - Use .lean() for performance
+   - Handle database errors
+   - Export singleton instance
+
+3. **Service Pattern** (Business Logic):
+   - Implement business rules
+   - Orchestrate multiple repositories
+   - Handle transactions
+   - Throw meaningful errors (AppError)
+   - Log important events
+
+4. **Controller Pattern** (Request Handlers):
+   - Parse request data (params, query, body)
+   - Call service layer
+   - Format consistent JSON responses
+   - Pass errors to next() middleware
+   - Add JSDoc comments
+
+5. **Route Pattern** (API Endpoints):
+   - Define routes with Express router
+   - Map to controller methods
+   - Add authentication/validation middleware
+   - Include JSDoc route documentation
+
+**ERROR HANDLING:**
+- Use AppError class for operational errors
+- Implement global error handler middleware
+- Validate all inputs with Joi schemas
+- Log errors with Winston logger
+
+**TESTING REQUIREMENTS:**
+- Integration tests for API endpoints
+- Unit tests for services and repositories
+- Test error scenarios and edge cases
+- Maintain >80% test coverage
+"""
+
+    # Add specific guidance based on existing layers
+    if architecture_layers["has_models"]:
+        guidelines_text += "\n**EXISTING MODELS DETECTED** - Follow existing model patterns and naming conventions."
+
+    if architecture_layers["has_repositories"]:
+        guidelines_text += "\n**EXISTING REPOSITORIES DETECTED** - Follow existing repository patterns and data access methods."
+
+    if architecture_layers["has_services"]:
+        guidelines_text += "\n**EXISTING SERVICES DETECTED** - Follow existing service patterns and business logic structure."
+
+    if architecture_layers["has_controllers"]:
+        guidelines_text += "\n**EXISTING CONTROLLERS DETECTED** - Follow existing controller patterns and response formatting."
+
+    if architecture_layers["has_routes"]:
+        guidelines_text += "\n**EXISTING ROUTES DETECTED** - Follow existing route patterns and middleware usage."
+
+    # Add AGENTS.md content if available
+    if architecture_guidelines["has_agents_md"]:
+        guidelines_text += """
+
+**ADDITIONAL GUIDELINES FROM AGENTS.md:**
+The project has a comprehensive AGENTS.md file with detailed architecture guidelines.
+Key sections include:
+- Layered Architecture (Routes → Controllers → Services → Repositories → Models)
+- Coding Conventions (naming, style, async/await patterns)
+- Common Patterns (route definition, controller pattern, service pattern)
+- Feature Development Process (step-by-step implementation guide)
+- Testing Guidelines (unit and integration test patterns)
+- Security Practices (authentication, validation, error handling)
+
+**FOLLOW THE EXACT PATTERNS AND CONVENTIONS DEFINED IN AGENTS.MD**
+"""
+
+    return guidelines_text
+
+
+def validate_express_plan_compliance(
+    implementation_plan: ImplementationPlan, architecture_guidelines: dict
+) -> dict:
+    """
+    Validate that the generated implementation plan complies with Express.js architecture guidelines.
+
+    Args:
+        implementation_plan: Generated implementation plan
+        architecture_guidelines: Architecture guidelines from AGENTS.md
+
+    Returns:
+        Dict with validation results and suggestions
+    """
+    validation_result = {
+        "is_compliant": True,
+        "warnings": [],
+        "errors": [],
+        "suggestions": [],
+    }
+
+    if not architecture_guidelines["is_express_project"]:
+        # Skip Express.js specific validation for non-Express projects
+        return validation_result
+
+    # Check implementation order compliance
+    expected_order = ["models", "repositories", "services", "controllers", "routes"]
+    step_categories = []
+
+    for step in implementation_plan.steps:
+        # Analyze step title and files to determine category
+        step_title_lower = step.title.lower()
+        step_desc_lower = step.description.lower()
+
+        # Determine step category based on content
+        if any(
+            keyword in step_title_lower or keyword in step_desc_lower
+            for keyword in ["model", "schema", "mongoose"]
+        ):
+            step_categories.append("models")
+        elif any(
+            keyword in step_title_lower or keyword in step_desc_lower
+            for keyword in ["repository", "data access", "database operation"]
+        ):
+            step_categories.append("repositories")
+        elif any(
+            keyword in step_title_lower or keyword in step_desc_lower
+            for keyword in ["service", "business logic"]
+        ):
+            step_categories.append("services")
+        elif any(
+            keyword in step_title_lower or keyword in step_desc_lower
+            for keyword in ["controller", "request handler"]
+        ):
+            step_categories.append("controllers")
+        elif any(
+            keyword in step_title_lower or keyword in step_desc_lower
+            for keyword in ["route", "endpoint", "api"]
+        ):
+            step_categories.append("routes")
+        else:
+            step_categories.append("other")
+
+    # Check if order follows Express.js architecture
+    last_seen_index = -1
+    for category in step_categories:
+        if category in expected_order:
+            current_index = expected_order.index(category)
+            if current_index < last_seen_index:
+                validation_result["warnings"].append(
+                    f"Implementation order violation: {category} step appears after {expected_order[last_seen_index]}. "
+                    f"Expected order: Models → Repositories → Services → Controllers → Routes"
+                )
+            last_seen_index = max(last_seen_index, current_index)
+
+    # Check file naming conventions
+    for step in implementation_plan.steps:
+        for sub_step in step.sub_steps:
+            files_affected = sub_step.get("files_affected", [])
+            for file_path in files_affected:
+                if not _validate_file_naming_convention(file_path):
+                    validation_result["warnings"].append(
+                        f"File naming convention issue: {file_path}. "
+                        f"Expected: models/PascalCase.js, repositories/camelCase.js, etc."
+                    )
+
+    # Check for missing essential layers
+    essential_layers = ["models", "services", "controllers", "routes"]
+    found_layers = set(step_categories)
+    missing_layers = [layer for layer in essential_layers if layer not in found_layers]
+
+    if missing_layers:
+        validation_result["suggestions"].append(
+            f"Consider adding steps for missing layers: {', '.join(missing_layers)}"
+        )
+
+    # Check for test coverage
+    has_tests = any(
+        "test" in step.title.lower() or "test" in step.description.lower()
+        for step in implementation_plan.steps
+    )
+    if not has_tests:
+        validation_result["suggestions"].append(
+            "Consider adding test implementation steps for better code quality"
+        )
+
+    return validation_result
+
+
+def _validate_file_naming_convention(file_path: str) -> bool:
+    """
+    Validate file naming convention based on Express.js guidelines.
+
+    Args:
+        file_path: File path to validate
+
+    Returns:
+        True if naming convention is correct
+    """
+    import re
+
+    # Extract filename and directory
+    parts = file_path.split("/")
+    if len(parts) < 2:
+        return True  # Skip validation for root files
+
+    directory = parts[-2]
+    filename = parts[-1]
+
+    # Remove file extension for validation
+    name_without_ext = (
+        filename.replace(".js", "")
+        .replace(".jsx", "")
+        .replace(".ts", "")
+        .replace(".tsx", "")
+    )
+
+    # Validation rules based on directory
+    if directory == "models":
+        # Models should be PascalCase
+        return re.match(r"^[A-Z][a-zA-Z0-9]*$", name_without_ext) is not None
+    elif directory in ["repositories", "services", "controllers"]:
+        # These should be camelCase
+        return re.match(r"^[a-z][a-zA-Z0-9]*$", name_without_ext) is not None
+    elif directory == "routes":
+        # Routes can be camelCase or kebab-case
+        return (
+            re.match(r"^[a-z][a-zA-Z0-9]*$", name_without_ext) is not None
+            or re.match(r"^[a-z][a-z0-9-]*$", name_without_ext) is not None
+        )
+    elif directory == "tests":
+        # Tests should be kebab-case (allow .test suffix)
+        test_name = name_without_ext.replace(".test", "").replace(".spec", "")
+        return re.match(r"^[a-z][a-z0-9-]*$", test_name) is not None
+
+    return True  # Default to valid for other directories
 
 
 def generate_plan(state: PlannerState) -> PlannerState:
@@ -40,6 +483,19 @@ def generate_plan(state: PlannerState) -> PlannerState:
         print(f"📁 Files to create: {len(codebase_analysis.files_to_create)}")
         print(f"✏️  Files to modify: {len(codebase_analysis.files_to_modify)}")
         print(f"📦 Affected modules: {len(codebase_analysis.affected_modules)}")
+
+        # Load architecture guidelines from AGENTS.md
+        codebase_path = getattr(state, "codebase_path", "") or ""
+        architecture_guidelines = load_architecture_guidelines(codebase_path)
+        architecture_layers = detect_express_architecture_layers(codebase_path)
+
+        print("🏗️ Architecture Guidelines:")
+        print(f"   Has AGENTS.md: {architecture_guidelines['has_agents_md']}")
+        print(f"   Is Express Project: {architecture_guidelines['is_express_project']}")
+        print(f"   Project Type: {architecture_guidelines['project_type']}")
+        print(
+            f"   Existing Layers: {[k for k, v in architecture_layers.items() if v and k.startswith('has_')]}"
+        )
 
         # Use LLM for plan generation with Chain of Vibe methodology
         import json
@@ -102,6 +558,17 @@ Database Changes:
 
 Dependency Mapping:
 {dependency_mapping.model_dump_json(indent=2)}
+
+## ARCHITECTURE GUIDELINES
+
+Project Type: {architecture_guidelines["project_type"]}
+Has AGENTS.md: {architecture_guidelines["has_agents_md"]}
+Is Express.js Project: {architecture_guidelines["is_express_project"]}
+
+Existing Architecture Layers:
+{json.dumps(architecture_layers, indent=2)}
+
+{_get_architecture_guidelines_text(architecture_guidelines, architecture_layers)}
 
 ## OUTPUT FORMAT
 
@@ -339,18 +806,48 @@ Each sub-step must include a "test" field with immediate verification:
   - Modify: "Start application and verify new configuration is loaded"
   - Test: "Run test suite and verify all tests pass"
 
-## DEPENDENCY ORDERING RULES
+## DEPENDENCY ORDERING RULES (EXPRESS.JS ARCHITECTURE)
 
-**Backend Execution Order:**
-1. Database/Schema setup
-2. Models and data access layer
-3. Service layer (business logic)
-4. Controllers
-5. Routes and middleware
-6. API documentation
+**CRITICAL: Follow Express.js Layered Architecture Implementation Order**
 
-**Frontend Execution Order:**
-1. API service layer
+**Express.js Backend Implementation Order (Bottom-Up):**
+1. **Models** (Database Schemas) - src/models/
+   - Define Mongoose schemas with validation
+   - Add indexes and instance/static methods
+   - Enable timestamps and virtuals
+
+2. **Repositories** (Data Access Layer) - src/repositories/
+   - Create repository classes for each model
+   - Abstract database operations (CRUD)
+   - Use .lean() for performance, handle errors
+
+3. **Services** (Business Logic) - src/services/
+   - Implement business rules and validation
+   - Orchestrate multiple repositories
+   - Handle transactions and complex operations
+
+4. **Controllers** (Request Handlers) - src/controllers/
+   - Parse request data (params, query, body)
+   - Call service layer methods
+   - Format consistent JSON responses
+
+5. **Routes** (API Endpoints) - src/routes/
+   - Define Express router with HTTP methods
+   - Map routes to controller methods
+   - Add middleware (auth, validation)
+
+6. **Validation** (Joi Schemas) - src/utils/validators.js
+   - Create validation schemas for requests
+   - Add validation middleware to routes
+
+7. **Tests** (Integration/Unit) - src/tests/
+   - Write integration tests for API endpoints
+   - Add unit tests for services and repositories
+
+8. **Registration** (app.js) - Register routes in main application
+
+**Frontend Implementation Order (if applicable):**
+1. API service layer (API client functions)
 2. Custom hooks/state management
 3. Component structure (presentational)
 4. Component logic (interactive)
@@ -358,8 +855,20 @@ Each sub-step must include a "test" field with immediate verification:
 6. Integration with backend
 
 **Cross-Stack Dependencies:**
-- Frontend steps CANNOT start until their backend API dependencies are complete
-- Example: LoginForm (step 3) requires login endpoint (step 2)
+- Models MUST be created before Repositories
+- Repositories MUST be created before Services
+- Services MUST be created before Controllers
+- Controllers MUST be created before Routes
+- Frontend components CANNOT start until their backend API dependencies are complete
+- Tests should be written after each layer is implemented
+
+**File Naming Conventions (CRITICAL):**
+- Models: PascalCase (User.js, Product.js)
+- Repositories: camelCase (userRepository.js, productRepository.js)
+- Services: camelCase (userService.js, authService.js)
+- Controllers: camelCase (userController.js, authController.js)
+- Routes: camelCase (users.js, auth.js)
+- Tests: kebab-case (user-controller.test.js)
 
 ## EXAMPLES
 
@@ -520,6 +1029,33 @@ Output valid JSON following the exact format above.
             total_estimated_hours=total_estimated_hours,
             story_points=story_points,
         )
+
+        # Validate plan compliance with architecture guidelines
+        print("🔍 Validating plan compliance with architecture guidelines...")
+        validation_result = validate_express_plan_compliance(
+            implementation_plan, architecture_guidelines
+        )
+
+        # Log validation results
+        if validation_result["warnings"]:
+            print("⚠️ Architecture compliance warnings:")
+            for warning in validation_result["warnings"]:
+                print(f"   - {warning}")
+
+        if validation_result["suggestions"]:
+            print("💡 Architecture suggestions:")
+            for suggestion in validation_result["suggestions"]:
+                print(f"   - {suggestion}")
+
+        if validation_result["errors"]:
+            print("❌ Architecture compliance errors:")
+            for error in validation_result["errors"]:
+                print(f"   - {error}")
+        else:
+            print("✅ Plan passes architecture compliance validation")
+
+        # Store validation results in state
+        state.tools_output["plan_validation"] = validation_result
 
         # Update state
         state.implementation_plan = implementation_plan
