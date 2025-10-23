@@ -18,7 +18,8 @@ from .prompts import (
     GENERATE_PROMPT,
     EVALUATE_PROMPT,
     REFINE_PROMPT,
-    FINALIZE_PROMPT
+    FINALIZE_PROMPT,
+    ASSIGN_PROMPT
 )
 from .tools import (
     validate_sprint_capacity,
@@ -82,6 +83,7 @@ class SprintPlannerAgent:
         # Add nodes
         workflow.add_node("initialize", self.initialize_node)
         workflow.add_node("generate", self.generate_node)
+        workflow.add_node("assign", self.assign_node)
         workflow.add_node("evaluate", self.evaluate_node)
         workflow.add_node("refine", self.refine_node)
         workflow.add_node("finalize", self.finalize_node)
@@ -90,7 +92,8 @@ class SprintPlannerAgent:
         # Add edges
         workflow.set_entry_point("initialize")
         workflow.add_edge("initialize", "generate")
-        workflow.add_edge("generate", "evaluate")
+        workflow.add_edge("generate", "assign")
+        workflow.add_edge("assign", "evaluate")
 
         # Conditional edge: evaluate -> refine or finalize
         workflow.add_conditional_edges(
@@ -202,10 +205,13 @@ class SprintPlannerAgent:
             # Update state
             state.daily_breakdown = result.get("daily_breakdown", [])
             state.resource_allocation = result.get("resource_allocation", {})
-            state.enriched_tasks = result.get("enriched_tasks", [])
+
+            # Merge enriched items with original backlog items
+            enriched_from_llm = result.get("enriched_items", result.get("enriched_tasks", []))
+            state.enriched_items = self._merge_enriched_items(state.sprint_backlog_items, enriched_from_llm)
 
             print(f"[Generate] Generated {len(state.daily_breakdown)} days plan")
-            print(f"[Generate] Enriched {len(state.enriched_tasks)} tasks with rank, story_point, deadline, status")
+            print(f"[Generate] Enriched {len(state.enriched_items)} items with rank, story_point, estimate_value, task_type, acceptance_criteria, dependencies")
             state.status = "generated"
 
         except json.JSONDecodeError as e:
@@ -213,6 +219,214 @@ class SprintPlannerAgent:
             state.status = "error"
 
         return state
+
+    def _merge_enriched_items(self, backlog_items: list[dict], enriched_items: list[dict]) -> list[dict]:
+        """Merge enriched items with original backlog items.
+
+        Args:
+            backlog_items: Original backlog items from backlog.json
+            enriched_items: Enriched items from LLM
+
+        Returns:
+            Merged items with all information (no nulls)
+        """
+        # Create a map of enriched items by ID
+        enriched_map = {item.get("id"): item for item in enriched_items}
+
+        # Create a map of all items by ID for dependency resolution
+        all_items_map = {item.get("id"): item for item in backlog_items}
+
+        # Merge with backlog items
+        merged = []
+        for idx, backlog_item in enumerate(backlog_items, 1):
+            item_id = backlog_item.get("id")
+            enriched = enriched_map.get(item_id, {})
+            parent_id = backlog_item.get("parent_id")
+
+            # Get dependencies from LLM or create based on parent_id
+            dependencies = enriched.get("dependencies") or backlog_item.get("dependencies") or []
+
+            # If no dependencies but has parent_id, add parent as dependency
+            if not dependencies and parent_id and parent_id in all_items_map:
+                dependencies = [parent_id]
+
+            # If still no dependencies, try to find related items
+            if not dependencies:
+                dependencies = self._find_related_dependencies(item_id, backlog_item, all_items_map)
+
+            # Merge: enriched fields override backlog fields, with defaults for nulls
+            merged_item = {
+                # Original backlog fields
+                "id": backlog_item.get("id"),
+                "type": backlog_item.get("type"),
+                "parent_id": backlog_item.get("parent_id"),
+                "title": backlog_item.get("title"),
+                "description": backlog_item.get("description"),
+                "labels": backlog_item.get("labels", []),
+                "business_value": backlog_item.get("business_value", ""),
+                "status": backlog_item.get("status", "Backlog"),
+
+                # Enriched fields (from LLM with fallback defaults)
+                "rank": enriched.get("rank") or backlog_item.get("rank") or idx,
+                "story_point": enriched.get("story_point") or backlog_item.get("story_point") or 5,
+                "estimate_value": enriched.get("estimate_value") or backlog_item.get("estimate_value") or 10,
+                "task_type": enriched.get("task_type") or backlog_item.get("task_type") or "Development",
+                "acceptance_criteria": enriched.get("acceptance_criteria") or backlog_item.get("acceptance_criteria") or ["Acceptance criteria to be defined"],
+                "dependencies": dependencies,
+                "deadline": enriched.get("deadline") or "2025-10-29",
+                "plan_status": enriched.get("status") or "planned"
+            }
+
+            merged.append(merged_item)
+
+        return merged
+
+    def _find_related_dependencies(self, item_id: str, item: dict, all_items_map: dict) -> list[str]:
+        """Find related dependencies for an item.
+
+        Args:
+            item_id: Current item ID
+            item: Current item dict
+            all_items_map: Map of all items by ID
+
+        Returns:
+            List of dependency IDs
+        """
+        dependencies = []
+        item_type = item.get("type", "")
+        item_title = item.get("title", "").lower()
+
+        # For Testing tasks, find related Development tasks
+        if "test" in item_type.lower() or "test" in item_title:
+            for other_id, other_item in all_items_map.items():
+                if other_id != item_id:
+                    other_type = other_item.get("type", "").lower()
+                    if "user story" in other_type or "task" in other_type:
+                        # Testing depends on Development
+                        dependencies.append(other_id)
+                        if len(dependencies) >= 2:
+                            break
+
+        # For User Stories, find related Epics
+        elif "user story" in item_type.lower():
+            parent_id = item.get("parent_id")
+            if parent_id and parent_id in all_items_map:
+                dependencies.append(parent_id)
+
+        # For Tasks, find related User Stories
+        elif "task" in item_type.lower():
+            parent_id = item.get("parent_id")
+            if parent_id and parent_id in all_items_map:
+                dependencies.append(parent_id)
+
+        return dependencies
+
+    def assign_node(self, state: SprintPlannerState) -> SprintPlannerState:
+        """Assign tasks to team members.
+
+        Args:
+            state: Current state
+
+        Returns:
+            Updated state with task assignments
+        """
+        print(f"[Assign] Assigning {len(state.enriched_items)} items to team members...")
+
+        if not state.enriched_items or not state.team_members:
+            print(f"[Assign] No items or team members to assign")
+            return state
+
+        # Prepare prompt
+        prompt = ASSIGN_PROMPT.format(
+            enriched_items=json.dumps(state.enriched_items, indent=2),
+            team_members=json.dumps(state.team_members, indent=2)
+        )
+
+        # Invoke LLM
+        messages = [
+            SystemMessage(content="You are a task assignment expert. Assign tasks to team members based on their roles and capacity."),
+            HumanMessage(content=prompt)
+        ]
+
+        response = self.llm.invoke(messages)
+
+        # Parse JSON response
+        try:
+            content = response.content
+            # Extract JSON from markdown code block if present
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0].strip()
+
+            result = json.loads(content)
+
+            # Update state
+            state.task_assignments = result.get("task_assignments", [])
+
+            print(f"[Assign] Assigned {len(state.task_assignments)} tasks")
+            state.status = "assigned"
+
+        except json.JSONDecodeError as e:
+            print(f"[Assign] JSON parse error: {e}")
+            # Fallback: create simple assignments
+            state.task_assignments = self._create_default_assignments(state)
+            print(f"[Assign] Created {len(state.task_assignments)} default assignments")
+
+        return state
+
+    def _create_default_assignments(self, state: SprintPlannerState) -> list[dict]:
+        """Create default task assignments when LLM fails.
+
+        Args:
+            state: Current state
+
+        Returns:
+            List of task assignments
+        """
+        assignments = []
+        team_members = state.team_members or []
+
+        if not team_members:
+            return assignments
+
+        # Group team members by role
+        developers = [m for m in team_members if m.get("role") == "Developer"]
+        testers = [m for m in team_members if m.get("role") == "Tester"]
+        designers = [m for m in team_members if m.get("role") == "Designer"]
+
+        dev_idx = 0
+        tester_idx = 0
+        designer_idx = 0
+
+        for item in state.enriched_items:
+            item_id = item.get("id", "")
+            task_type = item.get("task_type", "Development")
+            story_point = item.get("story_point", 5)
+
+            # Estimate hours based on story points (1 point = 2 hours)
+            estimated_hours = (story_point or 5) * 2
+
+            if task_type == "Testing" and testers:
+                assignee = testers[tester_idx % len(testers)]
+                tester_idx += 1
+            elif task_type == "Design" and designers:
+                assignee = designers[designer_idx % len(designers)]
+                designer_idx += 1
+            elif developers:
+                assignee = developers[dev_idx % len(developers)]
+                dev_idx += 1
+            else:
+                continue
+
+            assignments.append({
+                "item_id": item_id,
+                "assignee": assignee.get("name", "Unknown"),
+                "role": assignee.get("role", "Developer"),
+                "estimated_hours": estimated_hours
+            })
+
+        return assignments
 
     def evaluate_node(self, state: SprintPlannerState) -> SprintPlannerState:
         """Evaluate sprint plan quality.
@@ -516,33 +730,48 @@ class SprintPlannerAgent:
     def run(
         self,
         sprint_id: str,
-        sprint_goal: str,
-        sprint_backlog_items: list[dict],
+        sprint_number: int = 1,
+        sprint_goal: str = "",
+        start_date: str = "",
+        end_date: str = "",
         sprint_duration_days: int = 14,
+        velocity_plan: int = 0,
+        sprint_backlog_items: list[dict] = None,
         team_capacity: dict = None,
+        team_members: list[dict] = None,
         thread_id: str = None
     ) -> dict:
         """Run sprint planning workflow.
 
         Args:
             sprint_id: Sprint ID
+            sprint_number: Sprint number
             sprint_goal: Sprint goal
-            sprint_backlog_items: List of backlog items
+            start_date: Start date (YYYY-MM-DD)
+            end_date: End date (YYYY-MM-DD)
             sprint_duration_days: Sprint duration in days
+            velocity_plan: Velocity plan from PO
+            sprint_backlog_items: List of backlog items (raw from backlog.json)
             team_capacity: Team capacity dict
+            team_members: List of team members
             thread_id: Thread ID for conversation
 
         Returns:
-            Final sprint plan dict
+            Final sprint plan dict with enriched items, assignments, daily breakdown
         """
         # Initialize state
         initial_state = SprintPlannerState(
             sprint_id=sprint_id,
+            sprint_number=sprint_number,
             sprint_goal=sprint_goal,
-            sprint_backlog_items=sprint_backlog_items,
+            start_date=start_date,
+            end_date=end_date,
             sprint_duration_days=sprint_duration_days,
+            velocity_plan=velocity_plan,
+            sprint_backlog_items=sprint_backlog_items or [],
             team_capacity=team_capacity or {"dev_hours": 80, "qa_hours": 40},
-            max_loops=2,
+            team_members=team_members or [],
+            max_loops=1,
             current_loop=0,
             status="initial"
         )
@@ -579,14 +808,16 @@ class SprintPlannerAgent:
             plan_score = final_state.get("plan_score", 0.0)
             daily_breakdown = final_state.get("daily_breakdown", [])
             resource_allocation = final_state.get("resource_allocation", {})
-            enriched_tasks = final_state.get("enriched_tasks", [])
+            enriched_items = final_state.get("enriched_items", [])
+            task_assignments = final_state.get("task_assignments", [])
         else:
             status = final_state.status
             sprint_plan = final_state.sprint_plan
             plan_score = final_state.plan_score
             daily_breakdown = final_state.daily_breakdown
             resource_allocation = final_state.resource_allocation
-            enriched_tasks = final_state.enriched_tasks
+            enriched_items = final_state.enriched_items
+            task_assignments = final_state.task_assignments
 
         print(f"\n{'='*60}")
         print(f"Sprint Planning Complete: {status}")
@@ -598,7 +829,8 @@ class SprintPlannerAgent:
             "plan_score": plan_score,
             "daily_breakdown": daily_breakdown,
             "resource_allocation": resource_allocation,
-            "enriched_tasks": enriched_tasks
+            "enriched_items": enriched_items,
+            "task_assignments": task_assignments
         }
 
     # ==================== PROCESS PO OUTPUT METHOD ====================

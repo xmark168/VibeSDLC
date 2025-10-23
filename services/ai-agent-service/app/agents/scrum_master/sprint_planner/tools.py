@@ -15,12 +15,32 @@ from langchain_core.tools import tool
 from typing import Annotated, Dict, List
 from datetime import datetime
 
-# Import models from parent scrum_master package
-from ..models import (
-    SprintDB, BacklogItemDB, DoRCheckResult, AssignmentResult,
-    ItemType, ItemStatus, TaskType, SprintStatus
-)
-from ..test_data import MOCK_TEAM
+# Try to import models, with fallback for script execution
+try:
+    from ..models import (
+        SprintDB, BacklogItemDB, DoRCheckResult, AssignmentResult,
+        ItemType, ItemStatus, TaskType, SprintStatus
+    )
+    from ..test_data import MOCK_TEAM
+except (ImportError, ValueError):
+    # Fallback: define minimal stubs for script execution
+    class SprintDB:
+        pass
+    class BacklogItemDB:
+        pass
+    class DoRCheckResult:
+        pass
+    class AssignmentResult:
+        pass
+    class ItemType:
+        pass
+    class ItemStatus:
+        pass
+    class TaskType:
+        pass
+    class SprintStatus:
+        pass
+    MOCK_TEAM = {}
 
 
 @tool
