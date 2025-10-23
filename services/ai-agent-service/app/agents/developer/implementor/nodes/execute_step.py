@@ -612,19 +612,23 @@ def _build_file_context(
             context += f"- {created_file}\n"
         context += "\n"
 
-    # ✅ NEW: Add dependency files content for API contract coordination
-    dependency_files = _identify_dependency_files(file_path, state.files_created)
+    # ✅ NEW: Add dependency files API summary for API contract coordination
+    dependency_files = _identify_dependency_files(
+        file_path, state.files_created, state.codebase_path
+    )
     if dependency_files:
         context += "=" * 80 + "\n"
-        context += "📚 DEPENDENCY FILES (API CONTRACT REFERENCE)\n"
+        context += "📚 DEPENDENCY FILES - API SUMMARY (API CONTRACT REFERENCE)\n"
         context += "=" * 80 + "\n\n"
-        context += "⚠️ CRITICAL: Use EXACT method names, return types, and signatures from these files.\n\n"
+        context += "⚠️ CRITICAL: Use EXACT method names, return types, and signatures from these files.\n"
+        context += "Note: Implementation details are truncated for brevity. Focus on method signatures.\n\n"
 
         for dep_file in dependency_files:
-            dep_content = _read_dependency_file_content(dep_file, state.codebase_path)
-            if dep_content:
+            # Use new smart truncation function
+            dep_summary = _extract_dependency_api_summary(dep_file, state.codebase_path)
+            if dep_summary:
                 context += f"📄 File: {dep_file}\n"
-                context += f"```\n{dep_content}\n```\n\n"
+                context += f"```javascript\n{dep_summary}\n```\n\n"
 
         context += "=" * 80 + "\n\n"
 
@@ -638,9 +642,190 @@ def _build_file_context(
     return context
 
 
-def _identify_dependency_files(current_file: str, created_files: list) -> list:
+def _identify_dependency_files(
+    current_file: str, created_files: list, working_dir: str = None
+) -> list:
     """
     Identify which previously created files are dependencies of current file.
+
+    NEW APPROACH: Parse import/require statements from the current file to detect
+    ALL dependencies, not just layered architecture patterns.
+
+    Strategy:
+    1. Read current file content (if it exists)
+    2. Parse import/require statements to extract dependency paths
+    3. Match dependency paths with files in created_files
+    4. Fallback to layered architecture pattern if file doesn't exist yet
+
+    Args:
+        current_file: File being generated
+        created_files: List of files already created
+        working_dir: Working directory to read file from
+
+    Returns:
+        List of dependency file paths
+    """
+    dependencies = []
+
+    # Normalize path separators
+    current_file = current_file.replace("\\", "/")
+    created_files = [f.replace("\\", "/") for f in created_files]
+
+    # Try to read current file and parse imports
+    if working_dir:
+        try:
+            file_content = _read_file_for_imports(current_file, working_dir)
+            if file_content:
+                # Parse imports/requires from file content
+                import_paths = _parse_import_statements(file_content)
+
+                # Match import paths with created files
+                for import_path in import_paths:
+                    matched_files = _match_import_to_created_files(
+                        import_path, current_file, created_files
+                    )
+                    dependencies.extend(matched_files)
+
+                # Remove duplicates
+                dependencies = list(set(dependencies))
+
+                if dependencies:
+                    return dependencies
+        except Exception:
+            # Fallback to pattern-based detection if parsing fails
+            pass
+
+    # FALLBACK: Use layered architecture pattern if file doesn't exist yet
+    # or if import parsing failed
+    dependencies = _identify_dependencies_by_pattern(current_file, created_files)
+
+    return dependencies
+
+
+def _read_file_for_imports(file_path: str, working_dir: str) -> str | None:
+    """
+    Read file content to parse imports. Returns None if file doesn't exist.
+
+    Args:
+        file_path: Path to file
+        working_dir: Working directory
+
+    Returns:
+        File content or None
+    """
+    try:
+        read_result = read_file_tool.invoke(
+            {"file_path": file_path, "working_directory": working_dir}
+        )
+
+        if "File not found" in read_result or "does not exist" in read_result:
+            return None
+
+        # Extract actual content
+        from .generate_code import _extract_actual_content
+
+        return _extract_actual_content(read_result)
+    except Exception:
+        return None
+
+
+def _parse_import_statements(content: str) -> list:
+    """
+    Parse import/require statements from JavaScript/TypeScript file content.
+
+    Extracts paths from:
+    - require('path')
+    - require("path")
+    - import ... from 'path'
+    - import ... from "path"
+
+    Args:
+        content: File content
+
+    Returns:
+        List of import paths
+    """
+    import re
+
+    import_paths = []
+
+    # Pattern 1: require('path') or require("path")
+    require_pattern = r"require\s*\(\s*['\"]([^'\"]+)['\"]\s*\)"
+    require_matches = re.findall(require_pattern, content)
+    import_paths.extend(require_matches)
+
+    # Pattern 2: import ... from 'path' or import ... from "path"
+    import_pattern = r"import\s+.*?\s+from\s+['\"]([^'\"]+)['\"]"
+    import_matches = re.findall(import_pattern, content)
+    import_paths.extend(import_matches)
+
+    # Pattern 3: import 'path' or import "path" (side-effect imports)
+    import_side_effect_pattern = r"import\s+['\"]([^'\"]+)['\"]"
+    import_side_effect_matches = re.findall(import_side_effect_pattern, content)
+    import_paths.extend(import_side_effect_matches)
+
+    return import_paths
+
+
+def _match_import_to_created_files(
+    import_path: str, current_file: str, created_files: list
+) -> list:
+    """
+    Match an import path to files in created_files list.
+
+    Handles relative imports like:
+    - '../services/authService'
+    - './helpers/validator'
+    - '../../utils/formatter'
+
+    Args:
+        import_path: Import path from require/import statement
+        current_file: Current file path
+        created_files: List of created files
+
+    Returns:
+        List of matching file paths
+    """
+    import os
+
+    matches = []
+
+    # Skip node_modules and external packages
+    if not import_path.startswith("."):
+        return matches
+
+    # Resolve relative import path
+    current_dir = os.path.dirname(current_file)
+    resolved_path = os.path.normpath(os.path.join(current_dir, import_path))
+    resolved_path = resolved_path.replace("\\", "/")
+
+    # Try to match with created files
+    for created_file in created_files:
+        created_normalized = created_file.replace("\\", "/")
+
+        # Remove file extension from both paths for comparison
+        created_without_ext = os.path.splitext(created_normalized)[0]
+        resolved_without_ext = os.path.splitext(resolved_path)[0]
+
+        # Check if paths match (with or without extension)
+        if (
+            created_without_ext == resolved_without_ext
+            or created_normalized == resolved_path
+            or created_without_ext.endswith(resolved_without_ext)
+            or resolved_without_ext in created_without_ext
+        ):
+            matches.append(created_file)
+
+    return matches
+
+
+def _identify_dependencies_by_pattern(current_file: str, created_files: list) -> list:
+    """
+    FALLBACK: Identify dependencies using Express.js layered architecture pattern.
+
+    This is used when:
+    - File doesn't exist yet (being generated for first time)
+    - Import parsing fails
 
     Express.js layered architecture:
     - Routes depend on Controllers
@@ -655,20 +840,13 @@ def _identify_dependency_files(current_file: str, created_files: list) -> list:
     Returns:
         List of dependency file paths
     """
-    dependencies = []
-
-    # Normalize path separators
-    current_file = current_file.replace("\\", "/")
-    created_files = [f.replace("\\", "/") for f in created_files]
-
-    # Extract file name without extension
     from pathlib import Path
 
+    dependencies = []
     current_name = Path(current_file).stem
 
     # Controllers depend on Services
     if "/controllers/" in current_file:
-        # authController.js -> authService.js
         service_name = current_name.replace("Controller", "Service")
         for created in created_files:
             if "/services/" in created and service_name in created:
@@ -676,28 +854,22 @@ def _identify_dependency_files(current_file: str, created_files: list) -> list:
 
     # Services depend on Repositories
     elif "/services/" in current_file:
-        # authService.js -> userRepository.js
-        # Try multiple patterns
         base_name = current_name.replace("Service", "")
         for created in created_files:
             if "/repositories/" in created:
-                # Check if repository name matches (e.g., userRepository for authService)
                 if base_name.lower() in created.lower() or "Repository" in created:
                     dependencies.append(created)
 
     # Repositories depend on Models
     elif "/repositories/" in current_file:
-        # userRepository.js -> User.js
         base_name = current_name.replace("Repository", "")
         for created in created_files:
             if "/models/" in created:
-                # Check if model name matches (case-insensitive)
                 if base_name.lower() in created.lower():
                     dependencies.append(created)
 
     # Routes depend on Controllers
     elif "/routes/" in current_file:
-        # auth.js (route) -> authController.js
         for created in created_files:
             if "/controllers/" in created and current_name in created.lower():
                 dependencies.append(created)
@@ -705,18 +877,27 @@ def _identify_dependency_files(current_file: str, created_files: list) -> list:
     return dependencies
 
 
-def _read_dependency_file_content(file_path: str, working_dir: str) -> str | None:
+def _extract_dependency_api_summary(file_path: str, working_dir: str) -> str | None:
     """
-    Read content of a dependency file.
+    Extract API summary from dependency file by keeping signatures and minimal context.
+
+    Smart truncation approach:
+    - Keeps: Class/module declarations, method signatures, JSDoc comments
+    - Keeps: First 2-3 lines of each method body (for context)
+    - Keeps: Return statements
+    - Removes: Detailed implementation logic
+    - Adds: "// ... implementation details ..." placeholder
+    - Limits: Maximum 60 lines per file
 
     Args:
         file_path: Path to dependency file
         working_dir: Working directory
 
     Returns:
-        File content or None if failed
+        Truncated API summary or None if failed
     """
     try:
+        # First, read the full file content
         read_result = read_file_tool.invoke(
             {"file_path": file_path, "working_directory": working_dir}
         )
@@ -727,12 +908,177 @@ def _read_dependency_file_content(file_path: str, working_dir: str) -> str | Non
         # Extract actual content (remove line numbers if present)
         from .generate_code import _extract_actual_content
 
-        content = _extract_actual_content(read_result)
+        full_content = _extract_actual_content(read_result)
 
-        return content
+        # Apply smart truncation
+        try:
+            truncated = _truncate_to_api_summary(full_content)
+            return truncated
+        except Exception as truncate_error:
+            print(
+                f"      ⚠️ Truncation failed for {file_path}, using full content: {truncate_error}"
+            )
+            # Fallback to full content if truncation fails
+            return full_content
+
     except Exception as e:
         print(f"      ⚠️ Could not read dependency file {file_path}: {e}")
         return None
+
+
+def _truncate_to_api_summary(content: str, max_lines: int = 60) -> str:
+    """
+    Truncate file content to API summary by keeping signatures and minimal context.
+
+    Strategy:
+    - Keep class/module declarations
+    - Keep method signatures
+    - Keep first 2-3 lines of method body
+    - Keep return statements
+    - Replace detailed implementation with placeholder
+    - Preserve JSDoc comments
+
+    Args:
+        content: Full file content
+        max_lines: Maximum lines to keep (default: 60)
+
+    Returns:
+        Truncated content with API summary
+    """
+    lines = content.split("\n")
+    summary_lines = []
+
+    in_method = False
+    method_body_lines = 0
+    method_indent = 0
+    method_start_line = 0
+    seen_return = False
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        current_indent = len(line) - len(line.lstrip())
+
+        # Skip empty lines in method bodies (but keep them elsewhere)
+        if in_method and not stripped:
+            continue
+
+        # Keep JSDoc comments
+        if (
+            "/**" in stripped
+            or (stripped.startswith("*") and not stripped.startswith("**"))
+            or "*/" in stripped
+        ):
+            summary_lines.append(line)
+            continue
+
+        # Keep class declarations
+        if stripped.startswith("class ") or "module.exports" in stripped:
+            summary_lines.append(line)
+            continue
+
+        # Keep require/import statements
+        if "require(" in stripped or "import " in stripped:
+            summary_lines.append(line)
+            continue
+
+        # Detect method signatures (but NOT control flow statements)
+        is_method_signature = False
+
+        # Exclude control flow statements
+        if not any(
+            stripped.startswith(keyword)
+            for keyword in [
+                "if ",
+                "if(",
+                "for ",
+                "for(",
+                "while ",
+                "while(",
+                "switch ",
+                "switch(",
+                "catch ",
+                "catch(",
+            ]
+        ):
+            if any(
+                pattern in stripped
+                for pattern in [
+                    "async ",
+                    "function ",
+                    ") {",
+                    "(req, res)",
+                    "(userData)",
+                    "(email",
+                    "(id",
+                ]
+            ):
+                # Check if it looks like a method declaration
+                if "(" in stripped and ("{" in stripped or stripped.endswith("{")):
+                    is_method_signature = True
+
+        # Start of method
+        if is_method_signature and not in_method:
+            summary_lines.append(line)
+            in_method = True
+            method_body_lines = 0
+            method_indent = current_indent
+            method_start_line = i
+            seen_return = False
+            continue
+
+        # Inside method body
+        if in_method:
+            # ALWAYS keep return statements (CRITICAL for API contracts)
+            if "return " in stripped:
+                # Add placeholder before return if we skipped lines
+                if method_body_lines >= 3 and not seen_return:
+                    summary_lines.append(
+                        " " * (method_indent + 2) + "// ... implementation details ..."
+                    )
+                summary_lines.append(line)
+                seen_return = True
+                method_body_lines += 1
+
+            # Keep first 2-3 lines of method body (if not a return statement)
+            elif method_body_lines < 3:
+                summary_lines.append(line)
+                method_body_lines += 1
+
+            # Check if method ended (closing brace at SAME indent level as method start)
+            if "}" in stripped and current_indent == method_indent:
+                # Add placeholder if we haven't added it yet and haven't seen return
+                if method_body_lines >= 3 and not seen_return:
+                    summary_lines.append(
+                        " " * (method_indent + 2) + "// ... implementation details ..."
+                    )
+
+                # Add closing brace
+                summary_lines.append(line)
+                in_method = False
+                method_body_lines = 0
+
+                # Add empty line after method for readability
+                summary_lines.append("")
+
+            continue
+
+        # Keep closing braces for classes
+        if stripped == "}" or stripped == "};":
+            summary_lines.append(line)
+            continue
+
+        # Keep export statements
+        if "module.exports" in stripped or "export " in stripped:
+            summary_lines.append(line)
+            continue
+
+    # Limit to max_lines
+    if len(summary_lines) > max_lines:
+        summary_lines = summary_lines[:max_lines]
+        summary_lines.append("")
+        summary_lines.append("// ... additional methods truncated ...")
+
+    return "\n".join(summary_lines)
 
 
 def _generate_new_file_content(

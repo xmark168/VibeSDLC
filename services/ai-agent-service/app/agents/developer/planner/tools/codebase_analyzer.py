@@ -299,6 +299,14 @@ class JavaScriptTypeScriptAnalyzer(LanguageAnalyzer):
             r"let\s+(\w+)\s*=\s*\([^)]*\)\s*=>",
             r"var\s+(\w+)\s*=\s*\([^)]*\)\s*=>",
             r"export\s+function\s+(\w+)\s*\([^)]*\)",
+            # Regular methods
+            r"(?:async\s+)?(\w+)\s*\([^)]*\)\s*{",
+            # Static methods
+            r"static\s+(?:async\s+)?(\w+)\s*\([^)]*\)\s*{",
+            # Arrow functions
+            r"(\w+)\s*=\s*(?:async\s+)?\([^)]*\)\s*=>",
+            # Getter/Setter
+            r"(?:get|set)\s+(\w+)\s*\([^)]*\)\s*{",
         ]
 
         for pattern in func_patterns:

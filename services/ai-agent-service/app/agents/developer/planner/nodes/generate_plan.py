@@ -12,307 +12,626 @@ from langchain_core.messages import AIMessage
 from ..state import ImplementationPlan, PlannerState
 
 
-def load_architecture_guidelines(codebase_path: str = "") -> dict:
+def _detect_task_scope(codebase_analysis) -> dict:
     """
-    Load architecture guidelines from AGENTS.md file.
+    Detect if task needs backend, frontend, or both based on files to be created/modified.
+
+    Args:
+        codebase_analysis: CodebaseAnalysis object with files_to_create and files_to_modify
+
+    Returns:
+        Dict with needs_backend, needs_frontend, is_fullstack flags
+    """
+    backend_patterns = [
+        "/models/",
+        "/services/",
+        "/controllers/",
+        "/routes/",
+        "/repositories/",
+        "/middleware/",
+        "/api/",
+        "/database/",
+        "/config/",
+    ]
+    frontend_patterns = [
+        "/components/",
+        "/pages/",
+        "/hooks/",
+        "/stores/",
+        "/src/",
+        "/assets/",
+        "/styles/",
+        "/public/",
+        "/views/",
+    ]
+
+    needs_backend = False
+    needs_frontend = False
+
+    # Combine all files to analyze
+    all_files = codebase_analysis.files_to_create + codebase_analysis.files_to_modify
+
+    for file_item in all_files:
+        # Handle both dict format (with 'path' key) and string format
+        if isinstance(file_item, dict):
+            file_path = file_item.get("path", "")
+        else:
+            file_path = str(file_item)
+
+        file_path_lower = file_path.lower()
+
+        # Check backend patterns
+        if any(pattern in file_path_lower for pattern in backend_patterns):
+            needs_backend = True
+
+        # Check frontend patterns
+        if any(pattern in file_path_lower for pattern in frontend_patterns):
+            needs_frontend = True
+
+        # Early exit if both detected
+        if needs_backend and needs_frontend:
+            break
+
+    return {
+        "needs_backend": needs_backend,
+        "needs_frontend": needs_frontend,
+        "is_fullstack": needs_backend and needs_frontend,
+    }
+
+
+def _load_agents_md_from_path(codebase_path: str, category: str) -> dict | None:
+    """
+    Load AGENTS.md from a specific category (backend or frontend).
+
+    Args:
+        codebase_path: Path to the codebase
+        category: "backend" or "frontend"
+
+    Returns:
+        Dict with content and metadata, or None if not found
+    """
+    if not codebase_path or category not in ["backend", "frontend"]:
+        return None
+
+    # Possible subdirectory names for each category
+    category_dirs = {
+        "backend": ["backend", "be", "server", "api"],
+        "frontend": ["frontend", "fe", "client", "web", "ui"],
+    }
+
+    search_dirs = category_dirs.get(category, [])
+
+    # Try to find AGENTS.md in category-specific directories
+    for subdir in search_dirs:
+        agents_path = os.path.join(codebase_path, subdir, "AGENTS.md")
+        try:
+            if os.path.exists(agents_path):
+                with open(agents_path, encoding="utf-8") as f:
+                    content = f.read()
+                    project_type = _detect_project_type(content)
+                    stack_category = _detect_stack_category(content)
+
+                    print(f"✅ Loaded {category.upper()} AGENTS.md from: {agents_path}")
+                    print(f"   Project Type: {project_type}")
+
+                    return {
+                        "content": content,
+                        "path": agents_path,
+                        "project_type": project_type,
+                        "stack_category": stack_category,
+                    }
+        except Exception as e:
+            print(f"⚠️ Error loading {agents_path}: {e}")
+            continue
+
+    return None
+
+
+def _combine_guidelines(
+    backend_md: dict | None, frontend_md: dict | None, max_chars: int = 20000
+) -> str:
+    """
+    Combine backend and frontend guidelines intelligently.
+
+    Args:
+        backend_md: Backend AGENTS.md dict (with 'content' key)
+        frontend_md: Frontend AGENTS.md dict (with 'content' key)
+        max_chars: Maximum total characters
+
+    Returns:
+        Combined guidelines text
+    """
+    backend_content = backend_md.get("content", "") if backend_md else ""
+    frontend_content = frontend_md.get("content", "") if frontend_md else ""
+
+    # Only backend
+    if backend_content and not frontend_content:
+        if len(backend_content) > max_chars:
+            return backend_content[:max_chars] + "\n\n... (truncated for brevity)"
+        return backend_content
+
+    # Only frontend
+    if frontend_content and not backend_content:
+        if len(frontend_content) > max_chars:
+            return frontend_content[:max_chars] + "\n\n... (truncated for brevity)"
+        return frontend_content
+
+    # Both exist
+    if backend_content and frontend_content:
+        total_length = len(backend_content) + len(frontend_content)
+
+        # Both fit completely
+        if total_length <= max_chars:
+            return f"""## BACKEND ARCHITECTURE GUIDELINES
+
+{backend_content}
+
+## FRONTEND ARCHITECTURE GUIDELINES
+
+{frontend_content}"""
+
+        # Need to truncate - give each 50% of space
+        be_limit = max_chars // 2
+        fe_limit = max_chars // 2
+
+        return f"""## BACKEND ARCHITECTURE GUIDELINES
+
+{backend_content[:be_limit]}
+... (truncated)
+
+## FRONTEND ARCHITECTURE GUIDELINES
+
+{frontend_content[:fe_limit]}
+... (truncated)"""
+
+    return ""
+
+
+def load_architecture_guidelines(
+    codebase_path: str = "", task_scope: dict | None = None
+) -> dict:
+    """
+    Load architecture guidelines from AGENTS.md file(s) if available.
+    Supports loading separate backend and frontend guidelines for fullstack tasks.
 
     Args:
         codebase_path: Path to codebase root
+        task_scope: Optional dict with needs_backend and needs_frontend flags
 
     Returns:
         Dict containing architecture guidelines and project info
     """
     guidelines = {
         "has_agents_md": False,
-        "is_express_project": False,
         "architecture_content": "",
         "project_type": "unknown",
+        "stack_category": "unknown",
+        "backend_guidelines": None,
+        "frontend_guidelines": None,
+        "is_fullstack": False,
     }
 
-    # Try to find AGENTS.md in various locations
-    possible_paths = []
+    # Determine what to load
+    needs_backend = task_scope.get("needs_backend", True) if task_scope else True
+    needs_frontend = task_scope.get("needs_frontend", False) if task_scope else False
+    is_fullstack = task_scope.get("is_fullstack", False) if task_scope else False
 
-    if codebase_path:
-        # Direct path provided
-        possible_paths.append(os.path.join(codebase_path, "AGENTS.md"))
-        # Check if it's in a subdirectory
+    guidelines["is_fullstack"] = is_fullstack
+
+    # Try to load category-specific AGENTS.md first
+    if needs_backend:
+        backend_md = _load_agents_md_from_path(codebase_path, "backend")
+        if backend_md:
+            guidelines["backend_guidelines"] = backend_md
+            guidelines["has_agents_md"] = True
+
+    if needs_frontend:
+        frontend_md = _load_agents_md_from_path(codebase_path, "frontend")
+        if frontend_md:
+            guidelines["frontend_guidelines"] = frontend_md
+            guidelines["has_agents_md"] = True
+
+    # Fallback: Try to find single AGENTS.md in root (for monorepo or single-stack projects)
+    if not guidelines["has_agents_md"] and codebase_path:
+        possible_paths = [os.path.join(codebase_path, "AGENTS.md")]
+
+        # Also search subdirectories
         for root, dirs, files in os.walk(codebase_path):
             if "AGENTS.md" in files:
                 possible_paths.append(os.path.join(root, "AGENTS.md"))
                 break
 
-    # Default paths relative to current working directory
-    default_paths = [
-        "AGENTS.md",
-        "services/ai-agent-service/app/agents/demo/be/nodejs/express-basic/AGENTS.md",
-        "../../../demo/be/nodejs/express-basic/AGENTS.md",
-        "ai-agent-service/app/agents/demo/be/nodejs/express-basic/AGENTS.md",
-    ]
-    possible_paths.extend(default_paths)
-
-    # Try to load AGENTS.md
-    for agents_path in possible_paths:
-        try:
-            if os.path.exists(agents_path):
-                with open(agents_path, encoding="utf-8") as f:
-                    content = f.read()
-                    guidelines["has_agents_md"] = True
-                    guidelines["architecture_content"] = content
-
-                    # Detect project type from AGENTS.md content
-                    if "Express.js" in content and "MongoDB" in content:
-                        guidelines["is_express_project"] = True
-                        guidelines["project_type"] = "express_mongodb"
-
-                    print(f"✅ Loaded AGENTS.md from: {agents_path}")
-                    break
-        except Exception as e:
-            print(f"⚠️ Error loading {agents_path}: {e}")
-            continue
-
-    # Detect Express.js project structure if AGENTS.md not found
-    if not guidelines["has_agents_md"] and codebase_path:
-        package_json_path = os.path.join(codebase_path, "package.json")
-        if os.path.exists(package_json_path):
+        for agents_path in possible_paths:
             try:
-                with open(package_json_path) as f:
-                    package_data = json.load(f)
-                    dependencies = package_data.get("dependencies", {})
-                    if "express" in dependencies:
-                        guidelines["is_express_project"] = True
-                        guidelines["project_type"] = "express"
-                        print("✅ Detected Express.js project from package.json")
+                if os.path.exists(agents_path):
+                    with open(agents_path, encoding="utf-8") as f:
+                        content = f.read()
+                        project_type = _detect_project_type(content)
+                        stack_category = _detect_stack_category(content)
+
+                        guidelines["has_agents_md"] = True
+                        guidelines["project_type"] = project_type
+                        guidelines["stack_category"] = stack_category
+
+                        # Store in appropriate category
+                        md_dict = {
+                            "content": content,
+                            "path": agents_path,
+                            "project_type": project_type,
+                            "stack_category": stack_category,
+                        }
+
+                        if stack_category == "backend":
+                            guidelines["backend_guidelines"] = md_dict
+                        elif stack_category == "frontend":
+                            guidelines["frontend_guidelines"] = md_dict
+                        else:
+                            # Unknown - store in both if fullstack, otherwise in backend
+                            if is_fullstack:
+                                guidelines["backend_guidelines"] = md_dict
+                                guidelines["frontend_guidelines"] = md_dict
+                            else:
+                                guidelines["backend_guidelines"] = md_dict
+
+                        print(f"✅ Loaded AGENTS.md from: {agents_path}")
+                        print(f"   Project Type: {project_type}")
+                        print(f"   Stack Category: {stack_category}")
+                        break
             except Exception as e:
-                print(f"⚠️ Error reading package.json: {e}")
+                print(f"⚠️ Error loading {agents_path}: {e}")
+                continue
+
+    # Combine guidelines
+    guidelines["architecture_content"] = _combine_guidelines(
+        guidelines["backend_guidelines"], guidelines["frontend_guidelines"]
+    )
+
+    # Set project type and stack category from loaded guidelines
+    if guidelines["backend_guidelines"] and guidelines["frontend_guidelines"]:
+        guidelines["project_type"] = "fullstack"
+        guidelines["stack_category"] = "fullstack"
+    elif guidelines["backend_guidelines"]:
+        guidelines["project_type"] = guidelines["backend_guidelines"]["project_type"]
+        guidelines["stack_category"] = "backend"
+    elif guidelines["frontend_guidelines"]:
+        guidelines["project_type"] = guidelines["frontend_guidelines"]["project_type"]
+        guidelines["stack_category"] = "frontend"
+
+    # Fallback: Detect project type from package.json if no AGENTS.md found
+    if not guidelines["has_agents_md"] and codebase_path:
+        detected_type = _detect_project_from_package_json(codebase_path)
+        if detected_type:
+            guidelines["project_type"] = detected_type["type"]
+            guidelines["stack_category"] = detected_type["category"]
+            print(f"✅ Detected {detected_type['type']} project from package.json")
 
     return guidelines
 
 
-def detect_express_architecture_layers(codebase_path: str = "") -> dict:
+def _detect_project_type(content: str) -> str:
+    """Detect specific project type from AGENTS.md content."""
+    # Backend frameworks
+    if "Express.js" in content and "MongoDB" in content:
+        return "express_mongodb"
+    elif "Express.js" in content:
+        return "express"
+    elif "FastAPI" in content:
+        return "fastapi"
+    elif "Django" in content:
+        return "django"
+
+    # Frontend frameworks
+    elif "React" in content and "Vite" in content:
+        return "react_vite"
+    elif "React" in content and "Next.js" in content:
+        return "nextjs"
+    elif "Vue" in content:
+        return "vue"
+    elif "Angular" in content:
+        return "angular"
+
+    return "unknown"
+
+
+def _detect_stack_category(content: str) -> str:
+    """Detect whether project is backend or frontend."""
+    backend_keywords = [
+        "Express.js",
+        "FastAPI",
+        "Django",
+        "Flask",
+        "MongoDB",
+        "PostgreSQL",
+        "API",
+    ]
+    frontend_keywords = [
+        "React",
+        "Vue",
+        "Angular",
+        "Vite",
+        "Next.js",
+        "Component",
+        "useState",
+    ]
+
+    backend_score = sum(1 for keyword in backend_keywords if keyword in content)
+    frontend_score = sum(1 for keyword in frontend_keywords if keyword in content)
+
+    if backend_score > frontend_score:
+        return "backend"
+    elif frontend_score > backend_score:
+        return "frontend"
+
+    return "unknown"
+
+
+def _detect_project_from_package_json(codebase_path: str) -> dict | None:
+    """Detect project type from package.json dependencies."""
+    package_json_path = os.path.join(codebase_path, "package.json")
+    if not os.path.exists(package_json_path):
+        return None
+
+    try:
+        with open(package_json_path) as f:
+            package_data = json.load(f)
+            dependencies = {
+                **package_data.get("dependencies", {}),
+                **package_data.get("devDependencies", {}),
+            }
+
+            # Backend detection
+            if "express" in dependencies:
+                return {"type": "express", "category": "backend"}
+
+            # Frontend detection
+            if "react" in dependencies:
+                if "vite" in dependencies:
+                    return {"type": "react_vite", "category": "frontend"}
+                elif "next" in dependencies:
+                    return {"type": "nextjs", "category": "frontend"}
+                return {"type": "react", "category": "frontend"}
+
+            if "vue" in dependencies:
+                return {"type": "vue", "category": "frontend"}
+
+    except Exception as e:
+        print(f"⚠️ Error reading package.json: {e}")
+
+    return None
+
+
+def detect_project_structure(
+    codebase_path: str = "", stack_category: str = "unknown"
+) -> dict:
     """
-    Detect existing Express.js architecture layers in the codebase.
+    Detect existing project structure based on stack category.
+
+    Args:
+        codebase_path: Path to codebase root
+        stack_category: 'backend' or 'frontend'
 
     Returns:
-        Dict with information about existing layers and structure
+        Dict with information about existing structure
     """
-    layers = {
-        "has_models": False,
-        "has_repositories": False,
-        "has_services": False,
-        "has_controllers": False,
-        "has_routes": False,
-        "has_middleware": False,
+    structure = {
         "src_structure": "unknown",
+        "detected_folders": [],
     }
 
     if not codebase_path:
-        return layers
+        return structure
 
-    # Check for common Express.js folder structures
+    # Check if using src/ folder structure
     src_path = os.path.join(codebase_path, "src")
     if os.path.exists(src_path):
-        layers["src_structure"] = "src_based"
+        structure["src_structure"] = "src_based"
         base_path = src_path
     else:
-        layers["src_structure"] = "root_based"
+        structure["src_structure"] = "root_based"
         base_path = codebase_path
 
-    # Check for architecture layers
-    layer_folders = {
-        "models": "has_models",
-        "repositories": "has_repositories",
-        "services": "has_services",
-        "controllers": "has_controllers",
-        "routes": "has_routes",
-        "middleware": "has_middleware",
-        "middlewares": "has_middleware",
-    }
+    # Define folders to check based on stack category
+    if stack_category == "backend":
+        folders_to_check = [
+            "models",
+            "repositories",
+            "services",
+            "controllers",
+            "routes",
+            "middleware",
+            "middlewares",
+            "tests",
+            "utils",
+            "config",
+        ]
+    elif stack_category == "frontend":
+        folders_to_check = [
+            "components",
+            "pages",
+            "hooks",
+            "services",
+            "stores",
+            "utils",
+            "types",
+            "api-request",
+            "routes",
+            "assets",
+        ]
+    else:
+        # Generic folders
+        folders_to_check = ["src", "tests", "utils", "config", "lib", "components"]
 
-    for folder, key in layer_folders.items():
+    # Check which folders exist
+    for folder in folders_to_check:
         folder_path = os.path.join(base_path, folder)
         if os.path.exists(folder_path):
-            layers[key] = True
+            structure["detected_folders"].append(folder)
 
-    return layers
+    return structure
 
 
 def _get_architecture_guidelines_text(
-    architecture_guidelines: dict, architecture_layers: dict
+    architecture_guidelines: dict, project_structure: dict
 ) -> str:
     """
     Generate architecture guidelines text for the prompt based on project type.
 
     Args:
         architecture_guidelines: Guidelines loaded from AGENTS.md
-        architecture_layers: Detected architecture layers
+        project_structure: Detected project structure
 
     Returns:
         Formatted architecture guidelines text
     """
-    if not architecture_guidelines["is_express_project"]:
-        return """
-### GENERAL ARCHITECTURE GUIDELINES
-
-Since this is not an Express.js project or AGENTS.md is not available, follow these general principles:
-- Maintain separation of concerns
-- Follow existing code patterns in the codebase
-- Ensure proper error handling
-- Add appropriate tests for new functionality
-"""
-
-    # Express.js specific guidelines
-    guidelines_text = """
-### EXPRESS.JS ARCHITECTURE GUIDELINES (from AGENTS.md)
-
-**CRITICAL: Follow the Express.js Layered Architecture Pattern**
-
-**Architecture Flow (Request → Response):**
-```
-Routes (API Endpoints)
-  ↓ Map to controller methods
-Controllers (Request Handlers)
-  ↓ Parse request, validate input, call service
-Services (Business Logic)
-  ↓ Implement business rules, orchestrate repositories
-Repositories (Data Access)
-  ↓ Abstract database operations, query builders
-Models (Database Schemas)
-  ↓ Mongoose schemas, model methods, virtuals
-```
-
-**IMPLEMENTATION ORDER (Bottom-Up):**
-1. **Models** (Database Schemas) - Define data structure first
-2. **Repositories** (Data Access) - Abstract database operations
-3. **Services** (Business Logic) - Implement business rules
-4. **Controllers** (Request Handlers) - Handle HTTP requests/responses
-5. **Routes** (API Endpoints) - Define URL mappings and middleware
-6. **Validation** (Joi Schemas) - Add request validation
-7. **Tests** (Integration/Unit) - Verify functionality
-8. **Registration** (app.js) - Register routes in main app
-
-**NAMING CONVENTIONS:**
-- Files: camelCase (userController.js, authService.js)
-- Models: PascalCase (User.js, Product.js)
-- Tests: kebab-case (user-controller.test.js)
-- Variables/Functions: camelCase (getUserById, userName)
-- Classes: PascalCase (UserService, ProductRepository)
-- Constants: UPPER_SNAKE_CASE (MAX_LOGIN_ATTEMPTS)
-
-**FILE STRUCTURE:**
-```
-src/
-├── models/           # Mongoose models (User.js, Product.js)
-├── repositories/     # Data access layer (userRepository.js)
-├── services/         # Business logic (userService.js, authService.js)
-├── controllers/      # Request handlers (userController.js)
-├── routes/           # API routes (users.js, auth.js)
-├── middleware/       # Express middleware (auth.js, validate.js)
-├── utils/            # Utilities (validators.js, logger.js)
-└── tests/            # Test files (unit/, integration/)
-```
-
-**IMPLEMENTATION PATTERNS:**
-
-1. **Model Pattern** (Mongoose Schema):
-   - Define schema with validation rules
-   - Add indexes for performance
-   - Use instance/static methods
-   - Enable timestamps
-
-2. **Repository Pattern** (Data Access):
-   - One class per model
-   - Abstract Mongoose operations
-   - Use .lean() for performance
-   - Handle database errors
-   - Export singleton instance
-
-3. **Service Pattern** (Business Logic):
-   - Implement business rules
-   - Orchestrate multiple repositories
-   - Handle transactions
-   - Throw meaningful errors (AppError)
-   - Log important events
-
-4. **Controller Pattern** (Request Handlers):
-   - Parse request data (params, query, body)
-   - Call service layer
-   - Format consistent JSON responses
-   - Pass errors to next() middleware
-   - Add JSDoc comments
-
-5. **Route Pattern** (API Endpoints):
-   - Define routes with Express router
-   - Map to controller methods
-   - Add authentication/validation middleware
-   - Include JSDoc route documentation
-
-**ERROR HANDLING:**
-- Use AppError class for operational errors
-- Implement global error handler middleware
-- Validate all inputs with Joi schemas
-- Log errors with Winston logger
-
-**TESTING REQUIREMENTS:**
-- Integration tests for API endpoints
-- Unit tests for services and repositories
-- Test error scenarios and edge cases
-- Maintain >80% test coverage
-"""
-
-    # Add specific guidance based on existing layers
-    if architecture_layers["has_models"]:
-        guidelines_text += "\n**EXISTING MODELS DETECTED** - Follow existing model patterns and naming conventions."
-
-    if architecture_layers["has_repositories"]:
-        guidelines_text += "\n**EXISTING REPOSITORIES DETECTED** - Follow existing repository patterns and data access methods."
-
-    if architecture_layers["has_services"]:
-        guidelines_text += "\n**EXISTING SERVICES DETECTED** - Follow existing service patterns and business logic structure."
-
-    if architecture_layers["has_controllers"]:
-        guidelines_text += "\n**EXISTING CONTROLLERS DETECTED** - Follow existing controller patterns and response formatting."
-
-    if architecture_layers["has_routes"]:
-        guidelines_text += "\n**EXISTING ROUTES DETECTED** - Follow existing route patterns and middleware usage."
-
-    # Add FULL AGENTS.md content if available
+    # If AGENTS.md is available, use it as the primary source
     if architecture_guidelines["has_agents_md"]:
         agents_md_content = architecture_guidelines.get("architecture_content", "")
 
-        # Truncate if too long (keep first 8000 chars to fit in prompt)
-        if len(agents_md_content) > 8000:
+        # Truncate if too long (keep first 10000 chars to fit in prompt)
+        if len(agents_md_content) > 10000:
             agents_md_content = (
-                agents_md_content[:8000] + "\n\n... (truncated for brevity)"
+                agents_md_content[:10000] + "\n\n... (truncated for brevity)"
             )
 
-        guidelines_text += f"""
+        return f"""
+**CRITICAL: AGENTS.md ARCHITECTURE GUIDELINES**
 
-**CRITICAL: FULL AGENTS.md ARCHITECTURE GUIDELINES**
-
-The following are the COMPLETE architecture guidelines from AGENTS.md.
+The project has an AGENTS.md file with detailed architecture guidelines.
 YOU MUST FOLLOW THESE GUIDELINES EXACTLY when generating the implementation plan.
+
+Project Type: {architecture_guidelines["project_type"]}
+Stack Category: {architecture_guidelines["stack_category"]}
 
 ---
 {agents_md_content}
 ---
-
-**MANDATORY REQUIREMENTS:**
-1. Follow the EXACT implementation order: Models → Repositories → Services → Controllers → Routes
-2. Use the EXACT code patterns shown in AGENTS.md
-3. Follow the EXACT naming conventions (camelCase for files, PascalCase for models)
-4. Create ALL layers even if some don't exist yet (e.g., if no services/ folder, create it)
-5. NEVER put business logic in controllers - always use services layer
-6. NEVER query database in controllers - always use repositories layer
 """
 
-    return guidelines_text
+    # Fallback: Provide general guidelines based on stack category
+    stack_category = architecture_guidelines.get("stack_category", "unknown")
+
+    if stack_category == "backend":
+        return _get_backend_fallback_guidelines(
+            architecture_guidelines, project_structure
+        )
+    elif stack_category == "frontend":
+        return _get_frontend_fallback_guidelines(
+            architecture_guidelines, project_structure
+        )
+    else:
+        return _get_general_fallback_guidelines()
 
 
-def validate_express_plan_compliance(
+def _get_backend_fallback_guidelines(
+    architecture_guidelines: dict, project_structure: dict
+) -> str:
+    """Fallback guidelines for backend projects without AGENTS.md."""
+    return f"""
+### BACKEND ARCHITECTURE GUIDELINES
+
+**Project Type**: {architecture_guidelines.get("project_type", "unknown")}
+**Detected Folders**: {", ".join(project_structure.get("detected_folders", []))}
+
+**IMPORTANT**: This project does not have an AGENTS.md file. Follow these general backend principles:
+
+1. **Layered Architecture** (if applicable):
+   - Models/Entities → Repositories/DAL → Services/Business Logic → Controllers/Handlers → Routes/Endpoints
+   - Keep each layer focused on its responsibility
+   - Avoid mixing concerns between layers
+
+2. **File Organization**:
+   - Group related functionality together
+   - Use consistent naming conventions
+   - Separate configuration from business logic
+
+3. **Error Handling**:
+   - Implement proper error handling at each layer
+   - Use custom error classes for business logic errors
+   - Return appropriate HTTP status codes
+
+4. **Testing**:
+   - Write unit tests for business logic
+   - Write integration tests for API endpoints
+   - Aim for good test coverage
+
+5. **Code Quality**:
+   - Follow existing code patterns in the codebase
+   - Add proper documentation and comments
+   - Use type hints/annotations where applicable
+"""
+
+
+def _get_frontend_fallback_guidelines(
+    architecture_guidelines: dict, project_structure: dict
+) -> str:
+    """Fallback guidelines for frontend projects without AGENTS.md."""
+    return f"""
+### FRONTEND ARCHITECTURE GUIDELINES
+
+**Project Type**: {architecture_guidelines.get("project_type", "unknown")}
+**Detected Folders**: {", ".join(project_structure.get("detected_folders", []))}
+
+**IMPORTANT**: This project does not have an AGENTS.md file. Follow these general frontend principles:
+
+1. **Component Architecture**:
+   - Use functional components with hooks (React/Vue)
+   - Keep components small and focused
+   - Separate presentational and container components
+   - Use TypeScript for type safety
+
+2. **File Organization**:
+   - Components in `components/` or `src/components/`
+   - Pages/Routes in `pages/` or `src/pages/`
+   - Custom hooks in `hooks/` or `src/hooks/`
+   - Services/API calls in `services/` or `src/services/`
+   - State management in `stores/` or `src/stores/`
+
+3. **State Management**:
+   - Use appropriate state management (Context, Redux, Zustand, Pinia, etc.)
+   - Keep state close to where it's used
+   - Avoid prop drilling
+
+4. **API Integration**:
+   - Centralize API calls in service files
+   - Use proper error handling
+   - Implement loading states
+   - Consider using data fetching libraries (React Query, SWR, etc.)
+
+5. **Styling**:
+   - Follow existing styling approach (CSS Modules, Tailwind, styled-components, etc.)
+   - Keep styles modular and reusable
+   - Use consistent naming conventions
+
+6. **Testing**:
+   - Write unit tests for components
+   - Write integration tests for user flows
+   - Use testing libraries appropriate for the framework
+"""
+
+
+def _get_general_fallback_guidelines() -> str:
+    """Fallback guidelines for unknown project types."""
+    return """
+### GENERAL ARCHITECTURE GUIDELINES
+
+**IMPORTANT**: Project type could not be determined and no AGENTS.md file was found.
+
+Follow these general principles:
+- Maintain separation of concerns
+- Follow existing code patterns in the codebase
+- Ensure proper error handling
+- Add appropriate tests for new functionality
+- Use consistent naming conventions
+- Document complex logic
+- Keep functions/methods focused and small
+"""
+
+
+def validate_plan_compliance(
     implementation_plan: ImplementationPlan, architecture_guidelines: dict
 ) -> dict:
     """
-    Validate that the generated implementation plan complies with Express.js architecture guidelines.
+    Validate that the generated implementation plan is reasonable and complete.
 
     Args:
         implementation_plan: Generated implementation plan
@@ -328,82 +647,7 @@ def validate_express_plan_compliance(
         "suggestions": [],
     }
 
-    if not architecture_guidelines["is_express_project"]:
-        # Skip Express.js specific validation for non-Express projects
-        return validation_result
-
-    # Check implementation order compliance
-    expected_order = ["models", "repositories", "services", "controllers", "routes"]
-    step_categories = []
-
-    for step in implementation_plan.steps:
-        # Analyze step title and files to determine category
-        step_title_lower = step.title.lower()
-        step_desc_lower = step.description.lower()
-
-        # Determine step category based on content
-        if any(
-            keyword in step_title_lower or keyword in step_desc_lower
-            for keyword in ["model", "schema", "mongoose"]
-        ):
-            step_categories.append("models")
-        elif any(
-            keyword in step_title_lower or keyword in step_desc_lower
-            for keyword in ["repository", "data access", "database operation"]
-        ):
-            step_categories.append("repositories")
-        elif any(
-            keyword in step_title_lower or keyword in step_desc_lower
-            for keyword in ["service", "business logic"]
-        ):
-            step_categories.append("services")
-        elif any(
-            keyword in step_title_lower or keyword in step_desc_lower
-            for keyword in ["controller", "request handler"]
-        ):
-            step_categories.append("controllers")
-        elif any(
-            keyword in step_title_lower or keyword in step_desc_lower
-            for keyword in ["route", "endpoint", "api"]
-        ):
-            step_categories.append("routes")
-        else:
-            step_categories.append("other")
-
-    # Check if order follows Express.js architecture
-    last_seen_index = -1
-    for category in step_categories:
-        if category in expected_order:
-            current_index = expected_order.index(category)
-            if current_index < last_seen_index:
-                validation_result["warnings"].append(
-                    f"Implementation order violation: {category} step appears after {expected_order[last_seen_index]}. "
-                    f"Expected order: Models → Repositories → Services → Controllers → Routes"
-                )
-            last_seen_index = max(last_seen_index, current_index)
-
-    # Check file naming conventions
-    for step in implementation_plan.steps:
-        for sub_step in step.sub_steps:
-            files_affected = sub_step.get("files_affected", [])
-            for file_path in files_affected:
-                if not _validate_file_naming_convention(file_path):
-                    validation_result["warnings"].append(
-                        f"File naming convention issue: {file_path}. "
-                        f"Expected: models/PascalCase.js, repositories/camelCase.js, etc."
-                    )
-
-    # Check for missing essential layers
-    essential_layers = ["models", "services", "controllers", "routes"]
-    found_layers = set(step_categories)
-    missing_layers = [layer for layer in essential_layers if layer not in found_layers]
-
-    if missing_layers:
-        validation_result["suggestions"].append(
-            f"Consider adding steps for missing layers: {', '.join(missing_layers)}"
-        )
-
-    # Check for test coverage
+    # Basic validation: Check for test coverage
     has_tests = any(
         "test" in step.title.lower() or "test" in step.description.lower()
         for step in implementation_plan.steps
@@ -413,56 +657,29 @@ def validate_express_plan_compliance(
             "Consider adding test implementation steps for better code quality"
         )
 
-    return validation_result
-
-
-def _validate_file_naming_convention(file_path: str) -> bool:
-    """
-    Validate file naming convention based on Express.js guidelines.
-
-    Args:
-        file_path: File path to validate
-
-    Returns:
-        True if naming convention is correct
-    """
-    import re
-
-    # Extract filename and directory
-    parts = file_path.split("/")
-    if len(parts) < 2:
-        return True  # Skip validation for root files
-
-    directory = parts[-2]
-    filename = parts[-1]
-
-    # Remove file extension for validation
-    name_without_ext = (
-        filename.replace(".js", "")
-        .replace(".jsx", "")
-        .replace(".ts", "")
-        .replace(".tsx", "")
-    )
-
-    # Validation rules based on directory
-    if directory == "models":
-        # Models should be PascalCase
-        return re.match(r"^[A-Z][a-zA-Z0-9]*$", name_without_ext) is not None
-    elif directory in ["repositories", "services", "controllers"]:
-        # These should be camelCase
-        return re.match(r"^[a-z][a-zA-Z0-9]*$", name_without_ext) is not None
-    elif directory == "routes":
-        # Routes can be camelCase or kebab-case
-        return (
-            re.match(r"^[a-z][a-zA-Z0-9]*$", name_without_ext) is not None
-            or re.match(r"^[a-z][a-z0-9-]*$", name_without_ext) is not None
+    # Check if plan has reasonable number of steps
+    if len(implementation_plan.steps) == 0:
+        validation_result["errors"].append("Implementation plan has no steps")
+        validation_result["is_compliant"] = False
+    elif len(implementation_plan.steps) > 20:
+        validation_result["warnings"].append(
+            f"Implementation plan has {len(implementation_plan.steps)} steps, which might be too many. Consider consolidating."
         )
-    elif directory == "tests":
-        # Tests should be kebab-case (allow .test suffix)
-        test_name = name_without_ext.replace(".test", "").replace(".spec", "")
-        return re.match(r"^[a-z][a-z0-9-]*$", test_name) is not None
 
-    return True  # Default to valid for other directories
+    # Check if each step has description
+    for i, step in enumerate(implementation_plan.steps):
+        if not step.description or len(step.description.strip()) < 10:
+            validation_result["warnings"].append(
+                f"Step {i + 1} '{step.title}' has insufficient description"
+            )
+
+    # If AGENTS.md is available, suggest following it
+    if architecture_guidelines.get("has_agents_md"):
+        validation_result["suggestions"].append(
+            "Ensure the plan follows the architecture guidelines specified in AGENTS.md"
+        )
+
+    return validation_result
 
 
 def generate_plan(state: PlannerState) -> PlannerState:
@@ -497,17 +714,38 @@ def generate_plan(state: PlannerState) -> PlannerState:
         print(f"✏️  Files to modify: {len(codebase_analysis.files_to_modify)}")
         print(f"📦 Affected modules: {len(codebase_analysis.affected_modules)}")
 
-        # Load architecture guidelines from AGENTS.md
-        codebase_path = getattr(state, "codebase_path", "") or ""
-        architecture_guidelines = load_architecture_guidelines(codebase_path)
-        architecture_layers = detect_express_architecture_layers(codebase_path)
+        # Detect task scope (backend, frontend, or fullstack)
+        task_scope = _detect_task_scope(codebase_analysis)
+        print("\n🔍 Task Scope Detection:")
+        print(f"   Needs Backend: {task_scope['needs_backend']}")
+        print(f"   Needs Frontend: {task_scope['needs_frontend']}")
+        if task_scope["is_fullstack"]:
+            print("   ⚡ FULLSTACK task detected - will load both BE and FE guidelines")
 
-        print("🏗️ Architecture Guidelines:")
+        # Load architecture guidelines from AGENTS.md with task scope
+        codebase_path = getattr(state, "codebase_path", "") or ""
+        architecture_guidelines = load_architecture_guidelines(
+            codebase_path, task_scope
+        )
+        project_structure = detect_project_structure(
+            codebase_path, architecture_guidelines.get("stack_category", "unknown")
+        )
+
+        print("\n🏗️ Architecture Guidelines:")
         print(f"   Has AGENTS.md: {architecture_guidelines['has_agents_md']}")
-        print(f"   Is Express Project: {architecture_guidelines['is_express_project']}")
         print(f"   Project Type: {architecture_guidelines['project_type']}")
+        print(f"   Stack Category: {architecture_guidelines['stack_category']}")
+        print(f"   Is Fullstack: {architecture_guidelines['is_fullstack']}")
+        if architecture_guidelines.get("backend_guidelines"):
+            print(
+                f"   Backend Guidelines: Loaded ({len(architecture_guidelines['backend_guidelines'].get('content', ''))} chars)"
+            )
+        if architecture_guidelines.get("frontend_guidelines"):
+            print(
+                f"   Frontend Guidelines: Loaded ({len(architecture_guidelines['frontend_guidelines'].get('content', ''))} chars)"
+            )
         print(
-            f"   Existing Layers: {[k for k, v in architecture_layers.items() if v and k.startswith('has_')]}"
+            f"   Detected Folders: {', '.join(project_structure.get('detected_folders', []))}"
         )
 
         # Load detailed codebase context (existing files, functions, classes)
@@ -598,13 +836,17 @@ If a file already exists with similar functionality, MODIFY it instead of creati
 ## ARCHITECTURE GUIDELINES
 
 Project Type: {architecture_guidelines["project_type"]}
+Stack Category: {architecture_guidelines["stack_category"]}
 Has AGENTS.md: {architecture_guidelines["has_agents_md"]}
-Is Express.js Project: {architecture_guidelines["is_express_project"]}
+Is Fullstack Task: {architecture_guidelines["is_fullstack"]}
 
-Existing Architecture Layers:
-{json.dumps(architecture_layers, indent=2)}
+{"**⚡ IMPORTANT: This is a FULLSTACK task requiring both BACKEND and FRONTEND changes.**" if architecture_guidelines["is_fullstack"] else ""}
+{"**You MUST follow the architecture guidelines for BOTH backend and frontend sections below.**" if architecture_guidelines["is_fullstack"] else ""}
 
-{_get_architecture_guidelines_text(architecture_guidelines, architecture_layers)}
+Existing Project Structure:
+{json.dumps(project_structure, indent=2)}
+
+{_get_architecture_guidelines_text(architecture_guidelines, project_structure)}
 
 ## OUTPUT FORMAT
 
@@ -842,70 +1084,6 @@ Each sub-step must include a "test" field with immediate verification:
   - Modify: "Start application and verify new configuration is loaded"
   - Test: "Run test suite and verify all tests pass"
 
-## DEPENDENCY ORDERING RULES (EXPRESS.JS ARCHITECTURE)
-
-**CRITICAL: Follow Express.js Layered Architecture Implementation Order**
-
-**Express.js Backend Implementation Order (Bottom-Up):**
-1. **Models** (Database Schemas) - src/models/
-   - Define Mongoose schemas with validation
-   - Add indexes and instance/static methods
-   - Enable timestamps and virtuals
-
-2. **Repositories** (Data Access Layer) - src/repositories/
-   - Create repository classes for each model
-   - Abstract database operations (CRUD)
-   - Use .lean() for performance, handle errors
-
-3. **Services** (Business Logic) - src/services/
-   - Implement business rules and validation
-   - Orchestrate multiple repositories
-   - Handle transactions and complex operations
-
-4. **Controllers** (Request Handlers) - src/controllers/
-   - Parse request data (params, query, body)
-   - Call service layer methods
-   - Format consistent JSON responses
-
-5. **Routes** (API Endpoints) - src/routes/
-   - Define Express router with HTTP methods
-   - Map routes to controller methods
-   - Add middleware (auth, validation)
-
-6. **Validation** (Joi Schemas) - src/utils/validators.js
-   - Create validation schemas for requests
-   - Add validation middleware to routes
-
-7. **Tests** (Integration/Unit) - src/tests/
-   - Write integration tests for API endpoints
-   - Add unit tests for services and repositories
-
-8. **Registration** (app.js) - Register routes in main application
-
-**Frontend Implementation Order (if applicable):**
-1. API service layer (API client functions)
-2. Custom hooks/state management
-3. Component structure (presentational)
-4. Component logic (interactive)
-5. Form validation
-6. Integration with backend
-
-**Cross-Stack Dependencies:**
-- Models MUST be created before Repositories
-- Repositories MUST be created before Services
-- Services MUST be created before Controllers
-- Controllers MUST be created before Routes
-- Frontend components CANNOT start until their backend API dependencies are complete
-- Tests should be written after each layer is implemented
-
-**File Naming Conventions (CRITICAL):**
-- Models: PascalCase (User.js, Product.js)
-- Repositories: camelCase (userRepository.js, productRepository.js)
-- Services: camelCase (userService.js, authService.js)
-- Controllers: camelCase (userController.js, authController.js)
-- Routes: camelCase (users.js, auth.js)
-- Tests: kebab-case (user-controller.test.js)
-
 ## EXAMPLES
 
 ### Good Sub-Step (Atomic, Testable):
@@ -1066,29 +1244,29 @@ Output valid JSON following the exact format above.
             story_points=story_points,
         )
 
-        # Validate plan compliance with architecture guidelines
-        print("🔍 Validating plan compliance with architecture guidelines...")
-        validation_result = validate_express_plan_compliance(
+        # Validate plan compliance
+        print("🔍 Validating implementation plan...")
+        validation_result = validate_plan_compliance(
             implementation_plan, architecture_guidelines
         )
 
         # Log validation results
         if validation_result["warnings"]:
-            print("⚠️ Architecture compliance warnings:")
+            print("⚠️ Plan validation warnings:")
             for warning in validation_result["warnings"]:
                 print(f"   - {warning}")
 
         if validation_result["suggestions"]:
-            print("💡 Architecture suggestions:")
+            print("💡 Plan suggestions:")
             for suggestion in validation_result["suggestions"]:
                 print(f"   - {suggestion}")
 
         if validation_result["errors"]:
-            print("❌ Architecture compliance errors:")
+            print("❌ Plan validation errors:")
             for error in validation_result["errors"]:
                 print(f"   - {error}")
         else:
-            print("✅ Plan passes architecture compliance validation")
+            print("✅ Plan passes validation")
 
         # Store validation results in state
         state.tools_output["plan_validation"] = validation_result

@@ -71,6 +71,9 @@ src/
 ├── config/                # Configuration files
 ├── constants/             # Application constants
 ├── controllers/           # Request handlers (THIN - no business logic)
+├── db/
+│   ├── migrations/        # Database migration files
+│   └── seeds/             # Database seed files
 ├── dtos/                  # Data Transfer Objects
 ├── middleware/            # Express middlewares
 ├── models/                # Mongoose models (PascalCase)
