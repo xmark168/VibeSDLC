@@ -218,8 +218,8 @@ def _handle_sandbox_cleanup(state: ImplementorState) -> None:
 
     try:
         # Import Daytona utilities
-        from ...daytona.config import DaytonaConfig
-        from ...daytona.sandbox_manager import get_sandbox_manager
+        from ...daytona_integration.config import DaytonaConfig
+        from ...daytona_integration.sandbox_manager import get_sandbox_manager
 
         # Get Daytona config
         daytona_config = DaytonaConfig.from_env()

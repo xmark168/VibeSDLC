@@ -134,7 +134,7 @@ def create_feature_branch_tool(
         create_feature_branch_tool("feature/task-2", "main", ".", "feature/task-1")
     """
     # REFACTORED: Use adapter pattern for local/Daytona mode switching
-    from ...daytona.adapters import get_git_adapter
+    from ...daytona_integration.adapters import get_git_adapter
 
     adapter = get_git_adapter()
     result = adapter.create_branch(
@@ -165,7 +165,7 @@ def commit_changes_tool(
         commit_changes_tool("Add user authentication endpoints", ["auth.py", "routes.py"])
     """
     # REFACTORED: Use adapter pattern for local/Daytona mode switching
-    from ...daytona.adapters import get_git_adapter
+    from ...daytona_integration.adapters import get_git_adapter
 
     adapter = get_git_adapter()
     result = adapter.commit(message, files, working_directory)

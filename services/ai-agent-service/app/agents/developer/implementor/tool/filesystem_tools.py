@@ -44,7 +44,7 @@ def read_file_tool(
         read_file_tool("app/main.py", start_line=10, end_line=20)
     """
     # REFACTORED: Use adapter pattern for local/Daytona mode switching
-    from ...daytona.adapters import get_filesystem_adapter
+    from ...daytona_integration.adapters import get_filesystem_adapter
 
     adapter = get_filesystem_adapter()
     return adapter.read_file(file_path, start_line, end_line, working_directory)
@@ -73,7 +73,7 @@ def list_files_tool(
         list_files_tool("app", pattern="*.py", recursive=True)
     """
     # REFACTORED: Use adapter pattern for local/Daytona mode switching
-    from ...daytona.adapters import get_filesystem_adapter
+    from ...daytona_integration.adapters import get_filesystem_adapter
 
     adapter = get_filesystem_adapter()
     return adapter.list_files(directory, pattern, recursive, working_directory)
@@ -104,7 +104,7 @@ def write_file_tool(
         write_file_tool("app/routes/profile.py", "from fastapi import APIRouter\\n...")
     """
     # REFACTORED: Use adapter pattern for local/Daytona mode switching
-    from ...daytona.adapters import get_filesystem_adapter
+    from ...daytona_integration.adapters import get_filesystem_adapter
 
     adapter = get_filesystem_adapter()
     return adapter.write_file(file_path, content, working_directory, create_dirs)
@@ -310,7 +310,7 @@ def create_directory_tool(
         create_directory_tool("app/routes/v1")
     """
     # REFACTORED: Use adapter pattern for local/Daytona mode switching
-    from ...daytona.adapters import get_filesystem_adapter
+    from ...daytona_integration.adapters import get_filesystem_adapter
 
     adapter = get_filesystem_adapter()
     # Note: adapter.create_directory returns JSON, but this tool returns plain text

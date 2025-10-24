@@ -193,9 +193,9 @@ def _initialize_daytona_sandbox(state: ImplementorState, working_dir: str) -> st
     """
     try:
         # Import Daytona utilities
-        from ...daytona.adapters import get_git_adapter
-        from ...daytona.config import DaytonaConfig
-        from ...daytona.sandbox_manager import get_sandbox_manager
+        from ...daytona_integration.adapters import get_git_adapter
+        from ...daytona_integration.config import DaytonaConfig
+        from ...daytona_integration.sandbox_manager import get_sandbox_manager
 
         # Detect Daytona mode
         daytona_config = DaytonaConfig.from_env()

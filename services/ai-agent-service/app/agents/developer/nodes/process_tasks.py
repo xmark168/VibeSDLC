@@ -42,6 +42,7 @@ def _invoke_planner_agent(
             codebase_context="",
             codebase_path=state.working_directory,
             thread_id=f"{state.session_id}_planner_{task['id']}",
+            github_repo_url="https://github.com/trong03/boilerplate-vibe-sdlc.git",
         )
 
         print(f"✅ Planning complete for {task['id']}")
