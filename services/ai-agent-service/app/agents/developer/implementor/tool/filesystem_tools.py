@@ -4,6 +4,8 @@ Direct Filesystem Tools (OpenSWE-style)
 
 These tools interact directly with the real filesystem, replacing DeepAgents' Virtual FS.
 Based on OpenSWE's text-editor, view, grep, and shell tools.
+
+REFACTORED: Now uses Adapter Pattern to support both local and Daytona sandbox modes.
 """
 
 import json
@@ -11,6 +13,8 @@ import subprocess
 from pathlib import Path
 
 from langchain_core.tools import tool
+
+# Import filesystem adapter for local/Daytona mode switching
 
 # ============================================================================
 # FILE READING TOOLS
@@ -39,47 +43,11 @@ def read_file_tool(
     Example:
         read_file_tool("app/main.py", start_line=10, end_line=20)
     """
-    try:
-        # Resolve full path
-        full_path = Path(working_directory) / file_path
+    # REFACTORED: Use adapter pattern for local/Daytona mode switching
+    from ...daytona.adapters import get_filesystem_adapter
 
-        # Security check: prevent path traversal
-        full_path = full_path.resolve()
-        working_dir_resolved = Path(working_directory).resolve()
-        if not str(full_path).startswith(str(working_dir_resolved)):
-            return "Error: Access denied - path outside working directory"
-
-        # Check file exists
-        if not full_path.exists():
-            return f"Error: File '{file_path}' does not exist"
-
-        if not full_path.is_file():
-            return f"Error: '{file_path}' is not a file"
-
-        # Read file
-        with open(full_path, encoding="utf-8", errors="ignore") as f:
-            lines = f.readlines()
-
-        # Apply line range
-        if start_line is not None or end_line is not None:
-            start = (start_line - 1) if start_line else 0
-            end = end_line if end_line else len(lines)
-            lines = lines[start:end]
-            line_offset = start + 1
-        else:
-            line_offset = 1
-
-        # Format with line numbers (cat -n format)
-        formatted_lines = [
-            f"{i + line_offset:6d}\t{line.rstrip()}" for i, line in enumerate(lines)
-        ]
-
-        return "\n".join(formatted_lines)
-
-    except PermissionError:
-        return f"Error: Permission denied reading '{file_path}'"
-    except Exception as e:
-        return f"Error reading file: {str(e)}"
+    adapter = get_filesystem_adapter()
+    return adapter.read_file(file_path, start_line, end_line, working_directory)
 
 
 @tool
@@ -104,42 +72,11 @@ def list_files_tool(
     Example:
         list_files_tool("app", pattern="*.py", recursive=True)
     """
-    try:
-        # Resolve full path
-        full_path = Path(working_directory) / directory
-        full_path = full_path.resolve()
+    # REFACTORED: Use adapter pattern for local/Daytona mode switching
+    from ...daytona.adapters import get_filesystem_adapter
 
-        # Security check
-        working_dir_resolved = Path(working_directory).resolve()
-        if not str(full_path).startswith(str(working_dir_resolved)):
-            return "Error: Access denied - path outside working directory"
-
-        # Check directory exists
-        if not full_path.exists():
-            return f"Error: Directory '{directory}' does not exist"
-
-        if not full_path.is_dir():
-            return f"Error: '{directory}' is not a directory"
-
-        # List files
-        if recursive:
-            files = list(full_path.rglob(pattern))
-        else:
-            files = list(full_path.glob(pattern))
-
-        # Filter only files (not directories)
-        files = [f for f in files if f.is_file()]
-
-        # Make paths relative to working_directory
-        relative_files = [str(f.relative_to(working_dir_resolved)) for f in files]
-
-        if not relative_files:
-            return f"No files found matching pattern '{pattern}' in '{directory}'"
-
-        return "\n".join(sorted(relative_files))
-
-    except Exception as e:
-        return f"Error listing files: {str(e)}"
+    adapter = get_filesystem_adapter()
+    return adapter.list_files(directory, pattern, recursive, working_directory)
 
 
 # ============================================================================
@@ -166,49 +103,11 @@ def write_file_tool(
     Example:
         write_file_tool("app/routes/profile.py", "from fastapi import APIRouter\\n...")
     """
-    try:
-        # Resolve full path
-        full_path = Path(working_directory) / file_path
-        full_path = full_path.resolve()
+    # REFACTORED: Use adapter pattern for local/Daytona mode switching
+    from ...daytona.adapters import get_filesystem_adapter
 
-        # Security check
-        working_dir_resolved = Path(working_directory).resolve()
-        if not str(full_path).startswith(str(working_dir_resolved)):
-            return json.dumps(
-                {
-                    "status": "error",
-                    "message": "Access denied - path outside working directory",
-                }
-            )
-
-        # Create parent directories if needed
-        if create_dirs:
-            full_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Write file
-        full_path.write_text(content, encoding="utf-8")
-
-        lines_count = content.count("\n") + 1
-        bytes_count = len(content.encode("utf-8"))
-
-        return json.dumps(
-            {
-                "status": "success",
-                "message": f"Successfully wrote {lines_count} lines ({bytes_count} bytes) to '{file_path}'",
-            }
-        )
-
-    except PermissionError:
-        return json.dumps(
-            {
-                "status": "error",
-                "message": f"Permission denied writing to '{file_path}'",
-            }
-        )
-    except Exception as e:
-        return json.dumps(
-            {"status": "error", "message": f"Error writing file: {str(e)}"}
-        )
+    adapter = get_filesystem_adapter()
+    return adapter.write_file(file_path, content, working_directory, create_dirs)
 
 
 @tool
@@ -410,20 +309,24 @@ def create_directory_tool(
     Example:
         create_directory_tool("app/routes/v1")
     """
+    # REFACTORED: Use adapter pattern for local/Daytona mode switching
+    from ...daytona.adapters import get_filesystem_adapter
+
+    adapter = get_filesystem_adapter()
+    # Note: adapter.create_directory returns JSON, but this tool returns plain text
+    # So we need to parse and format the response
+    result = adapter.create_directory(directory_path, working_directory, mode="755")
+
+    # Parse JSON result and return plain text for backward compatibility
     try:
-        full_path = Path(working_directory) / directory_path
-        full_path = full_path.resolve()
-
-        # Security check
-        working_dir_resolved = Path(working_directory).resolve()
-        if not str(full_path).startswith(str(working_dir_resolved)):
-            return "Error: Access denied - path outside working directory"
-
-        full_path.mkdir(parents=parents, exist_ok=True)
-        return f"Successfully created directory: {directory_path}"
-
-    except Exception as e:
-        return f"Error creating directory: {str(e)}"
+        result_dict = json.loads(result)
+        if result_dict.get("status") == "success":
+            return f"Successfully created directory: {directory_path}"
+        else:
+            return f"Error creating directory: {result_dict.get('message', 'Unknown error')}"
+    except:
+        # If result is already plain text, return as is
+        return result
 
 
 @tool

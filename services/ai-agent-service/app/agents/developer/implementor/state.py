@@ -107,7 +107,9 @@ class ImplementorState(BaseModel):
 
     # Sandbox và codebase info
     sandbox_id: str = ""
-    codebase_path: str = ""
+    sandbox_mode: bool = False  # True if using Daytona sandbox
+    codebase_path: str = ""  # Current working directory (local or sandbox)
+    original_codebase_path: str = ""  # Backup of local path for fallback
     github_repo_url: str = ""
 
     # Tech stack

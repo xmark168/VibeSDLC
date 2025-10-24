@@ -2,6 +2,8 @@
 Setup Branch Node
 
 Tạo feature branch cho implementation sử dụng Git tools.
+
+REFACTORED: Now supports Daytona sandbox mode with automatic sandbox creation and repository cloning.
 """
 
 import json
@@ -16,6 +18,10 @@ from ..utils.validators import validate_git_operations
 def setup_branch(state: ImplementorState) -> ImplementorState:
     """
     Tạo feature branch cho implementation.
+
+    Supports both local mode and Daytona sandbox mode:
+    - Local mode: Creates branch in local repository
+    - Daytona mode: Creates sandbox, clones repository, then creates branch
 
     Args:
         state: ImplementorState với feature branch name
@@ -53,6 +59,9 @@ def setup_branch(state: ImplementorState) -> ImplementorState:
 
         # Determine working directory
         working_dir = state.codebase_path or "."
+
+        # Initialize Daytona sandbox if enabled
+        working_dir = _initialize_daytona_sandbox(state, working_dir)
 
         # Determine source branch for sequential branching
         source_branch = getattr(state, "source_branch", None)
@@ -162,3 +171,148 @@ def setup_branch(state: ImplementorState) -> ImplementorState:
 
         print(f"❌ Branch setup failed: {e}")
         return state
+
+
+def _initialize_daytona_sandbox(state: ImplementorState, working_dir: str) -> str:
+    """
+    Initialize Daytona sandbox if enabled.
+
+    This function:
+    1. Detects Daytona mode from environment variables
+    2. Creates sandbox if not already active
+    3. Extracts repository URL from local .git/config
+    4. Clones repository to sandbox workspace
+    5. Updates state with sandbox information
+
+    Args:
+        state: ImplementorState to update with sandbox info
+        working_dir: Current working directory (local path)
+
+    Returns:
+        Updated working directory (sandbox path if Daytona mode, otherwise original)
+    """
+    try:
+        # Import Daytona utilities
+        from ...daytona.adapters import get_git_adapter
+        from ...daytona.config import DaytonaConfig
+        from ...daytona.sandbox_manager import get_sandbox_manager
+
+        # Detect Daytona mode
+        daytona_config = DaytonaConfig.from_env()
+
+        if not daytona_config or not daytona_config.enabled:
+            # Local mode: keep current behavior
+            print("📍 Local mode: Using local filesystem")
+            state.sandbox_mode = False
+            state.original_codebase_path = working_dir
+            return working_dir
+
+        print("🚀 Daytona mode enabled: Initializing sandbox...")
+
+        # Get sandbox manager
+        sandbox_manager = get_sandbox_manager(daytona_config)
+
+        # Create or get existing sandbox
+        if not sandbox_manager.is_sandbox_active():
+            print("📦 Creating new Daytona sandbox...")
+            sandbox_info = sandbox_manager.create_sandbox()
+            print(f"✅ Sandbox created: {sandbox_info['sandbox_id']}")
+
+            # Update state with sandbox info
+            state.sandbox_id = sandbox_info["sandbox_id"]
+        else:
+            print(f"♻️  Reusing existing sandbox: {sandbox_manager.sandbox_id}")
+            state.sandbox_id = sandbox_manager.sandbox_id
+
+        # Extract repository URL from local git config
+        repo_url = _extract_repo_url(working_dir)
+        if not repo_url:
+            print("⚠️ Could not extract repository URL from local .git/config")
+            print("🔄 Falling back to local mode")
+            state.sandbox_mode = False
+            state.original_codebase_path = working_dir
+            return working_dir
+
+        print(f"📡 Repository URL: {repo_url}")
+
+        # Get sandbox workspace path
+        sandbox_path = sandbox_manager.get_workspace_path("repo")
+        print(f"📂 Sandbox workspace: {sandbox_path}")
+
+        # Clone repository to sandbox
+        print("🔄 Cloning repository to sandbox...")
+        git_adapter = get_git_adapter()
+
+        try:
+            clone_result = git_adapter.clone(repo_url, sandbox_path)
+            print("✅ Repository cloned successfully")
+
+            # Update state
+            state.sandbox_mode = True
+            state.original_codebase_path = working_dir
+            state.codebase_path = sandbox_path
+            state.github_repo_url = repo_url
+
+            print("✅ Daytona sandbox initialized successfully")
+            print(f"   Sandbox ID: {state.sandbox_id}")
+            print(f"   Workspace: {sandbox_path}")
+
+            return sandbox_path
+
+        except Exception as clone_error:
+            print(f"❌ Failed to clone repository to sandbox: {clone_error}")
+            print("🔄 Falling back to local mode")
+
+            # Cleanup sandbox on clone failure
+            try:
+                sandbox_manager.cleanup_sandbox()
+                print("🧹 Cleaned up failed sandbox")
+            except:
+                pass
+
+            state.sandbox_mode = False
+            state.sandbox_id = ""
+            state.original_codebase_path = working_dir
+            return working_dir
+
+    except Exception as e:
+        print(f"⚠️ Daytona sandbox initialization failed: {e}")
+        print("🔄 Falling back to local mode")
+
+        # Ensure state is set to local mode
+        state.sandbox_mode = False
+        state.sandbox_id = ""
+        state.original_codebase_path = working_dir
+
+        return working_dir
+
+
+def _extract_repo_url(working_dir: str) -> str | None:
+    """
+    Extract repository URL from local .git/config using GitPython.
+
+    Args:
+        working_dir: Local repository directory
+
+    Returns:
+        Repository URL or None if not found
+    """
+    try:
+        from git import Repo
+
+        repo = Repo(working_dir)
+
+        # Try to get origin remote URL
+        if "origin" in repo.remotes:
+            origin = repo.remote("origin")
+            return origin.url
+
+        # If no origin, try first available remote
+        if repo.remotes:
+            return repo.remotes[0].url
+
+        return None
+
+    except Exception as e:
+        print(f"⚠️ Failed to extract repository URL: {e}")
+        return None

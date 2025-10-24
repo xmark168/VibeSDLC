@@ -170,27 +170,23 @@ def _handle_sandbox_cleanup(state: ImplementorState) -> None:
     """
     Handle Daytona sandbox cleanup after workflow completion.
 
+    REFACTORED: Now uses SandboxManager from daytona module instead of daytona_client.
+
     Args:
         state: ImplementorState với sandbox information
     """
     # Import here to avoid circular imports
     from ..state import SandboxDeletion
-    from ..utils.daytona_client import delete_sandbox_sync, should_delete_sandbox
 
     print("🧹 Checking for Daytona sandbox cleanup...")
 
-    # Check if we should delete the sandbox
-    if not should_delete_sandbox(state.status, state.sandbox_id):
-        skip_reason = ""
-        if not state.sandbox_id:
-            skip_reason = "No sandbox ID provided"
-        elif state.status not in ["completed", "pr_ready", "finalized"]:
-            skip_reason = (
-                f"Workflow not completed successfully (status: {state.status})"
-            )
-        else:
-            skip_reason = "Unknown reason"
-
+    # Check if sandbox mode is enabled and sandbox ID exists
+    if not state.sandbox_mode or not state.sandbox_id:
+        skip_reason = (
+            "Not using Daytona sandbox mode"
+            if not state.sandbox_mode
+            else "No sandbox ID provided"
+        )
         print(f"⏭️  Skipping sandbox deletion: {skip_reason}")
 
         # Record skipped deletion
@@ -203,31 +199,57 @@ def _handle_sandbox_cleanup(state: ImplementorState) -> None:
         )
         return
 
+    # Check if workflow completed successfully
+    if state.status not in ["completed", "pr_ready", "finalized"]:
+        skip_reason = f"Workflow not completed successfully (status: {state.status})"
+        print(f"⏭️  Skipping sandbox deletion: {skip_reason}")
+
+        # Record skipped deletion
+        state.sandbox_deletion = SandboxDeletion(
+            sandbox_id=state.sandbox_id,
+            success=False,
+            message=f"Sandbox deletion skipped: {skip_reason}",
+            skipped=True,
+            skip_reason=skip_reason,
+        )
+        return
+
     print(f"🗑️  Deleting Daytona sandbox: {state.sandbox_id}")
 
     try:
-        # Attempt to delete the sandbox
-        deletion_result = delete_sandbox_sync(state.sandbox_id, max_retries=2)
+        # Import Daytona utilities
+        from ...daytona.config import DaytonaConfig
+        from ...daytona.sandbox_manager import get_sandbox_manager
+
+        # Get Daytona config
+        daytona_config = DaytonaConfig.from_env()
+
+        if not daytona_config:
+            raise Exception("Daytona configuration not found")
+
+        # Get sandbox manager
+        sandbox_manager = get_sandbox_manager(daytona_config)
+
+        # Cleanup sandbox
+        cleanup_result = sandbox_manager.cleanup_sandbox()
 
         # Create SandboxDeletion object from result
         state.sandbox_deletion = SandboxDeletion(
-            sandbox_id=deletion_result["sandbox_id"],
-            success=deletion_result["success"],
-            message=deletion_result["message"],
-            retries_used=deletion_result["retries_used"],
-            error=deletion_result.get("error", ""),
+            sandbox_id=state.sandbox_id,
+            success=cleanup_result.get("status") == "deleted",
+            message="Sandbox deleted successfully"
+            if cleanup_result.get("status") == "deleted"
+            else f"Sandbox cleanup status: {cleanup_result.get('status')}",
+            retries_used=0,
+            error="",
             skipped=False,
             skip_reason="",
         )
 
-        if deletion_result["success"]:
-            print(f"✅ Sandbox deleted successfully: {deletion_result['message']}")
-            if deletion_result["retries_used"] > 0:
-                print(f"   (Required {deletion_result['retries_used']} retries)")
+        if cleanup_result.get("status") == "deleted":
+            print(f"✅ Sandbox deleted successfully: {state.sandbox_id}")
         else:
-            print(f"⚠️  Sandbox deletion failed: {deletion_result['message']}")
-            print(f"   Error: {deletion_result.get('error', 'Unknown error')}")
-            print(f"   Retries used: {deletion_result['retries_used']}")
+            print(f"⚠️  Sandbox cleanup status: {cleanup_result.get('status')}")
 
     except Exception as e:
         error_msg = f"Exception during sandbox cleanup: {str(e)}"
@@ -235,7 +257,7 @@ def _handle_sandbox_cleanup(state: ImplementorState) -> None:
 
         # Record failed deletion
         state.sandbox_deletion = SandboxDeletion(
-            sandbox_id=state.sandbox_id or "",
+            sandbox_id=state.sandbox_id,
             success=False,
             message=error_msg,
             retries_used=0,
