@@ -59,6 +59,8 @@ CRITICAL .ENV FILE REQUIREMENTS:
 - NEVER generate empty .env files - always include comprehensive variable sets
 - Use the format: VARIABLE_NAME=default_value_or_placeholder
 
+<critical_rules>
+<api_contract>
 🔗 API CONTRACT CONSISTENCY (CRITICAL - HIGHEST PRIORITY):
 
 1. DEPENDENCY COORDINATION:
@@ -91,7 +93,185 @@ CRITICAL .ENV FILE REQUIREMENTS:
    - Before calling a method, verify it exists in dependency file
    - Before using a return value property, verify it exists in dependency return type
    - If dependency file shows method signature, match it exactly
+</api_contract>
+</critical_rules>
 
+<examples>
+📚 EXAMPLE: Correct Dependency Usage
+
+Given dependency file `authService.js`:
+```javascript
+class AuthService {{
+  async registerUser(userData) {{
+    const {{ email, password }} = userData;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newUser = await userRepository.create({{ ...userData, password: hashedPassword }});
+    return newUser;
+  }}
+
+  async loginUser(email, password) {{
+    const user = await userRepository.findByEmail(email);
+    if (!user) {{
+      throw new Error('Invalid email or password');
+    }}
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {{
+      throw new Error('Invalid email or password');
+    }}
+    const token = jwt.sign({{ userId: user.id }}, 'secret', {{ expiresIn: '1h' }});
+    return {{ user, token }}; // Returns object with user and token
+  }}
+}}
+module.exports = new AuthService();
+```
+
+✅ CORRECT Controller implementation:
+```javascript
+const authService = require('../services/authService');
+
+class AuthController {{
+  async registerUser(req, res) {{
+    try {{
+      const {{ email, password }} = req.body;
+      // ✅ CORRECT: Calling exact method name from authService
+      const newUser = await authService.registerUser({{ email, password }});
+      return res.status(201).json({{ user: newUser }});
+    }} catch (error) {{
+      return res.status(500).json({{ message: error.message }});
+    }}
+  }}
+
+  async loginUser(req, res) {{
+    try {{
+      const {{ email, password }} = req.body;
+      // ✅ CORRECT: Using exact method name 'loginUser' from authService
+      // ✅ CORRECT: Destructuring return value {{user, token}} as shown in authService
+      const {{ user, token }} = await authService.loginUser(email, password);
+      return res.status(200).json({{ user, token }});
+    }} catch (error) {{
+      return res.status(401).json({{ message: error.message }});
+    }}
+  }}
+}}
+module.exports = new AuthController();
+```
+
+❌ WRONG Controller implementation - Common Mistakes:
+```javascript
+const authService = require('../services/authService');
+
+class AuthController {{
+  async loginUser(req, res) {{
+    try {{
+      const {{ email, password }} = req.body;
+
+      // ❌ WRONG: Using non-existent method 'validateUser' instead of 'loginUser'
+      const user = await authService.validateUser({{ email, password }});
+
+      // ❌ WRONG: Not destructuring return value - authService.loginUser returns {{user, token}}
+      // ❌ WRONG: Generating token in controller when service already returns it
+      const token = jwt.sign({{ id: user.id }}, config.jwtSecret, {{ expiresIn: '1h' }});
+
+      return res.status(200).json({{ token }});
+    }} catch (error) {{
+      return res.status(500).json({{ message: error.message }});
+    }}
+  }}
+}}
+```
+
+🔑 KEY TAKEAWAYS:
+- ALWAYS check dependency files for exact method names (loginUser, NOT validateUser)
+- ALWAYS match return types (if service returns {{user, token}}, destructure both)
+- NEVER assume method names - verify from dependency code first
+- NEVER duplicate logic that dependency already handles (e.g., token generation)
+</examples>
+
+<routes_specific_guidance>
+🛣️ ROUTES FILE SPECIAL RULES (CRITICAL - READ CAREFULLY):
+
+When working with routes files (e.g., auth.js, user.js, product.js, api.py):
+
+1. MULTIPLE CONTROLLERS/HANDLERS:
+   - Routes files often import and use MULTIPLE controllers or handlers
+   - Do NOT assume all routes in one file use the same controller
+   - Check the task description AND dependency files for which controller handles each route
+   - Example: auth.js might use BOTH authController AND tokenController
+
+2. CONTROLLER/HANDLER SELECTION:
+   - Match route handler to the correct controller based on functionality
+   - /register, /login → authController
+   - /refresh, /validate-token → tokenController
+   - /profile, /update-profile → userController
+   - Check DEPENDENCY FILES to see which controller has which method
+
+3. IMPORT REQUIREMENTS:
+   - Import ALL controllers/handlers mentioned in the task description
+   - If task mentions "tokenController.refreshToken", you MUST import tokenController
+   - If DEPENDENCY FILES show tokenController.js exists, consider if you need it
+   - Do NOT assume methods exist in already-imported controllers
+
+4. COMMON MISTAKES TO AVOID:
+   ❌ WRONG: Assuming all auth routes use authController
+   ❌ WRONG: Using authController.refreshToken when method is in tokenController
+   ❌ WRONG: Not importing a controller that has the method you need
+   ❌ WRONG: Ignoring DEPENDENCY FILES that show available controllers
+
+   ✅ CORRECT: Import tokenController when you need tokenController.refreshToken
+   ✅ CORRECT: Check DEPENDENCY FILES for exact controller names and methods
+   ✅ CORRECT: Import multiple controllers if routes need multiple handlers
+   ✅ CORRECT: Match each route to the controller that has the handler method
+
+5. VERIFICATION CHECKLIST FOR ROUTES FILES:
+   Before generating routes code, verify:
+   - [ ] Did I check DEPENDENCY FILES for all available controllers?
+   - [ ] Did I identify which controller has each method I need?
+   - [ ] Did I import ALL controllers that have methods I'm using?
+   - [ ] Did I use the EXACT controller name from dependency files?
+   - [ ] Did I verify each route handler matches the correct controller?
+
+EXAMPLE: Routes File with Multiple Controllers
+
+Task: "Add refresh route to auth.js"
+
+DEPENDENCY FILES show:
+- src/controllers/authController.js (has: registerUser, loginUser)
+- src/controllers/tokenController.js (has: refreshToken, validateRefreshToken)
+
+✅ CORRECT Implementation:
+```javascript
+const express = require('express');
+const authController = require('../controllers/authController');
+const tokenController = require('../controllers/tokenController');  // ← Import BOTH
+
+const router = express.Router();
+
+router.post('/register', authController.registerUser);
+router.post('/login', authController.loginUser);
+router.post('/refresh', tokenController.refreshToken);  // ← Use tokenController (has the method)
+
+module.exports = router;
+```
+
+❌ WRONG Implementation:
+```javascript
+const express = require('express');
+const authController = require('../controllers/authController');  // ← Only one import
+
+const router = express.Router();
+
+router.post('/register', authController.registerUser);
+router.post('/login', authController.loginUser);
+router.post('/refresh', authController.refreshToken);  // ← WRONG! Method doesn't exist in authController
+
+module.exports = router;
+```
+
+🎯 KEY INSIGHT: Routes files are INTEGRATION points that wire together multiple controllers.
+Always check DEPENDENCY FILES to see which controller has which method, then import accordingly.
+</routes_specific_guidance>
+
+<best_practices>
 BACKEND BEST PRACTICES:
 
 1. API DESIGN PATTERNS:
@@ -145,7 +325,9 @@ BACKEND BEST PRACTICES:
    - Optimize database queries and use pagination
    - Implement background job processing
    - Consider microservices patterns for scalability
+</best_practices>
 
+<output_format>
 IMPORTANT OUTPUT FORMAT:
 - Return ONLY the complete file content
 - Do NOT include any explanations, descriptions, or markdown formatting
@@ -154,6 +336,7 @@ IMPORTANT OUTPUT FORMAT:
 - Start directly with the code (imports, class definitions, etc.)
 
 Generate the complete backend file content that meets these requirements.
+</output_format>
 """
 
 # Frontend File Creation Prompt
@@ -172,6 +355,7 @@ FILE SPECIFICATIONS:
 TECH STACK: {tech_stack}
 PROJECT TYPE: {project_type}
 
+<critical_rules>
 CRITICAL LANGUAGE REQUIREMENTS:
 - For tech_stack "react-vite": Generate JavaScript/TypeScript code ONLY
 - For tech_stack "nextjs": Generate JavaScript/TypeScript code ONLY
@@ -179,7 +363,9 @@ CRITICAL LANGUAGE REQUIREMENTS:
 - For tech_stack "angular": Generate TypeScript code ONLY
 - Match the file extension: .js = JavaScript, .ts = TypeScript, .jsx = React JSX, .tsx = React TSX
 - NEVER generate Python code for frontend files - use only JavaScript/TypeScript
+</critical_rules>
 
+<best_practices>
 FRONTEND BEST PRACTICES:
 
 1. COMPONENT ARCHITECTURE:
@@ -233,7 +419,9 @@ FRONTEND BEST PRACTICES:
    - Implement PWA features when appropriate
    - Use proper routing and navigation patterns
    - Handle offline scenarios and network errors
+</best_practices>
 
+<output_format>
 IMPORTANT OUTPUT FORMAT:
 - Return ONLY the complete file content
 - Do NOT include any explanations, descriptions, or markdown formatting
@@ -242,6 +430,7 @@ IMPORTANT OUTPUT FORMAT:
 - Start directly with the code (imports, component definitions, etc.)
 
 Generate the complete frontend file content that meets these requirements.
+</output_format>
 """
 
 # Generic File Creation Prompt (Fallback)
@@ -260,6 +449,7 @@ FILE SPECIFICATIONS:
 TECH STACK: {tech_stack}
 PROJECT TYPE: {project_type}
 
+<critical_rules>
 CRITICAL LANGUAGE REQUIREMENTS:
 - ALWAYS match the programming language to the file extension and tech stack
 - .js files = JavaScript code ONLY (for Node.js, Express, React, etc.)
@@ -268,7 +458,9 @@ CRITICAL LANGUAGE REQUIREMENTS:
 - .jsx/.tsx files = React JSX/TSX code ONLY
 - NEVER mix languages - if file is .js, generate JavaScript, NOT Python
 - Use syntax and patterns appropriate for the detected tech stack
+</critical_rules>
 
+<best_practices>
 Guidelines:
 1. QUALITY STANDARDS:
    - Write clean, readable, and maintainable code
@@ -297,7 +489,9 @@ Guidelines:
    - Write efficient algorithms and data structures
    - Consider scalability implications
    - Optimize for readability first, performance second
+</best_practices>
 
+<output_format>
 IMPORTANT OUTPUT FORMAT:
 - Return ONLY the complete file content
 - Do NOT include any explanations, descriptions, or markdown formatting
@@ -306,6 +500,7 @@ IMPORTANT OUTPUT FORMAT:
 - Start directly with the code (imports, class definitions, etc.)
 
 Generate the complete file content that meets these requirements.
+</output_format>
 """
 
 # Backend File Modification Prompt - FULL FILE REGENERATION
@@ -397,6 +592,72 @@ module.exports = router;
 - ERROR HANDLING: Keep existing error handling and logging patterns
 </backend_specific_guidelines>
 
+<routes_specific_guidance>
+🛣️ ROUTES FILE MODIFICATION RULES (CRITICAL):
+
+If you are modifying a routes file (e.g., auth.js, user.js, api.py):
+
+1. MULTIPLE CONTROLLERS:
+   - Routes files often use MULTIPLE controllers
+   - When adding a new route, check which controller has the handler method
+   - Do NOT assume the new route uses an already-imported controller
+   - Check DEPENDENCY FILES to see all available controllers
+
+2. IMPORT NEW CONTROLLERS:
+   - If adding a route that needs a new controller, ADD the import
+   - Example: Adding /refresh route that needs tokenController → import tokenController
+   - Keep existing imports AND add new ones
+
+3. VERIFICATION:
+   - [ ] Did I check DEPENDENCY FILES for which controller has the method?
+   - [ ] Did I add import for any new controller I'm using?
+   - [ ] Did I preserve all existing imports and routes?
+
+EXAMPLE: Adding refresh route to auth.js
+
+CURRENT FILE shows:
+```javascript
+const authController = require('../controllers/authController');
+router.post('/register', authController.registerUser);
+router.post('/login', authController.loginUser);
+```
+
+DEPENDENCY FILES show:
+- authController.js (has: registerUser, loginUser)
+- tokenController.js (has: refreshToken)
+
+Task: "Add /refresh route"
+
+✅ CORRECT Output:
+```javascript
+const express = require('express');
+const authController = require('../controllers/authController');
+const tokenController = require('../controllers/tokenController');  // ← ADD new import
+
+const router = express.Router();
+
+router.post('/register', authController.registerUser);  // ← PRESERVE
+router.post('/login', authController.loginUser);        // ← PRESERVE
+router.post('/refresh', tokenController.refreshToken);  // ← NEW route with correct controller
+
+module.exports = router;
+```
+
+❌ WRONG Output:
+```javascript
+const express = require('express');
+const authController = require('../controllers/authController');  // ← Missing tokenController import
+
+const router = express.Router();
+
+router.post('/register', authController.registerUser);
+router.post('/login', authController.loginUser);
+router.post('/refresh', authController.refreshToken);  // ← WRONG! Method not in authController
+
+module.exports = router;
+```
+</routes_specific_guidance>
+
 <output_format>
 IMPORTANT: Return the COMPLETE file content with your modifications.
 
@@ -428,48 +689,96 @@ If you answer NO to any question, revise your output.
 </verification_checklist>
 
 <backend_examples>
-<example_add_route>
-Task: "Add error handling to the user creation endpoint"
+<example_dependency_usage>
+📚 EXAMPLE: Correct Dependency Usage
 
-CURRENT FILE:
-```python
-from fastapi import FastAPI, HTTPException
-from models import User, UserCreate
+Given dependency file `authService.js`:
+```javascript
+class AuthService {{
+  async registerUser(userData) {{
+    const {{ email, password }} = userData;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newUser = await userRepository.create({{ ...userData, password: hashedPassword }});
+    return newUser;
+  }}
 
-app = FastAPI()
-
-@app.post("/users")
-def create_user(user_data: UserCreate):
-    user = User(**user_data.dict())
-    db.add(user)
-    db.commit()
-    return user
+  async loginUser(email, password) {{
+    const user = await userRepository.findByEmail(email);
+    if (!user) {{
+      throw new Error('Invalid email or password');
+    }}
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {{
+      throw new Error('Invalid email or password');
+    }}
+    const token = jwt.sign({{ userId: user.id }}, 'secret', {{ expiresIn: '1h' }});
+    return {{ user, token }}; // Returns object with user and token
+  }}
+}}
+module.exports = new AuthService();
 ```
 
-YOUR OUTPUT (complete file with error handling added):
-```python
-from fastapi import FastAPI, HTTPException
-from sqlalchemy.exc import IntegrityError
-from models import User, UserCreate
+✅ CORRECT Controller implementation:
+```javascript
+const authService = require('../services/authService');
 
-app = FastAPI()
+class AuthController {{
+  async registerUser(req, res) {{
+    try {{
+      const {{ email, password }} = req.body;
+      // ✅ CORRECT: Calling exact method name from authService
+      const newUser = await authService.registerUser({{ email, password }});
+      return res.status(201).json({{ user: newUser }});
+    }} catch (error) {{
+      return res.status(500).json({{ message: error.message }});
+    }}
+  }}
 
-@app.post("/users")
-def create_user(user_data: UserCreate):
-    try:
-        user = User(**user_data.dict())
-        db.add(user)
-        db.commit()
-        return user
-    except IntegrityError as e:
-        db.rollback()
-        raise HTTPException(status_code=400, detail="User already exists")
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error")
+  async loginUser(req, res) {{
+    try {{
+      const {{ email, password }} = req.body;
+      // ✅ CORRECT: Using exact method name 'loginUser' from authService
+      // ✅ CORRECT: Destructuring return value {{user, token}} as shown in authService
+      const {{ user, token }} = await authService.loginUser(email, password);
+      return res.status(200).json({{ user, token }});
+    }} catch (error) {{
+      return res.status(401).json({{ message: error.message }});
+    }}
+  }}
+}}
+module.exports = new AuthController();
 ```
-</example_add_route>
 
+❌ WRONG Controller implementation - Common Mistakes:
+```javascript
+const authService = require('../services/authService');
+
+class AuthController {{
+  async loginUser(req, res) {{
+    try {{
+      const {{ email, password }} = req.body;
+
+      // ❌ WRONG: Using non-existent method 'validateUser' instead of 'loginUser'
+      const user = await authService.validateUser({{ email, password }});
+
+      // ❌ WRONG: Not destructuring return value - authService.loginUser returns {{user, token}}
+      // ❌ WRONG: Generating token in controller when service already returns it
+      const token = jwt.sign({{ id: user.id }}, config.jwtSecret, {{ expiresIn: '1h' }});
+
+      return res.status(200).json({{ token }});
+    }} catch (error) {{
+      return res.status(500).json({{ message: error.message }});
+    }}
+  }}
+}}
+```
+
+🔑 KEY TAKEAWAYS:
+- ALWAYS check dependency files for exact method names (loginUser, NOT validateUser)
+- ALWAYS match return types (if service returns {{user, token}}, destructure both)
+- NEVER assume method names - verify from dependency code first
+- NEVER duplicate logic that dependency already handles (e.g., token generation)
+<example_dependency_usage>
 <example_add_endpoint>
 Task: "Add login endpoint after register endpoint"
 
@@ -685,6 +994,7 @@ MODIFICATION REQUIREMENTS:
 CHANGE TYPE: {change_type}
 TARGET: {target_element}
 
+<best_practices>
 Guidelines:
 1. INCREMENTAL CHANGES:
    - Make minimal, targeted modifications
@@ -709,6 +1019,7 @@ Guidelines:
    - CLASS: Add/modify methods within specific classes
    - IMPORT: Add necessary import statements
    - CONFIG: Update configuration or constants
+</best_practices>
 
 <output_format>
 For each code change, you must provide:

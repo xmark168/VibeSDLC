@@ -514,6 +514,33 @@ def _generate_new_file_content(
             project_type="existing_project",
         )
 
+        # SOLUTION 1: Append dependency context with strong reminder if available
+        if codebase_context and "DEPENDENCY FILES" in codebase_context:
+            prompt = f"""{prompt}
+
+{codebase_context}
+
+⚠️ ⚠️ ⚠️ CRITICAL REMINDER - READ CAREFULLY ⚠️ ⚠️ ⚠️
+
+You MUST use the EXACT method names, signatures, and return types from the DEPENDENCY FILES shown above.
+
+BEFORE writing any code that calls a dependency method:
+1. Scroll up and find the dependency file in the "📚 DEPENDENCY FILES" section
+2. Locate the EXACT method name in that file
+3. Check the method's parameters and return type
+4. Use the EXACT method name - do NOT invent, assume, or guess method names
+5. Match the EXACT return type - if it returns {{user, token}}, destructure both properties
+
+COMMON MISTAKES TO AVOID:
+❌ Using 'validateUser' when dependency has 'loginUser'
+❌ Using 'create' when dependency has 'createUser'
+❌ Ignoring return type structure (e.g., not destructuring {{user, token}})
+❌ Passing wrong parameter format (e.g., object when it expects individual params)
+
+Double-check EVERY method call against the dependency API summary above before generating code.
+If you're unsure about a method name, look it up in the dependency files - do NOT guess!
+"""
+
         # Call LLM
         response = llm.invoke(prompt)
         raw_response = response.content.strip()
@@ -639,6 +666,34 @@ def _generate_file_modification(
         except Exception as format_error:
             print(f"    ❌ DEBUG: Error in prompt formatting: {format_error}")
             raise
+
+        # SOLUTION 1: Append dependency context with strong reminder if available
+        if codebase_context and "DEPENDENCY FILES" in codebase_context:
+            prompt = f"""{prompt}
+
+{codebase_context}
+
+⚠️ ⚠️ ⚠️ CRITICAL REMINDER - READ CAREFULLY ⚠️ ⚠️ ⚠️
+
+You MUST use the EXACT method names, signatures, and return types from the DEPENDENCY FILES shown above.
+
+BEFORE writing any code that calls a dependency method:
+1. Scroll up and find the dependency file in the "📚 DEPENDENCY FILES" section
+2. Locate the EXACT method name in that file
+3. Check the method's parameters and return type
+4. Use the EXACT method name - do NOT invent, assume, or guess method names
+5. Match the EXACT return type - if it returns {{user, token}}, destructure both properties
+
+COMMON MISTAKES TO AVOID:
+❌ Using 'validateUser' when dependency has 'loginUser'
+❌ Using 'create' when dependency has 'createUser'
+❌ Ignoring return type structure (e.g., not destructuring {{user, token}})
+❌ Passing wrong parameter format (e.g., object when it expects individual params)
+
+Double-check EVERY method call against the dependency API summary above before generating code.
+If you're unsure about a method name, look it up in the dependency files - do NOT guess!
+"""
+            print("    🔍 DEBUG: Appended dependency context with critical reminder")
 
         # Call LLM
         print("    🔍 DEBUG: Calling LLM...")

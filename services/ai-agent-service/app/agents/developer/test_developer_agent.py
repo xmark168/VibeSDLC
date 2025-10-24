@@ -65,6 +65,46 @@ def create_test_data():
             ],
         },
         {
+            "id": "TASK-003",
+            "type": "Task",
+            "parent_id": "EPIC-001",
+            "title": "Implement password reset functionality",
+            "description": "Create password reset flow with email verification, secure token generation, and password update capabilities",
+            "task_type": "Development",
+            "acceptance_criteria": [
+                "POST /api/auth/forgot-password endpoint accepts email address",
+                "Generates secure random reset token with 1-hour expiration",
+                "Stores reset token hash in database with user association",
+                "Sends password reset email with secure reset link",
+                "POST /api/auth/reset-password endpoint validates reset token",
+                "Verifies token has not expired before allowing password reset",
+                "New password meets same validation requirements as registration",
+                "Invalidates reset token after successful password change",
+                "Includes comprehensive unit tests for all reset scenarios",
+                "API documentation is updated with password reset flow details",
+            ],
+        },
+        {
+            "id": "TASK-004",
+            "type": "Task",
+            "parent_id": "EPIC-001",
+            "title": "Implement JWT token refresh mechanism",
+            "description": "Create token refresh endpoint to allow users to obtain new access tokens without re-authentication",
+            "task_type": "Development",
+            "acceptance_criteria": [
+                "POST /api/auth/refresh endpoint accepts refresh token",
+                "Validates refresh token signature and expiration",
+                "Verifies refresh token exists in database and is not revoked",
+                "Issues new access token with updated expiration time",
+                "Issues new refresh token and invalidates old one (token rotation)",
+                "Access token expires in 15 minutes, refresh token in 7 days",
+                "Returns appropriate error for invalid or expired refresh tokens",
+                "Implements token blacklist for revoked refresh tokens",
+                "Includes comprehensive unit tests for token refresh scenarios",
+                "API documentation is updated with token refresh flow details",
+            ],
+        },
+        {
             "id": "US-001",
             "type": "User Story",
             "parent_id": "EPIC-001",
@@ -79,13 +119,15 @@ def create_test_data():
         {
             "sprint_id": "test-sprint-1",
             "sprint_number": 1,
-            "sprint_goal": "Implement core user authentication features (registration and login)",
+            "sprint_goal": "Implement core user authentication features (registration, login, password reset, and token refresh)",
             "start_date": "2025-01-01",
             "end_date": "2025-01-15",
             "assigned_items": [
                 "EPIC-001",  # Should be skipped (no task_type)
                 "TASK-001",  # Should be processed (Development)
-                "TASK-002",  # Should be processed (Infrastructure)
+                "TASK-002",  # Should be processed (Development)
+                "TASK-003",  # Should be processed (Development)
+                "TASK-004",  # Should be processed (Development)
                 "US-001",  # Should be skipped (no task_type)
                 "MISSING-TASK",  # Should be skipped (not found)
             ],
@@ -148,11 +190,11 @@ def test_developer_agent_basic():
                 print(f"📊 Success rate: {summary['success_rate']:.1f}%")
 
                 # Verify expected results
-                assert summary["total_assigned_items"] == 5, (
-                    "Should have 5 assigned items"
+                assert summary["total_assigned_items"] == 7, (
+                    "Should have 7 assigned items"
                 )
-                assert summary["eligible_tasks_count"] == 2, (
-                    "Should have 2 eligible tasks (TASK-001, TASK-002)"
+                assert summary["eligible_tasks_count"] == 4, (
+                    "Should have 4 eligible tasks (TASK-001, TASK-002, TASK-003, TASK-004)"
                 )
 
                 print("✅ Basic functionality test passed!")

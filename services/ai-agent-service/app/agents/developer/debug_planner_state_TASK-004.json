@@ -1,0 +1,249 @@
+{
+    "success": true,
+    "final_plan": {
+        "task_id": "TSK-9264",
+        "description": "Task: Implement JWT token refresh mechanism\nTask Description: Create token refresh endpoint to allow...",
+        "complexity_score": 7,
+        "plan_type": "complex",
+        "functional_requirements": [
+            "Create a POST endpoint at /api/auth/refresh to accept refresh tokens.",
+            "Validate the refresh token's signature and expiration.",
+            "Verify that the refresh token exists in the database and is not revoked.",
+            "Issue a new access token with an updated expiration time of 15 minutes.",
+            "Issue a new refresh token with an expiration time of 7 days and invalidate the old one (token rotation).",
+            "Return appropriate error messages for invalid or expired refresh tokens.",
+            "Implement a token blacklist for revoked refresh tokens.",
+            "Include comprehensive unit tests covering various token refresh scenarios.",
+            "Update API documentation to include details of the token refresh flow."
+        ],
+        "steps": [
+            {
+                "step": 1,
+                "title": "Setup Refresh Token Model and Repository",
+                "description": "Create the RefreshToken model and repository for managing refresh tokens.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "1.1",
+                        "title": "Create RefreshToken model",
+                        "description": "Define the RefreshToken schema in Mongoose.",
+                        "action_type": "create",
+                        "files_affected": [
+                            "src/models/RefreshToken.js"
+                        ],
+                        "test": "Import RefreshToken model and verify it can be instantiated without errors."
+                    },
+                    {
+                        "sub_step": "1.2",
+                        "title": "Create refresh token repository",
+                        "description": "Implement methods for CRUD operations on refresh tokens.",
+                        "action_type": "create",
+                        "files_affected": [
+                            "src/repositories/refreshTokenRepository.js"
+                        ],
+                        "test": "Instantiate refreshTokenRepository and verify CRUD methods are defined."
+                    }
+                ],
+                "dependencies": [],
+                "estimated_hours": 0.0,
+                "complexity": "medium"
+            },
+            {
+                "step": 2,
+                "title": "Implement Token Service Logic",
+                "description": "Create the token service to handle token generation, validation, and rotation.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "2.1",
+                        "title": "Create token service",
+                        "description": "Implement methods for issuing and validating tokens.",
+                        "action_type": "create",
+                        "files_affected": [
+                            "src/services/tokenService.js"
+                        ],
+                        "test": "Import tokenService and verify methods for token issuance and validation are defined."
+                    },
+                    {
+                        "sub_step": "2.2",
+                        "title": "Implement token rotation logic",
+                        "description": "Add logic to invalidate old tokens and issue new ones.",
+                        "action_type": "modify",
+                        "files_affected": [
+                            "src/services/tokenService.js"
+                        ],
+                        "test": "Call token rotation method with a valid refresh token and verify new tokens are issued."
+                    }
+                ],
+                "dependencies": [],
+                "estimated_hours": 0.0,
+                "complexity": "medium"
+            },
+            {
+                "step": 3,
+                "title": "Create Token Controller",
+                "description": "Implement the controller to handle refresh token requests.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "3.1",
+                        "title": "Create token controller",
+                        "description": "Define the refresh endpoint logic in the controller.",
+                        "action_type": "create",
+                        "files_affected": [
+                            "src/controllers/tokenController.js"
+                        ],
+                        "test": "Import tokenController and verify the refresh method is defined."
+                    },
+                    {
+                        "sub_step": "3.2",
+                        "title": "Handle token validation and response",
+                        "description": "Add logic to validate the refresh token and respond with new tokens.",
+                        "action_type": "modify",
+                        "files_affected": [
+                            "src/controllers/tokenController.js"
+                        ],
+                        "test": "Call refresh method with a valid refresh token and verify response contains new tokens."
+                    }
+                ],
+                "dependencies": [],
+                "estimated_hours": 0.0,
+                "complexity": "medium"
+            },
+            {
+                "step": 4,
+                "title": "Define Token Routes",
+                "description": "Add the refresh token endpoint to the routes.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "4.1",
+                        "title": "Add refresh route",
+                        "description": "Define POST /api/auth/refresh route in the auth routes file.",
+                        "action_type": "modify",
+                        "files_affected": [
+                            "src/routes/auth.js"
+                        ],
+                        "test": "Send a POST request to /api/auth/refresh and verify it is accessible."
+                    }
+                ],
+                "dependencies": [],
+                "estimated_hours": 0.0,
+                "complexity": "medium"
+            },
+            {
+                "step": 5,
+                "title": "Implement Token Blacklist",
+                "description": "Create a mechanism to blacklist revoked refresh tokens.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "5.1",
+                        "title": "Add blacklist logic to token service",
+                        "description": "Implement logic to check if a refresh token is blacklisted.",
+                        "action_type": "modify",
+                        "files_affected": [
+                            "src/services/tokenService.js"
+                        ],
+                        "test": "Call the blacklist check with a revoked token and verify it returns true."
+                    }
+                ],
+                "dependencies": [],
+                "estimated_hours": 0.0,
+                "complexity": "medium"
+            },
+            {
+                "step": 6,
+                "title": "Testing and Documentation",
+                "description": "Write unit tests for the refresh token functionality and update API documentation.",
+                "category": "testing",
+                "sub_steps": [
+                    {
+                        "sub_step": "6.1",
+                        "title": "Write unit tests for token refresh",
+                        "description": "Implement tests covering various scenarios for token refresh.",
+                        "action_type": "create",
+                        "files_affected": [
+                            "src/tests/auth/refresh.test.js"
+                        ],
+                        "test": "Run the test suite and verify all token refresh tests pass."
+                    },
+                    {
+                        "sub_step": "6.2",
+                        "title": "Update API documentation",
+                        "description": "Document the new refresh token endpoint and its usage.",
+                        "action_type": "modify",
+                        "files_affected": [
+                            "src/docs/api.md"
+                        ],
+                        "test": "Review the documentation to ensure the refresh token flow is accurately described."
+                    }
+                ],
+                "dependencies": [],
+                "estimated_hours": 0.0,
+                "complexity": "medium"
+            }
+        ],
+        "database_changes": [
+            {
+                "change": "Add refresh_tokens collection",
+                "fields": [
+                    "token_string",
+                    "user_reference",
+                    "expiration",
+                    "revoked_status",
+                    "issued_at",
+                    "rotated_at"
+                ],
+                "affected_step": 1
+            }
+        ],
+        "external_dependencies": [
+            {
+                "package": "jsonwebtoken",
+                "version": "^9.0.0",
+                "purpose": "JWT token generation and validation"
+            },
+            {
+                "package": "bcryptjs",
+                "version": "^2.4.3",
+                "purpose": "Password hashing for token security"
+            }
+        ],
+        "internal_dependencies": [
+            {
+                "module": "RefreshToken model",
+                "required_by_step": 1
+            },
+            {
+                "module": "tokenService",
+                "required_by_step": 3
+            },
+            {
+                "module": "tokenController",
+                "required_by_step": 4
+            }
+        ],
+        "total_estimated_hours": 6.5,
+        "story_points": 8,
+        "execution_order": [
+            "Execute steps sequentially: 1 → 2 → 3 → 4 → 5 → 6",
+            "Within each step, execute sub-steps in order",
+            "Test after each sub-step before proceeding",
+            "Commit code after each completed sub-step"
+        ]
+    },
+    "ready_for_implementation": true,
+    "task_id": "TSK-9264",
+    "complexity_score": 7,
+    "estimated_hours": 6.5,
+    "story_points": 8,
+    "validation_score": 0.9,
+    "status": "finalized",
+    "iterations": 3,
+    "metadata": {
+        "planner_version": "1.0",
+        "total_steps": 17,
+        "thread_id": "test_session_planner_TASK-004"
+    }
+}
