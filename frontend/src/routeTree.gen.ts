@@ -13,6 +13,7 @@ import { Route as LayoutRouteImport } from './routes/_layout'
 import { Route as AuthRouteRouteImport } from './routes/_auth/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ChatChatIdRouteImport } from './routes/chat/$chatId'
+import { Route as LayoutProjectsRouteImport } from './routes/_layout/projects'
 import { Route as LayoutAdminRouteImport } from './routes/_layout/admin'
 import { Route as AuthVerifyOtpRouteImport } from './routes/_auth/verify-otp'
 import { Route as AuthSignupRouteImport } from './routes/_auth/signup'
@@ -37,6 +38,11 @@ const ChatChatIdRoute = ChatChatIdRouteImport.update({
   id: '/chat/$chatId',
   path: '/chat/$chatId',
   getParentRoute: () => rootRouteImport,
+} as any)
+const LayoutProjectsRoute = LayoutProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => LayoutRoute,
 } as any)
 const LayoutAdminRoute = LayoutAdminRouteImport.update({
   id: '/admin',
@@ -77,6 +83,7 @@ export interface FileRoutesByFullPath {
   '/signup': typeof AuthSignupRoute
   '/verify-otp': typeof AuthVerifyOtpRoute
   '/admin': typeof LayoutAdminRoute
+  '/projects': typeof LayoutProjectsRoute
   '/chat/$chatId': typeof ChatChatIdRoute
 }
 export interface FileRoutesByTo {
@@ -87,6 +94,7 @@ export interface FileRoutesByTo {
   '/signup': typeof AuthSignupRoute
   '/verify-otp': typeof AuthVerifyOtpRoute
   '/admin': typeof LayoutAdminRoute
+  '/projects': typeof LayoutProjectsRoute
   '/chat/$chatId': typeof ChatChatIdRoute
 }
 export interface FileRoutesById {
@@ -100,6 +108,7 @@ export interface FileRoutesById {
   '/_auth/signup': typeof AuthSignupRoute
   '/_auth/verify-otp': typeof AuthVerifyOtpRoute
   '/_layout/admin': typeof LayoutAdminRoute
+  '/_layout/projects': typeof LayoutProjectsRoute
   '/chat/$chatId': typeof ChatChatIdRoute
 }
 export interface FileRouteTypes {
@@ -112,6 +121,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/verify-otp'
     | '/admin'
+    | '/projects'
     | '/chat/$chatId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -122,6 +132,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/verify-otp'
     | '/admin'
+    | '/projects'
     | '/chat/$chatId'
   id:
     | '__root__'
@@ -134,6 +145,7 @@ export interface FileRouteTypes {
     | '/_auth/signup'
     | '/_auth/verify-otp'
     | '/_layout/admin'
+    | '/_layout/projects'
     | '/chat/$chatId'
   fileRoutesById: FileRoutesById
 }
@@ -173,6 +185,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/chat/$chatId'
       preLoaderRoute: typeof ChatChatIdRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_layout/projects': {
+      id: '/_layout/projects'
+      path: '/projects'
+      fullPath: '/projects'
+      preLoaderRoute: typeof LayoutProjectsRouteImport
+      parentRoute: typeof LayoutRoute
     }
     '/_layout/admin': {
       id: '/_layout/admin'
@@ -241,10 +260,12 @@ const AuthRouteRouteWithChildren = AuthRouteRoute._addFileChildren(
 
 interface LayoutRouteChildren {
   LayoutAdminRoute: typeof LayoutAdminRoute
+  LayoutProjectsRoute: typeof LayoutProjectsRoute
 }
 
 const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutAdminRoute: LayoutAdminRoute,
+  LayoutProjectsRoute: LayoutProjectsRoute,
 }
 
 const LayoutRouteWithChildren =
