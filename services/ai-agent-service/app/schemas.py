@@ -6,6 +6,7 @@ from sqlmodel import Field, SQLModel
 from .models import Role
 from typing import Optional
 from enum import Enum
+from app.models import AuthorType
 
 # user
 class UserPublic(SQLModel):
@@ -61,6 +62,32 @@ class RefreshTokenRequest(SQLModel):
 
 class Message(SQLModel):
     message: str
+
+# chat/messages
+class ChatMessageBase(SQLModel):
+    content: str
+    author_type: AuthorType
+
+class ChatMessageCreate(ChatMessageBase):
+    project_id: UUID
+    agent_id: Optional[UUID] = None
+
+class ChatMessageUpdate(SQLModel):
+    content: Optional[str] = None
+
+class ChatMessagePublic(SQLModel):
+    id: UUID
+    project_id: UUID
+    author_type: AuthorType
+    user_id: Optional[UUID] = None
+    agent_id: Optional[UUID] = None
+    content: str
+    created_at: datetime
+    updated_at: datetime
+
+class ChatMessagesPublic(SQLModel):
+    data: list[ChatMessagePublic]
+    count: int
 
 class NewPassword(SQLModel):
     token: str

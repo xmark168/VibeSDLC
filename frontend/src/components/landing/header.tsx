@@ -3,9 +3,11 @@ import type React from "react"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Menu } from "lucide-react"
-import { Link } from "@tanstack/react-router"
+import { useNavigate } from "@tanstack/react-router"
+import { isLoggedIn } from "@/hooks/useAuth"
 
 export function Header() {
+    const navigate = useNavigate()
     const navItems = [
         { name: "Features", href: "#features-section" },
         { name: "Pricing", href: "#pricing-section" },
@@ -18,6 +20,14 @@ export function Header() {
         const targetElement = document.getElementById(targetId)
         if (targetElement) {
             targetElement.scrollIntoView({ behavior: "smooth" })
+        }
+    }
+
+    const handleTryClick = () => {
+        if (isLoggedIn()) {
+            navigate({ to: "/projects" })
+        } else {
+            navigate({ to: "/login" })
         }
     }
 
@@ -42,11 +52,9 @@ export function Header() {
                     </nav>
                 </div>
                 <div className="flex items-center gap-4">
-                    <Link to="/login" rel="noopener noreferrer" className="hidden md:block">
-                        <Button className="bg-secondary text-secondary-foreground hover:bg-secondary/90 px-6 py-2 rounded-full font-medium shadow-sm">
-                            Try for Free
-                        </Button>
-                    </Link>
+                    <Button onClick={handleTryClick} className="hidden md:block bg-secondary text-secondary-foreground hover:bg-secondary/90 px-6 py-2 rounded-full font-medium shadow-sm">
+                        Try for Free
+                    </Button>
                     <Sheet>
                         <SheetTrigger asChild className="md:hidden">
                             <Button variant="ghost" size="icon" className="text-foreground">
@@ -69,11 +77,9 @@ export function Header() {
                                         {item.name}
                                     </a>
                                 ))}
-                                <a href="https://vercel.com/home" target="_blank" rel="noopener noreferrer" className="w-full mt-4">
-                                    <Button className="bg-secondary text-secondary-foreground hover:bg-secondary/90 px-6 py-2 rounded-full font-medium shadow-sm">
-                                        Try for Free
-                                    </Button>
-                                </a>
+                                <Button onClick={handleTryClick} className="w-full mt-4 bg-secondary text-secondary-foreground hover:bg-secondary/90 px-6 py-2 rounded-full font-medium shadow-sm">
+                                    Try for Free
+                                </Button>
                             </nav>
                         </SheetContent>
                     </Sheet>

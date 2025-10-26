@@ -168,3 +168,36 @@ class IssueActivity(BaseModel, table=True):
     note: str | None = Field(default=None)
 
     issue: BacklogItem = Relationship(back_populates="activities") 
+
+class AuthorType(str, Enum):
+    USER = "user"
+    AGENT = "agent"
+
+
+class Agent(BaseModel, table=True):
+    __tablename__ = "agents"
+
+    name: str
+    agent_type: str | None = Field(default=None)
+
+    # Relationship to messages authored by this agent
+    messages: list["Message"] = Relationship(back_populates="agent")
+
+
+class Message(BaseModel, table=True):
+    __tablename__ = "messages"
+
+    # Single-session-per-project: attach all messages to a project
+    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
+
+    # Author info: either user or agent (or system/tool)
+    author_type: AuthorType = Field(default=AuthorType.USER, nullable=False)
+    user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
+    agent_id: UUID | None = Field(default=None, foreign_key="agents.id", ondelete="SET NULL")
+
+    # Message payload
+    content: str
+
+    # Relationship back to agent
+    agent: Agent | None = Relationship(back_populates="messages")
+    

@@ -26,12 +26,14 @@ import {
   ChevronsLeft,
 } from "lucide-react"
 import { TechStackDialog } from "./tech-stack-dialog"
+import { useTheme } from "@/components/provider/theme-provider"
 
 interface ChatPanelProps {
   sidebarCollapsed: boolean
   onToggleSidebar: () => void
   onCollapse: () => void
   onSidebarHover: (hovered: boolean) => void
+  projectId?: string
 }
 
 type MessageType = "thinking" | "question" | "reply"
@@ -65,14 +67,14 @@ const AGENTS = [
   { name: "Tester", role: "Tester", avatar: "🧪" },
 ]
 
-export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSidebarHover }: ChatPanelProps) {
+export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSidebarHover, projectId }: ChatPanelProps) {
   const [message, setMessage] = useState("")
   const [showMentions, setShowMentions] = useState(false)
   const [mentionSearch, setMentionSearch] = useState("")
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0)
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([])
-  const [theme, setTheme] = useState<"light" | "dark">("dark")
+  const { theme, setTheme } = useTheme()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const mentionDropdownRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -343,9 +345,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
 
   const toggleTheme = () => {
     const newTheme = theme === "light" ? "dark" : "light"
-    setTheme(newTheme)
-    localStorage.setItem("theme", newTheme)
-    document.documentElement.classList.toggle("dark", newTheme === "dark")
+    setTheme(newTheme as any)
   }
 
   const triggerMention = () => {
@@ -367,14 +367,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
     }, 0)
   }
 
-  useEffect(() => {
-    const savedTheme = localStorage.getItem("theme") as "light" | "dark" | null
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches
-    const initialTheme = savedTheme || (prefersDark ? "dark" : "light")
-
-    setTheme(initialTheme)
-    document.documentElement.classList.toggle("dark", initialTheme === "dark")
-  }, [])
+  // Theme is managed globally by ThemeProvider
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {

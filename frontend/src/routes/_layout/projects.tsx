@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useState, useMemo } from 'react'
 
@@ -10,7 +10,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import useAuth from '@/hooks/useAuth'
-import { fetchProjects } from '@/api/projects'
+import { useProjects } from '@/queries/projects'
+import CreateProjectDialog from '@/components/projects/CreateProjectDialog'
 import type { Project } from '@/types/project'
 import { number } from 'framer-motion'
 
@@ -27,17 +28,16 @@ export const Route = createFileRoute('/_layout/projects')({
 })
 
 function ProjectsPage() {
+  const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<'all'>('all')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
+  const [openCreate, setOpenCreate] = useState(false)
 
   const { logout } = useAuth()
 
-  const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['projects', { search, page, pageSize }],
-    queryFn: () => fetchProjects({ search, page, pageSize }),
-  })
+  const { data, isLoading, isError, refetch } = useProjects({ search, page, pageSize })
 
   const totalPages = useMemo(() => {
     const total = data?.count ?? 0
@@ -53,7 +53,7 @@ function ProjectsPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={logout}>Logout</Button>
-          <Button onClick={() => {/* TODO: open create project dialog */}}>New Project</Button>
+          <Button onClick={() => setOpenCreate(true)}>New Project</Button>
         </div>
       </div>
 
@@ -82,7 +82,11 @@ function ProjectsPage() {
           ))}
         </div>
       ) : (
-        <ProjectsTable items={data?.data ?? []} />
+        <ProjectsTable
+          items={data?.data ?? []}
+          onCreate={() => setOpenCreate(true)}
+          onOpenProject={(id) => navigate({ to: '/workspace/$workspaceId', params: { workspaceId: id } })}
+        />
       )}
 
       <div className="mt-4 flex items-center justify-between">
@@ -104,16 +108,17 @@ function ProjectsPage() {
           </Select>
         </div>
       </div>
+      <CreateProjectDialog open={openCreate} onOpenChange={setOpenCreate} />
     </div>
   )
 }
 
-function ProjectsTable({ items }: { items: Project[] }) {
+function ProjectsTable({ items, onCreate, onOpenProject }: { items: Project[]; onCreate: () => void; onOpenProject: (id: string) => void }) {
   if (items.length === 0) {
     return (
       <div className="border rounded-md p-10 text-center">
         <p className="text-sm text-muted-foreground">No projects found.</p>
-        <Button className="mt-3" onClick={() => {/* TODO: open create project dialog */}}>Create your first project</Button>
+        <Button className="mt-3" onClick={onCreate}>Create your first project</Button>
       </div>
     )
   }
@@ -122,14 +127,14 @@ function ProjectsTable({ items }: { items: Project[] }) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead className="w-[80px]">Stt</TableHead>
+          <TableHead className="w-[80px]">STT</TableHead>
           <TableHead>Tên</TableHead>
           <TableHead>Ngày tạo</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {items.map((p, idx) => (
-          <TableRow key={p.id} className="cursor-pointer" onClick={() => {/* TODO: navigate to project detail */}}>
+          <TableRow key={p.id} className="cursor-pointer" onClick={() => onOpenProject(p.id)}>
             <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
             <TableCell className="font-medium">{p.name}</TableCell>
             <TableCell>{(p.created_at ?? p.updated_at) ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(p.created_at ?? p.updated_at!)) : '-'}</TableCell>
