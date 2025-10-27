@@ -2,7 +2,7 @@ from typing import Any, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlmodel import select, func
+from sqlmodel import select, func, delete
 
 from app.api.deps import CurrentUser, SessionDep
 from app.models import Message as MessageModel, Project, Agent as AgentModel, AuthorType
@@ -11,6 +11,7 @@ from app.schemas import (
     ChatMessageUpdate,
     ChatMessagePublic,
     ChatMessagesPublic,
+    Message,
 )
 
 router = APIRouter(prefix="/messages", tags=["messages"])
@@ -121,3 +122,29 @@ def delete_message(
     session.commit()
     return None
 
+
+@router.delete("/by-project/{project_id}", response_model=Message)
+def delete_all_messages_by_project(
+    project_id: UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> Message:
+    # Validate project
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Only admin or project owner can clear messages
+    from app.models import Role
+    if current_user.role != Role.ADMIN and project.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    # Count existing messages
+    count_stmt = select(func.count()).select_from(MessageModel).where(MessageModel.project_id == project_id)
+    count = session.exec(count_stmt).one() or 0
+
+    # Bulk delete
+    session.exec(delete(MessageModel).where(MessageModel.project_id == project_id))
+    session.commit()
+
+    return Message(message=f"Deleted {count} messages for project {project_id}")

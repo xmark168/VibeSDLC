@@ -88,7 +88,7 @@ class ChatMessagePublic(SQLModel):
 class ChatMessagesPublic(SQLModel):
     data: list[ChatMessagePublic]
     count: int
-
+    
 class NewPassword(SQLModel):
     token: str
     new_password: str = Field(min_length=8)
@@ -262,4 +262,25 @@ class SprintPublic(SprintBase):
 
 class SprintsPublic(SQLModel):
     data: list[SprintPublic]
+    count: int
+
+# agent
+class AgentBase(SQLModel):
+    name: str
+    agent_type: Optional[str] = None
+
+class AgentCreate(AgentBase):
+    pass
+
+class AgentUpdate(SQLModel):
+    name: Optional[str] = None
+    agent_type: Optional[str] = None
+
+class AgentPublic(AgentBase):
+    id: UUID
+    created_at: datetime
+    updated_at: datetime
+
+class AgentsPublic(SQLModel):
+    data: list[AgentPublic]
     count: int

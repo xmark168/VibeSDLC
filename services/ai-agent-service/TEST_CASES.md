@@ -100,3 +100,9 @@ Theo bạn, điểm khác biệt nổi bật nhất của SmartTask so với Tre
   4. Issue Activities  (Để xem history - optional)
 
   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+  tasklist /FI "IMAGENAME eq python.exe"
+
+  taskkill /PID 12172 /T /F
+
+  uv run app/tests/test_agent.py 

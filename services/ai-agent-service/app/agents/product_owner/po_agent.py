@@ -428,38 +428,67 @@ class POAgent:
             {
                 "name": "gatherer",
                 "description": "Gathers product information from user and creates Product Brief",
-                "prompt": GATHERER_SUBAGENT_PROMPT,
+                "system_prompt": GATHERER_SUBAGENT_PROMPT,
                 "tools": []  # Tools are handled internally by tool wrapper
             },
             {
                 "name": "vision",
                 "description": "Creates Product Vision and PRD from Product Brief",
-                "prompt": VISION_SUBAGENT_PROMPT,
+                "system_prompt": VISION_SUBAGENT_PROMPT,
                 "tools": []
             },
             {
                 "name": "backlog",
                 "description": "Creates Product Backlog with Epics, User Stories, Tasks from Product Vision",
-                "prompt": BACKLOG_SUBAGENT_PROMPT,
+                "system_prompt": BACKLOG_SUBAGENT_PROMPT,
                 "tools": []
             },
             {
                 "name": "priority",
                 "description": "Creates Sprint Plan with WSJF prioritization from Product Backlog",
-                "prompt": PRIORITY_SUBAGENT_PROMPT,
+                "system_prompt": PRIORITY_SUBAGENT_PROMPT,
                 "tools": []
             }
         ]
 
         return create_deep_agent(
             tools=self.tools,
-            instructions=SYSTEM_PROMPT,  # Use imported prompt instead of method
             subagents=subagents,
             model=self._llm("gpt-4o", 0.2),
-            # No interrupt_config: Let tools execute automatically
-            # Human-in-the-loop is already handled inside each sub agent
-            # interrupt_config=None  # This allows automatic tool execution
+            
         )
+
+    def _is_website_intent(self, text: str) -> bool:
+        """Detect if user intends to create a website/web app.
+
+        If detected, we can bypass the kickoff-only greeting and immediately
+        trigger sub-agents (e.g., GathererAgent) to collect details.
+        """
+        t = (text or "").lower()
+        keywords = [
+            "tao trang web",
+            "tạo trang web",
+            "trang web",
+            "website",
+            "web app",
+            "xay dung website",
+            "xây dựng website",
+            "lam website",
+            "làm website",
+            "xay dung trang web",
+            "xây dựng trang web",
+            "phat trien website",
+            "phát triển website",
+        ]
+        return any(k in t for k in keywords)
+
+    def _needs_kickoff_only(self, user_input: str) -> bool:
+        """Return True if we should only greet and ask for more info (no tools)."""
+        text = (user_input or "").strip().lower()
+        if text in {"bắt đầu", "bat dau", "start", "hi", "hello", "chào", "chao", "xin chào", "xin chao"}:
+            return True
+        # Heuristic: very short input likely lacks enough context to start workflow
+        return len(text) < 20
 
     def run(self, user_input: str, thread_id: str | None = None) -> dict[str, Any]:
         """Run PO Agent workflow.
@@ -494,8 +523,36 @@ class POAgent:
             final_result = None
             step_count = 0
 
+            # Kickoff-only path: if user intends to create a website, start gathering; otherwise, greet and ask for info
+            if self._needs_kickoff_only(user_input):
+                if self._is_website_intent(user_input or ""):
+                    print("Detected website intent; starting GathererAgent to collect details...")
+                    tool_session_id = f"{self.session_id}_gatherer_tool"
+                    gatherer_agent = GathererAgent(session_id=tool_session_id, user_id=self.user_id)
+                    gather_result = gatherer_agent.run(
+                        initial_context=user_input,
+                        thread_id=f"{tool_session_id}_thread"
+                    )
+                    brief = None
+                    if isinstance(gather_result, dict):
+                        for node_name, state_data in gather_result.items():
+                            if isinstance(state_data, dict):
+                                brief = state_data.get("brief")
+                                if brief:
+                                    break
+                    msg = "Đã nhận yêu cầu tạo trang web. Bắt đầu thu thập thông tin với GathererAgent."
+                    return {"messages": [{"type": "assistant", "content": msg}], "brief": brief, "gatherer": gather_result or {}}
+                else:
+                    greeting = (
+                        "Chao ban! Toi la Product Owner Agent (PO Agent). "
+                        "Toi co the giup lap ke hoach va tao Sprint Plan tu y tuong san pham. "
+                        "Quy trinh: Gatherer -> Vision -> Backlog -> Priority. "
+                        "Vui long mo ta y tuong (ten, mo ta ngan, doi tuong, tinh nang chinh) de bat dau."
+                    )
+                    return {"messages": [{"type": "assistant", "content": greeting}]}
+
             for chunk in self.agent.stream(
-                {"messages": [("user", user_input)]},
+                {"messages": [("system", SYSTEM_PROMPT), ("user", user_input)]},
                 config=config,
                 stream_mode="updates"
             ):

@@ -1527,6 +1527,7 @@ def test_po_agent():
 
         # Run PO Agent
         result = po_agent.run(user_input=user_input)
+        # result = po_agent.run(user_input="""Bắt đầu""")
 
         print_separator()
         print("PO Agent workflow completed!")
