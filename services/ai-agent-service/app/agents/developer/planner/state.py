@@ -55,11 +55,6 @@ class ImplementationStep(BaseModel):
     sub_steps: list[dict[str, Any]] = Field(
         default_factory=list
     )  # For hierarchical breakdown with simplified structure
-    dependencies: list[int] = Field(
-        default_factory=list
-    )  # Step numbers this depends on (optional)
-    estimated_hours: float = 0.0  # Optional
-    complexity: Literal["low", "medium", "high"] = "medium"  # Optional
 
 
 class ImplementationPlan(BaseModel):
@@ -83,7 +78,6 @@ class ImplementationPlan(BaseModel):
     internal_dependencies: list[dict[str, Any]] = Field(default_factory=list)
 
     # Metadata
-    total_estimated_hours: float = 0.0
     story_points: int = 0
     execution_order: list[str] = Field(default_factory=list)
 
@@ -122,13 +116,11 @@ class PlannerState(BaseModel):
     dependency_mapping: DependencyMapping = Field(default_factory=DependencyMapping)
     implementation_plan: ImplementationPlan = Field(default_factory=ImplementationPlan)
 
-    # Workflow control (with analyze_codebase phase restored)
+    # Workflow control
     current_phase: Literal[
         "initialize",
         "parse_task",
-        "websearch",
         "analyze_codebase",
-        "map_dependencies",
         "generate_plan",
         "validate_plan",
         "finalize",

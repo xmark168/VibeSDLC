@@ -86,30 +86,11 @@ def initialize(state: ImplementorState) -> ImplementorState:
         files_to_modify_raw = []
 
         if state.plan_steps:
-            # Extract file operations from steps and sub_steps
-            for step in state.plan_steps:
-                sub_steps = step.get("sub_steps", [])
-                for sub_step in sub_steps:
-                    action_type = sub_step.get("action_type", "modify")
-                    files_affected = sub_step.get("files_affected", [])
-
-                    for file_path in files_affected:
-                        file_info = {
-                            "file_path": file_path,
-                            "description": sub_step.get("description", ""),
-                            "step": step.get("step", 0),
-                            "sub_step": sub_step.get("sub_step", ""),
-                            "action_type": action_type,
-                            "test": sub_step.get("test", ""),
-                        }
-
-                        if action_type == "create":
-                            files_to_create_raw.append(file_info)
-                        elif action_type == "modify":
-                            files_to_modify_raw.append(file_info)
-
+            # NEW FORMAT: Steps don't have action_type or files_affected anymore
+            # LLM will determine what files to create/modify using tools
+            # We just track files that get created/modified during execution
             print(
-                f"✅ Extracted from steps: {len(files_to_create_raw)} create, {len(files_to_modify_raw)} modify"
+                f"✅ Using new format: {len(state.plan_steps)} steps with sub-steps (files determined by LLM)"
             )
 
         elif "file_changes" in plan:
@@ -210,61 +191,65 @@ def initialize(state: ImplementorState) -> ImplementorState:
         # Note: Boilerplate templates no longer used
         # Repository creation from template handled by GitHub Template Repository API
 
-        # Parse file changes từ implementation plan với field mapping
+        # NEW FORMAT: Files are determined dynamically by LLM during execution
+        # We don't pre-populate files_to_create/files_to_modify anymore
+        # Instead, files are tracked as they're created/modified by tools
         files_to_create = []
         files_to_modify = []
 
-        for file_info in files_to_create_raw:
-            # Map fields from simplified format to FileChange model
-            file_path = file_info.get("file_path") or file_info.get("path", "")
-            description = file_info.get("description") or file_info.get("reason", "")
+        # Only populate if using legacy format
+        if files_to_create_raw or files_to_modify_raw:
+            for file_info in files_to_create_raw:
+                # Map fields from simplified format to FileChange model
+                file_path = file_info.get("file_path") or file_info.get("path", "")
+                description = file_info.get("description") or file_info.get("reason", "")
 
-            # Include step/sub_step metadata for sequential execution
-            step_info = ""
-            if "step" in file_info and "sub_step" in file_info:
-                step_info = f"Step {file_info['step']}.{file_info['sub_step']}: "
+                # Include step/sub_step metadata for sequential execution
+                step_info = ""
+                if "step" in file_info and "sub_step" in file_info:
+                    step_info = f"Step {file_info['step']}.{file_info['sub_step']}: "
 
-            full_description = f"{step_info}{description}"
-            if "test" in file_info and file_info["test"]:
-                full_description += f" | Test: {file_info['test']}"
+                full_description = f"{step_info}{description}"
+                if "test" in file_info and file_info["test"]:
+                    full_description += f" | Test: {file_info['test']}"
 
-            file_change = FileChange(
-                file_path=file_path,
-                operation="create",
-                content=file_info.get(
-                    "content", ""
-                ),  # Will be populated by generate_code
-                change_type="full_file",
-                description=full_description,
-            )
-            files_to_create.append(file_change)
+                file_change = FileChange(
+                    file_path=file_path,
+                    operation="create",
+                    content=file_info.get(
+                        "content", ""
+                    ),  # Will be populated by generate_code
+                    change_type="full_file",
+                    description=full_description,
+                )
+                files_to_create.append(file_change)
 
-        for file_info in files_to_modify_raw:
-            # Map fields from simplified format to FileChange model
-            file_path = file_info.get("file_path") or file_info.get("path", "")
-            description = file_info.get("description") or file_info.get("changes", "")
+            for file_info in files_to_modify_raw:
+                # Map fields from simplified format to FileChange model
+                file_path = file_info.get("file_path") or file_info.get("path", "")
+                description = file_info.get("description") or file_info.get("changes", "")
 
-            # Include step/sub_step metadata for sequential execution
-            step_info = ""
-            if "step" in file_info and "sub_step" in file_info:
-                step_info = f"Step {file_info['step']}.{file_info['sub_step']}: "
+                # Include step/sub_step metadata for sequential execution
+                step_info = ""
+                if "step" in file_info and "sub_step" in file_info:
+                    step_info = f"Step {file_info['step']}.{file_info['sub_step']}: "
 
-            full_description = f"{step_info}{description}"
-            if "test" in file_info and file_info["test"]:
-                full_description += f" | Test: {file_info['test']}"
+                full_description = f"{step_info}{description}"
+                if "test" in file_info and file_info["test"]:
+                    full_description += f" | Test: {file_info['test']}"
 
-            file_change = FileChange(
-                file_path=file_path,
-                operation="modify",
-                content=file_info.get(
-                    "content", ""
-                ),  # Will be populated by generate_code
-                change_type=file_info.get("change_type", "incremental"),
-                target_function=file_info.get("target_function", ""),
-                target_class=file_info.get("target_class", ""),
-                description=full_description,
-            )
-            files_to_modify.append(file_change)
+                file_change = FileChange(
+                    file_path=file_path,
+                    operation="modify",
+                    content=file_info.get(
+                        "content", ""
+                    ),  # Will be populated by generate_code
+                    change_type=file_info.get("change_type", "incremental"),
+                    target_function=file_info.get("target_function", ""),
+                    target_class=file_info.get("target_class", ""),
+                    description=full_description,
+                )
+                files_to_modify.append(file_change)
 
         state.files_to_create = files_to_create
         state.files_to_modify = files_to_modify
@@ -274,6 +259,11 @@ def initialize(state: ImplementorState) -> ImplementorState:
         if not task_id_clean:
             task_id_clean = "implementation"
         state.feature_branch = f"feature/{task_id_clean}"
+
+        # Initialize step tracking indices
+        state.current_step_index = 0
+        state.current_sub_step_index = 0
+        print(f"📍 Initialized step tracking: Step {state.current_step_index + 1}, Sub-step {state.current_sub_step_index + 1}")
 
         # Update status
         state.current_phase = "setup_branch"

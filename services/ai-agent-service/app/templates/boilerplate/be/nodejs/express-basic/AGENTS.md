@@ -1,176 +1,95 @@
-# AGENTS.md - Express.js Basic Boilerplate
-
-**AI Agent Guidelines for Express.js + MongoDB Development**
+# AI Agent Guidelines for Node.js Backend Development
 
 ---
 
-## 🎯 Tech Stack
+## Tech Stack
 
-- **Runtime**: Node.js 18+
-- **Framework**: Express.js 4.x
-- **Database**: MongoDB + Mongoose ODM
-- **Auth**: JWT (jsonwebtoken + bcryptjs)
-- **Validation**: Joi + express-validator
-- **Testing**: Jest + Supertest
+- Runtime: Node.js 18+
+- Framework: Express.js 4.x
+- Database: MongoDB + Mongoose ODM
+- Auth: JWT (jsonwebtoken + bcryptjs)
+- Validation: Joi
+- Testing: Jest + Supertest
 
 ---
 
-## 🏗️ CRITICAL: Layered Architecture
-
-**MANDATORY FLOW**: Routes → Controllers → Services → Repositories → Models
+## Architecture Flow
 
 ```
-┌─────────────────────────────────────────────────┐
-│  Routes (API Endpoints)                         │
-│  - Define URL paths                             │
-│  - Map to controller methods                    │
-│  - Apply middleware (auth, validation)          │
-└────────────────┬────────────────────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────────────────────┐
-│  Controllers (Request Handlers)                 │
-│  - Parse request data (params, query, body)     │
-│  - Call service layer                           │
-│  - Format response                              │
-│  - Pass errors to next()                        │
-└────────────────┬────────────────────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────────────────────┐
-│  Services (Business Logic)                      │
-│  - Implement business rules                     │
-│  - Orchestrate repositories                     │
-│  - Handle transactions                          │
-│  - Throw AppError for failures                  │
-└────────────────┬────────────────────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────────────────────┐
-│  Repositories (Data Access)                     │
-│  - Abstract database operations                 │
-│  - Query builders                               │
-│  - Use .lean() for performance                  │
-└────────────────┬────────────────────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────────────────────┐
-│  Models (Database Schemas)                      │
-│  - Mongoose schemas                             │
-│  - Validation rules                             │
-│  - Indexes                                      │
-└─────────────────────────────────────────────────┘
+Routes → Controllers → Services → Repositories → Models
 ```
+
+MANDATORY: Always follow this layered architecture. Each layer depends on the previous one.
 
 ---
 
-## 📁 Folder Structure
+## Folder Structure
 
 ```
 src/
-├── config/                # Configuration files
-├── constants/             # Application constants
-├── controllers/           # Request handlers (THIN - no business logic)
+├── config/           # App and database configuration
+├── constants/        # Application constants (roles, status codes)
+├── controllers/      # Request handlers (thin layer)
 ├── db/
-│   ├── migrations/        # Database migration files
-│   └── seeds/             # Database seed files
-├── dtos/                  # Data Transfer Objects
-├── middleware/            # Express middlewares
-├── models/                # Mongoose models (PascalCase)
-├── repositories/          # Data access layer
-├── routes/                # API routes
-├── services/              # Business logic
-├── tests/                 # Test files
-└── utils/                 # Utility functions
+│   ├── migrations/   # Database migration scripts
+│   └── seeds/        # Database seed data
+├── dtos/             # Data Transfer Objects (response formatting)
+├── middleware/       # Express middlewares (auth, validation, errors)
+├── models/           # Mongoose schemas (PascalCase)
+├── repositories/     # Data access layer
+├── routes/           # API endpoints
+├── services/         # Business logic
+├── tests/            # Test files
+└── utils/            # Utility functions (logger, validators, helpers)
 ```
 
 ---
 
-## 🎯 CRITICAL IMPLEMENTATION RULES
+## Implementation Rules
 
-### Rule #1: ALWAYS Follow Implementation Order
+### Rule 1: Implementation Order
 
-**MANDATORY SEQUENCE**: Models → Repositories → Services → Controllers → Routes
+MANDATORY SEQUENCE: Models → Repositories → Services → Controllers → Routes → Tests
 
-1. **Model** - Define database schema first
-2. **Repository** - Create data access layer
-3. **Service** - Implement business logic
-4. **Controller** - Handle requests/responses
-5. **Routes** - Define API endpoints
-6. **Tests** - Validate functionality
+### Rule 2: Separation of Concerns
 
-**WHY**: Each layer depends on the previous one. Breaking this order causes errors.
+**Controllers**: Parse request, call services, format response. NO business logic.
+**Services**: Business rules, orchestrate repositories. NO request handling.
+**Repositories**: Database operations only. NO business logic.
 
-### Rule #2: NEVER Mix Concerns
+### Rule 3: Naming Conventions
 
-**Controllers**:
-- ✅ Parse request data
-- ✅ Call service methods
-- ✅ Format responses
-- ❌ NEVER put business logic in controllers
-- ❌ NEVER query database in controllers
-- ❌ NO validation logic
-
-**Services**:
-- ✅ Business rules
-- ✅ Orchestrate repositories
-- ✅ Throw AppError
-- ❌ NO request/response handling
-- ❌ NO direct database queries
-
-**Repositories**:
-- ✅ Database operations
-- ✅ Query builders
-- ❌ NO business logic
-- ❌ NO error responses
-
-### Rule #3: File Naming Conventions
-
-- **camelCase**: `userController.js`, `authService.js`, `userRepository.js`
-- **PascalCase**: `User.js`, `Product.js` (models only)
-- **kebab-case**: `user-controller.test.js` (tests only)
+- camelCase: `userController.js`, `authService.js`, `userRepository.js`
+- PascalCase: `User.js`, `Product.js` (models only)
+- kebab-case: `auth-controller.test.js` (tests only)
 
 ---
 
-## 📐 Code Patterns
+## Core Patterns
 
-### Pattern #1: Model (Mongoose Schema)
+### Model
 
 ```javascript
 // src/models/User.js
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: [true, 'Name is required'],
-    trim: true,
-  },
-  email: {
-    type: String,
-    required: [true, 'Email is required'],
-    unique: true,
-    lowercase: true,
-  },
-  password: {
-    type: String,
-    required: [true, 'Password is required'],
-    select: false, // Don't return by default
-  },
+  name: { type: String, required: true, trim: true },
+  email: { type: String, required: true, unique: true, lowercase: true },
+  password: { type: String, required: true, select: false },
+  role: { type: String, enum: ['user', 'admin'], default: 'user' },
 }, { timestamps: true });
 
-// Indexes
 userSchema.index({ email: 1 });
 
 module.exports = mongoose.model('User', userSchema);
 ```
 
-### Pattern #2: Repository (Data Access)
+### Repository
 
 ```javascript
 // src/repositories/userRepository.js
 const User = require('../models/User');
-const { AppError } = require('../utils/errors');
 
 class UserRepository {
   async findByEmail(email) {
@@ -191,7 +110,7 @@ class UserRepository {
 module.exports = new UserRepository();
 ```
 
-### Pattern #3: Service (Business Logic)
+### Service
 
 ```javascript
 // src/services/authService.js
@@ -202,19 +121,14 @@ const jwt = require('jsonwebtoken');
 
 class AuthService {
   async registerUser(userData) {
-    // Check if user exists
     const existingUser = await userRepository.findByEmail(userData.email);
     if (existingUser) {
       throw new AppError('User already exists', 409);
     }
     
-    // Hash password
     userData.password = await bcrypt.hash(userData.password, 12);
-    
-    // Create user
     const newUser = await userRepository.create(userData);
     
-    // Generate token
     const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, {
       expiresIn: '1h',
     });
@@ -226,7 +140,7 @@ class AuthService {
 module.exports = new AuthService();
 ```
 
-### Pattern #4: Controller (Request Handler)
+### Controller
 
 ```javascript
 // src/controllers/authController.js
@@ -234,9 +148,7 @@ const authService = require('../services/authService');
 
 exports.registerUser = async (req, res, next) => {
   try {
-    const userData = req.body;
-    const result = await authService.registerUser(userData);
-    
+    const result = await authService.registerUser(req.body);
     return res.status(201).json({
       success: true,
       data: result,
@@ -248,7 +160,7 @@ exports.registerUser = async (req, res, next) => {
 };
 ```
 
-### Pattern #5: Routes (API Endpoints)
+### Routes
 
 ```javascript
 // src/routes/auth.js
@@ -256,27 +168,150 @@ const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
 const { validateRequest } = require('../middleware/validate');
-const { userValidation } = require('../utils/validators');
+const { authValidation } = require('../utils/validators');
 
-/**
- * @route   POST /api/v1/auth/register
- * @desc    Register new user
- * @access  Public
- */
-router.post(
-  '/register',
-  validateRequest(userValidation.createUser),
-  authController.registerUser
-);
+router.post('/register', validateRequest(authValidation.register), authController.registerUser);
 
 module.exports = router;
 ```
 
 ---
 
-## ❌ Error Handling
+## Configuration
 
-### Custom Error Class
+```javascript
+// src/config/database.js
+const mongoose = require('mongoose');
+
+const connectDB = async () => {
+  await mongoose.connect(process.env.MONGO_URI);
+  console.log('MongoDB Connected');
+};
+
+module.exports = connectDB;
+```
+
+```javascript
+// src/config/app.js
+module.exports = {
+  port: process.env.PORT || 3000,
+  jwt: {
+    secret: process.env.JWT_SECRET,
+    expiresIn: '1h',
+  },
+};
+```
+
+---
+
+## Middleware
+
+```javascript
+// src/middleware/auth.js
+const jwt = require('jsonwebtoken');
+const { AppError } = require('../utils/errors');
+
+exports.protect = async (req, res, next) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) throw new AppError('Not authorized', 401);
+    
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+```
+
+```javascript
+// src/middleware/validate.js
+exports.validateRequest = (schema) => {
+  return (req, res, next) => {
+    const { error } = schema.validate(req.body, { abortEarly: false });
+    if (error) {
+      return next(new AppError(error.details.map(d => d.message).join(', '), 400));
+    }
+    next();
+  };
+};
+```
+
+```javascript
+// src/middleware/errorHandler.js
+const errorHandler = (err, req, res, next) => {
+  const statusCode = err.statusCode || 500;
+  const message = err.message || 'Server Error';
+  
+  res.status(statusCode).json({
+    success: false,
+    error: message,
+  });
+};
+
+module.exports = errorHandler;
+```
+
+---
+
+## DTO Pattern
+
+```javascript
+// src/dtos/userDto.js
+class UserDto {
+  constructor(user) {
+    this.id = user._id;
+    this.name = user.name;
+    this.email = user.email;
+    this.role = user.role;
+  }
+  
+  static fromModel(user) {
+    return new UserDto(user);
+  }
+}
+
+module.exports = UserDto;
+```
+
+---
+
+## Database Operations
+
+```javascript
+// src/db/migrations/20250126_add_role.js
+module.exports = {
+  async up() {
+    await User.updateMany({ role: { $exists: false } }, { $set: { role: 'user' } });
+  },
+  async down() {
+    await User.updateMany({}, { $unset: { role: '' } });
+  },
+};
+```
+
+```javascript
+// src/db/seeds/userSeeder.js
+const User = require('../../models/User');
+const bcrypt = require('bcryptjs');
+
+module.exports = {
+  async seed() {
+    await User.deleteMany({});
+    await User.create({
+      name: 'Admin',
+      email: 'admin@example.com',
+      password: await bcrypt.hash('admin123', 12),
+      role: 'admin',
+    });
+  },
+};
+```
+
+---
+
+## Utilities
 
 ```javascript
 // src/utils/errors.js
@@ -291,85 +326,113 @@ class AppError extends Error {
 module.exports = { AppError };
 ```
 
-### Throwing Errors
+```javascript
+// src/utils/validators.js
+const Joi = require('joi');
+
+exports.authValidation = {
+  register: Joi.object({
+    name: Joi.string().min(2).required(),
+    email: Joi.string().email().required(),
+    password: Joi.string().min(8).required(),
+  }),
+};
+```
 
 ```javascript
-// In services
-if (!user) {
-  throw new AppError('User not found', 404);
-}
+// src/utils/logger.js
+const winston = require('winston');
 
-if (existingUser) {
-  throw new AppError('Email already in use', 409);
-}
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.json(),
+  transports: [
+    new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
+    new winston.transports.Console(),
+  ],
+});
+
+module.exports = logger;
 ```
 
 ---
 
-## 🧪 Testing Pattern
+## Constants
 
 ```javascript
-// src/tests/integration/auth.test.js
-const request = require('supertest');
-const app = require('../../app');
+// src/constants/roles.js
+module.exports = {
+  ADMIN: 'admin',
+  USER: 'user',
+};
+```
 
-describe('POST /api/v1/auth/register', () => {
+```javascript
+// src/constants/httpStatus.js
+module.exports = {
+  OK: 200,
+  CREATED: 201,
+  BAD_REQUEST: 400,
+  UNAUTHORIZED: 401,
+  NOT_FOUND: 404,
+};
+```
+
+---
+
+## Testing
+
+```javascript
+// src/tests/auth.test.js
+const request = require('supertest');
+const app = require('../app');
+
+describe('POST /api/auth/register', () => {
   it('should register new user', async () => {
-    const response = await request(app)
-      .post('/api/v1/auth/register')
-      .send({
-        name: 'John Doe',
-        email: 'john@example.com',
-        password: 'password123',
-      })
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({ name: 'John', email: 'john@test.com', password: 'password123' })
       .expect(201);
     
-    expect(response.body.success).toBe(true);
-    expect(response.body.data).toHaveProperty('token');
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toHaveProperty('token');
   });
 });
 ```
 
 ---
 
-## 🤖 AI Agent Checklist
+## Implementation Checklist
 
-When implementing a new feature:
-
-- [ ] **Step 1**: Create Model with validation
-- [ ] **Step 2**: Create Repository with CRUD methods
-- [ ] **Step 3**: Create Service with business logic
-- [ ] **Step 4**: Create Controller (thin, no business logic)
-- [ ] **Step 5**: Create Routes with middleware
-- [ ] **Step 6**: Add validation schemas
-- [ ] **Step 7**: Write integration tests
-- [ ] **Step 8**: Add JSDoc comments
+1. Create Model with validation
+2. Create Repository with data access
+3. Create Service with business logic
+4. Create DTO for response
+5. Create Controller (thin layer)
+6. Create Routes with validation
+7. Write tests
+8. Add JSDoc comments
 
 ---
 
-## ✅ DO's
+## Best Practices
 
-1. **Follow layered architecture** - Models → Repos → Services → Controllers → Routes
-2. **Use async/await** - Never use callbacks
-3. **Validate all inputs** - Use Joi schemas
-4. **Handle errors properly** - Throw AppError, pass to next()
-5. **Export singletons** - Services and repositories
-6. **Use .lean()** - For read-only queries
-7. **Add indexes** - For frequently queried fields
+### DO:
+- Follow layered architecture strictly
+- Use async/await
+- Validate all inputs
+- Use .lean() for read queries
+- Export singletons for services/repos
+- Handle errors with AppError
+- Write tests
 
-## ❌ DON'Ts
-
-1. **Don't mix business logic in controllers** - Keep controllers thin
-2. **Don't query database in controllers** - Use repositories
-3. **Don't use console.log** - Use logger
-4. **Don't skip validation** - Validate all inputs
-5. **Don't expose passwords** - Use select: false
-6. **Don't use var** - Use const/let
-7. **Don't skip tests** - Test critical paths
+### DONT:
+- Mix business logic in controllers
+- Query database in controllers
+- Skip validation
+- Expose sensitive data
+- Use console.log (use logger)
+- Skip error handling
+- Hardcode values
 
 ---
-
-**Version**: 2.0.0 (Optimized)  
-**Lines**: ~300 (reduced from 1930)  
-**Last Updated**: 2025-01-22
-

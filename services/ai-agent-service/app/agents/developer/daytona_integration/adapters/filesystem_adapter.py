@@ -137,6 +137,15 @@ class LocalFilesystemAdapter(FilesystemAdapter):
             full_path = Path(working_directory) / directory
             full_path = full_path.resolve()
 
+            # Debug logging
+            print(f"    🔍 list_files DEBUG:")
+            print(f"       - working_directory: {working_directory}")
+            print(f"       - directory: {directory}")
+            print(f"       - pattern: {pattern}")
+            print(f"       - full_path: {full_path}")
+            print(f"       - exists: {full_path.exists()}")
+            print(f"       - is_dir: {full_path.is_dir() if full_path.exists() else 'N/A'}")
+
             # Security check
             working_dir_resolved = Path(working_directory).resolve()
             if not str(full_path).startswith(str(working_dir_resolved)):
@@ -144,10 +153,10 @@ class LocalFilesystemAdapter(FilesystemAdapter):
 
             # Check directory exists
             if not full_path.exists():
-                return f"Error: Directory '{directory}' does not exist"
+                return f"Error: Directory '{directory}' does not exist (full path: {full_path})"
 
             if not full_path.is_dir():
-                return f"Error: '{directory}' is not a directory"
+                return f"Error: '{directory}' is not a directory (full path: {full_path})"
 
             # List files
             if recursive:
@@ -155,18 +164,27 @@ class LocalFilesystemAdapter(FilesystemAdapter):
             else:
                 files = list(full_path.glob(pattern))
 
+            print(f"       - files found (before filter): {len(files)}")
+
             # Filter only files (not directories)
             files = [f for f in files if f.is_file()]
+
+            print(f"       - files found (after filter): {len(files)}")
+            for f in files[:5]:  # Show first 5
+                print(f"         * {f.name}")
 
             # Make paths relative to working_directory
             relative_files = [str(f.relative_to(working_dir_resolved)) for f in files]
 
             if not relative_files:
-                return f"No files found matching pattern '{pattern}' in '{directory}'"
+                return f"No files found matching pattern '{pattern}' in '{directory}' (searched: {full_path})"
 
             return "\n".join(sorted(relative_files))
 
         except Exception as e:
+            import traceback
+            print(f"    ❌ list_files exception:")
+            traceback.print_exc()
             return f"Error listing files: {str(e)}"
 
     def delete_file(self, file_path: str, working_directory: str = ".") -> str:
@@ -256,6 +274,182 @@ class LocalFilesystemAdapter(FilesystemAdapter):
             return json.dumps(
                 {"status": "error", "message": f"Error creating directory: {str(e)}"}
             )
+
+    def edit_file(
+        self,
+        file_path: str,
+        old_str: str,
+        new_str: str,
+        working_directory: str = ".",
+        replace_all: bool = False,
+    ) -> str:
+        """Edit file by replacing old_str with new_str on local filesystem."""
+        try:
+            # Resolve full path
+            full_path = Path(working_directory) / file_path
+            full_path = full_path.resolve()
+
+            # Security check
+            working_dir_resolved = Path(working_directory).resolve()
+            if not str(full_path).startswith(str(working_dir_resolved)):
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "message": "Access denied - path outside working directory",
+                    }
+                )
+
+            # Check file exists
+            if not full_path.exists():
+                return json.dumps(
+                    {"status": "error", "message": f"File '{file_path}' does not exist"}
+                )
+
+            # Read current content
+            content = full_path.read_text(encoding="utf-8")
+
+            # Check if old_str exists
+            if old_str not in content:
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "message": f"String not found in file: '{old_str[:100]}...'",
+                    }
+                )
+
+            # Check for multiple occurrences if not replace_all
+            occurrences = content.count(old_str)
+            if not replace_all and occurrences > 1:
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "message": f"String appears {occurrences} times in file. "
+                        f"Use replace_all=True to replace all instances, or provide a more specific string.",
+                    }
+                )
+
+            # Perform replacement
+            if replace_all:
+                new_content = content.replace(old_str, new_str)
+                result_msg = f"Successfully replaced {occurrences} occurrence(s) in '{file_path}'"
+            else:
+                new_content = content.replace(old_str, new_str, 1)
+                result_msg = f"Successfully replaced 1 occurrence in '{file_path}'"
+
+            # Write back
+            full_path.write_text(new_content, encoding="utf-8")
+
+            return json.dumps({"status": "success", "message": result_msg})
+
+        except PermissionError:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Permission denied editing '{file_path}'",
+                }
+            )
+        except Exception as e:
+            return json.dumps(
+                {"status": "error", "message": f"Error editing file: {str(e)}"}
+            )
+
+    def grep_search(
+        self,
+        pattern: str,
+        directory: str = ".",
+        file_pattern: str = "*",
+        case_sensitive: bool = False,
+        context_lines: int = 0,
+        working_directory: str = ".",
+    ) -> str:
+        """Search for pattern in files using Python implementation (cross-platform)."""
+        import re
+        import fnmatch
+
+        try:
+            # Resolve full path
+            search_path = Path(working_directory) / directory
+            search_path = search_path.resolve()
+
+            # Security check
+            working_dir_resolved = Path(working_directory).resolve()
+            if not str(search_path).startswith(str(working_dir_resolved)):
+                return "Error: Access denied - path outside working directory"
+
+            # Check directory exists
+            if not search_path.exists():
+                return f"Error: Directory '{directory}' does not exist"
+
+            if not search_path.is_dir():
+                return f"Error: '{directory}' is not a directory"
+
+            # Compile regex pattern
+            flags = 0 if case_sensitive else re.IGNORECASE
+            try:
+                regex = re.compile(pattern, flags)
+            except re.error as e:
+                return f"Error: Invalid regex pattern: {str(e)}"
+
+            # Search files
+            results = []
+            files_searched = 0
+
+            # Get all files matching file_pattern
+            for file_path in search_path.rglob("*"):
+                if not file_path.is_file():
+                    continue
+
+                # Check if file matches file_pattern
+                if file_pattern != "*" and not fnmatch.fnmatch(file_path.name, file_pattern):
+                    continue
+
+                files_searched += 1
+
+                # Search in file
+                try:
+                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                        lines = f.readlines()
+
+                    for line_num, line in enumerate(lines, 1):
+                        if regex.search(line):
+                            # Get relative path
+                            rel_path = file_path.relative_to(working_dir_resolved)
+
+                            # Format result
+                            result_line = f"{rel_path}:{line_num}:{line.rstrip()}"
+                            results.append((line_num, result_line))
+
+                            # Add context lines if requested
+                            if context_lines > 0:
+                                # Add lines before
+                                for i in range(max(0, line_num - context_lines - 1), line_num - 1):
+                                    ctx_line = f"{rel_path}:{i+1}:{lines[i].rstrip()}"
+                                    results.append((i + 1, ctx_line))
+
+                                # Add lines after
+                                for i in range(line_num, min(len(lines), line_num + context_lines)):
+                                    ctx_line = f"{rel_path}:{i+1}:{lines[i].rstrip()}"
+                                    results.append((i + 1, ctx_line))
+
+                except (UnicodeDecodeError, PermissionError):
+                    # Skip files that can't be read
+                    continue
+
+            if not results:
+                return f"No matches found for pattern '{pattern}' (searched {files_searched} files)"
+
+            # Sort and deduplicate results
+            unique_results = []
+            seen = set()
+            for _, result in sorted(results):
+                if result not in seen:
+                    unique_results.append(result)
+                    seen.add(result)
+
+            return "\n".join(unique_results)
+
+        except Exception as e:
+            return f"Error executing search: {str(e)}"
 
 
 class DaytonaFilesystemAdapter(FilesystemAdapter):
@@ -473,6 +667,130 @@ class DaytonaFilesystemAdapter(FilesystemAdapter):
                     "message": f"Error creating directory in sandbox: {str(e)}",
                 }
             )
+
+    def edit_file(
+        self,
+        file_path: str,
+        old_str: str,
+        new_str: str,
+        working_directory: str = ".",
+        replace_all: bool = False,
+    ) -> str:
+        """Edit file by replacing old_str with new_str in Daytona sandbox."""
+        try:
+            # Resolve to sandbox path
+            sandbox_path = self._resolve_sandbox_path(file_path, working_directory)
+
+            # Download current content from sandbox
+            content = self.sandbox.fs.download_file(sandbox_path)
+
+            # Check if old_str exists
+            if old_str not in content:
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "message": f"String not found in file: '{old_str[:100]}...'",
+                    }
+                )
+
+            # Check for multiple occurrences if not replace_all
+            occurrences = content.count(old_str)
+            if not replace_all and occurrences > 1:
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "message": f"String appears {occurrences} times in file. "
+                        f"Use replace_all=True to replace all instances, or provide a more specific string.",
+                    }
+                )
+
+            # Perform replacement
+            if replace_all:
+                new_content = content.replace(old_str, new_str)
+                result_msg = f"Successfully replaced {occurrences} occurrence(s) in '{file_path}'"
+            else:
+                new_content = content.replace(old_str, new_str, 1)
+                result_msg = f"Successfully replaced 1 occurrence in '{file_path}'"
+
+            # Upload modified content back to sandbox
+            self.sandbox.fs.upload_file(new_content, sandbox_path)
+
+            return json.dumps({"status": "success", "message": result_msg})
+
+        except Exception as e:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Error editing file in sandbox: {str(e)}",
+                }
+            )
+
+    def grep_search(
+        self,
+        pattern: str,
+        directory: str = ".",
+        file_pattern: str = "*",
+        case_sensitive: bool = False,
+        context_lines: int = 0,
+        working_directory: str = ".",
+    ) -> str:
+        """Search for pattern in files using Daytona sandbox process execution."""
+        try:
+            # Resolve to sandbox path
+            sandbox_path = self._resolve_sandbox_path(directory, working_directory)
+
+            # Build grep command for sandbox execution
+            # Try ripgrep first, fallback to grep
+            rg_cmd = f"rg '{pattern}' {sandbox_path} -n --color=never"
+
+            if not case_sensitive:
+                rg_cmd += " -i"
+
+            if context_lines > 0:
+                rg_cmd += f" -C {context_lines}"
+
+            if file_pattern != "*":
+                rg_cmd += f" -g '{file_pattern}'"
+
+            # Execute command in sandbox
+            try:
+                # Try ripgrep first
+                result = self.sandbox.process.execute_command(rg_cmd)
+
+                # Check if command succeeded
+                if result.get("exit_code") == 0:
+                    return result.get("stdout", "")
+                elif result.get("exit_code") == 1:
+                    return f"No matches found for pattern '{pattern}'"
+                else:
+                    # Ripgrep not available, try grep
+                    grep_cmd = "grep -rn"
+
+                    if not case_sensitive:
+                        grep_cmd += " -i"
+
+                    if context_lines > 0:
+                        grep_cmd += f" -C {context_lines}"
+
+                    grep_cmd += f" '{pattern}' {sandbox_path}"
+
+                    if file_pattern != "*":
+                        grep_cmd += f" --include='{file_pattern}'"
+
+                    result = self.sandbox.process.execute_command(grep_cmd)
+
+                    if result.get("exit_code") == 0:
+                        return result.get("stdout", "")
+                    elif result.get("exit_code") == 1:
+                        return f"No matches found for pattern '{pattern}'"
+                    else:
+                        return f"Error: {result.get('stderr', 'Unknown error')}"
+
+            except Exception as e:
+                return f"Error executing search in sandbox: {str(e)}"
+
+        except Exception as e:
+            return f"Error searching in sandbox: {str(e)}"
 
 
 # ============================================================================

@@ -1,218 +1,126 @@
 {
     "success": true,
     "final_plan": {
-        "task_id": "TSK-7963",
+        "task_id": "TSK-2477",
         "description": "Task: Implement user login functionality\nTask Description: Create user login API endpoint with authe...",
         "complexity_score": 7,
         "plan_type": "complex",
         "functional_requirements": [
             "Create a POST /api/auth/login endpoint that accepts email and password.",
             "Validate user credentials against the database.",
-            "Compare hashed password using bcrypt for authentication.",
-            "Return a JWT token containing user ID, email, and expiration time upon successful login.",
+            "Compare hashed password using bcrypt.",
+            "Return a JWT token with user information upon successful login.",
             "Implement rate limiting to prevent brute force attacks.",
             "Log failed login attempts for security monitoring.",
             "Return appropriate error messages for invalid credentials.",
-            "Include comprehensive unit tests for all authentication scenarios.",
-            "Update API documentation with details of the login endpoint."
+            "Ensure the token includes user ID, email, and expiration time.",
+            "Include comprehensive unit tests for authentication scenarios.",
+            "Update API documentation with endpoint details."
         ],
         "steps": [
             {
                 "step": 1,
-                "title": "Setup user model for login functionality",
-                "description": "Extend the User model to support failed login attempts and account lockout.",
+                "title": "Setup JWT and bcrypt authentication foundation",
+                "description": "Install necessary dependencies and configure JWT and bcrypt for authentication.",
                 "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "1.1",
-                        "title": "Modify User model to include new fields",
-                        "description": "Add failedLoginAttempts and lockUntil fields to User schema.",
-                        "action_type": "modify",
-                        "files_affected": [
-                            "src/models/User.js"
-                        ],
-                        "test": "Verify that the User model includes failedLoginAttempts and lockUntil fields."
+                        "title": "Install jsonwebtoken and bcryptjs libraries",
+                        "description": "Add jsonwebtoken and bcryptjs libraries to package.json for token generation and password hashing."
+                    },
+                    {
+                        "sub_step": "1.2",
+                        "title": "Add JWT_SECRET to environment config",
+                        "description": "Add JWT_SECRET variable to .env file and ensure it's loaded in the application."
                     }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
+                ]
             },
             {
                 "step": 2,
-                "title": "Implement user repository methods",
-                "description": "Add methods to the User repository for finding users and updating login attempts.",
+                "title": "Implement login API endpoint",
+                "description": "Create the login endpoint with credential validation and JWT generation.",
                 "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "2.1",
-                        "title": "Add findByEmail method to user repository",
-                        "description": "Implement a method to find a user by email.",
-                        "action_type": "modify",
-                        "files_affected": [
-                            "src/repositories/userRepository.js"
-                        ],
-                        "test": "Call findByEmail with a test email and verify it returns the correct user."
+                        "title": "Create auth router and login route",
+                        "description": "Setup POST /api/auth/login route in the auth router using Express."
                     },
                     {
                         "sub_step": "2.2",
-                        "title": "Add updateFailedLoginAttempts method",
-                        "description": "Implement a method to update failed login attempts and lockUntil.",
-                        "action_type": "modify",
-                        "files_affected": [
-                            "src/repositories/userRepository.js"
-                        ],
-                        "test": "Call updateFailedLoginAttempts with test data and verify the user record is updated."
+                        "title": "Implement login controller logic",
+                        "description": "Create controller function to validate user credentials and generate JWT token upon successful login."
+                    },
+                    {
+                        "sub_step": "2.3",
+                        "title": "Add request validation middleware",
+                        "description": "Implement middleware to validate email format and password presence using Joi."
+                    },
+                    {
+                        "sub_step": "2.4",
+                        "title": "Implement password comparison logic",
+                        "description": "Use bcrypt to compare the hashed password stored in the database with the provided password."
+                    },
+                    {
+                        "sub_step": "2.5",
+                        "title": "Log failed login attempts",
+                        "description": "Implement logging of failed login attempts for security monitoring."
+                    },
+                    {
+                        "sub_step": "2.6",
+                        "title": "Implement rate limiting",
+                        "description": "Add rate limiting middleware to prevent brute force attacks on the login endpoint."
                     }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
+                ]
             },
             {
                 "step": 3,
-                "title": "Create authentication service logic",
-                "description": "Implement business logic for user authentication and JWT generation.",
-                "category": "backend",
-                "sub_steps": [
-                    {
-                        "sub_step": "3.1",
-                        "title": "Implement login method in auth service",
-                        "description": "Create a method to handle user login, validate credentials, and generate JWT.",
-                        "action_type": "modify",
-                        "files_affected": [
-                            "src/services/authService.js"
-                        ],
-                        "test": "Call the login method with valid credentials and verify it returns a JWT."
-                    },
-                    {
-                        "sub_step": "3.2",
-                        "title": "Implement rate limiting logic",
-                        "description": "Add logic to limit login attempts and lock accounts after multiple failures.",
-                        "action_type": "modify",
-                        "files_affected": [
-                            "src/services/authService.js"
-                        ],
-                        "test": "Attempt multiple logins with invalid credentials and verify the account is locked."
-                    }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
-            },
-            {
-                "step": 4,
-                "title": "Create authentication controller",
-                "description": "Handle requests and responses for the login endpoint.",
-                "category": "backend",
-                "sub_steps": [
-                    {
-                        "sub_step": "4.1",
-                        "title": "Implement login controller method",
-                        "description": "Create a method to handle login requests and return JWT or error messages.",
-                        "action_type": "modify",
-                        "files_affected": [
-                            "src/controllers/authController.js"
-                        ],
-                        "test": "Send a POST request to /api/auth/login with valid credentials and verify the response contains a JWT."
-                    },
-                    {
-                        "sub_step": "4.2",
-                        "title": "Log failed login attempts",
-                        "description": "Log failed login attempts for security monitoring.",
-                        "action_type": "modify",
-                        "files_affected": [
-                            "src/controllers/authController.js"
-                        ],
-                        "test": "Send a POST request with invalid credentials and verify that the failed attempt is logged."
-                    }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
-            },
-            {
-                "step": 5,
-                "title": "Define authentication routes",
-                "description": "Set up the API endpoint for user login.",
-                "category": "backend",
-                "sub_steps": [
-                    {
-                        "sub_step": "5.1",
-                        "title": "Add login route to auth router",
-                        "description": "Create a POST /api/auth/login route in the auth router.",
-                        "action_type": "modify",
-                        "files_affected": [
-                            "src/routes/auth.js"
-                        ],
-                        "test": "Send a POST request to /api/auth/login and verify the route is accessible."
-                    }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
-            },
-            {
-                "step": 6,
-                "title": "Implement unit tests for authentication",
-                "description": "Create tests for login functionality, including success and failure cases.",
+                "title": "Create comprehensive unit tests for authentication scenarios",
+                "description": "Write tests to validate the login functionality and error handling.",
                 "category": "testing",
                 "sub_steps": [
                     {
-                        "sub_step": "6.1",
-                        "title": "Write unit tests for login success",
-                        "description": "Test successful login with valid credentials.",
-                        "action_type": "create",
-                        "files_affected": [
-                            "src/tests/auth/login.test.js"
-                        ],
-                        "test": "Run the test suite and verify that the successful login test passes."
+                        "sub_step": "3.1",
+                        "title": "Test successful login flow",
+                        "description": "Write tests to verify that a valid email and password return a JWT token."
                     },
                     {
-                        "sub_step": "6.2",
-                        "title": "Write unit tests for login failure",
-                        "description": "Test failed login attempts with invalid credentials.",
-                        "action_type": "create",
-                        "files_affected": [
-                            "src/tests/auth/login.test.js"
-                        ],
-                        "test": "Run the test suite and verify that the failed login test passes."
+                        "sub_step": "3.2",
+                        "title": "Test invalid credentials handling",
+                        "description": "Write tests to ensure appropriate error messages are returned for invalid credentials."
+                    },
+                    {
+                        "sub_step": "3.3",
+                        "title": "Test rate limiting behavior",
+                        "description": "Write tests to verify that rate limiting blocks further login attempts after multiple failures."
                     }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
+                ]
             },
             {
-                "step": 7,
+                "step": 4,
                 "title": "Update API documentation",
-                "description": "Document the new login endpoint and its requirements.",
+                "description": "Ensure that the API documentation reflects the new login endpoint and its usage.",
                 "category": "documentation",
                 "sub_steps": [
                     {
-                        "sub_step": "7.1",
-                        "title": "Add login endpoint documentation",
-                        "description": "Update API documentation to include details about the /api/auth/login endpoint.",
-                        "action_type": "modify",
-                        "files_affected": [
-                            "docs/api.md"
-                        ],
-                        "test": "Review the documentation to ensure the login endpoint is accurately described."
+                        "sub_step": "4.1",
+                        "title": "Document login API endpoint",
+                        "description": "Add details about the /api/auth/login endpoint, including request and response formats."
                     }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
+                ]
             }
         ],
         "database_changes": [
             {
-                "change": "Add fields to User model",
+                "change": "Add login attempt logging collection",
                 "fields": [
-                    "failedLoginAttempts",
-                    "lockUntil"
+                    "id",
+                    "email",
+                    "timestamp",
+                    "success"
                 ],
-                "affected_step": 1
+                "affected_step": 2
             }
         ],
         "external_dependencies": [
@@ -223,7 +131,7 @@
             },
             {
                 "package": "bcryptjs",
-                "version": "^5.1.0",
+                "version": "^2.4.3",
                 "purpose": "Password hashing"
             },
             {
@@ -235,53 +143,31 @@
         "internal_dependencies": [
             {
                 "module": "User model",
-                "required_by_step": 1
-            },
-            {
-                "module": "User repository",
                 "required_by_step": 2
             },
             {
-                "module": "Auth service",
-                "required_by_step": 3
-            },
-            {
-                "module": "Auth controller",
-                "required_by_step": 4
-            },
-            {
-                "module": "Auth routes",
-                "required_by_step": 5
-            },
-            {
-                "module": "Tests",
-                "required_by_step": 6
-            },
-            {
-                "module": "Documentation",
-                "required_by_step": 7
+                "module": "Validation middleware",
+                "required_by_step": 2
             }
         ],
-        "total_estimated_hours": 6.5,
         "story_points": 8,
         "execution_order": [
-            "Execute steps sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7",
+            "Execute steps sequentially: 1 → 2 → 3 → 4",
             "Within each step, execute sub-steps in order",
             "Test after each sub-step before proceeding",
             "Commit code after each completed sub-step"
         ]
     },
     "ready_for_implementation": true,
-    "task_id": "TSK-7963",
+    "task_id": "TSK-2477",
     "complexity_score": 7,
-    "estimated_hours": 6.5,
     "story_points": 8,
     "validation_score": 0.9,
     "status": "finalized",
     "iterations": 3,
     "metadata": {
         "planner_version": "1.0",
-        "total_steps": 17,
+        "total_steps": 13,
         "thread_id": "test_session_planner_TASK-002"
     }
 }

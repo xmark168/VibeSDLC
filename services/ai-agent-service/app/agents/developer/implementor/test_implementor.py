@@ -13,235 +13,187 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 from app.agents.developer.implementor.agent import ImplementorAgent
 
 
-def cleanup_test_branch(test_dir: str, branch_name: str):
-    """Clean up test branch if it exists."""
-    import subprocess
-
-    try:
-        # Check if branch exists
-        result = subprocess.run(
-            ["git", "branch", "--list", branch_name],
-            cwd=test_dir,
-            capture_output=True,
-            text=True,
-        )
-
-        if result.returncode == 0 and branch_name in result.stdout:
-            print(f"🧹 Cleaning up existing branch: {branch_name}")
-
-            # Switch to main first
-            subprocess.run(
-                ["git", "checkout", "main"], cwd=test_dir, capture_output=True
-            )
-
-            # Delete the branch
-            subprocess.run(
-                ["git", "branch", "-D", branch_name], cwd=test_dir, capture_output=True
-            )
-            print(f"✅ Cleaned up branch: {branch_name}")
-
-    except subprocess.CalledProcessError as e:
-        print(f"⚠️ Branch cleanup failed: {e}")
-
-
 def test_implementor_new_project():
     """Test implementor với new project scenario."""
 
     print("\n🧪 Testing New Project Scenario...")
 
     # Create test directory structure
-    import os
 
-    test_dir = r"D:\capstone project\VibeSDLC\services\ai-agent-service\app\agents\demo"
-    if not os.path.exists(test_dir):
-        os.makedirs(test_dir)
-        print(f"📁 Created test directory: {test_dir}")
-
-    # Initialize git repo if needed
-    if not os.path.exists(os.path.join(test_dir, ".git")):
-        import subprocess
-
-        try:
-            subprocess.run(
-                ["git", "init"], cwd=test_dir, check=True, capture_output=True
-            )
-            subprocess.run(
-                ["git", "config", "user.email", "test@example.com"],
-                cwd=test_dir,
-                check=True,
-            )
-            subprocess.run(
-                ["git", "config", "user.name", "Test User"], cwd=test_dir, check=True
-            )
-            print(f"🔧 Initialized git repo in {test_dir}")
-        except subprocess.CalledProcessError as e:
-            print(f"⚠️ Git init failed: {e}")
-
-    # Clean up any existing test branch
-    cleanup_test_branch(test_dir, "feature/tsk-9640")
+    test_dir = r"D:\capstone project\VibeSDLC\services\ai-agent-service\app\agents\demo\be\nodejs\express-basic"
 
     implementor = ImplementorAgent(model="gpt-4o")
 
     # Mock plan for new FastAPI project
     new_project_plan = {
-        "task_id": "TSK-9011",
+        "task_id": "TSK-7457",
         "description": "Task: Implement user registration functionality\nTask Description: Create user registration API endpo...",
         "complexity_score": 7,
         "plan_type": "complex",
         "functional_requirements": [
             "Create a POST /api/auth/register endpoint that accepts email, password, and confirm_password.",
-            "Implement password validation that requires a minimum of 8 characters, including at least one uppercase letter, one lowercase letter, one number, and one special character.",
-            "Ensure email validation checks for proper format and uniqueness in the database.",
+            "Implement password validation to ensure it includes a minimum of 8 characters, at least one uppercase letter, one lowercase letter, one number, and one special character.",
+            "Ensure email validation checks for proper format and uniqueness.",
             "Hash the password using bcrypt before storing it in the database.",
             "Store user data in the database with a created_at timestamp.",
             "Return a JWT token upon successful registration.",
             "Return appropriate error messages for validation failures.",
-            "Include comprehensive unit tests for all scenarios related to registration.",
-            "Update API documentation with details of the /api/auth/register endpoint.",
+            "Include comprehensive unit tests for all scenarios.",
+            "Update API documentation with endpoint details.",
         ],
         "steps": [
             {
                 "step": 1,
-                "title": "Setup and preparation",
-                "description": "Initialize development environment and dependencies for user registration.",
-                "category": "backend",
+                "title": "Create User Model",
+                "description": "Define the User model schema with Mongoose including validation rules.",
+                "category": "database",
                 "sub_steps": [
                     {
                         "sub_step": "1.1",
-                        "title": "Install necessary libraries",
-                        "description": "Add express, mongoose, bcrypt, jsonwebtoken, and validator libraries to package.json.",
-                        "action_type": "setup",
-                        "files_affected": ["package.json"],
-                        "test": "Run npm install and verify express, mongoose, bcrypt, jsonwebtoken, and validator are installed correctly.",
+                        "title": "Define User schema",
+                        "description": "Create a Mongoose schema for User with fields: name, email, password, and timestamps.",
                     },
                     {
                         "sub_step": "1.2",
-                        "title": "Create user model",
-                        "description": "Define the user schema with email, password, and created_at fields.",
-                        "action_type": "create",
-                        "files_affected": ["src/models/user.js"],
-                        "test": "Import User model and verify schema structure by creating a test user instance.",
-                    },
-                    {
-                        "sub_step": "1.3",
-                        "title": "Setup database connection",
-                        "description": "Configure MongoDB connection in app.js.",
-                        "action_type": "modify",
-                        "files_affected": ["src/app.js"],
-                        "test": "Start application and verify successful connection to MongoDB without errors.",
+                        "title": "Add unique index on email",
+                        "description": "Ensure the email field is unique to prevent duplicate registrations.",
                     },
                 ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium",
             },
             {
                 "step": 2,
-                "title": "Core implementation",
-                "description": "Implement user registration API endpoint and validation logic.",
+                "title": "Create User Repository",
+                "description": "Implement the User repository for database operations related to users.",
                 "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "2.1",
-                        "title": "Create registration route",
-                        "description": "Setup POST /api/auth/register route with Express router.",
-                        "action_type": "create",
-                        "files_affected": ["src/routes/auth.js"],
-                        "test": "Send POST request to /api/auth/register and verify route is accessible (404 → 400/500).",
+                        "title": "Implement findByEmail method",
+                        "description": "Create a method to find a user by email in the User repository.",
                     },
                     {
                         "sub_step": "2.2",
-                        "title": "Implement registration controller logic",
-                        "description": "Create controller to handle user registration, including validation and password hashing.",
-                        "action_type": "create",
-                        "files_affected": ["src/services/authService.js"],
-                        "test": "Call registration controller with valid data and verify user is created in the database.",
-                    },
-                    {
-                        "sub_step": "2.3",
-                        "title": "Add request validation middleware",
-                        "description": "Validate email format, password strength, and confirm password match.",
-                        "action_type": "create",
-                        "files_affected": ["src/middleware/validation.js"],
-                        "test": "Send invalid registration request and verify appropriate validation error messages.",
-                    },
-                    {
-                        "sub_step": "2.4",
-                        "title": "Hash password before storing",
-                        "description": "Use bcrypt to hash the password before saving user data to the database.",
-                        "action_type": "modify",
-                        "files_affected": ["src/services/authService.js"],
-                        "test": "Verify that the password stored in the database is hashed and not plain text.",
-                    },
-                    {
-                        "sub_step": "2.5",
-                        "title": "Generate JWT token on successful registration",
-                        "description": "Return a JWT token upon successful registration.",
-                        "action_type": "modify",
-                        "files_affected": ["src/services/authService.js"],
-                        "test": "Verify that a valid JWT token is returned upon successful registration.",
+                        "title": "Implement create method",
+                        "description": "Create a method to save a new user in the User repository.",
                     },
                 ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium",
             },
             {
                 "step": 3,
-                "title": "Integration and testing",
-                "description": "Integrate components and validate functionality through unit tests.",
+                "title": "Create Auth Service",
+                "description": "Implement business logic for user registration and token generation.",
                 "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "3.1",
-                        "title": "Write unit tests for registration",
-                        "description": "Implement unit tests for all scenarios related to user registration.",
-                        "action_type": "create",
-                        "files_affected": ["src/tests/auth.test.js"],
-                        "test": "Run test suite and verify all registration tests pass successfully.",
+                        "title": "Implement registerUser method",
+                        "description": "Create a method to handle user registration, including validation and password hashing.",
                     },
                     {
                         "sub_step": "3.2",
-                        "title": "Update API documentation",
-                        "description": "Document the /api/auth/register endpoint with request and response examples.",
-                        "action_type": "modify",
-                        "files_affected": ["docs/api.md"],
-                        "test": "Verify that the documentation accurately reflects the registration endpoint and its requirements.",
+                        "title": "Generate JWT token",
+                        "description": "Implement logic to generate a JWT token upon successful registration.",
                     },
                 ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium",
+            },
+            {
+                "step": 4,
+                "title": "Create Auth Controller",
+                "description": "Implement the controller to handle incoming registration requests.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "4.1",
+                        "title": "Implement registerUser controller",
+                        "description": "Create a controller method to process registration requests and return responses.",
+                    },
+                    {
+                        "sub_step": "4.2",
+                        "title": "Handle errors in controller",
+                        "description": "Ensure proper error handling and response formatting in the controller.",
+                    },
+                ],
+            },
+            {
+                "step": 5,
+                "title": "Create Auth Routes",
+                "description": "Define the API routes for user registration.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "5.1",
+                        "title": "Setup POST /api/auth/register route",
+                        "description": "Create the route for user registration and link it to the controller.",
+                    },
+                    {
+                        "sub_step": "5.2",
+                        "title": "Add request validation middleware",
+                        "description": "Implement middleware to validate request body using Joi.",
+                    },
+                ],
+            },
+            {
+                "step": 6,
+                "title": "Implement Unit Tests",
+                "description": "Create tests for the registration functionality.",
+                "category": "testing",
+                "sub_steps": [
+                    {
+                        "sub_step": "6.1",
+                        "title": "Test successful registration",
+                        "description": "Write tests to verify successful user registration and token generation.",
+                    },
+                    {
+                        "sub_step": "6.2",
+                        "title": "Test validation errors",
+                        "description": "Write tests to check for validation errors on email and password.",
+                    },
+                    {
+                        "sub_step": "6.3",
+                        "title": "Test duplicate email error",
+                        "description": "Write tests to verify handling of duplicate email registrations.",
+                    },
+                ],
+            },
+            {
+                "step": 7,
+                "title": "Update API Documentation",
+                "description": "Document the new registration endpoint in the API documentation.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "7.1",
+                        "title": "Add endpoint details",
+                        "description": "Include details about the /api/auth/register endpoint in the API documentation.",
+                    }
+                ],
             },
         ],
         "database_changes": [
             {
                 "change": "Add users collection",
-                "fields": ["email", "password", "created_at"],
+                "fields": ["name", "email", "password", "createdAt", "updatedAt"],
                 "affected_step": 1,
             }
         ],
         "external_dependencies": [
+            {"package": "bcryptjs", "version": "^5.0.0", "purpose": "Password hashing"},
             {
                 "package": "jsonwebtoken",
                 "version": "^9.0.0",
                 "purpose": "JWT token generation",
             },
-            {"package": "bcrypt", "version": "^5.1.0", "purpose": "Password hashing"},
-            {
-                "package": "validator",
-                "version": "^13.6.0",
-                "purpose": "Input validation",
-            },
+            {"package": "joi", "version": "^17.0.0", "purpose": "Input validation"},
         ],
         "internal_dependencies": [
             {"module": "User model", "required_by_step": 2},
-            {"module": "Validation middleware", "required_by_step": 2},
+            {"module": "User repository", "required_by_step": 3},
+            {"module": "Auth service", "required_by_step": 4},
+            {"module": "Validation middleware", "required_by_step": 5},
         ],
-        "total_estimated_hours": 5.5,
         "story_points": 8,
         "execution_order": [
-            "Execute steps sequentially: 1 → 2 → 3",
+            "Execute steps sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7",
             "Within each step, execute sub-steps in order",
             "Test after each sub-step before proceeding",
             "Commit code after each completed sub-step",

@@ -18,7 +18,6 @@ from .nodes import (
     generate_plan,
     initialize,
     initialize_sandbox,
-    map_dependencies,
     parse_task,
     validate_plan,
 )
@@ -33,8 +32,8 @@ class PlannerAgent:
     Planner Agent - Phân tích task requirements và tạo detailed implementation plan.
 
     Workflow:
-    START → initialize → initialize_sandbox → parse_task → websearch → analyze_codebase →
-    map_dependencies → generate_plan → validate_plan → finalize → END
+    START → initialize → initialize_sandbox → parse_task → analyze_codebase →
+    generate_plan → validate_plan → finalize → END
 
     Với validation loop: validate_plan có thể loop back đến analyze_codebase
     """
@@ -88,11 +87,8 @@ class PlannerAgent:
         graph_builder.add_node("initialize_sandbox", initialize_sandbox)
         graph_builder.add_node("parse_task", parse_task)
         from .nodes.analyze_codebase import analyze_codebase
-        from .nodes.websearch import websearch
 
-        graph_builder.add_node("websearch", websearch)
         graph_builder.add_node("analyze_codebase", analyze_codebase)
-        graph_builder.add_node("map_dependencies", map_dependencies)
         graph_builder.add_node("generate_plan", generate_plan)
         graph_builder.add_node("validate_plan", validate_plan)
         graph_builder.add_node("finalize", finalize)
@@ -101,14 +97,8 @@ class PlannerAgent:
         graph_builder.add_edge(START, "initialize")
         graph_builder.add_edge("initialize", "initialize_sandbox")
         graph_builder.add_edge("initialize_sandbox", "parse_task")
-
-        # Conditional edge từ parse_task
-        graph_builder.add_conditional_edges("parse_task", self.websearch_branch)
-
-        # Include analyze_codebase in workflow
-        graph_builder.add_edge("websearch", "analyze_codebase")
-        graph_builder.add_edge("analyze_codebase", "map_dependencies")
-        graph_builder.add_edge("map_dependencies", "generate_plan")
+        graph_builder.add_edge("parse_task", "analyze_codebase")
+        graph_builder.add_edge("analyze_codebase", "generate_plan")
         graph_builder.add_edge("generate_plan", "validate_plan")
 
         # Conditional edges for validation loop
@@ -118,38 +108,6 @@ class PlannerAgent:
         # Setup checkpointer
         checkpointer = MemorySaver()
         return graph_builder.compile(checkpointer=checkpointer)
-
-    def websearch_branch(self, state: PlannerState) -> str:
-        """
-        Conditional branch sau parse_task node.
-
-        Logic:
-        - Đánh giá xem có cần web search hay không
-        - Nếu cần → websearch
-        - Nếu không cần → analyze_codebase
-        """
-        from .tools.tavily_search import should_perform_websearch
-
-        task_description = state.task_description
-        task_requirements = state.task_requirements.model_dump()
-        codebase_context = state.codebase_context
-
-        should_search, reason = should_perform_websearch(
-            task_description=task_description,
-            task_requirements=task_requirements,
-            codebase_context=codebase_context,
-        )
-
-        print("\n🔀 WebSearch Branch Decision:")
-        print(f"   Should Search: {should_search}")
-        print(f"   Reason: {reason}")
-
-        if should_search:
-            print("   → Decision: WEBSEARCH")
-            return "websearch"
-        else:
-            print("   → Decision: ANALYZE_CODEBASE (skip websearch)")
-            return "analyze_codebase"
 
     def validate_branch(self, state: PlannerState) -> str:
         """
@@ -297,11 +255,6 @@ class PlannerAgent:
                         if implementation_plan
                         else 0
                     ),
-                    "estimated_hours": (
-                        implementation_plan.total_estimated_hours
-                        if implementation_plan
-                        else 0
-                    ),
                     "story_points": (
                         implementation_plan.story_points if implementation_plan else 0
                     ),
@@ -320,9 +273,7 @@ class PlannerAgent:
                 print("=" * 80)
                 print(f"📋 Task ID: {result['task_id']}")
                 print(f"📊 Complexity: {result['complexity_score']}/10")
-                print(
-                    f"⏱️  Estimated: {result['estimated_hours']} hours ({result['story_points']} SP)"
-                )
+                print(f"⭐ Story Points: {result['story_points']} SP")
                 print(
                     f"✅ Ready for Implementation: {result['ready_for_implementation']}"
                 )

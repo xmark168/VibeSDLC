@@ -4,13 +4,13 @@ Planner Validators
 Validation utilities cho planner workflow.
 """
 
-from typing import Dict, Any, List, Tuple
 import re
+from typing import Any
 
 
 def validate_task_requirements(
-    task_requirements: Dict[str, Any],
-) -> Tuple[bool, List[str]]:
+    task_requirements: dict[str, Any],
+) -> tuple[bool, list[str]]:
     """
     Validate task requirements completeness và quality.
 
@@ -66,8 +66,8 @@ def validate_task_requirements(
 
 
 def validate_codebase_analysis(
-    codebase_analysis: Dict[str, Any],
-) -> Tuple[bool, List[str]]:
+    codebase_analysis: dict[str, Any],
+) -> tuple[bool, list[str]]:
     """
     Validate codebase analysis completeness.
 
@@ -105,8 +105,8 @@ def validate_codebase_analysis(
 
 
 def validate_dependency_mapping(
-    dependency_mapping: Dict[str, Any],
-) -> Tuple[bool, List[str]]:
+    dependency_mapping: dict[str, Any],
+) -> tuple[bool, list[str]]:
     """
     Validate dependency mapping logic.
 
@@ -126,14 +126,14 @@ def validate_dependency_mapping(
     # Validate execution order structure
     for i, step in enumerate(execution_order):
         if not isinstance(step, dict):
-            issues.append(f"Execution step {i+1} is not properly structured")
+            issues.append(f"Execution step {i + 1} is not properly structured")
             continue
 
         if "step" not in step:
-            issues.append(f"Execution step {i+1} missing 'step' field")
+            issues.append(f"Execution step {i + 1} missing 'step' field")
 
         if "dependencies" not in step:
-            issues.append(f"Execution step {i+1} missing 'dependencies' field")
+            issues.append(f"Execution step {i + 1} missing 'dependencies' field")
 
     # Check for circular dependencies
     circular_deps = find_circular_dependencies(execution_order)
@@ -151,8 +151,8 @@ def validate_dependency_mapping(
 
 
 def validate_implementation_plan(
-    implementation_plan: Dict[str, Any],
-) -> Tuple[bool, List[str]]:
+    implementation_plan: dict[str, Any],
+) -> tuple[bool, list[str]]:
     """
     Validate implementation plan completeness và consistency.
 
@@ -184,35 +184,14 @@ def validate_implementation_plan(
     if not implementation_steps:
         issues.append("No implementation steps specified")
 
-    total_hours = 0
     for i, step in enumerate(implementation_steps):
         step_issues = validate_implementation_step(step, i + 1)
         issues.extend(step_issues)
-
-        # Accumulate hours
-        estimated_hours = step.get("estimated_hours", 0)
-        if isinstance(estimated_hours, (int, float)):
-            total_hours += estimated_hours
-
-    # Validate total effort
-    plan_total_hours = implementation_plan.get("total_estimated_hours", 0)
-    if abs(total_hours - plan_total_hours) > 0.1:
-        issues.append(
-            f"Total hours mismatch: steps sum to {total_hours}, plan shows {plan_total_hours}"
-        )
 
     # Validate story points
     story_points = implementation_plan.get("story_points", 0)
     if not isinstance(story_points, int) or story_points not in [1, 2, 3, 5, 8, 13, 21]:
         issues.append("Story points must be Fibonacci number: 1, 2, 3, 5, 8, 13, 21")
-
-    # Check effort consistency
-    if story_points > 0 and total_hours > 0:
-        hours_per_point = total_hours / story_points
-        if hours_per_point < 0.5 or hours_per_point > 8:
-            issues.append(
-                f"Effort ratio unusual: {hours_per_point:.1f} hours per story point"
-            )
 
     # Validate risks
     risks = implementation_plan.get("risks", [])
@@ -222,7 +201,7 @@ def validate_implementation_plan(
     return len(issues) == 0, issues
 
 
-def validate_implementation_step(step: Dict[str, Any], step_number: int) -> List[str]:
+def validate_implementation_step(step: dict[str, Any], step_number: int) -> list[str]:
     """
     Validate individual implementation step.
 
@@ -236,7 +215,7 @@ def validate_implementation_step(step: Dict[str, Any], step_number: int) -> List
     issues = []
 
     # Check required fields
-    required_fields = ["title", "description", "estimated_hours"]
+    required_fields = ["title", "description"]
     for field in required_fields:
         if field not in step:
             issues.append(f"Step {step_number} missing required field: {field}")
@@ -250,15 +229,6 @@ def validate_implementation_step(step: Dict[str, Any], step_number: int) -> List
     description = step.get("description", "")
     if len(description) < 10:
         issues.append(f"Step {step_number} description too brief")
-
-    # Validate estimated hours
-    estimated_hours = step.get("estimated_hours", 0)
-    if not isinstance(estimated_hours, (int, float)) or estimated_hours <= 0:
-        issues.append(f"Step {step_number} invalid estimated hours: {estimated_hours}")
-    elif estimated_hours > 40:
-        issues.append(
-            f"Step {step_number} estimated hours too high: {estimated_hours} (consider breaking down)"
-        )
 
     # Validate files
     files = step.get("files", [])
@@ -312,7 +282,7 @@ def validate_file_path(file_path: str) -> bool:
     return True
 
 
-def find_circular_dependencies(execution_order: List[Dict[str, Any]]) -> List[str]:
+def find_circular_dependencies(execution_order: list[dict[str, Any]]) -> list[str]:
     """
     Find circular dependencies trong execution order.
 
@@ -394,8 +364,8 @@ def calculate_validation_score(
 
 
 def validate_plan_readiness(
-    implementation_plan: Dict[str, Any],
-) -> Tuple[bool, float, List[str]]:
+    implementation_plan: dict[str, Any],
+) -> tuple[bool, float, list[str]]:
     """
     Comprehensive validation of plan readiness for implementation.
 

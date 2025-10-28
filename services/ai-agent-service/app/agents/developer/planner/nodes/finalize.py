@@ -73,9 +73,6 @@ def finalize(state: PlannerState) -> PlannerState:
                     "description": step.description,
                     "category": step.category,
                     "sub_steps": step.sub_steps,
-                    "dependencies": step.dependencies,
-                    "estimated_hours": step.estimated_hours,
-                    "complexity": step.complexity,
                 }
                 for step in implementation_plan.steps
             ],
@@ -84,7 +81,6 @@ def finalize(state: PlannerState) -> PlannerState:
             "external_dependencies": implementation_plan.external_dependencies,
             "internal_dependencies": implementation_plan.internal_dependencies,
             # Metadata
-            "total_estimated_hours": implementation_plan.total_estimated_hours,
             "story_points": implementation_plan.story_points,
             "execution_order": implementation_plan.execution_order,
         }
@@ -98,7 +94,7 @@ def finalize(state: PlannerState) -> PlannerState:
         # Create summary statistics
         summary_stats = {
             "implementation_steps": len(implementation_plan.steps),
-            "estimated_effort": f"{implementation_plan.total_estimated_hours} hours ({implementation_plan.story_points} story points)",
+            "estimated_effort": f"{implementation_plan.story_points} story points",
             "complexity_level": get_complexity_level(
                 implementation_plan.complexity_score
             ),
@@ -120,7 +116,7 @@ Infrastructure Changes:
 - Database: {len(implementation_plan.database_changes)} changes
 - Dependencies: {len(implementation_plan.external_dependencies)} external
 
-Effort Estimate: {implementation_plan.total_estimated_hours} hours ({implementation_plan.story_points} story points)
+Effort Estimate: {implementation_plan.story_points} story points
 
 SUCCESS: Chain of Vibe plan is ready for handoff to Implementor Agent"""
         )

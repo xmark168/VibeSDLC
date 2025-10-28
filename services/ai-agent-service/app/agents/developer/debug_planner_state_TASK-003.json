@@ -1,219 +1,184 @@
 {
     "success": true,
     "final_plan": {
-        "task_id": "TSK-4262",
+        "task_id": "TSK-7267",
         "description": "Task: Implement password reset functionality\nTask Description: Create password reset flow with email...",
         "complexity_score": 7,
         "plan_type": "complex",
         "functional_requirements": [
-            "Create a password reset flow that includes email verification.",
+            "Create a password reset flow with email verification.",
             "Generate a secure random reset token with a 1-hour expiration.",
             "Store the reset token hash in the database associated with the user.",
             "Send a password reset email containing a secure reset link.",
-            "Validate the reset token upon password reset request.",
-            "Verify that the reset token has not expired before allowing the password reset.",
-            "Ensure the new password meets the same validation requirements as the registration process.",
+            "Validate the reset token during the password reset process.",
+            "Ensure the new password meets the same validation requirements as registration.",
             "Invalidate the reset token after a successful password change.",
-            "Include comprehensive unit tests for all password reset scenarios.",
+            "Include comprehensive unit tests for all reset scenarios.",
             "Update API documentation with details of the password reset flow."
         ],
         "steps": [
             {
                 "step": 1,
-                "title": "Update User Model for Password Reset",
-                "description": "Add fields for password reset token and expiration to the User model.",
+                "title": "Create Password Reset Token Model",
+                "description": "Define a new Mongoose model for storing password reset tokens.",
                 "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "1.1",
-                        "title": "Add passwordResetTokenHash and passwordResetTokenExpires fields",
-                        "description": "Modify User model to include fields for password reset token and expiration.",
-                        "action_type": "modify",
-                        "files_affected": [
-                            "src/models/User.js"
-                        ],
-                        "test": "Start application and verify User model includes new fields."
+                        "title": "Define PasswordResetToken schema",
+                        "description": "Create a schema with fields for userId, token, and expiration date."
+                    },
+                    {
+                        "sub_step": "1.2",
+                        "title": "Export PasswordResetToken model",
+                        "description": "Export the newly created model for use in repositories."
                     }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
+                ]
             },
             {
                 "step": 2,
-                "title": "Create Password Reset Repository",
-                "description": "Implement data access methods for password reset functionality.",
+                "title": "Implement Password Reset Token Repository",
+                "description": "Create repository methods for managing password reset tokens.",
                 "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "2.1",
-                        "title": "Create passwordResetRepository.js",
-                        "description": "Create repository to handle password reset token storage and retrieval.",
-                        "action_type": "create",
-                        "files_affected": [
-                            "src/repositories/passwordResetRepository.js"
-                        ],
-                        "test": "Import repository and verify methods for storing and retrieving tokens work."
+                        "title": "Create findByToken method",
+                        "description": "Implement a method to find a token by its value."
+                    },
+                    {
+                        "sub_step": "2.2",
+                        "title": "Create saveToken method",
+                        "description": "Implement a method to save a new password reset token."
+                    },
+                    {
+                        "sub_step": "2.3",
+                        "title": "Create invalidateToken method",
+                        "description": "Implement a method to delete or invalidate a token after use."
                     }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
+                ]
             },
             {
                 "step": 3,
-                "title": "Implement Password Reset Service",
-                "description": "Create business logic for generating tokens and sending emails.",
+                "title": "Develop Password Reset Service",
+                "description": "Implement business logic for generating and validating password reset tokens.",
                 "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "3.1",
-                        "title": "Create passwordResetService.js",
-                        "description": "Implement service methods for generating reset tokens and sending emails.",
-                        "action_type": "create",
-                        "files_affected": [
-                            "src/services/passwordResetService.js"
-                        ],
-                        "test": "Import service and verify token generation and email sending methods work."
+                        "title": "Create generateResetToken method",
+                        "description": "Implement logic to generate a secure random token and save it."
+                    },
+                    {
+                        "sub_step": "3.2",
+                        "title": "Create validateResetToken method",
+                        "description": "Implement logic to verify the token and check its expiration."
+                    },
+                    {
+                        "sub_step": "3.3",
+                        "title": "Create resetPassword method",
+                        "description": "Implement logic to reset the user's password and invalidate the token."
                     }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
+                ]
             },
             {
                 "step": 4,
-                "title": "Create Password Reset Controller",
-                "description": "Handle requests related to password reset functionality.",
+                "title": "Implement Password Reset Controller",
+                "description": "Create controller methods for handling password reset requests.",
                 "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "4.1",
-                        "title": "Create passwordResetController.js",
-                        "description": "Implement controller methods for handling password reset requests.",
-                        "action_type": "create",
-                        "files_affected": [
-                            "src/controllers/passwordResetController.js"
-                        ],
-                        "test": "Import controller and verify methods for handling requests work."
+                        "title": "Create forgotPassword method",
+                        "description": "Implement logic to handle forgot password requests and send email."
+                    },
+                    {
+                        "sub_step": "4.2",
+                        "title": "Create resetPassword method",
+                        "description": "Implement logic to handle password reset requests with token validation."
                     }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
+                ]
             },
             {
                 "step": 5,
                 "title": "Define Password Reset Routes",
-                "description": "Set up API routes for password reset functionality.",
+                "description": "Set up API endpoints for password reset functionality.",
                 "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "5.1",
-                        "title": "Create passwordReset.js route file",
-                        "description": "Define routes for requesting a password reset and resetting the password.",
-                        "action_type": "create",
-                        "files_affected": [
-                            "src/routes/passwordReset.js"
-                        ],
-                        "test": "Send requests to defined routes and verify responses are correct."
+                        "title": "Create POST /api/auth/forgot-password route",
+                        "description": "Set up route to initiate password reset process."
+                    },
+                    {
+                        "sub_step": "5.2",
+                        "title": "Create POST /api/auth/reset-password route",
+                        "description": "Set up route to handle password reset with token."
                     }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
+                ]
             },
             {
                 "step": 6,
-                "title": "Implement Token Validation Logic",
-                "description": "Ensure tokens are validated and not expired during password reset.",
+                "title": "Send Password Reset Email",
+                "description": "Implement email service to send password reset emails.",
                 "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "6.1",
-                        "title": "Add token validation to passwordResetService",
-                        "description": "Implement logic to check token validity and expiration.",
-                        "action_type": "modify",
-                        "files_affected": [
-                            "src/services/passwordResetService.js"
-                        ],
-                        "test": "Call validation method with valid and invalid tokens to verify behavior."
+                        "title": "Create email template for password reset",
+                        "description": "Design an email template that includes the reset link."
+                    },
+                    {
+                        "sub_step": "6.2",
+                        "title": "Implement sendResetEmail function",
+                        "description": "Create a function to send the password reset email using a mail service."
                     }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
+                ]
             },
             {
                 "step": 7,
-                "title": "Update Password Validation Logic",
-                "description": "Ensure new passwords meet validation criteria.",
-                "category": "backend",
-                "sub_steps": [
-                    {
-                        "sub_step": "7.1",
-                        "title": "Modify validation.js for password reset",
-                        "description": "Update validation rules to match registration requirements.",
-                        "action_type": "modify",
-                        "files_affected": [
-                            "src/utils/validation.js"
-                        ],
-                        "test": "Test validation rules with various password inputs to ensure correctness."
-                    }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
-            },
-            {
-                "step": 8,
-                "title": "Create Unit Tests for Password Reset",
-                "description": "Implement unit tests for all password reset scenarios.",
+                "title": "Write Unit Tests for Password Reset Functionality",
+                "description": "Create comprehensive tests for all password reset scenarios.",
                 "category": "testing",
                 "sub_steps": [
                     {
-                        "sub_step": "8.1",
-                        "title": "Create passwordReset.test.js",
-                        "description": "Write comprehensive tests for password reset functionality.",
-                        "action_type": "create",
-                        "files_affected": [
-                            "src/tests/auth/passwordReset.test.js"
-                        ],
-                        "test": "Run test suite and verify all password reset tests pass."
+                        "sub_step": "7.1",
+                        "title": "Test forgotPassword functionality",
+                        "description": "Write tests to verify email sending and token generation."
+                    },
+                    {
+                        "sub_step": "7.2",
+                        "title": "Test resetPassword functionality",
+                        "description": "Write tests to verify password reset with valid and invalid tokens."
                     }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
+                ]
             },
             {
-                "step": 9,
+                "step": 8,
                 "title": "Update API Documentation",
-                "description": "Document the new password reset functionality in the API documentation.",
-                "category": "documentation",
+                "description": "Document the new password reset endpoints and their usage.",
+                "category": "backend",
                 "sub_steps": [
                     {
-                        "sub_step": "9.1",
-                        "title": "Modify API documentation",
-                        "description": "Add details about the password reset flow to the documentation.",
-                        "action_type": "modify",
-                        "files_affected": [
-                            "src/docs/apiDocumentation.md"
-                        ],
-                        "test": "Review documentation to ensure all new endpoints and flows are accurately described."
+                        "sub_step": "8.1",
+                        "title": "Add documentation for forgot-password endpoint",
+                        "description": "Include details about the request and response for forgot password."
+                    },
+                    {
+                        "sub_step": "8.2",
+                        "title": "Add documentation for reset-password endpoint",
+                        "description": "Include details about the request and response for reset password."
                     }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
+                ]
             }
         ],
         "database_changes": [
             {
-                "change": "Add password reset fields to User model",
+                "change": "Add PasswordResetToken model",
                 "fields": [
-                    "passwordResetTokenHash",
-                    "passwordResetTokenExpires"
+                    "userId",
+                    "token",
+                    "expiresAt"
                 ],
                 "affected_step": 1
             }
@@ -222,48 +187,46 @@
             {
                 "package": "nodemailer",
                 "version": "^6.7.0",
-                "purpose": "Sending password reset emails"
+                "purpose": "Send password reset emails"
             },
             {
                 "package": "crypto",
-                "version": "1.0.1",
-                "purpose": "Generating secure tokens"
+                "version": "latest",
+                "purpose": "Generate secure random tokens"
             }
         ],
         "internal_dependencies": [
             {
+                "module": "PasswordResetToken model",
+                "required_by_step": 2
+            },
+            {
                 "module": "User model",
-                "required_by_step": 1
+                "required_by_step": 3
             },
             {
-                "module": "passwordResetService",
-                "required_by_step": 4
-            },
-            {
-                "module": "passwordResetController",
-                "required_by_step": 5
+                "module": "Email service",
+                "required_by_step": 6
             }
         ],
-        "total_estimated_hours": 8.5,
         "story_points": 8,
         "execution_order": [
-            "Execute steps sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9",
+            "Execute steps sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8",
             "Within each step, execute sub-steps in order",
             "Test after each sub-step before proceeding",
             "Commit code after each completed sub-step"
         ]
     },
     "ready_for_implementation": true,
-    "task_id": "TSK-4262",
+    "task_id": "TSK-7267",
     "complexity_score": 7,
-    "estimated_hours": 8.5,
     "story_points": 8,
-    "validation_score": 0.9,
+    "validation_score": 0.925,
     "status": "finalized",
     "iterations": 3,
     "metadata": {
         "planner_version": "1.0",
-        "total_steps": 17,
+        "total_steps": 13,
         "thread_id": "test_session_planner_TASK-003"
     }
 }

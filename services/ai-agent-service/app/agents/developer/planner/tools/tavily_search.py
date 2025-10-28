@@ -10,6 +10,8 @@ import os
 import time
 from typing import Any
 
+from langchain_core.tools import tool
+
 try:
     from tavily import TavilyClient
 except ImportError:
@@ -74,6 +76,7 @@ class WebSearchResults(BaseModel):
     summary: str = ""
 
 
+@tool
 def tavily_search_tool(
     query: str,
     max_results: int = 5,

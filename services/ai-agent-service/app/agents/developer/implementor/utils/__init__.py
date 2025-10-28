@@ -10,12 +10,11 @@ from .validators import *
 
 __all__ = [
     # Prompts
-    "FILE_CREATION_PROMPT",
-    "FILE_MODIFICATION_PROMPT",
+    "BACKEND_PROMPT",
+    "FRONTEND_PROMPT",
     "GIT_COMMIT_PROMPT",
     "PR_CREATION_PROMPT",
     "TEST_ANALYSIS_PROMPT",
-    "ERROR_RECOVERY_PROMPT",
     # Validators
     "validate_implementation_plan",
     "validate_file_changes",

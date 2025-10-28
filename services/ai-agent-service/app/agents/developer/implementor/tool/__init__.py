@@ -12,10 +12,10 @@ Các tools được sử dụng trong implementor workflow để:
 from .external_file_tools import copy_directory_from_external_tool
 from .filesystem_tools import (
     create_directory_tool,
-    edit_file_tool,
     grep_search_tool,
     list_files_tool,
     read_file_tool,
+    str_replace_tool,
     write_file_tool,
 )
 from .git_tools_gitpython import (
@@ -39,7 +39,7 @@ __all__ = [
     # Filesystem operations
     "read_file_tool",
     "write_file_tool",
-    "edit_file_tool",
+    "str_replace_tool",
     "list_files_tool",
     "grep_search_tool",
     "create_directory_tool",

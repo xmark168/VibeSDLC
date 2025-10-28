@@ -9,7 +9,6 @@ REFACTORED: Now uses Adapter Pattern to support both local and Daytona sandbox m
 """
 
 import json
-import subprocess
 from pathlib import Path
 
 from langchain_core.tools import tool
@@ -111,7 +110,7 @@ def write_file_tool(
 
 
 @tool
-def edit_file_tool(
+def str_replace_tool(
     file_path: str,
     old_str: str,
     new_str: str,
@@ -132,79 +131,19 @@ def edit_file_tool(
         Success message or error
 
     Example:
-        edit_file_tool(
+        str_replace_tool(
             "app/main.py",
             old_str="from app.routes import users",
             new_str="from app.routes import users, profile"
         )
     """
-    try:
-        # Resolve full path
-        full_path = Path(working_directory) / file_path
-        full_path = full_path.resolve()
+    # REFACTORED: Use adapter pattern for local/Daytona mode switching
+    from ...daytona_integration.adapters import get_filesystem_adapter
 
-        # Security check
-        working_dir_resolved = Path(working_directory).resolve()
-        if not str(full_path).startswith(str(working_dir_resolved)):
-            return json.dumps(
-                {
-                    "status": "error",
-                    "message": "Access denied - path outside working directory",
-                }
-            )
-
-        # Check file exists
-        if not full_path.exists():
-            return json.dumps(
-                {"status": "error", "message": f"File '{file_path}' does not exist"}
-            )
-
-        # Read current content
-        content = full_path.read_text(encoding="utf-8")
-
-        # Check if old_str exists
-        if old_str not in content:
-            return json.dumps(
-                {
-                    "status": "error",
-                    "message": f"String not found in file: '{old_str[:100]}...'",
-                }
-            )
-
-        # Check for multiple occurrences if not replace_all
-        occurrences = content.count(old_str)
-        if not replace_all and occurrences > 1:
-            return json.dumps(
-                {
-                    "status": "error",
-                    "message": f"String appears {occurrences} times in file. "
-                    f"Use replace_all=True to replace all instances, or provide a more specific string.",
-                }
-            )
-
-        # Perform replacement
-        if replace_all:
-            new_content = content.replace(old_str, new_str)
-            result_msg = (
-                f"Successfully replaced {occurrences} occurrence(s) in '{file_path}'"
-            )
-        else:
-            new_content = content.replace(old_str, new_str, 1)
-            result_msg = f"Successfully replaced 1 occurrence in '{file_path}'"
-
-        # Write back
-        full_path.write_text(new_content, encoding="utf-8")
-
-        return json.dumps({"status": "success", "message": result_msg})
-
-    except PermissionError:
-        return json.dumps(
-            {"status": "error", "message": f"Permission denied editing '{file_path}'"}
-        )
-    except Exception as e:
-        return json.dumps(
-            {"status": "error", "message": f"Error editing file: {str(e)}"}
-        )
+    adapter = get_filesystem_adapter()
+    return adapter.edit_file(
+        file_path, old_str, new_str, working_directory, replace_all
+    )
 
 
 # ============================================================================
@@ -238,60 +177,18 @@ def grep_search_tool(
     Example:
         grep_search_tool("def authenticate", directory="app", file_pattern="*.py")
     """
-    try:
-        # Resolve full path
-        search_path = Path(working_directory) / directory
-        search_path = search_path.resolve()
+    # REFACTORED: Use adapter pattern for local/Daytona mode switching
+    from ...daytona_integration.adapters import get_filesystem_adapter
 
-        # Security check
-        working_dir_resolved = Path(working_directory).resolve()
-        if not str(search_path).startswith(str(working_dir_resolved)):
-            return "Error: Access denied - path outside working directory"
-
-        # Try ripgrep first (faster)
-        try:
-            cmd = ["rg", pattern, str(search_path), "-n", "--color=never"]
-
-            if not case_sensitive:
-                cmd.append("-i")
-
-            if context_lines > 0:
-                cmd.extend(["-C", str(context_lines)])
-
-            if file_pattern != "*":
-                cmd.extend(["-g", file_pattern])
-
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-
-        except FileNotFoundError:
-            # Fallback to grep
-            cmd = ["grep", "-rn"]
-
-            if not case_sensitive:
-                cmd.append("-i")
-
-            if context_lines > 0:
-                cmd.extend(["-C", str(context_lines)])
-
-            cmd.append(pattern)
-            cmd.append(str(search_path))
-
-            if file_pattern != "*":
-                cmd.extend(["--include", file_pattern])
-
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-
-        if result.returncode == 0:
-            return result.stdout
-        elif result.returncode == 1:
-            return f"No matches found for pattern '{pattern}'"
-        else:
-            return f"Error: {result.stderr}"
-
-    except subprocess.TimeoutExpired:
-        return "Error: Search timed out after 30 seconds"
-    except Exception as e:
-        return f"Error executing grep: {str(e)}"
+    adapter = get_filesystem_adapter()
+    return adapter.grep_search(
+        pattern,
+        directory,
+        file_pattern,
+        case_sensitive,
+        context_lines,
+        working_directory,
+    )
 
 
 @tool
@@ -415,7 +312,7 @@ def batch_edit_files_tool(file_edits: list[dict], working_directory: str = ".") 
     """
     results = []
     for i, edit in enumerate(file_edits):
-        result = edit_file_tool(
+        result = str_replace_tool(
             file_path=edit["file_path"],
             old_str=edit["old_str"],
             new_str=edit["new_str"],
@@ -433,7 +330,7 @@ __all__ = [
     "list_files_tool",
     # File Writing
     "write_file_tool",
-    "edit_file_tool",
+    "str_replace_tool",
     # Directory Operations
     "create_directory_tool",
     "list_directory_tree_tool",

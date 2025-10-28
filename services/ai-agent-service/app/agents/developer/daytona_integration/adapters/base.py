@@ -5,7 +5,6 @@ Abstract base classes cho Filesystem và Git adapters.
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional
 
 
 class FilesystemAdapter(ABC):
@@ -21,8 +20,8 @@ class FilesystemAdapter(ABC):
     def read_file(
         self,
         file_path: str,
-        start_line: Optional[int] = None,
-        end_line: Optional[int] = None,
+        start_line: int | None = None,
+        end_line: int | None = None,
         working_directory: str = ".",
     ) -> str:
         """
@@ -114,6 +113,56 @@ class FilesystemAdapter(ABC):
         """
         pass
 
+    @abstractmethod
+    def edit_file(
+        self,
+        file_path: str,
+        old_str: str,
+        new_str: str,
+        working_directory: str = ".",
+        replace_all: bool = False,
+    ) -> str:
+        """
+        Edit file by replacing old_str with new_str.
+
+        Args:
+            file_path: Path to file (relative to working_directory)
+            old_str: String to search for (must match exactly)
+            new_str: String to replace with
+            working_directory: Base directory for relative paths
+            replace_all: Whether to replace all occurrences (default: first only)
+
+        Returns:
+            Success message (JSON format)
+        """
+        pass
+
+    @abstractmethod
+    def grep_search(
+        self,
+        pattern: str,
+        directory: str = ".",
+        file_pattern: str = "*",
+        case_sensitive: bool = False,
+        context_lines: int = 0,
+        working_directory: str = ".",
+    ) -> str:
+        """
+        Search for pattern in files using grep/ripgrep.
+
+        Args:
+            pattern: Pattern to search for (regex supported)
+            directory: Directory to search in (relative to working_directory)
+            file_pattern: File glob pattern (e.g., "*.py", "*.ts")
+            case_sensitive: Whether search is case-sensitive
+            context_lines: Number of context lines before/after match
+            working_directory: Base directory for relative paths
+
+        Returns:
+            Search results with file paths and line numbers
+        """
+        pass
+
 
 class GitAdapter(ABC):
     """
@@ -144,7 +193,7 @@ class GitAdapter(ABC):
         self,
         branch_name: str,
         base_branch: str = "main",
-        source_branch: Optional[str] = None,
+        source_branch: str | None = None,
         working_directory: str = ".",
     ) -> dict:
         """
@@ -165,7 +214,7 @@ class GitAdapter(ABC):
     def commit(
         self,
         message: str,
-        files: Optional[list[str]] = None,
+        files: list[str] | None = None,
         working_directory: str = ".",
     ) -> dict:
         """
@@ -184,7 +233,7 @@ class GitAdapter(ABC):
     @abstractmethod
     def push(
         self,
-        branch: Optional[str] = None,
+        branch: str | None = None,
         remote: str = "origin",
         working_directory: str = ".",
     ) -> dict:
@@ -227,4 +276,3 @@ class GitAdapter(ABC):
             Dict with checkout status
         """
         pass
-

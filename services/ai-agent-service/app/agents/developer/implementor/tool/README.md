@@ -33,13 +33,13 @@ from app.agents.developer.implementor.tool import write_file_tool
 result = write_file_tool("app/config.py", "CONFIG = {}")
 ```
 
-#### `edit_file_tool(file_path, old_str, new_str, working_directory)`
+#### `str_replace_tool(file_path, old_str, new_str, working_directory)`
 Edit file bằng cách replace old_str với new_str.
 
 ```python
-from app.agents.developer.implementor.tool import edit_file_tool
+from app.agents.developer.implementor.tool import str_replace_tool
 
-result = edit_file_tool("app/main.py", "old_code", "new_code")
+result = str_replace_tool("app/main.py", "old_code", "new_code")
 ```
 
 #### `list_files_tool(directory, pattern, working_directory)`

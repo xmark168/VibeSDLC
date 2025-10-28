@@ -17,8 +17,8 @@ from langchain_core.messages import AIMessage
 from ..state import FileChange, ImplementorState
 from ..tool.filesystem_tools import (
     create_directory_tool,
-    edit_file_tool,
     read_file_tool,
+    str_replace_tool,
     write_file_tool,
 )
 from ..tool.incremental_tools import (
@@ -841,7 +841,7 @@ def _apply_incremental_change(file_change: FileChange, working_dir: str) -> bool
 
                 indented_content = "\n".join(indented_lines)
 
-                result = edit_file_tool.invoke(
+                result = str_replace_tool.invoke(
                     {
                         "file_path": file_change.file_path,
                         "old_str": old_str,

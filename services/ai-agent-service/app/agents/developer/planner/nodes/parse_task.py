@@ -51,16 +51,77 @@ def parse_task(state: PlannerState) -> PlannerState:
             base_url=os.getenv("OPENAI_BASE_URL"),
         )
 
+        # Bind tools to LLM - LLM has full autonomy to decide when/if to use them
+        from ..tools.tavily_search import tavily_search_tool
+
+        llm_with_tools = llm.bind_tools([tavily_search_tool])
+
         # Format prompt with context
         formatted_prompt = TASK_PARSING_PROMPT.format(
             task_description=task_description,
             context=state.codebase_context or "No additional context provided",
         )
 
-        print("🤖 Calling LLM for task parsing...")
+        print("🤖 Calling LLM for task parsing (autonomous mode - tools available)...")
 
-        # Call LLM
-        response = llm.invoke(formatted_prompt)
+        # Call LLM - it autonomously decides whether to use tools
+        response = llm_with_tools.invoke(formatted_prompt)
+
+        # Handle tool calls if LLM autonomously decided to use them
+        if hasattr(response, "tool_calls") and response.tool_calls:
+            print(
+                f"🔧 LLM autonomously requested {len(response.tool_calls)} tool call(s)"
+            )
+
+            # Execute tool calls and collect results
+            from langchain_core.messages import HumanMessage, ToolMessage
+
+            tool_messages = []
+            for tool_call in response.tool_calls:
+                print(
+                    f"   → Executing: {tool_call['name']} with args: {tool_call['args']}"
+                )
+
+                # Execute the tool
+                if tool_call["name"] == "tavily_search_tool":
+                    tool_result = tavily_search_tool.invoke(tool_call["args"])
+                    tool_messages.append(
+                        ToolMessage(
+                            content=str(tool_result), tool_call_id=tool_call["id"]
+                        )
+                    )
+                    print(f"   ✓ Tool result: {str(tool_result)[:100]}...")
+
+            # If tools were called, give LLM the results and let it continue
+            if tool_messages:
+                print("🔄 Feeding tool results back to LLM for final analysis...")
+
+                # Create follow-up prompt asking for JSON output
+                follow_up_prompt = f"""Based on the search results provided, now generate the task parsing output.
+
+Original task: {task_description}
+
+Please output ONLY a valid JSON object following this exact format (no markdown, no explanations):
+{{{{
+  "task_id": "Generated task ID",
+  "task_title": "Clear, descriptive title",
+  "functional_requirements": ["requirement 1", "requirement 2"],
+  "acceptance_criteria": ["criteria 1", "criteria 2"],
+  "business_rules": {{}},
+  "technical_specs": {{}},
+  "assumptions": [],
+  "clarifications_needed": []
+}}}}"""
+
+                messages = [
+                    HumanMessage(content=formatted_prompt),
+                    response,
+                    *tool_messages,
+                    HumanMessage(content=follow_up_prompt),
+                ]
+                response = llm_with_tools.invoke(messages)
+                print("✓ LLM completed analysis with tool results")
+
         llm_output = response.content
 
         print(f"📝 LLM Response: {llm_output[:200]}...")
@@ -146,7 +207,7 @@ def parse_task(state: PlannerState) -> PlannerState:
 
         # Update state
         state.task_requirements = task_requirements
-        state.current_phase = "websearch"
+        state.current_phase = "analyze_codebase"
         state.status = "task_parsed"
 
         # Store in tools_output for reference

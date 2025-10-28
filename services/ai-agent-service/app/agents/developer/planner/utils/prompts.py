@@ -1,299 +1,254 @@
 """
-Planner Prompts
+Planner Agent Prompts
 
-System prompts cho từng phase của planner workflow.
+Contains all prompt templates for the Planner Agent.
 """
 
-# Phase 1: Task Parsing
-TASK_PARSING_PROMPT = """
-You are a senior software architect analyzing task requirements. Your job is to extract structured information from task descriptions.
+import json
 
-TASK DESCRIPTION:
-{task_description}
 
-CODEBASE CONTEXT:
-{codebase_context}
+def create_chain_of_vibe_prompt(
+    state,
+    task_requirements,
+    detailed_codebase_context: str,
+    project_structure: dict,
+    architecture_guidelines_text: str,
+) -> str:
+    """
+    Create Chain of Vibe implementation planning prompt.
 
-Extract the following information:
+    Args:
+        state: PlannerState with tech_stack
+        task_requirements: TaskRequirements object
+        detailed_codebase_context: Detailed context string
+        project_structure: Project structure dict
+        architecture_guidelines_text: Architecture guidelines text
 
-1. FUNCTIONAL REQUIREMENTS:
-   - What specific functionality needs to be implemented?
-   - What are the core features and capabilities?
-   - What business logic is required?
+    Returns:
+        Formatted prompt string
+    """
 
-2. ACCEPTANCE CRITERIA:
-   - What conditions must be met for this task to be considered complete?
-   - What are the success metrics?
-   - What edge cases need to be handled?
+    prompt = f"""# CHAIN OF VIBE IMPLEMENTATION PLANNING
 
-3. BUSINESS RULES:
-   - What business constraints apply?
-   - What validation rules are needed?
-   - What compliance requirements exist?
+You are an expert implementation planner using the "Chain of Vibe" methodology for hierarchical, incremental task decomposition.
 
-4. TECHNICAL SPECIFICATIONS:
-   - What technologies or frameworks should be used?
-   - What architectural patterns should be followed?
-   - What performance requirements exist?
+## TASK CONTEXT
 
-5. CONSTRAINTS:
-   - What limitations exist (time, resources, technology)?
-   - What cannot be changed or modified?
-   - What dependencies must be maintained?
+Tech Stack: {state.tech_stack or "unknown"}
+Task ID: {task_requirements.task_id}
+Task Title: {task_requirements.task_title}
 
-Provide your analysis in structured JSON format with clear, actionable requirements.
+Requirements:
+{json.dumps(task_requirements.requirements, indent=2)}
+
+Acceptance Criteria:
+{json.dumps(task_requirements.acceptance_criteria, indent=2)}
+
+Technical Specs:
+{json.dumps(task_requirements.technical_specs, indent=2)}
+
+
+## DETAILED CODEBASE CONTEXT
+
+{detailed_codebase_context}
+
+
+Existing Project Structure:
+{json.dumps(project_structure, indent=2)}
+
+{architecture_guidelines_text}
+
+## OUTPUT FORMAT
+
+Generate a detailed implementation plan in JSON format:
+
+```json
+{{
+  "task_id": "{task_requirements.task_id}",
+  "description": "Clear description of what will be implemented",
+  "complexity_score": 1-10,
+  "plan_type": "simple|complex",
+
+  "functional_requirements": [
+    "Requirement 1 extracted from task",
+    "Requirement 2 extracted from task"
+  ],
+
+  "steps": [
+    {{
+      "step": 1,
+      "title": "Setup JWT authentication foundation",
+      "description": "Install dependencies and configure JWT infrastructure",
+      "category": "backend",
+      "sub_steps": [
+        {{
+          "sub_step": "1.1",
+          "title": "Install jsonwebtoken and bcrypt libraries",
+          "description": "Add JWT and password hashing libraries to package.json"
+        }},
+        {{
+          "sub_step": "1.2",
+          "title": "Create JWT utility functions",
+          "description": "Implement signToken() and verifyToken() helper functions"
+        }},
+        {{
+          "sub_step": "1.3",
+          "title": "Add JWT_SECRET to environment config",
+          "description": "Add JWT_SECRET variable to .env and config loader"
+        }}
+      ]
+    }},
+    {{
+      "step": 2,
+      "title": "Implement login API endpoint",
+      "description": "Create authentication endpoint with credential validation",
+      "category": "backend",
+      "sub_steps": [
+        {{
+          "sub_step": "2.1",
+          "title": "Create auth router and login route",
+          "description": "Setup POST /api/auth/login route with Express router"
+        }},
+        {{
+          "sub_step": "2.2",
+          "title": "Implement login controller logic",
+          "description": "Create controller to validate credentials and generate JWT"
+        }},
+        {{
+          "sub_step": "2.3",
+          "title": "Add request validation middleware",
+          "description": "Validate email format and password presence"
+        }}
+      ]
+    }},
+    {{
+      "step": 3,
+      "title": "Create frontend Login Form component",
+      "description": "Build React login form with validation and state management",
+      "category": "frontend",
+      "sub_steps": [
+        {{
+          "sub_step": "3.1",
+          "title": "Create LoginForm component structure",
+          "description": "Setup functional component with form fields and basic styling"
+        }},
+        {{
+          "sub_step": "3.2",
+          "title": "Add form validation logic",
+          "description": "Implement client-side validation with error messages"
+        }},
+        {{
+          "sub_step": "3.3",
+          "title": "Add loading and error states",
+          "description": "Implement loading spinner and API error display"
+        }}
+      ]
+    }},
+    {{
+      "step": 4,
+      "title": "Implement authentication state management",
+      "description": "Create custom hook and API service for auth flow",
+      "category": "frontend",
+      "sub_steps": [
+        {{
+          "sub_step": "4.1",
+          "title": "Create auth API service",
+          "description": "Implement API client for authentication endpoints"
+        }},
+        {{
+          "sub_step": "4.2",
+          "title": "Create useAuth custom hook",
+          "description": "Build hook managing auth state and login function"
+        }},
+        {{
+          "sub_step": "4.3",
+          "title": "Add token storage logic",
+          "description": "Implement localStorage for JWT persistence"
+        }}
+      ]
+    }},
+    {{
+      "step": 5,
+      "title": "End-to-end integration testing",
+      "description": "Test complete authentication flow from UI to backend",
+      "category": "integration",
+      "sub_steps": [
+        {{
+          "sub_step": "5.1",
+          "title": "Test successful login flow",
+          "description": "Verify complete flow with valid credentials"
+        }},
+        {{
+          "sub_step": "5.2",
+          "title": "Test error scenarios",
+          "description": "Verify handling of invalid credentials and network errors"
+        }}
+      ]
+    }}
+  ],
+
+  "database_changes": [
+    {{
+      "change": "Add users table",
+      "fields": ["id", "email", "password_hash", "created_at", "updated_at"],
+      "affected_step": 1
+    }}
+  ],
+
+  "external_dependencies": [
+    {{"package": "jsonwebtoken", "version": "^9.0.0", "purpose": "JWT token generation"}},
+    {{"package": "bcrypt", "version": "^5.1.0", "purpose": "Password hashing"}}
+  ],
+
+  "internal_dependencies": [
+    {{"module": "User model", "required_by_step": 2}},
+    {{"module": "Validation middleware", "required_by_step": 2}}
+  ],
+
+  "story_points": 5,
+
+  "execution_order": [
+    "Execute steps sequentially: 1 → 2 → 3 → 4 → 5",
+    "Within each step, execute sub-steps in order",
+    "Test after each sub-step before proceeding",
+    "Commit code after each completed sub-step"
+  ]
+}}
+```
+
+## CRITICAL REQUIREMENTS
+
+### Core Principles:
+1. **Hierarchical Breakdown**: Each major step decomposes into atomic sub-steps
+2. **Logical Dependencies**: Steps ordered by technical dependencies (data → logic → UI)
+3. **Actionable Granularity**: Each sub-step is a single, testable change
+4. **Incremental Execution**: Each sub-step produces working code that can be committed
+5. **Full-Stack Coverage**: Unified plan covering backend → frontend → integration
+
+### JSON Schema Rules:
+1. **Steps**: Each step MUST have: step (number), title, description, category, sub_steps (array)
+2. **Sub-steps**: Each sub-step MUST have ONLY 3 fields:
+   - "sub_step": "X.Y" (string format)
+   - "title": "Brief action title"
+   - "description": "Detailed description"
+3. **Categories**: Use "backend", "frontend", "database", "testing", or "integration"
+4. **Database Changes**: Include change, fields (array), affected_step
+5. **Dependencies**:
+   - external_dependencies: package, version, purpose
+   - internal_dependencies: module, required_by_step
+6. **Execution Order**: Array of strings describing sequential execution flow
+7. **Story Points**: Use Fibonacci sequence (1, 2, 3, 5, 8, 13, 21)
+
+## GENERATE PLAN NOW
+
+Analyze the task requirements and generate a complete Chain of Vibe implementation plan.
+
+**STRICT OUTPUT RULES:**
+- Output ONLY valid JSON, no markdown code blocks
+- Follow the EXACT schema shown in the example above
+- Do NOT add extra fields to sub-steps (only sub_step, title, description)
+- Do NOT add file_changes, estimated_time, or any other fields
+- Ensure all JSON is properly formatted and parseable
 """
 
-# Phase 2: Codebase Analysis
-CODEBASE_ANALYSIS_PROMPT = """
-You are a senior software architect analyzing existing codebase for implementation planning.
-
-TASK REQUIREMENTS:
-{task_requirements}
-
-CODEBASE CONTEXT:
-{codebase_context}
-
-Analyze the codebase and identify:
-
-1. FILES TO CREATE:
-   - What new files need to be created?
-   - What directory structure is needed?
-   - What file types and extensions?
-
-2. FILES TO MODIFY:
-   - What existing files need changes?
-   - What specific modifications are required?
-   - What is the impact of each change?
-
-3. AFFECTED MODULES:
-   - What modules/components will be impacted?
-   - What are the relationships between modules?
-   - What interfaces need to be updated?
-
-4. DATABASE CHANGES:
-   - What database schema changes are needed?
-   - What migrations are required?
-   - What data transformations are needed?
-
-5. API ENDPOINTS:
-   - What new endpoints need to be created?
-   - What existing endpoints need modification?
-   - What request/response formats are required?
-
-6. DEPENDENCIES:
-   - What internal dependencies exist?
-   - What external packages are needed?
-   - What version constraints apply?
-
-7. TESTING REQUIREMENTS:
-   - What unit tests are needed?
-   - What integration tests are required?
-   - What test data is needed?
-
-Provide detailed analysis with specific file paths, function names, and implementation details.
-"""
-
-# Phase 3: Dependency Mapping
-DEPENDENCY_MAPPING_PROMPT = """
-You are a senior software architect creating implementation execution order.
-
-TASK REQUIREMENTS:
-{task_requirements}
-
-CODEBASE ANALYSIS:
-{codebase_analysis}
-
-Create a dependency mapping that includes:
-
-1. EXECUTION ORDER:
-   - What is the correct order of implementation steps?
-   - What tasks must be completed before others can start?
-   - What are the critical path dependencies?
-
-2. BLOCKING RELATIONSHIPS:
-   - What tasks block other tasks?
-   - What are the hard dependencies that cannot be parallelized?
-   - What are the soft dependencies that could be worked around?
-
-3. PARALLEL OPPORTUNITIES:
-   - What tasks can be executed in parallel?
-   - What work can be done independently?
-   - What are the synchronization points?
-
-4. INTERNAL DEPENDENCIES:
-   - What components depend on each other within the project?
-   - What interfaces need to be defined first?
-   - What shared utilities are needed?
-
-5. EXTERNAL DEPENDENCIES:
-   - What third-party services or APIs are required?
-   - What external packages need to be installed?
-   - What infrastructure dependencies exist?
-
-6. RISK FACTORS:
-   - What dependencies pose the highest risk?
-   - What could cause delays or blocking issues?
-   - What contingency plans are needed?
-
-Provide a clear execution roadmap with dependency relationships and parallel execution opportunities.
-"""
-
-# Phase 4: Implementation Planning
-IMPLEMENTATION_PLANNING_PROMPT = """
-You are a senior software architect creating detailed implementation plans.
-
-TASK REQUIREMENTS:
-{task_requirements}
-
-CODEBASE ANALYSIS:
-{codebase_analysis}
-
-DEPENDENCY MAPPING:
-{dependency_mapping}
-
-Create a comprehensive implementation plan:
-
-1. COMPLEXITY ASSESSMENT:
-   - Rate complexity from 1-10 based on:
-     * Number of files to create/modify
-     * Database schema changes required
-     * API endpoint complexity
-     * Integration requirements
-     * Testing complexity
-   - Determine if this is a "simple" (1-4) or "complex" (5-10) plan
-
-2. IMPLEMENTATION APPROACH:
-   - What is the overall strategy?
-   - What architectural patterns will be used?
-   - How does this align with existing codebase?
-
-3. DETAILED STEPS:
-   For each implementation step, provide:
-   - Step title and description
-   - Files to be created or modified
-   - Specific implementation details
-   - Dependencies on other steps
-   - Estimated effort in hours
-   - Risk level (low/medium/high)
-
-4. EFFORT ESTIMATION:
-   - Total estimated hours
-   - Story points (Fibonacci: 1, 2, 3, 5, 8, 13, 21)
-   - Confidence level in estimates
-
-5. TESTING STRATEGY:
-   - Unit test requirements
-   - Integration test needs
-   - Test coverage targets
-   - Test data requirements
-
-6. ROLLBACK PLAN:
-   - How to revert changes if needed
-   - What backup procedures are required
-   - What data migration rollbacks are needed
-
-7. RISKS AND ASSUMPTIONS:
-   - What could go wrong?
-   - What assumptions are being made?
-   - What mitigation strategies exist?
-
-For COMPLEX plans (complexity >= 5), also include:
-- Subtasks breakdown
-- Execution strategy (phases, milestones)
-- Resource allocation recommendations
-
-Provide actionable, detailed implementation guidance that an implementor can follow step-by-step.
-"""
-
-# Validation Prompts
-PLAN_VALIDATION_PROMPT = """
-You are a senior software architect reviewing implementation plans for quality and completeness.
-
-IMPLEMENTATION PLAN:
-{implementation_plan}
-
-ORIGINAL REQUIREMENTS:
-{task_requirements}
-
-Validate the plan across these dimensions:
-
-1. COMPLETENESS (0.0-1.0):
-   - Does the plan address all functional requirements?
-   - Are all acceptance criteria covered?
-   - Are all technical specifications included?
-   - Are all constraints considered?
-
-2. CONSISTENCY (0.0-1.0):
-   - Are the implementation steps logically ordered?
-   - Do the dependencies make sense?
-   - Are the effort estimates reasonable?
-   - Is the approach consistent throughout?
-
-3. EFFORT ESTIMATES (0.0-1.0):
-   - Are the hour estimates realistic?
-   - Do story points align with complexity?
-   - Is the total effort reasonable for the scope?
-   - Are individual step estimates balanced?
-
-4. RISK ASSESSMENT (0.0-1.0):
-   - Are all major risks identified?
-   - Are mitigation strategies adequate?
-   - Is the rollback plan comprehensive?
-   - Are assumptions clearly stated?
-
-Provide:
-- Overall validation score (0.0-1.0)
-- Specific issues found (if any)
-- Recommendations for improvement
-- Whether the plan can proceed (score >= 0.7)
-
-If validation fails, provide specific guidance on what needs to be improved.
-"""
-
-# Finalization Prompt
-PLAN_FINALIZATION_PROMPT = """
-You are preparing a final implementation plan for handoff to the implementor agent.
-
-VALIDATED PLAN:
-{implementation_plan}
-
-TASK CONTEXT:
-{task_requirements}
-
-Create a comprehensive final plan that includes:
-
-1. EXECUTIVE SUMMARY:
-   - Task overview and objectives
-   - Complexity assessment and approach
-   - Key deliverables and timeline
-
-2. IMPLEMENTATION ROADMAP:
-   - Detailed step-by-step instructions
-   - File-level changes required
-   - Dependencies and execution order
-   - Parallel execution opportunities
-
-3. TECHNICAL SPECIFICATIONS:
-   - Architecture and design patterns
-   - Database schema changes
-   - API endpoint specifications
-   - Integration requirements
-
-4. QUALITY ASSURANCE:
-   - Testing requirements and strategy
-   - Validation criteria
-   - Code review checkpoints
-
-5. PROJECT MANAGEMENT:
-   - Effort estimates and story points
-   - Risk assessment and mitigation
-   - Success metrics and acceptance criteria
-
-6. HANDOFF INFORMATION:
-   - What the implementor needs to know
-   - Key decision points and rationale
-   - Contact points for clarification
-
-Ensure the final plan is complete, actionable, and ready for immediate implementation.
-"""
+    return prompt

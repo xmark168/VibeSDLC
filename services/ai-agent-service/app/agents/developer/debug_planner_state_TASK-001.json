@@ -1,208 +1,171 @@
 {
     "success": true,
     "final_plan": {
-        "task_id": "TSK-0478",
+        "task_id": "TSK-1696",
         "description": "Task: Implement user registration functionality\nTask Description: Create user registration API endpo...",
         "complexity_score": 7,
         "plan_type": "complex",
         "functional_requirements": [
-            "Create a user registration API endpoint at POST /api/auth/register that accepts email, password, and confirm_password.",
-            "Implement password validation that requires a minimum of 8 characters, including at least one uppercase letter, one lowercase letter, one number, and one special character.",
-            "Ensure email validation checks for proper format and uniqueness in the database.",
+            "Create a POST /api/auth/register endpoint that accepts email, password, and confirm_password.",
+            "Implement password validation to ensure it includes a minimum of 8 characters, at least one uppercase letter, one lowercase letter, one number, and one special character.",
+            "Ensure email validation checks for proper format and uniqueness.",
             "Hash the password using bcrypt before storing it in the database.",
             "Store user data in the database with a created_at timestamp.",
             "Return a JWT token upon successful registration.",
             "Return appropriate error messages for validation failures.",
-            "Include comprehensive unit tests for all scenarios related to user registration.",
-            "Update API documentation with details of the /api/auth/register endpoint."
+            "Include comprehensive unit tests for all scenarios.",
+            "Update API documentation with endpoint details."
         ],
         "steps": [
             {
                 "step": 1,
                 "title": "Create User Model",
-                "description": "Define the User schema for MongoDB using Mongoose.",
+                "description": "Define the User model schema with Mongoose for user data storage.",
                 "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "1.1",
                         "title": "Define User schema",
-                        "description": "Create a Mongoose schema for user data including email, password, and timestamps.",
-                        "action_type": "create",
-                        "files_affected": [
-                            "src/models/User.js"
-                        ],
-                        "test": "Import User model in a test file and verify it can be instantiated."
+                        "description": "Create a Mongoose schema for the User model with fields for email, password, and timestamps."
+                    },
+                    {
+                        "sub_step": "1.2",
+                        "title": "Implement unique email validation",
+                        "description": "Add a unique index on the email field to ensure no duplicate registrations."
                     }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
+                ]
             },
             {
                 "step": 2,
                 "title": "Create User Repository",
-                "description": "Implement data access methods for user operations.",
+                "description": "Implement data access methods for user-related operations.",
                 "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "2.1",
                         "title": "Implement findByEmail method",
-                        "description": "Add a method to find a user by email in the User repository.",
-                        "action_type": "create",
-                        "files_affected": [
-                            "src/repositories/userRepository.js"
-                        ],
-                        "test": "Call findByEmail with a test email and verify it returns null for non-existing user."
+                        "description": "Create a method to find a user by email in the User repository."
                     },
                     {
                         "sub_step": "2.2",
                         "title": "Implement create method",
-                        "description": "Add a method to create a new user in the User repository.",
-                        "action_type": "create",
-                        "files_affected": [
-                            "src/repositories/userRepository.js"
-                        ],
-                        "test": "Call create with a test user and verify it returns the user object."
+                        "description": "Create a method to save a new user to the database."
                     }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
+                ]
             },
             {
                 "step": 3,
-                "title": "Create Auth Service",
-                "description": "Implement business logic for user registration.",
+                "title": "Implement User Registration Service",
+                "description": "Create the business logic for user registration including validation and password hashing.",
                 "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "3.1",
-                        "title": "Implement registerUser method",
-                        "description": "Add logic to register a new user, including validation and password hashing.",
-                        "action_type": "create",
-                        "files_affected": [
-                            "src/services/authService.js"
-                        ],
-                        "test": "Call registerUser with valid user data and verify it returns a JWT token."
+                        "title": "Implement user registration logic",
+                        "description": "Create a service method to handle user registration, including email uniqueness and password hashing."
+                    },
+                    {
+                        "sub_step": "3.2",
+                        "title": "Generate JWT token",
+                        "description": "Generate a JWT token upon successful registration."
                     }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
+                ]
             },
             {
                 "step": 4,
-                "title": "Create Auth Controller",
-                "description": "Handle requests related to user registration.",
+                "title": "Create User Registration Controller",
+                "description": "Implement the controller to handle registration requests and responses.",
                 "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "4.1",
-                        "title": "Implement registerUser controller",
-                        "description": "Create a controller method to handle user registration requests.",
-                        "action_type": "create",
-                        "files_affected": [
-                            "src/controllers/authController.js"
-                        ],
-                        "test": "Send a POST request to /api/auth/register and verify the response includes a JWT token."
+                        "title": "Implement registerUser method",
+                        "description": "Create a controller method to handle the registration request and return appropriate responses."
+                    },
+                    {
+                        "sub_step": "4.2",
+                        "title": "Handle errors and responses",
+                        "description": "Ensure proper error handling and response formatting in the controller."
                     }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
+                ]
             },
             {
                 "step": 5,
-                "title": "Create Auth Routes",
-                "description": "Define the API endpoint for user registration.",
+                "title": "Define User Registration Routes",
+                "description": "Set up the API endpoint for user registration.",
                 "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "5.1",
-                        "title": "Add registration route",
-                        "description": "Set up the POST /api/auth/register route in the Express router.",
-                        "action_type": "create",
-                        "files_affected": [
-                            "src/routes/auth.js"
-                        ],
-                        "test": "Send a POST request to /api/auth/register and verify the route is accessible."
+                        "title": "Create auth route",
+                        "description": "Define the POST /api/auth/register route in the Express router."
+                    },
+                    {
+                        "sub_step": "5.2",
+                        "title": "Add validation middleware",
+                        "description": "Integrate request validation middleware to validate input data."
                     }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
+                ]
             },
             {
                 "step": 6,
-                "title": "Implement Validation Logic",
-                "description": "Add validation for user input using Joi.",
+                "title": "Implement Input Validation",
+                "description": "Use Joi to validate user input for registration.",
                 "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "6.1",
-                        "title": "Create validation schema",
-                        "description": "Define validation rules for email and password using Joi.",
-                        "action_type": "create",
-                        "files_affected": [
-                            "src/utils/validation.js"
-                        ],
-                        "test": "Import validation schema and verify it correctly validates valid and invalid input."
+                        "title": "Define validation schema",
+                        "description": "Create a Joi schema to validate email, password, and confirm_password."
+                    },
+                    {
+                        "sub_step": "6.2",
+                        "title": "Implement validation middleware",
+                        "description": "Create a middleware function to validate incoming requests against the schema."
                     }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
+                ]
             },
             {
                 "step": 7,
                 "title": "Write Unit Tests",
-                "description": "Create tests for user registration functionality.",
+                "description": "Create comprehensive unit tests for the registration functionality.",
                 "category": "testing",
                 "sub_steps": [
                     {
                         "sub_step": "7.1",
-                        "title": "Write tests for registration",
-                        "description": "Implement unit tests for all scenarios related to user registration.",
-                        "action_type": "create",
-                        "files_affected": [
-                            "src/tests/auth/register.test.js"
-                        ],
-                        "test": "Run the test suite and verify all registration tests pass."
+                        "title": "Test successful registration",
+                        "description": "Write tests to verify successful user registration and token generation."
+                    },
+                    {
+                        "sub_step": "7.2",
+                        "title": "Test validation errors",
+                        "description": "Write tests to check for various validation errors (invalid email, weak password, etc.)."
                     }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
+                ]
             },
             {
                 "step": 8,
                 "title": "Update API Documentation",
-                "description": "Document the user registration API endpoint.",
-                "category": "documentation",
+                "description": "Document the new registration endpoint and its requirements.",
+                "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "8.1",
-                        "title": "Add documentation for registration endpoint",
-                        "description": "Update the API documentation to include details about the /api/auth/register endpoint.",
-                        "action_type": "modify",
-                        "files_affected": [
-                            "src/docs/api/auth/register.md"
-                        ],
-                        "test": "Review the documentation to ensure all required fields and responses are included."
+                        "title": "Add endpoint details",
+                        "description": "Update API documentation with details of the /api/auth/register endpoint."
                     }
-                ],
-                "dependencies": [],
-                "estimated_hours": 0.0,
-                "complexity": "medium"
+                ]
             }
         ],
         "database_changes": [
             {
                 "change": "Add users collection",
                 "fields": [
+                    "_id",
                     "email",
                     "password",
-                    "created_at"
+                    "createdAt",
+                    "updatedAt"
                 ],
                 "affected_step": 1
             }
@@ -210,7 +173,7 @@
         "external_dependencies": [
             {
                 "package": "bcryptjs",
-                "version": "^2.4.3",
+                "version": "^5.1.0",
                 "purpose": "Password hashing"
             },
             {
@@ -220,7 +183,7 @@
             },
             {
                 "package": "joi",
-                "version": "^17.4.0",
+                "version": "^17.0.0",
                 "purpose": "Input validation"
             }
         ],
@@ -230,19 +193,14 @@
                 "required_by_step": 2
             },
             {
-                "module": "userRepository",
+                "module": "User repository",
                 "required_by_step": 3
             },
             {
-                "module": "authService",
-                "required_by_step": 4
-            },
-            {
-                "module": "validation",
+                "module": "Validation middleware",
                 "required_by_step": 5
             }
         ],
-        "total_estimated_hours": 6.5,
         "story_points": 8,
         "execution_order": [
             "Execute steps sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8",
@@ -252,16 +210,15 @@
         ]
     },
     "ready_for_implementation": true,
-    "task_id": "TSK-0478",
+    "task_id": "TSK-1696",
     "complexity_score": 7,
-    "estimated_hours": 6.5,
     "story_points": 8,
     "validation_score": 0.9,
     "status": "finalized",
     "iterations": 3,
     "metadata": {
         "planner_version": "1.0",
-        "total_steps": 17,
+        "total_steps": 13,
         "thread_id": "test_session_planner_TASK-001"
     }
 }

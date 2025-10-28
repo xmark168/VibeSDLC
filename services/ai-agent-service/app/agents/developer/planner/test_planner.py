@@ -69,9 +69,7 @@ def test_planner_basic():
             print("✅ Planning completed successfully!")
             print(f"📋 Task ID: {result['task_id']}")
             print(f"📊 Complexity: {result['complexity_score']}/10")
-            print(
-                f"⏱️  Estimated: {result['estimated_hours']} hours ({result['story_points']} SP)"
-            )
+            print(f"⭐ Story Points: {result['story_points']} SP")
             print(f"✅ Ready for Implementation: {result['ready_for_implementation']}")
             print(f"📈 Validation Score: {result['validation_score']:.1%}")
             print(f"🔄 Iterations: {result['iterations']}")

@@ -185,7 +185,7 @@ def analyze_codebase(state: PlannerState) -> PlannerState:
 
         # Update state
         state.codebase_analysis = codebase_analysis
-        state.current_phase = "map_dependencies"
+        state.current_phase = "generate_plan"
         state.status = "codebase_analyzed"
 
         # Store in tools_output
@@ -398,7 +398,6 @@ def _estimate_file_size(file_path, step):
         int: Estimated number of lines
     """
     complexity = step.get("complexity", "medium")
-    estimated_hours = step.get("estimated_hours", 1.0)
 
     # Base estimates by file type
     if file_path.endswith((".test.js", ".test.py", ".spec.js", ".spec.py")):
@@ -417,10 +416,5 @@ def _estimate_file_size(file_path, step):
     # Adjust by complexity
     complexity_multiplier = {"low": 0.7, "medium": 1.0, "high": 1.5}
 
-    # Adjust by estimated hours
-    hours_multiplier = min(estimated_hours / 2.0, 2.0)  # Cap at 2x
-
-    final_estimate = int(
-        base_lines * complexity_multiplier.get(complexity, 1.0) * hours_multiplier
-    )
+    final_estimate = int(base_lines * complexity_multiplier.get(complexity, 1.0))
     return max(final_estimate, 20)  # Minimum 20 lines

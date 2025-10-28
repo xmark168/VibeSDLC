@@ -232,24 +232,10 @@ def validate_effort_estimates(
     """Validate effort estimates."""
     score = 1.0
 
-    # Check if estimates are reasonable
-    total_hours = implementation_plan.total_estimated_hours
-    step_count = len(implementation_plan.steps)
-
-    if total_hours == 0:
-        validation_issues.append("No effort estimates provided")
-        score -= 0.5
-    elif total_hours < step_count * 0.5:
-        validation_issues.append("Effort estimates seem too low")
-        score -= 0.2
-    elif total_hours > step_count * 10:
-        validation_issues.append("Effort estimates seem too high")
-        score -= 0.2
-
     # Check story points
     if implementation_plan.story_points == 0:
         validation_issues.append("Story points not estimated")
-        score -= 0.3
+        score -= 0.5
 
     return max(score, 0.0)
 

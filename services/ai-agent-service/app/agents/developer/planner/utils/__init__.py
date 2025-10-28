@@ -6,14 +6,7 @@ Utility functions và helpers cho planner workflow:
 - validators: Plan validation logic
 """
 
-from .prompts import (
-    CODEBASE_ANALYSIS_PROMPT,
-    DEPENDENCY_MAPPING_PROMPT,
-    IMPLEMENTATION_PLANNING_PROMPT,
-    PLAN_FINALIZATION_PROMPT,
-    PLAN_VALIDATION_PROMPT,
-    TASK_PARSING_PROMPT,
-)
+from .prompts import create_chain_of_vibe_prompt
 from .validators import (
     validate_codebase_analysis,
     validate_dependency_mapping,
@@ -23,12 +16,7 @@ from .validators import (
 )
 
 __all__ = [
-    "TASK_PARSING_PROMPT",
-    "CODEBASE_ANALYSIS_PROMPT",
-    "DEPENDENCY_MAPPING_PROMPT",
-    "IMPLEMENTATION_PLANNING_PROMPT",
-    "PLAN_VALIDATION_PROMPT",
-    "PLAN_FINALIZATION_PROMPT",
+    "create_chain_of_vibe_prompt",
     "validate_task_requirements",
     "validate_codebase_analysis",
     "validate_dependency_mapping",

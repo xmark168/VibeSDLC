@@ -17,7 +17,6 @@ from .nodes import (
     commit_changes,
     create_pr,
     finalize,
-    implement_files,
     initialize,
     run_and_verify,
     run_tests,
@@ -62,7 +61,7 @@ class ImplementorAgent:
             user_id: User ID cho Langfuse tracing
         """
         self.model_name = model or "gpt-4o"
-        self.session_id = session_id
+        self.session_id = session_id or "default_implementor_session"
         self.user_id = user_id
 
         # Setup Langfuse tracing (optional)
@@ -100,7 +99,9 @@ class ImplementorAgent:
         from .nodes.install_dependencies import install_dependencies
 
         graph_builder.add_node("install_dependencies", install_dependencies)
-        graph_builder.add_node("execute_step", execute_step)  # Now includes generation + implementation
+        graph_builder.add_node(
+            "execute_step", execute_step
+        )  # Now includes generation + implementation
 
         # Legacy nodes (not used in Option 1 main flow)
         # from .nodes.generate_code import generate_code
@@ -145,7 +146,10 @@ class ImplementorAgent:
     def _should_continue_execution(self, state: ImplementorState) -> str:
         """
         Determine if execute_step should continue or proceed to next phase.
-        
+
+        NOTE: This function should NOT mutate state. All state mutations
+        happen in execute_step node to ensure they are properly persisted.
+
         Returns:
             "continue" if there are more sub-steps to execute
             "done" if all steps completed or error occurred
@@ -155,36 +159,27 @@ class ImplementorAgent:
             print("❌ Stopping execution due to sub-step failure")
             print(f"   Error: {state.error_message}")
             return "done"  # Exit loop to prevent infinite retry
-        
+
+        # Check if execution is complete
+        if state.status == "execution_complete":
+            print("✅ Execution complete, proceeding to tests")
+            return "done"
+
         # Check if we have steps to execute
         if not state.plan_steps:
+            print("⚠️ No plan steps found")
             return "done"
-        
+
         # Check if all steps completed
         if state.current_step_index >= len(state.plan_steps):
-            print("✅ All steps completed!")
+            print("✅ All steps completed (by index check)")
             return "done"
-        
-        # Get current step
-        current_step = state.plan_steps[state.current_step_index]
-        sub_steps = current_step.get("sub_steps", [])
-        
-        # Check if all sub_steps in current step completed
-        if state.current_sub_step_index >= len(sub_steps):
-            # Move to next step
-            state.current_step_index += 1
-            state.current_sub_step_index = 0
-            
-            # Check if that was the last step
-            if state.current_step_index >= len(state.plan_steps):
-                print("✅ All steps completed!")
-                return "done"
-            else:
-                print(f"📋 Moving to Step {state.current_step_index + 1}...")
-                return "continue"
-        else:
-            # More sub-steps in current step
-            return "continue"
+
+        # More work to do
+        print(
+            f"🔄 Continuing execution: Step {state.current_step_index + 1}, Sub-step {state.current_sub_step_index + 1}"
+        )
+        return "continue"
 
     def run(
         self,
@@ -233,14 +228,31 @@ class ImplementorAgent:
             if source_branch:
                 initial_state.source_branch = source_branch
 
-            # Setup thread config
-            thread_config = {"configurable": {"thread_id": thread_id or "default"}}
+            # Build metadata for Langfuse tracing
+            metadata = {}
+            if self.session_id:
+                metadata["langfuse_session_id"] = self.session_id
+            if self.user_id:
+                metadata["langfuse_user_id"] = self.user_id
+            metadata["langfuse_tags"] = ["implementor_agent"]
+
+            # Setup config with optional Langfuse callback
+            callbacks = []
+            if self.langfuse_handler:
+                callbacks.append(self.langfuse_handler)
+
+            config = {
+                "configurable": {"thread_id": thread_id or "default"},
+                "callbacks": callbacks,
+                "metadata": metadata,
+                "recursion_limit": 50,
+            }
 
             # Run workflow
             print("📊 Executing implementation workflow...")
             final_state = None
 
-            for step in self.graph.stream(initial_state, config=thread_config):
+            for step in self.graph.stream(initial_state.model_dump(), config=config):
                 node_name = list(step.keys())[0]
                 node_state = step[node_name]
 

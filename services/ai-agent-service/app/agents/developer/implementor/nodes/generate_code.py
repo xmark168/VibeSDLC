@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 
 from langchain_core.messages import AIMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 
 from ..state import FileChange, ImplementorState
@@ -122,12 +123,15 @@ def _has_line_numbers(content: str) -> bool:
     return line_number_count >= 3
 
 
-def generate_code(state: ImplementorState) -> ImplementorState:
+def generate_code(
+    state: ImplementorState, config: RunnableConfig = None
+) -> ImplementorState:
     """
     Generate actual code content cho tất cả files trong implementation plan.
 
     Args:
         state: ImplementorState với files_to_create và files_to_modify
+        config: RunnableConfig with callbacks for LangFuse tracing
 
     Returns:
         Updated ImplementorState với populated file content
@@ -135,11 +139,9 @@ def generate_code(state: ImplementorState) -> ImplementorState:
     try:
         print("🤖 Generating code content...")
 
-        # Import prompts
-
-        # Initialize LLM
+        # Initialize LLM (callbacks are automatically injected by LangGraph)
         llm = ChatOpenAI(
-            model="gpt-4.1",
+            model="gpt-4o",
             temperature=0.3,
             api_key=os.getenv("OPENAI_API_KEY"),
             base_url=os.getenv("OPENAI_BASE_URL"),
@@ -1016,7 +1018,6 @@ def _match_import_to_created_files(
     Returns:
         List of matching file paths
     """
-    import os
 
     matches = []
 
