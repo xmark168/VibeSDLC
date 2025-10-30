@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { Message } from '@/types/message'
-import { clearInterval } from 'timers'
 
 export type WebSocketMessage = {
   type: 'connected' | 'message' | 'agent_message' | 'typing' | 'pong' | 'error'
