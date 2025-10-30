@@ -1,0 +1,348 @@
+    setSelectedMentionIndex(0)
+
+    setTimeout(() => {
+      textarea.focus()
+      const newCursorPos = cursorPos + 1
+      textarea.setSelectionRange(newCursorPos, newCursorPos)
+    }, 0)
+  }
+
+  // Theme is managed globally by ThemeProvider
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        mentionDropdownRef.current &&
+        !mentionDropdownRef.current.contains(event.target as Node) &&
+        textareaRef.current &&
+        !textareaRef.current.contains(event.target as Node)
+      ) {
+        setShowMentions(false)
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
+
+  useEffect(() => {
+    // Only auto-scroll if a new message was added, not when updating existing messages
+    if (messagesContainerRef.current && messages.length > prevMessagesLengthRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+    }
+    prevMessagesLengthRef.current = messages.length
+  }, [messages])
+
+  return (
+    <div className="flex flex-col h-full bg-background">
+      {sidebarCollapsed && (
+        <div className="flex items-center gap-2 px-3 py-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggleSidebar}
+            onMouseEnter={() => onSidebarHover(true)}
+            className="w-8 h-8 text-foreground hover:bg-accent"
+          >
+            <PanelRightClose className="w-5 h-5" />
+          </Button>
+          <div className="flex-1" />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleTheme}
+            className="w-8 h-8 text-foreground hover:bg-accent"
+            title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+          >
+            {theme === "light" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onCollapse}
+            className="w-8 h-8 text-foreground hover:bg-accent"
+            title="Hide chat panel"
+          >
+            <ChevronsLeft className="w-4 h-4" />
+          </Button>
+        </div>
+      )}
+
+      {!sidebarCollapsed && (
+        <div className="flex items-center justify-end gap-2 px-3 py-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleTheme}
+            className="w-8 h-8 text-foreground hover:bg-accent"
+            title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+          >
+            {theme === "light" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onCollapse}
+            className="w-8 h-8 text-foreground hover:bg-accent"
+            title="Hide chat panel"
+          >
+            <PanelLeftClose className="w-4 h-4" />
+          </Button>
+        </div>
+      )}
+
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
+        {messages.map((msg) => {
+          const isUserMessage = msg.agent.name === "User"
+
+          if (isUserMessage) {
+            return (
+              <div key={msg.id} className="flex justify-end">
+                <div className="max-w-[70%]">
+                  {msg.content && (
+                    <div className="space-y-1.5">
+                      <div className="rounded-lg px-3 py-2 bg-muted w-fit ml-auto">
+                        <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">{msg.content}</div>
+                      </div>
+                      <div className="flex items-center justify-end gap-2 px-1">
+                        <span className="text-xs text-muted-foreground">{formatTimestamp(msg.id)}</span>
+                        <button
+                          onClick={() => copyToClipboard(msg.content, msg.id)}
+                          className="p-1 rounded hover:bg-accent transition-colors"
+                          title="Copy message"
+                        >
+                          {copiedMessageId === msg.id ? (
+                            <Check className="w-3.5 h-3.5 text-green-500" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {msg.attachments && msg.attachments.length > 0 && (
+                    <div className="flex flex-col gap-2">{msg.attachments.map((file) => renderAttachment(file))}</div>
+                  )}
+                </div>
+              </div>
+            )
+          }
+
+          return (
+            <div key={msg.id} className="flex gap-3">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
+                {msg.agent.avatar}
+              </div>
+
+              <div className="flex-1 space-y-2">
+                <div className="text-xs font-medium text-muted-foreground">{msg.agent.name}</div>
+
+                {msg.type === "thinking" && (
+                  <div className="space-y-1.5">
+                    <div className="text-sm text-foreground/80 leading-loose whitespace-pre-wrap">{msg.content}</div>
+                    <div className="flex items-center gap-2 px-1">
+                      <span className="text-xs text-muted-foreground">{formatTimestamp(msg.id)}</span>
+                      <button
+                        onClick={() => copyToClipboard(msg.content, msg.id)}
+                        className="p-1 rounded hover:bg-accent transition-colors"
+                        title="Copy message"
+                      >
+                        {copiedMessageId === msg.id ? (
+                          <Check className="w-3.5 h-3.5 text-green-500" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {msg.type === "question" && (
+                  <div className="space-y-1.5">
+                    <div className="rounded-lg px-3 py-2 bg-muted w-fit">
+                      <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
+                        {msg.expanded ? msg.content : msg.content.slice(0, 100) + "..."}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 px-1">
+                      <span className="text-xs text-muted-foreground">{formatTimestamp(msg.id)}</span>
+                      <button
+                        onClick={() => copyToClipboard(msg.content, msg.id)}
+                        className="p-1 rounded hover:bg-accent transition-colors"
+                        title="Copy message"
+                      >
+                        {copiedMessageId === msg.id ? (
+                          <Check className="w-3.5 h-3.5 text-green-500" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+                        )}
+                      </button>
+                      <button
+                        onClick={() => toggleExpand(msg.id)}
+                        className="p-1 hover:bg-accent rounded transition-colors"
+                        title={msg.expanded ? "Collapse" : "Expand"}
+                      >
+                        {msg.expanded ? (
+                          <ChevronUp className="w-3.5 h-3.5 text-foreground" />
+                        ) : (
+                          <ChevronDown className="w-3.5 h-3.5 text-foreground" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {msg.type === "reply" && !isUserMessage && (
+                  <div className="space-y-3">
+                    {msg.content && (
+                      <div className="space-y-1.5">
+                        <div className="rounded-lg px-3 py-2 bg-muted border border-border">
+                          <div className="text-sm text-foreground leading-loose whitespace-pre-wrap">
+                            {msg.content}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 px-1">
+                          <span className="text-xs text-muted-foreground">{formatTimestamp(msg.id)}</span>
+                          <button
+                            onClick={() => copyToClipboard(msg.content, msg.id)}
+                            className="p-1 rounded hover:bg-accent transition-colors"
+                            title="Copy message"
+                          >
+                            {copiedMessageId === msg.id ? (
+                              <Check className="w-3.5 h-3.5 text-green-500" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {msg.attachments && msg.attachments.length > 0 && (
+                      <div className="flex flex-col gap-2">{msg.attachments.map((file) => renderAttachment(file))}</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="p-2 m-4 rounded-4xl relative bg-muted">
+        {showMentions && filteredAgents.length > 0 && (
+          <div
+            ref={mentionDropdownRef}
+            className="absolute bottom-full left-0 right-0 mb-2 mx-1 bg-card border border-border rounded-lg shadow-lg overflow-hidden"
+          >
+            <div className="flex items-center justify-between px-4 py-2 border-b border-border">
+              <span className="text-sm font-medium text-foreground">Group Members</span>
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <kbd className="px-1.5 py-0.5 text-xs bg-accent rounded">Tab</kbd>
+                to select
+              </span>
+            </div>
+            <div className="max-h-[240px] overflow-y-auto">
+              {filteredAgents.map((agent, index) => (
+                <button
+                  key={agent.name}
+                  onClick={() => insertMention(agent.name)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors ${index === selectedMentionIndex ? "bg-accent/50" : ""
+                    }`}
+                >
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0 bg-muted">
+                    {agent.avatar}
+                  </div>
+                  <div className="flex-1 text-left">
+                    <div className="text-sm font-medium text-foreground">{agent.name}</div>
+                    <div className="text-xs text-muted-foreground">{agent.role}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="bg-transparent rounded-4xl p-1 border-0">
+          {attachedFiles.length > 0 && (
+            <div className="mb-3 flex flex-wrap gap-2">
+              {attachedFiles.map((file) => (
+                <div
+                  key={file.id}
+                  className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg text-sm group hover:bg-muted/80 transition-colors"
+                >
+                  {getFileIcon(file.type)}
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-foreground truncate max-w-[150px]">{file.name}</span>
+                    <span className="text-xs text-muted-foreground">{formatFileSize(file.size)}</span>
+                  </div>
+                  <button
+                    onClick={() => removeFile(file.id)}
+                    className="ml-1 p-1 hover:bg-background rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <Textarea
+            ref={textareaRef}
+            value={message}
+            onChange={handleTextareaChange}
+            onKeyDown={handleKeyDown}
+            placeholder="Press Enter to send requests anytime - we'll notice."
+            className="min-h-[40px] resize-none bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground p-1 focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
+          />
+          <div className="flex items-center justify-between pt-3">
+            <div className="flex gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/*,.pdf,.doc,.docx,.txt"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 hover:bg-accent"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Paperclip className="w-4 h-4" />
+              </Button>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-accent" onClick={triggerMention}>
+                      <AtSign className="w-4 h-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Mention an agent</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div>
+                      <TechStackDialog />
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>View tech stack</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            <Button size="icon" className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90" onClick={handleSend}>
+              <ArrowUp className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

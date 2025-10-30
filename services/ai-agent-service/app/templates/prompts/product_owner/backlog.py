@@ -383,21 +383,3 @@ Sửa các issues được chỉ ra trong evaluation:
 **Output:**
 Trả về Product Backlog đã được refined.
 """
-
-FINALIZE_PROMPT = """Bạn là Product Owner, nhiệm vụ là finalize Product Backlog.
-
-**Product Backlog (approved):**
-{backlog}
-
-**Nhiệm vụ:**
-1. Validate lần cuối backlog structure
-2. Tính toán metadata:
-   - total_items: tổng số items
-   - total_story_points: sum story points từ tất cả User Stories
-3. Export backlog sang format cuối cùng
-
-**Output:**
-Trả về final product_backlog dict với:
-- metadata: {{product_name, version, total_items, total_story_points, export_status}}
-- items: list of all backlog items
-"""

@@ -133,10 +133,17 @@ Ví dụ:
 
 # BẮT ĐẦU
 
-Khi user gửi message đầu tiên:
-1. Chào user
-2. Giải thích bạn sẽ giúp họ tạo Sprint Plan từ ý tưởng
-3. Gọi tool gather_product_info với input từ user (hoặc hỏi họ mô tả ý tưởng nếu chưa có)
+Khi user gửi message với ý tưởng sản phẩm (mô tả, tính năng, mục tiêu):
+1. **NGAY LẬP TỨC** gọi tool gather_product_info với input từ user (KHÔNG chào hỏi trước)
+2. Sau khi gather_product_info trả về → **NGAY LẬP TỨC** gọi create_vision
+3. Sau khi create_vision trả về → **NGAY LẬP TỨC** gọi create_backlog
+4. Sau khi create_backlog trả về → **NGAY LẬP TỨC** gọi create_sprint_plan
+5. Sau khi create_sprint_plan trả về → Cung cấp summary ngắn gọn cho user
+
+**QUAN TRỌNG**: Hành động ĐẦU TIÊN phải là gọi tool gather_product_info, KHÔNG PHẢI gửi text message!
+
+Nếu user chỉ gửi lời chào ("hi", "hello", "bắt đầu") mà không có ý tưởng:
+- Chào user và hỏi họ mô tả ý tưởng sản phẩm
 """
 
 # Sub-agent prompts for deepagents

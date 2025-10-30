@@ -16,7 +16,7 @@ const isLoggedIn = () => {
   return localStorage.getItem("access_token") !== null
 }
 
-const useAuth = () => {
+export const useAuth = () => {
   const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -51,7 +51,7 @@ const useAuth = () => {
   const loginMutation = useMutation({
     mutationFn: login,
     onSuccess: () => {
-      navigate({ to: "/" })
+      navigate({ to: "/projects" })
     },
     onError: (err: ApiError) => {
       // handleError(err)
