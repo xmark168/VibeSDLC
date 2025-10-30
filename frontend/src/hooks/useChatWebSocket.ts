@@ -17,6 +17,7 @@ export type SendMessageParams = {
 
 export function useChatWebSocket(projectId: string | undefined, token: string | undefined) {
   const [isConnected, setIsConnected] = useState(false)
+  const [isReady, setIsReady] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [typingAgents, setTypingAgents] = useState<Set<string>>(new Set())
   const wsRef = useRef<WebSocket | null>(null)
@@ -44,6 +45,11 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
       console.log('WebSocket connected')
       setIsConnected(true)
       reconnectAttemptsRef.current = 0
+
+      // Double check readyState and set isReady
+      if (ws.readyState === WebSocket.OPEN) {
+        setIsReady(true)
+      }
     }
 
     ws.onmessage = (event) => {
@@ -101,6 +107,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     ws.onclose = () => {
       console.log('WebSocket disconnected')
       setIsConnected(false)
+      setIsReady(false)
       wsRef.current = null
 
       // Attempt to reconnect
@@ -108,7 +115,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
         reconnectAttemptsRef.current++
         const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000)
         console.log(`Reconnecting in ${delay}ms... (attempt ${reconnectAttemptsRef.current})`)
-        
+
         reconnectTimeoutRef.current = setTimeout(() => {
           connect()
         }, delay)
@@ -125,6 +132,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
       wsRef.current = null
     }
     setIsConnected(false)
+    setIsReady(false)
   }, [])
 
   const sendMessage = useCallback((params: SendMessageParams) => {
@@ -171,8 +179,27 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     return () => clearInterval(interval)
   }, [isConnected, ping])
 
+  // Polling mechanism to sync isReady with actual WebSocket readyState
+  useEffect(() => {
+    const checkReadyState = () => {
+      if (wsRef.current) {
+        const actuallyReady = wsRef.current.readyState === WebSocket.OPEN
+        setIsReady(actuallyReady)
+      } else {
+        setIsReady(false)
+      }
+    }
+
+    // Check immediately and then every 100ms
+    checkReadyState()
+    const interval = setInterval(checkReadyState, 100)
+
+    return () => clearInterval(interval)
+  }, [isConnected])
+
   return {
     isConnected,
+    isReady,
     messages,
     typingAgents: Array.from(typingAgents),
     sendMessage,

@@ -106,3 +106,8 @@ Theo bạn, điểm khác biệt nổi bật nhất của SmartTask so với Tre
   taskkill /PID 12172 /T /F
 
   uv run app/tests/test_agent.py 
+
+front end 
+netstat -ano | findstr :5174
+taskkill /PID <PID> /F
+

@@ -103,6 +103,7 @@ export function ChatPanelWS({
   // WebSocket connection
   const {
     isConnected,
+    isReady,
     messages: wsMessages,
     typingAgents,
     sendMessage: wsSendMessage,
@@ -180,8 +181,8 @@ export function ChatPanelWS({
 
   const handleSend = () => {
     if (!message.trim() && attachedFiles.length === 0) return;
-    if (!isConnected) {
-      console.error("WebSocket not connected");
+    if (!isReady) {
+      console.error("WebSocket not ready");
       return;
     }
 
@@ -324,12 +325,12 @@ export function ChatPanelWS({
     }, 0);
   };
 
-  // Notify parent about connection status
+  // Notify parent about connection status (use isReady for accurate status)
   useEffect(() => {
     if (onConnectionChange) {
-      onConnectionChange(isConnected);
+      onConnectionChange(isReady);
     }
-  }, [isConnected, onConnectionChange]);
+  }, [isReady, onConnectionChange]);
 
   // Notify parent about sendMessage function
   useEffect(() => {
@@ -379,7 +380,7 @@ export function ChatPanelWS({
             <PanelRightClose className="w-5 h-5" />
           </Button>
           <div className="flex-1" />
-          {!isConnected && (
+          {!isReady && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="w-3 h-3 animate-spin" />
               Connecting...
@@ -413,13 +414,13 @@ export function ChatPanelWS({
       {!sidebarCollapsed && (
         <div className="flex items-center justify-between gap-2 px-3 py-2">
           <div className="flex items-center gap-2">
-            {!isConnected && (
+            {!isReady && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="w-3 h-3 animate-spin" />
                 Connecting...
               </div>
             )}
-            {isConnected && (
+            {isReady && (
               <div className="flex items-center gap-2 text-xs text-green-600">
                 <div className="w-2 h-2 bg-green-600 rounded-full" />
                 Connected
@@ -644,7 +645,7 @@ export function ChatPanelWS({
             onKeyDown={handleKeyDown}
             placeholder="Press Enter to send requests anytime - we'll notice."
             className="min-h-[40px] resize-none bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground p-1 focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
-            disabled={!isConnected}
+            disabled={!isReady}
           />
           <div className="flex items-center justify-between pt-3">
             <div className="flex gap-2">
@@ -661,7 +662,7 @@ export function ChatPanelWS({
                 size="icon"
                 className="h-8 w-8 hover:bg-accent"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={!isConnected}
+                disabled={!isReady}
               >
                 <Paperclip className="w-4 h-4" />
               </Button>
@@ -673,7 +674,7 @@ export function ChatPanelWS({
                       size="icon"
                       className="h-8 w-8 hover:bg-accent"
                       onClick={triggerMention}
-                      disabled={!isConnected}
+                      disabled={!isReady}
                     >
                       <AtSign className="w-4 h-4" />
                     </Button>
@@ -701,7 +702,7 @@ export function ChatPanelWS({
               className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90"
               onClick={handleSend}
               disabled={
-                !isConnected || (!message.trim() && attachedFiles.length === 0)
+                !isReady || (!message.trim() && attachedFiles.length === 0)
               }
             >
               <ArrowUp className="w-4 h-4" />

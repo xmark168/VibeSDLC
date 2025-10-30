@@ -8,13 +8,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Sparkles, Rocket, Loader2 } from "lucide-react";
+import { Sparkles, Rocket } from "lucide-react";
 
 interface WelcomeDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSendMessage: (content: string) => boolean;
-  isConnected: boolean;
+  isConnected: boolean; // This receives isReady value from parent
 }
 
 export function WelcomeDialog({
@@ -58,12 +58,6 @@ export function WelcomeDialog({
         </DialogHeader>
 
         <DialogFooter className="flex flex-col items-center gap-2 sm:justify-center mt-4">
-          {!isConnected && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Đang kết nối...
-            </div>
-          )}
           <Button
             onClick={handleStart}
             disabled={isStarting || !isConnected}
