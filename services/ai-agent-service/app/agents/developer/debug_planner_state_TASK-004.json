@@ -1,0 +1,229 @@
+{
+    "success": true,
+    "final_plan": {
+        "task_id": "TSK-6291",
+        "description": "Task: Implement JWT token refresh mechanism\nTask Description: Create token refresh endpoint to allow...",
+        "complexity_score": 7,
+        "plan_type": "complex",
+        "functional_requirements": [
+            "Create a POST /api/auth/refresh endpoint that accepts a refresh token.",
+            "Validate the refresh token's signature and expiration.",
+            "Verify that the refresh token exists in the database and is not revoked.",
+            "Issue a new access token with an updated expiration time.",
+            "Issue a new refresh token and invalidate the old one (token rotation).",
+            "Ensure the access token expires in 15 minutes and the refresh token in 7 days.",
+            "Return appropriate error messages for invalid or expired refresh tokens.",
+            "Implement a token blacklist for revoked refresh tokens.",
+            "Include comprehensive unit tests for various token refresh scenarios.",
+            "Update API documentation to include details of the token refresh flow."
+        ],
+        "steps": [
+            {
+                "step": 1,
+                "title": "Create Refresh Token Model",
+                "description": "Define a Mongoose model for storing refresh tokens with necessary fields.",
+                "category": "database",
+                "sub_steps": [
+                    {
+                        "sub_step": "1.1",
+                        "title": "Define RefreshToken schema",
+                        "description": "Create a schema for refresh tokens including fields for user ID, token value, expiration date, and revoked status."
+                    },
+                    {
+                        "sub_step": "1.2",
+                        "title": "Export RefreshToken model",
+                        "description": "Export the RefreshToken model for use in repositories."
+                    }
+                ]
+            },
+            {
+                "step": 2,
+                "title": "Implement Refresh Token Repository",
+                "description": "Create a repository for managing refresh tokens in the database.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "2.1",
+                        "title": "Create refreshTokenRepository.js",
+                        "description": "Implement methods to find, save, and invalidate refresh tokens."
+                    },
+                    {
+                        "sub_step": "2.2",
+                        "title": "Add method to check if token is revoked",
+                        "description": "Implement a method to check if a refresh token is revoked."
+                    }
+                ]
+            },
+            {
+                "step": 3,
+                "title": "Implement Auth Service Logic",
+                "description": "Add business logic to handle refresh token operations.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "3.1",
+                        "title": "Add refreshToken method",
+                        "description": "Create a method in authService to handle the logic for refreshing tokens."
+                    },
+                    {
+                        "sub_step": "3.2",
+                        "title": "Generate new tokens",
+                        "description": "Implement logic to generate new access and refresh tokens with appropriate expiration."
+                    },
+                    {
+                        "sub_step": "3.3",
+                        "title": "Invalidate old refresh token",
+                        "description": "Add logic to invalidate the old refresh token after issuing a new one."
+                    }
+                ]
+            },
+            {
+                "step": 4,
+                "title": "Create Refresh Token Controller",
+                "description": "Implement the controller to handle requests to the refresh token endpoint.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "4.1",
+                        "title": "Create refreshToken controller method",
+                        "description": "Implement the controller method to handle the POST /api/auth/refresh request."
+                    },
+                    {
+                        "sub_step": "4.2",
+                        "title": "Handle errors",
+                        "description": "Implement error handling for invalid or expired tokens."
+                    }
+                ]
+            },
+            {
+                "step": 5,
+                "title": "Define Refresh Token Route",
+                "description": "Set up the route for the refresh token endpoint.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "5.1",
+                        "title": "Add POST /api/auth/refresh route",
+                        "description": "Define the route in auth.js and link it to the refresh token controller."
+                    },
+                    {
+                        "sub_step": "5.2",
+                        "title": "Add validation middleware",
+                        "description": "Implement middleware to validate the refresh token format."
+                    }
+                ]
+            },
+            {
+                "step": 6,
+                "title": "Implement Token Blacklist",
+                "description": "Create a mechanism to blacklist revoked refresh tokens.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "6.1",
+                        "title": "Create blacklist repository",
+                        "description": "Implement a repository to manage blacklisted tokens."
+                    },
+                    {
+                        "sub_step": "6.2",
+                        "title": "Check blacklist in refresh logic",
+                        "description": "Integrate blacklist checks in the refresh token logic."
+                    }
+                ]
+            },
+            {
+                "step": 7,
+                "title": "Write Unit Tests",
+                "description": "Create comprehensive tests for the refresh token functionality.",
+                "category": "testing",
+                "sub_steps": [
+                    {
+                        "sub_step": "7.1",
+                        "title": "Test valid refresh token flow",
+                        "description": "Write tests to verify that valid refresh tokens return new tokens."
+                    },
+                    {
+                        "sub_step": "7.2",
+                        "title": "Test expired and revoked token scenarios",
+                        "description": "Write tests to ensure proper error handling for expired and revoked tokens."
+                    }
+                ]
+            },
+            {
+                "step": 8,
+                "title": "Update API Documentation",
+                "description": "Document the new refresh token endpoint and its usage.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "8.1",
+                        "title": "Add endpoint details",
+                        "description": "Include details about the POST /api/auth/refresh endpoint in the API documentation."
+                    },
+                    {
+                        "sub_step": "8.2",
+                        "title": "Document token structure",
+                        "description": "Provide information on the structure of access and refresh tokens."
+                    }
+                ]
+            }
+        ],
+        "database_changes": [
+            {
+                "change": "Add refresh_tokens collection",
+                "fields": [
+                    "userId",
+                    "token",
+                    "expiresAt",
+                    "isRevoked"
+                ],
+                "affected_step": 1
+            }
+        ],
+        "external_dependencies": [
+            {
+                "package": "jsonwebtoken",
+                "version": "^9.0.0",
+                "purpose": "JWT token generation and verification"
+            },
+            {
+                "package": "bcrypt",
+                "version": "^5.1.0",
+                "purpose": "Password hashing for token security"
+            }
+        ],
+        "internal_dependencies": [
+            {
+                "module": "RefreshToken model",
+                "required_by_step": 2
+            },
+            {
+                "module": "AuthService",
+                "required_by_step": 4
+            },
+            {
+                "module": "Validation middleware",
+                "required_by_step": 5
+            }
+        ],
+        "story_points": 8,
+        "execution_order": [
+            "Execute steps sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8",
+            "Within each step, execute sub-steps in order",
+            "Test after each sub-step before proceeding",
+            "Commit code after each completed sub-step"
+        ]
+    },
+    "ready_for_implementation": true,
+    "task_id": "TSK-6291",
+    "complexity_score": 7,
+    "story_points": 8,
+    "validation_score": 0.925,
+    "status": "finalized",
+    "iterations": 3,
+    "metadata": {
+        "planner_version": "1.0",
+        "total_steps": 13,
+        "thread_id": "test_session_planner_TASK-004"
+    }
+}
