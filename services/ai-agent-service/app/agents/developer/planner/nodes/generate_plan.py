@@ -595,9 +595,39 @@ def generate_plan(state: PlannerState) -> PlannerState:
         print(f"✏️  Files to modify: {len(codebase_analysis.files_to_modify)}")
         print(f"📦 Affected modules: {len(codebase_analysis.affected_modules)}")
 
-        # Detect task scope (backend, frontend, or fullstack)
-        task_scope = _detect_task_scope(codebase_analysis)
+        # Determine task scope: prioritize labels from state, fallback to file path detection
+        task_scope_from_labels = None
+        if state.task_scope:
+            # Convert task_scope string to dict format
+            if state.task_scope == "backend":
+                task_scope_from_labels = {
+                    "needs_backend": True,
+                    "needs_frontend": False,
+                    "is_fullstack": False,
+                }
+            elif state.task_scope == "frontend":
+                task_scope_from_labels = {
+                    "needs_backend": False,
+                    "needs_frontend": True,
+                    "is_fullstack": False,
+                }
+            elif state.task_scope == "full-stack":
+                task_scope_from_labels = {
+                    "needs_backend": True,
+                    "needs_frontend": True,
+                    "is_fullstack": True,
+                }
+
+        # If no scope from labels, detect from file paths
+        if task_scope_from_labels:
+            task_scope = task_scope_from_labels
+            scope_source = "LABELS"
+        else:
+            task_scope = _detect_task_scope(codebase_analysis)
+            scope_source = "FILE PATHS"
+
         print("\n🔍 Task Scope Detection:")
+        print(f"   Source: {scope_source}")
         print(f"   Needs Backend: {task_scope['needs_backend']}")
         print(f"   Needs Frontend: {task_scope['needs_frontend']}")
         if task_scope["is_fullstack"]:
@@ -661,6 +691,53 @@ def generate_plan(state: PlannerState) -> PlannerState:
         from ..utils.prompts import create_chain_of_vibe_prompt
 
         # Create Chain of Vibe prompt for plan generation
+        # Use task_scope from state if available, otherwise use detected scope
+        task_scope_for_prompt = state.task_scope or (
+            "full-stack"
+            if task_scope["is_fullstack"]
+            else ("backend" if task_scope["needs_backend"] else "frontend")
+        )
+
+        print(f"📋 Task Scope for Prompt: {task_scope_for_prompt}")
+
+        # Format existing dependencies for prompt
+        existing_dependencies_str = ""
+        if state.codebase_analysis and state.codebase_analysis.existing_dependencies:
+            existing_deps_dict = state.codebase_analysis.existing_dependencies
+
+            # Format dependencies from package.json or requirements.txt
+            all_deps = []
+
+            # Node.js dependencies
+            if existing_deps_dict.get("dependencies"):
+                for pkg_name, version in existing_deps_dict["dependencies"].items():
+                    all_deps.append(f"{pkg_name}@{version}")
+
+            # Node.js devDependencies
+            if existing_deps_dict.get("devDependencies"):
+                for pkg_name, version in existing_deps_dict["devDependencies"].items():
+                    all_deps.append(f"{pkg_name}@{version} (dev)")
+
+            # Python dependencies
+            if existing_deps_dict.get("dependencies") and not existing_deps_dict.get(
+                "devDependencies"
+            ):
+                # This is likely Python format
+                for pkg_name, version in existing_deps_dict["dependencies"].items():
+                    all_deps.append(f"{pkg_name}=={version}")
+
+            if all_deps:
+                existing_dependencies_str = "Existing packages found:\n"
+                for dep in all_deps:
+                    existing_dependencies_str += f"- {dep}\n"
+                print(
+                    f"📦 Found {len(all_deps)} existing dependencies from package files"
+                )
+            else:
+                print("📦 No existing dependencies found in package files")
+        else:
+            print("📦 No codebase analysis or existing dependencies available")
+
         plan_prompt = create_chain_of_vibe_prompt(
             state=state,
             task_requirements=task_requirements,
@@ -669,6 +746,8 @@ def generate_plan(state: PlannerState) -> PlannerState:
             architecture_guidelines_text=_get_architecture_guidelines_text(
                 architecture_guidelines, project_structure
             ),
+            task_scope=task_scope_for_prompt,
+            existing_dependencies=existing_dependencies_str,
         )
 
         print("🤖 Calling LLM for Chain of Vibe plan generation...")
@@ -722,6 +801,98 @@ def generate_plan(state: PlannerState) -> PlannerState:
             internal_dependencies = parsed_plan.get("internal_dependencies", [])
             execution_order = parsed_plan.get("execution_order", [])
             story_points = parsed_plan.get("story_points", 0)
+
+            # Validate external_dependencies structure
+            if external_dependencies:
+                print(
+                    f"🔍 Validating {len(external_dependencies)} external dependencies..."
+                )
+                required_fields = [
+                    "package",
+                    "version",
+                    "purpose",
+                    "category",
+                    "already_installed",
+                    "installation_method",
+                    "install_command",
+                    "package_file",
+                    "dependency_type",
+                ]
+                valid_categories = ["backend", "frontend"]
+                valid_methods = ["npm", "yarn", "pip", "poetry"]
+                valid_types = ["production", "development"]
+
+                for i, dep in enumerate(external_dependencies):
+                    # Check required fields
+                    missing_fields = [
+                        field for field in required_fields if field not in dep
+                    ]
+                    if missing_fields:
+                        print(f"⚠️ Dependency {i + 1} missing fields: {missing_fields}")
+
+                    # Validate category
+                    if dep.get("category") not in valid_categories:
+                        print(
+                            f"⚠️ Dependency {i + 1} invalid category: {dep.get('category')}"
+                        )
+
+                    # Validate already_installed is boolean
+                    if not isinstance(dep.get("already_installed"), bool):
+                        print(
+                            f"⚠️ Dependency {i + 1} already_installed must be boolean: {dep.get('already_installed')}"
+                        )
+
+                    # Validate installation_method
+                    if dep.get("installation_method") not in valid_methods:
+                        print(
+                            f"⚠️ Dependency {i + 1} invalid installation_method: {dep.get('installation_method')}"
+                        )
+
+                    # Validate dependency_type
+                    if dep.get("dependency_type") not in valid_types:
+                        print(
+                            f"⚠️ Dependency {i + 1} invalid dependency_type: {dep.get('dependency_type')}"
+                        )
+
+                    # Validate directory consistency
+                    category = dep.get("category", "")
+                    package_file = dep.get("package_file", "")
+                    install_command = dep.get("install_command", "")
+
+                    if category == "backend":
+                        if package_file and not any(
+                            dir_name in package_file for dir_name in ["be/", "backend/"]
+                        ):
+                            print(
+                                f"⚠️ Dependency {i + 1} backend category but package_file doesn't contain 'be/' or 'backend/': {package_file}"
+                            )
+                        if install_command and not any(
+                            dir_name in install_command
+                            for dir_name in ["cd be", "cd backend"]
+                        ):
+                            print(
+                                f"⚠️ Dependency {i + 1} backend category but install_command doesn't contain 'cd be' or 'cd backend': {install_command}"
+                            )
+
+                    elif category == "frontend":
+                        if package_file and not any(
+                            dir_name in package_file
+                            for dir_name in ["fe/", "frontend/"]
+                        ):
+                            print(
+                                f"⚠️ Dependency {i + 1} frontend category but package_file doesn't contain 'fe/' or 'frontend/': {package_file}"
+                            )
+                        if install_command and not any(
+                            dir_name in install_command
+                            for dir_name in ["cd fe", "cd frontend"]
+                        ):
+                            print(
+                                f"⚠️ Dependency {i + 1} frontend category but install_command doesn't contain 'cd fe' or 'cd frontend': {install_command}"
+                            )
+
+                print("✅ External dependencies validation completed")
+            else:
+                print("📦 No external dependencies in plan")
 
             print(
                 f"✅ Successfully parsed Chain of Vibe plan with complexity {complexity_score}/10, {len(implementation_steps)} steps, {story_points} story points"

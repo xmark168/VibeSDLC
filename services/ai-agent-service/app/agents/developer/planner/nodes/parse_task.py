@@ -37,7 +37,7 @@ def parse_task(state: PlannerState) -> PlannerState:
 
         from langchain_openai import ChatOpenAI
 
-        from app.templates.prompts.developer.planner import TASK_PARSING_PROMPT
+        from app.agents.developer.planner.utils.prompts import TASK_PARSING_PROMPT
 
         task_description = state.task_description
 

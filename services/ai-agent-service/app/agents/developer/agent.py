@@ -131,6 +131,7 @@ class DeveloperAgent:
         backlog_path: str = "",
         sprint_path: str = "",
         working_directory: str = ".",
+        github_repo_url: str = "",
         thread_id: str | None = None,
         continue_on_error: bool = True,
     ) -> dict[str, Any]:
@@ -142,6 +143,7 @@ class DeveloperAgent:
             backlog_path: Path to backlog.json file (empty = auto-detect)
             sprint_path: Path to sprint.json file (empty = auto-detect)
             working_directory: Working directory for code operations
+            github_repo_url: GitHub repository URL for Daytona sandbox integration (empty = use local path)
             thread_id: Thread ID for checkpointer (to resume)
             continue_on_error: Continue execution when individual tasks fail
 
@@ -156,6 +158,7 @@ class DeveloperAgent:
                 backlog_path=backlog_path,
                 sprint_path=sprint_path,
                 working_directory=working_directory,
+                github_repo_url=github_repo_url,
                 model_name=self.model,
                 session_id=self.session_id or "default",
                 continue_on_error=continue_on_error,
@@ -258,6 +261,7 @@ def run_developer_agent(
     backlog_path: str = "",
     sprint_path: str = "",
     working_directory: str = ".",
+    github_repo_url: str = "",
     model_name: str = "gpt-4o",
     session_id: str | None = None,
     thread_id: str | None = None,
@@ -271,6 +275,7 @@ def run_developer_agent(
         backlog_path: Path to backlog.json file
         sprint_path: Path to sprint.json file
         working_directory: Working directory for code operations
+        github_repo_url: GitHub repository URL for Daytona sandbox integration
         model_name: LLM model to use
         session_id: Session ID for tracking
         thread_id: Thread ID for checkpointer
@@ -290,6 +295,7 @@ def run_developer_agent(
         backlog_path=backlog_path,
         sprint_path=sprint_path,
         working_directory=working_directory,
+        github_repo_url=github_repo_url,
         thread_id=thread_id,
         continue_on_error=continue_on_error,
     )

@@ -25,26 +25,19 @@ def test_planner_basic():
 
     # Test task description
     task_description = """
-    Implement user authentication system with email verification.
+    Implement Role-Based Access Control (RBAC) for the application.
 
     Requirements:
-    - Users can register with email and password
-    - Email verification required before account activation
-    - Login with email/password after verification
-    - Password reset functionality
+    - Support multiple user roles with different access levels (Admin, Teacher, Student)
+    - Role data stored and validated through authentication system
+    - Access to resources and actions restricted based on user role
+    - Include necessary API endpoints and client-side logic to enforce permissions
 
     Acceptance Criteria:
-    - Registration endpoint accepts email, password, confirm_password
-    - Verification email sent automatically after registration
-    - Users cannot login until email is verified
-    - Password reset sends secure reset link to email
-    - All endpoints return appropriate error messages
-
-    Technical Specs:
-    - Use FastAPI for API endpoints
-    - PostgreSQL database with SQLModel
-    - JWT tokens for authentication
-    - Email service integration (SMTP or SendGrid)
+    - Users can only access features allowed by their role
+    - Unauthorized access returns appropriate error or redirection
+    - Roles can be updated by authorized users
+    - Both backend and frontend reflect consistent role-based restrictions
     """
 
     try:

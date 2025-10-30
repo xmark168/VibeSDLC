@@ -20,6 +20,7 @@ from langchain_openai import ChatOpenAI
 from ..state import ImplementorState
 from ..tool.filesystem_tools import (
     create_directory_tool,
+    execute_command_tool,
     grep_search_tool,
     list_files_tool,
     read_file_tool,
@@ -92,6 +93,7 @@ def execute_step(state: ImplementorState) -> ImplementorState:
                 create_directory_tool,
                 list_files_tool,
                 str_replace_tool,
+                execute_command_tool,
             ]
         )
 
@@ -492,6 +494,8 @@ def _process_tool_calls(
                     # Track file changes
                     file_path = tool_args.get("file_path", "")
                     _track_file_change(state, file_path, working_dir)
+                elif tool_name == "execute_command_tool":
+                    result = execute_command_tool.invoke(tool_args)
                 else:
                     result = f"Error: Unknown tool '{tool_name}'"
 

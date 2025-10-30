@@ -1,282 +1,358 @@
-# Developer Agent
+# Developer Planner Subagent
 
-Main Developer Agent orchestrator that coordinates Planner, Implementor, and Code Reviewer subagents to execute sprint tasks from Product Owner Agent output.
+Planner subagent chịu trách nhiệm phân tích task requirements và tạo detailed implementation plan cho implementor subagent. Sử dụng LangGraph framework với 4-phase planning process.
 
-## 🎯 Overview
-
-Developer Agent serves as the main orchestrator for sprint task execution, bridging the gap between Product Owner Agent (planning) and implementation. It:
-
-1. **Reads Sprint Data**: Loads sprint.json and backlog.json from Product Owner Agent
-2. **Filters Tasks**: Processes only "Infrastructure" and "Development" task types
-3. **Enriches Context**: Resolves parent_id to provide Epic/User Story context
-4. **Orchestrates Workflow**: Coordinates Planner → Implementor → Code Reviewer for each task
-5. **Generates Reports**: Creates comprehensive sprint execution summaries
-
-## 🏗️ Architecture
+## Architecture Overview
 
 ```
-Developer Agent (Main Orchestrator)
-├── Sprint Parser - Load and validate sprint/backlog data
-├── Task Filter - Filter by task_type and resolve parent context
-├── Task Processor - Orchestrate subagents for each task
-│   ├── Planner Agent - Generate implementation plan
-│   ├── Implementor Agent - Execute implementation
-│   └── Code Reviewer Agent - Review code quality (placeholder)
-└── Report Generator - Generate execution summary
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   Product       │    │     Planner      │    │   Implementor   │
+│   Backlog       │───▶│    Subagent      │───▶│   Subagent      │
+│                 │    │                  │    │                 │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+                              │
+                              ▼
+                       ┌──────────────────┐
+                       │  Code Reviewer   │
+                       │    Subagent      │
+                       └──────────────────┘
 ```
 
-### Workflow Phases
+## 4-Phase Planning Process
 
-1. **initialize**: Setup session, validate file paths
-2. **parse_sprint**: Load and validate JSON data
-3. **filter_tasks**: Filter eligible tasks and resolve parent context
-4. **process_tasks**: Execute Planner → Implementor → Code Reviewer loop
-5. **finalize**: Generate execution report and cleanup
+### Phase 1: Task Parsing
+- Extract functional requirements
+- Identify acceptance criteria
+- Parse business rules and constraints
+- Extract technical specifications
 
-## 📋 Usage
+### Phase 2: Codebase Analysis
+- Analyze existing code patterns
+- Identify files to create/modify
+- Map affected modules and dependencies
+- Assess database and API changes
+
+### Phase 3: Dependency Mapping
+- Create execution order
+- Identify blocking relationships
+- Find parallel execution opportunities
+- Map internal and external dependencies
+
+### Phase 4: Implementation Planning
+- Calculate complexity score (1-10)
+- Create detailed implementation steps
+- Estimate effort (hours and story points)
+- Identify risks and assumptions
+
+## Directory Structure
+
+```
+planner/
+├── __init__.py              # Main exports
+├── agent.py                 # PlannerAgent class with LangGraph workflow
+├── state.py                 # State management with Pydantic models
+├── nodes/                   # Workflow nodes
+│   ├── __init__.py
+│   ├── initialize.py        # Setup and validation
+│   ├── parse_task.py        # Phase 1: Task parsing
+│   ├── analyze_codebase.py  # Phase 2: Codebase analysis
+│   ├── map_dependencies.py  # Phase 3: Dependency mapping
+│   ├── generate_plan.py     # Phase 4: Implementation planning
+│   ├── validate_plan.py     # Plan validation with retry
+│   └── finalize.py          # Final output preparation
+├── tools/                   # Analysis tools
+│   ├── __init__.py
+│   ├── code_analysis.py     # Code search, AST parsing, file analysis
+│   ├── dependency_tools.py  # Dependency analysis, execution order
+│   └── planning_tools.py    # Task parsing, effort estimation, risk assessment
+├── utils/                   # Utilities
+│   ├── __init__.py
+│   ├── prompts.py          # System prompts for each phase
+│   └── validators.py       # Plan validation logic
+├── test_planner.py         # Test suite
+└── README.md               # This file
+```
+
+## Key Components
+
+### PlannerState
+Comprehensive state model with nested Pydantic models:
+- `TaskRequirements`: Structured requirements from task parsing
+- `CodebaseAnalysis`: Codebase analysis results
+- `DependencyMapping`: Dependency and execution order mapping
+- `ImplementationPlan`: Final implementation plan output
+
+### Workflow Nodes
+- **initialize**: Setup initial state and validate input
+- **parse_task**: Extract requirements, acceptance criteria, constraints
+- **analyze_codebase**: Analyze existing code, dependencies, affected files
+- **map_dependencies**: Map execution order, dependencies, blocking steps
+- **generate_plan**: Create detailed implementation plan (simple vs complex)
+- **validate_plan**: Validate plan quality with retry mechanism (max 3 iterations)
+- **finalize**: Prepare final output for implementor
+
+### Tools
+- **code_search_tool**: Search for code patterns in codebase
+- **ast_parser_tool**: Parse Python files using AST for structure analysis
+- **file_analyzer_tool**: Analyze files to determine changes needed
+- **dependency_analyzer_tool**: Analyze dependencies and relationships
+- **execution_order_tool**: Create execution order based on dependencies
+- **task_parser_tool**: Parse task descriptions to extract requirements
+- **effort_estimation_tool**: Estimate effort using complexity factors
+- **risk_assessment_tool**: Assess risks and generate mitigation strategies
+
+## Usage
 
 ### Basic Usage
 
 ```python
-from app.agents.developer.agent import DeveloperAgent
+from agents.developer.planner import PlannerAgent
 
-# Create agent
-agent = DeveloperAgent(
+# Create planner agent
+planner = PlannerAgent(
     model="gpt-4o",
-    session_id="sprint_execution_001",
-    user_id="developer_team"
+    session_id="session_001",
+    user_id="user_123"
 )
 
-# Run sprint execution
-result = agent.run(
-    sprint_id="sprint-1",
-    working_directory="./target_project",
-    continue_on_error=True
+# Run planning workflow
+result = planner.run(
+    task_description="Implement user authentication with email verification",
+    codebase_context="Existing FastAPI app with PostgreSQL database",
+    codebase_path="",  # Optional: path to codebase for analysis (empty = use default)
+    thread_id="thread_001"
 )
 
 # Check results
 if result["success"]:
-    print(f"✅ Sprint {result['sprint_id']} completed")
-    print(f"📊 Success rate: {result['execution_summary']['success_rate']:.1f}%")
-    print(f"✅ Successful tasks: {result['execution_summary']['successful_tasks_count']}")
+    print(f"Task ID: {result['task_id']}")
+    print(f"Complexity: {result['complexity_score']}/10")
+    print(f"Estimated: {result['estimated_hours']} hours")
+    print(f"Ready: {result['ready_for_implementation']}")
+    
+    # Access final plan
+    final_plan = result["final_plan"]
+    implementation_steps = final_plan["implementation"]["steps"]
+```
+
+### Using Custom Codebase Path
+
+```python
+# Analyze a specific codebase directory
+result = planner.run(
+    task_description="Add new feature to existing project",
+    codebase_context="FastAPI backend with React frontend",
+    codebase_path=r"D:\projects\my-app\backend",  # Specific path for analysis
+    thread_id="thread_002"
+)
+
+# If codebase_path is empty or not provided, uses default path
+result = planner.run(
+    task_description="Add new feature",
+    codebase_context="Existing codebase",
+    # codebase_path defaults to: D:\capstone project\VibeSDLC\services\ai-agent-service\app\agents\demo
+)
+```
+
+### Using Daytona Sandbox with GitHub Repository (NEW!)
+
+```python
+# Analyze GitHub repository using Daytona sandbox
+result = planner.run(
+    task_description="Implement user authentication with JWT tokens",
+    codebase_context="FastAPI application with PostgreSQL database",
+    github_repo_url="https://github.com/your-org/your-repo.git",  # GitHub repository
+    thread_id="thread_003"
+)
+
+# For private repositories, ensure GitHub credentials are configured
+result = planner.run(
+    task_description="Add new feature to private repository",
+    codebase_context="Private company codebase",
+    github_repo_url="https://github.com/private-org/private-repo.git",
+    thread_id="thread_004"
+)
+
+# Check if sandbox was used
+if result.get("sandbox_id"):
+    print(f"Used Daytona sandbox: {result['sandbox_id']}")
+    print(f"Repository cloned to: {result.get('codebase_path', 'N/A')}")
 else:
-    print(f"❌ Sprint execution failed: {result['error']}")
+    print("Used local codebase analysis")
 ```
 
-### Convenience Function
+### Fallback Behavior
+
+The planner supports multiple modes with automatic fallback:
+
+1. **Daytona Sandbox Mode**: If `github_repo_url` is provided and Daytona is configured
+2. **Local Path Mode**: If `codebase_path` is provided
+3. **Default Mode**: Falls back to default local path
 
 ```python
-from app.agents.developer.agent import run_developer_agent
+# Priority order:
+# 1. Daytona sandbox (if github_repo_url provided and Daytona available)
+# 2. Custom local path (if codebase_path provided)
+# 3. Default local path (fallback)
 
-# Direct execution
-result = run_developer_agent(
-    sprint_id="sprint-1",
-    backlog_path="./backlog.json",
-    sprint_path="./sprint.json",
-    working_directory="./target_project",
-    model_name="gpt-4o"
+result = planner.run(
+    task_description="Implement feature",
+    github_repo_url="https://github.com/user/repo.git",  # Highest priority
+    codebase_path="/custom/local/path",  # Ignored if sandbox succeeds
+    # Falls back to default if both fail
 )
 ```
 
-### Custom File Paths
+### Integration with Implementor
 
 ```python
-result = agent.run(
-    sprint_id="sprint-1",
-    backlog_path="/custom/path/backlog.json",
-    sprint_path="/custom/path/sprint.json",
-    working_directory="/target/project"
+# Planner output becomes implementor input
+planner_result = planner.run(
+    task_description=task_description,
+    codebase_context=codebase_context,
+    codebase_path=r"D:\path\to\codebase"  # Optional custom path
 )
+
+if planner_result["ready_for_implementation"]:
+    # Hand off to implementor
+    implementor_result = implementor.run(
+        implementation_plan=planner_result["final_plan"],
+        thread_id=planner_result["metadata"]["thread_id"]
+    )
 ```
 
-## 📊 Input Data Format
-
-### Backlog.json Structure
-
-```json
-[
-  {
-    "id": "EPIC-001",
-    "type": "Epic",
-    "parent_id": null,
-    "title": "AI-Powered Task Management",
-    "description": "Develop intelligent task management system",
-    "business_value": "Increase user productivity"
-  },
-  {
-    "id": "TASK-001",
-    "type": "Task",
-    "parent_id": "EPIC-001",
-    "title": "Implement task prioritization",
-    "description": "Create algorithm for automatic task prioritization",
-    "task_type": "Development",
-    "acceptance_criteria": [
-      "Algorithm calculates priority scores",
-      "Priority updates in real-time"
-    ]
-  }
-]
-```
-
-### Sprint.json Structure
-
-```json
-[
-  {
-    "sprint_id": "sprint-1",
-    "sprint_goal": "Implement core task management features",
-    "start_date": "2025-01-01",
-    "end_date": "2025-01-15",
-    "assigned_items": [
-      "TASK-001",
-      "TASK-002",
-      "SUB-001"
-    ],
-    "status": "Planned"
-  }
-]
-```
-
-## 🔄 Task Processing Logic
-
-### Task Filtering
-
-Only processes tasks with:
-- `"task_type": "Development"` OR
-- `"task_type": "Infrastructure"`
-
-Skips:
-- Epic items (no task_type)
-- User Stories without task_type
-- Tasks with other task_types
-- Missing items
-
-### Context Enrichment
-
-For each eligible task:
-1. **Resolve Parent**: Find parent Epic/User Story by parent_id
-2. **Extract Context**: Get title, description, business_value, acceptance_criteria
-3. **Enrich Description**: Combine task + parent context for Planner Agent
-
-Example enriched description:
-```
-Task: Implement task prioritization
-Task Description: Create algorithm for automatic task prioritization
-
-Parent Context:
-Epic: AI-Powered Task Management
-Description: Develop intelligent task management system
-Business Value: Increase user productivity
-
-Task Acceptance Criteria: Algorithm calculates priority scores; Priority updates in real-time
-```
-
-## 📈 Execution Results
-
-### Success Response
-
-```json
-{
-  "success": true,
-  "sprint_id": "sprint-1",
-  "session_id": "dev_agent_20250119_143022",
-  "execution_summary": {
-    "total_assigned_items": 5,
-    "eligible_tasks_count": 3,
-    "processed_tasks_count": 3,
-    "successful_tasks_count": 2,
-    "failed_tasks_count": 1,
-    "success_rate": 66.7,
-    "total_duration_seconds": 245.8
-  },
-  "task_results": [
-    {
-      "task_id": "TASK-001",
-      "status": "success",
-      "task_title": "Implement task prioritization",
-      "task_type": "Development",
-      "duration_seconds": 89.2
-    }
-  ]
-}
-```
-
-### Error Response
-
-```json
-{
-  "success": false,
-  "error": "Sprint file not found: ./sprint.json",
-  "sprint_id": "sprint-1",
-  "session_id": "dev_agent_20250119_143022"
-}
-```
-
-## 🔧 Configuration
+## Configuration
 
 ### Environment Variables
-
 ```bash
 # Required for LLM
-OPENAI_API_KEY=your_openai_api_key
+OPENAI_API_KEY=your_openai_key
 
-# Optional for tracing
-LANGFUSE_SECRET_KEY=your_langfuse_key
-LANGFUSE_PUBLIC_KEY=your_langfuse_public_key
+# Required for Langfuse tracing
+LANGFUSE_SECRET_KEY=your_langfuse_secret
+LANGFUSE_PUBLIC_KEY=your_langfuse_public
 LANGFUSE_HOST=https://cloud.langfuse.com
+
+# Optional: Daytona Sandbox Configuration (for GitHub repository analysis)
+DAYTONA_API_KEY=your_daytona_api_key
+DAYTONA_API_URL=https://app.daytona.io/api
+DAYTONA_TARGET=us
+
+# Optional: GitHub Authentication (for private repositories)
+GITHUB_USERNAME=your_github_username
+GITHUB_TOKEN=your_github_personal_access_token
 ```
 
-### Default File Paths
+### Model Configuration
+- Default model: `gpt-4o`
+- Temperature: `0.3` (for consistent planning)
+- Max tokens: Determined by model limits
+- Timeout: 60 seconds per node
 
-- **Backlog**: `services/ai-agent-service/app/agents/developer/backlog.json`
-- **Sprint**: `services/ai-agent-service/app/agents/developer/sprint.json`
-- **Reports**: `{working_directory}/reports/sprint_execution_report_{sprint_id}_{timestamp}.json`
+## Validation and Quality
 
-## 🧪 Testing
+### Validation Loop
+- Plan validation with scoring (0.0-1.0)
+- Automatic retry if score < 0.7
+- Maximum 3 iterations per task
+- Force finalization if max iterations reached
 
-### Run Component Tests
+### Quality Metrics
+- **Completeness**: All requirements addressed
+- **Consistency**: Logical step ordering and dependencies
+- **Effort Estimates**: Realistic hours and story points
+- **Risk Assessment**: Comprehensive risk identification
 
+### Success Criteria
+- Validation score ≥ 0.7
+- All required fields populated
+- No circular dependencies
+- Reasonable effort estimates
+
+## Testing
+
+### Run Tests
 ```bash
-cd services/ai-agent-service
-python test_developer_agent_simple.py
+cd services/ai-agent-service/app/agents/developer/planner
+python test_planner.py
 ```
 
 ### Test Coverage
+- Basic functionality test
+- Simple task planning
+- Complex task planning
+- Error handling
+- Validation loop testing
 
-- ✅ State model validation
-- ✅ Node functionality (initialize, parse_sprint, filter_tasks)
-- ✅ Task filtering and context resolution
-- ✅ Error handling and validation
-- ✅ Workflow structure integrity
+## Integration Points
 
-## 🔗 Integration Points
+### Input (from Product Backlog)
+- Task description (string)
+- Codebase context (optional string)
+- Thread ID for checkpointing
 
-### Input (from Product Owner Agent)
-- `backlog.json`: Complete product backlog with hierarchy
-- `sprint.json`: Sprint planning with assigned items
+### Output (to Implementor)
+- Final implementation plan (structured dict)
+- Task metadata (complexity, estimates)
+- Ready for implementation flag
+- Validation results
 
-### Output (to Development Team)
-- Implementation plans from Planner Agent
-- Code changes from Implementor Agent
-- Quality reports from Code Reviewer Agent
-- Comprehensive execution reports
+### Monitoring (Langfuse)
+- Workflow execution tracing
+- Node-level performance metrics
+- Error tracking and debugging
+- User session tracking
 
-### Subagent Coordination
-- **Planner Agent**: Receives enriched task descriptions
-- **Implementor Agent**: Receives implementation plans
-- **Code Reviewer Agent**: Reviews implementation results (placeholder)
+## Best Practices
 
-## 🚀 Next Steps
+### For Task Descriptions
+- Include clear requirements and acceptance criteria
+- Specify technical constraints and preferences
+- Provide business context and user stories
+- Include any existing code references
 
-1. **Code Reviewer Integration**: Implement actual Code Reviewer Agent
-2. **Dependency Management**: Add task dependency resolution
-3. **Parallel Execution**: Support parallel task processing
-4. **Advanced Filtering**: Add more sophisticated task filtering rules
-5. **Rollback Mechanisms**: Add rollback capabilities for failed implementations
+### For Codebase Context
+- Describe existing architecture patterns
+- Mention relevant existing components
+- Include technology stack information
+- Note any constraints or limitations
 
-## 📝 Notes
+### For Integration
+- Always check `ready_for_implementation` flag
+- Handle validation failures gracefully
+- Use thread IDs for workflow continuity
+- Monitor execution through Langfuse
 
-- **Error Resilience**: Continues execution even when individual tasks fail
-- **Comprehensive Logging**: Detailed logging for debugging and monitoring
-- **Resume Capability**: Supports workflow resumption via thread_id
-- **Flexible Configuration**: Customizable file paths and working directories
+## Troubleshooting
+
+### Common Issues
+1. **Validation failures**: Check task description clarity
+2. **Tool errors**: Verify file paths and permissions
+3. **LLM timeouts**: Reduce task complexity or increase timeout
+4. **Import errors**: Check Python path and dependencies
+
+### Debug Mode
+Set environment variable for detailed logging:
+```bash
+export PLANNER_DEBUG=true
+```
+
+### Logs Location
+- Workflow logs: Console output with emoji indicators
+- Langfuse traces: Available in Langfuse dashboard
+- Error logs: Captured in state.error_message
+
+## Future Enhancements
+
+### Planned Features
+- Integration with actual code analysis tools
+- Support for multiple programming languages
+- Advanced risk assessment algorithms
+- Machine learning-based effort estimation
+- Integration with project management tools
+
+### Performance Optimizations
+- Parallel tool execution
+- Caching of codebase analysis results
+- Incremental planning for related tasks
+- Optimized prompt engineering

@@ -34,6 +34,10 @@ class CodebaseAnalysis(BaseModel):
     api_endpoints: list[dict[str, Any]] = Field(default_factory=list)
     external_dependencies: list[str] = Field(default_factory=list)
     internal_dependencies: list[str] = Field(default_factory=list)
+    existing_dependencies: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Existing dependencies từ package.json/requirements.txt/pyproject.toml. Format: {'dependencies': {...}, 'devDependencies': {...}}",
+    )
 
 
 class DependencyMapping(BaseModel):
@@ -74,7 +78,21 @@ class ImplementationPlan(BaseModel):
 
     # Infrastructure Changes (simplified objects)
     database_changes: list[dict[str, Any]] = Field(default_factory=list)
-    external_dependencies: list[dict[str, Any]] = Field(default_factory=list)
+    external_dependencies: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="""External package dependencies with complete installation info.
+        Each dict must contain:
+        - package: Package name (str)
+        - version: Version constraint (str, e.g., '^8.0.0', '>=3.3.0')
+        - purpose: Why this package is needed (str)
+        - category: 'backend' or 'frontend' (str)
+        - already_installed: Whether package exists in package.json/requirements.txt (bool)
+        - installation_method: 'npm' | 'yarn' | 'pip' | 'poetry' (str)
+        - install_command: Full executable command with directory navigation (str, e.g., 'cd be && npm install express@^4.18.0')
+        - package_file: Full path from codebase root (str, e.g., 'be/package.json', 'fe/package.json', 'backend/package.json')
+        - dependency_type: 'production' | 'development' (str)
+        """,
+    )
     internal_dependencies: list[dict[str, Any]] = Field(default_factory=list)
 
     # Metadata
@@ -105,9 +123,21 @@ class PlannerState(BaseModel):
     # Tech stack detection
     tech_stack: str = ""  # e.g., "nodejs", "fastapi", "react-vite"
 
+    # Task scope from labels (backend, frontend, full-stack)
+    task_scope: str = ""  # Scope detected from task labels
+    task_labels: list[str] = Field(
+        default_factory=list, description="Original labels from task"
+    )
+
     # Daytona Sandbox Integration
     sandbox_id: str = ""  # ID của Daytona sandbox instance
     github_repo_url: str = ""  # URL của GitHub repository cần clone vào sandbox
+
+    # Cumulative dependency tracking across tasks
+    cumulative_dependencies: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Track all external dependencies suggested across all tasks in this planning session to prevent duplicates",
+    )
 
     # Phase outputs
     task_requirements: TaskRequirements = Field(default_factory=TaskRequirements)

@@ -36,13 +36,15 @@ def _invoke_planner_agent(
             user_id="developer_agent",
         )
 
-        # Run planner with enriched description
+        # Run planner with enriched description and scope
         result = planner.run(
             task_description=task["enriched_description"],
             codebase_context="",
             codebase_path=state.working_directory,
             thread_id=f"{state.session_id}_planner_{task['id']}",
-            github_repo_url="https://github.com/trong03/boilerplate-vibe-sdlc.git",
+            github_repo_url=state.github_repo_url,
+            task_scope=task.get("scope", ""),
+            task_labels=task.get("labels", []),
         )
 
         print(f"✅ Planning complete for {task['id']}")

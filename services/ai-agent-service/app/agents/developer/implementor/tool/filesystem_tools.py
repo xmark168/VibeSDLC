@@ -324,6 +324,77 @@ def batch_edit_files_tool(file_edits: list[dict], working_directory: str = ".") 
     return "\n".join(results)
 
 
+# ============================================================================
+# COMMAND EXECUTION TOOLS
+# ============================================================================
+
+
+@tool
+def execute_command_tool(
+    command: str,
+    working_directory: str = ".",
+    timeout: int = 60,
+    capture_output: bool = True,
+) -> str:
+    """
+    Execute shell command in the working directory.
+
+    Use this tool to:
+    - Run tests (npm test, pytest, jest)
+    - Start the application (npm start, node server.js, python app.py)
+    - Build the project (npm run build, cargo build)
+    - Install dependencies (npm install, pip install)
+    - Run linters/formatters (eslint, prettier, black)
+    - Execute any development command
+
+    IMPORTANT - Error Handling Workflow:
+    When a command fails (exit_code != 0):
+    1. Analyze the stderr output to identify the root cause
+    2. Use read_file_tool to examine the problematic files
+    3. Use str_replace_tool or write_file_tool to fix the issues
+    4. Re-run the command to verify the fix
+    5. Iterate until the command succeeds
+
+    Security:
+    - Dangerous commands are blocked (rm -rf /, sudo, etc.)
+    - Commands run within the working directory only
+    - Timeout enforced to prevent hanging
+
+    Args:
+        command: Shell command to execute (e.g., "npm test", "python -m pytest")
+        working_directory: Base directory for command execution (auto-injected)
+        timeout: Command timeout in seconds (default: 60)
+        capture_output: Whether to capture stdout/stderr (default: True)
+
+    Returns:
+        JSON string with execution results:
+        {
+            "status": "success" | "error",
+            "exit_code": 0,
+            "stdout": "command output...",
+            "stderr": "error output...",
+            "execution_time": 1.23
+        }
+
+    Example - Run tests and fix errors:
+        # Step 1: Run tests
+        result = execute_command_tool(command="npm test")
+        # Result: {"status": "error", "exit_code": 1, "stderr": "SyntaxError: Unexpected token..."}
+
+        # Step 2: Analyze error and fix
+        read_file_tool(file_path="src/auth.js")  # Read problematic file
+        str_replace_tool(file_path="src/auth.js", old_str="...", new_str="...")  # Fix syntax
+
+        # Step 3: Re-run tests
+        result = execute_command_tool(command="npm test")
+        # Result: {"status": "success", "exit_code": 0, "stdout": "All tests passed"}
+    """
+    from ...daytona_integration.adapters import get_filesystem_adapter
+
+    adapter = get_filesystem_adapter()
+    return adapter.execute_command(command, working_directory, timeout, capture_output)
+
+
 __all__ = [
     # File Reading
     "read_file_tool",
@@ -338,4 +409,6 @@ __all__ = [
     "grep_search_tool",
     # Batch Operations
     "batch_edit_files_tool",
+    # Command Execution
+    "execute_command_tool",
 ]

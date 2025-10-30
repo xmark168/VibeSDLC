@@ -4,12 +4,176 @@ Install Dependencies Node
 Cài đặt external dependencies từ implementation plan được tạo bởi Planner Agent.
 """
 
+import os
 import time
 
 from langchain_core.messages import AIMessage
 
 from ..state import DependencyInstallation, ImplementorState
 from ..tool.shell_tools import shell_execute_tool
+
+
+def _process_install_command(
+    install_command: str, package_file: str, package: str
+) -> str:
+    """
+    Process install command to ensure correct directory navigation.
+
+    Args:
+        install_command: Original install command from plan
+        package_file: Package file path (e.g., "be/package.json", "fe/package.json")
+        package: Package name for logging
+
+    Returns:
+        Processed install command with correct directory navigation
+    """
+    # If command already has cd, use it as-is
+    if install_command.startswith("cd ") or " && " in install_command:
+        return install_command
+
+    # If no package_file or it's root level, use command as-is
+    if not package_file or package_file in [
+        "package.json",
+        "requirements.txt",
+        "pyproject.toml",
+    ]:
+        return install_command
+
+    # Extract directory from package_file
+    directory = os.path.dirname(package_file)
+    if directory:
+        # Add cd command to navigate to correct directory
+        return f"cd {directory} && {install_command}"
+
+    return install_command
+
+
+def _extract_target_directory(final_command: str, package_file: str) -> str:
+    """
+    Extract target directory from final command or package_file.
+
+    Args:
+        final_command: Final processed install command
+        package_file: Package file path
+
+    Returns:
+        Target directory name or empty string for root
+    """
+    # Try to extract from cd command
+    if final_command.startswith("cd "):
+        parts = final_command.split(" && ")
+        if len(parts) > 0:
+            cd_part = parts[0]
+            directory = cd_part.replace("cd ", "").strip()
+            return directory
+
+    # Try to extract from package_file
+    if package_file and "/" in package_file:
+        directory = os.path.dirname(package_file)
+        return directory
+
+    return ""
+
+
+def _check_and_install_base_dependencies(codebase_path: str) -> dict:
+    """
+    Check and install base dependencies for backend and frontend directories.
+
+    Args:
+        codebase_path: Path to the codebase root
+
+    Returns:
+        Dict with installation results for backend and frontend
+    """
+    print("\n🔍 Checking base dependencies (node_modules)...")
+
+    results = {
+        "backend": {"checked": False, "installed": False, "error": None},
+        "frontend": {"checked": False, "installed": False, "error": None},
+    }
+
+    # Define directories to check
+    directories = [
+        {"name": "backend", "paths": ["be", "backend"], "type": "Backend"},
+        {"name": "frontend", "paths": ["fe", "frontend"], "type": "Frontend"},
+    ]
+
+    for dir_config in directories:
+        dir_name = dir_config["name"]
+        dir_paths = dir_config["paths"]
+        dir_type = dir_config["type"]
+
+        # Find which directory exists
+        existing_dir = None
+        package_json_path = None
+
+        for path in dir_paths:
+            full_path = os.path.join(codebase_path, path)
+            package_json = os.path.join(full_path, "package.json")
+
+            if os.path.exists(full_path) and os.path.exists(package_json):
+                existing_dir = path
+                package_json_path = package_json
+                break
+
+        if not existing_dir:
+            print(
+                f"   ⚠️ No {dir_type.lower()} directory found (checked: {', '.join(dir_paths)})"
+            )
+            continue
+
+        results[dir_name]["checked"] = True
+
+        # Check if node_modules exists
+        node_modules_path = os.path.join(codebase_path, existing_dir, "node_modules")
+
+        if os.path.exists(node_modules_path):
+            print(
+                f"   ✅ {dir_type} node_modules already exists: {existing_dir}/node_modules"
+            )
+            results[dir_name]["installed"] = True
+            continue
+
+        # node_modules doesn't exist, need to install
+        print(
+            f"   📦 {dir_type} node_modules not found, installing base dependencies..."
+        )
+        print(f"   📁 Directory: {existing_dir}")
+        print(f"   📄 Package.json: {package_json_path}")
+
+        # Run npm install
+        install_command = f"cd {existing_dir} && npm install"
+        print(f"   🔧 Running: {install_command}")
+
+        try:
+            result = shell_execute_tool(
+                command=install_command,
+                working_directory=codebase_path,
+                timeout=300,  # 5 minutes timeout
+                allow_dangerous=False,
+            )
+
+            # Check if installation was successful
+            success = "Error:" not in result and "error:" not in result.lower()
+
+            if success:
+                print(f"   ✅ {dir_type} base dependencies installed successfully")
+                results[dir_name]["installed"] = True
+            else:
+                error_msg = result[:200] + "..." if len(result) > 200 else result
+                print(f"   ❌ {dir_type} base dependencies installation failed")
+                print(f"   Error: {error_msg}")
+                results[dir_name]["error"] = error_msg
+
+        except Exception as e:
+            error_msg = str(e)
+            print(
+                f"   ❌ Exception during {dir_type.lower()} base dependencies installation"
+            )
+            print(f"   Error: {error_msg}")
+            results[dir_name]["error"] = error_msg
+
+    return results
 
 
 def install_dependencies(state: ImplementorState) -> ImplementorState:
@@ -37,6 +201,34 @@ def install_dependencies(state: ImplementorState) -> ImplementorState:
         # Update current phase
         state.current_phase = "install_dependencies"
         state.status = "installing_dependencies"
+
+        # Step 1: Check and install base dependencies (node_modules) first
+        print("📋 Step 1: Checking base dependencies...")
+        base_deps_results = _check_and_install_base_dependencies(
+            state.codebase_path or "."
+        )
+
+        # Log base dependencies results
+        backend_result = base_deps_results.get("backend", {})
+        frontend_result = base_deps_results.get("frontend", {})
+
+        if backend_result.get("checked"):
+            if backend_result.get("installed"):
+                print("   ✅ Backend base dependencies ready")
+            elif backend_result.get("error"):
+                print(
+                    f"   ⚠️ Backend base dependencies failed: {backend_result['error'][:100]}..."
+                )
+
+        if frontend_result.get("checked"):
+            if frontend_result.get("installed"):
+                print("   ✅ Frontend base dependencies ready")
+            elif frontend_result.get("error"):
+                print(
+                    f"   ⚠️ Frontend base dependencies failed: {frontend_result['error'][:100]}..."
+                )
+
+        print("📋 Step 2: Processing external dependencies from plan...")
 
         # Get external dependencies from implementation plan
         implementation_plan = state.implementation_plan
@@ -82,23 +274,40 @@ def install_dependencies(state: ImplementorState) -> ImplementorState:
             package = dep.get("package", "unknown-package")
             version = dep.get("version", "")
             install_command = dep.get("install_command", "")
+            package_file = dep.get("package_file", "")
+            category = dep.get("category", "")
             purpose = dep.get("purpose", "")
 
             print(f"\n📦 Installing dependency {i}/{len(deps_to_install)}: {package}")
             print(f"   Version: {version}")
+            print(f"   Category: {category}")
+            print(f"   Package file: {package_file}")
             print(f"   Purpose: {purpose}")
-            print(f"   Command: {install_command}")
+            print(f"   Original command: {install_command}")
 
             if not install_command or install_command == "Already installed":
                 print("   ⚠️ No install command provided, skipping")
                 continue
+
+            # Process install command to ensure correct directory navigation
+            final_command = _process_install_command(
+                install_command, package_file, package
+            )
+            print(f"   Final command: {final_command}")
+
+            # Extract target directory for logging
+            target_dir = _extract_target_directory(final_command, package_file)
+            if target_dir:
+                print(f"   📁 Installing in directory: {target_dir}")
+            else:
+                print("   📁 Installing in root directory")
 
             # Execute installation command
             start_time = time.time()
 
             try:
                 result = shell_execute_tool(
-                    command=install_command,
+                    command=final_command,
                     working_directory=state.codebase_path or ".",
                     timeout=300,  # 5 minutes timeout for package installation
                     allow_dangerous=False,
@@ -188,30 +397,59 @@ def install_dependencies(state: ImplementorState) -> ImplementorState:
 
         # Create summary
         summary = {
-            "total_dependencies": len(external_deps),
-            "already_installed": len(external_deps) - len(deps_to_install),
-            "attempted_installs": len(deps_to_install),
-            "successful_installs": successful_installs,
-            "failed_installs": failed_installs,
-            "installation_results": [
-                {
-                    "package": result.package,
-                    "success": result.success,
-                    "already_installed": result.already_installed,
-                    "error": result.error_message if not result.success else None,
-                }
-                for result in installation_results
-            ],
+            "base_dependencies": {
+                "backend": {
+                    "checked": backend_result.get("checked", False),
+                    "installed": backend_result.get("installed", False),
+                    "error": backend_result.get("error"),
+                },
+                "frontend": {
+                    "checked": frontend_result.get("checked", False),
+                    "installed": frontend_result.get("installed", False),
+                    "error": frontend_result.get("error"),
+                },
+            },
+            "external_dependencies": {
+                "total_dependencies": len(external_deps),
+                "already_installed": len(external_deps) - len(deps_to_install),
+                "attempted_installs": len(deps_to_install),
+                "successful_installs": successful_installs,
+                "failed_installs": failed_installs,
+                "installation_results": [
+                    {
+                        "package": result.package,
+                        "success": result.success,
+                        "already_installed": result.already_installed,
+                        "error": result.error_message if not result.success else None,
+                    }
+                    for result in installation_results
+                ],
+            },
         }
 
         # Store in tools_output
         state.tools_output["dependency_installation"] = summary
 
         # Add AI message
+        base_deps_status = []
+        if backend_result.get("checked"):
+            status = "✅ Ready" if backend_result.get("installed") else "❌ Failed"
+            base_deps_status.append(f"Backend: {status}")
+        if frontend_result.get("checked"):
+            status = "✅ Ready" if frontend_result.get("installed") else "❌ Failed"
+            base_deps_status.append(f"Frontend: {status}")
+
+        base_deps_summary = (
+            ", ".join(base_deps_status) if base_deps_status else "No directories found"
+        )
+
         ai_message = AIMessage(
             content=f"""Install Dependencies - COMPLETED
 
-Summary:
+Base Dependencies:
+- {base_deps_summary}
+
+External Dependencies:
 - Total dependencies: {len(external_deps)}
 - Already installed: {len(external_deps) - len(deps_to_install)}
 - Successfully installed: {successful_installs}

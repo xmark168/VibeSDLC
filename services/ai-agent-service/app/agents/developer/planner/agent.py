@@ -160,6 +160,8 @@ class PlannerAgent:
         codebase_context: str = "",
         codebase_path: str = "",
         github_repo_url: str = "",
+        task_scope: str = "",
+        task_labels: list[str] | None = None,
         thread_id: str | None = None,
     ) -> dict[str, Any]:
         """
@@ -170,6 +172,8 @@ class PlannerAgent:
             codebase_context: Additional codebase context
             codebase_path: Path to codebase for analysis (empty = use default)
             github_repo_url: GitHub repository URL to clone into Daytona sandbox (empty = use local path)
+            task_scope: Task scope from labels (backend, frontend, full-stack)
+            task_labels: Original labels from task
             thread_id: Thread ID cho checkpointer (để resume)
 
         Returns:
@@ -178,12 +182,17 @@ class PlannerAgent:
         if thread_id is None:
             thread_id = self.session_id or "default"
 
+        if task_labels is None:
+            task_labels = []
+
         # Create initial state
         initial_state = PlannerState(
             task_description=task_description,
             codebase_context=codebase_context,
             codebase_path=codebase_path,
             github_repo_url=github_repo_url,
+            task_scope=task_scope,
+            task_labels=task_labels,
         )
 
         # Build metadata for Langfuse tracing

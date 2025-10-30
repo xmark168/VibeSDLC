@@ -4,9 +4,81 @@ Analyze Codebase Node
 PHASE 2: Codebase Analysis - Analyze existing code, dependencies, affected files
 """
 
+import json
+import os
+from typing import Any
+
 from langchain_core.messages import AIMessage
 
 from app.agents.developer.planner.state import CodebaseAnalysis, PlannerState
+
+
+def _read_package_json(codebase_path: str) -> dict[str, Any]:
+    """
+    Read and parse package.json if exists (for Node.js projects).
+
+    Args:
+        codebase_path: Path to codebase root
+
+    Returns:
+        Dict with dependencies and devDependencies, or empty dict if not found
+    """
+    package_json_path = os.path.join(codebase_path, "package.json")
+
+    if os.path.exists(package_json_path):
+        try:
+            with open(package_json_path, encoding="utf-8") as f:
+                data = json.load(f)
+                return {
+                    "dependencies": data.get("dependencies", {}),
+                    "devDependencies": data.get("devDependencies", {}),
+                }
+        except Exception as e:
+            print(f"⚠️ Error reading package.json: {e}")
+            return {"dependencies": {}, "devDependencies": {}}
+
+    return {"dependencies": {}, "devDependencies": {}}
+
+
+def _read_pyproject_toml(codebase_path: str) -> dict[str, Any]:
+    """
+    Read and parse pyproject.toml if exists (for Python projects).
+
+    Args:
+        codebase_path: Path to codebase root
+
+    Returns:
+        Dict with dependencies, or empty dict if not found
+    """
+    pyproject_path = os.path.join(codebase_path, "pyproject.toml")
+
+    if os.path.exists(pyproject_path):
+        try:
+            # Simple TOML parsing for dependencies section
+            with open(pyproject_path, encoding="utf-8") as f:
+                content = f.read()
+
+                # Extract dependencies from [project.dependencies] or [tool.poetry.dependencies]
+                dependencies = {}
+
+                # Try to find dependencies section (basic parsing)
+                if (
+                    "[project.dependencies]" in content
+                    or "[tool.poetry.dependencies]" in content
+                ):
+                    # For now, return a marker that pyproject.toml exists
+                    # Full TOML parsing would require toml library
+                    return {
+                        "dependencies": {},
+                        "note": "pyproject.toml found - manual parsing needed",
+                    }
+
+                return {"dependencies": {}}
+        except Exception as e:
+            print(f"⚠️ Error reading pyproject.toml: {e}")
+            return {"dependencies": {}}
+
+    return {"dependencies": {}}
 
 
 def analyze_codebase(state: PlannerState) -> PlannerState:
@@ -46,7 +118,7 @@ def analyze_codebase(state: PlannerState) -> PlannerState:
         from app.agents.developer.planner.tools.codebase_analyzer import (
             analyze_codebase_context,
         )
-        from app.templates.prompts.developer.planner import CODEBASE_ANALYSIS_PROMPT
+        from app.agents.developer.planner.utils.prompts import CODEBASE_ANALYSIS_PROMPT
 
         # Initialize LLM
         llm = ChatOpenAI(
@@ -87,11 +159,41 @@ def analyze_codebase(state: PlannerState) -> PlannerState:
                 "Codebase analysis not available - using LLM knowledge only"
             )
 
-        # Format prompt with context
+        # Read existing dependencies from package.json or pyproject.toml
+        print("\n📦 Reading existing dependencies from package files...")
+        existing_deps = {}
+
+        # Try Node.js first (package.json)
+        package_json_deps = _read_package_json(codebase_path)
+        if package_json_deps.get("dependencies") or package_json_deps.get(
+            "devDependencies"
+        ):
+            existing_deps = package_json_deps
+            print(
+                f"✅ Found package.json with {len(package_json_deps.get('dependencies', {}))} dependencies, {len(package_json_deps.get('devDependencies', {}))} devDependencies"
+            )
+        else:
+            # Try Python (pyproject.toml)
+            pyproject_deps = _read_pyproject_toml(codebase_path)
+            if pyproject_deps.get("dependencies"):
+                existing_deps = pyproject_deps
+                print("✅ Found pyproject.toml with dependencies")
+            else:
+                print("⚠️ No package.json or pyproject.toml found")
+
+        # Get cumulative dependencies from previous tasks
+        cumulative_deps = state.cumulative_dependencies or []
+        print(
+            f"📊 Cumulative dependencies from previous tasks: {len(cumulative_deps)} packages"
+        )
+
+        # Format prompt with context + existing deps + cumulative deps
         formatted_prompt = CODEBASE_ANALYSIS_PROMPT.format(
             task_requirements=task_requirements.model_dump_json(indent=2),
             tech_stack=state.tech_stack or "unknown",
             codebase_context=codebase_context,
+            existing_dependencies=json.dumps(existing_deps, indent=2),
+            previously_suggested_dependencies=json.dumps(cumulative_deps, indent=2),
         )
 
         print("🤖 Calling LLM for codebase analysis...")
@@ -172,6 +274,29 @@ def analyze_codebase(state: PlannerState) -> PlannerState:
                 f"🔧 Extracted: {len(files_to_create)} files to create, {len(files_to_modify)} files to modify"
             )
 
+        # Update cumulative dependencies with new dependencies from this task
+        if external_dependencies:
+            # Filter out duplicates before adding
+            existing_packages = {dep.get("package") for dep in cumulative_deps}
+            new_deps = [
+                dep
+                for dep in external_dependencies
+                if dep.get("package") not in existing_packages
+            ]
+
+            if new_deps:
+                state.cumulative_dependencies.extend(new_deps)
+                print(
+                    f"📦 Added {len(new_deps)} new dependencies to cumulative tracker"
+                )
+                print(
+                    f"   Total cumulative dependencies: {len(state.cumulative_dependencies)}"
+                )
+            else:
+                print("✅ No new dependencies to add (all already tracked)")
+        else:
+            print("✅ No external dependencies needed for this task")
+
         # Create CodebaseAnalysis object
         codebase_analysis = CodebaseAnalysis(
             files_to_create=files_to_create,
@@ -181,6 +306,7 @@ def analyze_codebase(state: PlannerState) -> PlannerState:
             api_endpoints=api_endpoints,
             external_dependencies=external_dependencies,
             internal_dependencies=internal_dependencies,
+            existing_dependencies=existing_deps,
         )
 
         # Update state

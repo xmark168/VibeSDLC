@@ -163,6 +163,35 @@ class FilesystemAdapter(ABC):
         """
         pass
 
+    @abstractmethod
+    def execute_command(
+        self,
+        command: str,
+        working_directory: str = ".",
+        timeout: int = 60,
+        capture_output: bool = True,
+    ) -> str:
+        """
+        Execute shell command in working directory.
+
+        Args:
+            command: Shell command to execute
+            working_directory: Base directory for command execution
+            timeout: Command timeout in seconds (default: 60)
+            capture_output: Whether to capture stdout/stderr (default: True)
+
+        Returns:
+            JSON string with execution results:
+            {
+                "status": "success" | "error",
+                "exit_code": 0,
+                "stdout": "command output...",
+                "stderr": "error output...",
+                "execution_time": 1.23
+            }
+        """
+        pass
+
 
 class GitAdapter(ABC):
     """

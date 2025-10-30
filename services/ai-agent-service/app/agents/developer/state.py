@@ -69,6 +69,7 @@ class DeveloperState(BaseModel):
 
     # Configuration
     working_directory: str = "."
+    github_repo_url: str = ""  # GitHub repository URL for Daytona sandbox integration
     model_name: str = "gpt-4o"
     session_id: str = ""
 

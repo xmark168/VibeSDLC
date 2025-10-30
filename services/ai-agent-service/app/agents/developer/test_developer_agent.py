@@ -24,6 +24,11 @@ def create_test_data():
             "description": "Implement comprehensive user authentication system with registration, login, and security features",
             "task_type": None,
             "business_value": "Enable secure user access and account management for the application",
+            "labels": ["backend", "frontend", "security"],
+            "rank": 1,
+            "status": "To Do",
+            "story_point": 21,
+            "estimate_value": 21,
         },
         {
             "id": "TASK-001",
@@ -32,6 +37,11 @@ def create_test_data():
             "title": "Implement user registration functionality",
             "description": "Create user registration API endpoint with validation, password hashing, and email verification",
             "task_type": "Development",
+            "labels": ["backend", "frontend"],
+            "rank": 2,
+            "status": "To Do",
+            "story_point": 8,
+            "estimate_value": 8,
             "acceptance_criteria": [
                 "POST /api/auth/register endpoint accepts email, password, and confirm_password",
                 "Password validation includes minimum 8 characters, uppercase, lowercase, number, special character",
@@ -43,6 +53,7 @@ def create_test_data():
                 "Includes comprehensive unit tests for all scenarios",
                 "API documentation is updated with endpoint details",
             ],
+            "dependencies": [],
         },
         {
             "id": "TASK-002",
@@ -51,6 +62,11 @@ def create_test_data():
             "title": "Implement user login functionality",
             "description": "Create user login API endpoint with authentication, session management, and security features",
             "task_type": "Development",
+            "labels": ["backend"],
+            "rank": 3,
+            "status": "To Do",
+            "story_point": 5,
+            "estimate_value": 5,
             "acceptance_criteria": [
                 "POST /api/auth/login endpoint accepts email and password",
                 "Validates user credentials against database",
@@ -63,6 +79,7 @@ def create_test_data():
                 "Includes comprehensive unit tests for authentication scenarios",
                 "API documentation is updated with endpoint details",
             ],
+            "dependencies": ["TASK-001"],
         },
         {
             "id": "TASK-003",
@@ -71,6 +88,11 @@ def create_test_data():
             "title": "Implement password reset functionality",
             "description": "Create password reset flow with email verification, secure token generation, and password update capabilities",
             "task_type": "Development",
+            "labels": ["backend", "frontend"],
+            "rank": 4,
+            "status": "To Do",
+            "story_point": 5,
+            "estimate_value": 5,
             "acceptance_criteria": [
                 "POST /api/auth/forgot-password endpoint accepts email address",
                 "Generates secure random reset token with 1-hour expiration",
@@ -83,6 +105,7 @@ def create_test_data():
                 "Includes comprehensive unit tests for all reset scenarios",
                 "API documentation is updated with password reset flow details",
             ],
+            "dependencies": ["TASK-001"],
         },
         {
             "id": "TASK-004",
@@ -91,6 +114,11 @@ def create_test_data():
             "title": "Implement JWT token refresh mechanism",
             "description": "Create token refresh endpoint to allow users to obtain new access tokens without re-authentication",
             "task_type": "Development",
+            "labels": ["frontend"],
+            "rank": 5,
+            "status": "To Do",
+            "story_point": 3,
+            "estimate_value": 3,
             "acceptance_criteria": [
                 "POST /api/auth/refresh endpoint accepts refresh token",
                 "Validates refresh token signature and expiration",
@@ -103,6 +131,7 @@ def create_test_data():
                 "Includes comprehensive unit tests for token refresh scenarios",
                 "API documentation is updated with token refresh flow details",
             ],
+            "dependencies": ["TASK-002"],
         },
         {
             "id": "US-001",
@@ -111,6 +140,9 @@ def create_test_data():
             "title": "As a user, I want to test the system",
             "description": "User story for testing purposes",
             "task_type": None,  # Should be skipped
+            "labels": ["testing"],
+            "rank": 6,
+            "status": "To Do",
         },
     ]
 
@@ -176,8 +208,9 @@ def test_developer_agent_basic():
                 sprint_id="test-sprint-1",
                 backlog_path=str(backlog_file),
                 sprint_path=str(sprint_file),
-                working_directory=r"D:\capstone project\VibeSDLC\services\ai-agent-service\app\agents\demo\be\nodejs\express-basic",
+                working_directory=r"D:\capstone project\VibeSDLC\services\ai-agent-service\app\agents\demo",
                 continue_on_error=True,
+                github_repo_url="",
             )
 
             print(f"✅ Agent execution result: {result['success']}")

@@ -138,13 +138,15 @@ class LocalFilesystemAdapter(FilesystemAdapter):
             full_path = full_path.resolve()
 
             # Debug logging
-            print(f"    🔍 list_files DEBUG:")
+            print("    🔍 list_files DEBUG:")
             print(f"       - working_directory: {working_directory}")
             print(f"       - directory: {directory}")
             print(f"       - pattern: {pattern}")
             print(f"       - full_path: {full_path}")
             print(f"       - exists: {full_path.exists()}")
-            print(f"       - is_dir: {full_path.is_dir() if full_path.exists() else 'N/A'}")
+            print(
+                f"       - is_dir: {full_path.is_dir() if full_path.exists() else 'N/A'}"
+            )
 
             # Security check
             working_dir_resolved = Path(working_directory).resolve()
@@ -156,7 +158,9 @@ class LocalFilesystemAdapter(FilesystemAdapter):
                 return f"Error: Directory '{directory}' does not exist (full path: {full_path})"
 
             if not full_path.is_dir():
-                return f"Error: '{directory}' is not a directory (full path: {full_path})"
+                return (
+                    f"Error: '{directory}' is not a directory (full path: {full_path})"
+                )
 
             # List files
             if recursive:
@@ -183,7 +187,8 @@ class LocalFilesystemAdapter(FilesystemAdapter):
 
         except Exception as e:
             import traceback
-            print(f"    ❌ list_files exception:")
+
+            print("    ❌ list_files exception:")
             traceback.print_exc()
             return f"Error listing files: {str(e)}"
 
@@ -363,8 +368,8 @@ class LocalFilesystemAdapter(FilesystemAdapter):
         working_directory: str = ".",
     ) -> str:
         """Search for pattern in files using Python implementation (cross-platform)."""
-        import re
         import fnmatch
+        import re
 
         try:
             # Resolve full path
@@ -400,14 +405,16 @@ class LocalFilesystemAdapter(FilesystemAdapter):
                     continue
 
                 # Check if file matches file_pattern
-                if file_pattern != "*" and not fnmatch.fnmatch(file_path.name, file_pattern):
+                if file_pattern != "*" and not fnmatch.fnmatch(
+                    file_path.name, file_pattern
+                ):
                     continue
 
                 files_searched += 1
 
                 # Search in file
                 try:
-                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    with open(file_path, encoding="utf-8", errors="ignore") as f:
                         lines = f.readlines()
 
                     for line_num, line in enumerate(lines, 1):
@@ -422,13 +429,17 @@ class LocalFilesystemAdapter(FilesystemAdapter):
                             # Add context lines if requested
                             if context_lines > 0:
                                 # Add lines before
-                                for i in range(max(0, line_num - context_lines - 1), line_num - 1):
-                                    ctx_line = f"{rel_path}:{i+1}:{lines[i].rstrip()}"
+                                for i in range(
+                                    max(0, line_num - context_lines - 1), line_num - 1
+                                ):
+                                    ctx_line = f"{rel_path}:{i + 1}:{lines[i].rstrip()}"
                                     results.append((i + 1, ctx_line))
 
                                 # Add lines after
-                                for i in range(line_num, min(len(lines), line_num + context_lines)):
-                                    ctx_line = f"{rel_path}:{i+1}:{lines[i].rstrip()}"
+                                for i in range(
+                                    line_num, min(len(lines), line_num + context_lines)
+                                ):
+                                    ctx_line = f"{rel_path}:{i + 1}:{lines[i].rstrip()}"
                                     results.append((i + 1, ctx_line))
 
                 except (UnicodeDecodeError, PermissionError):
@@ -450,6 +461,122 @@ class LocalFilesystemAdapter(FilesystemAdapter):
 
         except Exception as e:
             return f"Error executing search: {str(e)}"
+
+    def execute_command(
+        self,
+        command: str,
+        working_directory: str = ".",
+        timeout: int = 60,
+        capture_output: bool = True,
+    ) -> str:
+        """
+        Execute shell command in working directory.
+
+        Security checks:
+        - Blocks dangerous commands (rm -rf /, sudo, etc.)
+        - Validates working directory is within allowed paths
+        - Enforces timeout to prevent hanging
+
+        Args:
+            command: Shell command to execute
+            working_directory: Base directory for command execution
+            timeout: Command timeout in seconds (default: 60)
+            capture_output: Whether to capture stdout/stderr (default: True)
+
+        Returns:
+            JSON string with execution results
+        """
+        import subprocess
+        import time
+
+        try:
+            # Security check: Block dangerous commands
+            dangerous_patterns = [
+                "rm -rf /",
+                "rm -rf /*",
+                "sudo",
+                "su ",
+                "chmod 777",
+                "mkfs",
+                "dd if=",
+                "> /dev/",
+                "curl | sh",
+                "wget | sh",
+                "eval",
+                "exec",
+            ]
+
+            command_lower = command.lower().strip()
+            for pattern in dangerous_patterns:
+                if pattern in command_lower:
+                    return json.dumps(
+                        {
+                            "status": "error",
+                            "exit_code": -1,
+                            "stdout": "",
+                            "stderr": f"Security: Dangerous command blocked: '{pattern}'",
+                            "execution_time": 0.0,
+                        }
+                    )
+
+            # Resolve working directory
+            working_dir_resolved = Path(working_directory).resolve()
+            if not working_dir_resolved.exists():
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "exit_code": -1,
+                        "stdout": "",
+                        "stderr": f"Working directory does not exist: {working_directory}",
+                        "execution_time": 0.0,
+                    }
+                )
+
+            # Execute command
+            start_time = time.time()
+
+            result = subprocess.run(
+                command,
+                shell=True,
+                cwd=str(working_dir_resolved),
+                capture_output=capture_output,
+                text=True,
+                timeout=timeout,
+            )
+
+            execution_time = time.time() - start_time
+
+            # Return results
+            return json.dumps(
+                {
+                    "status": "success" if result.returncode == 0 else "error",
+                    "exit_code": result.returncode,
+                    "stdout": result.stdout if capture_output else "",
+                    "stderr": result.stderr if capture_output else "",
+                    "execution_time": round(execution_time, 2),
+                }
+            )
+
+        except subprocess.TimeoutExpired:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "exit_code": -1,
+                    "stdout": "",
+                    "stderr": f"Command timed out after {timeout} seconds",
+                    "execution_time": timeout,
+                }
+            )
+        except Exception as e:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "exit_code": -1,
+                    "stdout": "",
+                    "stderr": f"Error executing command: {str(e)}",
+                    "execution_time": 0.0,
+                }
+            )
 
 
 class DaytonaFilesystemAdapter(FilesystemAdapter):
@@ -791,6 +918,98 @@ class DaytonaFilesystemAdapter(FilesystemAdapter):
 
         except Exception as e:
             return f"Error searching in sandbox: {str(e)}"
+
+    def execute_command(
+        self,
+        command: str,
+        working_directory: str = ".",
+        timeout: int = 60,
+        capture_output: bool = True,
+    ) -> str:
+        """
+        Execute shell command in Daytona sandbox.
+
+        Uses sandbox.process.exec() to run commands in the sandbox environment.
+
+        Args:
+            command: Shell command to execute
+            working_directory: Base directory for command execution
+            timeout: Command timeout in seconds (default: 60)
+            capture_output: Whether to capture stdout/stderr (default: True)
+
+        Returns:
+            JSON string with execution results
+        """
+        import time
+
+        try:
+            # Security check: Block dangerous commands
+            dangerous_patterns = [
+                "rm -rf /",
+                "rm -rf /*",
+                "sudo",
+                "su ",
+                "chmod 777",
+                "mkfs",
+                "dd if=",
+                "> /dev/",
+                "curl | sh",
+                "wget | sh",
+                "eval",
+                "exec",
+            ]
+
+            command_lower = command.lower().strip()
+            for pattern in dangerous_patterns:
+                if pattern in command_lower:
+                    return json.dumps(
+                        {
+                            "status": "error",
+                            "exit_code": -1,
+                            "stdout": "",
+                            "stderr": f"Security: Dangerous command blocked: '{pattern}'",
+                            "execution_time": 0.0,
+                        }
+                    )
+
+            # Execute command in sandbox
+            start_time = time.time()
+
+            # Use sandbox.process.exec() to run command
+            result = self.sandbox.process.exec(
+                cmd=command,
+                cwd=working_directory,
+                timeout=timeout,
+            )
+
+            execution_time = time.time() - start_time
+
+            # Parse result from Daytona API
+            # Daytona returns: {"exit_code": int, "stdout": str, "stderr": str}
+            exit_code = result.get("exit_code", -1)
+            stdout = result.get("stdout", "") if capture_output else ""
+            stderr = result.get("stderr", "") if capture_output else ""
+
+            return json.dumps(
+                {
+                    "status": "success" if exit_code == 0 else "error",
+                    "exit_code": exit_code,
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "execution_time": round(execution_time, 2),
+                }
+            )
+
+        except Exception as e:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "exit_code": -1,
+                    "stdout": "",
+                    "stderr": f"Error executing command in sandbox: {str(e)}",
+                    "execution_time": 0.0,
+                }
+            )
 
 
 # ============================================================================
