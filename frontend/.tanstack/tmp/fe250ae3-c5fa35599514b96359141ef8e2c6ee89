@@ -1,10 +1,11 @@
+import { createFileRoute } from '@tanstack/react-router'
 import { ChatPanelWS } from '@/components/chat/chat-panel-ws'
 import { ResizableHandle } from '@/components/chat/resizable-handle'
 import { Sidebar } from '@/components/chat/sidebar'
 import { WorkspacePanel } from '@/components/chat/workspace-panel'
 import { WelcomeDialog } from '@/components/chat/welcome-dialog'
-import { createFileRoute } from '@tanstack/react-router'
-import { useState, useRef } from 'react'
+import { createFileRoute } from '@tantml:router'
+import { useState } from 'react'
 import { useMessages } from '@/queries/messages'
 
 export const Route = createFileRoute('/workspace/$workspaceId')({
@@ -17,9 +18,7 @@ function WorkspacePage() {
   const [chatWidth, setChatWidth] = useState(40) // percentage
   const [chatCollapsed, setChatCollapsed] = useState(false)
   const [sidebarHovered, setSidebarHovered] = useState(false)
-  const [welcomeDismissed, setWelcomeDismissed] = useState(false)
-  const [isWebSocketConnected, setIsWebSocketConnected] = useState(false)
-  const sendMessageRef = useRef<((params: { content: string; author_type: string }) => boolean) | null>(null)
+  const [welcomeOpen, setWelcomeOpen] = useState(false)
 
   // Fetch messages to check if project is new
   const { data: messagesData, isLoading } = useMessages({
@@ -28,43 +27,18 @@ function WorkspacePage() {
     limit: 1,
   })
 
-  // Show welcome dialog only once when project has no messages
+  // Show welcome dialog if no messages and not loading
   const hasMessages = messagesData && messagesData.count > 0
-  const showWelcome = !isLoading && !hasMessages && !welcomeDismissed
-  
-  // Handle welcome dialog close and send start message
-  const handleWelcomeStart = () => {
-    setWelcomeDismissed(true)
-    
-    // Send "Bắt đầu" message via ChatPanelWS
-    if (sendMessageRef.current) {
-      sendMessageRef.current({
-        content: 'Bắt đầu',
-        author_type: 'user'
-      })
-    }
-  }
+  const showWelcome = !isLoading && !hasMessages && !welcomeOpen
+
   return (
     <>
       <WelcomeDialog 
         open={showWelcome} 
-        onOpenChange={(open) => {
-          if (!open) {
-            setWelcomeDismissed(true)
-          }
-        }}
-        onSendMessage={(content) => {
-          if (sendMessageRef.current) {
-            return sendMessageRef.current({
-              content,
-              author_type: 'user'
-            })
-          }
-          return false
-        }}
-        isConnected={isWebSocketConnected}
+        onOpenChange={setWelcomeOpen}
+        projectId={workspaceId}
       />
-
+      
       <div className="flex h-screen overflow-hidden bg-white relative">
         <Sidebar
           collapsed={sidebarCollapsed}
@@ -76,17 +50,13 @@ function WorkspacePage() {
         <div className="flex flex-1 overflow-hidden">
           {!chatCollapsed && (
             <>
-              <div className="flex flex-col overflow-hidden" style={{ width: `${chatWidth}%` }}>
+              <div className="flex flex-col overflow-hidden" style={{ width: "${chatWidth}%" }}>
                 <ChatPanelWS
                   sidebarCollapsed={sidebarCollapsed}
                   onToggleSidebar={() => setSidebarCollapsed(false)}
                   onCollapse={() => setChatCollapsed(true)}
                   onSidebarHover={setSidebarHovered}
                   projectId={workspaceId}
-                  onSendMessageReady={(sendFn) => {
-                    sendMessageRef.current = sendFn
-                  }}
-                  onConnectionChange={setIsWebSocketConnected}
                 />
               </div>
 

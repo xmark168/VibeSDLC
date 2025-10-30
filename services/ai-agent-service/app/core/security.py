@@ -48,6 +48,27 @@ def create_access_token(
     return encoded_jwt
 
 
+def decode_access_token(token: str) -> dict[str, Any]:
+    """
+    Decode and verify JWT access token
+    
+    Args:
+        token: JWT token string
+        
+    Returns:
+        Decoded token payload
+        
+    Raises:
+        jwt.JWTError: If token is invalid or expired
+    """
+    payload = jwt.decode(
+        token,
+        settings.SECRET_KEY,
+        algorithms=[ALGORITHM]
+    )
+    return payload
+
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 

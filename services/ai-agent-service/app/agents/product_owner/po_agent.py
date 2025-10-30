@@ -28,13 +28,7 @@ from app.agents.product_owner.backlog_agent import BacklogAgent
 from app.agents.product_owner.priority_agent import PriorityAgent
 
 # Import prompts for PO Agent
-from app.templates.prompts.product_owner.po_agent import (
-    SYSTEM_PROMPT,
-    GATHERER_SUBAGENT_PROMPT,
-    VISION_SUBAGENT_PROMPT,
-    BACKLOG_SUBAGENT_PROMPT,
-    PRIORITY_SUBAGENT_PROMPT,
-)
+from app.templates.prompts.product_owner.po_agent import SYSTEM_PROMPT
 
 load_dotenv()
 
@@ -421,41 +415,12 @@ class POAgent:
 
 
     def _build_agent(self):
-        """Build Deep Agent với tools, instructions, và sub-agents."""
-        # Create sub-agents configuration for deepagents
-        # Using prompts from templates/prompts/product_owner/po_agent.py
-        subagents = [
-            {
-                "name": "gatherer",
-                "description": "Gathers product information from user and creates Product Brief",
-                "system_prompt": GATHERER_SUBAGENT_PROMPT,
-                "tools": []  # Tools are handled internally by tool wrapper
-            },
-            {
-                "name": "vision",
-                "description": "Creates Product Vision and PRD from Product Brief",
-                "system_prompt": VISION_SUBAGENT_PROMPT,
-                "tools": []
-            },
-            {
-                "name": "backlog",
-                "description": "Creates Product Backlog with Epics, User Stories, Tasks from Product Vision",
-                "system_prompt": BACKLOG_SUBAGENT_PROMPT,
-                "tools": []
-            },
-            {
-                "name": "priority",
-                "description": "Creates Sprint Plan with WSJF prioritization from Product Backlog",
-                "system_prompt": PRIORITY_SUBAGENT_PROMPT,
-                "tools": []
-            }
-        ]
-
+        """Build Deep Agent với tools và system instructions."""
         return create_deep_agent(
             tools=self.tools,
-            subagents=subagents,
             model=self._llm("gpt-4o", 0.2),
-            
+            # model=self._llm("claude-sonnet-4-5", 0.2),
+            system_prompt=SYSTEM_PROMPT,
         )
 
     def _is_website_intent(self, text: str) -> bool:
@@ -485,10 +450,13 @@ class POAgent:
     def _needs_kickoff_only(self, user_input: str) -> bool:
         """Return True if we should only greet and ask for more info (no tools)."""
         text = (user_input or "").strip().lower()
+        # Only block on explicit greeting keywords, not on length
+        # This allows short but meaningful inputs like "Tạo website" to trigger full workflow
         if text in {"bắt đầu", "bat dau", "start", "hi", "hello", "chào", "chao", "xin chào", "xin chao"}:
             return True
-        # Heuristic: very short input likely lacks enough context to start workflow
-        return len(text) < 20
+        # Removed: length check that was blocking short but valid inputs
+        # Old logic: return len(text) < 20
+        return False
 
     def run(self, user_input: str, thread_id: str | None = None) -> dict[str, Any]:
         """Run PO Agent workflow.
@@ -552,7 +520,7 @@ class POAgent:
                     return {"messages": [{"type": "assistant", "content": greeting}]}
 
             for chunk in self.agent.stream(
-                {"messages": [("system", SYSTEM_PROMPT), ("user", user_input)]},
+                {"messages": [("user", user_input)]},
                 config=config,
                 stream_mode="updates"
             ):

@@ -25,6 +25,7 @@ slowapi>=0.1.9
 authlib>=1.6.5
 httpx-oauth>=0.16.1
 deepagents>=0.1.2
+pytest>=8.4.2
 
 [dev]
 ruff
