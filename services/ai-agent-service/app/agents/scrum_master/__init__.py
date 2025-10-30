@@ -1,9 +1,11 @@
 """Scrum Master Agent module.
 
 Main exports:
-- ScrumMasterAgent: Deep Agent orchestrator
-- SprintPlannerAgent: LangGraph workflow for sprint planning
+- ScrumMasterAgent: Supervisor Agent that routes to Daily/Retro coordinators
 - create_scrum_master_agent: Convenience function
+
+Note: Sprint Planning is now handled by Product Owner Agent.
+      Sprint Planner subagent has been removed.
 """
 
 # Lazy imports to avoid deepagents dependency issues
@@ -14,13 +16,9 @@ def __getattr__(name):
     elif name == "create_scrum_master_agent":
         from .scrum_master_agent import create_scrum_master_agent
         return create_scrum_master_agent
-    elif name == "SprintPlannerAgent":
-        from .sprint_planner.agent import SprintPlannerAgent
-        return SprintPlannerAgent
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     "ScrumMasterAgent",
-    "SprintPlannerAgent",
     "create_scrum_master_agent"
 ]
