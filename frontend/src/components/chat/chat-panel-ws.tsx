@@ -34,6 +34,7 @@ import { useChatWebSocket } from "@/hooks/useChatWebSocket";
 import { useAuth } from "@/hooks/useAuth";
 import { useMessages } from "@/queries/messages";
 import { AuthorType, type Message } from "@/types/message";
+import { AgentQuestionModal } from "./agent-question-modal";
 
 interface ChatPanelProps {
   sidebarCollapsed: boolean;
@@ -106,7 +107,10 @@ export function ChatPanelWS({
     isReady,
     messages: wsMessages,
     typingAgents,
+    agentProgress,
+    pendingQuestions,
     sendMessage: wsSendMessage,
+    submitAnswer,
   } = useChatWebSocket(projectId, token || undefined);
 
   // Combine existing messages with WebSocket messages
@@ -323,6 +327,19 @@ export function ChatPanelWS({
       const newCursorPos = cursorPos + 1;
       textarea.setSelectionRange(newCursorPos, newCursorPos);
     }, 0);
+  };
+
+  // Agent question handlers
+  const handleSubmitAnswer = (question_id: string, answer: string) => {
+    submitAnswer(question_id, answer);
+  };
+
+  const handleSkipQuestion = (question_id: string) => {
+    submitAnswer(question_id, "skip");
+  };
+
+  const handleSkipAllQuestions = (question_id: string) => {
+    submitAnswer(question_id, "skip_all");
   };
 
   // Notify parent about connection status (use isReady for accurate status)
@@ -565,6 +582,37 @@ export function ChatPanelWS({
             </div>
           </div>
         )}
+
+        {agentProgress.isExecuting && (
+          <div className="flex gap-3 p-4 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-blue-100 dark:bg-blue-900">
+              🤖
+            </div>
+            <div className="flex-1 space-y-2">
+              <div className="text-xs font-medium text-blue-600 dark:text-blue-400">
+                {agentProgress.currentAgent || 'Agent đang xử lý'}
+              </div>
+              <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <div className="text-sm space-y-1">
+                  {agentProgress.currentStep && (
+                    <div>{agentProgress.currentStep}</div>
+                  )}
+                  {agentProgress.currentTool && (
+                    <div className="text-xs text-blue-600 dark:text-blue-400">
+                      → {agentProgress.currentTool}
+                    </div>
+                  )}
+                  {agentProgress.stepNumber && (
+                    <div className="text-xs text-blue-500 dark:text-blue-500">
+                      Bước {agentProgress.stepNumber}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="p-2 m-4 rounded-4xl relative bg-muted">
@@ -710,6 +758,14 @@ export function ChatPanelWS({
           </div>
         </div>
       </div>
+
+      {/* Agent Question Modal */}
+      <AgentQuestionModal
+        question={pendingQuestions[0] || null}
+        onSubmit={handleSubmitAnswer}
+        onSkip={handleSkipQuestion}
+        onSkipAll={handleSkipAllQuestions}
+      />
     </div>
   );
 }

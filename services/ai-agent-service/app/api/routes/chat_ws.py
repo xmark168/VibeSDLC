@@ -3,11 +3,13 @@ from uuid import UUID
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query, status
 from sqlmodel import Session, select
 import json
+import asyncio
 from datetime import datetime
 
 from app.api.deps import get_current_user, get_db
 from app.models import Message as MessageModel, Project, User, AuthorType
 from app.core.config import settings
+from app.core.response_queue import response_manager
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -76,12 +78,14 @@ def get_websocket_info():
         },
         "message_format": {
             "client_to_server": {
-                "type": "message",
-                "content": "Your message here",
-                "author_type": "user"
+                "type": "message | user_answer | ping",
+                "content": "Your message here (for message type)",
+                "author_type": "user (for message type)",
+                "question_id": "UUID (for user_answer type)",
+                "answer": "Your answer (for user_answer type)"
             },
             "server_to_client": {
-                "type": "message | agent_message | typing | connected | pong",
+                "type": "message | agent_message | typing | connected | pong | routing | agent_step | agent_thinking | tool_call | agent_question",
                 "data": "Message object or other data"
             }
         },
@@ -167,15 +171,20 @@ async def websocket_endpoint(
         # Listen for messages
         while True:
             data = await websocket.receive_text()
+            print(f"\n[WebSocket] ===== Raw message received =====", flush=True)
+            print(f"[WebSocket] Raw data: {data[:200] if len(data) > 200 else data}", flush=True)
+
             message_data = json.loads(data)
-            
+            print(f"[WebSocket] Parsed message_data: {message_data}", flush=True)
+
             msg_type = message_data.get("type")
-            
+            print(f"[WebSocket] Message type: {msg_type}", flush=True)
+
             if msg_type == "message":
                 # Save user message to database
                 content = message_data.get("content", "")
                 author_type = message_data.get("author_type", "user")
-                
+
                 new_message = MessageModel(
                     project_id=UUID(project_id),
                     author_type=AuthorType(author_type),
@@ -186,7 +195,7 @@ async def websocket_endpoint(
                 session.add(new_message)
                 session.commit()
                 session.refresh(new_message)
-                
+
                 # Broadcast to all clients in project
                 await manager.broadcast_to_project({
                     "type": "message",
@@ -201,10 +210,38 @@ async def websocket_endpoint(
                         "updated_at": new_message.updated_at.isoformat(),
                     }
                 }, project_id)
-                
-                # Trigger agent processing
-                await trigger_agent_execution(session, project_id, user_id, new_message.content)
-                
+
+                # Trigger agent processing in background (non-blocking)
+                # This allows WebSocket to continue receiving user_answer messages
+                asyncio.create_task(
+                    trigger_agent_execution_bg(project_id, user_id, new_message.content)
+                )
+
+            elif msg_type == "user_answer":
+                # User responding to agent question
+                print(f"\n[WebSocket] ===== Received user_answer =====", flush=True)
+                question_id = message_data.get("question_id")
+                answer = message_data.get("answer")
+                print(f"[WebSocket] question_id: {question_id}", flush=True)
+                print(f"[WebSocket] answer: {answer}", flush=True)
+
+                if question_id and answer is not None:
+                    print(f"[WebSocket] Submitting to ResponseManager...", flush=True)
+                    # Submit response to ResponseManager
+                    success = await response_manager.submit_response(
+                        project_id,
+                        question_id,
+                        answer
+                    )
+
+                    print(f"[WebSocket] ResponseManager.submit_response returned: {success}", flush=True)
+                    if success:
+                        print(f"[WebSocket] ✓ User answer submitted successfully: question_id={question_id}", flush=True)
+                    else:
+                        print(f"[WebSocket] ✗ Question not found in ResponseManager: question_id={question_id}", flush=True)
+                else:
+                    print(f"[WebSocket] ✗ Invalid user_answer data: question_id={question_id}, answer={answer}", flush=True)
+
             elif msg_type == "ping":
                 await websocket.send_json({"type": "pong"})
                 
@@ -213,6 +250,20 @@ async def websocket_endpoint(
     except Exception as e:
         print(f"WebSocket error: {e}")
         manager.disconnect(websocket, project_id)
+    finally:
+        session.close()
+
+
+async def trigger_agent_execution_bg(project_id: str, user_id: str, user_message: str):
+    """
+    Background task wrapper for trigger_agent_execution.
+    Creates its own database session to avoid session lifecycle issues.
+    """
+    from app.core.db import engine
+    session = Session(engine)
+
+    try:
+        await trigger_agent_execution(session, project_id, user_id, user_message)
     finally:
         session.close()
 
@@ -298,20 +349,18 @@ async def trigger_agent_execution(session: Session, project_id: str, user_id: st
         if agent_type in agent_factory:
             agent = agent_factory[agent_type]()
         else:
-            print(f"[Warning] Agent type '{agent_type}' not implemented yet, using PO Agent")
+            print(f"[WARNING] Agent type '{agent_type}' not implemented yet, using PO Agent")
             agent = agent_factory["po"]()
             agent_display_name = "PO Agent"
-        
-        # Run agent in executor to avoid blocking
-        import concurrent.futures
-        loop = asyncio.get_event_loop()
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            result = await loop.run_in_executor(
-                pool,
-                agent.run,
-                user_message
-            )
-        
+
+        # Run agent with WebSocket streaming
+        result = await agent.run_with_streaming(
+            user_input=user_message,
+            websocket_broadcast_fn=manager.broadcast_to_project,
+            project_id=project_id,
+            response_manager=response_manager
+        )
+
         # Extract response from result
         response_content = ""
         if isinstance(result, dict):
@@ -347,10 +396,10 @@ async def trigger_agent_execution(session: Session, project_id: str, user_id: st
         
         if not response_content:
             response_content = "✅ Agent execution completed successfully."
-        
+
         # Clean up escaped newlines
         response_content = response_content.replace('\\n', '\n')
-        
+
         # Save agent response to database
         agent_message = MessageModel(
             project_id=UUID(project_id),
@@ -362,14 +411,14 @@ async def trigger_agent_execution(session: Session, project_id: str, user_id: st
         session.add(agent_message)
         session.commit()
         session.refresh(agent_message)
-        
+
         # Send typing stopped
         await manager.broadcast_to_project({
             "type": "typing",
             "agent_name": "PO Agent",
             "is_typing": False
         }, project_id)
-        
+
         # Broadcast agent message
         await manager.broadcast_to_project({
             "type": "agent_message",
@@ -384,7 +433,7 @@ async def trigger_agent_execution(session: Session, project_id: str, user_id: st
                 "updated_at": agent_message.updated_at.isoformat(),
             }
         }, project_id)
-        
+
     except Exception as e:
         error_msg = f"❌ Agent execution failed: {str(e)}"
         print(f"Error: {error_msg}\n{traceback.format_exc()}")

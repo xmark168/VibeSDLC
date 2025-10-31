@@ -103,7 +103,7 @@ Theo bạn, điểm khác biệt nổi bật nhất của SmartTask so với Tre
 
   tasklist /FI "IMAGENAME eq python.exe"
 
-  taskkill /PID 12172 /T /F
+  taskkill /PID 11180 /T /F
 
   uv run app/tests/test_agent.py 
 

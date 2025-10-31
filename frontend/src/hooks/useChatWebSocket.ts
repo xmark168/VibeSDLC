@@ -2,12 +2,49 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import type { Message } from '@/types/message'
 
 export type WebSocketMessage = {
-  type: 'connected' | 'message' | 'agent_message' | 'typing' | 'pong' | 'error'
+  type: 'connected' | 'message' | 'agent_message' | 'typing' | 'pong' | 'error' | 'routing' | 'agent_step' | 'agent_thinking' | 'tool_call' | 'agent_question'
   data?: Message
   agent_name?: string
   is_typing?: boolean
   message?: string
   project_id?: string
+  // For routing messages
+  agent_selected?: string
+  confidence?: number
+  user_intent?: string
+  reasoning?: string
+  // For agent_step messages
+  step?: string
+  agent?: string
+  node?: string
+  step_number?: number
+  // For agent_thinking messages
+  content?: string
+  // For tool_call messages
+  tool?: string
+  display_name?: string
+  // For agent_question messages
+  question_id?: string
+  question_type?: 'text' | 'choice' | 'multiple_choice'
+  question_text?: string
+  question_number?: number
+  total_questions?: number
+  timeout?: number
+  context?: string
+  options?: string[]
+}
+
+export type AgentQuestion = {
+  question_id: string
+  agent: string
+  question_type: 'text' | 'choice' | 'multiple_choice'
+  question_text: string
+  question_number: number
+  total_questions: number
+  timeout: number
+  context?: string
+  options?: string[]
+  receivedAt: number // timestamp
 }
 
 export type SendMessageParams = {
@@ -20,6 +57,16 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
   const [isReady, setIsReady] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [typingAgents, setTypingAgents] = useState<Set<string>>(new Set())
+  const [pendingQuestions, setPendingQuestions] = useState<AgentQuestion[]>([])
+  const [agentProgress, setAgentProgress] = useState<{
+    isExecuting: boolean
+    currentStep?: string
+    currentAgent?: string
+    currentTool?: string
+    stepNumber?: number
+  }>({
+    isExecuting: false
+  })
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>()
   const reconnectAttemptsRef = useRef(0)
@@ -55,12 +102,12 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     ws.onmessage = (event) => {
       try {
         const data: WebSocketMessage = JSON.parse(event.data)
-        
+
         switch (data.type) {
           case 'connected':
             console.log('Connected to chat:', data.message)
             break
-            
+
           case 'message':
           case 'agent_message':
             if (data.data) {
@@ -72,7 +119,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
               })
             }
             break
-            
+
           case 'typing':
             if (data.agent_name) {
               setTypingAgents((prev) => {
@@ -86,11 +133,81 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
               })
             }
             break
-            
+
+          case 'routing':
+            console.log('Agent routing:', data.agent_selected, 'confidence:', data.confidence)
+            break
+
+          case 'agent_step':
+            // Update agent progress
+            if (data.step === 'started') {
+              setAgentProgress({
+                isExecuting: true,
+                currentAgent: data.agent,
+                currentStep: data.message
+              })
+            } else if (data.step === 'executing') {
+              setAgentProgress(prev => ({
+                ...prev,
+                isExecuting: true,
+                currentStep: data.node,
+                stepNumber: data.step_number
+              }))
+            } else if (data.step === 'completed') {
+              setAgentProgress({
+                isExecuting: false,
+                currentStep: data.message
+              })
+              // Clear after a short delay
+              setTimeout(() => {
+                setAgentProgress({ isExecuting: false })
+              }, 2000)
+            } else if (data.step === 'error') {
+              setAgentProgress({
+                isExecuting: false,
+                currentStep: data.message
+              })
+            }
+            break
+
+          case 'agent_thinking':
+            console.log('Agent thinking:', data.content?.substring(0, 100))
+            // Could display this in UI as streaming text
+            break
+
+          case 'tool_call':
+            console.log('Tool called:', data.display_name || data.tool)
+            setAgentProgress(prev => ({
+              ...prev,
+              currentTool: data.display_name || data.tool
+            }))
+            break
+
+          case 'agent_question':
+            // Agent asking user a question
+            if (data.question_id && data.question_text) {
+              const question: AgentQuestion = {
+                question_id: data.question_id,
+                agent: data.agent || 'Agent',
+                question_type: data.question_type || 'text',
+                question_text: data.question_text,
+                question_number: data.question_number || 1,
+                total_questions: data.total_questions || 1,
+                timeout: data.timeout || 600,
+                context: data.context,
+                options: data.options,
+                receivedAt: Date.now()
+              }
+
+              setPendingQuestions(prev => [...prev, question])
+              console.log('Agent question received:', question.question_text.substring(0, 100))
+            }
+            break
+
           case 'pong':
             // Handle ping/pong for keep-alive
             break
-            
+
           case 'error':
             console.error('WebSocket error:', data.message)
             break
@@ -154,6 +271,36 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     }
   }, [])
 
+  const submitAnswer = useCallback((question_id: string, answer: string) => {
+    console.log('[submitAnswer] Called with:', { question_id, answer })
+    console.log('[submitAnswer] WebSocket state:', wsRef.current?.readyState)
+
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.error('[submitAnswer] WebSocket is not connected')
+      return false
+    }
+
+    try {
+      const message = {
+        type: 'user_answer',
+        question_id: question_id,
+        answer: answer,
+      }
+      console.log('[submitAnswer] Sending message:', message)
+
+      wsRef.current.send(JSON.stringify(message))
+
+      // Remove question from pending queue
+      setPendingQuestions(prev => prev.filter(q => q.question_id !== question_id))
+
+      console.log('[submitAnswer] ✓ Answer submitted successfully for question:', question_id)
+      return true
+    } catch (error) {
+      console.error('[submitAnswer] ✗ Failed to submit answer:', error)
+      return false
+    }
+  }, [])
+
   const ping = useCallback(() => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'ping' }))
@@ -202,7 +349,10 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     isReady,
     messages,
     typingAgents: Array.from(typingAgents),
+    agentProgress,
+    pendingQuestions,
     sendMessage,
+    submitAnswer,
     connect,
     disconnect,
   }

@@ -141,15 +141,33 @@ class POAgent:
                 # Create separate session_id for this tool call to create a new trace
                 tool_session_id = f"{self.session_id}_gatherer_tool"
 
+                # Get event loop from self
+                event_loop = getattr(self, 'event_loop', None)
+                print(f"[Tool Call] event_loop: {event_loop}", flush=True)
+                print(f"[Tool Call] websocket_broadcast_fn: {getattr(self, 'websocket_broadcast_fn', None) is not None}", flush=True)
+                print(f"[Tool Call] project_id: {getattr(self, 'project_id', None)}", flush=True)
+                print(f"[Tool Call] response_manager: {getattr(self, 'response_manager', None) is not None}", flush=True)
+
                 # Create a new GathererAgent instance with separate session_id
-                # This ensures a completely separate trace in Langfuse
-                gatherer_agent = GathererAgent(session_id=tool_session_id, user_id=self.user_id)
+                # Pass WebSocket dependencies if available
+                gatherer_agent = GathererAgent(
+                    session_id=tool_session_id,
+                    user_id=self.user_id,
+                    websocket_broadcast_fn=getattr(self, 'websocket_broadcast_fn', None),
+                    project_id=getattr(self, 'project_id', None),
+                    response_manager=getattr(self, 'response_manager', None),
+                    event_loop=event_loop  # Use stored event loop
+                )
+
+                print(f"[Tool Call] GathererAgent created, about to call run()...", flush=True)
 
                 # Call GathererAgent - it will create its own trace via its handler
                 result = gatherer_agent.run(
                     initial_context=user_input,
                     thread_id=f"{tool_session_id}_thread"
                 )
+
+                print(f"[Tool Call] GathererAgent.run() returned!", flush=True)
 
                 # Extract brief from final state
                 # Result structure: {node_name: state_data}
@@ -457,6 +475,196 @@ class POAgent:
         # Removed: length check that was blocking short but valid inputs
         # Old logic: return len(text) < 20
         return False
+
+    async def run_with_streaming(
+        self,
+        user_input: str,
+        websocket_broadcast_fn,
+        project_id: str,
+        response_manager,
+        thread_id: str | None = None
+    ) -> dict[str, Any]:
+        """Run PO Agent workflow with WebSocket streaming.
+
+        Args:
+            user_input: Ý tưởng sản phẩm hoặc yêu cầu từ user
+            websocket_broadcast_fn: Async function to broadcast messages
+            project_id: Project ID for broadcasting
+            response_manager: ResponseManager instance for human-in-the-loop
+            thread_id: Thread ID cho checkpointer (để resume)
+
+        Returns:
+            dict: Final state với messages và outputs
+        """
+        # Store dependencies for tool access
+        self.websocket_broadcast_fn = websocket_broadcast_fn
+        self.project_id = project_id
+        self.response_manager = response_manager
+
+        # Store event loop for tools that need async operations
+        import asyncio
+        self.event_loop = asyncio.get_event_loop()
+
+        if thread_id is None:
+            thread_id = self.session_id
+
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "callbacks": [self.langfuse_handler],
+            "recursion_limit": 50,
+        }
+
+        try:
+            final_result = None
+            step_count = 0
+
+            # Kickoff-only path (just greeting, no processing needed)
+            if self._needs_kickoff_only(user_input):
+                is_website = self._is_website_intent(user_input or "")
+
+                if is_website:
+
+                    # Send start indicator for website intent processing
+                    await websocket_broadcast_fn({
+                        "type": "agent_step",
+                        "step": "started",
+                        "agent": "PO Agent",
+                        "message": "🚀 PO Agent bắt đầu xử lý..."
+                    }, project_id)
+
+                    await websocket_broadcast_fn({
+                        "type": "agent_thinking",
+                        "content": "Phát hiện ý định tạo website. Bắt đầu thu thập thông tin..."
+                    }, project_id)
+
+                    tool_session_id = f"{self.session_id}_gatherer_tool"
+
+                    # Get current event loop
+                    import asyncio
+                    loop = asyncio.get_event_loop()
+
+                    gatherer_agent = GathererAgent(
+                        session_id=tool_session_id,
+                        user_id=self.user_id,
+                        websocket_broadcast_fn=websocket_broadcast_fn,
+                        project_id=project_id,
+                        response_manager=response_manager,
+                        event_loop=loop  # Pass event loop for async operations
+                    )
+
+                    # Call synchronously - GathererAgent.run() handles async internally
+                    gather_result = gatherer_agent.run(
+                        user_input,
+                        f"{tool_session_id}_thread"
+                    )
+
+                    brief = None
+                    if isinstance(gather_result, dict):
+                        for node_name, state_data in gather_result.items():
+                            if isinstance(state_data, dict):
+                                brief = state_data.get("brief")
+                                if brief:
+                                    break
+
+                    msg = "Đã nhận yêu cầu tạo trang web. Đã thu thập thông tin với GathererAgent."
+                    return {"messages": [{"type": "assistant", "content": msg}], "brief": brief, "gatherer": gather_result or {}}
+                else:
+                    greeting = (
+                        "Chào bạn! Tôi là Product Owner Agent (PO Agent). "
+                        "Tôi có thể giúp lập kế hoạch và tạo Sprint Plan từ ý tưởng sản phẩm. "
+                        "Quy trình: Gatherer -> Vision -> Backlog -> Priority. "
+                        "Vui lòng mô tả ý tưởng để bắt đầu."
+                    )
+                    return {"messages": [{"type": "assistant", "content": greeting}]}
+
+            # Full execution path - send start indicator here
+            await websocket_broadcast_fn({
+                "type": "agent_step",
+                "step": "started",
+                "agent": "PO Agent",
+                "message": "🚀 PO Agent bắt đầu xử lý..."
+            }, project_id)
+
+            for chunk in self.agent.stream(
+                {"messages": [("user", user_input)]},
+                config=config,
+                stream_mode="updates"
+            ):
+                step_count += 1
+
+                # Stream each chunk to WebSocket
+                if isinstance(chunk, dict):
+                    for node_name, node_data in chunk.items():
+                        # Broadcast node execution
+                        await websocket_broadcast_fn({
+                            "type": "agent_step",
+                            "step": "executing",
+                            "node": node_name,
+                            "step_number": step_count
+                        }, project_id)
+
+                        if isinstance(node_data, dict):
+                            messages = node_data.get("messages", [])
+                            if messages:
+                                last_msg = messages[-1] if isinstance(messages, list) else messages
+
+                                # Check for tool calls
+                                if hasattr(last_msg, "tool_calls"):
+                                    tool_calls = last_msg.tool_calls
+                                    if tool_calls:
+                                        for tc in tool_calls:
+                                            tool_name = tc.get('name', 'unknown')
+                                            # Map tool names to friendly names
+                                            agent_names = {
+                                                "gatherer_agent_tool": "Gatherer Agent - Thu thập thông tin",
+                                                "vision_agent_tool": "Vision Agent - Tạo tài liệu tầm nhìn",
+                                                "backlog_agent_tool": "Backlog Agent - Tạo Product Backlog",
+                                                "priority_agent_tool": "Priority Agent - Ưu tiên & tạo Sprint Plan"
+                                            }
+                                            friendly_name = agent_names.get(tool_name, tool_name)
+
+                                            await websocket_broadcast_fn({
+                                                "type": "tool_call",
+                                                "tool": tool_name,
+                                                "display_name": friendly_name
+                                            }, project_id)
+                                    else:
+                                        # AI response without tool calls
+                                        if hasattr(last_msg, "content"):
+                                            content = last_msg.content
+                                            if content and len(content.strip()) > 0:
+                                                await websocket_broadcast_fn({
+                                                    "type": "agent_thinking",
+                                                    "content": content
+                                                }, project_id)
+                                elif hasattr(last_msg, "content"):
+                                    content = last_msg.content
+                                    if content and len(content.strip()) > 0:
+                                        await websocket_broadcast_fn({
+                                            "type": "agent_thinking",
+                                            "content": content
+                                        }, project_id)
+
+                        final_result = node_data
+
+            # Send completion
+            await websocket_broadcast_fn({
+                "type": "agent_step",
+                "step": "completed",
+                "agent": "PO Agent",
+                "message": f"✅ Hoàn thành! Đã thực hiện {step_count} bước."
+            }, project_id)
+
+            return final_result or {}
+
+        except Exception as e:
+            await websocket_broadcast_fn({
+                "type": "agent_step",
+                "step": "error",
+                "agent": "PO Agent",
+                "message": f"❌ Lỗi: {str(e)}"
+            }, project_id)
+            raise
 
     def run(self, user_input: str, thread_id: str | None = None) -> dict[str, Any]:
         """Run PO Agent workflow.

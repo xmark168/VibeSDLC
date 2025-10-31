@@ -153,16 +153,39 @@ class State(BaseModel):
 class GathererAgent:
     """Gatherer Agent để thu thập thông tin sản phẩm giúp tạo backlog trong tương lai."""
 
-    def __init__(self, session_id: str | None = None, user_id: str | None = None):
+    def __init__(
+        self,
+        session_id: str | None = None,
+        user_id: str | None = None,
+        websocket_broadcast_fn=None,
+        project_id: str | None = None,
+        response_manager=None,
+        event_loop=None
+    ):
         """Khởi tạo gatherer agent.
 
         Args:
             session_id: Session ID tùy chọn để theo dõi
             user_id: User ID tùy chọn để theo dõi
+            websocket_broadcast_fn: Async function to broadcast WebSocket messages (optional)
+            project_id: Project ID for WebSocket broadcasting (optional)
+            response_manager: ResponseManager for human-in-the-loop via WebSocket (optional)
+            event_loop: Event loop for async operations (required for WebSocket mode)
         """
         self.session_id = session_id
         self.user_id = user_id
-        
+
+        # WebSocket dependencies (optional)
+        self.websocket_broadcast_fn = websocket_broadcast_fn
+        self.project_id = project_id
+        self.response_manager = response_manager
+        self.event_loop = event_loop  # Store event loop
+        self.use_websocket = (
+            websocket_broadcast_fn is not None
+            and project_id is not None
+            and response_manager is not None
+        )
+
         self.langfuse_handler = CallbackHandler()
 
         self.graph = self._build_graph()
@@ -383,6 +406,9 @@ class GathererAgent:
     
     def ask_user(self, state: State) -> State:
         """Tạo câu hỏi để thu thập thông tin cho các gaps còn thiếu."""
+        print(f"\n[ask_user] Called!", flush=True)
+        print(f"[ask_user] Gaps count: {len(state.gaps)}", flush=True)
+
         formatted_gaps = "\n".join([f"- {gap}" for gap in state.gaps]) if state.gaps else "Không có gaps"
 
         formatted_messages = "\n".join([
@@ -411,15 +437,181 @@ class GathererAgent:
 
     def increment_iteration(self, state: State) -> State:
         """Tăng iteration count và checkpoint state để có thể resume sau này."""
+        print(f"\n[increment_iteration] Called!", flush=True)
         state.iteration_count += 1
         print(f"\n=== Iteration {state.iteration_count}/{state.max_iterations} completed ===")
         print(f"Current gaps: {len(state.gaps)}")
         print(f"Score: {state.score}, Confidence: {state.confidence}, Status: {state.status}")
+        print(f"[increment_iteration] Returning state, next should be wait_for_user", flush=True)
 
         return state
 
     def wait_for_user(self, state: State) -> State:
-        """Hỏi user từng câu một và đợi response với timeout 10 phút cho mỗi câu. Trả về structured output."""
+        """Hỏi user từng câu một và đợi response. Support cả terminal và WebSocket mode."""
+        print(f"\n[wait_for_user] Called! use_websocket={self.use_websocket}", flush=True)
+        print(f"[wait_for_user] Questions count: {len(state.questions)}", flush=True)
+
+        if self.use_websocket:
+            # Use WebSocket mode
+            print(f"[wait_for_user] Routing to WebSocket mode", flush=True)
+            return self._wait_for_user_websocket_sync(state)
+        else:
+            # Use terminal mode (original implementation)
+            print(f"[wait_for_user] Routing to terminal mode", flush=True)
+            return self._wait_for_user_terminal(state)
+
+    async def _wait_for_user_websocket_async(self, state: State) -> State:
+        """WebSocket version: Ask user questions via WebSocket và đợi responses."""
+        import uuid
+
+        print("\n[WebSocket Mode] Sending questions to frontend...")
+
+        has_responses = False
+        skip_all = False
+        answered_count = 0
+        skipped_count = 0
+        user_responses = []
+
+        for idx, question in enumerate(state.questions, 1):
+            if skip_all:
+                break
+
+            state.messages.append(AIMessage(content=question))
+
+            # Generate unique question ID
+            question_id = str(uuid.uuid4())
+
+            print(f"\n[Question {idx}/{len(state.questions)}] Sending via WebSocket...")
+            print(f"Question ID: {question_id}")
+            print(f"Question: {question[:100]}...")
+
+            try:
+                # Send question to frontend
+                await self.websocket_broadcast_fn({
+                    "type": "agent_question",
+                    "question_id": question_id,
+                    "agent": "Gatherer Agent",
+                    "question_type": "text",
+                    "question_text": question,
+                    "question_number": idx,
+                    "total_questions": len(state.questions),
+                    "timeout": 600,
+                    "context": f"Câu hỏi {idx}/{len(state.questions)}"
+                }, self.project_id)
+
+                # Wait for user response (10 minutes timeout)
+                user_input = await self.response_manager.await_response(
+                    self.project_id,
+                    question_id,
+                    timeout=600.0
+                )
+
+                if user_input is None:
+                    print(f"⏰ Timeout for question {idx}")
+                    skipped_count += 1
+                    continue
+
+                # Check for special commands
+                if isinstance(user_input, str):
+                    if user_input.lower() == 'skip_all':
+                        skip_all = True
+                        print("\n⊘ User chose to skip all remaining questions.")
+                        break
+                    elif user_input.lower() == 'skip':
+                        print(f"⊘ User skipped question {idx}.")
+                        skipped_count += 1
+                        continue
+                    elif user_input.strip():
+                        state.messages.append(HumanMessage(content=user_input))
+                        user_responses.append({"question": question, "answer": user_input})
+                        has_responses = True
+                        answered_count += 1
+                        print(f"✓ Answer received for question {idx}.")
+                    else:
+                        print(f"⚠ Empty answer for question {idx}, skipping.")
+                        skipped_count += 1
+
+            except Exception as e:
+                print(f"\n❌ Error processing question {idx}: {e}")
+                skipped_count += 1
+                continue
+
+        # Update state based on responses
+        if skip_all:
+            state.user_skipped = True
+            state.status = "skipped_all"
+            print("\n⊘ All questions skipped. Will generate brief with available info.")
+        elif has_responses:
+            state.user_skipped = False
+            state.status = "user_responded"
+            print(f"\n✓ Q&A completed: {answered_count} answers, {skipped_count} skipped")
+        else:
+            state.user_skipped = True
+            state.status = "no_responses"
+            print(f"\n⚠ No answers received. Will generate brief with available info.")
+
+        return state
+
+    def _wait_for_user_websocket_sync(self, state: State) -> State:
+        """Sync wrapper for async WebSocket version using run_coroutine_threadsafe."""
+        print(f"\n[_wait_for_user_websocket_sync] Called!", flush=True)
+
+        import asyncio
+        from concurrent.futures import Future
+
+        if not self.event_loop:
+            print("❌ Error: event_loop not provided for WebSocket mode")
+            state.user_skipped = True
+            state.status = "error"
+            return state
+
+        # Check if we're running in the main loop or a separate thread
+        try:
+            current_loop = asyncio.get_running_loop()
+            in_async_context = True
+            print(f"[_wait_for_user_websocket_sync] Running in async context, current loop: {current_loop}", flush=True)
+        except RuntimeError:
+            current_loop = None
+            in_async_context = False
+            print(f"[_wait_for_user_websocket_sync] NOT in async context", flush=True)
+
+        # If we're in a thread with its own event loop, use run_until_complete
+        try:
+            thread_loop = asyncio.get_event_loop()
+            if thread_loop is not None and thread_loop != self.event_loop:
+                print(f"[_wait_for_user_websocket_sync] Using thread's own event loop", flush=True)
+                return thread_loop.run_until_complete(self._wait_for_user_websocket_async(state))
+        except RuntimeError:
+            pass
+
+        # Otherwise use run_coroutine_threadsafe (original logic)
+        print(f"[_wait_for_user_websocket_sync] Using run_coroutine_threadsafe to main loop", flush=True)
+
+        # Container for result
+        result_future: Future[State] = Future()
+
+        async def async_wrapper():
+            try:
+                result = await self._wait_for_user_websocket_async(state)
+                result_future.set_result(result)
+            except Exception as e:
+                result_future.set_exception(e)
+
+        # Schedule in main event loop (non-blocking)
+        asyncio.run_coroutine_threadsafe(async_wrapper(), self.event_loop)
+
+        try:
+            # Wait for result with timeout
+            return result_future.result(timeout=660)  # 11 minutes
+        except Exception as e:
+            print(f"❌ Error in WebSocket wait_for_user: {e}")
+            # Fallback: skip all
+            state.user_skipped = True
+            state.status = "error"
+            return state
+
+    def _wait_for_user_terminal(self, state: State) -> State:
+        """Terminal version: Hỏi user từng câu một qua terminal."""
         import signal
 
         print("\n" + "="*60)
@@ -869,6 +1061,59 @@ class GathererAgent:
         Returns:
             dict: Trạng thái cuối cùng chứa bản tóm tắt đã tạo và các chỉ số đánh giá
         """
+        print(f"\n[GathererAgent.run] Called!", flush=True)
+        print(f"[GathererAgent.run] use_websocket: {self.use_websocket}", flush=True)
+        print(f"[GathererAgent.run] event_loop: {self.event_loop}", flush=True)
+
+        # For WebSocket mode, run async in a new thread with its own event loop
+        if self.use_websocket and self.event_loop:
+            print(f"[GathererAgent.run] Using WebSocket mode - running in thread pool", flush=True)
+            import asyncio
+            import threading
+            from concurrent.futures import ThreadPoolExecutor, Future
+
+            result_container = {}
+            exception_container = {}
+
+            def run_in_new_loop():
+                """Run async code in a new event loop in this thread."""
+                try:
+                    # Create new event loop for this thread
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+
+                    print(f"[Thread] New event loop created", flush=True)
+
+                    # Run async version
+                    result = loop.run_until_complete(
+                        self.run_async(initial_context, thread_id)
+                    )
+
+                    print(f"[Thread] Async execution completed!", flush=True)
+                    result_container['result'] = result
+
+                    loop.close()
+                except Exception as e:
+                    print(f"[Thread] Exception: {e}", flush=True)
+                    import traceback
+                    traceback.print_exc()
+                    exception_container['exception'] = e
+
+            # Run in thread pool
+            print(f"[GathererAgent.run] Starting thread pool execution...", flush=True)
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(run_in_new_loop)
+                future.result(timeout=660)  # Wait with timeout
+
+            print(f"[GathererAgent.run] Thread pool execution completed!", flush=True)
+
+            if 'exception' in exception_container:
+                raise exception_container['exception']
+
+            return result_container.get('result', {})
+
+        # Terminal mode: sync execution
+        print(f"[GathererAgent.run] Using terminal mode (sync)", flush=True)
         if thread_id is None:
             thread_id = self.session_id or "default_thread"
 
@@ -884,14 +1129,54 @@ class GathererAgent:
         metadata["langfuse_tags"] = ["gatherer_agent"]
 
         config = {
-            "configurable": {"thread_id": thread_id},  
+            "configurable": {"thread_id": thread_id},
             "callbacks": [self.langfuse_handler],
-            "metadata": metadata,  
-            "recursion_limit": 50  
+            "metadata": metadata,
+            "recursion_limit": 50
         }
 
         final_state = None
         for output in self.graph.stream(
+            initial_state.model_dump() if initial_state else None,
+            config=config,
+        ):
+            final_state = output
+
+        return final_state or {}
+
+    async def run_async(self, initial_context: str = "", thread_id: str | None = None) -> dict[str, Any]:
+        """Async version for WebSocket mode.
+
+        Args:
+            initial_context: Ngữ cảnh ban đầu
+            thread_id: ID để resume state
+
+        Returns:
+            dict: Trạng thái cuối cùng
+        """
+        if thread_id is None:
+            thread_id = self.session_id or "default_thread"
+
+        initial_state = State(
+            messages=[HumanMessage(content=initial_context)] if initial_context else []
+        )
+
+        metadata = {}
+        if self.session_id:
+            metadata["langfuse_session_id"] = self.session_id
+        if self.user_id:
+            metadata["langfuse_user_id"] = self.user_id
+        metadata["langfuse_tags"] = ["gatherer_agent"]
+
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "callbacks": [self.langfuse_handler],
+            "metadata": metadata,
+            "recursion_limit": 50
+        }
+
+        final_state = None
+        async for output in self.graph.astream(
             initial_state.model_dump() if initial_state else None,
             config=config,
         ):
