@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import type { Message } from '@/types/message'
 
 export type WebSocketMessage = {
-  type: 'connected' | 'message' | 'agent_message' | 'typing' | 'pong' | 'error' | 'routing' | 'agent_step' | 'agent_thinking' | 'tool_call' | 'agent_question'
+  type: 'connected' | 'message' | 'agent_message' | 'typing' | 'pong' | 'error' | 'routing' | 'agent_step' | 'agent_thinking' | 'tool_call' | 'agent_question' | 'agent_preview'
   data?: Message
   agent_name?: string
   is_typing?: boolean
@@ -32,6 +32,13 @@ export type WebSocketMessage = {
   timeout?: number
   context?: string
   options?: string[]
+  // For agent_preview messages
+  preview_id?: string
+  preview_type?: string
+  title?: string
+  brief?: any
+  incomplete_flag?: boolean
+  prompt?: string
 }
 
 export type AgentQuestion = {
@@ -47,6 +54,18 @@ export type AgentQuestion = {
   receivedAt: number // timestamp
 }
 
+export type AgentPreview = {
+  preview_id: string
+  agent: string
+  preview_type: string
+  title: string
+  brief: any
+  incomplete_flag: boolean
+  options: string[]
+  prompt: string
+  receivedAt: number
+}
+
 export type SendMessageParams = {
   content: string
   author_type?: 'user' | 'agent'
@@ -58,6 +77,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
   const [messages, setMessages] = useState<Message[]>([])
   const [typingAgents, setTypingAgents] = useState<Set<string>>(new Set())
   const [pendingQuestions, setPendingQuestions] = useState<AgentQuestion[]>([])
+  const [pendingPreviews, setPendingPreviews] = useState<AgentPreview[]>([])
   const [agentProgress, setAgentProgress] = useState<{
     isExecuting: boolean
     currentStep?: string
@@ -204,6 +224,26 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
             }
             break
 
+          case 'agent_preview':
+            // Agent showing preview for approval
+            if (data.preview_id && data.title) {
+              const preview: AgentPreview = {
+                preview_id: data.preview_id,
+                agent: data.agent || 'Agent',
+                preview_type: data.preview_type || 'unknown',
+                title: data.title,
+                brief: data.brief,
+                incomplete_flag: data.incomplete_flag || false,
+                options: data.options || ['approve', 'edit', 'regenerate'],
+                prompt: data.prompt || 'What would you like to do?',
+                receivedAt: Date.now()
+              }
+
+              setPendingPreviews(prev => [...prev, preview])
+              console.log('Agent preview received:', preview.title)
+            }
+            break
+
           case 'pong':
             // Handle ping/pong for keep-alive
             break
@@ -301,6 +341,36 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     }
   }, [])
 
+  const submitPreviewChoice = useCallback((preview_id: string, choice: string, edit_changes?: string) => {
+    console.log('[submitPreviewChoice] Called with:', { preview_id, choice, edit_changes })
+    console.log('[submitPreviewChoice] WebSocket state:', wsRef.current?.readyState)
+
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.error('[submitPreviewChoice] WebSocket is not connected')
+      return false
+    }
+
+    try {
+      const message: any = {
+        type: 'user_answer',
+        question_id: preview_id,
+        answer: edit_changes ? { choice, edit_changes } : choice,
+      }
+      console.log('[submitPreviewChoice] Sending message:', message)
+
+      wsRef.current.send(JSON.stringify(message))
+
+      // Remove preview from pending queue
+      setPendingPreviews(prev => prev.filter(p => p.preview_id !== preview_id))
+
+      console.log('[submitPreviewChoice] ✓ Choice submitted successfully for preview:', preview_id)
+      return true
+    } catch (error) {
+      console.error('[submitPreviewChoice] ✗ Failed to submit choice:', error)
+      return false
+    }
+  }, [])
+
   const ping = useCallback(() => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'ping' }))
@@ -351,8 +421,10 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     typingAgents: Array.from(typingAgents),
     agentProgress,
     pendingQuestions,
+    pendingPreviews,
     sendMessage,
     submitAnswer,
+    submitPreviewChoice,
     connect,
     disconnect,
   }

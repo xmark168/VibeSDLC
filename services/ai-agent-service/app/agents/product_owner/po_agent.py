@@ -503,7 +503,12 @@ class POAgent:
 
         # Store event loop for tools that need async operations
         import asyncio
-        self.event_loop = asyncio.get_event_loop()
+        try:
+            # Try to get the currently running loop (preferred)
+            self.event_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # Fallback to get_event_loop (might return None or a new loop)
+            self.event_loop = asyncio.get_event_loop()
 
         if thread_id is None:
             thread_id = self.session_id

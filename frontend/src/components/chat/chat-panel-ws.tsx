@@ -35,6 +35,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useMessages } from "@/queries/messages";
 import { AuthorType, type Message } from "@/types/message";
 import { AgentQuestionModal } from "./agent-question-modal";
+import { AgentPreviewModal } from "./agent-preview-modal";
 
 interface ChatPanelProps {
   sidebarCollapsed: boolean;
@@ -109,8 +110,10 @@ export function ChatPanelWS({
     typingAgents,
     agentProgress,
     pendingQuestions,
+    pendingPreviews,
     sendMessage: wsSendMessage,
     submitAnswer,
+    submitPreviewChoice,
   } = useChatWebSocket(projectId, token || undefined);
 
   // Combine existing messages with WebSocket messages
@@ -340,6 +343,11 @@ export function ChatPanelWS({
 
   const handleSkipAllQuestions = (question_id: string) => {
     submitAnswer(question_id, "skip_all");
+  };
+
+  // Agent preview handlers
+  const handleSubmitPreview = (preview_id: string, choice: string, edit_changes?: string) => {
+    submitPreviewChoice(preview_id, choice, edit_changes);
   };
 
   // Notify parent about connection status (use isReady for accurate status)
@@ -765,6 +773,12 @@ export function ChatPanelWS({
         onSubmit={handleSubmitAnswer}
         onSkip={handleSkipQuestion}
         onSkipAll={handleSkipAllQuestions}
+      />
+
+      {/* Agent Preview Modal */}
+      <AgentPreviewModal
+        preview={pendingPreviews[0] || null}
+        onSubmit={handleSubmitPreview}
       />
     </div>
   );

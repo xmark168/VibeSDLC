@@ -5,6 +5,7 @@ and wait for user responses asynchronously.
 """
 
 import asyncio
+import threading
 import uuid
 from typing import Any, Optional
 from datetime import datetime
@@ -34,14 +35,31 @@ class ResponseManager:
 
     def __init__(self):
         """Initialize ResponseManager."""
-        # Store pending questions: {project_id: {question_id: Event}}
-        self._pending: dict[str, dict[str, asyncio.Event]] = {}
+        # Store pending questions: {project_id: {question_id: threading.Event}}
+        # Use threading.Event instead of asyncio.Event for cross-loop support
+        self._pending: dict[str, dict[str, threading.Event]] = {}
 
         # Store responses: {project_id: {question_id: response}}
         self._responses: dict[str, dict[str, Any]] = {}
 
-        # Lock for thread safety
-        self._lock = asyncio.Lock()
+        # Lock for thread safety (use threading.Lock, not asyncio.Lock)
+        self._lock = threading.Lock()
+
+        # Broadcast queue for messages that need to be sent from main loop
+        # Format: (message_data, project_id)
+        self._broadcast_queue: asyncio.Queue = asyncio.Queue()
+
+    def get_broadcast_queue(self) -> asyncio.Queue:
+        """Get the broadcast queue for WebSocket messages."""
+        return self._broadcast_queue
+
+    async def queue_broadcast(self, message_data: dict, project_id: str):
+        """Queue a message to be broadcast from main loop.
+
+        This is thread-safe and can be called from any thread.
+        """
+        await self._broadcast_queue.put((message_data, project_id))
+        print(f"[ResponseManager] Message queued for broadcast: {message_data.get('type')}", flush=True)
 
     async def await_response(
         self,
@@ -59,41 +77,59 @@ class ResponseManager:
         Returns:
             User's response, or None if timeout
         """
-        async with self._lock:
+        # Create threading.Event for cross-loop support
+        with self._lock:
             # Create event for this question
             if project_id not in self._pending:
                 self._pending[project_id] = {}
 
-            event = asyncio.Event()
+            event = threading.Event()
             self._pending[project_id][question_id] = event
 
-        print(f"[ResponseManager] Waiting for response: project={project_id}, question={question_id}, timeout={timeout}s")
+        print(f"[ResponseManager] Waiting for response: project={project_id}, question={question_id}, timeout={timeout}s", flush=True)
+
+        # Wait for event in executor to not block event loop
+        import asyncio
+        loop = asyncio.get_event_loop()
+
+        def wait_for_event():
+            """Wait for threading.Event (blocking)"""
+            return event.wait(timeout=timeout)
 
         try:
-            # Wait for response with timeout
-            await asyncio.wait_for(event.wait(), timeout=timeout)
+            # Run blocking wait in executor
+            result = await loop.run_in_executor(None, wait_for_event)
 
-            # Get response
-            async with self._lock:
-                response = self._responses.get(project_id, {}).get(question_id)
+            if result:
+                # Event was set, get response
+                with self._lock:
+                    response = self._responses.get(project_id, {}).get(question_id)
 
-                # Cleanup
-                if project_id in self._responses and question_id in self._responses[project_id]:
-                    del self._responses[project_id][question_id]
+                    # Cleanup
+                    if project_id in self._responses and question_id in self._responses[project_id]:
+                        del self._responses[project_id][question_id]
+                    if project_id in self._pending and question_id in self._pending[project_id]:
+                        del self._pending[project_id][question_id]
+
+                    print(f"[ResponseManager] Response received: {response}", flush=True)
+                    return response
+            else:
+                # Timeout
+                print(f"[ResponseManager] Timeout waiting for response: {question_id}", flush=True)
+
+                # Cleanup on timeout
+                with self._lock:
+                    if project_id in self._pending and question_id in self._pending[project_id]:
+                        del self._pending[project_id][question_id]
+
+                return None
+
+        except Exception as e:
+            print(f"[ResponseManager] Error waiting for response: {e}", flush=True)
+            # Cleanup on error
+            with self._lock:
                 if project_id in self._pending and question_id in self._pending[project_id]:
                     del self._pending[project_id][question_id]
-
-                print(f"[ResponseManager] Response received: {response}")
-                return response
-
-        except asyncio.TimeoutError:
-            print(f"[ResponseManager] Timeout waiting for response: {question_id}")
-
-            # Cleanup on timeout
-            async with self._lock:
-                if project_id in self._pending and question_id in self._pending[project_id]:
-                    del self._pending[project_id][question_id]
-
             return None
 
     async def submit_response(
@@ -117,7 +153,7 @@ class ResponseManager:
         print(f"[ResponseManager] question_id: {question_id}", flush=True)
         print(f"[ResponseManager] answer: {answer}", flush=True)
 
-        async with self._lock:
+        with self._lock:
             # Debug: show all pending questions
             print(f"[ResponseManager] Current _pending projects: {list(self._pending.keys())}", flush=True)
             if project_id in self._pending:
@@ -138,7 +174,7 @@ class ResponseManager:
 
             # Trigger event to wake up awaiting agent
             event = self._pending[project_id][question_id]
-            event.set()
+            event.set()  # threading.Event.set() is thread-safe!
 
             print(f"[ResponseManager] ✓ Response submitted successfully: project={project_id}, question={question_id}", flush=True)
             return True

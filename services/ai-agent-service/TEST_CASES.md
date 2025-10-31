@@ -99,15 +99,15 @@ Theo bạn, điểm khác biệt nổi bật nhất của SmartTask so với Tre
   3. Projects API      (Để quản lý projects và members)
   4. Issue Activities  (Để xem history - optional)
 
-  uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
-  tasklist /FI "IMAGENAME eq python.exe"
+tasklist /FI "IMAGENAME eq python.exe"
 
-  taskkill /PID 11180 /T /F
+taskkill /PID 8452 /T /F
 
-  uv run app/tests/test_agent.py 
+uv run app/tests/test_agent.py 
 
 front end 
-netstat -ano | findstr :5174
-taskkill /PID <PID> /F
+netstat -ano | findstr :5173
+taskkill /PID 24844 /F
 

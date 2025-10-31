@@ -168,14 +168,58 @@ async def websocket_endpoint(
             "message": "Connected to chat"
         })
 
+        # Start background task to poll broadcast queue
+        async def poll_broadcast_queue():
+            """Poll ResponseManager's broadcast queue and send messages"""
+            from app.core.response_queue import response_manager
+            broadcast_queue = response_manager.get_broadcast_queue()
+
+            while True:
+                try:
+                    # Wait for message from queue (with timeout to allow cancellation)
+                    try:
+                        message_data, proj_id = await asyncio.wait_for(
+                            broadcast_queue.get(),
+                            timeout=1.0
+                        )
+
+                        # Broadcast to project
+                        print(f"[Broadcast Queue] Broadcasting {message_data.get('type')} to project {proj_id}", flush=True)
+                        await manager.broadcast_to_project(message_data, proj_id)
+                        print(f"[Broadcast Queue] ✓ Broadcast completed!", flush=True)
+
+                    except asyncio.TimeoutError:
+                        # No message in queue, continue
+                        continue
+
+                except asyncio.CancelledError:
+                    print(f"[Broadcast Queue] Task cancelled, exiting", flush=True)
+                    break
+                except Exception as e:
+                    print(f"[Broadcast Queue] Error: {e}", flush=True)
+                    import traceback
+                    traceback.print_exc()
+
+        # Start polling task
+        poll_task = asyncio.create_task(poll_broadcast_queue())
+
         # Listen for messages
         while True:
-            data = await websocket.receive_text()
-            print(f"\n[WebSocket] ===== Raw message received =====", flush=True)
-            print(f"[WebSocket] Raw data: {data[:200] if len(data) > 200 else data}", flush=True)
+            try:
+                print(f"\n[WebSocket] Waiting for message...", flush=True)
+                data = await websocket.receive_text()
+                print(f"\n[WebSocket] ===== Raw message received =====", flush=True)
+                print(f"[WebSocket] Raw data: {data[:200] if len(data) > 200 else data}", flush=True)
+            except Exception as e:
+                print(f"[WebSocket] Error receiving message: {e}", flush=True)
+                raise
 
-            message_data = json.loads(data)
-            print(f"[WebSocket] Parsed message_data: {message_data}", flush=True)
+            try:
+                message_data = json.loads(data)
+                print(f"[WebSocket] Parsed message_data: {message_data}", flush=True)
+            except json.JSONDecodeError as e:
+                print(f"[WebSocket] JSON decode error: {e}", flush=True)
+                continue
 
             msg_type = message_data.get("type")
             print(f"[WebSocket] Message type: {msg_type}", flush=True)
@@ -211,11 +255,27 @@ async def websocket_endpoint(
                     }
                 }, project_id)
 
-                # Trigger agent processing in background (non-blocking)
-                # This allows WebSocket to continue receiving user_answer messages
-                asyncio.create_task(
-                    trigger_agent_execution_bg(project_id, user_id, new_message.content)
-                )
+                # Trigger agent processing in background thread (NOT in event loop)
+                # This frees main loop to handle WebSocket messages while agent runs
+                # Agent will schedule broadcasts back to main loop via run_coroutine_threadsafe
+                import concurrent.futures
+                executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+
+                def run_agent_sync():
+                    """Wrapper to run async agent in sync context"""
+                    import asyncio
+                    # Create new event loop for this thread
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        result = loop.run_until_complete(
+                            trigger_agent_execution_bg(project_id, user_id, new_message.content)
+                        )
+                        return result
+                    finally:
+                        loop.close()
+
+                executor.submit(run_agent_sync)
 
             elif msg_type == "user_answer":
                 # User responding to agent question
@@ -247,9 +307,11 @@ async def websocket_endpoint(
                 
     except WebSocketDisconnect:
         manager.disconnect(websocket, project_id)
+        poll_task.cancel()  # Cancel broadcast polling task
     except Exception as e:
         print(f"WebSocket error: {e}")
         manager.disconnect(websocket, project_id)
+        poll_task.cancel()  # Cancel broadcast polling task
     finally:
         session.close()
 
