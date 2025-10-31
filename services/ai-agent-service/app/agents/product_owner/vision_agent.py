@@ -649,12 +649,20 @@ class VisionAgent:
 
         Theo sơ đồ:
         - Nếu user chọn "approve" → finalize
-        - Nếu user chọn "edit" → reason
+        - Nếu user chọn "edit" VÀ đã có edit_reason (từ WebSocket) → generate (skip reason)
+        - Nếu user chọn "edit" NHƯNG chưa có edit_reason (terminal mode) → reason
         """
         if state.user_choice == "approve":
             return "finalize"
         elif state.user_choice == "edit":
-            return "reason"
+            # If edit_reason already provided (WebSocket mode), skip reason node
+            if state.edit_reason:
+                print(f"[preview_branch] Edit reason already provided, going directly to generate", flush=True)
+                return "generate"
+            else:
+                # Terminal mode: need to collect reason via reason node
+                print(f"[preview_branch] No edit reason yet, going to reason node", flush=True)
+                return "reason"
         else:
             # Default: finalize
             return "finalize"
@@ -713,6 +721,68 @@ class VisionAgent:
         print("="*80 + "\n")
 
         return state
+
+    async def run_async(self, product_brief: dict, thread_id: str | None = None) -> dict[str, Any]:
+        """Async version - Chạy quy trình làm việc của vision agent với WebSocket support.
+
+        Args:
+            product_brief: Product brief từ gatherer_agent (dict chứa product info)
+            thread_id: ID để resume state (nếu None, dùng session_id hoặc default)
+
+        Returns:
+            dict: Trạng thái cuối cùng chứa product_vision và summary
+        """
+        if thread_id is None:
+            thread_id = self.session_id or "default_vision_thread"
+
+        initial_state = VisionState(
+            product_brief=product_brief
+        )
+
+        # Build metadata for Langfuse tracing with session_id and user_id
+        metadata = {}
+        if self.session_id:
+            metadata["langfuse_session_id"] = self.session_id
+        if self.user_id:
+            metadata["langfuse_user_id"] = self.user_id
+        # Add tags
+        metadata["langfuse_tags"] = ["vision_agent"]
+
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "callbacks": [self.langfuse_handler],
+            "metadata": metadata,  # Pass session_id/user_id via metadata
+            "recursion_limit": 50
+        }
+
+        final_state = None
+        async for output in self.graph.astream(  # Use async version!
+            initial_state.model_dump(),
+            config=config,
+        ):
+            final_state = output
+
+        # Convert messages to serializable format before returning
+        if final_state:
+            # Extract the actual state from the output (it's wrapped in a node key)
+            for node_name, state_data in final_state.items():
+                if isinstance(state_data, dict) and "messages" in state_data:
+                    # Convert BaseMessage objects to dicts
+                    serializable_messages = []
+                    for msg in state_data.get("messages", []):
+                        if hasattr(msg, "dict"):  # Pydantic v1
+                            serializable_messages.append(msg.dict())
+                        elif hasattr(msg, "model_dump"):  # Pydantic v2
+                            serializable_messages.append(msg.model_dump())
+                        else:
+                            # Fallback for plain objects
+                            serializable_messages.append({
+                                "type": msg.__class__.__name__,
+                                "content": str(msg.content) if hasattr(msg, "content") else str(msg)
+                            })
+                    state_data["messages"] = serializable_messages
+
+        return final_state or {}
 
     def run(self, product_brief: dict, thread_id: str | None = None) -> dict[str, Any]:
         """Chạy quy trình làm việc của vision agent.
