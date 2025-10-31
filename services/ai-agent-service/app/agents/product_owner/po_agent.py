@@ -238,8 +238,25 @@ class POAgent:
                 # Create separate session_id for this tool call to create a new trace
                 tool_session_id = f"{self.session_id}_vision_tool"
 
+                # Get WebSocket dependencies (same as GathererAgent)
+                event_loop = getattr(self, 'event_loop', None)
+                print(f"[Vision Tool Call] event_loop: {event_loop}", flush=True)
+                print(f"[Vision Tool Call] websocket_broadcast_fn: {getattr(self, 'websocket_broadcast_fn', None) is not None}", flush=True)
+                print(f"[Vision Tool Call] project_id: {getattr(self, 'project_id', None)}", flush=True)
+                print(f"[Vision Tool Call] response_manager: {getattr(self, 'response_manager', None) is not None}", flush=True)
+
                 # Create a new VisionAgent instance with separate session_id
-                vision_agent = VisionAgent(session_id=tool_session_id, user_id=self.user_id)
+                # Pass WebSocket dependencies if available (like GathererAgent)
+                vision_agent = VisionAgent(
+                    session_id=tool_session_id,
+                    user_id=self.user_id,
+                    websocket_broadcast_fn=getattr(self, 'websocket_broadcast_fn', None),
+                    project_id=getattr(self, 'project_id', None),
+                    response_manager=getattr(self, 'response_manager', None),
+                    event_loop=event_loop  # Use stored event loop
+                )
+
+                print(f"[Vision Tool Call] VisionAgent created with WebSocket support", flush=True)
 
                 # Call VisionAgent - it will create its own trace via its handler
                 result = vision_agent.run(

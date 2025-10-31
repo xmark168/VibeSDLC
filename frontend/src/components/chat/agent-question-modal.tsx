@@ -138,7 +138,7 @@ export function AgentQuestionModal({
               onChange={(e) => setAnswer(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Nhập câu trả lời... (Enter để gửi, Shift+Enter để xuống dòng)"
-              className="min-h-[120px] text-base"
+              className="min-h-[120px] text-base p-3"
               autoFocus
             />
             <p className="text-xs text-muted-foreground">

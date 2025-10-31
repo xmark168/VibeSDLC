@@ -59,7 +59,10 @@ export type AgentPreview = {
   agent: string
   preview_type: string
   title: string
-  brief: any
+  brief?: any  // For Gatherer Agent (product_brief)
+  vision?: any  // For Vision Agent (product_vision)
+  quality_score?: number  // For Vision Agent
+  validation_result?: string  // For Vision Agent
   incomplete_flag: boolean
   options: string[]
   prompt: string
@@ -232,7 +235,10 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
                 agent: data.agent || 'Agent',
                 preview_type: data.preview_type || 'unknown',
                 title: data.title,
-                brief: data.brief,
+                brief: data.brief,  // For Gatherer Agent
+                vision: data.vision,  // For Vision Agent
+                quality_score: data.quality_score,  // For Vision Agent
+                validation_result: data.validation_result,  // For Vision Agent
                 incomplete_flag: data.incomplete_flag || false,
                 options: data.options || ['approve', 'edit', 'regenerate'],
                 prompt: data.prompt || 'What would you like to do?',
