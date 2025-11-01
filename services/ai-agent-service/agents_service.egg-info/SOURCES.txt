@@ -8,6 +8,7 @@ app/__init__.py
 app/main.py
 app/models.py
 app/schemas.py
+app/utils.py
 app/agents/__init__.py
 app/agents/developer/__init__.py
 app/agents/developer/agent.py
@@ -155,6 +156,5 @@ app/tests/agents/developer/implementor/nodes/test_finalize_daytona.py
 app/tests/agents/developer/implementor/nodes/test_setup_branch_daytona.py
 app/utils/__init__.py
 app/utils/custom_llm.py
-app/utils/email.py
 app/utils/langfuse_tracer.py
 app/utils/llm_config.py

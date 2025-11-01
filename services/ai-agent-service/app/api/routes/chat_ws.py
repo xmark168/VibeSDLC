@@ -338,13 +338,125 @@ async def trigger_agent_execution(session: Session, project_id: str, user_id: st
     1. TL Agent classifies user intent
     2. Route to appropriate agent (PO/SM/Dev/Tester)
     3. Execute agent and return response
+
+    Special: Detect [TEST_*] commands for direct agent testing with mock data
     """
     import asyncio
+    import json
+    import re
     from app.agents.team_leader.tl_agent import TeamLeaderAgent
     from app.agents.product_owner.po_agent import POAgent
+    from app.agents.product_owner.vision_agent import VisionAgent
+    from app.agents.product_owner.gatherer_agent import GathererAgent
     import traceback
 
-    # STEP 1: Classify với TL Agent
+    # ===== STEP 0: Check for test commands =====
+    test_match = re.match(r'\[TEST_(\w+)\]\s*(.*)', user_message, re.DOTALL)
+    if test_match:
+        test_agent = test_match.group(1).lower()
+        test_data_str = test_match.group(2).strip()
+
+        print(f"\n[TEST MODE] Detected test command for: {test_agent}", flush=True)
+
+        # Send typing indicator
+        await manager.broadcast_to_project({
+            "type": "typing",
+            "agent_name": f"{test_agent.capitalize()} Agent (Test Mode)",
+            "is_typing": True
+        }, project_id)
+
+        try:
+            if test_agent == "vision":
+                # Parse mock product_brief from message
+                product_brief = json.loads(test_data_str)
+
+                print(f"[TEST MODE] Running Vision Agent with mock data", flush=True)
+
+                # Create Vision Agent with WebSocket support
+                session_id = f"vision_test_{project_id}_{user_id}"
+                vision_agent = VisionAgent(
+                    session_id=session_id,
+                    user_id=user_id,
+                    websocket_broadcast_fn=manager.broadcast_to_project,
+                    project_id=project_id,
+                    response_manager=response_manager,
+                    event_loop=asyncio.get_event_loop()
+                )
+
+                # Run Vision Agent (async version for WebSocket support)
+                result = await vision_agent.run_async(
+                    product_brief=product_brief,
+                    thread_id=f"{session_id}_thread"
+                )
+
+                # Send completion message
+                await manager.broadcast_to_project({
+                    "type": "agent_message",
+                    "content": "✅ Vision Agent test completed! Check the preview above.",
+                    "agent_name": "Vision Agent"
+                }, project_id)
+
+                # Save to database
+                agent_message = MessageModel(
+                    project_id=UUID(project_id),
+                    author_type=AuthorType.AGENT,
+                    user_id=None,
+                    agent_id=None,
+                    content="[Test Mode] Vision Agent executed with mock data. Product Vision generated."
+                )
+                session.add(agent_message)
+                session.commit()
+
+                return
+
+            elif test_agent == "gatherer":
+                print(f"[TEST MODE] Running Gatherer Agent", flush=True)
+
+                # Create Gatherer Agent with WebSocket support
+                session_id = f"gatherer_test_{project_id}_{user_id}"
+                gatherer_agent = GathererAgent(
+                    session_id=session_id,
+                    user_id=user_id,
+                    websocket_broadcast_fn=manager.broadcast_to_project,
+                    project_id=project_id,
+                    response_manager=response_manager,
+                    event_loop=asyncio.get_event_loop()
+                )
+
+                # Run Gatherer Agent with test input
+                result = gatherer_agent.run(
+                    initial_context=test_data_str or "Create a task management application",
+                    thread_id=f"{session_id}_thread"
+                )
+
+                await manager.broadcast_to_project({
+                    "type": "agent_message",
+                    "content": "✅ Gatherer Agent test completed!",
+                    "agent_name": "Gatherer Agent"
+                }, project_id)
+
+                return
+
+            else:
+                # Unknown test agent
+                await manager.broadcast_to_project({
+                    "type": "agent_message",
+                    "content": f"❌ Unknown test agent: {test_agent}",
+                    "agent_name": "System"
+                }, project_id)
+                return
+
+        except Exception as e:
+            print(f"[TEST MODE] Error: {e}", flush=True)
+            traceback.print_exc()
+            await manager.broadcast_to_project({
+                "type": "agent_message",
+                "content": f"❌ Test failed: {str(e)}",
+                "agent_name": "System"
+            }, project_id)
+            return
+
+    # ===== STEP 1: Classify với TL Agent (normal flow) =====
     try:
         tl_session_id = f"tl_agent_{project_id}"
         tl_agent = TeamLeaderAgent(session_id=tl_session_id, user_id=user_id)
