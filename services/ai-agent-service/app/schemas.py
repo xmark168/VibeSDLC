@@ -15,17 +15,20 @@ class UserPublic(SQLModel):
     email: EmailStr
     role: Role
 
+
 class UsersPublic(SQLModel):
     data: list[UserPublic]
     count: int
 
-class UserCreate(SQLModel): 
+
+class UserCreate(SQLModel):
     username: str
     password: str
     email: EmailStr
 
+
 class UserLogin(SQLModel):
-    email_or_username: str 
+    email_or_username: str
     password: str
 
 class UserUpdate(SQLModel):
@@ -109,8 +112,10 @@ class BacklogItemBase(SQLModel):
     reviewer_id: Optional[UUID] = None
     parent_id: Optional[UUID] = None
 
+
 class BacklogItemCreate(BacklogItemBase):
     sprint_id: UUID
+
 
 class BacklogItemUpdate(SQLModel):
     title: Optional[str] = None
@@ -127,11 +132,13 @@ class BacklogItemUpdate(SQLModel):
     parent_id: Optional[UUID] = None
     sprint_id: Optional[UUID] = None
 
+
 class BacklogItemPublic(BacklogItemBase):
     id: UUID
     sprint_id: UUID
     created_at: datetime
     updated_at: datetime
+
 
 class BacklogItemsPublic(SQLModel):
     data: list[BacklogItemPublic]
@@ -150,7 +157,7 @@ class BacklogItemsStatus(str, Enum):
     DONE = "Done"
 
 class IssueActivityBase(SQLModel):
-    action: Optional[str] = None 
+    action: Optional[str] = None
     actor_id: Optional[str] = None
     actor_name: Optional[str] = None
     title_from: Optional[str] = None
@@ -173,13 +180,16 @@ class IssueActivityBase(SQLModel):
     type_to: Optional[str] = None
     note: Optional[str] = None
 
+
 class IssueActivityCreate(IssueActivityBase):
     issue_id: UUID
+
 
 class IssueActivityPublic(IssueActivityBase):
     id: UUID
     issue_id: UUID
     created_at: datetime
+
 
 class IssueActivitiesPublic(SQLModel):
     data: list[IssueActivityPublic]
@@ -189,18 +199,22 @@ class IssueActivitiesPublic(SQLModel):
 class CommentBase(SQLModel):
     content: str = Field(min_length=1)
 
+
 class CommentCreate(CommentBase):
     backlog_item_id: UUID
     commenter_id: UUID
 
+
 class CommentUpdate(SQLModel):
     content: str = Field(min_length=1)
+
 
 class CommentPublic(CommentBase):
     id: UUID
     backlog_item_id: UUID
     commenter_id: UUID
     created_at: datetime
+
 
 class CommentsPublic(SQLModel):
     data: list[CommentPublic]

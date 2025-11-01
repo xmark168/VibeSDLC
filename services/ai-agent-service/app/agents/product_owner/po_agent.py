@@ -69,7 +69,7 @@ class POAgent:
         try:
             self.langfuse_handler = CallbackHandler(
                 flush_at=5,  # Flush every 5 events instead of default (15)
-                flush_interval=1.0  # Flush every 1 second
+                flush_interval=1.0,  # Flush every 1 second
             )
         except Exception:
             # Fallback if flush_at not supported in this version
@@ -105,7 +105,9 @@ class POAgent:
         """
 
         @tool
-        def gather_product_info(user_input: str) -> Annotated[dict, "Product Brief với full data"]:
+        def gather_product_info(
+            user_input: str,
+        ) -> Annotated[dict, "Product Brief với full data"]:
             """Thu thập thông tin sản phẩm từ user, tạo Product Brief.
 
             Tool này sẽ tương tác với user qua terminal để:
@@ -132,9 +134,9 @@ class POAgent:
                 - Trả về full data cho frontend
                 - Terminal output được track qua Langfuse
             """
-            print("\n" + "="*80)
+            print("\n" + "=" * 80)
             print("🔧 PO AGENT - Calling Tool: gather_product_info")
-            print("="*80)
+            print("=" * 80)
             print(f"📥 Input: {user_input[:100]}...")
 
             try:
@@ -163,8 +165,7 @@ class POAgent:
 
                 # Call GathererAgent - it will create its own trace via its handler
                 result = gatherer_agent.run(
-                    initial_context=user_input,
-                    thread_id=f"{tool_session_id}_thread"
+                    initial_context=user_input, thread_id=f"{tool_session_id}_thread"
                 )
 
                 print(f"[Tool Call] GathererAgent.run() returned!", flush=True)
@@ -184,17 +185,19 @@ class POAgent:
                 print(f"\n✅ Tool completed - Product Brief created")
                 print(f"   Product: {brief.get('product_name', 'N/A')}")
                 print(f"   Features: {len(brief.get('key_features', []))}")
-                print("="*80 + "\n")
+                print("=" * 80 + "\n")
 
                 return brief
 
             except Exception as e:
                 print(f"\n❌ Tool error: {e}")
-                print("="*80 + "\n")
+                print("=" * 80 + "\n")
                 raise
 
         @tool
-        def create_vision(product_brief: dict) -> Annotated[dict, "Product Vision với PRD full data"]:
+        def create_vision(
+            product_brief: dict,
+        ) -> Annotated[dict, "Product Vision với PRD full data"]:
             """Tạo Product Vision và PRD từ Product Brief.
 
             Tool này sẽ:
@@ -229,9 +232,9 @@ class POAgent:
                 - Tool này có human-in-the-loop (preview/approve ở VisionAgent)
                 - Trả về full data cho frontend
             """
-            print("\n" + "="*80)
+            print("\n" + "=" * 80)
             print("🔧 PO AGENT - Calling Tool: create_vision")
-            print("="*80)
+            print("=" * 80)
             print(f"📥 Input Product Brief: {product_brief.get('product_name', 'N/A')}")
 
             try:
@@ -260,8 +263,7 @@ class POAgent:
 
                 # Call VisionAgent - it will create its own trace via its handler
                 result = vision_agent.run(
-                    product_brief=product_brief,
-                    thread_id=f"{tool_session_id}_thread"
+                    product_brief=product_brief, thread_id=f"{tool_session_id}_thread"
                 )
 
                 # Extract vision from final state
@@ -277,19 +279,25 @@ class POAgent:
 
                 print(f"\n✅ Tool completed - Product Vision created")
                 print(f"   Product: {vision.get('product_name', 'N/A')}")
-                print(f"   Vision: {vision.get('vision_statement_final', 'N/A')[:80]}...")
-                print(f"   Functional Reqs: {len(vision.get('functional_requirements', []))}")
-                print("="*80 + "\n")
+                print(
+                    f"   Vision: {vision.get('vision_statement_final', 'N/A')[:80]}..."
+                )
+                print(
+                    f"   Functional Reqs: {len(vision.get('functional_requirements', []))}"
+                )
+                print("=" * 80 + "\n")
 
                 return vision
 
             except Exception as e:
                 print(f"\n❌ Tool error: {e}")
-                print("="*80 + "\n")
+                print("=" * 80 + "\n")
                 raise
 
         @tool
-        def create_backlog(product_vision: dict) -> Annotated[dict, "Product Backlog với full data"]:
+        def create_backlog(
+            product_vision: dict,
+        ) -> Annotated[dict, "Product Backlog với full data"]:
             """Tạo Product Backlog từ Product Vision.
 
             Tool này sẽ:
@@ -323,22 +331,25 @@ class POAgent:
                 - Tool này có human-in-the-loop (preview/approve ở BacklogAgent)
                 - Trả về full data với metadata và items
             """
-            print("\n" + "="*80)
+            print("\n" + "=" * 80)
             print("🔧 PO AGENT - Calling Tool: create_backlog")
-            print("="*80)
-            print(f"📥 Input Product Vision: {product_vision.get('product_name', 'N/A')}")
+            print("=" * 80)
+            print(
+                f"📥 Input Product Vision: {product_vision.get('product_name', 'N/A')}"
+            )
 
             try:
                 # Create separate session_id for this tool call to create a new trace
                 tool_session_id = f"{self.session_id}_backlog_tool"
 
                 # Create a new BacklogAgent instance with separate session_id
-                backlog_agent = BacklogAgent(session_id=tool_session_id, user_id=self.user_id)
+                backlog_agent = BacklogAgent(
+                    session_id=tool_session_id, user_id=self.user_id
+                )
 
                 # Call BacklogAgent - it will create its own trace via its handler
                 result = backlog_agent.run(
-                    product_vision=product_vision,
-                    thread_id=f"{tool_session_id}_thread"
+                    product_vision=product_vision, thread_id=f"{tool_session_id}_thread"
                 )
 
                 # Extract backlog from final state
@@ -359,17 +370,19 @@ class POAgent:
                 print(f"   Epics: {metadata.get('total_epics', 0)}")
                 print(f"   User Stories: {metadata.get('total_user_stories', 0)}")
                 print(f"   Tasks: {metadata.get('total_tasks', 0)}")
-                print("="*80 + "\n")
+                print("=" * 80 + "\n")
 
                 return backlog
 
             except Exception as e:
                 print(f"\n❌ Tool error: {e}")
-                print("="*80 + "\n")
+                print("=" * 80 + "\n")
                 raise
 
         @tool
-        def create_sprint_plan(product_backlog: dict) -> Annotated[dict, "Sprint Plan với full data"]:
+        def create_sprint_plan(
+            product_backlog: dict,
+        ) -> Annotated[dict, "Sprint Plan với full data"]:
             """Tạo Sprint Plan từ Product Backlog.
 
             Tool này sẽ:
@@ -402,9 +415,9 @@ class POAgent:
                 - Tool này có human-in-the-loop (preview/approve ở PriorityAgent)
                 - Trả về full data với metadata, prioritized backlog, và sprints
             """
-            print("\n" + "="*80)
+            print("\n" + "=" * 80)
             print("🔧 PO AGENT - Calling Tool: create_sprint_plan")
-            print("="*80)
+            print("=" * 80)
 
             metadata = product_backlog.get("metadata", {})
             print(f"📥 Input Product Backlog: {metadata.get('product_name', 'N/A')}")
@@ -415,12 +428,14 @@ class POAgent:
                 tool_session_id = f"{self.session_id}_priority_tool"
 
                 # Create a new PriorityAgent instance with separate session_id
-                priority_agent = PriorityAgent(session_id=tool_session_id, user_id=self.user_id)
+                priority_agent = PriorityAgent(
+                    session_id=tool_session_id, user_id=self.user_id
+                )
 
                 # Call PriorityAgent - it will create its own trace via its handler
                 sprint_plan = priority_agent.run(
                     product_backlog=product_backlog,
-                    thread_id=f"{tool_session_id}_thread"
+                    thread_id=f"{tool_session_id}_thread",
                 )
 
                 if not sprint_plan:
@@ -430,15 +445,19 @@ class POAgent:
                 print(f"\n✅ Tool completed - Sprint Plan created")
                 print(f"   Product: {sp_metadata.get('product_name', 'N/A')}")
                 print(f"   Total Sprints: {sp_metadata.get('total_sprints', 0)}")
-                print(f"   Total Items Assigned: {sp_metadata.get('total_items_assigned', 0)}")
-                print(f"   Total Story Points: {sp_metadata.get('total_story_points', 0)}")
-                print("="*80 + "\n")
+                print(
+                    f"   Total Items Assigned: {sp_metadata.get('total_items_assigned', 0)}"
+                )
+                print(
+                    f"   Total Story Points: {sp_metadata.get('total_story_points', 0)}"
+                )
+                print("=" * 80 + "\n")
 
                 return sprint_plan
 
             except Exception as e:
                 print(f"\n❌ Tool error: {e}")
-                print("="*80 + "\n")
+                print("=" * 80 + "\n")
                 raise
 
         return [
@@ -447,7 +466,6 @@ class POAgent:
             create_backlog,
             create_sprint_plan,
         ]
-
 
     def _build_agent(self):
         """Build Deep Agent với tools và system instructions."""
@@ -707,12 +725,12 @@ class POAgent:
             "recursion_limit": 50,
         }
 
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("🚀 PO AGENT STARTED")
-        print("="*80)
+        print("=" * 80)
         print(f"📝 User Input: {user_input[:200]}...")
         print(f"🔗 Thread ID: {thread_id}")
-        print("="*80 + "\n")
+        print("=" * 80 + "\n")
 
         try:
             # Stream agent execution để xem từng bước
@@ -752,7 +770,7 @@ class POAgent:
             for chunk in self.agent.stream(
                 {"messages": [("user", user_input)]},
                 config=config,
-                stream_mode="updates"
+                stream_mode="updates",
             ):
                 step_count += 1
                 print(f"\n{'='*80}")
@@ -768,7 +786,11 @@ class POAgent:
                             # Check for messages
                             messages = node_data.get("messages", [])
                             if messages:
-                                last_msg = messages[-1] if isinstance(messages, list) else messages
+                                last_msg = (
+                                    messages[-1]
+                                    if isinstance(messages, list)
+                                    else messages
+                                )
                                 print(f"   Type: {type(last_msg).__name__}")
 
                                 # Check if AI message with tool calls
@@ -777,7 +799,9 @@ class POAgent:
                                     if tool_calls:
                                         print(f"   🔧 Tool Calls: {len(tool_calls)}")
                                         for tc in tool_calls:
-                                            print(f"      - {tc.get('name', 'unknown')}")
+                                            print(
+                                                f"      - {tc.get('name', 'unknown')}"
+                                            )
                                     else:
                                         print(f"   💬 AI Response (no tool calls)")
                                         if hasattr(last_msg, "content"):
@@ -791,25 +815,26 @@ class POAgent:
 
                 print(f"{'='*80}\n")
 
-            print("\n" + "="*80)
+            print("\n" + "=" * 80)
             print("✅ PO AGENT COMPLETED")
-            print("="*80)
+            print("=" * 80)
             print(f"📊 Total Steps: {step_count}")
             if final_result and isinstance(final_result, dict):
-                messages = final_result.get('messages', [])
+                messages = final_result.get("messages", [])
                 print(f"💬 Total Messages: {len(messages)}")
-            print("="*80 + "\n")
+            print("=" * 80 + "\n")
 
             return final_result or {}
 
         except Exception as e:
-            print("\n" + "="*80)
+            print("\n" + "=" * 80)
             print("❌ PO AGENT ERROR")
-            print("="*80)
+            print("=" * 80)
             print(f"Error: {e}")
             import traceback
+
             traceback.print_exc()
-            print("="*80 + "\n")
+            print("=" * 80 + "\n")
             raise
 
 

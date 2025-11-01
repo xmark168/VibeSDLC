@@ -16,23 +16,31 @@ Requires-Dist: langchain-community>=0.3.13
 Requires-Dist: langchain-core>=0.3.28
 Requires-Dist: langgraph>=0.2.62
 Requires-Dist: langsmith>=0.2.7
-Requires-Dist: langfuse>=2.50.0
+Requires-Dist: langfuse>=2.56.0
 Requires-Dist: uvicorn>=0.34.0
 Requires-Dist: openagents>=0.6.12
 Requires-Dist: jwt>=1.4.0
 Requires-Dist: sqlmodel>=0.0.27
 Requires-Dist: alembic>=1.17.0
 Requires-Dist: psycopg[binary]>=3.2.10
-Requires-Dist: pyjwt>=2.10.1
-Requires-Dist: passlib[bcrypt]>=1.7.4
-Requires-Dist: bcrypt<4.1.0,>=4.0.0
-Requires-Dist: emails>=0.6
-Requires-Dist: slowapi>=0.1.9
-Requires-Dist: authlib>=1.6.5
-Requires-Dist: httpx-oauth>=0.16.1
-Requires-Dist: deepagents>=0.1.2
-Requires-Dist: pytest>=8.4.2
 Provides-Extra: dev
 Requires-Dist: ruff; extra == "dev"
 Requires-Dist: pylint; extra == "dev"
 Requires-Dist: pytest; extra == "dev"
+
+# AI Agent Service
+
+Scrum Agents team in a service that expose through some http routes for frontend and management services.
+
+## Installation
+
+```bash
+uv sync
+```
+
+## Usage
+
+```bash
+uvicorn app.main:app --reload
+```
+

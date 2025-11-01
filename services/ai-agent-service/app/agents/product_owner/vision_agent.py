@@ -4,7 +4,7 @@ import re
 from typing import Any, Literal
 
 from dotenv import load_dotenv
-from langchain_core.messages import BaseMessage, HumanMessage,AIMessage
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain_openai import ChatOpenAI
 from langfuse.langchain import CallbackHandler
 from langgraph.graph import END, START, StateGraph
@@ -15,7 +15,7 @@ from app.templates.prompts.product_owner.vision import (
     VALIDATE_PROMPT,
     REASON_PROMPT,
     FINALIZE_PROMPT,
-) 
+)
 
 from langgraph.checkpoint.memory import MemorySaver
 
@@ -33,8 +33,12 @@ class FeatureRequirement(BaseModel):
     name: str = Field(description="Tên tính năng")
     description: str = Field(description="Mô tả chi tiết tính năng")
     priority: str = Field(description="Độ ưu tiên: High, Medium, Low")
-    user_stories: list[str] = Field(description="Danh sách user stories cho tính năng này")
-    acceptance_criteria: list[str] = Field(description="Tiêu chí chấp nhận - điều kiện cụ thể để tính năng được coi là hoàn thành đúng yêu cầu nghiệp vụ")
+    user_stories: list[str] = Field(
+        description="Danh sách user stories cho tính năng này"
+    )
+    acceptance_criteria: list[str] = Field(
+        description="Tiêu chí chấp nhận - điều kiện cụ thể để tính năng được coi là hoàn thành đúng yêu cầu nghiệp vụ"
+    )
 
 
 class FinalizeOutput(BaseModel):
@@ -53,12 +57,20 @@ class GenerateOutput(BaseModel):
     draft_vision_statement: str = Field(description="Tuyên bố tầm nhìn (solution-free)")
     experience_principles: list[str] = Field(description="3-5 nguyên tắc trải nghiệm")
     problem_summary: str = Field(description="Tóm tắt vấn đề cần giải quyết")
-    audience_segments: list[AudienceSegment] = Field(description="Phân tích các nhóm đối tượng")
-    scope_capabilities: list[str] = Field(description="Khả năng cốt lõi (không phải tính năng)")
-    scope_non_goals: list[str] = Field(description="Những gì KHÔNG làm trong phiên bản này")
+    audience_segments: list[AudienceSegment] = Field(
+        description="Phân tích các nhóm đối tượng"
+    )
+    scope_capabilities: list[str] = Field(
+        description="Khả năng cốt lõi (không phải tính năng)"
+    )
+    scope_non_goals: list[str] = Field(
+        description="Những gì KHÔNG làm trong phiên bản này"
+    )
 
     # PRD: Functional Requirements
-    functional_requirements: list[FeatureRequirement] = Field(description="Các tính năng cụ thể cần implement")
+    functional_requirements: list[FeatureRequirement] = Field(
+        description="Các tính năng cụ thể cần implement"
+    )
 
     # PRD: Non-Functional Requirements
     performance_requirements: list[str] = Field(description="Yêu cầu về hiệu năng")
@@ -70,7 +82,7 @@ class GenerateOutput(BaseModel):
     assumptions: list[str] = Field(description="Các giả định quan trọng")
 
 
-class VisionState(BaseModel): 
+class VisionState(BaseModel):
     # Input & Messages
     messages: list[BaseMessage] = Field(default_factory=list)
     product_brief: dict = Field(default_factory=dict)
@@ -104,6 +116,7 @@ class VisionState(BaseModel):
     # Final output
     product_vision: dict = Field(default_factory=dict)
     status: str = "initial"
+
 
 class VisionAgent:
 
@@ -149,8 +162,8 @@ class VisionAgent:
     def _llm(self, model: str, temperature: str) -> ChatOpenAI:
         try:
             llm = ChatOpenAI(
-                model= model,
-                temperature= temperature,
+                model=model,
+                temperature=temperature,
                 api_key=os.getenv("OPENAI_API_KEY"),
                 base_url=os.getenv("OPENAI_BASE_URL"),
             )
@@ -179,9 +192,7 @@ class VisionAgent:
 
         checkpointer = MemorySaver()
 
-        return graph_builder.compile(
-            checkpointer=checkpointer
-        )
+        return graph_builder.compile(checkpointer=checkpointer)
 
     def initialize(self, state: VisionState) -> VisionState:
         """Initialize - Load schema (ProductVision) và load product_brief (chuẩn bị dữ liệu).
@@ -191,9 +202,9 @@ class VisionAgent:
         - Load product_brief từ state (đã có sẵn)
         - Chuẩn bị dữ liệu cho các node tiếp theo
         """
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("🚀 INITIALIZE - KHỞI TẠO VISION AGENT")
-        print("="*80)
+        print("=" * 80)
 
         # Validate product_brief structure (đã có trong state.product_brief)
         if not state.product_brief or len(state.product_brief) == 0:
@@ -202,10 +213,19 @@ class VisionAgent:
         else:
             print(f"✓ Đã load product_brief từ state")
             print(f"  - Product Name: {state.product_brief.get('product_name', 'N/A')}")
-            print(f"  - Description: {state.product_brief.get('description', 'N/A')[:100]}...")
+            print(
+                f"  - Description: {state.product_brief.get('description', 'N/A')[:100]}..."
+            )
 
-            required_fields = ["product_name", "description", "target_audience", "key_features"]
-            missing_fields = [field for field in required_fields if field not in state.product_brief]
+            required_fields = [
+                "product_name",
+                "description",
+                "target_audience",
+                "key_features",
+            ]
+            missing_fields = [
+                field for field in required_fields if field not in state.product_brief
+            ]
 
             if missing_fields:
                 print(f"⚠ Product brief thiếu các trường: {', '.join(missing_fields)}")
@@ -214,7 +234,7 @@ class VisionAgent:
                 print("✓ Product brief đầy đủ các trường bắt buộc")
                 state.status = "ready"
 
-        print("="*80 + "\n")
+        print("=" * 80 + "\n")
 
         return state
 
@@ -226,34 +246,43 @@ class VisionAgent:
         - 3-5 experience principles
         - Điền: problem / audience / scope / deps / uncertainties (risks/assumptions)
         """
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("✨ GENERATE - TẠO PRODUCT VISION")
-        print("="*80)
+        print("=" * 80)
 
         # Format product brief
         brief_text = json.dumps(state.product_brief, ensure_ascii=False, indent=2)
 
         # Check if there's edit feedback
         if state.edit_reason:
-            prompt = GENERATE_PROMPT.format(brief=brief_text) + f"\n\n**EDIT FEEDBACK từ user:**\n{state.edit_reason}\n\nHãy tạo lại Product Vision với những điều chỉnh theo feedback trên."
+            prompt = (
+                GENERATE_PROMPT.format(brief=brief_text)
+                + f"\n\n**EDIT FEEDBACK từ user:**\n{state.edit_reason}\n\nHãy tạo lại Product Vision với những điều chỉnh theo feedback trên."
+            )
         else:
             prompt = GENERATE_PROMPT.format(brief=brief_text)
 
         try:
             # Use structured output with Pydantic model
-            structured_llm = self._llm("gpt-4o", 0.3).with_structured_output(GenerateOutput)
+            structured_llm = self._llm("gpt-4o", 0.3).with_structured_output(
+                GenerateOutput
+            )
             generate_result = structured_llm.invoke([HumanMessage(content=prompt)])
 
             # Update state with generated components
             state.draft_vision_statement = generate_result.draft_vision_statement
             state.experience_principles = generate_result.experience_principles
             state.problem_summary = generate_result.problem_summary
-            state.audience_segments = [seg.model_dump() for seg in generate_result.audience_segments]
+            state.audience_segments = [
+                seg.model_dump() for seg in generate_result.audience_segments
+            ]
             state.scope_capabilities = generate_result.scope_capabilities
             state.scope_non_goals = generate_result.scope_non_goals
 
             # PRD components
-            state.functional_requirements = [req.model_dump() for req in generate_result.functional_requirements]
+            state.functional_requirements = [
+                req.model_dump() for req in generate_result.functional_requirements
+            ]
             state.performance_requirements = generate_result.performance_requirements
             state.security_requirements = generate_result.security_requirements
             state.ux_requirements = generate_result.ux_requirements
@@ -273,7 +302,9 @@ class VisionAgent:
             print(f"👥 Audience Segments: {len(state.audience_segments)}")
             print(f"⚙️  Capabilities: {len(state.scope_capabilities)}")
             print(f"🚫 Non-Goals: {len(state.scope_non_goals)}")
-            print(f"\n📋 PRD - Functional Requirements: {len(state.functional_requirements)}")
+            print(
+                f"\n📋 PRD - Functional Requirements: {len(state.functional_requirements)}"
+            )
             print(f"⚡ Performance Requirements: {len(state.performance_requirements)}")
             print(f"🔒 Security Requirements: {len(state.security_requirements)}")
             print(f"🎨 UX Requirements: {len(state.ux_requirements)}")
@@ -281,16 +312,19 @@ class VisionAgent:
             print(f"⚠️  Risks: {len(state.risks)}")
             print(f"💭 Assumptions: {len(state.assumptions)}")
 
-            print("\n" + "="*80 + "\n")
+            print("\n" + "=" * 80 + "\n")
 
             # Print structured output
             print("\n📊 Structured Output từ generate:")
-            print(json.dumps(generate_result.model_dump(), ensure_ascii=False, indent=2))
+            print(
+                json.dumps(generate_result.model_dump(), ensure_ascii=False, indent=2)
+            )
             print()
 
         except Exception as e:
             print(f"❌ Lỗi khi generate vision: {e}")
             import traceback
+
             traceback.print_exc()
             state.status = "error_generating"
 
@@ -322,9 +356,9 @@ class VisionAgent:
         - Kiểm tra schema & completeness
         - Tính quality_score
         """
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("✅ VALIDATE - KIỂM TRA PRODUCT VISION")
-        print("="*80)
+        print("=" * 80)
 
         # Prepare vision draft for validation
         vision_draft = {
@@ -348,7 +382,9 @@ class VisionAgent:
 
         try:
             # Use structured output with Pydantic model
-            structured_llm = self._llm("gpt-4o", 0.1).with_structured_output(ValidateOutput)
+            structured_llm = self._llm("gpt-4o", 0.1).with_structured_output(
+                ValidateOutput
+            )
             validate_result = structured_llm.invoke([HumanMessage(content=prompt)])
 
             # Update state
@@ -366,16 +402,19 @@ class VisionAgent:
                 for i, issue in enumerate(validate_result.issues, 1):
                     print(f"   {i}. {issue}")
 
-            print("\n" + "="*80 + "\n")
+            print("\n" + "=" * 80 + "\n")
 
             # Print structured output
             print("\n📊 Structured Output từ validate:")
-            print(json.dumps(validate_result.model_dump(), ensure_ascii=False, indent=2))
+            print(
+                json.dumps(validate_result.model_dump(), ensure_ascii=False, indent=2)
+            )
             print()
 
         except Exception as e:
             print(f"❌ Lỗi khi validate vision: {e}")
             import traceback
+
             traceback.print_exc()
             # Set low quality score on error
             state.quality_score = 0.5
@@ -520,12 +559,12 @@ class VisionAgent:
         - Hỏi user lựa chọn: Approve hoặc Edit
         - Cập nhật user_choice vào state
         """
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("📋 PREVIEW - XEM TRƯỚC PRODUCT VISION & PRD")
-        print("="*80)
+        print("=" * 80)
         print(f"🎯 Quality Score: {state.quality_score:.2f}")
         print(f"📝 Validation: {state.validation_result}")
-        print("="*80)
+        print("=" * 80)
 
         # Display Vision
         print("\n🌟 VISION STATEMENT:")
@@ -540,7 +579,9 @@ class VisionAgent:
 
         print(f"\n👥 AUDIENCE SEGMENTS ({len(state.audience_segments)}):")
         for i, seg in enumerate(state.audience_segments, 1):
-            print(f"   {i}. {seg.get('name', 'N/A')}: {seg.get('description', 'N/A')[:80]}...")
+            print(
+                f"   {i}. {seg.get('name', 'N/A')}: {seg.get('description', 'N/A')[:80]}..."
+            )
 
         print(f"\n⚙️  SCOPE - CAPABILITIES ({len(state.scope_capabilities)}):")
         for i, cap in enumerate(state.scope_capabilities[:3], 1):  # Show first 3
@@ -558,7 +599,9 @@ class VisionAgent:
         for i, req in enumerate(state.functional_requirements[:3], 1):
             print(f"   {i}. {req.get('name', 'N/A')} ({req.get('priority', 'N/A')})")
         if len(state.functional_requirements) > 3:
-            print(f"   ... và {len(state.functional_requirements) - 3} requirements khác")
+            print(
+                f"   ... và {len(state.functional_requirements) - 3} requirements khác"
+            )
 
         print(f"\n⚡ PERFORMANCE REQUIREMENTS: {len(state.performance_requirements)}")
         print(f"🔒 SECURITY REQUIREMENTS: {len(state.security_requirements)}")
@@ -568,17 +611,19 @@ class VisionAgent:
         print(f"⚠️  RISKS: {len(state.risks)}")
         print(f"💭 ASSUMPTIONS: {len(state.assumptions)}")
 
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("💡 Bạn có thể:")
         print("  1. Gõ 'approve' để phê duyệt vision")
         print("  2. Gõ 'edit' để chỉnh sửa vision")
-        print("="*80 + "\n")
+        print("=" * 80 + "\n")
 
         try:
             user_choice = input("👤 Lựa chọn của bạn (approve/edit): ").strip().lower()
 
             if user_choice not in ["approve", "edit"]:
-                print(f"⚠️  Lựa chọn không hợp lệ: '{user_choice}'. Mặc định chọn 'approve'.")
+                print(
+                    f"⚠️  Lựa chọn không hợp lệ: '{user_choice}'. Mặc định chọn 'approve'."
+                )
                 user_choice = "approve"
 
             state.user_choice = user_choice
@@ -602,15 +647,15 @@ class VisionAgent:
         - Lưu edit_reason vào state
         - Sau đó quay lại generate để tạo lại với feedback
         """
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("📝 REASON - THU THẬP LÝ DO CHỈNH SỬA")
-        print("="*80)
+        print("=" * 80)
         print("💡 Hãy mô tả những điểm bạn muốn chỉnh sửa trong Product Vision.")
         print("   Ví dụ:")
         print("   - Vision statement chưa đủ inspiring")
         print("   - Thiếu functional requirement về authentication")
         print("   - Performance requirement cần cụ thể hơn")
-        print("="*80 + "\n")
+        print("=" * 80 + "\n")
 
         try:
             edit_reason = input("👤 Lý do chỉnh sửa của bạn: ").strip()
@@ -629,7 +674,7 @@ class VisionAgent:
             reason_output = {
                 "edit_reason": edit_reason,
                 "timestamp": "current",
-                "will_regenerate": True
+                "will_regenerate": True,
             }
 
             print("\n📊 Structured Output từ reason:")
@@ -675,9 +720,9 @@ class VisionAgent:
         - Generate summary.md (markdown format)
         - Update status = "completed"
         """
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("✅ FINALIZE - HOÀN TẤT PRODUCT VISION & PRD")
-        print("="*80)
+        print("=" * 80)
 
         # Prepare vision for finalization
         vision_text = json.dumps(state.product_vision, ensure_ascii=False, indent=2)
@@ -685,7 +730,9 @@ class VisionAgent:
 
         try:
             # Use structured output with Pydantic model
-            structured_llm = self._llm("gpt-4o", 0.3).with_structured_output(FinalizeOutput)
+            structured_llm = self._llm("gpt-4o", 0.3).with_structured_output(
+                FinalizeOutput
+            )
             finalize_result = structured_llm.invoke([HumanMessage(content=prompt)])
 
             # Update state
@@ -693,7 +740,9 @@ class VisionAgent:
 
             # Update product_vision with final info
             state.product_vision["product_name"] = finalize_result.product_name
-            state.product_vision["vision_statement_final"] = finalize_result.vision_statement
+            state.product_vision["vision_statement_final"] = (
+                finalize_result.vision_statement
+            )
 
             # Print final output
             print(f"\n✓ Finalize completed")
@@ -702,7 +751,9 @@ class VisionAgent:
             print(f"   Status: {state.status}")
 
             print("\n📊 Structured Output từ finalize:")
-            print(json.dumps(finalize_result.model_dump(), ensure_ascii=False, indent=2))
+            print(
+                json.dumps(finalize_result.model_dump(), ensure_ascii=False, indent=2)
+            )
             print()
 
             # Print final product_vision JSON
@@ -713,12 +764,13 @@ class VisionAgent:
         except Exception as e:
             print(f"❌ Lỗi khi finalize vision: {e}")
             import traceback
+
             traceback.print_exc()
             state.status = "error_finalizing"
 
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print(f"✅ HOÀN TẤT - Status: {state.status}")
-        print("="*80 + "\n")
+        print("=" * 80 + "\n")
 
         return state
 
@@ -797,9 +849,7 @@ class VisionAgent:
         if thread_id is None:
             thread_id = self.session_id or "default_vision_thread"
 
-        initial_state = VisionState(
-            product_brief=product_brief
-        )
+        initial_state = VisionState(product_brief=product_brief)
 
         # Build metadata for Langfuse tracing with session_id and user_id
         metadata = {}
@@ -814,7 +864,7 @@ class VisionAgent:
             "configurable": {"thread_id": thread_id},
             "callbacks": [self.langfuse_handler],
             "metadata": metadata,  # Pass session_id/user_id via metadata
-            "recursion_limit": 50
+            "recursion_limit": 50,
         }
 
         final_state = None
@@ -838,10 +888,16 @@ class VisionAgent:
                             serializable_messages.append(msg.model_dump())
                         else:
                             # Fallback for plain objects
-                            serializable_messages.append({
-                                "type": msg.__class__.__name__,
-                                "content": str(msg.content) if hasattr(msg, "content") else str(msg)
-                            })
+                            serializable_messages.append(
+                                {
+                                    "type": msg.__class__.__name__,
+                                    "content": (
+                                        str(msg.content)
+                                        if hasattr(msg, "content")
+                                        else str(msg)
+                                    ),
+                                }
+                            )
                     state_data["messages"] = serializable_messages
 
         return final_state or {}

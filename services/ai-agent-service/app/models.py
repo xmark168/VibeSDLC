@@ -9,17 +9,18 @@ class Role(str, Enum):
     ADMIN = "admin"
     USER = "user"
 
+
 class BaseModel(SQLModel):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        nullable=False
+        default_factory=lambda: datetime.now(timezone.utc), nullable=False
     )
     updated_at: datetime = Field(
-        default_factory= lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(timezone.utc),
         sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc)},
-        nullable=False
+        nullable=False,
     )
+
 
 # Shared properties
 class User(BaseModel, table=True):
@@ -38,22 +39,22 @@ class User(BaseModel, table=True):
 
     # Relationship
     refresh_tokens: list["RefreshToken"] = Relationship(
-        back_populates="user",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+        back_populates="user", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
     owned_projects: list["Project"] = Relationship(
-        back_populates="owner",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"} 
+        back_populates="owner", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
     comments: list["Comment"] = Relationship(
         back_populates="commenter",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+
 
 class RefreshToken(BaseModel, table=True):
     __tablename__ = "refresh_tokens"
 
     token: str = Field(unique=True, index=True, max_length=500)
+    user_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")
     user_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")
     expires_at: datetime
     is_revoked: bool = Field(default=False)
@@ -64,6 +65,7 @@ class RefreshToken(BaseModel, table=True):
 
     # Relationship
     user: User | None = Relationship(back_populates="refresh_tokens")
+
 
 class Project(BaseModel, table=True):
     __tablename__ = "projects"
@@ -76,13 +78,16 @@ class Project(BaseModel, table=True):
     owner: User = Relationship(back_populates="owned_projects")
     sprints: list["Sprint"] = Relationship(
         back_populates="project",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+
 
 class Sprint(BaseModel, table=True):
     __tablename__ = "sprints"
 
-    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE") 
+    project_id: UUID = Field(
+        foreign_key="projects.id", nullable=False, ondelete="CASCADE"
+    )
     name: str
     number: int
     goal: str
@@ -95,20 +100,29 @@ class Sprint(BaseModel, table=True):
     project: Project = Relationship(back_populates="sprints")
     backlog_items: list["BacklogItem"] = Relationship(
         back_populates="sprint",  # ✅ SỬA từ backlog_items="sprint"
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}  
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+
 
 class BacklogItem(BaseModel, table=True):
     __tablename__ = "backlog_items"
 
-    sprint_id: UUID = Field(foreign_key="sprints.id", nullable=False, ondelete="CASCADE") 
-    parent_id: UUID | None = Field(default=None, foreign_key="backlog_items.id", ondelete="SET NULL")
+    sprint_id: UUID = Field(
+        foreign_key="sprints.id", nullable=False, ondelete="CASCADE"
+    )
+    parent_id: UUID | None = Field(
+        default=None, foreign_key="backlog_items.id", ondelete="SET NULL"
+    )
     type: str
     title: str
     description: str | None = Field(default=None)
     status: str
-    reviewer_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")  
-    assignee_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL") 
+    reviewer_id: UUID | None = Field(
+        default=None, foreign_key="users.id", ondelete="SET NULL"
+    )
+    assignee_id: UUID | None = Field(
+        default=None, foreign_key="users.id", ondelete="SET NULL"
+    )
     rank: int | None = Field(default=None)
     estimate_value: int | None = Field(default=None)
     story_point: int | None = Field(default=None)
@@ -118,32 +132,39 @@ class BacklogItem(BaseModel, table=True):
     sprint: Sprint = Relationship(back_populates="backlog_items")
     parent: Optional["BacklogItem"] = Relationship(
         back_populates="children",
-        sa_relationship_kwargs={"remote_side": "BacklogItem.id"}
+        sa_relationship_kwargs={"remote_side": "BacklogItem.id"},
     )
     children: list["BacklogItem"] = Relationship(back_populates="parent")
     comments: list["Comment"] = Relationship(
         back_populates="backlog_item",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"} 
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
     activities: list["IssueActivity"] = Relationship(
-        back_populates="issue",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"} 
+        back_populates="issue", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
+
 
 class Comment(BaseModel, table=True):
     __tablename__ = "comments"
 
-    backlog_item_id: UUID = Field(foreign_key="backlog_items.id", nullable=False, ondelete="CASCADE") 
-    commenter_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE") 
+    backlog_item_id: UUID = Field(
+        foreign_key="backlog_items.id", nullable=False, ondelete="CASCADE"
+    )
+    commenter_id: UUID = Field(
+        foreign_key="users.id", nullable=False, ondelete="CASCADE"
+    )
     content: str
 
     backlog_item: BacklogItem = Relationship(back_populates="comments")
     commenter: User = Relationship(back_populates="comments")
 
+
 class IssueActivity(BaseModel, table=True):
     __tablename__ = "issue_activities"
 
-    issue_id: UUID = Field(foreign_key="backlog_items.id", nullable=False, ondelete="CASCADE") 
+    issue_id: UUID = Field(
+        foreign_key="backlog_items.id", nullable=False, ondelete="CASCADE"
+    )
     actor_id: str | None = Field(default=None)
     actor_name: str | None = Field(default=None)
 
