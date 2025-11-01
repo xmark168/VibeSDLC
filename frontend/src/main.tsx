@@ -7,17 +7,15 @@ import {
 import { createRouter, RouterProvider } from "@tanstack/react-router"
 import { StrictMode } from "react"
 import ReactDOM from "react-dom/client"
-import { ApiError, OpenAPI } from "./client"
+import { ApiError } from "./client"
+import "@client/setup"
 import { routeTree } from "./routeTree.gen"
 
 import "./index.css"
 import "../public/assets/fonts/ibm-plex-sans.regular.ttf"
 import { ThemeProvider } from "./components/provider/theme-provider"
 
-OpenAPI.BASE = import.meta.env.VITE_API_URL
-OpenAPI.TOKEN = async () => {
-  return localStorage.getItem("access_token") || ""
-}
+// OpenAPI is configured in @client/setup
 
 const handleApiError = (error: Error) => {
   if (error instanceof ApiError && [401, 403].includes(error.status)) {

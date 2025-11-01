@@ -4,28 +4,25 @@ Version: 0.0.1
 Summary: Scrum Agents team in a service that expose through some http routes for frontend and management services
 Requires-Python: >=3.13
 Description-Content-Type: text/markdown
-Requires-Dist: fastapi>=0.118.0
-Requires-Dist: uvicorn>=0.37.0
-Requires-Dist: langchain<1.0.0,>=0.3.27
-Requires-Dist: langchain-openai<1.0.0,>=0.3.0
-Requires-Dist: langchain-postgres>=0.0.15
-Requires-Dist: langgraph>=0.6.8
-Requires-Dist: langgraph-checkpoint-postgres>=2.0.24
-Requires-Dist: langfuse<4.0.0,>=3.6.1
-Requires-Dist: psycopg[binary]>=3.0.0
-Requires-Dist: pgvector>=0.2.5
-Requires-Dist: dotenv>=0.9.9
-Requires-Dist: duckduckgo-search>=8.1.1
-Requires-Dist: passlib[bcrypt]>=1.7.4
-Requires-Dist: pylint>=3.3.8
-Requires-Dist: langchain-core<1.0.0,>=0.3.0
-Requires-Dist: pytest>=8.4.2
-Requires-Dist: pytest-asyncio>=0.24.0
-Requires-Dist: gitpython>=3.1.45
-Requires-Dist: tavily-python>=0.7.12
-Requires-Dist: tavily-python>=0.3.0
-Requires-Dist: langchain-google-genai>=2.1.12
-Requires-Dist: daytona>=0.111.0
+Requires-Dist: fastapi[standard]>=0.115.0
+Requires-Dist: python-multipart>=0.0.17
+Requires-Dist: pydantic>=2.10.0
+Requires-Dist: pydantic-settings>=2.6.0
+Requires-Dist: httpx>=0.28.0
+Requires-Dist: langchain>=0.3.13
+Requires-Dist: langchain-openai>=0.2.14
+Requires-Dist: langchain-anthropic>=0.3.3
+Requires-Dist: langchain-community>=0.3.13
+Requires-Dist: langchain-core>=0.3.28
+Requires-Dist: langgraph>=0.2.62
+Requires-Dist: langsmith>=0.2.7
+Requires-Dist: langfuse>=2.56.0
+Requires-Dist: uvicorn>=0.34.0
+Requires-Dist: openagents>=0.6.12
+Requires-Dist: jwt>=1.4.0
+Requires-Dist: sqlmodel>=0.0.27
+Requires-Dist: alembic>=1.17.0
+Requires-Dist: psycopg[binary]>=3.2.10
 Provides-Extra: dev
 Requires-Dist: ruff; extra == "dev"
 Requires-Dist: pylint; extra == "dev"

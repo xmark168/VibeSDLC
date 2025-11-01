@@ -14,7 +14,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel, Field
 
-from templates.prompts.product_owner.priority import (
+from app.templates.prompts.product_owner.priority import (
     CALCULATE_PRIORITY_PROMPT,
     EVALUATE_SPRINT_PLAN_PROMPT,
     REFINE_SPRINT_PLAN_PROMPT,

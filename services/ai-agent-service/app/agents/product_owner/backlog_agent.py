@@ -11,11 +11,10 @@ from langfuse.langchain import CallbackHandler
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 
-from templates.prompts.product_owner.backlog import (
+from app.templates.prompts.product_owner.backlog import (
     GENERATE_PROMPT,
     EVALUATE_PROMPT,
     REFINE_PROMPT,
-    FINALIZE_PROMPT,
 )
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -705,14 +704,8 @@ class BacklogAgent:
     # ========================================================================
 
     def finalize(self, state: BacklogState) -> BacklogState:
-        """Finalize backlog.
-
-        Theo sơ đồ:
-        - Định dạng OUTPUT: danh sách PBI CHƯA SẮP XẾP (unordered)
-        - Kiểm tra nhất quán: liên kết goal, có AC, ước lượng, phụ thuộc
-        - Export: JSON/Sheet/Jira (handoff → Priority agent để sắp xếp)
-        """
-        print("\n" + "=" * 80)
+        """Finalize backlog."""
+        print("\n" + "="*80)
         print("✅ FINALIZE - HOÀN THIỆN PRODUCT BACKLOG")
         print("=" * 80)
 
@@ -723,51 +716,10 @@ class BacklogAgent:
 
         print(f"✓ Finalizing {len(state.backlog_items)} backlog items...")
 
-        # Prepare backlog for prompt
-        backlog_text = json.dumps(state.product_backlog, ensure_ascii=False, indent=2)
-
-        prompt = FINALIZE_PROMPT.format(backlog=backlog_text)
-
         try:
-            llm = self._llm("gpt-4.1", 0.3)
+            final_items = [BacklogItem(**item) for item in state.backlog_items]
 
-            # Add JSON instruction
-            json_prompt = (
-                prompt
-                + "\n\nIMPORTANT: Return ONLY valid JSON with metadata and items. No markdown, no explanations."
-            )
-
-            print("\n🤖 Calling LLM to finalize backlog...")
-            response = llm.invoke([HumanMessage(content=json_prompt)])
-
-            # Parse JSON response
-            response_text = response.content.strip()
-
-            # Clean up markdown if present
-            if "```json" in response_text:
-                response_text = (
-                    response_text.split("```json")[1].split("```")[0].strip()
-                )
-            elif "```" in response_text:
-                response_text = response_text.split("```")[1].split("```")[0].strip()
-
-            # Remove trailing commas and comments
-            response_text = re.sub(r",(\s*[}\]])", r"\1", response_text)
-            response_text = re.sub(r"//.*?$", "", response_text, flags=re.MULTILINE)
-
-            # Parse JSON
-            result_dict = json.loads(response_text)
-
-            # Validate structure
-            if "items" not in result_dict:
-                raise ValueError("Finalized backlog missing 'items' field")
-            if "metadata" not in result_dict:
-                raise ValueError("Finalized backlog missing 'metadata' field")
-
-            # Parse items with Pydantic validation
-            final_items = [BacklogItem(**item) for item in result_dict["items"]]
-
-            # Recalculate metadata to ensure accuracy
+            # Calculate metadata (simple math, no LLM needed)
             epics = [i for i in final_items if i.type == "Epic"]
             stories = [i for i in final_items if i.type == "User Story"]
             tasks = [i for i in final_items if i.type == "Task"]
@@ -777,23 +729,21 @@ class BacklogAgent:
             total_story_points = sum(item.story_point or 0 for item in final_items)
             total_estimate_hours = sum(item.estimate_value or 0 for item in final_items)
 
-            final_metadata = result_dict["metadata"]
-            final_metadata.update(
-                {
-                    "version": "v1.0",
-                    "total_items": total_items,
-                    "total_epics": len(epics),
-                    "total_user_stories": len(stories),
-                    "total_tasks": len(tasks),
-                    "total_subtasks": len(subtasks),
-                    "total_story_points": total_story_points,
-                    "total_estimate_hours": total_estimate_hours,
-                    "export_status": "success",
-                }
-            )
+            # Get existing metadata and update
+            final_metadata = state.product_backlog.get("metadata", {}).copy()
+            final_metadata.update({
+                "version": "v1.0",
+                "total_items": total_items,
+                "total_epics": len(epics),
+                "total_user_stories": len(stories),
+                "total_tasks": len(tasks),
+                "total_subtasks": len(subtasks),
+                "total_story_points": total_story_points,
+                "total_estimate_hours": total_estimate_hours,
+                "export_status": "success"
+            })
 
-            # Update state with finalized backlog
-            state.backlog_items = [item.model_dump() for item in final_items]
+            # Update state (no LLM processing needed)
             state.product_backlog = {
                 "metadata": final_metadata,
                 "items": state.backlog_items,

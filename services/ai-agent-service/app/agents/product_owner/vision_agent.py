@@ -10,7 +10,7 @@ from langfuse.langchain import CallbackHandler
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 
-from templates.prompts.product_owner.vision import (
+from app.templates.prompts.product_owner.vision import (
     GENERATE_PROMPT,
     VALIDATE_PROMPT,
     REASON_PROMPT,
@@ -120,9 +120,38 @@ class VisionState(BaseModel):
 
 class VisionAgent:
 
-    def __init__(self, session_id: str | None = None, user_id: str | None = None):
+    def __init__(
+        self,
+        session_id: str | None = None,
+        user_id: str | None = None,
+        websocket_broadcast_fn=None,
+        project_id: str | None = None,
+        response_manager=None,
+        event_loop=None
+    ):
+        """Khởi tạo vision agent.
+
+        Args:
+            session_id: Session ID tùy chọn để theo dõi
+            user_id: User ID tùy chọn để theo dõi
+            websocket_broadcast_fn: Async function to broadcast WebSocket messages (optional)
+            project_id: Project ID for WebSocket broadcasting (optional)
+            response_manager: ResponseManager for human-in-the-loop via WebSocket (optional)
+            event_loop: Event loop for async operations (required for WebSocket mode)
+        """
         self.session_id = session_id
         self.user_id = user_id
+
+        # WebSocket dependencies (optional)
+        self.websocket_broadcast_fn = websocket_broadcast_fn
+        self.project_id = project_id
+        self.response_manager = response_manager
+        self.event_loop = event_loop
+        self.use_websocket = (
+            websocket_broadcast_fn is not None
+            and project_id is not None
+            and response_manager is not None
+        )
 
         # Initialize Langfuse callback handler (without session_id/user_id in constructor)
         # Session/user metadata will be passed via config metadata during invoke/stream
@@ -148,8 +177,9 @@ class VisionAgent:
         graph_builder.add_node("initialize", self.initialize)
         graph_builder.add_node("generate", self.generate)
         graph_builder.add_node("validate", self.validate)
-        graph_builder.add_node("preview", self.preview)
-        graph_builder.add_node("reason", self.reason)
+        # Use async versions for preview and reason (supports both WebSocket and terminal modes)
+        graph_builder.add_node("preview", self.preview_async)
+        graph_builder.add_node("reason", self.reason_async)
         graph_builder.add_node("finalize", self.finalize)
 
         graph_builder.add_edge(START, "initialize")
@@ -397,6 +427,130 @@ class VisionAgent:
 
         return state
 
+    async def preview_async(self, state: VisionState) -> VisionState:
+        """Async version of preview - works for both WebSocket and terminal modes."""
+        import uuid
+        import asyncio
+
+        print("\n[preview_async] ===== ENTERED =====", flush=True)
+        print(f"[preview_async] use_websocket: {self.use_websocket}", flush=True)
+
+        if not self.use_websocket:
+            # Terminal mode - run sync version in executor
+            print(f"[preview_async] Routing to terminal mode (via executor)", flush=True)
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, self.preview, state)
+
+        # WebSocket mode
+        print(f"[preview_async] WebSocket mode, queuing preview...", flush=True)
+
+        # Generate unique preview ID
+        preview_id = str(uuid.uuid4())
+
+        # Queue preview message for broadcast
+        preview_message = {
+            "type": "agent_preview",
+            "preview_id": preview_id,
+            "agent": "Vision Agent",
+            "preview_type": "product_vision",
+            "title": "📋 PREVIEW - Product Vision & PRD",
+            "vision": state.product_vision,
+            "quality_score": state.quality_score,
+            "validation_result": state.validation_result,
+            "options": ["approve", "edit"],
+            "prompt": "Bạn muốn làm gì với Product Vision này?"
+        }
+
+        await self.response_manager.queue_broadcast(preview_message, self.project_id)
+        print(f"[preview_async] ✓ Preview queued!", flush=True)
+
+        # Wait for user choice
+        print(f"[preview_async] Waiting for user choice...", flush=True)
+        user_response = await self.response_manager.await_response(
+            self.project_id,
+            preview_id,
+            timeout=600.0
+        )
+
+        if user_response is None:
+            print(f"[preview_async] ⏰ Timeout, defaulting to 'approve'", flush=True)
+            state.user_choice = "approve"
+            return state
+
+        # Parse user response
+        if isinstance(user_response, dict):
+            choice = user_response.get("choice", "approve")
+            edit_reason = user_response.get("edit_changes", "")
+        else:
+            choice = str(user_response).strip().lower()
+            edit_reason = ""
+
+        print(f"[preview_async] User choice: {choice}", flush=True)
+
+        state.user_choice = choice
+
+        if choice == "edit" and edit_reason:
+            state.edit_reason = edit_reason
+            print(f"[preview_async] Edit reason: {edit_reason[:100]}...", flush=True)
+            # Add to messages for context
+            state.messages.append(HumanMessage(content=f"Edit request: {edit_reason}"))
+
+        return state
+
+    async def reason_async(self, state: VisionState) -> VisionState:
+        """Async version of reason - collects edit reason from user via WebSocket or terminal."""
+        import uuid
+        import asyncio
+
+        print("\n[reason_async] ===== ENTERED =====", flush=True)
+        print(f"[reason_async] use_websocket: {self.use_websocket}", flush=True)
+
+        if not self.use_websocket:
+            # Terminal mode - run sync version in executor
+            print(f"[reason_async] Routing to terminal mode (via executor)", flush=True)
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, self.reason, state)
+
+        # WebSocket mode
+        print(f"[reason_async] WebSocket mode, queuing question for edit reason...", flush=True)
+
+        # Generate unique question ID
+        question_id = str(uuid.uuid4())
+
+        # Queue question for edit reason
+        question_message = {
+            "type": "agent_question",
+            "question_id": question_id,
+            "agent": "Vision Agent",
+            "question_type": "text",
+            "question_text": "Mô tả những điểm bạn muốn chỉnh sửa trong Product Vision. Ví dụ: Vision statement chưa đủ inspiring, Thiếu functional requirement về authentication, etc.",
+            "timeout": 600,
+            "context": "Edit Request"
+        }
+
+        await self.response_manager.queue_broadcast(question_message, self.project_id)
+        print(f"[reason_async] ✓ Question queued!", flush=True)
+
+        # Wait for user response
+        print(f"[reason_async] Waiting for edit reason...", flush=True)
+        edit_reason = await self.response_manager.await_response(
+            self.project_id,
+            question_id,
+            timeout=600.0
+        )
+
+        if edit_reason is None or not str(edit_reason).strip():
+            print(f"[reason_async] ⏰ Timeout or empty reason, using default", flush=True)
+            edit_reason = "User requested edits without specific reason"
+
+        state.edit_reason = str(edit_reason).strip()
+        print(f"[reason_async] ✓ Edit reason received: {state.edit_reason[:100]}...", flush=True)
+
+        # Add to messages for context
+        state.messages.append(HumanMessage(content=f"Edit request: {state.edit_reason}"))
+
+        return state
+
     def preview(self, state: VisionState) -> VisionState:
         """Preview - Hiển thị product vision cho user và hỏi: Approve / Edit.
 
@@ -540,12 +694,20 @@ class VisionAgent:
 
         Theo sơ đồ:
         - Nếu user chọn "approve" → finalize
-        - Nếu user chọn "edit" → reason
+        - Nếu user chọn "edit" VÀ đã có edit_reason (từ WebSocket) → generate (skip reason)
+        - Nếu user chọn "edit" NHƯNG chưa có edit_reason (terminal mode) → reason
         """
         if state.user_choice == "approve":
             return "finalize"
         elif state.user_choice == "edit":
-            return "reason"
+            # If edit_reason already provided (WebSocket mode), skip reason node
+            if state.edit_reason:
+                print(f"[preview_branch] Edit reason already provided, going directly to generate", flush=True)
+                return "generate"
+            else:
+                # Terminal mode: need to collect reason via reason node
+                print(f"[preview_branch] No edit reason yet, going to reason node", flush=True)
+                return "reason"
         else:
             # Default: finalize
             return "finalize"
@@ -611,6 +773,68 @@ class VisionAgent:
         print("=" * 80 + "\n")
 
         return state
+
+    async def run_async(self, product_brief: dict, thread_id: str | None = None) -> dict[str, Any]:
+        """Async version - Chạy quy trình làm việc của vision agent với WebSocket support.
+
+        Args:
+            product_brief: Product brief từ gatherer_agent (dict chứa product info)
+            thread_id: ID để resume state (nếu None, dùng session_id hoặc default)
+
+        Returns:
+            dict: Trạng thái cuối cùng chứa product_vision và summary
+        """
+        if thread_id is None:
+            thread_id = self.session_id or "default_vision_thread"
+
+        initial_state = VisionState(
+            product_brief=product_brief
+        )
+
+        # Build metadata for Langfuse tracing with session_id and user_id
+        metadata = {}
+        if self.session_id:
+            metadata["langfuse_session_id"] = self.session_id
+        if self.user_id:
+            metadata["langfuse_user_id"] = self.user_id
+        # Add tags
+        metadata["langfuse_tags"] = ["vision_agent"]
+
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "callbacks": [self.langfuse_handler],
+            "metadata": metadata,  # Pass session_id/user_id via metadata
+            "recursion_limit": 50
+        }
+
+        final_state = None
+        async for output in self.graph.astream(  # Use async version!
+            initial_state.model_dump(),
+            config=config,
+        ):
+            final_state = output
+
+        # Convert messages to serializable format before returning
+        if final_state:
+            # Extract the actual state from the output (it's wrapped in a node key)
+            for node_name, state_data in final_state.items():
+                if isinstance(state_data, dict) and "messages" in state_data:
+                    # Convert BaseMessage objects to dicts
+                    serializable_messages = []
+                    for msg in state_data.get("messages", []):
+                        if hasattr(msg, "dict"):  # Pydantic v1
+                            serializable_messages.append(msg.dict())
+                        elif hasattr(msg, "model_dump"):  # Pydantic v2
+                            serializable_messages.append(msg.model_dump())
+                        else:
+                            # Fallback for plain objects
+                            serializable_messages.append({
+                                "type": msg.__class__.__name__,
+                                "content": str(msg.content) if hasattr(msg, "content") else str(msg)
+                            })
+                    state_data["messages"] = serializable_messages
+
+        return final_state or {}
 
     def run(self, product_brief: dict, thread_id: str | None = None) -> dict[str, Any]:
         """Chạy quy trình làm việc của vision agent.

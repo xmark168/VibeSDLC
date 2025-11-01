@@ -4,214 +4,298 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-VibeSDLC is a microservices-based Software Development Life Cycle (SDLC) platform that implements Scrum methodology using AI agents. The system features a peer-to-peer architecture where services communicate through external PostgreSQL and Kafka infrastructure, with no direct service dependencies.
+VibeSDLC is a microservices-based software development lifecycle management platform with integrated AI agents. The system uses a peer-to-peer architecture where services communicate through a shared PostgreSQL database and Kafka event streaming. Key features include real-time WebSocket-based chat with AI agents, project/sprint management, and automated product backlog generation.
 
-## Core Architecture
+## Architecture
 
-### Service Structure
-- **Management Service** (Port 8000): FastAPI backend with PostgreSQL for core business logic, user management, and authentication
-- **AI Agent Service** (Port 8001): FastAPI service for AI operations using LangChain/LangGraph, integrating OpenAI & Anthropic Claude
-- **Frontend** (Port 5173): React 19 + TypeScript with Vite, using Radix UI components and TailwindCSS
+### Microservices Structure
 
-### Key Technologies
-- **Backend**: Python 3.13+, FastAPI, SQLModel, Alembic for migrations
-- **AI Framework**: LangChain 0.3+, LangGraph 0.6.7+, DeepAgents
-- **Frontend**: React 19, TypeScript, Vite, TanStack Router & Query
-- **Infrastructure**: Docker, PostgreSQL, Kafka (external), LangFuse (observability)
+Three independent services with no inter-service dependencies:
+
+1. **Management Service** (Port 8000): Core business logic, user authentication, project/sprint/backlog management
+2. **AI Agent Service** (Port 8001): AI-powered product owner agent, WebSocket chat, agent orchestration
+3. **Frontend** (Port 5173): React SPA with real-time WebSocket integration
+
+All services connect directly to:
+- **PostgreSQL**: Shared database with SQLModel ORM
+- **Kafka**: Event streaming (external/self-hosted)
+
+### WebSocket Architecture
+
+Real-time chat implementation in AI Agent Service:
+
+- **Endpoint**: `ws://localhost:8001/api/v1/chat/ws?token={jwt_token}`
+- **ConnectionManager**: Per-project connection pooling (app/api/routes/chat_ws.py:23)
+- **Authentication**: JWT token via query parameter
+- **Keep-alive**: Ping/pong mechanism every 30 seconds
+- **Client**: Auto-reconnect with exponential backoff (frontend/src/hooks/useChatWebSocket.ts)
+- **Message Persistence**: All messages saved to database with sender tracking
+- **Broadcasting**: Messages sent to all connected project members
+
+### AI Agent System
+
+PO Agent orchestrates 4 specialized sub-agents using LangGraph:
+
+1. **Gatherer Agent**: Collects product information through conversation
+2. **Vision Agent**: Creates product vision document
+3. **Backlog Agent**: Generates user stories and backlog items
+4. **Priority Agent**: Prioritizes items and creates sprint plan
+
+Agent execution available via:
+- **WebSocket** (real-time streaming): POST `/api/v1/chat/ws` - messages streamed as agent works
+- **REST API** (background/sync): POST `/api/v1/agent/execute` - full results returned when complete
+
+Typical execution time: 1-3 minutes for full workflow.
+
+### Database Models
+
+Key entities (SQLModel with UUID primary keys):
+
+- **User**: Authentication, roles (ADMIN/USER), failed login tracking
+- **Project**: Workspace containing sprints and backlog items
+- **Sprint**: Time-boxed development iteration
+- **BacklogItem**: User stories with priority, points, status
+- **Message**: Chat history (user/agent messages)
+- **Agent**: Agent execution tracking and results
+
+Relationships use cascade delete. All models inherit from base with `created_at`, `updated_at` timestamps.
+
+### Authentication Flow
+
+JWT-based with token rotation:
+
+1. Login: POST `/api/v1/login/access-token` → access token (30 min) + refresh token (7 days)
+2. Token includes: user_id, email, role, family_id (for rotation tracking)
+3. Refresh: POST `/api/v1/login/refresh-token` → new token pair
+4. WebSocket auth: Token in query param validated before upgrade
+5. Lockout: 5 failed attempts → account locked (failed_login_attempts field)
+
+Token validation in both services (management-service/app/core/security.py:45, ai-agent-service/app/core/security.py:38).
 
 ## Development Commands
 
-### Primary Development Workflow
+### Frontend (React + TypeScript)
+
 ```bash
-# Local development with included PostgreSQL
-npm run dev              # Start all services with local PostgreSQL
-npm run dev:build        # Build and start with local PostgreSQL
-npm run dev:down         # Stop local development
-
-# Production mode (requires external infrastructure)
-npm run prod             # Start production mode
-npm run prod:build       # Build and start production
-npm run prod:down        # Stop production
-
-# Monitoring and debugging
-npm run logs             # View all service logs
-npm run logs:management  # Management service logs only
-npm run logs:ai          # AI agent service logs only
-npm run logs:frontend    # Frontend logs only
-npm run status           # Check service status
-npm run clean            # Stop and remove everything
+cd frontend
+npm install                 # Install dependencies
+npm run dev                 # Dev server (localhost:5173)
+npm run build               # Production build
+npm run lint                # Biome linting
+npm run typecheck           # TypeScript checking
+npm run test:e2e            # Playwright E2E tests
+npm run test:e2e:ui         # E2E tests with UI
+npm run generate-client     # Generate API client from OpenAPI
+npm run ci                  # Full check: typecheck + lint + build
 ```
 
-### Individual Service Development
-```bash
-# Frontend (requires Node.js 24+)
-cd frontend
-npm install
-npm run dev              # Development server
-npm run build            # Production build
-npm run typecheck        # TypeScript validation
-npm run lint             # Biome linting with auto-fix
-npm run test:e2e         # Playwright end-to-end tests
-npm run generate-client  # Generate API client from OpenAPI
+### Management Service (FastAPI + SQLModel)
 
-# Backend services use uv/pip with pyproject.toml
+```bash
 cd services/management-service
-uv sync                  # Install dependencies
-pytest                   # Run tests
-mypy app/                # Type checking
-ruff check               # Linting
 
-# Database migrations (Management Service)
-docker-compose exec management-service alembic upgrade head
-docker-compose exec management-service alembic revision --autogenerate -m "description"
+# Testing & Quality
+bash scripts/test.sh        # pytest with coverage
+bash scripts/lint.sh        # mypy + ruff linting
+bash scripts/format.sh      # ruff fix + format
+
+# Run locally
+uvicorn app.main:app --reload --port 8000
+
+# Database migrations (Alembic)
+alembic revision --autogenerate -m "Description"
+alembic upgrade head
+alembic downgrade -1
 ```
 
-### Testing Commands
+### AI Agent Service (FastAPI + LangChain)
+
 ```bash
-# Frontend testing
-cd frontend
-npm run test:e2e         # Playwright E2E tests
-npm run test:e2e:ui      # Playwright with UI
+cd services/ai-agent-service
 
-# Backend testing
-docker-compose exec management-service pytest tests/unit/ -v --cov=app
-docker-compose exec ai-agent-service pytest tests/ -v
+# Install dependencies (uses uv)
+uv sync
+
+# Run server
+uv run uvicorn app.main:app --reload --port 8001
+
+# Testing
+pytest
+uv run app/tests/test_agent.py
 ```
 
-## Agent Architecture
+### All Services (Convenience Scripts)
 
-The AI Agent Service implements a sophisticated Scrum-based agent system with clearly defined roles:
+```bash
+# Start all services
+bash scripts/start-microservices.sh
 
-### Agent Roles
-- **Product Owner Agent**: Requirements clarification, backlog management, acceptance criteria
-- **Scrum Master Agent**: Sprint planning, daily scrum facilitation, impediment tracking
-- **Developer Agent**: Task implementation, pull requests, unit testing, code quality
-- **Tester Agent**: Test generation, validation, defect reporting
+# Individual services
+bash scripts/run-frontend.sh
+bash scripts/run-management-service.sh
+bash scripts/run-ai-agent-service.sh
+```
 
-### Agent Communication
-- **LangGraph Workflows**: State-driven workflows for Scrum ceremonies (Sprint Planning, Daily Scrum, Sprint Review, Retrospective)
-- **Kafka Integration**: Event-driven communication between agents
-- **PostgreSQL State**: Persistent workflow state using langgraph-checkpoint-postgres
-- **LangFuse Observability**: Comprehensive monitoring and tracing of agent interactions
+### Docker Development
 
-### Developer Agent Workflow
-The Developer Agent follows a structured 4-phase approach:
-1. **Task Assignment & Analysis**: Receive from Scrum Master, analyze requirements, break down complex tasks
-2. **Implementation & Testing**: Write production code, create unit tests (80%+ coverage), run local validation
-3. **Code Submission & Review**: Commit with conventional format, create PR, trigger CI/CD pipeline
-4. **Review & Integration**: Handle CI results, address feedback, merge to main, notify Tester Agent
+```bash
+# Local development (includes PostgreSQL)
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
 
-## Code Quality Standards
+# Production (external PostgreSQL/Kafka)
+docker compose up -d
 
-### Python Services
-- **Python 3.13+** required
-- **Type hints** mandatory (mypy strict mode)
-- **Test coverage** minimum 80%
-- **Ruff** for linting with pyupgrade, flake8-bugbear
-- **Conventional commits** format
-- **Alembic** for database migrations
+# Logs
+docker compose logs -f management-service
+docker compose logs -f ai-agent-service
+```
 
-### Frontend Standards
-- **TypeScript strict mode**
-- **Biome** for linting and formatting
-- **Playwright** for E2E testing
-- **TanStack** patterns for data fetching and routing
+## Key File Locations
 
-### Agent Development Patterns
-- **LangChain 0.3+** for enhanced model capabilities
-- **Structured outputs** for reliable agent responses
-- **LCEL** (LangChain Expression Language) for chain composition
-- **State management** for workflow persistence across agent interactions
-- **Error handling** and retry mechanisms in workflows
-- **Conditional edges** for dynamic workflow routing
+### Frontend
+
+- **API Clients**: `frontend/src/apis/` - Auto-generated from OpenAPI specs
+- **WebSocket Hook**: `frontend/src/hooks/useChatWebSocket.ts` - Manages WebSocket connection lifecycle
+- **Routes**: `frontend/src/routes/` - File-based routing (TanStack Router)
+- **Components**: `frontend/src/components/` - Shared UI components
+- **Queries**: `frontend/src/queries/` - TanStack Query hooks
+- **Types**: `frontend/src/types/` - Shared TypeScript types
+
+### Management Service
+
+- **Routes**: `services/management-service/app/api/routes/` - REST endpoints (users, projects, sprints, backlog_items)
+- **Models**: `services/management-service/app/models.py` - SQLModel database models
+- **Schemas**: `services/management-service/app/schemas.py` - Pydantic request/response schemas
+- **Security**: `services/management-service/app/core/security.py` - JWT auth, password hashing
+- **Config**: `services/management-service/app/core/config.py` - Environment-based settings
+- **Migrations**: `services/management-service/alembic/versions/` - Database migrations
+
+### AI Agent Service
+
+- **WebSocket**: `services/ai-agent-service/app/api/routes/chat_ws.py` - WebSocket chat implementation
+- **Agent Execution**: `services/ai-agent-service/app/api/routes/agent_execution.py` - REST API for agent runs
+- **PO Agent**: `services/ai-agent-service/app/agents/product_owner/` - Main orchestrator and sub-agents
+- **Models**: `services/ai-agent-service/app/models.py` - Message and Agent models
+- **Config**: `services/ai-agent-service/app/core/config.py` - OpenAI/Anthropic/LangFuse settings
+
+## Testing WebSocket Integration
+
+Manual testing using test files in root:
+
+1. **HTML Client**: Open `test_websocket.html` in browser
+2. **Python Script**: `python test_websocket.py`
+3. **Step-by-step Guide**: Follow `TEST_WEBSOCKET_STEPS.md`
+
+Automated E2E tests use Playwright (frontend/tests/).
 
 ## Environment Configuration
 
-### Local Development (.env)
+Required environment variables:
+
 ```bash
-# Local infrastructure (defaults work)
+# Database
 POSTGRES_SERVER=localhost
+POSTGRES_PORT=5432
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=yourpassword
+POSTGRES_DB=vibesdlc
+
+# Security
+SECRET_KEY=your-secret-key-min-32-chars
+FIRST_SUPERUSER=admin@example.com
+FIRST_SUPERUSER_PASSWORD=adminpassword
+
+# AI Services
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+
+# LangFuse (optional observability)
+LANGFUSE_PUBLIC_KEY=pk-...
+LANGFUSE_SECRET_KEY=sk-...
+LANGFUSE_HOST=https://cloud.langfuse.com
+
+# Kafka (external)
 KAFKA_BOOTSTRAP_SERVERS=localhost:9092
 
-# Required AI API keys
-OPENAI_API_KEY=your-openai-key
-ANTHROPIC_API_KEY=your-anthropic-key
-
-# Optional observability
-LANGFUSE_SECRET_KEY=your-langfuse-secret
-LANGFUSE_PUBLIC_KEY=your-langfuse-public
-LANGFUSE_HOST=your-langfuse-host
+# CORS (development)
+FRONTEND_HOST=http://localhost:5173
 ```
 
-### Production Configuration
-Requires external PostgreSQL and Kafka infrastructure. Update environment variables to point to external services.
+## Code Style & Conventions
 
-## Database Operations
+### Python (Backend Services)
 
-### Management Service Database
+- **Formatting**: `ruff format` (services/management-service/scripts/format.sh)
+- **Linting**: `ruff check` + `mypy` for type checking
+- **Naming**: snake_case for functions/variables, PascalCase for classes
+- **Async**: Use async/await for all route handlers and database operations
+- **Type Hints**: Required for all functions (enforced by mypy)
+
+### TypeScript/React (Frontend)
+
+- **Linting**: Biome (`npm run lint`)
+- **Type Checking**: tsc (`npm run typecheck`)
+- **Naming**: PascalCase for components/files (UserCard.tsx), camelCase for functions/variables
+- **File Routing**: TanStack Router uses file structure (routes/workspace/$workspaceId.tsx)
+- **State Management**: TanStack Query for server state, local state for UI
+
+### Testing
+
+- **Python**: pytest with coverage reports, tests in `tests/` directories
+- **Frontend**: Playwright for E2E, tests in `frontend/tests/`
+- **Naming**: Python `test_*.py`, TypeScript `*.spec.ts`
+
+### Commits
+
+Follow Conventional Commits:
+- `feat:` - New features
+- `fix:` - Bug fixes
+- `chore:` - Maintenance
+- `test:` - Testing
+- `docs:` - Documentation
+
+## Common Patterns
+
+### API Client Generation
+
+Frontend API clients are auto-generated from backend OpenAPI specs:
+
 ```bash
-# Run migrations
-docker-compose exec management-service alembic upgrade head
-
-# Create new migration
-docker-compose exec management-service alembic revision --autogenerate -m "add new table"
-
-# Access database directly
-docker-compose exec postgres psql -U postgres -d app
+cd frontend
+npm run generate-client  # Updates src/apis/ from backend schemas
 ```
 
-### AI Agent State Persistence
-The AI agents use PostgreSQL for LangGraph state persistence via `langgraph-checkpoint-postgres`. State is automatically managed through the workflow engine.
+Always regenerate after backend schema changes.
 
-## Integration Patterns
+### Database Operations
 
-### Kafka Event Streaming
-- **Topics**: user-events, ai-requests, ai-responses
-- **Pattern**: Agents communicate through Kafka events for loose coupling
-- **Configuration**: External Kafka cluster (not containerized)
+Use SQLModel sessions with proper lifecycle:
 
-### API Integration
-- **Management API**: http://localhost:8000/docs
-- **AI Agent API**: http://localhost:8001/docs
-- **Frontend**: Communicates with both APIs via generated TypeScript client
+```python
+from app.core.database import get_session
 
-## Common Development Tasks
+async def create_item(*, session: Session = Depends(get_session)):
+    item = Model(...)
+    session.add(item)
+    await session.commit()
+    await session.refresh(item)
+    return item
+```
 
-### Adding a New Agent
-1. Create agent module in `services/ai-agent-service/app/agents/`
-2. Define agent state and workflow using LangGraph
-3. Implement tool integrations and memory management
-4. Add Kafka event handlers for inter-agent communication
-5. Register agent in the main FastAPI application
+### WebSocket Message Flow
 
-### Modifying Scrum Workflows
-1. Update workflow definitions in relevant agent directories
-2. Modify state schemas if needed
-3. Update conditional edges for new workflow paths
-4. Test workflow changes using the agent testing patterns
-5. Update LangFuse observability if adding new events
+1. Client connects with JWT token
+2. ConnectionManager adds to project pool
+3. Client sends message → saved to DB → broadcast to all project members
+4. Agent processes message → streams responses → saved to DB
+5. Ping/pong keep-alive every 30 seconds
+6. On disconnect: ConnectionManager removes from pool
 
-### Database Schema Changes
-1. Modify SQLModel models in management service
-2. Generate migration: `alembic revision --autogenerate -m "description"`
-3. Review generated migration for correctness
-4. Apply migration: `alembic upgrade head`
-5. Update API schemas and endpoints accordingly
+## Documentation References
 
-## Troubleshooting
-
-### Common Issues
-- **Kafka Connection Failed**: Verify external Kafka accessibility and topic creation
-- **Database Connection Issues**: Check PostgreSQL container status and environment variables
-- **Frontend Build Issues**: Clear node_modules and reinstall dependencies
-- **Agent State Issues**: Check PostgreSQL checkpoint tables and LangGraph configuration
-
-### Port Conflicts
-Default ports: Frontend (5173), Management (8000), AI Agent (8001), PostgreSQL (5432)
-Use `lsof -i :PORT` to identify conflicts.
-
-### Agent Debugging
-- Use LangFuse dashboard for workflow observability
-- Check Kafka topic messages for inter-agent communication
-- Review PostgreSQL checkpoint tables for workflow state
-- Enable debug logging in FastAPI applications
+- `README.md` - Project overview, deployment modes
+- `AGENTS.md` - Repository guidelines, commands, coding style
+- `WEBSOCKET_IMPLEMENTATION_SUMMARY.md` - Complete WebSocket implementation details
+- `docs/WEBSOCKET_CHAT.md` - WebSocket protocol specification
+- `docs/AGENT_INTEGRATION.md` - Agent integration guide
+- `frontend/README.md` - Frontend-specific setup and development

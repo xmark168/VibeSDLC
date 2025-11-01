@@ -6,14 +6,20 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Link } from "@tanstack/react-router"
+import useAuth from "@/hooks/useAuth"
 
 export function LoginForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const { loginMutation } = useAuth()
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     console.log("Login attempt:", { email, password })
+    loginMutation.mutate({
+      username: email,
+      password: password,
+    })
   }
 
   return (
@@ -120,10 +126,16 @@ export function LoginForm() {
 
           <Button
             type="submit"
+            disabled={loginMutation.isPending}
             className="w-full h-12 text-base font-semibold bg-primary hover:bg-primary/90 transition-all"
           >
-            Sign in
+            {loginMutation.isPending ? "Signing in..." : "Sign in"}
           </Button>
+          {loginMutation.error && (
+            <div className="text-sm text-red-500 text-center">
+              {loginMutation.error.message || "Login failed"}
+            </div>
+          )}
 
           <div className="text-center">
             <Link to="/forgot-password" className="text-sm text-muted-foreground transition-colors underline">

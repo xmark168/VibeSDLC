@@ -12,7 +12,7 @@ from langfuse.langchain import CallbackHandler
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 
-from templates.prompts.product_owner.gatherer import (
+from app.templates.prompts.product_owner.gatherer import (
     EVALUATE_PROMPT,
     CLARIFY_PROMPT,
     SUGGEST_PROMPT,
@@ -193,15 +193,38 @@ class State(BaseModel):
 class GathererAgent:
     """Gatherer Agent để thu thập thông tin sản phẩm giúp tạo backlog trong tương lai."""
 
-    def __init__(self, session_id: str | None = None, user_id: str | None = None):
+    def __init__(
+        self,
+        session_id: str | None = None,
+        user_id: str | None = None,
+        websocket_broadcast_fn=None,
+        project_id: str | None = None,
+        response_manager=None,
+        event_loop=None
+    ):
         """Khởi tạo gatherer agent.
 
         Args:
             session_id: Session ID tùy chọn để theo dõi
             user_id: User ID tùy chọn để theo dõi
+            websocket_broadcast_fn: Async function to broadcast WebSocket messages (optional)
+            project_id: Project ID for WebSocket broadcasting (optional)
+            response_manager: ResponseManager for human-in-the-loop via WebSocket (optional)
+            event_loop: Event loop for async operations (required for WebSocket mode)
         """
         self.session_id = session_id
         self.user_id = user_id
+
+        # WebSocket dependencies (optional)
+        self.websocket_broadcast_fn = websocket_broadcast_fn
+        self.project_id = project_id
+        self.response_manager = response_manager
+        self.event_loop = event_loop  # Store event loop
+        self.use_websocket = (
+            websocket_broadcast_fn is not None
+            and project_id is not None
+            and response_manager is not None
+        )
 
         self.langfuse_handler = CallbackHandler()
 
@@ -229,12 +252,19 @@ class GathererAgent:
         graph_builder.add_node("suggest", self.suggest)
         graph_builder.add_node("ask_user", self.ask_user)
         graph_builder.add_node("increment_iteration", self.increment_iteration)
-        graph_builder.add_node("wait_for_user", self.wait_for_user)
+
+        # Always use async version for wait_for_user
+        # It will check use_websocket flag and route appropriately
+        graph_builder.add_node("wait_for_user", self.wait_for_user_async)
+
         graph_builder.add_node("generate", self.generate)
         graph_builder.add_node("force_generate", self.force_generate)
         graph_builder.add_node("validate", self.validate)
         graph_builder.add_node("retry_decision", self.retry_decision)
-        graph_builder.add_node("preview", self.preview)
+
+        # Always use async version for preview (like wait_for_user)
+        graph_builder.add_node("preview", self.preview_async)
+
         graph_builder.add_node("edit_mode", self.edit_mode)
         graph_builder.add_node("finalize", self.finalize)
 
@@ -248,15 +278,16 @@ class GathererAgent:
         graph_builder.add_conditional_edges("wait_for_user", self.wait_for_user_branch)
         graph_builder.add_edge("generate", "validate")
         graph_builder.add_edge("force_generate", "validate")
+        graph_builder.add_edge("force_generate", "validate")
         graph_builder.add_conditional_edges("validate", self.validate_branch)
         graph_builder.add_conditional_edges("preview", self.preview_branch)
-        graph_builder.add_conditional_edges(
-            "retry_decision", self.retry_decision_branch
-        )
+        graph_builder.add_conditional_edges("retry_decision", self.retry_decision_branch)
         graph_builder.add_edge("edit_mode", "validate")
         graph_builder.add_edge("finalize", END)
         checkpointer = MemorySaver()
-        return graph_builder.compile(checkpointer=checkpointer)
+        return graph_builder.compile(
+            checkpointer=checkpointer
+        )
 
     def _initialize(self, state: State) -> State:
         print(state)
@@ -456,11 +487,10 @@ class GathererAgent:
 
     def ask_user(self, state: State) -> State:
         """Tạo câu hỏi để thu thập thông tin cho các gaps còn thiếu."""
-        formatted_gaps = (
-            "\n".join([f"- {gap}" for gap in state.gaps])
-            if state.gaps
-            else "Không có gaps"
-        )
+        print(f"\n[ask_user] Called!", flush=True)
+        print(f"[ask_user] Gaps count: {len(state.gaps)}", flush=True)
+
+        formatted_gaps = "\n".join([f"- {gap}" for gap in state.gaps]) if state.gaps else "Không có gaps"
 
         formatted_messages = "\n".join(
             [
@@ -491,19 +521,233 @@ class GathererAgent:
 
     def increment_iteration(self, state: State) -> State:
         """Tăng iteration count và checkpoint state để có thể resume sau này."""
+        print(f"\n[increment_iteration] Called!", flush=True)
         state.iteration_count += 1
         print(
             f"\n=== Iteration {state.iteration_count}/{state.max_iterations} completed ==="
         )
         print(f"Current gaps: {len(state.gaps)}")
-        print(
-            f"Score: {state.score}, Confidence: {state.confidence}, Status: {state.status}"
-        )
+        print(f"Score: {state.score}, Confidence: {state.confidence}, Status: {state.status}")
+        print(f"[increment_iteration] Returning state, next should be wait_for_user", flush=True)
 
         return state
 
+    async def wait_for_user_async(self, state: State) -> State:
+        """Async version of wait_for_user - works for both WebSocket and terminal modes."""
+        print(f"\n[wait_for_user_async] Called!", flush=True)
+        print(f"[wait_for_user_async] use_websocket: {self.use_websocket}", flush=True)
+        print(f"[wait_for_user_async] Questions count: {len(state.questions)}", flush=True)
+
+        if self.use_websocket:
+            # WebSocket mode - call async implementation
+            print(f"[wait_for_user_async] Routing to WebSocket mode", flush=True)
+            return await self._wait_for_user_websocket_async(state)
+        else:
+            # Terminal mode - run sync version in executor to not block event loop
+            print(f"[wait_for_user_async] Routing to terminal mode (via executor)", flush=True)
+            import asyncio
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, self._wait_for_user_terminal, state)
+
     def wait_for_user(self, state: State) -> State:
-        """Hỏi user từng câu một và đợi response với timeout 10 phút cho mỗi câu. Trả về structured output."""
+        """Hỏi user từng câu một và đợi response. Support cả terminal và WebSocket mode."""
+        print(f"\n[wait_for_user] Called! use_websocket={self.use_websocket}", flush=True)
+        print(f"[wait_for_user] Questions count: {len(state.questions)}", flush=True)
+
+        if self.use_websocket:
+            # WebSocket mode - check if we're in async context
+            import asyncio
+            try:
+                # If we're in async context, we should use async version
+                running_loop = asyncio.get_running_loop()
+                print(f"[wait_for_user] In async context! Loop: {running_loop}", flush=True)
+                print(f"[wait_for_user] ERROR: Sync wait_for_user called from async context!", flush=True)
+                # This shouldn't happen - graph should use async nodes
+                raise RuntimeError("Sync wait_for_user called from async context. Use wait_for_user_async instead.")
+            except RuntimeError:
+                # Not in async context - use sync wrapper
+                print(f"[wait_for_user] Routing to WebSocket mode (sync wrapper)", flush=True)
+                return self._wait_for_user_websocket_sync(state)
+        else:
+            # Use terminal mode (original implementation)
+            print(f"[wait_for_user] Routing to terminal mode", flush=True)
+            return self._wait_for_user_terminal(state)
+
+    async def _wait_for_user_websocket_async(self, state: State) -> State:
+        """WebSocket version: Ask user questions via WebSocket và đợi responses.
+
+        IMPORTANT: This function runs in WebSocket helper loop (dedicated thread).
+        It needs to call broadcast_fn and response_manager which run in main loop.
+        """
+        import uuid
+        import asyncio
+
+        print("\n[_wait_for_user_websocket_async] ===== ENTERED =====", flush=True)
+        print(f"[_wait_for_user_websocket_async] Questions count: {len(state.questions)}", flush=True)
+        print(f"[_wait_for_user_websocket_async] Project ID: {self.project_id}", flush=True)
+
+        has_responses = False
+        skip_all = False
+        answered_count = 0
+        skipped_count = 0
+        user_responses = []
+
+        for idx, question in enumerate(state.questions, 1):
+            if skip_all:
+                break
+
+            state.messages.append(AIMessage(content=question))
+
+            # Generate unique question ID
+            question_id = str(uuid.uuid4())
+
+            print(f"\n[_wait_for_user_websocket_async] ===== Question {idx}/{len(state.questions)} =====", flush=True)
+            print(f"[_wait_for_user_websocket_async] Question ID: {question_id}", flush=True)
+            print(f"[_wait_for_user_websocket_async] Question: {question[:100]}...", flush=True)
+
+            try:
+                # Send question to frontend via broadcast queue
+                # Queue it instead of scheduling directly to avoid event loop conflicts
+                print(f"[_wait_for_user_websocket_async] Queuing question for broadcast...", flush=True)
+
+                message_data = {
+                    "type": "agent_question",
+                    "question_id": question_id,
+                    "agent": "Gatherer Agent",
+                    "question_type": "text",
+                    "question_text": question,
+                    "question_number": idx,
+                    "total_questions": len(state.questions),
+                    "timeout": 600,
+                    "context": f"Câu hỏi {idx}/{len(state.questions)}"
+                }
+
+                # Queue message for broadcast from main loop
+                await self.response_manager.queue_broadcast(message_data, self.project_id)
+                print(f"[_wait_for_user_websocket_async] ✓ Question queued!", flush=True)
+
+                print(f"[_wait_for_user_websocket_async] Question sent! Waiting for user response...", flush=True)
+
+                # Wait for user response
+                # Response manager is thread-safe, can be called directly from any async context
+                user_input = await self.response_manager.await_response(
+                    self.project_id,
+                    question_id,
+                    timeout=600.0
+                )
+
+                print(f"[_wait_for_user_websocket_async] Response received: {user_input}", flush=True)
+
+                if user_input is None:
+                    print(f"⏰ Timeout for question {idx}")
+                    skipped_count += 1
+                    continue
+
+                # Check for special commands
+                if isinstance(user_input, str):
+                    if user_input.lower() == 'skip_all':
+                        skip_all = True
+                        print("\n⊘ User chose to skip all remaining questions.")
+                        break
+                    elif user_input.lower() == 'skip':
+                        print(f"⊘ User skipped question {idx}.")
+                        skipped_count += 1
+                        continue
+                    elif user_input.strip():
+                        state.messages.append(HumanMessage(content=user_input))
+                        user_responses.append({"question": question, "answer": user_input})
+                        has_responses = True
+                        answered_count += 1
+                        print(f"✓ Answer received for question {idx}.")
+                    else:
+                        print(f"⚠ Empty answer for question {idx}, skipping.")
+                        skipped_count += 1
+
+            except Exception as e:
+                print(f"\n❌ Error processing question {idx}: {e}", flush=True)
+                import traceback
+                traceback.print_exc()
+                skipped_count += 1
+                continue
+
+        # Update state based on responses
+        if skip_all:
+            state.user_skipped = True
+            state.status = "skipped_all"
+            print("\n⊘ All questions skipped. Will generate brief with available info.")
+        elif has_responses:
+            state.user_skipped = False
+            state.status = "user_responded"
+            print(f"\n✓ Q&A completed: {answered_count} answers, {skipped_count} skipped")
+        else:
+            state.user_skipped = True
+            state.status = "no_responses"
+            print(f"\n⚠ No answers received. Will generate brief with available info.")
+
+        print(f"\n[_wait_for_user_websocket_async] ===== RETURNING =====", flush=True)
+        return state
+
+    def _wait_for_user_websocket_sync(self, state: State) -> State:
+        """Sync wrapper for async WebSocket version.
+
+        Strategy:
+        We MUST use run_coroutine_threadsafe because:
+        1. websocket_broadcast_fn and response_manager run in main loop
+        2. This function is called from a thread with its own loop
+        3. We need to schedule work back to main loop
+        """
+        print(f"\n[_wait_for_user_websocket_sync] Called!", flush=True)
+
+        import asyncio
+
+        if not self.event_loop:
+            print("❌ Error: event_loop not provided for WebSocket mode")
+            state.user_skipped = True
+            state.status = "error"
+            return state
+
+        print(f"[_wait_for_user_websocket_sync] Main event loop: {self.event_loop}", flush=True)
+        print(f"[_wait_for_user_websocket_sync] Main loop running? {self.event_loop.is_running()}", flush=True)
+
+        try:
+            # Check if there's a running loop in current thread
+            try:
+                running_loop = asyncio.get_running_loop()
+                print(f"[_wait_for_user_websocket_sync] Found running loop in thread: {running_loop}", flush=True)
+                print(f"[_wait_for_user_websocket_sync] ERROR: Cannot call from async context!", flush=True)
+                raise RuntimeError("Cannot call sync function from async context")
+            except RuntimeError:
+                # Good - no running loop in current thread
+                print(f"[_wait_for_user_websocket_sync] No running loop in current thread (expected)", flush=True)
+
+            # Use run_coroutine_threadsafe to schedule in main loop
+            print(f"[_wait_for_user_websocket_sync] Scheduling coroutine in main loop...", flush=True)
+
+            future = asyncio.run_coroutine_threadsafe(
+                self._wait_for_user_websocket_async(state),
+                self.event_loop
+            )
+
+            print(f"[_wait_for_user_websocket_sync] Coroutine scheduled! Future: {future}", flush=True)
+            print(f"[_wait_for_user_websocket_sync] Waiting for result (timeout=660s)...", flush=True)
+
+            # Wait for result with timeout
+            result = future.result(timeout=660)  # 11 minutes
+
+            print(f"[_wait_for_user_websocket_sync] ✓ Result received!", flush=True)
+            return result
+
+        except Exception as e:
+            print(f"❌ Error in WebSocket wait_for_user: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            # Fallback: skip all
+            state.user_skipped = True
+            state.status = "error"
+            return state
+
+    def _wait_for_user_terminal(self, state: State) -> State:
+        """Terminal version: Hỏi user từng câu một qua terminal."""
         import signal
 
         print("\n" + "=" * 60)
@@ -736,7 +980,77 @@ class GathererAgent:
         print(f"🔄 RETRY DECISION - Lần thử {state.retry_count}")
         print(f"  - Confidence: {state.confidence:.2f}")
         print(f"  - Completeness: {state.score:.2f}")
-        print("=" * 60 + "\n")
+        print("="*60 + "\n")
+
+        return state
+
+    async def preview_async(self, state: State) -> State:
+        """Async version of preview - works for both WebSocket and terminal modes."""
+        import uuid
+
+        print("\n[preview_async] ===== ENTERED =====", flush=True)
+        print(f"[preview_async] use_websocket: {self.use_websocket}", flush=True)
+
+        if not self.use_websocket:
+            # Terminal mode - run sync version in executor
+            print(f"[preview_async] Routing to terminal mode (via executor)", flush=True)
+            import asyncio
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, self.preview, state)
+
+        # WebSocket mode
+        print(f"[preview_async] WebSocket mode, queuing preview...", flush=True)
+
+        # Generate unique preview ID
+        preview_id = str(uuid.uuid4())
+
+        # Queue preview message for broadcast
+        preview_message = {
+            "type": "agent_preview",
+            "preview_id": preview_id,
+            "agent": "Gatherer Agent",
+            "preview_type": "product_brief",
+            "title": "📋 PREVIEW - Product Brief",
+            "brief": state.brief,
+            "incomplete_flag": state.incomplete_flag,
+            "options": ["approve", "edit", "regenerate"],
+            "prompt": "Bạn muốn làm gì với Product Brief này?"
+        }
+
+        await self.response_manager.queue_broadcast(preview_message, self.project_id)
+        print(f"[preview_async] ✓ Preview queued!", flush=True)
+
+        # Wait for user choice
+        print(f"[preview_async] Waiting for user choice...", flush=True)
+        user_response = await self.response_manager.await_response(
+            self.project_id,
+            preview_id,
+            timeout=600.0
+        )
+
+        if user_response is None:
+            print(f"[preview_async] ⏰ Timeout, defaulting to 'approve'", flush=True)
+            state.user_choice = "approve"
+            return state
+
+        # Parse user response
+        if isinstance(user_response, dict):
+            choice = user_response.get("choice", "approve")
+            edit_changes = user_response.get("edit_changes", "")
+        else:
+            choice = str(user_response).strip().lower()
+            edit_changes = ""
+
+        print(f"[preview_async] User choice: {choice}", flush=True)
+
+        state.user_choice = choice
+
+        if choice == "edit" and edit_changes:
+            state.edit_changes = edit_changes
+            print(f"[preview_async] Edit changes: {edit_changes[:100]}...", flush=True)
+        elif choice == "regenerate":
+            state.retry_count = 0
+            print(f"[preview_async] Will regenerate brief", flush=True)
 
         return state
 
@@ -979,6 +1293,70 @@ class GathererAgent:
         Returns:
             dict: Trạng thái cuối cùng chứa bản tóm tắt đã tạo và các chỉ số đánh giá
         """
+        print(f"\n[GathererAgent.run] Called!", flush=True)
+        print(f"[GathererAgent.run] use_websocket: {self.use_websocket}", flush=True)
+
+        # For WebSocket mode, run async version in dedicated WebSocket helper loop
+        if self.use_websocket:
+            print(f"[GathererAgent.run] WebSocket mode - using WebSocket helper loop", flush=True)
+
+            # Import websocket helper
+            from app.core.websocket_helper import websocket_helper
+
+            # Run async version in dedicated WebSocket loop
+            print(f"[GathererAgent.run] Scheduling in WebSocket helper loop...", flush=True)
+            result = websocket_helper.run_coroutine(
+                self.run_async(initial_context, thread_id),
+                timeout=660  # 11 minutes
+            )
+            print(f"[GathererAgent.run] Execution completed!", flush=True)
+            return result
+
+        # Terminal mode: sync execution
+        print(f"[GathererAgent.run] Terminal mode - sync execution", flush=True)
+        if thread_id is None:
+            thread_id = self.session_id or "default_thread"
+
+        initial_state = State(
+            messages=[HumanMessage(content=initial_context)] if initial_context else []
+        )
+
+        metadata = {}
+        if self.session_id:
+            metadata["langfuse_session_id"] = self.session_id
+        if self.user_id:
+            metadata["langfuse_user_id"] = self.user_id
+        metadata["langfuse_tags"] = ["gatherer_agent"]
+
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "configurable": {"thread_id": thread_id},
+            "callbacks": [self.langfuse_handler],
+            "metadata": metadata,
+            "recursion_limit": 50
+        }
+
+        final_state = None
+        for output in self.graph.stream(
+            initial_state.model_dump() if initial_state else None,
+            config=config,
+        ):
+            final_state = output
+
+        return final_state or {}
+
+    async def run_async(self, initial_context: str = "", thread_id: str | None = None) -> dict[str, Any]:
+        """Async version for WebSocket mode.
+
+        Args:
+            initial_context: Ngữ cảnh ban đầu
+            thread_id: ID để resume state
+
+        Returns:
+            dict: Trạng thái cuối cùng
+        """
+        print(f"\n[GathererAgent.run_async] ENTERED", flush=True)
+
         if thread_id is None:
             thread_id = self.session_id or "default_thread"
 
@@ -997,14 +1375,18 @@ class GathererAgent:
             "configurable": {"thread_id": thread_id},
             "callbacks": [self.langfuse_handler],
             "metadata": metadata,
-            "recursion_limit": 50,
+            "recursion_limit": 50
         }
 
+        print(f"[GathererAgent.run_async] Starting astream...", flush=True)
+
         final_state = None
-        for output in self.graph.stream(
+        async for output in self.graph.astream(
             initial_state.model_dump() if initial_state else None,
             config=config,
         ):
             final_state = output
+            print(f"[GathererAgent.run_async] Got output from node", flush=True)
 
+        print(f"[GathererAgent.run_async] COMPLETED", flush=True)
         return final_state or {}

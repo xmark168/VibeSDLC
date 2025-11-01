@@ -3,7 +3,7 @@ from uuid import UUID, uuid4
 from enum import Enum
 from pydantic import EmailStr
 from sqlmodel import Field, SQLModel, Relationship
-
+from typing import Optional
 
 class Role(str, Enum):
     ADMIN = "admin"
@@ -31,6 +31,12 @@ class User(BaseModel, table=True):
     email: EmailStr = Field(unique=True, index=True, max_length=255)
     role: Role = Field(default=Role.USER, nullable=True)
 
+    # Account status fields for security
+    is_active: bool = Field(default=True, nullable=False)
+    is_locked: bool = Field(default=False, nullable=False)
+    locked_until: datetime | None = Field(default=None)
+    failed_login_attempts: int = Field(default=0, nullable=False)
+
     # Relationship
     refresh_tokens: list["RefreshToken"] = Relationship(
         back_populates="user", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
@@ -49,8 +55,13 @@ class RefreshToken(BaseModel, table=True):
 
     token: str = Field(unique=True, index=True, max_length=500)
     user_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")
+    user_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")
     expires_at: datetime
     is_revoked: bool = Field(default=False)
+
+    # Token rotation detection
+    family_id: UUID = Field(default_factory=uuid4, nullable=False, index=True)
+    parent_token_id: UUID | None = Field(default=None)
 
     # Relationship
     user: User | None = Relationship(back_populates="refresh_tokens")
@@ -61,7 +72,8 @@ class Project(BaseModel, table=True):
 
     code: str
     name: str
-    owner_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")
+    owner_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE") 
+    is_init: bool = Field(default=False)
 
     owner: User = Relationship(back_populates="owned_projects")
     sprints: list["Sprint"] = Relationship(
@@ -118,7 +130,7 @@ class BacklogItem(BaseModel, table=True):
     deadline: datetime | None = Field(default=None)
 
     sprint: Sprint = Relationship(back_populates="backlog_items")
-    parent: "BacklogItem | None" = Relationship(
+    parent: Optional["BacklogItem"] = Relationship(
         back_populates="children",
         sa_relationship_kwargs={"remote_side": "BacklogItem.id"},
     )
@@ -176,4 +188,37 @@ class IssueActivity(BaseModel, table=True):
     type_to: str | None = Field(default=None)
     note: str | None = Field(default=None)
 
-    issue: BacklogItem = Relationship(back_populates="activities")
+    issue: BacklogItem = Relationship(back_populates="activities") 
+
+class AuthorType(str, Enum):
+    USER = "user"
+    AGENT = "agent"
+
+
+class Agent(BaseModel, table=True):
+    __tablename__ = "agents"
+
+    name: str
+    agent_type: str | None = Field(default=None)
+
+    # Relationship to messages authored by this agent
+    messages: list["Message"] = Relationship(back_populates="agent")
+
+
+class Message(BaseModel, table=True):
+    __tablename__ = "messages"
+
+    # Single-session-per-project: attach all messages to a project
+    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
+
+    # Author info: either user or agent (or system/tool)
+    author_type: AuthorType = Field(default=AuthorType.USER, nullable=False)
+    user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
+    agent_id: UUID | None = Field(default=None, foreign_key="agents.id", ondelete="SET NULL")
+
+    # Message payload
+    content: str
+
+    # Relationship back to agent
+    agent: Agent | None = Relationship(back_populates="messages")
+    
