@@ -10,22 +10,13 @@ langchain-community>=0.3.13
 langchain-core>=0.3.28
 langgraph>=0.2.62
 langsmith>=0.2.7
-langfuse>=2.50.0
+langfuse>=2.56.0
 uvicorn>=0.34.0
 openagents>=0.6.12
 jwt>=1.4.0
 sqlmodel>=0.0.27
 alembic>=1.17.0
 psycopg[binary]>=3.2.10
-pyjwt>=2.10.1
-passlib[bcrypt]>=1.7.4
-bcrypt<4.1.0,>=4.0.0
-emails>=0.6
-slowapi>=0.1.9
-authlib>=1.6.5
-httpx-oauth>=0.16.1
-deepagents>=0.1.2
-pytest>=8.4.2
 
 [dev]
 ruff

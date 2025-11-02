@@ -5,6 +5,12 @@ node_modules/
 /blob-report/
 /playwright/.cache/
 
+.cursor/
+CONTEXT.md
+MCP_USAGE_LOG.md
+mcp.json
+PLAN.md
+TASKS.md
 
 #BACKEND
 .claude
@@ -13,6 +19,8 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+open-swe/
+.idea/
 frontend/src/routeTree.gen.ts
 
 .env

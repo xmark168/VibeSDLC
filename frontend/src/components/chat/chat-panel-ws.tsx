@@ -34,6 +34,9 @@ import { useChatWebSocket } from "@/hooks/useChatWebSocket";
 import { useAuth } from "@/hooks/useAuth";
 import { useMessages } from "@/queries/messages";
 import { AuthorType, type Message } from "@/types/message";
+import { AgentQuestionModal } from "./agent-question-modal";
+import { AgentPreviewModal } from "./agent-preview-modal";
+import { AgentTestSelector, MOCK_DATA, type AgentTestMode } from "./agent-test-selector";
 
 interface ChatPanelProps {
   sidebarCollapsed: boolean;
@@ -82,6 +85,7 @@ export function ChatPanelWS({
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(
     new Set()
   );
+  const [testMode, setTestMode] = useState<AgentTestMode>('full');
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -103,9 +107,15 @@ export function ChatPanelWS({
   // WebSocket connection
   const {
     isConnected,
+    isReady,
     messages: wsMessages,
     typingAgents,
+    agentProgress,
+    pendingQuestions,
+    pendingPreviews,
     sendMessage: wsSendMessage,
+    submitAnswer,
+    submitPreviewChoice,
   } = useChatWebSocket(projectId, token || undefined);
 
   // Combine existing messages with WebSocket messages
@@ -178,16 +188,76 @@ export function ChatPanelWS({
     }
   };
 
+  const getPlaceholder = () => {
+    switch (testMode) {
+      case 'gatherer':
+        return 'Test Gatherer Agent - describe your product idea...';
+      case 'vision':
+        return 'Test Vision Agent - paste your product_brief JSON or type anything for mock data';
+      case 'backlog':
+        return 'Test Backlog Agent - type anything to generate backlog (uses mock data)';
+      case 'priority':
+        return 'Test Priority Agent - type anything to prioritize items (uses mock data)';
+      default:
+        return "Press Enter to send requests anytime - we'll notice.";
+    }
+  };
+
   const handleSend = () => {
     if (!message.trim() && attachedFiles.length === 0) return;
-    if (!isConnected) {
-      console.error("WebSocket not connected");
+    if (!isReady) {
+      console.error("WebSocket not ready");
       return;
+    }
+
+    let finalMessage = message.trim();
+
+    // Auto-apply test mode if not in full workflow
+    if (testMode !== 'full' && finalMessage) {
+      switch (testMode) {
+        case 'gatherer':
+          // Just send as-is for gatherer (no mock data needed)
+          break;
+        case 'vision':
+          // Check if user provided JSON (check for { and required fields)
+          if (finalMessage.includes('{') && finalMessage.includes('product_name')) {
+            try {
+              // Parse multi-line JSON
+              const briefData = JSON.parse(finalMessage);
+
+              // Validate required fields
+              const requiredFields = ['product_name', 'description', 'target_audience', 'key_features'];
+              const missingFields = requiredFields.filter(field => !briefData[field]);
+
+              if (missingFields.length > 0) {
+                console.warn('Missing required fields:', missingFields, '- using mock data instead');
+                finalMessage = `[TEST_VISION] ${JSON.stringify(MOCK_DATA.product_brief)}`;
+              } else {
+                // Valid custom data - use it!
+                finalMessage = `[TEST_VISION] ${JSON.stringify(briefData)}`;
+              }
+            } catch (e) {
+              console.error('Failed to parse JSON, using mock data:', e);
+              // Fallback to mock data
+              finalMessage = `[TEST_VISION] ${JSON.stringify(MOCK_DATA.product_brief)}`;
+            }
+          } else {
+            // No custom data, use mock data
+            finalMessage = `[TEST_VISION] ${JSON.stringify(MOCK_DATA.product_brief)}`;
+          }
+          break;
+        case 'backlog':
+          finalMessage = `[TEST_BACKLOG] ${JSON.stringify(MOCK_DATA.product_vision)}`;
+          break;
+        case 'priority':
+          finalMessage = `[TEST_PRIORITY] Mock backlog data`;
+          break;
+      }
     }
 
     // Send via WebSocket
     const success = wsSendMessage({
-      content: message.trim(),
+      content: finalMessage,
       author_type: "user",
     });
 
@@ -324,12 +394,30 @@ export function ChatPanelWS({
     }, 0);
   };
 
-  // Notify parent about connection status
+  // Agent question handlers
+  const handleSubmitAnswer = (question_id: string, answer: string) => {
+    submitAnswer(question_id, answer);
+  };
+
+  const handleSkipQuestion = (question_id: string) => {
+    submitAnswer(question_id, "skip");
+  };
+
+  const handleSkipAllQuestions = (question_id: string) => {
+    submitAnswer(question_id, "skip_all");
+  };
+
+  // Agent preview handlers
+  const handleSubmitPreview = (preview_id: string, choice: string, edit_changes?: string) => {
+    submitPreviewChoice(preview_id, choice, edit_changes);
+  };
+
+  // Notify parent about connection status (use isReady for accurate status)
   useEffect(() => {
     if (onConnectionChange) {
-      onConnectionChange(isConnected);
+      onConnectionChange(isReady);
     }
-  }, [isConnected, onConnectionChange]);
+  }, [isReady, onConnectionChange]);
 
   // Notify parent about sendMessage function
   useEffect(() => {
@@ -379,7 +467,7 @@ export function ChatPanelWS({
             <PanelRightClose className="w-5 h-5" />
           </Button>
           <div className="flex-1" />
-          {!isConnected && (
+          {!isReady && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="w-3 h-3 animate-spin" />
               Connecting...
@@ -413,13 +501,13 @@ export function ChatPanelWS({
       {!sidebarCollapsed && (
         <div className="flex items-center justify-between gap-2 px-3 py-2">
           <div className="flex items-center gap-2">
-            {!isConnected && (
+            {!isReady && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="w-3 h-3 animate-spin" />
                 Connecting...
               </div>
             )}
-            {isConnected && (
+            {isReady && (
               <div className="flex items-center gap-2 text-xs text-green-600">
                 <div className="w-2 h-2 bg-green-600 rounded-full" />
                 Connected
@@ -564,6 +652,37 @@ export function ChatPanelWS({
             </div>
           </div>
         )}
+
+        {agentProgress.isExecuting && (
+          <div className="flex gap-3 p-4 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-blue-100 dark:bg-blue-900">
+              🤖
+            </div>
+            <div className="flex-1 space-y-2">
+              <div className="text-xs font-medium text-blue-600 dark:text-blue-400">
+                {agentProgress.currentAgent || 'Agent đang xử lý'}
+              </div>
+              <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <div className="text-sm space-y-1">
+                  {agentProgress.currentStep && (
+                    <div>{agentProgress.currentStep}</div>
+                  )}
+                  {agentProgress.currentTool && (
+                    <div className="text-xs text-blue-600 dark:text-blue-400">
+                      → {agentProgress.currentTool}
+                    </div>
+                  )}
+                  {agentProgress.stepNumber && (
+                    <div className="text-xs text-blue-500 dark:text-blue-500">
+                      Bước {agentProgress.stepNumber}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="p-2 m-4 rounded-4xl relative bg-muted">
@@ -610,6 +729,14 @@ export function ChatPanelWS({
         )}
 
         <div className="bg-transparent rounded-4xl p-1 border-0">
+          {/* Agent Test Selector */}
+          <div className="mb-3">
+            <AgentTestSelector
+              value={testMode}
+              onChange={setTestMode}
+            />
+          </div>
+
           {attachedFiles.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-2">
               {attachedFiles.map((file) => (
@@ -642,9 +769,9 @@ export function ChatPanelWS({
             value={message}
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
-            placeholder="Press Enter to send requests anytime - we'll notice."
+            placeholder={getPlaceholder()}
             className="min-h-[40px] resize-none bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground p-1 focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
-            disabled={!isConnected}
+            disabled={!isReady}
           />
           <div className="flex items-center justify-between pt-3">
             <div className="flex gap-2">
@@ -661,7 +788,7 @@ export function ChatPanelWS({
                 size="icon"
                 className="h-8 w-8 hover:bg-accent"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={!isConnected}
+                disabled={!isReady}
               >
                 <Paperclip className="w-4 h-4" />
               </Button>
@@ -673,7 +800,7 @@ export function ChatPanelWS({
                       size="icon"
                       className="h-8 w-8 hover:bg-accent"
                       onClick={triggerMention}
-                      disabled={!isConnected}
+                      disabled={!isReady}
                     >
                       <AtSign className="w-4 h-4" />
                     </Button>
@@ -701,7 +828,7 @@ export function ChatPanelWS({
               className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90"
               onClick={handleSend}
               disabled={
-                !isConnected || (!message.trim() && attachedFiles.length === 0)
+                !isReady || (!message.trim() && attachedFiles.length === 0)
               }
             >
               <ArrowUp className="w-4 h-4" />
@@ -709,6 +836,20 @@ export function ChatPanelWS({
           </div>
         </div>
       </div>
+
+      {/* Agent Question Modal */}
+      <AgentQuestionModal
+        question={pendingQuestions[0] || null}
+        onSubmit={handleSubmitAnswer}
+        onSkip={handleSkipQuestion}
+        onSkipAll={handleSkipAllQuestions}
+      />
+
+      {/* Agent Preview Modal */}
+      <AgentPreviewModal
+        preview={pendingPreviews[0] || null}
+        onSubmit={handleSubmitPreview}
+      />
     </div>
   );
 }
