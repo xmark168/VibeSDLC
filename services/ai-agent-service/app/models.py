@@ -26,21 +26,19 @@ class BaseModel(SQLModel):
 class User(BaseModel, table=True):
     __tablename__ = "users"
 
-    username: str = Field(unique=True, index=True, max_length=50)
-    hashed_password: str
+    full_name: str = Field(max_length=50, nullable=True)
+    hashed_password: str = Field(nullable=True)
     email: EmailStr = Field(unique=True, index=True, max_length=255)
     role: Role = Field(default=Role.USER, nullable=True)
 
     # Account status fields for security
-    is_active: bool = Field(default=True, nullable=False)
+    is_active: bool = Field(default=True, nullable=True)
     is_locked: bool = Field(default=False, nullable=False)
     locked_until: datetime | None = Field(default=None)
     failed_login_attempts: int = Field(default=0, nullable=False)
 
-    # Relationship
-    refresh_tokens: list["RefreshToken"] = Relationship(
-        back_populates="user", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
-    )
+    login_provider: bool = Field(default=False, nullable=False)
+
     owned_projects: list["Project"] = Relationship(
         back_populates="owner", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
@@ -48,24 +46,6 @@ class User(BaseModel, table=True):
         back_populates="commenter",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
-
-
-class RefreshToken(BaseModel, table=True):
-    __tablename__ = "refresh_tokens"
-
-    token: str = Field(unique=True, index=True, max_length=500)
-    user_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")
-    user_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")
-    expires_at: datetime
-    is_revoked: bool = Field(default=False)
-
-    # Token rotation detection
-    family_id: UUID = Field(default_factory=uuid4, nullable=False, index=True)
-    parent_token_id: UUID | None = Field(default=None)
-
-    # Relationship
-    user: User | None = Relationship(back_populates="refresh_tokens")
-
 
 class Project(BaseModel, table=True):
     __tablename__ = "projects"
@@ -221,4 +201,25 @@ class Message(BaseModel, table=True):
 
     # Relationship back to agent
     agent: Agent | None = Relationship(back_populates="messages")
+
+
+class RefreshToken(BaseModel, table=True):
+    __tablename__ = "refresh_tokens"
+
+    token: str = Field(unique=True, index=True, max_length=255)
+    user_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")
+    expires_at: datetime = Field(nullable=False)
+    is_revoked: bool = Field(default=False, nullable=False)
+
+    # Token family tracking for rotation detection
+    family_id: UUID = Field(nullable=False, index=True)
+    parent_token_id: UUID | None = Field(default=None, foreign_key="refresh_tokens.id", ondelete="SET NULL")
+
+    # Relationships
+    user: User = Relationship()
+    parent: Optional["RefreshToken"] = Relationship(
+        back_populates="children",
+        sa_relationship_kwargs={"remote_side": "RefreshToken.id"},
+    )
+    children: list["RefreshToken"] = Relationship(back_populates="parent")
     

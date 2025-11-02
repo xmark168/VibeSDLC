@@ -96,6 +96,65 @@ class NewPassword(SQLModel):
     token: str
     new_password: str = Field(min_length=8)
 
+# Authentication schemas
+class LoginRequest(SQLModel):
+    email: EmailStr
+    password: Optional[str] = None
+    fullname: Optional[str] = None
+    login_provider: bool = Field(description="false = credential login, true = OAuth provider login")
+
+class LoginResponse(SQLModel):
+    user_id: UUID
+    access_token: str
+    refresh_token: str
+
+class RegisterRequest(SQLModel):
+    email: EmailStr = Field(description="Email address")
+    fullname: str = Field(min_length=1, max_length=50, description="Full name")
+    password: str = Field(min_length=8, description="Password (min 8 chars, must contain letter and number)")
+    confirm_password: str = Field(description="Password confirmation")
+
+class RegisterResponse(SQLModel):
+    message: str
+    email: EmailStr
+    expires_in: int
+
+class ConfirmCodeRequest(SQLModel):
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6, description="6-digit verification code")
+
+class ConfirmCodeResponse(SQLModel):
+    message: str
+    user_id: UUID
+
+class ResendCodeRequest(SQLModel):
+    email: EmailStr
+
+class ResendCodeResponse(SQLModel):
+    message: str
+    email: EmailStr
+    expires_in: int
+
+class RefreshTokenResponse(SQLModel):
+    user_id: UUID
+    access_token: str
+    refresh_token: str
+
+class ForgotPasswordRequest(SQLModel):
+    email: EmailStr
+
+class ForgotPasswordResponse(SQLModel):
+    message: str
+    expires_in: int
+
+class ResetPasswordRequest(SQLModel):
+    token: str
+    new_password: str = Field(min_length=8)
+    confirm_password: str
+
+class ResetPasswordResponse(SQLModel):
+    message: str
+
 # backlog
 
 class BacklogItemBase(SQLModel):

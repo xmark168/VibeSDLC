@@ -156,6 +156,23 @@ class Settings(BaseSettings):
     # MONITORING
     SENTRY_DSN: HttpUrl | None = None
 
+    # REDIS SETTINGS
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_PASSWORD: str | None = None
+    REDIS_DB: int = 0
+    REDIS_URL: str | None = None
+
+    @computed_field
+    @property
+    def redis_url(self) -> str:
+        """Build Redis connection URL"""
+        if self.REDIS_URL:
+            return self.REDIS_URL
+
+        auth = f":{self.REDIS_PASSWORD}@" if self.REDIS_PASSWORD else ""
+        return f"redis://{auth}{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+
     # VALIDATORS
     @model_validator(mode="after")
     def _set_default_emails_from(self) -> Self:

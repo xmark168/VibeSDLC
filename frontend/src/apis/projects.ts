@@ -1,6 +1,7 @@
-import { OpenAPI } from '@client'
+
 import { request as __request } from '@client/core/request'
 import type { ProjectsPage, Project } from '@/types/project'
+import { OpenAPI } from '@/client'
 
 export type FetchProjectsParams = {
   search?: string

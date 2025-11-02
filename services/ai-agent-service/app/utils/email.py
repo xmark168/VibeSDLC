@@ -122,3 +122,47 @@ def verify_password_reset_token(token: str) -> str | None:
     except InvalidTokenError:
         return None
 
+
+def generate_verification_code_email(email_to: str, code: str) -> EmailData:
+    """Generate email for verification code"""
+    project_name = settings.PROJECT_NAME
+    subject = f"{project_name} - Mã xác thực đăng ký"
+    html_content = f"""
+    <html>
+    <body>
+        <h2>Xác thực đăng ký tài khoản</h2>
+        <p>Chào bạn,</p>
+        <p>Mã xác thực của bạn là: <strong style="font-size: 24px; color: #007bff;">{code}</strong></p>
+        <p>Mã này có hiệu lực trong 3 phút.</p>
+        <p>Nếu bạn không yêu cầu đăng ký, vui lòng bỏ qua email này.</p>
+        <br>
+        <p>Trân trọng,<br>{project_name} Team</p>
+    </body>
+    </html>
+    """
+    return EmailData(html_content=html_content, subject=subject)
+
+
+def generate_password_reset_email(email_to: str, reset_link: str) -> EmailData:
+    """Generate email for password reset"""
+    project_name = settings.PROJECT_NAME
+    subject = f"{project_name} - Đặt lại mật khẩu"
+    html_content = f"""
+    <html>
+    <body>
+        <h2>Đặt lại mật khẩu</h2>
+        <p>Chào bạn,</p>
+        <p>Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn.</p>
+        <p>Vui lòng nhấp vào liên kết bên dưới để đặt lại mật khẩu:</p>
+        <p><a href="{reset_link}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Đặt lại mật khẩu</a></p>
+        <p>Hoặc copy và paste liên kết này vào trình duyệt:</p>
+        <p><a href="{reset_link}">{reset_link}</a></p>
+        <p><strong>Lưu ý:</strong> Liên kết này có hiệu lực trong 15 phút.</p>
+        <p>Nếu bạn không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này.</p>
+        <br>
+        <p>Trân trọng,<br>{project_name} Team</p>
+    </body>
+    </html>
+    """
+    return EmailData(html_content=html_content, subject=subject)
+
