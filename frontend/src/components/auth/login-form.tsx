@@ -1,25 +1,43 @@
-import type React from "react"
-
-import { useState } from "react"
+import { Link } from "@tanstack/react-router"
 import { motion } from "framer-motion"
+import type React from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Link } from "@tanstack/react-router"
 import useAuth from "@/hooks/useAuth"
-
+import { withToast } from "@/utils"
 export function LoginForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const { loginMutation } = useAuth()
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     console.log("Login attempt:", { email, password })
-    loginMutation.mutate({
-      username: email,
-      password: password,
-    })
+    const data = { email, password }
+
+    await withToast(
+      new Promise((resolve, reject) => {
+        loginMutation.mutate(
+          {
+            requestBody: {
+              ...data,
+              login_provider: false,
+            },
+          },
+          {
+            onSuccess: resolve,
+            onError: reject,
+          },
+        )
+      }),
+      {
+        loading: "Signing in...",
+        success: <b>Welcome back!</b>,
+        error: <b>Login failed. Please try again.</b>,
+      },
+    )
   }
 
   return (
@@ -48,7 +66,12 @@ export function LoginForm() {
         </motion.h2>
       </div>
 
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }} className="space-y-6">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.5 }}
+        className="space-y-6"
+      >
         {/* Google Sign In */}
         <Button
           variant="outline"
@@ -81,7 +104,9 @@ export function LoginForm() {
             <span className="w-full border-t border-border" />
           </div>
           <div className="relative flex justify-center text-sm">
-            <span className="bg-card px-4 text-muted-foreground">Or Sign in with a registered account</span>
+            <span className="bg-card px-4 text-muted-foreground">
+              Or Sign in with a registered account
+            </span>
           </div>
         </div>
 
@@ -119,7 +144,10 @@ export function LoginForm() {
 
           <div className="text-center text-sm text-muted-foreground">
             {"Don't have an account? "}
-            <Link to="/signup" className="text-foreground underline transition-colors">
+            <Link
+              to="/signup"
+              className="text-foreground underline transition-colors"
+            >
               Create your account
             </Link>
           </div>
@@ -138,7 +166,10 @@ export function LoginForm() {
           )}
 
           <div className="text-center">
-            <Link to="/forgot-password" className="text-sm text-muted-foreground transition-colors underline">
+            <Link
+              to="/forgot-password"
+              className="text-sm text-muted-foreground transition-colors underline"
+            >
               Forgot password?
             </Link>
           </div>

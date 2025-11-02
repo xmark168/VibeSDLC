@@ -1,10 +1,9 @@
-
 import type React from "react"
 
-import { useState, useRef } from "react"
+import { useRef, useState } from "react"
+import type { KanbanCardData } from "./kanban-card"
 import { KanbanColumn, type KanbanColumnData } from "./kanban-column"
 import { TaskDetailModal } from "./task-detail-modal"
-import type { KanbanCardData } from "./kanban-card"
 
 const initialColumns: KanbanColumnData[] = [
   { id: "backlog", title: "Backlog", color: "border-yellow-500", cards: [] },
@@ -35,7 +34,9 @@ const initialColumns: KanbanColumnData[] = [
 export function KanbanBoard() {
   const [columns, setColumns] = useState<KanbanColumnData[]>(initialColumns)
   const [draggedCard, setDraggedCard] = useState<KanbanCardData | null>(null)
-  const [draggedOverColumn, setDraggedOverColumn] = useState<string | null>(null)
+  const [draggedOverColumn, setDraggedOverColumn] = useState<string | null>(
+    null,
+  )
   const [selectedCard, setSelectedCard] = useState<KanbanCardData | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
@@ -77,7 +78,7 @@ export function KanbanBoard() {
                 taskId: `T${Math.floor(Math.random() * 10000)}`,
                 result: `# Task Result\n\nThis is the result of the task: ${content}`,
                 subtasks: ["Subtask 1", "Subtask 2"],
-                branch: "feature/task-" + Date.now(),
+                branch: `feature/task-${Date.now()}`,
               },
             ],
           }

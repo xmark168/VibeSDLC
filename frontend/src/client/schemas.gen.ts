@@ -1491,9 +1491,9 @@ export const UserPublicSchema = {
             format: 'uuid',
             title: 'Id'
         },
-        username: {
+        full_name: {
             type: 'string',
-            title: 'Username'
+            title: 'Full Name'
         },
         email: {
             type: 'string',
@@ -1505,7 +1505,7 @@ export const UserPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'username', 'email', 'role'],
+    required: ['id', 'full_name', 'email', 'role'],
     title: 'UserPublic'
 } as const;
 

@@ -1,4 +1,6 @@
-import { useState } from 'react'
+import { CheckCircle, Edit, RefreshCw } from "lucide-react"
+import { useState } from "react"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -6,26 +8,27 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
-import { CheckCircle, Edit, RefreshCw } from 'lucide-react'
-import type { AgentPreview } from '@/hooks/useChatWebSocket'
-import { ProductBriefPreview, ProductVisionPreview } from './previews'
+} from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
+import type { AgentPreview } from "@/hooks/useChatWebSocket"
+import { ProductBriefPreview, ProductVisionPreview } from "./previews"
 
 interface AgentPreviewModalProps {
   preview: AgentPreview | null
   onSubmit: (preview_id: string, choice: string, edit_changes?: string) => void
 }
 
-export function AgentPreviewModal({ preview, onSubmit }: AgentPreviewModalProps) {
+export function AgentPreviewModal({
+  preview,
+  onSubmit,
+}: AgentPreviewModalProps) {
   const [editMode, setEditMode] = useState(false)
-  const [editChanges, setEditChanges] = useState('')
+  const [editChanges, setEditChanges] = useState("")
 
   if (!preview) return null
 
   const handleApprove = () => {
-    onSubmit(preview.preview_id, 'approve')
+    onSubmit(preview.preview_id, "approve")
   }
 
   const handleEdit = () => {
@@ -38,31 +41,31 @@ export function AgentPreviewModal({ preview, onSubmit }: AgentPreviewModalProps)
       setEditMode(false)
       return
     }
-    onSubmit(preview.preview_id, 'edit', editChanges)
+    onSubmit(preview.preview_id, "edit", editChanges)
     setEditMode(false)
-    setEditChanges('')
+    setEditChanges("")
   }
 
   const handleRegenerate = () => {
-    onSubmit(preview.preview_id, 'regenerate')
+    onSubmit(preview.preview_id, "regenerate")
   }
 
   const handleCancelEdit = () => {
     setEditMode(false)
-    setEditChanges('')
+    setEditChanges("")
   }
 
   const renderContent = () => {
     // Route based on preview_type
     switch (preview.preview_type) {
-      case 'product_brief':
+      case "product_brief":
         return (
           <ProductBriefPreview
             brief={preview.brief}
             incompleteFlag={preview.incomplete_flag}
           />
         )
-      case 'product_vision':
+      case "product_vision":
         return (
           <ProductVisionPreview
             vision={preview.vision}
@@ -80,7 +83,8 @@ export function AgentPreviewModal({ preview, onSubmit }: AgentPreviewModalProps)
               validationResult={preview.validation_result}
             />
           )
-        } else if (preview.brief) {
+        }
+        if (preview.brief) {
           return (
             <ProductBriefPreview
               brief={preview.brief}
@@ -88,7 +92,11 @@ export function AgentPreviewModal({ preview, onSubmit }: AgentPreviewModalProps)
             />
           )
         }
-        return <div className="text-sm text-muted-foreground">No preview data available</div>
+        return (
+          <div className="text-sm text-muted-foreground">
+            No preview data available
+          </div>
+        )
     }
   }
 
@@ -99,16 +107,14 @@ export function AgentPreviewModal({ preview, onSubmit }: AgentPreviewModalProps)
           <DialogTitle className="flex items-center gap-2">
             <span>{preview.title}</span>
           </DialogTitle>
-          <DialogDescription>
-            {preview.prompt}
-          </DialogDescription>
+          <DialogDescription>{preview.prompt}</DialogDescription>
         </DialogHeader>
 
         {!editMode ? (
           <>
             {renderContent()}
             <DialogFooter className="flex gap-2">
-              {preview.options.includes('regenerate') && (
+              {preview.options.includes("regenerate") && (
                 <Button
                   variant="outline"
                   onClick={handleRegenerate}
@@ -118,7 +124,7 @@ export function AgentPreviewModal({ preview, onSubmit }: AgentPreviewModalProps)
                   Tạo lại
                 </Button>
               )}
-              {preview.options.includes('edit') && (
+              {preview.options.includes("edit") && (
                 <Button
                   variant="outline"
                   onClick={handleEdit}
@@ -128,7 +134,7 @@ export function AgentPreviewModal({ preview, onSubmit }: AgentPreviewModalProps)
                   Chỉnh sửa
                 </Button>
               )}
-              {preview.options.includes('approve') && (
+              {preview.options.includes("approve") && (
                 <Button
                   onClick={handleApprove}
                   className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
@@ -156,16 +162,10 @@ export function AgentPreviewModal({ preview, onSubmit }: AgentPreviewModalProps)
               </div>
             </div>
             <DialogFooter className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={handleCancelEdit}
-              >
+              <Button variant="outline" onClick={handleCancelEdit}>
                 Hủy
               </Button>
-              <Button
-                onClick={handleSubmitEdit}
-                disabled={!editChanges.trim()}
-              >
+              <Button onClick={handleSubmitEdit} disabled={!editChanges.trim()}>
                 Áp dụng thay đổi
               </Button>
             </DialogFooter>

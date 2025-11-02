@@ -1,6 +1,7 @@
 import random
 import re
 import secrets
+import logging
 from datetime import timedelta
 from typing import Annotated, Any
 
@@ -9,6 +10,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+
+logger = logging.getLogger(__name__)
 
 from app import crud
 from app.api.deps import CurrentUser, SessionDep, get_current_active_superuser
@@ -300,27 +303,43 @@ def confirm_code(
     registration_data = redis_client.get(registration_key)
     verification_code = redis_client.get(verification_key)
 
+    # Debug logging
+    logger.info(f"[OTP DEBUG] Email: {confirm_data.email}")
+    logger.info(f"[OTP DEBUG] Received code from client: {confirm_data.code!r} (type: {type(confirm_data.code).__name__})")
+    logger.info(f"[OTP DEBUG] Retrieved verification_code from Redis: {verification_code!r} (type: {type(verification_code).__name__})")
+    logger.info(f"[OTP DEBUG] Registration data exists: {bool(registration_data)}")
+
     # Handle edge cases
     if not registration_data and not verification_code:
+        logger.warning(f"[OTP DEBUG] Both registration_data and verification_code are missing for {confirm_data.email}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Dữ liệu đăng ký đã hết hạn. Vui lòng đăng ký lại từ đầu"
         )
 
     if not registration_data and verification_code:
+        logger.warning(f"[OTP DEBUG] Registration data missing but verification_code exists for {confirm_data.email}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Dữ liệu đăng ký đã hết hạn. Vui lòng đăng ký lại từ đầu"
         )
 
     if registration_data and not verification_code:
+        logger.warning(f"[OTP DEBUG] Verification code missing but registration_data exists for {confirm_data.email}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Mã xác thực đã hết hạn. Vui lòng yêu cầu gửi lại mã"
         )
 
-    # Verify code
-    if verification_code != confirm_data.code:
+    # Verify code - ensure both are strings for comparison
+    verification_code_str = str(verification_code).strip() if verification_code else None
+    confirm_code_str = str(confirm_data.code).strip() if confirm_data.code else None
+
+    logger.info(f"[OTP DEBUG] After normalization - verification_code: {verification_code_str!r}, confirm_code: {confirm_code_str!r}")
+    logger.info(f"[OTP DEBUG] Codes match: {verification_code_str == confirm_code_str}")
+
+    if verification_code_str != confirm_code_str:
+        logger.error(f"[OTP DEBUG] Code mismatch for {confirm_data.email}: expected {verification_code_str!r}, got {confirm_code_str!r}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Mã xác thực không đúng"

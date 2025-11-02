@@ -1,6 +1,6 @@
 export enum AuthorType {
-  USER = 'user',
-  AGENT = 'agent'
+  USER = "user",
+  AGENT = "agent",
 }
 
 export type Message = {

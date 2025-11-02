@@ -1,7 +1,6 @@
-
-import { request as __request } from '@client/core/request'
-import type { ProjectsPage, Project } from '@/types/project'
-import { OpenAPI } from '@/client'
+import { request as __request } from "@client/core/request"
+import { OpenAPI } from "@/client"
+import type { Project, ProjectsPage } from "@/types/project"
 
 export type FetchProjectsParams = {
   search?: string
@@ -36,21 +35,21 @@ export type UpdateProjectBody = {
 export const projectsApi = {
   list: async (params: FetchProjectsParams): Promise<ProjectsPage> => {
     return __request<ProjectsPage>(OpenAPI, {
-      method: 'GET',
-      url: '/api/v1/projects/',
+      method: "GET",
+      url: "/api/v1/projects/",
       query: buildProjectsQuery(params),
     })
   },
   create: async (body: CreateProjectBody): Promise<Project> => {
     return __request<Project>(OpenAPI, {
-      method: 'POST',
-      url: '/api/v1/projects/',
+      method: "POST",
+      url: "/api/v1/projects/",
       body,
     })
   },
   update: async (id: string, body: UpdateProjectBody): Promise<Project> => {
     return __request<Project>(OpenAPI, {
-      method: 'PATCH',
+      method: "PATCH",
       url: `/api/v1/projects/${id}`,
       body,
     })

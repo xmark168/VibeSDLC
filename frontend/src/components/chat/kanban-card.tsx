@@ -1,4 +1,4 @@
-import { X, Eye } from "lucide-react"
+import { Eye, X } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 export type KanbanCardData = {
@@ -45,7 +45,10 @@ export function KanbanCard({
       <div className="flex items-start gap-3">
         {/* Avatar */}
         <Avatar className="w-10 h-10 flex-shrink-0">
-          <AvatarImage src={card.agentAvatar || "/placeholder.svg"} alt={card.agentName} />
+          <AvatarImage
+            src={card.agentAvatar || "/placeholder.svg"}
+            alt={card.agentName}
+          />
           <AvatarFallback className="bg-primary/10 text-primary text-xs">
             {card.agentName?.charAt(0) || "A"}
           </AvatarFallback>
@@ -53,14 +56,18 @@ export function KanbanCard({
 
         <div className="flex-1 min-w-0">
           {/* Task Title */}
-          <h4 className="text-sm font-medium text-foreground mb-2 line-clamp-2">{card.content}</h4>
+          <h4 className="text-sm font-medium text-foreground mb-2 line-clamp-2">
+            {card.content}
+          </h4>
 
           {/* Agent Name Tag and Task ID */}
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs px-2 py-1 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 truncate">
               {card.agentName}
             </span>
-            <span className="text-xs text-muted-foreground">id:{card.taskId}</span>
+            <span className="text-xs text-muted-foreground">
+              id:{card.taskId}
+            </span>
           </div>
         </div>
       </div>

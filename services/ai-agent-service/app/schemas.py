@@ -11,7 +11,7 @@ from app.models import AuthorType
 # user
 class UserPublic(SQLModel):
     id: UUID
-    username: str
+    full_name: str
     email: EmailStr
     role: Role
 

@@ -1,6 +1,11 @@
-
+import {
+  ChevronDown,
+  ChevronRight,
+  File,
+  Folder,
+  FolderOpen,
+} from "lucide-react"
 import { useState } from "react"
-import { ChevronRight, ChevronDown, File, Folder, FolderOpen } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface FileNode {
@@ -27,15 +32,48 @@ const fileTree: FileNode[] = [
     type: "folder",
     path: "components",
     children: [
-      { name: "chat-panel.tsx", type: "file", path: "components/chat-panel.tsx" },
-      { name: "kanban-board.tsx", type: "file", path: "components/kanban-board.tsx" },
-      { name: "kanban-card.tsx", type: "file", path: "components/kanban-card.tsx" },
-      { name: "kanban-column.tsx", type: "file", path: "components/kanban-column.tsx" },
-      { name: "resizable-handle.tsx", type: "file", path: "components/resizable-handle.tsx", modified: "+2/-2" },
+      {
+        name: "chat-panel.tsx",
+        type: "file",
+        path: "components/chat-panel.tsx",
+      },
+      {
+        name: "kanban-board.tsx",
+        type: "file",
+        path: "components/kanban-board.tsx",
+      },
+      {
+        name: "kanban-card.tsx",
+        type: "file",
+        path: "components/kanban-card.tsx",
+      },
+      {
+        name: "kanban-column.tsx",
+        type: "file",
+        path: "components/kanban-column.tsx",
+      },
+      {
+        name: "resizable-handle.tsx",
+        type: "file",
+        path: "components/resizable-handle.tsx",
+        modified: "+2/-2",
+      },
       { name: "sidebar.tsx", type: "file", path: "components/sidebar.tsx" },
-      { name: "task-detail-modal.tsx", type: "file", path: "components/task-detail-modal.tsx" },
-      { name: "theme-toggle.tsx", type: "file", path: "components/theme-toggle.tsx" },
-      { name: "workspace-panel.tsx", type: "file", path: "components/workspace-panel.tsx" },
+      {
+        name: "task-detail-modal.tsx",
+        type: "file",
+        path: "components/task-detail-modal.tsx",
+      },
+      {
+        name: "theme-toggle.tsx",
+        type: "file",
+        path: "components/theme-toggle.tsx",
+      },
+      {
+        name: "workspace-panel.tsx",
+        type: "file",
+        path: "components/workspace-panel.tsx",
+      },
     ],
   },
   {
@@ -58,8 +96,13 @@ interface FileExplorerProps {
   selectedFile: string | null
 }
 
-export function FileExplorer({ onFileSelect, selectedFile }: FileExplorerProps) {
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(["components"]))
+export function FileExplorer({
+  onFileSelect,
+  selectedFile,
+}: FileExplorerProps) {
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
+    new Set(["components"]),
+  )
 
   const toggleFolder = (path: string) => {
     const newExpanded = new Set(expandedFolders)
@@ -95,7 +138,11 @@ export function FileExplorer({ onFileSelect, selectedFile }: FileExplorerProps) 
             )}
             <span className="text-foreground truncate">{node.name}</span>
           </button>
-          {isExpanded && node.children && <div>{node.children.map((child) => renderNode(child, depth + 1))}</div>}
+          {isExpanded && node.children && (
+            <div>
+              {node.children.map((child) => renderNode(child, depth + 1))}
+            </div>
+          )}
         </div>
       )
     }
@@ -112,7 +159,9 @@ export function FileExplorer({ onFileSelect, selectedFile }: FileExplorerProps) 
       >
         <div className="w-3.5 flex-shrink-0" />
         <File className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-        <span className="text-foreground truncate flex-1 text-left">{node.name}</span>
+        <span className="text-foreground truncate flex-1 text-left">
+          {node.name}
+        </span>
         {node.modified && (
           <span className="text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
             {node.modified}

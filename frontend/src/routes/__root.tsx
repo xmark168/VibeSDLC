@@ -1,8 +1,6 @@
 import { createRootRoute, Outlet } from "@tanstack/react-router"
 import React, { Suspense } from "react"
 
-
-
 const loadDevtools = () =>
   Promise.all([
     import("@tanstack/router-devtools"),
@@ -25,7 +23,6 @@ export const Route = createRootRoute({
   component: () => (
     <>
       <div style={{ fontFamily: "IBM Plex Sans" }}>
-
         <Outlet />
       </div>
       <Suspense>

@@ -1,15 +1,18 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { useState } from "react"
 
 import {
-  type Body_login_login_access_token as AccessToken,
+  // type Body_login_login_access_token as AccessToken,
   type ApiError,
-  LoginService,
+  type AuthenticationLoginData,
+  type AuthenticationRegisterData,
+  AuthenticationService,
   type UserPublic,
-  type UserRegister,
   UsersService,
 } from "@/client"
+import { handleError } from "@/utils"
+
 // import { handleError } from "@/utils"
 
 const isLoggedIn = () => {
@@ -19,7 +22,6 @@ const isLoggedIn = () => {
 export const useAuth = () => {
   const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const { data: user } = useQuery<UserPublic | null, Error>({
     queryKey: ["currentUser"],
     queryFn: UsersService.readUserMe,
@@ -27,25 +29,24 @@ export const useAuth = () => {
   })
 
   const signUpMutation = useMutation({
-    mutationFn: (data: UserRegister) =>
-      UsersService.registerUser({ requestBody: data }),
+    mutationFn: (data: AuthenticationRegisterData) =>
+      AuthenticationService.register(data),
 
-    onSuccess: () => {
-      navigate({ to: "/login" })
+    onSuccess: (_, variables) => {
+      navigate({
+        to: "/verify-otp",
+        search: { email: variables.requestBody.email },
+      })
     },
     onError: (err: ApiError) => {
-      // handleError(err)
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["users"] })
+      handleError(err)
     },
   })
 
-  const login = async (data: AccessToken) => {
-    const response = await LoginService.loginAccessToken({
-      formData: data,
-    })
+  const login = async (data: AuthenticationLoginData) => {
+    const response = await AuthenticationService.login(data)
     localStorage.setItem("access_token", response.access_token)
+    localStorage.setItem("refresh_token", response.refresh_token)
   }
 
   const loginMutation = useMutation({
@@ -54,12 +55,13 @@ export const useAuth = () => {
       navigate({ to: "/projects" })
     },
     onError: (err: ApiError) => {
-      // handleError(err)
+      handleError(err)
     },
   })
 
   const logout = () => {
     localStorage.removeItem("access_token")
+    localStorage.removeItem("refresh_token")
     navigate({ to: "/login" })
   }
 

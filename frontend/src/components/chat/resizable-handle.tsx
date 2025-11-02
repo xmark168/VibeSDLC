@@ -1,6 +1,5 @@
-
-import { useEffect, useRef, useState } from "react"
 import { GripVertical } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
 
 interface ResizableHandleProps {
   onResize: (delta: number) => void

@@ -87,17 +87,21 @@ class RedisClient:
         if not self.is_connected():
             if not self.connect():
                 return None
-        
+
         try:
             value = self._client.get(key)
             if value is None:
                 return None
-            
-            # Try to parse as JSON
-            try:
-                return json.loads(value)
-            except (json.JSONDecodeError, TypeError):
-                return value
+
+            # Try to parse as JSON only if it looks like JSON (starts with { or [)
+            if isinstance(value, str) and value.strip() and value.strip()[0] in ('{', '['):
+                try:
+                    return json.loads(value)
+                except (json.JSONDecodeError, TypeError):
+                    return value
+
+            # Return as-is for plain strings
+            return value
         except Exception as e:
             logger.error(f"Redis GET error: {e}")
             return None

@@ -1,13 +1,13 @@
-import { ChatPanelWS } from '@/components/chat/chat-panel-ws'
-import { ResizableHandle } from '@/components/chat/resizable-handle'
-import { Sidebar } from '@/components/chat/sidebar'
-import { WorkspacePanel } from '@/components/chat/workspace-panel'
-import { WelcomeDialog } from '@/components/chat/welcome-dialog'
-import { createFileRoute } from '@tanstack/react-router'
-import { useState, useRef } from 'react'
-import { useMessages } from '@/queries/messages'
+import { createFileRoute } from "@tanstack/react-router"
+import { useRef, useState } from "react"
+import { ChatPanelWS } from "@/components/chat/chat-panel-ws"
+import { ResizableHandle } from "@/components/chat/resizable-handle"
+import { Sidebar } from "@/components/chat/sidebar"
+import { WelcomeDialog } from "@/components/chat/welcome-dialog"
+import { WorkspacePanel } from "@/components/chat/workspace-panel"
+import { useMessages } from "@/queries/messages"
 
-export const Route = createFileRoute('/workspace/$workspaceId')({
+export const Route = createFileRoute("/workspace/$workspaceId")({
   component: WorkspacePage,
 })
 
@@ -19,7 +19,9 @@ function WorkspacePage() {
   const [sidebarHovered, setSidebarHovered] = useState(false)
   const [welcomeDismissed, setWelcomeDismissed] = useState(false)
   const [isWebSocketConnected, setIsWebSocketConnected] = useState(false)
-  const sendMessageRef = useRef<((params: { content: string; author_type: string }) => boolean) | null>(null)
+  const sendMessageRef = useRef<
+    ((params: { content: string; author_type: string }) => boolean) | null
+  >(null)
 
   // Fetch messages to check if project is new
   const { data: messagesData, isLoading } = useMessages({
@@ -31,23 +33,23 @@ function WorkspacePage() {
   // Show welcome dialog only once when project has no messages
   const hasMessages = messagesData && messagesData.count > 0
   const showWelcome = !isLoading && !hasMessages && !welcomeDismissed
-  
+
   // Handle welcome dialog close and send start message
-  const handleWelcomeStart = () => {
+  const _handleWelcomeStart = () => {
     setWelcomeDismissed(true)
-    
+
     // Send "Bắt đầu" message via ChatPanelWS
     if (sendMessageRef.current) {
       sendMessageRef.current({
-        content: 'Bắt đầu',
-        author_type: 'user'
+        content: "Bắt đầu",
+        author_type: "user",
       })
     }
   }
   return (
     <>
-      <WelcomeDialog 
-        open={showWelcome} 
+      <WelcomeDialog
+        open={showWelcome}
         onOpenChange={(open) => {
           if (!open) {
             setWelcomeDismissed(true)
@@ -57,7 +59,7 @@ function WorkspacePage() {
           if (sendMessageRef.current) {
             return sendMessageRef.current({
               content,
-              author_type: 'user'
+              author_type: "user",
             })
           }
           return false
@@ -76,7 +78,10 @@ function WorkspacePage() {
         <div className="flex flex-1 overflow-hidden">
           {!chatCollapsed && (
             <>
-              <div className="flex flex-col overflow-hidden" style={{ width: `${chatWidth}%` }}>
+              <div
+                className="flex flex-col overflow-hidden"
+                style={{ width: `${chatWidth}%` }}
+              >
                 <ChatPanelWS
                   sidebarCollapsed={sidebarCollapsed}
                   onToggleSidebar={() => setSidebarCollapsed(false)}
@@ -100,7 +105,10 @@ function WorkspacePage() {
           )}
 
           <div className="flex-1 overflow-hidden">
-            <WorkspacePanel chatCollapsed={chatCollapsed} onExpandChat={() => setChatCollapsed(false)} />
+            <WorkspacePanel
+              chatCollapsed={chatCollapsed}
+              onExpandChat={() => setChatCollapsed(false)}
+            />
           </div>
         </div>
       </div>

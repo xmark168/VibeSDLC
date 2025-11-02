@@ -1,8 +1,7 @@
-import { createFileRoute, Outlet } from '@tanstack/react-router'
-import { LoginForm } from '../../components/auth/login-form'
-import { motion } from "framer-motion";
-import { CheckCircle, ClipboardList, Code, Workflow } from 'lucide-react';
-export const Route = createFileRoute('/_auth')({
+import { createFileRoute, Outlet } from "@tanstack/react-router"
+import { motion } from "framer-motion"
+import { CheckCircle, ClipboardList, Code, Workflow } from "lucide-react"
+export const Route = createFileRoute("/_auth")({
   component: RouteComponent,
 })
 
@@ -12,19 +11,31 @@ function RouteComponent() {
       {/* Left Side - Animated Agent Circle */}
       <div
         className="relative flex flex-1 items-center justify-center overflow-hidden p-8 lg:p-16"
-        style={{ background: "linear-gradient(90deg,rgba(39, 39, 115, 1) 0%, rgba(55, 55, 161, 1) 35%, rgb(34, 35, 39) 100%)" }}
+        style={{
+          background:
+            "linear-gradient(90deg,rgba(39, 39, 115, 1) 0%, rgba(55, 55, 161, 1) 35%, rgb(34, 35, 39) 100%)",
+        }}
       >
         {/* Animated Background Gradient Blobs */}
         <div className="absolute inset-0">
           <motion.div
             className="absolute left-1/4 top-1/4 h-96 w-96 rounded-full bg-white/20 blur-3xl"
             animate={{ y: [0, -10, 0] }}
-            transition={{ duration: 3, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
+            transition={{
+              duration: 3,
+              repeat: Number.POSITIVE_INFINITY,
+              ease: "easeInOut",
+            }}
           />
           <motion.div
             className="absolute right-1/4 bottom-1/4 h-96 w-96 rounded-full bg-purple-300/30 blur-3xl"
             animate={{ y: [0, -10, 0] }}
-            transition={{ duration: 3, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut", delay: 1 }}
+            transition={{
+              duration: 3,
+              repeat: Number.POSITIVE_INFINITY,
+              ease: "easeInOut",
+              delay: 1,
+            }}
           />
         </div>
 
@@ -33,7 +44,11 @@ function RouteComponent() {
           <motion.div
             className="relative mb-12 h-96 w-96"
             animate={{ y: [0, -10, 0] }}
-            transition={{ duration: 3, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
+            transition={{
+              duration: 3,
+              repeat: Number.POSITIVE_INFINITY,
+              ease: "easeInOut",
+            }}
           >
             <div className="absolute left-1/2 top-1/2 h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/15 backdrop-blur-sm" />
 
@@ -43,8 +58,12 @@ function RouteComponent() {
             >
               <div className="flex h-full w-full items-center justify-center">
                 <div className="text-center">
-                  <div className="text-5xl font-bold text-white drop-shadow-lg">AI</div>
-                  <div className="text-base font-medium text-white/95 drop-shadow-md">Powered</div>
+                  <div className="text-5xl font-bold text-white drop-shadow-lg">
+                    AI
+                  </div>
+                  <div className="text-base font-medium text-white/95 drop-shadow-md">
+                    Powered
+                  </div>
                 </div>
               </div>
             </div>
@@ -53,13 +72,21 @@ function RouteComponent() {
             <motion.div
               className="absolute inset-0"
               animate={{ rotate: 360 }}
-              transition={{ duration: 20, repeat: Number.POSITIVE_INFINITY, ease: "linear" }}
+              transition={{
+                duration: 20,
+                repeat: Number.POSITIVE_INFINITY,
+                ease: "linear",
+              }}
             >
               {/* Product Owner - Top */}
               <motion.div
                 className="absolute left-1/2 top-0 -translate-x-1/2"
                 animate={{ rotate: -360 }}
-                transition={{ duration: 20, repeat: Number.POSITIVE_INFINITY, ease: "linear" }}
+                transition={{
+                  duration: 20,
+                  repeat: Number.POSITIVE_INFINITY,
+                  ease: "linear",
+                }}
               >
                 <div className="flex flex-col items-center gap-3">
                   <motion.div
@@ -85,7 +112,11 @@ function RouteComponent() {
               <motion.div
                 className="absolute right-0 top-1/2 -translate-y-1/2"
                 animate={{ rotate: -360 }}
-                transition={{ duration: 20, repeat: Number.POSITIVE_INFINITY, ease: "linear" }}
+                transition={{
+                  duration: 20,
+                  repeat: Number.POSITIVE_INFINITY,
+                  ease: "linear",
+                }}
               >
                 <div className="flex flex-col items-center gap-3">
                   <motion.div
@@ -111,7 +142,11 @@ function RouteComponent() {
               <motion.div
                 className="absolute bottom-0 left-1/2 -translate-x-1/2"
                 animate={{ rotate: -360 }}
-                transition={{ duration: 20, repeat: Number.POSITIVE_INFINITY, ease: "linear" }}
+                transition={{
+                  duration: 20,
+                  repeat: Number.POSITIVE_INFINITY,
+                  ease: "linear",
+                }}
               >
                 <div className="flex flex-col items-center gap-3">
                   <motion.div
@@ -137,7 +172,11 @@ function RouteComponent() {
               <motion.div
                 className="absolute left-0 top-1/2 -translate-y-1/2"
                 animate={{ rotate: -360 }}
-                transition={{ duration: 20, repeat: Number.POSITIVE_INFINITY, ease: "linear" }}
+                transition={{
+                  duration: 20,
+                  repeat: Number.POSITIVE_INFINITY,
+                  ease: "linear",
+                }}
               >
                 <div className="flex flex-col items-center gap-3">
                   <motion.div
@@ -160,9 +199,28 @@ function RouteComponent() {
               </motion.div>
             </motion.div>
 
-            <svg className="absolute inset-0 h-full w-full opacity-30" style={{ transform: "rotate(0deg)" }}>
-              <circle cx="50%" cy="50%" r="35%" fill="none" stroke="white" strokeWidth="1.5" strokeDasharray="4 4" />
-              <circle cx="50%" cy="50%" r="45%" fill="none" stroke="white" strokeWidth="1.5" strokeDasharray="8 8" />
+            <svg
+              className="absolute inset-0 h-full w-full opacity-30"
+              style={{ transform: "rotate(0deg)" }}
+            >
+              <circle
+                cx="50%"
+                cy="50%"
+                r="35%"
+                fill="none"
+                stroke="white"
+                strokeWidth="1.5"
+                strokeDasharray="4 4"
+              />
+              <circle
+                cx="50%"
+                cy="50%"
+                r="45%"
+                fill="none"
+                stroke="white"
+                strokeWidth="1.5"
+                strokeDasharray="8 8"
+              />
             </svg>
           </motion.div>
 
@@ -176,9 +234,14 @@ function RouteComponent() {
             <h1 className="text-5xl font-bold mb-4 text-balance leading-tight text-white drop-shadow-lg">
               Dream, Chat, Create
               <br />
-              Your <span className="text-purple-200 drop-shadow-lg">24/7 AI Team</span>
+              Your{" "}
+              <span className="text-purple-200 drop-shadow-lg">
+                24/7 AI Team
+              </span>
             </h1>
-            <p className="text-white text-lg font-medium drop-shadow-md">Providing the First AI Software Company</p>
+            <p className="text-white text-lg font-medium drop-shadow-md">
+              Providing the First AI Software Company
+            </p>
           </motion.div>
         </div>
       </div>

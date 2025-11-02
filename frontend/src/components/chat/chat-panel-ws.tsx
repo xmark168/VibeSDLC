@@ -1,60 +1,58 @@
-import type React from "react";
-import { useState, useRef, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import {
+  ArrowUp,
+  AtSign,
+  Check,
+  ChevronDown,
+  ChevronsLeft,
+  ChevronUp,
+  Copy,
+  FileText,
+  ImageIcon,
+  Loader2,
+  Moon,
+  PanelLeftClose,
+  PanelRightClose,
+  Paperclip,
+  Sun,
+  X,
+} from "lucide-react"
+import type React from "react"
+import { useEffect, useRef, useState } from "react"
+import { useTheme } from "@/components/provider/theme-provider"
+import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
-  ChevronDown,
-  ChevronUp,
-  ArrowUp,
-  Copy,
-  Check,
-  Paperclip,
-  X,
-  FileText,
-  ImageIcon,
-  Download,
-  File,
-  Moon,
-  Sun,
-  AtSign,
-  PanelRightClose,
-  PanelLeftClose,
-  ChevronsLeft,
-  Loader2,
-} from "lucide-react";
-import { TechStackDialog } from "./tech-stack-dialog";
-import { useTheme } from "@/components/provider/theme-provider";
-import { useChatWebSocket } from "@/hooks/useChatWebSocket";
-import { useAuth } from "@/hooks/useAuth";
-import { useMessages } from "@/queries/messages";
-import { AuthorType, type Message } from "@/types/message";
-import { AgentQuestionModal } from "./agent-question-modal";
-import { AgentPreviewModal } from "./agent-preview-modal";
+} from "@/components/ui/tooltip"
+import { useAuth } from "@/hooks/useAuth"
+import { useChatWebSocket } from "@/hooks/useChatWebSocket"
+import { useMessages } from "@/queries/messages"
+import { AuthorType, type Message } from "@/types/message"
+import { AgentPreviewModal } from "./agent-preview-modal"
+import { AgentQuestionModal } from "./agent-question-modal"
+import { TechStackDialog } from "./tech-stack-dialog"
 
 interface ChatPanelProps {
-  sidebarCollapsed: boolean;
-  onToggleSidebar: () => void;
-  onCollapse: () => void;
-  onSidebarHover: (hovered: boolean) => void;
-  projectId?: string;
+  sidebarCollapsed: boolean
+  onToggleSidebar: () => void
+  onCollapse: () => void
+  onSidebarHover: (hovered: boolean) => void
+  projectId?: string
   onSendMessageReady?: (
-    sendFn: (params: { content: string; author_type: string }) => boolean
-  ) => void;
-  onConnectionChange?: (connected: boolean) => void;
+    sendFn: (params: { content: string; author_type: string }) => boolean,
+  ) => void
+  onConnectionChange?: (connected: boolean) => void
 }
 
 interface AttachedFile {
-  id: string;
-  name: string;
-  size: number;
-  type: string;
-  url?: string;
+  id: string
+  name: string
+  size: number
+  type: string
+  url?: string
 }
 
 const AGENTS = [
@@ -64,7 +62,7 @@ const AGENTS = [
   { name: "Alex", role: "Engineer", avatar: "👨‍💻" },
   { name: "Developer", role: "Developer", avatar: "🔧" },
   { name: "Tester", role: "Tester", avatar: "🧪" },
-];
+]
 
 export function ChatPanelWS({
   sidebarCollapsed,
@@ -75,32 +73,32 @@ export function ChatPanelWS({
   onSendMessageReady,
   onConnectionChange,
 }: ChatPanelProps) {
-  const [message, setMessage] = useState("");
-  const [showMentions, setShowMentions] = useState(false);
-  const [mentionSearch, setMentionSearch] = useState("");
-  const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
-  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  const [message, setMessage] = useState("")
+  const [showMentions, setShowMentions] = useState(false)
+  const [mentionSearch, setMentionSearch] = useState("")
+  const [selectedMentionIndex, setSelectedMentionIndex] = useState(0)
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([])
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(
-    new Set()
-  );
-  const { theme, setTheme } = useTheme();
-  const { user } = useAuth();
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const mentionDropdownRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const prevMessagesLengthRef = useRef(0);
+    new Set(),
+  )
+  const { theme, setTheme } = useTheme()
+  const { user } = useAuth()
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const mentionDropdownRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const prevMessagesLengthRef = useRef(0)
 
   // Get access token
-  const token = localStorage.getItem("access_token");
+  const token = localStorage.getItem("access_token")
 
   // Fetch existing messages
   const { data: messagesData } = useMessages({
     project_id: projectId || "",
     skip: 0,
     limit: 100,
-  });
+  })
 
   // WebSocket connection
   const {
@@ -114,149 +112,148 @@ export function ChatPanelWS({
     sendMessage: wsSendMessage,
     submitAnswer,
     submitPreviewChoice,
-  } = useChatWebSocket(projectId, token || undefined);
+  } = useChatWebSocket(projectId, token || undefined)
 
   // Combine existing messages with WebSocket messages
   const allMessages = [...(messagesData?.data || []), ...wsMessages].sort(
     (a, b) =>
-      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-  );
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+  )
 
   // Remove duplicates by id
   const uniqueMessages = allMessages.filter(
-    (msg, index, self) => index === self.findIndex((m) => m.id === msg.id)
-  );
+    (msg, index, self) => index === self.findIndex((m) => m.id === msg.id),
+  )
 
   const toggleExpand = (id: string) => {
     setExpandedMessages((prev) => {
-      const newSet = new Set(prev);
+      const newSet = new Set(prev)
       if (newSet.has(id)) {
-        newSet.delete(id);
+        newSet.delete(id)
       } else {
-        newSet.add(id);
+        newSet.add(id)
       }
-      return newSet;
-    });
-  };
+      return newSet
+    })
+  }
 
   const filteredAgents = AGENTS.filter((agent) =>
-    agent.name.toLowerCase().includes(mentionSearch.toLowerCase())
-  );
+    agent.name.toLowerCase().includes(mentionSearch.toLowerCase()),
+  )
 
   const insertMention = (agentName: string) => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
+    const textarea = textareaRef.current
+    if (!textarea) return
 
-    const cursorPos = textarea.selectionStart;
-    const textBeforeCursor = message.slice(0, cursorPos);
-    const textAfterCursor = message.slice(cursorPos);
+    const cursorPos = textarea.selectionStart
+    const textBeforeCursor = message.slice(0, cursorPos)
+    const textAfterCursor = message.slice(cursorPos)
 
-    const atIndex = textBeforeCursor.lastIndexOf("@");
-    const newText =
-      textBeforeCursor.slice(0, atIndex) + `@${agentName} ` + textAfterCursor;
+    const atIndex = textBeforeCursor.lastIndexOf("@")
+    const newText = `${textBeforeCursor.slice(0, atIndex)}@${agentName} ${textAfterCursor}`
 
-    setMessage(newText);
-    setShowMentions(false);
-    setMentionSearch("");
+    setMessage(newText)
+    setShowMentions(false)
+    setMentionSearch("")
 
     setTimeout(() => {
-      const newCursorPos = atIndex + agentName.length + 2;
-      textarea.setSelectionRange(newCursorPos, newCursorPos);
-      textarea.focus();
-    }, 0);
-  };
+      const newCursorPos = atIndex + agentName.length + 2
+      textarea.setSelectionRange(newCursorPos, newCursorPos)
+      textarea.focus()
+    }, 0)
+  }
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const value = e.target.value;
-    setMessage(value);
+    const value = e.target.value
+    setMessage(value)
 
-    const cursorPos = e.target.selectionStart;
-    const textBeforeCursor = value.slice(0, cursorPos);
+    const cursorPos = e.target.selectionStart
+    const textBeforeCursor = value.slice(0, cursorPos)
 
-    const atIndex = textBeforeCursor.lastIndexOf("@");
-    const spaceAfterAt = textBeforeCursor.slice(atIndex).indexOf(" ");
+    const atIndex = textBeforeCursor.lastIndexOf("@")
+    const spaceAfterAt = textBeforeCursor.slice(atIndex).indexOf(" ")
 
     if (atIndex !== -1 && spaceAfterAt === -1 && cursorPos - atIndex <= 20) {
-      const searchTerm = textBeforeCursor.slice(atIndex + 1);
-      setMentionSearch(searchTerm);
-      setShowMentions(true);
-      setSelectedMentionIndex(0);
+      const searchTerm = textBeforeCursor.slice(atIndex + 1)
+      setMentionSearch(searchTerm)
+      setShowMentions(true)
+      setSelectedMentionIndex(0)
     } else {
-      setShowMentions(false);
+      setShowMentions(false)
     }
-  };
+  }
 
   const handleSend = () => {
-    if (!message.trim() && attachedFiles.length === 0) return;
+    if (!message.trim() && attachedFiles.length === 0) return
     if (!isReady) {
-      console.error("WebSocket not ready");
-      return;
+      console.error("WebSocket not ready")
+      return
     }
 
     // Send via WebSocket
     const success = wsSendMessage({
       content: message.trim(),
       author_type: "user",
-    });
+    })
 
     if (success) {
-      setMessage("");
-      setAttachedFiles([]);
+      setMessage("")
+      setAttachedFiles([])
       setTimeout(() => {
-        textareaRef.current?.focus();
-      }, 0);
+        textareaRef.current?.focus()
+      }, 0)
     }
-  };
+  }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (showMentions && filteredAgents.length > 0) {
       if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSelectedMentionIndex((prev) => (prev + 1) % filteredAgents.length);
+        e.preventDefault()
+        setSelectedMentionIndex((prev) => (prev + 1) % filteredAgents.length)
       } else if (e.key === "ArrowUp") {
-        e.preventDefault();
+        e.preventDefault()
         setSelectedMentionIndex(
-          (prev) => (prev - 1 + filteredAgents.length) % filteredAgents.length
-        );
+          (prev) => (prev - 1 + filteredAgents.length) % filteredAgents.length,
+        )
       } else if (e.key === "Tab" || e.key === "Enter") {
         if (showMentions) {
-          e.preventDefault();
-          insertMention(filteredAgents[selectedMentionIndex].name);
+          e.preventDefault()
+          insertMention(filteredAgents[selectedMentionIndex].name)
         }
       } else if (e.key === "Escape") {
-        e.preventDefault();
-        setShowMentions(false);
+        e.preventDefault()
+        setShowMentions(false)
       }
     } else if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
+      e.preventDefault()
+      handleSend()
     }
-  };
+  }
 
   const copyToClipboard = async (content: string, messageId: string) => {
     try {
-      await navigator.clipboard.writeText(content);
-      setCopiedMessageId(messageId);
-      setTimeout(() => setCopiedMessageId(null), 2000);
+      await navigator.clipboard.writeText(content)
+      setCopiedMessageId(messageId)
+      setTimeout(() => setCopiedMessageId(null), 2000)
     } catch (err) {
-      console.error("Failed to copy:", err);
+      console.error("Failed to copy:", err)
     }
-  };
+  }
 
   const formatTimestamp = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const hours = date.getHours();
-    const minutes = date.getMinutes().toString().padStart(2, "0");
-    const ampm = hours >= 12 ? "PM" : "AM";
-    const displayHours = hours % 12 || 12;
-    const month = date.toLocaleString("en-US", { month: "short" });
-    const day = date.getDate().toString().padStart(2, "0");
-    return `${displayHours}:${minutes} ${ampm} on ${month} ${day}`;
-  };
+    const date = new Date(dateStr)
+    const hours = date.getHours()
+    const minutes = date.getMinutes().toString().padStart(2, "0")
+    const ampm = hours >= 12 ? "PM" : "AM"
+    const displayHours = hours % 12 || 12
+    const month = date.toLocaleString("en-US", { month: "short" })
+    const day = date.getDate().toString().padStart(2, "0")
+    return `${displayHours}:${minutes} ${ampm} on ${month} ${day}`
+  }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
+    const files = e.target.files
+    if (!files) return
 
     const newFiles: AttachedFile[] = Array.from(files).map((file) => ({
       id: Math.random().toString(36).substring(2, 9),
@@ -264,105 +261,108 @@ export function ChatPanelWS({
       size: file.size,
       type: file.type,
       url: URL.createObjectURL(file),
-    }));
+    }))
 
-    setAttachedFiles((prev) => [...prev, ...newFiles]);
+    setAttachedFiles((prev) => [...prev, ...newFiles])
     if (fileInputRef.current) {
-      fileInputRef.current.value = "";
+      fileInputRef.current.value = ""
     }
-  };
+  }
 
   const removeFile = (fileId: string) => {
     setAttachedFiles((prev) => {
-      const file = prev.find((f) => f.id === fileId);
+      const file = prev.find((f) => f.id === fileId)
       if (file?.url) {
-        URL.revokeObjectURL(file.url);
+        URL.revokeObjectURL(file.url)
       }
-      return prev.filter((f) => f.id !== fileId);
-    });
-  };
+      return prev.filter((f) => f.id !== fileId)
+    })
+  }
 
   const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return bytes + " B";
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
-  };
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  }
 
   const getFileIcon = (type: string) => {
-    if (type.startsWith("image/")) return <ImageIcon className="w-4 h-4" />;
-    return <FileText className="w-4 h-4" />;
-  };
+    if (type.startsWith("image/")) return <ImageIcon className="w-4 h-4" />
+    return <FileText className="w-4 h-4" />
+  }
 
   const getAgentAvatar = (authorType: AuthorType) => {
-    if (authorType === AuthorType.USER) return "👤";
-    if (authorType === AuthorType.AGENT) return "🔧";
-    if (authorType === AuthorType.SYSTEM) return "⚙️";
-    return "🤖";
-  };
+    if (authorType === AuthorType.USER) return "👤"
+    if (authorType === AuthorType.AGENT) return "🔧"
+    // if (authorType === AuthorType.SYSTEM) return "⚙️";
+    return "🤖"
+  }
 
   const getAgentName = (msg: Message) => {
-    if (msg.author_type === AuthorType.USER) return "You";
-    if (msg.author_type === AuthorType.AGENT) return "Developer";
-    if (msg.author_type === AuthorType.SYSTEM) return "System";
-    return "Bot";
-  };
+    if (msg.author_type === AuthorType.USER) return "You"
+    if (msg.author_type === AuthorType.AGENT) return "Developer"
+    // if (msg.author_type === AuthorType.SYSTEM) return "System";
+    return "Bot"
+  }
 
   const toggleTheme = () => {
-    const newTheme = theme === "light" ? "dark" : "light";
-    setTheme(newTheme as any);
-  };
+    const newTheme = theme === "light" ? "dark" : "light"
+    setTheme(newTheme as any)
+  }
 
   const triggerMention = () => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
+    const textarea = textareaRef.current
+    if (!textarea) return
 
-    const cursorPos = textarea.selectionStart;
-    const newMessage =
-      message.slice(0, cursorPos) + "@" + message.slice(cursorPos);
+    const cursorPos = textarea.selectionStart
+    const newMessage = `${message.slice(0, cursorPos)}@${message.slice(cursorPos)}`
 
-    setMessage(newMessage);
-    setShowMentions(true);
-    setMentionSearch("");
-    setSelectedMentionIndex(0);
+    setMessage(newMessage)
+    setShowMentions(true)
+    setMentionSearch("")
+    setSelectedMentionIndex(0)
 
     setTimeout(() => {
-      textarea.focus();
-      const newCursorPos = cursorPos + 1;
-      textarea.setSelectionRange(newCursorPos, newCursorPos);
-    }, 0);
-  };
+      textarea.focus()
+      const newCursorPos = cursorPos + 1
+      textarea.setSelectionRange(newCursorPos, newCursorPos)
+    }, 0)
+  }
 
   // Agent question handlers
   const handleSubmitAnswer = (question_id: string, answer: string) => {
-    submitAnswer(question_id, answer);
-  };
+    submitAnswer(question_id, answer)
+  }
 
   const handleSkipQuestion = (question_id: string) => {
-    submitAnswer(question_id, "skip");
-  };
+    submitAnswer(question_id, "skip")
+  }
 
   const handleSkipAllQuestions = (question_id: string) => {
-    submitAnswer(question_id, "skip_all");
-  };
+    submitAnswer(question_id, "skip_all")
+  }
 
   // Agent preview handlers
-  const handleSubmitPreview = (preview_id: string, choice: string, edit_changes?: string) => {
-    submitPreviewChoice(preview_id, choice, edit_changes);
-  };
+  const handleSubmitPreview = (
+    preview_id: string,
+    choice: string,
+    edit_changes?: string,
+  ) => {
+    submitPreviewChoice(preview_id, choice, edit_changes)
+  }
 
   // Notify parent about connection status (use isReady for accurate status)
   useEffect(() => {
     if (onConnectionChange) {
-      onConnectionChange(isReady);
+      onConnectionChange(isReady)
     }
-  }, [isReady, onConnectionChange]);
+  }, [isReady, onConnectionChange])
 
   // Notify parent about sendMessage function
   useEffect(() => {
     if (onSendMessageReady) {
-      onSendMessageReady(wsSendMessage);
+      // onSendMessageReady(wsSendMessage);
     }
-  }, [wsSendMessage, onSendMessageReady]);
+  }, [onSendMessageReady])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -372,13 +372,13 @@ export function ChatPanelWS({
         textareaRef.current &&
         !textareaRef.current.contains(event.target as Node)
       ) {
-        setShowMentions(false);
+        setShowMentions(false)
       }
-    };
+    }
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
 
   useEffect(() => {
     if (
@@ -386,10 +386,10 @@ export function ChatPanelWS({
       uniqueMessages.length > prevMessagesLengthRef.current
     ) {
       messagesContainerRef.current.scrollTop =
-        messagesContainerRef.current.scrollHeight;
+        messagesContainerRef.current.scrollHeight
     }
-    prevMessagesLengthRef.current = uniqueMessages.length;
-  }, [uniqueMessages.length]);
+    prevMessagesLengthRef.current = uniqueMessages.length
+  }, [uniqueMessages.length])
 
   return (
     <div className="flex flex-col h-full bg-background">
@@ -484,9 +484,9 @@ export function ChatPanelWS({
         className="flex-1 overflow-y-auto px-6 py-6 space-y-4"
       >
         {uniqueMessages.map((msg) => {
-          const isUserMessage = msg.author_type === AuthorType.USER;
-          const isExpanded = expandedMessages.has(msg.id);
-          const shouldTruncate = msg.content.length > 200;
+          const isUserMessage = msg.author_type === AuthorType.USER
+          const isExpanded = expandedMessages.has(msg.id)
+          const shouldTruncate = msg.content.length > 200
 
           if (isUserMessage) {
             return (
@@ -517,7 +517,7 @@ export function ChatPanelWS({
                   </div>
                 </div>
               </div>
-            );
+            )
           }
 
           return (
@@ -535,7 +535,7 @@ export function ChatPanelWS({
                   <div className="rounded-lg px-3 py-2 bg-muted w-fit">
                     <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
                       {shouldTruncate && !isExpanded
-                        ? msg.content.slice(0, 200) + "..."
+                        ? `${msg.content.slice(0, 200)}...`
                         : msg.content}
                     </div>
                   </div>
@@ -571,7 +571,7 @@ export function ChatPanelWS({
                 </div>
               </div>
             </div>
-          );
+          )
         })}
 
         {typingAgents.length > 0 && (
@@ -598,7 +598,7 @@ export function ChatPanelWS({
             </div>
             <div className="flex-1 space-y-2">
               <div className="text-xs font-medium text-blue-600 dark:text-blue-400">
-                {agentProgress.currentAgent || 'Agent đang xử lý'}
+                {agentProgress.currentAgent || "Agent đang xử lý"}
               </div>
               <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300">
                 <Loader2 className="w-3 h-3 animate-spin" />
@@ -781,5 +781,5 @@ export function ChatPanelWS({
         onSubmit={handleSubmitPreview}
       />
     </div>
-  );
+  )
 }

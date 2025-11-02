@@ -7,7 +7,7 @@ interface ProductVisionPreviewProps {
 export function ProductVisionPreview({
   vision,
   qualityScore,
-  validationResult
+  validationResult,
 }: ProductVisionPreviewProps) {
   if (!vision) return null
 
@@ -24,7 +24,7 @@ export function ProductVisionPreview({
     scope_non_goals,
     dependencies,
     risks,
-    assumptions
+    assumptions,
   } = vision
 
   return (
@@ -33,12 +33,14 @@ export function ProductVisionPreview({
       {qualityScore !== undefined && (
         <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
           <div className="text-sm">
-            <strong>Quality Score:</strong>{' '}
+            <strong>Quality Score:</strong>{" "}
             <span className="text-blue-700 dark:text-blue-300">
               {(qualityScore * 100).toFixed(0)}%
             </span>
             {validationResult && (
-              <span className="ml-2 text-muted-foreground">- {validationResult}</span>
+              <span className="ml-2 text-muted-foreground">
+                - {validationResult}
+              </span>
             )}
           </div>
         </div>
@@ -47,7 +49,9 @@ export function ProductVisionPreview({
       {/* Vision Statement */}
       {draft_vision_statement && (
         <div>
-          <h4 className="text-sm font-semibold text-foreground mb-1">🌟 Vision Statement:</h4>
+          <h4 className="text-sm font-semibold text-foreground mb-1">
+            🌟 Vision Statement:
+          </h4>
           <p className="text-sm text-muted-foreground whitespace-pre-wrap italic border-l-4 border-blue-500 pl-3">
             {draft_vision_statement}
           </p>
@@ -57,7 +61,9 @@ export function ProductVisionPreview({
       {/* Experience Principles */}
       {experience_principles && experience_principles.length > 0 && (
         <div>
-          <h4 className="text-sm font-semibold text-foreground mb-1">💡 Experience Principles:</h4>
+          <h4 className="text-sm font-semibold text-foreground mb-1">
+            💡 Experience Principles:
+          </h4>
           <ul className="list-disc list-inside space-y-1">
             {experience_principles.map((principle: string, idx: number) => (
               <li key={idx} className="text-sm text-muted-foreground">
@@ -71,8 +77,12 @@ export function ProductVisionPreview({
       {/* Problem Summary */}
       {problem_summary && (
         <div>
-          <h4 className="text-sm font-semibold text-foreground mb-1">🎯 Problem Summary:</h4>
-          <p className="text-sm text-muted-foreground whitespace-pre-wrap">{problem_summary}</p>
+          <h4 className="text-sm font-semibold text-foreground mb-1">
+            🎯 Problem Summary:
+          </h4>
+          <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+            {problem_summary}
+          </p>
         </div>
       )}
 
@@ -84,9 +94,16 @@ export function ProductVisionPreview({
           </h4>
           <div className="space-y-2">
             {audience_segments.slice(0, 3).map((segment: any, idx: number) => (
-              <div key={idx} className="pl-4 border-l-2 border-gray-300 dark:border-gray-700">
-                <p className="text-sm font-medium text-foreground">{segment.name}</p>
-                <p className="text-xs text-muted-foreground">{segment.description}</p>
+              <div
+                key={idx}
+                className="pl-4 border-l-2 border-gray-300 dark:border-gray-700"
+              >
+                <p className="text-sm font-medium text-foreground">
+                  {segment.name}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {segment.description}
+                </p>
               </div>
             ))}
             {audience_segments.length > 3 && (
@@ -105,15 +122,24 @@ export function ProductVisionPreview({
             📋 Functional Requirements ({functional_requirements.length}):
           </h4>
           <div className="space-y-2">
-            {functional_requirements.slice(0, 5).map((req: any, idx: number) => (
-              <div key={idx} className="pl-4 border-l-2 border-green-300 dark:border-green-700">
-                <p className="text-sm font-medium text-foreground">
-                  {req.name}{' '}
-                  <span className="text-xs text-muted-foreground">({req.priority})</span>
-                </p>
-                <p className="text-xs text-muted-foreground">{req.description}</p>
-              </div>
-            ))}
+            {functional_requirements
+              .slice(0, 5)
+              .map((req: any, idx: number) => (
+                <div
+                  key={idx}
+                  className="pl-4 border-l-2 border-green-300 dark:border-green-700"
+                >
+                  <p className="text-sm font-medium text-foreground">
+                    {req.name}{" "}
+                    <span className="text-xs text-muted-foreground">
+                      ({req.priority})
+                    </span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {req.description}
+                  </p>
+                </div>
+              ))}
             {functional_requirements.length > 5 && (
               <p className="text-xs text-muted-foreground">
                 ... và {functional_requirements.length - 5} requirements khác

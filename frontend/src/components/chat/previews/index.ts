@@ -8,8 +8,8 @@
  * 3. Add routing logic in agent-preview-modal.tsx
  */
 
-export { ProductBriefPreview } from './ProductBriefPreview'
-export { ProductVisionPreview } from './ProductVisionPreview'
+export { ProductBriefPreview } from "./ProductBriefPreview"
+export { ProductVisionPreview } from "./ProductVisionPreview"
 
 // Future agent previews:
 // export { BacklogPreview } from './BacklogPreview'

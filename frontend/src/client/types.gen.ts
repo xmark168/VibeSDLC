@@ -350,7 +350,7 @@ export type UserCreate = {
 
 export type UserPublic = {
     id: string;
-    username: string;
+    full_name: string;
     email: string;
     role: Role;
 };
