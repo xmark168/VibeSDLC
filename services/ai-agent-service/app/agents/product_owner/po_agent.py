@@ -342,9 +342,14 @@ class POAgent:
                 # Create separate session_id for this tool call to create a new trace
                 tool_session_id = f"{self.session_id}_backlog_tool"
 
-                # Create a new BacklogAgent instance with separate session_id
+                # Create a new BacklogAgent instance with separate session_id + WebSocket deps
                 backlog_agent = BacklogAgent(
-                    session_id=tool_session_id, user_id=self.user_id
+                    session_id=tool_session_id,
+                    user_id=self.user_id,
+                    websocket_broadcast_fn=getattr(self, 'websocket_broadcast_fn', None),
+                    project_id=getattr(self, 'project_id', None),
+                    response_manager=getattr(self, 'response_manager', None),
+                    event_loop=getattr(self, 'event_loop', None)
                 )
 
                 # Call BacklogAgent - it will create its own trace via its handler
@@ -427,9 +432,14 @@ class POAgent:
                 # Create separate session_id for this tool call to create a new trace
                 tool_session_id = f"{self.session_id}_priority_tool"
 
-                # Create a new PriorityAgent instance with separate session_id
+                # Create a new PriorityAgent instance with separate session_id + WebSocket deps
                 priority_agent = PriorityAgent(
-                    session_id=tool_session_id, user_id=self.user_id
+                    session_id=tool_session_id,
+                    user_id=self.user_id,
+                    websocket_broadcast_fn=getattr(self, 'websocket_broadcast_fn', None),
+                    project_id=getattr(self, 'project_id', None),
+                    response_manager=getattr(self, 'response_manager', None),
+                    event_loop=getattr(self, 'event_loop', None)
                 )
 
                 # Call PriorityAgent - it will create its own trace via its handler

@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import uuid
 from typing import Any, Literal, Optional
 from datetime import datetime
 
@@ -113,15 +114,38 @@ class BacklogState(BaseModel):
 class BacklogAgent:
     """Backlog Agent - Tạo Product Backlog từ Product Vision (fully automated)."""
 
-    def __init__(self, session_id: str | None = None, user_id: str | None = None):
+    def __init__(
+        self,
+        session_id: str | None = None,
+        user_id: str | None = None,
+        websocket_broadcast_fn=None,
+        project_id: str | None = None,
+        response_manager=None,
+        event_loop=None
+    ):
         """Khởi tạo backlog agent.
 
         Args:
             session_id: Session ID tùy chọn
             user_id: User ID tùy chọn
+            websocket_broadcast_fn: Async function to broadcast WebSocket messages (optional)
+            project_id: Project ID for WebSocket broadcasting (optional)
+            response_manager: ResponseManager for human-in-the-loop via WebSocket (optional)
+            event_loop: Event loop for async operations (required for WebSocket mode)
         """
         self.session_id = session_id
         self.user_id = user_id
+
+        # WebSocket dependencies (optional)
+        self.websocket_broadcast_fn = websocket_broadcast_fn
+        self.project_id = project_id
+        self.response_manager = response_manager
+        self.event_loop = event_loop
+        self.use_websocket = (
+            websocket_broadcast_fn is not None
+            and project_id is not None
+            and response_manager is not None
+        )
 
         # Initialize Langfuse callback handler (without session_id/user_id in constructor)
         # Session/user metadata will be passed via config metadata during invoke/stream
@@ -152,7 +176,9 @@ class BacklogAgent:
         graph_builder.add_node("evaluate", self.evaluate)
         graph_builder.add_node("refine", self.refine)
         graph_builder.add_node("finalize", self.finalize)
-        graph_builder.add_node("preview", self.preview)
+
+        # Always use async version for preview (like gatherer agent)
+        graph_builder.add_node("preview", self.preview_async)
 
         # Add edges
         graph_builder.add_edge(START, "initialize")
@@ -824,6 +850,73 @@ class BacklogAgent:
     # Node: Preview
     # ========================================================================
 
+    async def preview_async(self, state: BacklogState) -> BacklogState:
+        """Async version of preview - works for both WebSocket and terminal modes."""
+        print("\n[preview_async] ===== ENTERED =====", flush=True)
+        print(f"[preview_async] use_websocket: {self.use_websocket}", flush=True)
+
+        if not self.use_websocket:
+            # Terminal mode - run sync version in executor
+            print(f"[preview_async] Routing to terminal mode (via executor)", flush=True)
+            import asyncio
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, self.preview, state)
+
+        # WebSocket mode
+        print(f"[preview_async] WebSocket mode, queuing preview...", flush=True)
+
+        # Generate unique preview ID
+        preview_id = str(uuid.uuid4())
+
+        # Queue preview message for broadcast
+        preview_message = {
+            "type": "agent_preview",
+            "preview_id": preview_id,
+            "agent": "Backlog Agent",
+            "preview_type": "product_backlog",
+            "title": "📋 PREVIEW - Product Backlog",
+            "backlog": state.product_backlog,
+            "options": ["approve", "edit"],
+            "prompt": "Bạn muốn phê duyệt backlog này không?"
+        }
+
+        await self.response_manager.queue_broadcast(preview_message, self.project_id)
+        print(f"[preview_async] ✓ Preview queued!", flush=True)
+
+        # Wait for user choice
+        print(f"[preview_async] Waiting for user choice...", flush=True)
+        user_response = await self.response_manager.await_response(
+            self.project_id,
+            preview_id,
+            timeout=600.0
+        )
+
+        if user_response is None:
+            print(f"[preview_async] ⏰ Timeout, defaulting to 'approve'", flush=True)
+            state.user_approval = "approve"
+            state.user_feedback = None
+            return state
+
+        # Parse user response
+        if isinstance(user_response, dict):
+            choice = user_response.get("choice", "approve")
+            edit_changes = user_response.get("edit_changes", "")
+        else:
+            choice = str(user_response).strip().lower()
+            edit_changes = ""
+
+        print(f"[preview_async] User choice: {choice}", flush=True)
+
+        state.user_approval = choice
+
+        if choice == "edit" and edit_changes:
+            state.user_feedback = edit_changes
+            print(f"[preview_async] Edit changes: {edit_changes[:100]}...", flush=True)
+        else:
+            state.user_feedback = None
+
+        return state
+
     def preview(self, state: BacklogState) -> BacklogState:
         """Preview - Hiển thị bản nháp handoff để người dùng chọn: Approve / Edit.
 
@@ -986,6 +1079,28 @@ class BacklogAgent:
         Returns:
             dict: Final state với product_backlog
         """
+        print(f"\n[BacklogAgent.run] Called!", flush=True)
+        print(f"[BacklogAgent.run] use_websocket: {self.use_websocket}", flush=True)
+
+        # For WebSocket mode, run async version in dedicated WebSocket helper loop
+        if self.use_websocket:
+            print(f"[BacklogAgent.run] WebSocket mode - using WebSocket helper loop", flush=True)
+
+            # Import websocket helper
+            from app.core.websocket_helper import websocket_helper
+
+            # Run async version in dedicated WebSocket loop
+            print(f"[BacklogAgent.run] Scheduling in WebSocket helper loop...", flush=True)
+            result = websocket_helper.run_coroutine(
+                self.run_async(product_vision, thread_id),
+                timeout=1200  # 20 minutes (increased for large backlogs with refine cycles)
+            )
+            print(f"[BacklogAgent.run] Execution completed!", flush=True)
+            return result
+
+        # Terminal mode: sync execution
+        print(f"[BacklogAgent.run] Terminal mode - sync execution", flush=True)
+
         if thread_id is None:
             thread_id = self.session_id or "default_backlog_thread"
 
@@ -1015,4 +1130,49 @@ class BacklogAgent:
             final_state = output
 
         # Return final state (last node output)
+        return final_state or {}
+
+    async def run_async(self, product_vision: dict, thread_id: str | None = None) -> dict[str, Any]:
+        """Async version for WebSocket mode.
+
+        Args:
+            product_vision: Product Vision từ Vision Agent
+            thread_id: Thread ID cho checkpointer
+
+        Returns:
+            dict: Final state với product_backlog
+        """
+        print(f"\n[BacklogAgent.run_async] ENTERED", flush=True)
+
+        if thread_id is None:
+            thread_id = self.session_id or "default_backlog_thread"
+
+        initial_state = BacklogState(product_vision=product_vision)
+
+        # Build metadata for Langfuse tracing
+        metadata = {}
+        if self.session_id:
+            metadata["langfuse_session_id"] = self.session_id
+        if self.user_id:
+            metadata["langfuse_user_id"] = self.user_id
+        metadata["langfuse_tags"] = ["backlog_agent"]
+
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "callbacks": [self.langfuse_handler],
+            "metadata": metadata,
+            "recursion_limit": 50,
+        }
+
+        print(f"[BacklogAgent.run_async] Starting astream...", flush=True)
+
+        final_state = None
+        async for output in self.graph.astream(
+            initial_state.model_dump(),
+            config=config,
+        ):
+            final_state = output
+            print(f"[BacklogAgent.run_async] Got output from node", flush=True)
+
+        print(f"[BacklogAgent.run_async] COMPLETED", flush=True)
         return final_state or {}

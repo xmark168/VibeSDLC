@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { CheckCircle, Edit, RefreshCw } from 'lucide-react'
 import type { AgentPreview } from '@/hooks/useChatWebSocket'
-import { ProductBriefPreview, ProductVisionPreview } from './previews'
+import { ProductBriefPreview, ProductVisionPreview, BacklogPreview, SprintPlanPreview } from './previews'
 
 interface AgentPreviewModalProps {
   preview: AgentPreview | null
@@ -70,6 +70,18 @@ export function AgentPreviewModal({ preview, onSubmit }: AgentPreviewModalProps)
             validationResult={preview.validation_result}
           />
         )
+      case 'product_backlog':
+        return (
+          <BacklogPreview
+            backlog={preview.backlog}
+          />
+        )
+      case 'sprint_plan':
+        return (
+          <SprintPlanPreview
+            sprintPlan={preview.sprint_plan}
+          />
+        )
       default:
         // Fallback: try to render whatever is available
         if (preview.vision) {
@@ -85,6 +97,18 @@ export function AgentPreviewModal({ preview, onSubmit }: AgentPreviewModalProps)
             <ProductBriefPreview
               brief={preview.brief}
               incompleteFlag={preview.incomplete_flag}
+            />
+          )
+        } else if (preview.backlog) {
+          return (
+            <BacklogPreview
+              backlog={preview.backlog}
+            />
+          )
+        } else if (preview.sprint_plan) {
+          return (
+            <SprintPlanPreview
+              sprintPlan={preview.sprint_plan}
             />
           )
         }

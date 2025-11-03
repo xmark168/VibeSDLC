@@ -206,23 +206,26 @@ async def websocket_endpoint(
         # Listen for messages
         while True:
             try:
-                print(f"\n[WebSocket] Waiting for message...", flush=True)
                 data = await websocket.receive_text()
-                print(f"\n[WebSocket] ===== Raw message received =====", flush=True)
-                print(f"[WebSocket] Raw data: {data[:200] if len(data) > 200 else data}", flush=True)
             except Exception as e:
                 print(f"[WebSocket] Error receiving message: {e}", flush=True)
                 raise
 
             try:
                 message_data = json.loads(data)
-                print(f"[WebSocket] Parsed message_data: {message_data}", flush=True)
             except json.JSONDecodeError as e:
                 print(f"[WebSocket] JSON decode error: {e}", flush=True)
                 continue
 
             msg_type = message_data.get("type")
-            print(f"[WebSocket] Message type: {msg_type}", flush=True)
+
+            # Skip logging for ping/pong messages (keep-alive)
+            if msg_type != "ping":
+                print(f"\n[WebSocket] Waiting for message...", flush=True)
+                print(f"\n[WebSocket] ===== Raw message received =====", flush=True)
+                print(f"[WebSocket] Raw data: {data[:200] if len(data) > 200 else data}", flush=True)
+                print(f"[WebSocket] Parsed message_data: {message_data}", flush=True)
+                print(f"[WebSocket] Message type: {msg_type}", flush=True)
 
             if msg_type == "message":
                 # Save user message to database
@@ -348,6 +351,7 @@ async def trigger_agent_execution(session: Session, project_id: str, user_id: st
     from app.agents.product_owner.po_agent import POAgent
     from app.agents.product_owner.vision_agent import VisionAgent
     from app.agents.product_owner.gatherer_agent import GathererAgent
+    from app.agents.product_owner.backlog_agent import BacklogAgent
     import traceback
 
     # ===== STEP 0: Check for test commands =====
@@ -434,6 +438,49 @@ async def trigger_agent_execution(session: Session, project_id: str, user_id: st
                     "content": "✅ Gatherer Agent test completed!",
                     "agent_name": "Gatherer Agent"
                 }, project_id)
+
+                return
+
+            elif test_agent == "backlog":
+                # Parse mock product_vision from message
+                product_vision = json.loads(test_data_str)
+
+                print(f"[TEST MODE] Running Backlog Agent with mock data", flush=True)
+
+                # Create Backlog Agent with WebSocket support
+                session_id = f"backlog_test_{project_id}_{user_id}"
+                backlog_agent = BacklogAgent(
+                    session_id=session_id,
+                    user_id=user_id,
+                    websocket_broadcast_fn=manager.broadcast_to_project,
+                    project_id=project_id,
+                    response_manager=response_manager,
+                    event_loop=asyncio.get_event_loop()
+                )
+
+                # Run Backlog Agent
+                result = backlog_agent.run(
+                    product_vision=product_vision,
+                    thread_id=f"{session_id}_thread"
+                )
+
+                # Send completion message
+                await manager.broadcast_to_project({
+                    "type": "agent_message",
+                    "content": "✅ Backlog Agent test completed! Check the preview above.",
+                    "agent_name": "Backlog Agent"
+                }, project_id)
+
+                # Save to database
+                agent_message = MessageModel(
+                    project_id=UUID(project_id),
+                    author_type=AuthorType.AGENT,
+                    user_id=None,
+                    agent_id=None,
+                    content="[Test Mode] Backlog Agent executed with mock data. Product Backlog generated."
+                )
+                session.add(agent_message)
+                session.commit()
 
                 return
 

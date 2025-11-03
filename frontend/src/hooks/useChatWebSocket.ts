@@ -61,6 +61,8 @@ export type AgentPreview = {
   title: string
   brief?: any  // For Gatherer Agent (product_brief)
   vision?: any  // For Vision Agent (product_vision)
+  backlog?: any  // For Backlog Agent (product_backlog)
+  sprint_plan?: any  // For Priority Agent (sprint_plan)
   quality_score?: number  // For Vision Agent
   validation_result?: string  // For Vision Agent
   incomplete_flag: boolean
@@ -237,6 +239,8 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
                 title: data.title,
                 brief: data.brief,  // For Gatherer Agent
                 vision: data.vision,  // For Vision Agent
+                backlog: data.backlog,  // For Backlog Agent
+                sprint_plan: data.sprint_plan,  // For Priority Agent
                 quality_score: data.quality_score,  // For Vision Agent
                 validation_result: data.validation_result,  // For Vision Agent
                 incomplete_flag: data.incomplete_flag || false,
