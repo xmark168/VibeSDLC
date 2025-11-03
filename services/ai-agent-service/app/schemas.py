@@ -368,7 +368,7 @@ class GitHubInstallationBase(SQLModel):
 
 
 class GitHubInstallationCreate(GitHubInstallationBase):
-    user_id: UUID
+    user_id: UUID | None = None
 
 
 class GitHubInstallationUpdate(SQLModel):

@@ -65,7 +65,7 @@ class GitHubInstallation(BaseModel, table=True):
     account_login: str = Field(nullable=False)
     account_type: GitHubAccountType = Field(nullable=False)
     repositories: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
-    user_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")
+    user_id: UUID | None = Field(default=None, foreign_key="users.id", nullable=True, ondelete="CASCADE")
 
     user: User = Relationship(back_populates="github_installations")
     projects: list["Project"] = Relationship(back_populates="github_installation")

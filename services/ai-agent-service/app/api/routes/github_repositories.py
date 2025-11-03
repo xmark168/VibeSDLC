@@ -21,7 +21,7 @@ from app.schemas import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/github", tags=["github"])
+router = APIRouter(prefix="/github", tags=["github"])
 
 
 @router.get("/repositories", response_model=GitHubRepositoriesPublic)

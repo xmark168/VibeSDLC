@@ -3,7 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { AgentExecutionExecuteAgentData, AgentExecutionExecuteAgentResponse, AgentExecutionExecuteAgentSyncData, AgentExecutionExecuteAgentSyncResponse, AgentsListAgentsData, AgentsListAgentsResponse, AgentsCreateAgentData, AgentsCreateAgentResponse, AgentsGetAgentData, AgentsGetAgentResponse, AgentsUpdateAgentData, AgentsUpdateAgentResponse, AgentsDeleteAgentData, AgentsDeleteAgentResponse, AuthenticationLoginData, AuthenticationLoginResponse, AuthenticationRegisterData, AuthenticationRegisterResponse, AuthenticationConfirmCodeData, AuthenticationConfirmCodeResponse, AuthenticationResendCodeData, AuthenticationResendCodeResponse, AuthenticationRefreshTokenData, AuthenticationRefreshTokenResponse, AuthenticationForgotPasswordData, AuthenticationForgotPasswordResponse, AuthenticationResetPasswordData, AuthenticationResetPasswordResponse, BacklogItemsGetBacklogItemsData, BacklogItemsGetBacklogItemsResponse, BacklogItemsCreateBacklogItemData, BacklogItemsCreateBacklogItemResponse, BacklogItemsGetBacklogItemData, BacklogItemsGetBacklogItemResponse, BacklogItemsUpdateBacklogItemData, BacklogItemsUpdateBacklogItemResponse, BacklogItemsDeleteBacklogItemData, BacklogItemsDeleteBacklogItemResponse, BacklogItemsMoveBacklogItemData, BacklogItemsMoveBacklogItemResponse, BacklogItemsGetKanbanBoardData, BacklogItemsGetKanbanBoardResponse, ChatGetWebsocketInfoResponse, ChatGetConnectionStatsResponse, MessagesListMessagesData, MessagesListMessagesResponse, MessagesCreateMessageData, MessagesCreateMessageResponse, MessagesUpdateMessageData, MessagesUpdateMessageResponse, MessagesDeleteMessageData, MessagesDeleteMessageResponse, MessagesDeleteAllMessagesByProjectData, MessagesDeleteAllMessagesByProjectResponse, PrivateCreateUserData, PrivateCreateUserResponse, ProjectsListProjectsData, ProjectsListProjectsResponse, ProjectsCreateProjectData, ProjectsCreateProjectResponse, ProjectsGetProjectData, ProjectsGetProjectResponse, ProjectsUpdateProjectData, ProjectsUpdateProjectResponse, ProjectsDeleteProjectData, ProjectsDeleteProjectResponse, SprintsListSprintsData, SprintsListSprintsResponse, SprintsCreateSprintData, SprintsCreateSprintResponse, SprintsGetSprintData, SprintsGetSprintResponse, SprintsUpdateSprintData, SprintsUpdateSprintResponse, SprintsDeleteSprintData, SprintsDeleteSprintResponse, SprintsGetActiveSprintData, SprintsGetActiveSprintResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { AgentExecutionExecuteAgentData, AgentExecutionExecuteAgentResponse, AgentExecutionExecuteAgentSyncData, AgentExecutionExecuteAgentSyncResponse, AgentsListAgentsData, AgentsListAgentsResponse, AgentsCreateAgentData, AgentsCreateAgentResponse, AgentsGetAgentData, AgentsGetAgentResponse, AgentsUpdateAgentData, AgentsUpdateAgentResponse, AgentsDeleteAgentData, AgentsDeleteAgentResponse, AuthenticationLoginData, AuthenticationLoginResponse, AuthenticationRegisterData, AuthenticationRegisterResponse, AuthenticationConfirmCodeData, AuthenticationConfirmCodeResponse, AuthenticationResendCodeData, AuthenticationResendCodeResponse, AuthenticationRefreshTokenData, AuthenticationRefreshTokenResponse, AuthenticationForgotPasswordData, AuthenticationForgotPasswordResponse, AuthenticationResetPasswordData, AuthenticationResetPasswordResponse, BacklogItemsGetBacklogItemsData, BacklogItemsGetBacklogItemsResponse, BacklogItemsCreateBacklogItemData, BacklogItemsCreateBacklogItemResponse, BacklogItemsGetBacklogItemData, BacklogItemsGetBacklogItemResponse, BacklogItemsUpdateBacklogItemData, BacklogItemsUpdateBacklogItemResponse, BacklogItemsDeleteBacklogItemData, BacklogItemsDeleteBacklogItemResponse, BacklogItemsMoveBacklogItemData, BacklogItemsMoveBacklogItemResponse, BacklogItemsGetKanbanBoardData, BacklogItemsGetKanbanBoardResponse, ChatGetWebsocketInfoResponse, ChatGetConnectionStatsResponse, GithubGithubWebhookResponse, GithubGithubCallbackData, GithubGithubCallbackResponse, GithubLinkInstallationToUserData, GithubLinkInstallationToUserResponse, GithubListGithubRepositoriesData, GithubListGithubRepositoriesResponse, GithubLinkGithubRepositoryData, GithubLinkGithubRepositoryResponse, GithubUnlinkGithubRepositoryData, GithubUnlinkGithubRepositoryResponse, GithubListGithubInstallationsData, GithubListGithubInstallationsResponse, MessagesListMessagesData, MessagesListMessagesResponse, MessagesCreateMessageData, MessagesCreateMessageResponse, MessagesUpdateMessageData, MessagesUpdateMessageResponse, MessagesDeleteMessageData, MessagesDeleteMessageResponse, MessagesDeleteAllMessagesByProjectData, MessagesDeleteAllMessagesByProjectResponse, PrivateCreateUserData, PrivateCreateUserResponse, ProjectsListProjectsData, ProjectsListProjectsResponse, ProjectsCreateProjectData, ProjectsCreateProjectResponse, ProjectsGetProjectData, ProjectsGetProjectResponse, ProjectsUpdateProjectData, ProjectsUpdateProjectResponse, ProjectsDeleteProjectData, ProjectsDeleteProjectResponse, SprintsListSprintsData, SprintsListSprintsResponse, SprintsCreateSprintData, SprintsCreateSprintResponse, SprintsGetSprintData, SprintsGetSprintResponse, SprintsUpdateSprintData, SprintsUpdateSprintResponse, SprintsDeleteSprintData, SprintsDeleteSprintResponse, SprintsGetActiveSprintData, SprintsGetActiveSprintResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
 
 export class AgentExecutionService {
     /**
@@ -515,6 +515,206 @@ export class ChatService {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/v1/chat/stats'
+        });
+    }
+}
+
+export class GithubService {
+    /**
+     * Github Webhook
+     * Handle GitHub App webhook events.
+     *
+     * Supported events:
+     * - installation.created: User installs the GitHub App
+     * - installation.deleted: User uninstalls the GitHub App
+     * - installation_repositories.added: User adds repositories to the app
+     * - installation_repositories.removed: User removes repositories from the app
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static githubWebhook(): CancelablePromise<GithubGithubWebhookResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/github/webhook'
+        });
+    }
+    
+    /**
+     * Github Callback
+     * Handle GitHub App OAuth callback.
+     *
+     * This endpoint is called by GitHub after user installs the GitHub App.
+     * GitHub redirects here WITHOUT authentication, so we create a pending installation.
+     *
+     * Query Parameters:
+     * - installation_id: GitHub's installation ID (required)
+     * - setup_action: "install" or "update" (optional)
+     *
+     * Flow:
+     * 1. User clicks "Install GitHub App" button
+     * 2. Redirects to GitHub App installation page
+     * 3. User installs app on GitHub
+     * 4. GitHub redirects to this endpoint with installation_id
+     * 5. Backend creates pending installation (user_id = NULL)
+     * 6. Webhook updates installation details
+     * 7. Frontend links installation with current user
+     *
+     * Note: This endpoint does NOT require authentication because GitHub
+     * redirects here without JWT token. Installation is created as "pending"
+     * and will be linked to user later.
+     * @param data The data for the request.
+     * @param data.installationId
+     * @param data.setupAction
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static githubCallback(data: GithubGithubCallbackData): CancelablePromise<GithubGithubCallbackResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/github/callback',
+            query: {
+                installation_id: data.installationId,
+                setup_action: data.setupAction
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Link Installation To User
+     * Link a pending GitHub installation with the current user.
+     *
+     * This endpoint is called by frontend after user confirms linking.
+     *
+     * Request Body:
+     * - installation_id: GitHub installation ID to link
+     *
+     * Response:
+     * - status: "linked" or "error"
+     * - installation_id: GitHub installation ID
+     * - db_id: Database installation ID
+     * - message: Status message
+     *
+     * Flow:
+     * 1. User installs GitHub App (callback creates pending installation)
+     * 2. Frontend shows "Link with your account?" prompt
+     * 3. User clicks "Link"
+     * 4. Frontend calls this endpoint with installation_id
+     * 5. Backend links installation with current user
+     * 6. Frontend shows success message
+     * @param data The data for the request.
+     * @param data.installationId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static linkInstallationToUser(data: GithubLinkInstallationToUserData): CancelablePromise<GithubLinkInstallationToUserResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/github/link-installation',
+            query: {
+                installation_id: data.installationId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * List Github Repositories
+     * List available GitHub repositories for the current user.
+     *
+     * If installation_id is provided, list repositories for that specific installation.
+     * Otherwise, list repositories from all user's installations.
+     * @param data The data for the request.
+     * @param data.installationId
+     * @param data.skip
+     * @param data.limit
+     * @returns GitHubRepositoriesPublic Successful Response
+     * @throws ApiError
+     */
+    public static listGithubRepositories(data: GithubListGithubRepositoriesData = {}): CancelablePromise<GithubListGithubRepositoriesResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/github/repositories',
+            query: {
+                installation_id: data.installationId,
+                skip: data.skip,
+                limit: data.limit
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Link Github Repository
+     * Link a GitHub repository to a project.
+     * @param data The data for the request.
+     * @param data.projectId
+     * @param data.requestBody
+     * @returns ProjectPublic Successful Response
+     * @throws ApiError
+     */
+    public static linkGithubRepository(data: GithubLinkGithubRepositoryData): CancelablePromise<GithubLinkGithubRepositoryResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/github/projects/{project_id}/link-repository',
+            path: {
+                project_id: data.projectId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Unlink Github Repository
+     * Unlink a GitHub repository from a project.
+     * @param data The data for the request.
+     * @param data.projectId
+     * @returns ProjectPublic Successful Response
+     * @throws ApiError
+     */
+    public static unlinkGithubRepository(data: GithubUnlinkGithubRepositoryData): CancelablePromise<GithubUnlinkGithubRepositoryResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/github/projects/{project_id}/unlink-repository',
+            path: {
+                project_id: data.projectId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * List Github Installations
+     * List all GitHub App installations for the current user.
+     * @param data The data for the request.
+     * @param data.skip
+     * @param data.limit
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static listGithubInstallations(data: GithubListGithubInstallationsData = {}): CancelablePromise<GithubListGithubInstallationsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/github/installations',
+            query: {
+                skip: data.skip,
+                limit: data.limit
+            },
+            errors: {
+                422: 'Validation Error'
+            }
         });
     }
 }

@@ -154,6 +154,21 @@ export type ForgotPasswordResponse = {
     expires_in: number;
 };
 
+export type GitHubRepositoriesPublic = {
+    data: Array<GitHubRepository>;
+    count: number;
+};
+
+export type GitHubRepository = {
+    id: number;
+    name: string;
+    full_name: string;
+    url: string;
+    description?: (string | null);
+    private: boolean;
+    owner: string;
+};
+
 export type HTTPValidationError = {
     detail?: Array<ValidationError>;
 };
@@ -190,6 +205,12 @@ export type ProjectCreate = {
     name: string;
     is_init?: boolean;
     owner_id: string;
+};
+
+export type ProjectGitHubLink = {
+    github_repository_id: number;
+    github_repository_name: string;
+    github_installation_id: string;
 };
 
 export type ProjectPublic = {
@@ -539,6 +560,55 @@ export type BacklogItemsGetKanbanBoardResponse = (unknown);
 export type ChatGetWebsocketInfoResponse = (unknown);
 
 export type ChatGetConnectionStatsResponse = (unknown);
+
+export type GithubGithubWebhookResponse = ({
+    [key: string]: unknown;
+});
+
+export type GithubGithubCallbackData = {
+    installationId: number;
+    setupAction?: (string | null);
+};
+
+export type GithubGithubCallbackResponse = (unknown);
+
+export type GithubLinkInstallationToUserData = {
+    installationId: number;
+};
+
+export type GithubLinkInstallationToUserResponse = ({
+    [key: string]: unknown;
+});
+
+export type GithubListGithubRepositoriesData = {
+    installationId?: (string | null);
+    limit?: number;
+    skip?: number;
+};
+
+export type GithubListGithubRepositoriesResponse = (GitHubRepositoriesPublic);
+
+export type GithubLinkGithubRepositoryData = {
+    projectId: string;
+    requestBody: ProjectGitHubLink;
+};
+
+export type GithubLinkGithubRepositoryResponse = (ProjectPublic);
+
+export type GithubUnlinkGithubRepositoryData = {
+    projectId: string;
+};
+
+export type GithubUnlinkGithubRepositoryResponse = (ProjectPublic);
+
+export type GithubListGithubInstallationsData = {
+    limit?: number;
+    skip?: number;
+};
+
+export type GithubListGithubInstallationsResponse = ({
+    [key: string]: unknown;
+});
 
 export type MessagesListMessagesData = {
     limit?: number;

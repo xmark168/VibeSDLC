@@ -3,35 +3,55 @@
 import logging
 import hmac
 import hashlib
+import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import RedirectResponse
 from sqlmodel import Session
 
 from app import crud
-from app.api.deps import SessionDep
+from app.api.deps import SessionDep, CurrentUser
 from app.core.config import settings
 from app.models import GitHubInstallation, GitHubAccountType
 from app.schemas import GitHubInstallationCreate
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/github", tags=["github"])
+router = APIRouter(prefix="/github", tags=["github"])
 
 
 def verify_github_webhook_signature(request_body: bytes, signature: str) -> bool:
     """Verify GitHub webhook signature."""
     if not settings.GITHUB_WEBHOOK_SECRET:
-        logger.warning("GITHUB_WEBHOOK_SECRET not configured")
+        logger.error("GITHUB_WEBHOOK_SECRET not configured in settings")
         return False
 
+    # Log secret info (first/last 4 chars only for security)
+    secret = settings.GITHUB_WEBHOOK_SECRET
+    logger.info(
+        f"Webhook verification - Secret length: {len(secret)}, "
+        f"starts with: {secret[:4]}..., ends with: ...{secret[-4:]}"
+    )
+
     expected_signature = "sha256=" + hmac.new(
-        settings.GITHUB_WEBHOOK_SECRET.encode(),
+        secret.encode('utf-8'),
         request_body,
         hashlib.sha256,
     ).hexdigest()
 
-    return hmac.compare_digest(signature, expected_signature)
+    is_valid = hmac.compare_digest(signature, expected_signature)
+
+    # Always log for debugging (use WARNING to see in production)
+    logger.warning(
+        f"Signature verification:\n"
+        f"  Received:  {signature}\n"
+        f"  Expected:  {expected_signature}\n"
+        f"  Body size: {len(request_body)} bytes\n"
+        f"  Match:     {is_valid}"
+    )
+
+    return is_valid
 
 
 @router.post("/webhook")
@@ -41,28 +61,58 @@ async def github_webhook(
 ) -> dict[str, Any]:
     """
     Handle GitHub App webhook events.
-    
+
     Supported events:
     - installation.created: User installs the GitHub App
     - installation.deleted: User uninstalls the GitHub App
     - installation_repositories.added: User adds repositories to the app
     - installation_repositories.removed: User removes repositories from the app
     """
-    # Get request body
+    # Get request body (only once!)
     body = await request.body()
-    
-    # Verify signature
-    signature = request.headers.get("X-Hub-Signature-256", "")
-    if not verify_github_webhook_signature(body, signature):
-        logger.warning("Invalid GitHub webhook signature")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid webhook signature"
+
+    # Get signature - MUST use X-Hub-Signature-256 (not the old SHA1 version)
+    signature = (
+        request.headers.get("X-Hub-Signature-256") or
+        request.headers.get("x-hub-signature-256") or
+        ""
+    )
+
+    logger.info(f"Signature header (X-Hub-Signature-256): {signature[:50] if signature else 'NOT FOUND'}...")
+
+    # Verify signature if present, or warn if missing
+    if signature:
+        if not verify_github_webhook_signature(body, signature):
+            logger.warning(
+                f"Invalid GitHub webhook signature. "
+                f"Expected signature format: sha256=..., "
+                f"Received: {signature[:20] if len(signature) > 20 else signature}... "
+                f"Body length: {len(body)}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid webhook signature"
+            )
+    else:
+        # No signature header - webhook secret not configured in GitHub App
+        logger.error(
+            "⚠️  NO SIGNATURE HEADER FOUND! "
+            "GitHub webhook secret is not configured in your GitHub App settings. "
+            "This is a SECURITY RISK in production! "
+            "Please configure webhook secret at: https://github.com/settings/apps"
         )
-    
-    # Parse JSON
+
+        # In production, you should reject requests without signature
+        # For development/testing, we allow it but log a warning
+        if settings.ENVIRONMENT == "production":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Webhook signature required"
+            )
+
+    # Parse JSON from body bytes
     try:
-        payload = await request.json()
+        payload = json.loads(body.decode('utf-8'))
     except Exception as e:
         logger.error(f"Failed to parse webhook payload: {e}")
         raise HTTPException(
@@ -125,8 +175,10 @@ async def handle_installation_created(
             session, installation_id
         )
         if existing:
-            logger.info(f"Installation {installation_id} already exists, updating...")
-            # Update repositories
+            logger.info(f"Installation {installation_id} already exists, updating details...")
+            # Update account info and repositories from webhook
+            existing.account_login = account_login
+            existing.account_type = account_type_enum
             existing.repositories = {
                 "repositories": [
                     {
@@ -141,23 +193,24 @@ async def handle_installation_created(
             }
             session.add(existing)
             session.commit()
-            return {"status": "updated", "installation_id": installation_id}
-        
-        # Get user by GitHub login (sender)
-        sender_login = sender.get("login")
-        user = crud.user.get_user_by_email(session, sender_login)
-        
-        if not user:
-            logger.warning(f"User not found for GitHub login: {sender_login}")
-            # For now, we'll skip creating installation if user doesn't exist
-            # In production, you might want to create a user or handle this differently
+            logger.info(f"Updated GitHub installation {installation_id}")
             return {
-                "status": "skipped",
-                "reason": "User not found",
-                "installation_id": installation_id
+                "status": "updated",
+                "installation_id": installation_id,
+                "db_id": str(existing.id)
             }
-        
-        # Create installation record
+
+        # Installation doesn't exist yet
+        # This can happen if:
+        # 1. User installed app but callback endpoint wasn't called (old flow)
+        # 2. Webhook arrived before callback
+        # In this case, we create a placeholder installation without user_id
+        # It will be linked to user when callback is processed
+        logger.warning(
+            f"Installation {installation_id} received via webhook but not yet linked to user. "
+            f"Waiting for callback endpoint to be called."
+        )
+
         installation_create = GitHubInstallationCreate(
             installation_id=installation_id,
             account_login=account_login,
@@ -174,18 +227,19 @@ async def handle_installation_created(
                     for repo in repositories
                 ]
             },
-            user_id=user.id,
+            user_id=None,  # Will be set by callback endpoint
         )
-        
+
         db_installation = crud.github_installation.create_github_installation(
             session, installation_create
         )
-        
-        logger.info(f"Created GitHub installation: {db_installation.id}")
+
+        logger.info(f"Created placeholder GitHub installation: {db_installation.id}")
         return {
-            "status": "created",
+            "status": "created_placeholder",
             "installation_id": installation_id,
-            "db_id": str(db_installation.id)
+            "db_id": str(db_installation.id),
+            "note": "Installation created but not yet linked to user. Waiting for callback."
         }
     
     except Exception as e:
@@ -333,4 +387,170 @@ async def handle_repositories_removed(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing webhook: {str(e)}"
         )
+
+
+@router.get("/callback")
+async def github_callback(
+    installation_id: int,
+    setup_action: str | None = None,
+    session: SessionDep = None,
+) -> RedirectResponse:
+    """
+    Handle GitHub App OAuth callback.
+
+    This endpoint is called by GitHub after user installs the GitHub App.
+    GitHub redirects here WITHOUT authentication, so we create a pending installation.
+
+    Query Parameters:
+    - installation_id: GitHub's installation ID (required)
+    - setup_action: "install" or "update" (optional)
+
+    Flow:
+    1. User clicks "Install GitHub App" button
+    2. Redirects to GitHub App installation page
+    3. User installs app on GitHub
+    4. GitHub redirects to this endpoint with installation_id
+    5. Backend creates pending installation (user_id = NULL)
+    6. Webhook updates installation details
+    7. Frontend links installation with current user
+
+    Note: This endpoint does NOT require authentication because GitHub
+    redirects here without JWT token. Installation is created as "pending"
+    and will be linked to user later.
+    """
+    try:
+        if not installation_id:
+            logger.error("Missing installation_id in GitHub callback")
+            return RedirectResponse(
+                url=f"{settings.FRONTEND_HOST}/projects?error=missing_installation_id",
+                status_code=status.HTTP_302_FOUND
+            )
+
+        # Check if installation already exists
+        existing = crud.github_installation.get_github_installation_by_installation_id(
+            session, installation_id
+        )
+
+        if existing:
+            logger.info(
+                f"Installation {installation_id} already exists (user_id: {existing.user_id}). "
+                f"Webhook will update details."
+            )
+            # Installation already exists, webhook will update details
+            # Just redirect to frontend
+            return RedirectResponse(
+                url=f"{settings.FRONTEND_HOST}/projects?github_installation=exists&installation_id={installation_id}",
+                status_code=status.HTTP_302_FOUND
+            )
+
+        # Create new PENDING installation (user_id = NULL)
+        # Webhook will update details, frontend will link with user
+        installation_create = GitHubInstallationCreate(
+            installation_id=installation_id,
+            account_login="",  # Will be updated by webhook
+            account_type=GitHubAccountType.USER,  # Default, will be updated by webhook
+            repositories={"repositories": []},  # Empty for now, will be updated by webhook
+            user_id=None,  # PENDING - will be linked by frontend or user action
+        )
+
+        db_installation = crud.github_installation.create_github_installation(
+            session, installation_create
+        )
+
+        logger.info(
+            f"Created PENDING GitHub installation {installation_id} "
+            f"(db_id: {db_installation.id}). Waiting for webhook and user linking."
+        )
+
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_HOST}/projects?github_installation=pending&installation_id={installation_id}",
+            status_code=status.HTTP_302_FOUND
+        )
+
+    except Exception as e:
+        logger.error(f"Error handling GitHub callback: {e}", exc_info=True)
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_HOST}/projects?error=callback_failed&message={str(e)}",
+            status_code=status.HTTP_302_FOUND
+        )
+
+
+@router.post("/link-installation")
+async def link_installation_to_user(
+    installation_id: int,
+    current_user: CurrentUser = None,
+    session: SessionDep = None,
+) -> dict[str, Any]:
+    """
+    Link a pending GitHub installation with the current user.
+
+    This endpoint is called by frontend after user confirms linking.
+
+    Request Body:
+    - installation_id: GitHub installation ID to link
+
+    Response:
+    - status: "linked" or "error"
+    - installation_id: GitHub installation ID
+    - db_id: Database installation ID
+    - message: Status message
+
+    Flow:
+    1. User installs GitHub App (callback creates pending installation)
+    2. Frontend shows "Link with your account?" prompt
+    3. User clicks "Link"
+    4. Frontend calls this endpoint with installation_id
+    5. Backend links installation with current user
+    6. Frontend shows success message
+    """
+    try:
+        if not installation_id:
+            raise ValueError("installation_id is required")
+
+        # Get pending installation
+        installation = crud.github_installation.get_github_installation_by_installation_id(
+            session, installation_id
+        )
+
+        if not installation:
+            logger.warning(f"Installation {installation_id} not found")
+            return {
+                "status": "error",
+                "message": f"Installation {installation_id} not found",
+                "installation_id": installation_id
+            }
+
+        if installation.user_id is not None:
+            logger.warning(
+                f"Installation {installation_id} already linked to user {installation.user_id}"
+            )
+            return {
+                "status": "error",
+                "message": f"Installation already linked to another user",
+                "installation_id": installation_id
+            }
+
+        # Link installation with current user
+        installation.user_id = current_user.id
+        session.add(installation)
+        session.commit()
+
+        logger.info(
+            f"Linked GitHub installation {installation_id} to user {current_user.id}"
+        )
+
+        return {
+            "status": "linked",
+            "installation_id": installation_id,
+            "db_id": str(installation.id),
+            "message": "Installation linked successfully"
+        }
+
+    except Exception as e:
+        logger.error(f"Error linking installation: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "message": str(e),
+            "installation_id": installation_id
+        }
 

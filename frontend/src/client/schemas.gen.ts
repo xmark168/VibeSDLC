@@ -792,6 +792,68 @@ export const ForgotPasswordResponseSchema = {
     title: 'ForgotPasswordResponse'
 } as const;
 
+export const GitHubRepositoriesPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/GitHubRepository'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'GitHubRepositoriesPublic'
+} as const;
+
+export const GitHubRepositorySchema = {
+    properties: {
+        id: {
+            type: 'integer',
+            title: 'Id'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        full_name: {
+            type: 'string',
+            title: 'Full Name'
+        },
+        url: {
+            type: 'string',
+            title: 'Url'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        private: {
+            type: 'boolean',
+            title: 'Private'
+        },
+        owner: {
+            type: 'string',
+            title: 'Owner'
+        }
+    },
+    type: 'object',
+    required: ['id', 'name', 'full_name', 'url', 'private', 'owner'],
+    title: 'GitHubRepository'
+} as const;
+
 export const HTTPValidationErrorSchema = {
     properties: {
         detail: {
@@ -932,6 +994,27 @@ export const ProjectCreateSchema = {
     type: 'object',
     required: ['code', 'name', 'owner_id'],
     title: 'ProjectCreate'
+} as const;
+
+export const ProjectGitHubLinkSchema = {
+    properties: {
+        github_repository_id: {
+            type: 'integer',
+            title: 'Github Repository Id'
+        },
+        github_repository_name: {
+            type: 'string',
+            title: 'Github Repository Name'
+        },
+        github_installation_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Github Installation Id'
+        }
+    },
+    type: 'object',
+    required: ['github_repository_id', 'github_repository_name', 'github_installation_id'],
+    title: 'ProjectGitHubLink'
 } as const;
 
 export const ProjectPublicSchema = {

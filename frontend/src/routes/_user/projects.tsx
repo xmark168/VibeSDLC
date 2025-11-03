@@ -1,6 +1,8 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router"
 import { useMemo, useState } from "react"
 import CreateProjectDialog from "@/components/projects/CreateProjectDialog"
+import { GitHubInstallButton } from "@/components/github/GitHubInstallButton"
+import { GitHubInstallationHandler } from "@/components/github/GitHubInstallationHandler"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -41,6 +43,7 @@ function ProjectsPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [openCreate, setOpenCreate] = useState(false)
+  const [githubSuccess, setGithubSuccess] = useState(false)
 
   const { logout } = useAuth()
 
@@ -57,6 +60,11 @@ function ProjectsPage() {
 
   return (
     <div className="max-w-[1200px] mx-auto p-6">
+      <GitHubInstallationHandler
+        onSuccess={() => setGithubSuccess(true)}
+        onError={(error) => console.error("GitHub installation error:", error)}
+      />
+
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-semibold">Projects</h1>
@@ -65,6 +73,7 @@ function ProjectsPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <GitHubInstallButton variant="outline" size="default" />
           <Button variant="outline" onClick={logout}>
             Logout
           </Button>
