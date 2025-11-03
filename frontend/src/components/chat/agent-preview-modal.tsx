@@ -177,7 +177,7 @@ export function AgentPreviewModal({ preview, onSubmit }: AgentPreviewModalProps)
                     value={editChanges}
                     onChange={(e) => setEditChanges(e.target.value)}
                     placeholder="Ví dụ: Thay đổi tên sản phẩm thành 'TaskMaster Pro Plus', thêm tính năng AI chatbot..."
-                    className="min-h-[120px] p-3"
+                    className="min-h-[120px] p-3 focus-visible:ring-0 focus-visible:ring-offset-0"
                     autoFocus
                   />
                 </div>

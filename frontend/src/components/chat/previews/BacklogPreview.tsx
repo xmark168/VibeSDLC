@@ -120,7 +120,7 @@ export function BacklogPreview({ backlog }: BacklogPreviewProps) {
     const paddingLeft = `${depth * 1.5}rem`
 
     return (
-      <div key={item.id} className="border-l border-gray-200 dark:border-gray-700">
+      <div key={item.id}>
         <Card
           className="mb-2 hover:bg-accent/50 transition-colors cursor-pointer"
           style={{ marginLeft: paddingLeft }}

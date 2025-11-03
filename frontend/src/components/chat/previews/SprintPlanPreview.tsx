@@ -141,29 +141,20 @@ export function SprintPlanPreview({ sprintPlan }: SprintPlanPreviewProps) {
                 <ChevronRight className="w-5 h-5 text-muted-foreground" />
               )}
               <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex items-center gap-3 flex-wrap">
                   <CardTitle className="text-base">
                     Sprint {sprint.sprint_number}
                   </CardTitle>
-                  <Badge variant="outline" className="text-xs">
-                    {sprint.sprint_id}
-                  </Badge>
-                  <Badge variant="secondary" className="text-xs">
-                    {sprint.status}
-                  </Badge>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Calendar className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">
+                      {sprint.start_date} → {sprint.end_date}
+                    </span>
+                  </div>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  {sprint.sprint_goal}
-                </p>
               </div>
             </div>
             <div className="flex items-center gap-3 text-sm">
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-muted-foreground" />
-                <span className="text-muted-foreground">
-                  {sprint.start_date} → {sprint.end_date}
-                </span>
-              </div>
               <div className={`flex items-center gap-2 font-medium ${capacityColor}`}>
                 <span>{capacityIcon}</span>
                 <span>{sprint.velocity_plan}/{capacity} pts</span>
@@ -287,7 +278,7 @@ export function SprintPlanPreview({ sprintPlan }: SprintPlanPreviewProps) {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Tìm kiếm sprint theo goal hoặc ID..."
+            placeholder="Nhập tên"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
