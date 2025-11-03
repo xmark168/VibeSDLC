@@ -118,7 +118,7 @@ export function AgentPreviewModal({ preview, onSubmit }: AgentPreviewModalProps)
 
   return (
     <Dialog open={!!preview} modal>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <span>{preview.title}</span>
@@ -130,8 +130,10 @@ export function AgentPreviewModal({ preview, onSubmit }: AgentPreviewModalProps)
 
         {!editMode ? (
           <>
-            {renderContent()}
-            <DialogFooter className="flex gap-2">
+            <div className="overflow-y-auto flex-1 -mx-6 px-6">
+              {renderContent()}
+            </div>
+            <DialogFooter className="flex gap-2 flex-shrink-0">
               {preview.options.includes('regenerate') && (
                 <Button
                   variant="outline"
@@ -165,21 +167,23 @@ export function AgentPreviewModal({ preview, onSubmit }: AgentPreviewModalProps)
           </>
         ) : (
           <>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-foreground mb-2 block">
-                  Nhập các thay đổi bạn muốn áp dụng:
-                </label>
-                <Textarea
-                  value={editChanges}
-                  onChange={(e) => setEditChanges(e.target.value)}
-                  placeholder="Ví dụ: Thay đổi tên sản phẩm thành 'TaskMaster Pro Plus', thêm tính năng AI chatbot..."
-                  className="min-h-[120px] p-3"
-                  autoFocus
-                />
+            <div className="overflow-y-auto flex-1 -mx-6 px-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-2 block">
+                    Nhập các thay đổi bạn muốn áp dụng:
+                  </label>
+                  <Textarea
+                    value={editChanges}
+                    onChange={(e) => setEditChanges(e.target.value)}
+                    placeholder="Ví dụ: Thay đổi tên sản phẩm thành 'TaskMaster Pro Plus', thêm tính năng AI chatbot..."
+                    className="min-h-[120px] p-3"
+                    autoFocus
+                  />
+                </div>
               </div>
             </div>
-            <DialogFooter className="flex gap-2">
+            <DialogFooter className="flex gap-2 flex-shrink-0">
               <Button
                 variant="outline"
                 onClick={handleCancelEdit}

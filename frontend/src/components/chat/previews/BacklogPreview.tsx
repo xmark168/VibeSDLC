@@ -244,7 +244,7 @@ export function BacklogPreview({ backlog }: BacklogPreviewProps) {
       </div>
 
       {/* Hierarchical Tree View */}
-      <div className="max-h-[400px] overflow-y-auto space-y-2">
+      <div className="space-y-2">
         {rootItems.length === 0 ? (
           <div className="text-center text-sm text-muted-foreground py-8">
             Không tìm thấy items phù hợp
