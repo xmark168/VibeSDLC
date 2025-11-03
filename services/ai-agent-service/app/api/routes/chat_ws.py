@@ -352,6 +352,7 @@ async def trigger_agent_execution(session: Session, project_id: str, user_id: st
     from app.agents.product_owner.vision_agent import VisionAgent
     from app.agents.product_owner.gatherer_agent import GathererAgent
     from app.agents.product_owner.backlog_agent import BacklogAgent
+    from app.agents.product_owner.priority_agent import PriorityAgent
     import traceback
 
     # ===== STEP 0: Check for test commands =====
@@ -478,6 +479,49 @@ async def trigger_agent_execution(session: Session, project_id: str, user_id: st
                     user_id=None,
                     agent_id=None,
                     content="[Test Mode] Backlog Agent executed with mock data. Product Backlog generated."
+                )
+                session.add(agent_message)
+                session.commit()
+
+                return
+
+            elif test_agent == "priority":
+                # Parse mock product_backlog from message
+                product_backlog = json.loads(test_data_str)
+
+                print(f"[TEST MODE] Running Priority Agent with mock data", flush=True)
+
+                # Create Priority Agent with WebSocket support
+                session_id = f"priority_test_{project_id}_{user_id}"
+                priority_agent = PriorityAgent(
+                    session_id=session_id,
+                    user_id=user_id,
+                    websocket_broadcast_fn=manager.broadcast_to_project,
+                    project_id=project_id,
+                    response_manager=response_manager,
+                    event_loop=asyncio.get_event_loop()
+                )
+
+                # Run Priority Agent
+                result = priority_agent.run(
+                    product_backlog=product_backlog,
+                    thread_id=f"{session_id}_thread"
+                )
+
+                # Send completion message
+                await manager.broadcast_to_project({
+                    "type": "agent_message",
+                    "content": "✅ Priority Agent test completed! Check the preview above.",
+                    "agent_name": "Priority Agent"
+                }, project_id)
+
+                # Save to database
+                agent_message = MessageModel(
+                    project_id=UUID(project_id),
+                    author_type=AuthorType.AGENT,
+                    user_id=None,
+                    agent_id=None,
+                    content="[Test Mode] Priority Agent executed with mock data. Sprint Plan generated."
                 )
                 session.add(agent_message)
                 session.commit()

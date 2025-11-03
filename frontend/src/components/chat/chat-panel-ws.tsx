@@ -250,7 +250,32 @@ export function ChatPanelWS({
           finalMessage = `[TEST_BACKLOG] ${JSON.stringify(MOCK_DATA.product_vision)}`;
           break;
         case 'priority':
-          finalMessage = `[TEST_PRIORITY] Mock backlog data`;
+          // Check if user provided JSON (check for { and required fields)
+          if (finalMessage.includes('{') && finalMessage.includes('metadata') && finalMessage.includes('items')) {
+            try {
+              // Parse multi-line JSON
+              const backlogData = JSON.parse(finalMessage);
+
+              // Validate required fields
+              const hasMetadata = backlogData.metadata && backlogData.metadata.product_name;
+              const hasItems = Array.isArray(backlogData.items) && backlogData.items.length > 0;
+
+              if (!hasMetadata || !hasItems) {
+                console.warn('Invalid backlog structure - using mock data instead');
+                finalMessage = `[TEST_PRIORITY] ${JSON.stringify(MOCK_DATA.product_backlog)}`;
+              } else {
+                // Valid custom data - use it!
+                finalMessage = `[TEST_PRIORITY] ${JSON.stringify(backlogData)}`;
+              }
+            } catch (e) {
+              console.error('Failed to parse JSON, using mock data:', e);
+              // Fallback to mock data
+              finalMessage = `[TEST_PRIORITY] ${JSON.stringify(MOCK_DATA.product_backlog)}`;
+            }
+          } else {
+            // No custom data, use mock data
+            finalMessage = `[TEST_PRIORITY] ${JSON.stringify(MOCK_DATA.product_backlog)}`;
+          }
           break;
       }
     }

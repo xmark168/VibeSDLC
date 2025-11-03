@@ -228,6 +228,9 @@ class PriorityState(BaseModel):
     user_feedback: Optional[str] = Field(
         default=None, description="Lý do/yêu cầu chỉnh sửa từ user"
     )
+    just_adjusted: bool = Field(
+        default=False, description="Flag để track việc vừa adjust theo user feedback"
+    )
 
     # Final Output
     sprint_plan: dict = Field(
@@ -326,7 +329,7 @@ class PriorityAgent:
         graph_builder.add_edge(START, "initialize")
         graph_builder.add_edge("initialize", "calculate_priority")
         graph_builder.add_edge("calculate_priority", "plan_sprints")
-        graph_builder.add_edge("plan_sprints", "evaluate")
+        graph_builder.add_conditional_edges("plan_sprints", self.plan_sprints_branch)
         graph_builder.add_conditional_edges("evaluate", self.evaluate_branch)
         graph_builder.add_edge("refine", "plan_sprints")  # refine → plan_sprints
         graph_builder.add_edge("finalize", "preview")
@@ -964,9 +967,10 @@ class PriorityAgent:
                     f"   Sprint {sprint_num}: {status_icon} {velocity}/{capacity} pts ({utilization:.0f}%) - {items_count} items ({start_date} to {end_date})"
                 )
 
-            # Clear user_feedback after processing
+            # Clear user_feedback after processing and set flag
             print(f"\n✓ User feedback applied successfully, clearing feedback state")
             state.user_feedback = None
+            state.just_adjusted = True  # Mark that we just adjusted per user request
             state.status = "sprints_planned"
 
             print(
@@ -1531,10 +1535,10 @@ class PriorityAgent:
         state.user_approval = choice
 
         if choice == "edit" and edit_feedback:
-            state.edit_feedback = edit_feedback
+            state.user_feedback = edit_feedback
             print(f"[preview_async] Edit feedback: {edit_feedback[:100]}...", flush=True)
         else:
-            state.edit_feedback = None
+            state.user_feedback = None
 
         return state
 
@@ -1739,6 +1743,24 @@ class PriorityAgent:
     # ========================================================================
     # Branch Functions
     # ========================================================================
+
+    def plan_sprints_branch(self, state: PriorityState) -> str:
+        """Branch sau plan_sprints node.
+
+        Logic:
+        - Nếu just_adjusted == True → finalize (user vừa edit, skip evaluate)
+        - Else → evaluate (normal flow)
+        """
+        if state.just_adjusted:
+            print(f"\n🔀 Plan Sprints Branch Decision:")
+            print(f"   Just Adjusted: True (user edit applied)")
+            print(f"   → Decision: FINALIZE (skip evaluate, go straight to preview)")
+            return "finalize"
+        else:
+            print(f"\n🔀 Plan Sprints Branch Decision:")
+            print(f"   Just Adjusted: False (normal flow)")
+            print(f"   → Decision: EVALUATE (validate sprint plan)")
+            return "evaluate"
 
     def evaluate_branch(self, state: PriorityState) -> str:
         """Branch sau evaluate node.
