@@ -421,7 +421,8 @@ class BacklogAgent:
         prompt = EVALUATE_PROMPT.format(backlog=backlog_text)
 
         try:
-            llm = self._llm("gpt-4.1", 0.3)
+            # Use faster model for evaluate (gpt-4o-mini is good enough for quality checks)
+            llm = self._llm("gpt-4o-mini", 0.3)
 
             # Add JSON instruction
             json_prompt = (
@@ -552,14 +553,37 @@ class BacklogAgent:
         # Check if this is user-requested refine (from preview)
         if state.user_feedback:
             print(f"\n👤 User Feedback: {state.user_feedback}")
-            print(f"✓ Refining based on user feedback...")
+            print(f"✓ Refining based on user feedback (all items)...")
+            # User-driven refine: refine ALL items
+            items_to_refine = state.backlog_items
+            items_to_keep = []
         else:
             print(
                 f"✓ Issues to fix: {len(state.invest_issues)} INVEST + {len(state.gherkin_issues)} Gherkin"
             )
 
+            # Auto refine: ONLY refine items with issues (OPTIMIZATION)
+            # Collect item IDs with issues
+            issue_item_ids = set()
+            for issue in state.invest_issues:
+                issue_item_ids.add(issue.get('item_id'))
+            for issue in state.gherkin_issues:
+                issue_item_ids.add(issue.get('item_id'))
+
+            # Split items into two groups
+            items_to_refine = [item for item in state.backlog_items if item.get('id') in issue_item_ids]
+            items_to_keep = [item for item in state.backlog_items if item.get('id') not in issue_item_ids]
+
+            print(f"✓ Optimization: Refining only {len(items_to_refine)} items with issues")
+            print(f"✓ Keeping {len(items_to_keep)} items without issues")
+
         # Prepare data for prompt
-        backlog_text = json.dumps(state.product_backlog, ensure_ascii=False, indent=2)
+        # Only send items that need refinement to LLM
+        backlog_to_refine = {
+            "metadata": state.product_backlog.get("metadata", {}),
+            "items": items_to_refine
+        }
+        backlog_text = json.dumps(backlog_to_refine, ensure_ascii=False, indent=2)
         issues_text = json.dumps(
             {
                 "invest_issues": state.invest_issues,
@@ -587,9 +611,11 @@ class BacklogAgent:
                 issues=issues_text,
                 recommendations=recommendations_text,
             )
+            prompt += f"\n\nNOTE: You are only refining {len(items_to_refine)} items that have issues. Return ONLY these refined items (you may split them if needed). Items without issues will be kept as-is."
 
         try:
-            llm = self._llm("gpt-4.1", 0.3)
+            # Use faster model for refine (gpt-4o-mini is 3-5x faster and cheaper)
+            llm = self._llm("gpt-4o-mini", 0.3)
 
             # Add JSON instruction
             json_prompt = (
@@ -625,17 +651,26 @@ class BacklogAgent:
             # Parse items with Pydantic validation
             refined_items = [BacklogItem(**item) for item in result_dict["items"]]
 
+            # Merge refined items with items that were kept
+            # For auto-refine: combine refined + kept items
+            # For user-feedback refine: use all refined items (items_to_keep is empty)
+            if items_to_keep:
+                print(f"\n🔄 Merging {len(refined_items)} refined items with {len(items_to_keep)} kept items...")
+                all_items = refined_items + [BacklogItem(**item) for item in items_to_keep]
+            else:
+                all_items = refined_items
+
             # Count by type
-            epics = [i for i in refined_items if i.type == "Epic"]
-            stories = [i for i in refined_items if i.type == "User Story"]
-            tasks = [i for i in refined_items if i.type == "Task"]
-            subtasks = [i for i in refined_items if i.type == "Sub-task"]
+            epics = [i for i in all_items if i.type == "Epic"]
+            stories = [i for i in all_items if i.type == "User Story"]
+            tasks = [i for i in all_items if i.type == "Task"]
+            subtasks = [i for i in all_items if i.type == "Sub-task"]
 
             # Recalculate metadata
-            total_items = len(refined_items)
-            total_story_points = sum(item.story_point or 0 for item in refined_items)
+            total_items = len(all_items)
+            total_story_points = sum(item.story_point or 0 for item in all_items)
             total_estimate_hours = sum(
-                item.estimate_value or 0 for item in refined_items
+                item.estimate_value or 0 for item in all_items
             )
 
             refined_metadata = result_dict.get("metadata", {})
@@ -655,8 +690,8 @@ class BacklogAgent:
             # Store old counts for comparison
             old_issues_count = len(state.invest_issues) + len(state.gherkin_issues)
 
-            # Update state with refined backlog
-            state.backlog_items = [item.model_dump() for item in refined_items]
+            # Update state with refined backlog (all_items = refined + kept)
+            state.backlog_items = [item.model_dump() for item in all_items]
             state.product_backlog = {
                 "metadata": refined_metadata,
                 "items": state.backlog_items,
@@ -672,9 +707,10 @@ class BacklogAgent:
 
             # Print summary
             print(f"\n✓ Refine completed")
-            print(
-                f"   Total Items: {total_items} (before: {len(result_dict.get('items', []))})"
-            )
+            print(f"   Refined Items: {len(refined_items)}")
+            if items_to_keep:
+                print(f"   Kept Items (no issues): {len(items_to_keep)}")
+            print(f"   Total Items: {total_items}")
 
             print(f"\n📊 Refined Backlog Breakdown:")
             print(f"   - Epics: {len(epics)}")
@@ -705,10 +741,10 @@ class BacklogAgent:
             print("\n📊 Refined Backlog (sample 3 items):")
             sample_output = {
                 "metadata": refined_metadata,
-                "items": [item.model_dump() for item in refined_items[:3]],
+                "items": [item.model_dump() for item in all_items[:3]],
             }
             print(json.dumps(sample_output, ensure_ascii=False, indent=2))
-            print(f"... và {len(refined_items) - 3} items khác\n")
+            print(f"... và {len(all_items) - 3} items khác\n")
 
             state.status = "refined"
             print(
