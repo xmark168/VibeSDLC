@@ -4,10 +4,16 @@ from enum import Enum
 from pydantic import EmailStr
 from sqlmodel import Field, SQLModel, Relationship
 from typing import Optional
+from sqlalchemy import JSON, Column
 
 class Role(str, Enum):
     ADMIN = "admin"
     USER = "user"
+
+
+class GitHubAccountType(str, Enum):
+    USER = "User"
+    ORGANIZATION = "Organization"
 
 
 class BaseModel(SQLModel):
@@ -46,20 +52,46 @@ class User(BaseModel, table=True):
         back_populates="commenter",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+    github_installations: list["GitHubInstallation"] = Relationship(
+        back_populates="user", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+
+
+# GitHub App Integration
+class GitHubInstallation(BaseModel, table=True):
+    __tablename__ = "github_installations"
+
+    installation_id: int = Field(unique=True, index=True, nullable=False)
+    account_login: str = Field(nullable=False)
+    account_type: GitHubAccountType = Field(nullable=False)
+    repositories: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    user_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")
+
+    user: User = Relationship(back_populates="github_installations")
+    projects: list["Project"] = Relationship(back_populates="github_installation")
+
 
 class Project(BaseModel, table=True):
     __tablename__ = "projects"
 
     code: str
     name: str
-    owner_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE") 
+    owner_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")
     is_init: bool = Field(default=False)
+
+    # GitHub integration fields
+    github_repository_id: int | None = Field(default=None, unique=True, nullable=True)
+    github_repository_name: str | None = Field(default=None, nullable=True)
+    github_installation_id: UUID | None = Field(
+        default=None, foreign_key="github_installations.id", ondelete="SET NULL", nullable=True
+    )
 
     owner: User = Relationship(back_populates="owned_projects")
     sprints: list["Sprint"] = Relationship(
         back_populates="project",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+    github_installation: Optional["GitHubInstallation"] = Relationship(back_populates="projects")
 
 
 class Sprint(BaseModel, table=True):

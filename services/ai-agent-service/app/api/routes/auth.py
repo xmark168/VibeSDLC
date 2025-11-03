@@ -117,7 +117,7 @@ def login(
 
     else:
         # Provider Login
-        if not login_data.email or not login_data.fullname or login_data.password:
+        if not login_data.email or not login_data.fullname or login_data.password is not None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email và fullname không được để trống, password phải null với provider login"
@@ -138,11 +138,6 @@ def login(
             session.add(user)
             session.commit()
             session.refresh(user)
-        elif not user.login_provider:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email này đã được đăng ký với credential login"
-            )
 
     # Check account status
     if not user.is_active:
@@ -450,7 +445,10 @@ def refresh_token(
     # Decode and validate refresh token
     try:
         payload = security.decode_access_token(refresh_token)
+        logger.info(f"[REFRESH TOKEN] Decoded payload: {payload}")
+
         if payload.get("type") != "refresh":
+            logger.warning(f"[REFRESH TOKEN] Invalid token type: {payload.get('type')}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token không hợp lệ"
@@ -458,33 +456,45 @@ def refresh_token(
 
         user_id = payload.get("sub")
         if not user_id:
+            logger.warning("[REFRESH TOKEN] Missing user_id in token")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token không hợp lệ"
             )
 
-    except Exception:
+        logger.info(f"[REFRESH TOKEN] User ID from token: {user_id}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[REFRESH TOKEN] Token decode error: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token không hợp lệ hoặc đã hết hạn"
         )
 
     # Get user
+    logger.info(f"[REFRESH TOKEN] Looking up user with ID: {user_id}")
     user = session.get(User, user_id)
     if not user:
+        logger.error(f"[REFRESH TOKEN] User not found: {user_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Người dùng không tồn tại"
         )
 
+    logger.info(f"[REFRESH TOKEN] User found: {user.email}, is_active={user.is_active}, is_locked={user.is_locked}")
+
     # Check user status
     if not user.is_active:
+        logger.warning(f"[REFRESH TOKEN] User account disabled: {user.email}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Tài khoản đã bị vô hiệu hóa"
         )
 
     if user.is_locked:
+        logger.warning(f"[REFRESH TOKEN] User account locked: {user.email}")
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
             detail="Tài khoản đã bị khóa"

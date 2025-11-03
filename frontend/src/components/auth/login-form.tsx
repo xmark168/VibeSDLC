@@ -2,11 +2,13 @@ import { Link } from "@tanstack/react-router"
 import { motion } from "framer-motion"
 import type React from "react"
 import { useState } from "react"
+import { OAuthProvider } from "appwrite"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import useAuth from "@/hooks/useAuth"
 import { withToast } from "@/utils"
+import { account } from "@/lib/appwrite"
 export function LoginForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -38,6 +40,18 @@ export function LoginForm() {
         error: <b>Login failed. Please try again.</b>,
       },
     )
+  }
+
+  const handleLoginGithub = () => {
+    try {
+      account.createOAuth2Session(
+        OAuthProvider.Github,
+        "http://localhost:5173/oauth-callback",
+        "http://localhost:5173/login",
+      )
+    } catch (error) {
+      console.error("Login error:", error)
+    }
   }
 
   return (
@@ -75,8 +89,9 @@ export function LoginForm() {
         {/* Google Sign In */}
         <Button
           variant="outline"
-          className="w-full h-12 text-base font-medium hover:bg-secondary transition-colors bg-transparent"
+          className="w-full h-12 text-base font-medium hover:bg-secondary transition-colors bg-transparent cursor-pointer"
           type="button"
+          onClick={handleLoginGithub}
         >
           <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">
             <path

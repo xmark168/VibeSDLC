@@ -7,7 +7,7 @@ import { WelcomeDialog } from "@/components/chat/welcome-dialog"
 import { WorkspacePanel } from "@/components/chat/workspace-panel"
 import { useMessages } from "@/queries/messages"
 
-export const Route = createFileRoute("/workspace/$workspaceId")({
+export const Route = createFileRoute("/_user/workspace/$workspaceId")({
   component: WorkspacePage,
 })
 

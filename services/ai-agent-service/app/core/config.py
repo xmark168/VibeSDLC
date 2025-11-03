@@ -16,6 +16,7 @@ from pydantic import (
     AnyUrl,
     BeforeValidator,
     EmailStr,
+    Field,
     HttpUrl,
     PostgresDsn,
     computed_field,
@@ -66,9 +67,10 @@ class Settings(BaseSettings):
     """Unified application settings with pydantic validation."""
 
     model_config = SettingsConfigDict(
-        env_file="../.env",
+        env_file=".env",
         env_ignore_empty=True,
         extra="ignore",
+        case_sensitive=True,
     )
 
     # GENERAL APPLICATION SETTINGS
@@ -82,9 +84,14 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     # SECURITY SETTINGS
-    SECRET_KEY: str = secrets.token_urlsafe(32)
+    SECRET_KEY: str = Field(default="your-fixed-secret-key-min-32-chars-change-this-in-production")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7  # 7 days
+
+    # GITHUB APP SETTINGS
+    GITHUB_APP_ID: str = ""
+    GITHUB_APP_PRIVATE_KEY: str = ""
+    GITHUB_WEBHOOK_SECRET: str = ""
 
     # CORS SETTINGS
     FRONTEND_HOST: str = "http://localhost:5173"

@@ -3,7 +3,7 @@ from token import OP
 from uuid import UUID, uuid4
 from pydantic import EmailStr
 from sqlmodel import Field, SQLModel
-from .models import Role
+from .models import Role, GitHubAccountType
 from typing import Optional
 from enum import Enum
 from app.models import AuthorType
@@ -357,3 +357,58 @@ class AgentPublic(AgentBase):
 class AgentsPublic(SQLModel):
     data: list[AgentPublic]
     count: int
+
+
+# GitHub Integration schemas
+class GitHubInstallationBase(SQLModel):
+    installation_id: int
+    account_login: str
+    account_type: GitHubAccountType
+    repositories: Optional[dict] = None
+
+
+class GitHubInstallationCreate(GitHubInstallationBase):
+    user_id: UUID
+
+
+class GitHubInstallationUpdate(SQLModel):
+    repositories: Optional[dict] = None
+
+
+class GitHubInstallationPublic(GitHubInstallationBase):
+    id: UUID
+    user_id: UUID
+    created_at: datetime
+    updated_at: datetime
+
+
+class GitHubInstallationsPublic(SQLModel):
+    data: list[GitHubInstallationPublic]
+    count: int
+
+
+# GitHub Repository schemas
+class GitHubRepository(SQLModel):
+    id: int
+    name: str
+    full_name: str
+    url: str
+    description: Optional[str] = None
+    private: bool
+    owner: str
+
+
+class GitHubRepositoriesPublic(SQLModel):
+    data: list[GitHubRepository]
+    count: int
+
+
+# Project GitHub linking schemas
+class ProjectGitHubLink(SQLModel):
+    github_repository_id: int
+    github_repository_name: str
+    github_installation_id: UUID
+
+
+class ProjectGitHubUnlink(SQLModel):
+    pass

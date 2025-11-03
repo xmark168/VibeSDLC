@@ -29,6 +29,8 @@ Requires-Dist: emails>=0.6.0
 Requires-Dist: jinja2>=3.1.0
 Requires-Dist: bcrypt==4.0.1
 Requires-Dist: redis>=7.0.1
+Requires-Dist: pygithub>=2.8.1
+Requires-Dist: email-validator>=2.3.0
 Provides-Extra: dev
 Requires-Dist: ruff; extra == "dev"
 Requires-Dist: pylint; extra == "dev"

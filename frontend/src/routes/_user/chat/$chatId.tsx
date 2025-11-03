@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router"
 
 // Legacy route: redirect /chat/$chatId -> /workspace/$workspaceId
-export const Route = createFileRoute("/chat/$chatId")({
+export const Route = createFileRoute("/_user/chat/$chatId")({
   beforeLoad: ({ params }) => {
     throw redirect({
       to: "/workspace/$workspaceId",

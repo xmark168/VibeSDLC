@@ -24,10 +24,8 @@ import useAuth, { isLoggedIn } from "@/hooks/useAuth"
 import { useProjects } from "@/queries/projects"
 import type { Project } from "@/types/project"
 
-// Temporary UI type until backend Projects API is available
-// Use backend types. Status/tags/members are not in backend yet.
 
-export const Route = createFileRoute("/_layout/projects")({
+export const Route = createFileRoute("/_user/projects")({
   beforeLoad: () => {
     if (!isLoggedIn()) {
       throw redirect({ to: "/login" })
@@ -207,9 +205,9 @@ function ProjectsTable({
             <TableCell>
               {(p.created_at ?? p.updated_at)
                 ? new Intl.DateTimeFormat(undefined, {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                  }).format(new Date(p.created_at ?? p.updated_at!))
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                }).format(new Date(p.created_at ?? p.updated_at!))
                 : "-"}
             </TableCell>
           </TableRow>
