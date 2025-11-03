@@ -69,10 +69,20 @@ export function BacklogPreview({ backlog }: BacklogPreviewProps) {
   }, [items])
 
   const rootItems = useMemo(() => {
+    // If filtering by specific type OR searching, show all filtered items as root (flatten view)
+    // This allows viewing User Stories, Tasks, etc. even if they have parents
+    if (typeFilter !== 'all' || searchQuery !== '') {
+      return filteredItems
+    }
+    // Otherwise, show only true root items (hierarchical view)
     return filteredItems.filter(item => !item.parent_id)
-  }, [filteredItems])
+  }, [filteredItems, typeFilter, searchQuery])
 
   const getChildren = (parentId: string): BacklogItem[] => {
+    // Don't show children when filtering by specific type OR searching (flatten view)
+    if (typeFilter !== 'all' || searchQuery !== '') {
+      return []
+    }
     return filteredItems.filter(item => item.parent_id === parentId)
   }
 
