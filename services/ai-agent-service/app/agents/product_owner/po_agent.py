@@ -105,7 +105,7 @@ class POAgent:
         """
 
         @tool
-        def gather_product_info(
+        async def gather_product_info(
             user_input: str,
         ) -> Annotated[dict, "Product Brief với full data"]:
             """Thu thập thông tin sản phẩm từ user, tạo Product Brief.
@@ -161,14 +161,14 @@ class POAgent:
                     event_loop=event_loop  # Use stored event loop
                 )
 
-                print(f"[Tool Call] GathererAgent created, about to call run()...", flush=True)
+                print(f"[Tool Call] GathererAgent created, about to call run_async()...", flush=True)
 
-                # Call GathererAgent - it will create its own trace via its handler
-                result = gatherer_agent.run(
+                # Call GathererAgent async version - it will create its own trace via its handler
+                result = await gatherer_agent.run_async(
                     initial_context=user_input, thread_id=f"{tool_session_id}_thread"
                 )
 
-                print(f"[Tool Call] GathererAgent.run() returned!", flush=True)
+                print(f"[Tool Call] GathererAgent.run_async() returned!", flush=True)
 
                 # Extract brief from final state
                 # Result structure: {node_name: state_data}
@@ -195,7 +195,7 @@ class POAgent:
                 raise
 
         @tool
-        def create_vision(
+        async def create_vision(
             product_brief: dict,
         ) -> Annotated[dict, "Product Vision với PRD full data"]:
             """Tạo Product Vision và PRD từ Product Brief.
@@ -261,8 +261,8 @@ class POAgent:
 
                 print(f"[Vision Tool Call] VisionAgent created with WebSocket support", flush=True)
 
-                # Call VisionAgent - it will create its own trace via its handler
-                result = vision_agent.run(
+                # Call VisionAgent async version - it will create its own trace via its handler
+                result = await vision_agent.run_async(
                     product_brief=product_brief, thread_id=f"{tool_session_id}_thread"
                 )
 
@@ -295,7 +295,7 @@ class POAgent:
                 raise
 
         @tool
-        def create_backlog(
+        async def create_backlog(
             product_vision: dict,
         ) -> Annotated[dict, "Product Backlog với full data"]:
             """Tạo Product Backlog từ Product Vision.
@@ -342,13 +342,18 @@ class POAgent:
                 # Create separate session_id for this tool call to create a new trace
                 tool_session_id = f"{self.session_id}_backlog_tool"
 
-                # Create a new BacklogAgent instance with separate session_id
+                # Create a new BacklogAgent instance with separate session_id + WebSocket deps
                 backlog_agent = BacklogAgent(
-                    session_id=tool_session_id, user_id=self.user_id
+                    session_id=tool_session_id,
+                    user_id=self.user_id,
+                    websocket_broadcast_fn=getattr(self, 'websocket_broadcast_fn', None),
+                    project_id=getattr(self, 'project_id', None),
+                    response_manager=getattr(self, 'response_manager', None),
+                    event_loop=getattr(self, 'event_loop', None)
                 )
 
-                # Call BacklogAgent - it will create its own trace via its handler
-                result = backlog_agent.run(
+                # Call BacklogAgent async version - it will create its own trace via its handler
+                result = await backlog_agent.run_async(
                     product_vision=product_vision, thread_id=f"{tool_session_id}_thread"
                 )
 
@@ -380,7 +385,7 @@ class POAgent:
                 raise
 
         @tool
-        def create_sprint_plan(
+        async def create_sprint_plan(
             product_backlog: dict,
         ) -> Annotated[dict, "Sprint Plan với full data"]:
             """Tạo Sprint Plan từ Product Backlog.
@@ -427,13 +432,18 @@ class POAgent:
                 # Create separate session_id for this tool call to create a new trace
                 tool_session_id = f"{self.session_id}_priority_tool"
 
-                # Create a new PriorityAgent instance with separate session_id
+                # Create a new PriorityAgent instance with separate session_id + WebSocket deps
                 priority_agent = PriorityAgent(
-                    session_id=tool_session_id, user_id=self.user_id
+                    session_id=tool_session_id,
+                    user_id=self.user_id,
+                    websocket_broadcast_fn=getattr(self, 'websocket_broadcast_fn', None),
+                    project_id=getattr(self, 'project_id', None),
+                    response_manager=getattr(self, 'response_manager', None),
+                    event_loop=getattr(self, 'event_loop', None)
                 )
 
-                # Call PriorityAgent - it will create its own trace via its handler
-                sprint_plan = priority_agent.run(
+                # Call PriorityAgent async version - it will create its own trace via its handler
+                sprint_plan = await priority_agent.run_async(
                     product_backlog=product_backlog,
                     thread_id=f"{tool_session_id}_thread",
                 )
@@ -592,10 +602,10 @@ class POAgent:
                         event_loop=loop  # Pass event loop for async operations
                     )
 
-                    # Call synchronously - GathererAgent.run() handles async internally
-                    gather_result = gatherer_agent.run(
-                        user_input,
-                        f"{tool_session_id}_thread"
+                    # Call async version - we're in async context
+                    gather_result = await gatherer_agent.run_async(
+                        initial_context=user_input,
+                        thread_id=f"{tool_session_id}_thread"
                     )
 
                     brief = None
@@ -625,7 +635,7 @@ class POAgent:
                 "message": "🚀 PO Agent bắt đầu xử lý..."
             }, project_id)
 
-            for chunk in self.agent.stream(
+            async for chunk in self.agent.astream(
                 {"messages": [("user", user_input)]},
                 config=config,
                 stream_mode="updates"

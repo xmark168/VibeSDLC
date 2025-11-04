@@ -103,7 +103,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 tasklist /FI "IMAGENAME eq python.exe"
 
-taskkill /PID 7948 /T /F
+taskkill /PID 22028 /T /F
 
 uv run app/tests/test_agent.py 
 làm giải pháp 2 đi
@@ -111,3 +111,4 @@ front end
 netstat -ano | findstr :5173
 taskkill /PID 24844 /F
 
+git reset --soft HEAD~1
