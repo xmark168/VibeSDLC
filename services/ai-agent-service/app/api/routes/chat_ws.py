@@ -176,6 +176,18 @@ async def trigger_next_step_auto(
                 print(f"[Auto-Trigger] Vision Agent completed", flush=True)
             else:
                 print(f"[Auto-Trigger] ⚠ Brief not found in DB", flush=True)
+                # Send error message and turn off typing indicator
+                await websocket_broadcast_fn({
+                    "type": "agent_step",
+                    "step": "error",
+                    "agent": "Vision Agent",
+                    "message": "❌ Không tìm thấy Product Brief. Vui lòng chạy lại Gatherer Agent."
+                }, project_id)
+                await websocket_broadcast_fn({
+                    "type": "typing",
+                    "agent_name": "PO Agent",
+                    "is_typing": False
+                }, project_id)
 
         elif next_agent == "backlog":
             # Get approved vision from DB
@@ -217,6 +229,18 @@ async def trigger_next_step_auto(
                 print(f"[Auto-Trigger] Backlog Agent completed", flush=True)
             else:
                 print(f"[Auto-Trigger] ⚠ Vision not found in DB", flush=True)
+                # Send error message and turn off typing indicator
+                await websocket_broadcast_fn({
+                    "type": "agent_step",
+                    "step": "error",
+                    "agent": "Backlog Agent",
+                    "message": "❌ Không tìm thấy Product Vision. Vui lòng chạy lại Vision Agent."
+                }, project_id)
+                await websocket_broadcast_fn({
+                    "type": "typing",
+                    "agent_name": "PO Agent",
+                    "is_typing": False
+                }, project_id)
 
         elif next_agent == "priority":
             # Get approved backlog from DB
@@ -256,8 +280,39 @@ async def trigger_next_step_auto(
                     thread_id=f"priority_auto_{project_id}"
                 )
                 print(f"[Auto-Trigger] Priority Agent completed", flush=True)
+
+                # Priority Agent is the last step - send completion messages
+                print(f"[Auto-Trigger] Workflow complete for project {project_id}", flush=True)
+
+                # Send workflow completed message
+                await websocket_broadcast_fn({
+                    "type": "agent_step",
+                    "step": "completed",
+                    "agent": "PO Agent",
+                    "message": "✅ Hoàn thành workflow PO Agent! Sprint Plan đã sẵn sàng."
+                }, project_id)
+
+                # Turn off typing indicator
+                await websocket_broadcast_fn({
+                    "type": "typing",
+                    "agent_name": "PO Agent",
+                    "is_typing": False
+                }, project_id)
+
             else:
                 print(f"[Auto-Trigger] ⚠ Backlog not found in DB", flush=True)
+                # Send error message and turn off typing indicator
+                await websocket_broadcast_fn({
+                    "type": "agent_step",
+                    "step": "error",
+                    "agent": "Priority Agent",
+                    "message": "❌ Không tìm thấy Product Backlog. Vui lòng chạy lại Backlog Agent."
+                }, project_id)
+                await websocket_broadcast_fn({
+                    "type": "typing",
+                    "agent_name": "PO Agent",
+                    "is_typing": False
+                }, project_id)
 
     except Exception as e:
         print(f"[Auto-Trigger] ✗ Error: {e}", flush=True)
@@ -269,6 +324,13 @@ async def trigger_next_step_auto(
             "step": "error",
             "agent": next_agent.capitalize() + " Agent" if 'next_agent' in locals() else "Agent",
             "message": f"❌ Lỗi khi chạy agent: {str(e)}"
+        }, project_id)
+
+        # Turn off typing indicator on error
+        await websocket_broadcast_fn({
+            "type": "typing",
+            "agent_name": "PO Agent",
+            "is_typing": False
         }, project_id)
     finally:
         step_session.close()
