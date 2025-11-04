@@ -106,7 +106,7 @@ tasklist /FI "IMAGENAME eq python.exe"
 taskkill /PID 22028 /T /F
 
 uv run app/tests/test_agent.py 
-
+làm giải pháp 2 đi
 front end 
 netstat -ano | findstr :5173
 taskkill /PID 24844 /F
