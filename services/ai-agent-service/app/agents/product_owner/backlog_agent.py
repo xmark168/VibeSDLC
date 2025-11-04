@@ -422,7 +422,7 @@ class BacklogAgent:
 
         try:
             # Use faster model for evaluate (gpt-4o-mini is good enough for quality checks)
-            llm = self._llm("gpt-4o-mini", 0.3)
+            llm = self._llm("gpt-4.1-mini", 0.3)
 
             # Add JSON instruction
             json_prompt = (
@@ -615,7 +615,7 @@ class BacklogAgent:
 
         try:
             # Use faster model for refine (gpt-4o-mini is 3-5x faster and cheaper)
-            llm = self._llm("gpt-4o-mini", 0.3)
+            llm = self._llm("gpt-4.1-mini", 0.3)
 
             # Add JSON instruction
             json_prompt = (

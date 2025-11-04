@@ -148,6 +148,14 @@ async def trigger_next_step_auto(
             if brief_msg and brief_msg.structured_data:
                 print(f"[Auto-Trigger] Found brief in DB: {brief_msg.structured_data.get('product_name')}", flush=True)
 
+                # Send agent_step to show progress indicator
+                await websocket_broadcast_fn({
+                    "type": "agent_step",
+                    "step": "started",
+                    "agent": "Vision Agent",
+                    "message": "🔄 Đang tạo Product Vision..."
+                }, project_id)
+
                 # Trigger Vision Agent
                 from app.agents.product_owner.vision_agent import VisionAgent
 
@@ -181,6 +189,14 @@ async def trigger_next_step_auto(
             if vision_msg and vision_msg.structured_data:
                 print(f"[Auto-Trigger] Found vision in DB", flush=True)
 
+                # Send agent_step to show progress indicator
+                await websocket_broadcast_fn({
+                    "type": "agent_step",
+                    "step": "started",
+                    "agent": "Backlog Agent",
+                    "message": "🔄 Đang tạo Product Backlog..."
+                }, project_id)
+
                 # Trigger Backlog Agent
                 from app.agents.product_owner.backlog_agent import BacklogAgent
 
@@ -213,6 +229,14 @@ async def trigger_next_step_auto(
 
             if backlog_msg and backlog_msg.structured_data:
                 print(f"[Auto-Trigger] Found backlog in DB", flush=True)
+
+                # Send agent_step to show progress indicator
+                await websocket_broadcast_fn({
+                    "type": "agent_step",
+                    "step": "started",
+                    "agent": "Priority Agent",
+                    "message": "🔄 Đang sắp xếp ưu tiên và tạo Sprint Plan..."
+                }, project_id)
 
                 # Trigger Priority Agent
                 from app.agents.product_owner.priority_agent import PriorityAgent
@@ -924,106 +948,52 @@ async def trigger_agent_execution(session: Session, project_id: str, user_id: st
 
     try:
         # STEP 3: Create appropriate agent instance
-        # Agent factory pattern
-        agent_factory = {
-            "po": lambda: POAgent(
-                session_id=f"po_agent_{project_id}_{user_id}",
-                user_id=user_id
-            ),
-            # TODO: Implement other agents
-            # "scrum_master": lambda: ScrumMasterAgent(...),
-            # "developer": lambda: DeveloperAgent(...),
-            # "tester": lambda: TesterAgent(...),
-        }
+        # For PO agent type, only run Gatherer Agent first (step-by-step workflow)
+        # Auto-trigger will handle Vision → Backlog → Priority after approval
+        if agent_type == "po":
+            print(f"\n[Agent Execution] Using step-by-step workflow: Starting with Gatherer Agent only", flush=True)
 
-        # Get agent or fallback to PO
-        if agent_type in agent_factory:
-            agent = agent_factory[agent_type]()
+            # Send agent_step to show progress indicator
+            await manager.broadcast_to_project({
+                "type": "agent_step",
+                "step": "started",
+                "agent": "Gatherer Agent",
+                "message": "🔄 Đang thu thập thông tin sản phẩm..."
+            }, project_id)
+
+            # Create Gatherer Agent with WebSocket support
+            gatherer_agent = GathererAgent(
+                session_id=f"gatherer_{project_id}_{user_id}",
+                user_id=user_id,
+                websocket_broadcast_fn=manager.broadcast_to_project,
+                project_id=project_id,
+                response_manager=response_manager,
+                event_loop=asyncio.get_event_loop()
+            )
+
+            # Run only Gatherer Agent (will show preview and wait for approval)
+            result = await gatherer_agent.run_async(
+                initial_context=user_message,
+                thread_id=f"gatherer_{project_id}_thread"
+            )
+
+            print(f"[Agent Execution] Gatherer Agent completed. Waiting for approval before next step.", flush=True)
         else:
-            print(f"[WARNING] Agent type '{agent_type}' not implemented yet, using PO Agent")
-            agent = agent_factory["po"]()
-            agent_display_name = "PO Agent"
+            # TODO: Implement other agents (Scrum Master, Developer, Tester)
+            print(f"[WARNING] Agent type '{agent_type}' not implemented yet")
+            agent_display_name = "System"
 
-        # Run agent with WebSocket streaming
-        result = await agent.run_with_streaming(
-            user_input=user_message,
-            websocket_broadcast_fn=manager.broadcast_to_project,
-            project_id=project_id,
-            response_manager=response_manager
-        )
+            await manager.broadcast_to_project({
+                "type": "agent_message",
+                "content": f"⚠️ Agent type '{agent_type}' is not implemented yet. Please contact support.",
+                "agent_name": "System"
+            }, project_id)
+            return
 
-        # Extract response from result
-        response_content = ""
-        if isinstance(result, dict):
-            # Try to get messages from result
-            messages = result.get("messages", [])
-            if messages:
-                last_message = messages[-1]
-                if isinstance(last_message, dict):
-                    response_content = last_message.get("content", "")
-                elif hasattr(last_message, 'content'):
-                    # LangChain message object
-                    response_content = last_message.content
-                else:
-                    # Convert to string and try to extract content
-                    msg_str = str(last_message)
-                    if "content=" in msg_str:
-                        # Extract content from string representation
-                        import re
-                        match = re.search(r"content='([^']*)'", msg_str)
-                        if match:
-                            response_content = match.group(1)
-                        else:
-                            response_content = msg_str
-                    else:
-                        response_content = msg_str
-            
-            # If no messages, try to get other fields
-            if not response_content:
-                for key in ["sprint_plan", "backlog", "vision", "brief"]:
-                    if key in result and result[key]:
-                        response_content = f"✅ Generated {key}:\n\n{result[key]}"
-                        break
-        
-        if not response_content:
-            response_content = "✅ Agent execution completed successfully."
-
-        # Clean up escaped newlines
-        response_content = response_content.replace('\\n', '\n')
-
-        # Save agent response to database
-        agent_message = MessageModel(
-            project_id=UUID(project_id),
-            author_type=AuthorType.AGENT,
-            user_id=None,
-            agent_id=None,
-            content=response_content
-        )
-        session.add(agent_message)
-        session.commit()
-        session.refresh(agent_message)
-
-        # Send typing stopped
-        await manager.broadcast_to_project({
-            "type": "typing",
-            "agent_name": "PO Agent",
-            "is_typing": False
-        }, project_id)
-
-        # Broadcast agent message
-        await manager.broadcast_to_project({
-            "type": "agent_message",
-            "data": {
-                "id": str(agent_message.id),
-                "project_id": str(agent_message.project_id),
-                "author_type": agent_message.author_type,
-                "user_id": str(agent_message.user_id) if agent_message.user_id else None,
-                "agent_id": str(agent_message.agent_id) if agent_message.agent_id else None,
-                "content": agent_message.content,
-                "created_at": agent_message.created_at.isoformat(),
-                "updated_at": agent_message.updated_at.isoformat(),
-            }
-        }, project_id)
+        # Gatherer Agent completed successfully
+        # Wait for user to approve preview, then auto-trigger will run next agent
+        # Keep progress indicator and typing indicator active (don't send typing stopped)
+        print(f"[Agent Execution] ✓ Gatherer Agent workflow initiated successfully", flush=True)
 
     except Exception as e:
         error_msg = f"❌ Agent execution failed: {str(e)}"
