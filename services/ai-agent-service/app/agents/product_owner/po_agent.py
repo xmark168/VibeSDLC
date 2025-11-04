@@ -52,15 +52,33 @@ class POAgent:
     - State persistence với checkpointer
     """
 
-    def __init__(self, session_id: str | None = None, user_id: str | None = None):
+    def __init__(
+        self,
+        session_id: str | None = None,
+        user_id: str | None = None,
+        websocket_broadcast_fn=None,
+        project_id: str | None = None,
+        response_manager=None,
+        event_loop=None
+    ):
         """Khởi tạo PO Agent.
 
         Args:
             session_id: Session ID cho tracking
             user_id: User ID cho tracking
+            websocket_broadcast_fn: Async function to broadcast WebSocket messages (optional)
+            project_id: Project ID for WebSocket broadcasting (optional)
+            response_manager: ResponseManager for human-in-the-loop via WebSocket (optional)
+            event_loop: Event loop for async operations (optional)
         """
         self.session_id = session_id or "default_po_session"
         self.user_id = user_id
+
+        # WebSocket dependencies (optional)
+        self.websocket_broadcast_fn = websocket_broadcast_fn
+        self.project_id = project_id
+        self.response_manager = response_manager
+        self.event_loop = event_loop
 
         # Initialize Langfuse callback handler (with batch size limit)
         # Note: session_id and user_id are NOT passed to constructor
@@ -261,7 +279,7 @@ class POAgent:
 
                 print(f"[Vision Tool Call] VisionAgent created with WebSocket support", flush=True)
 
-                # Call VisionAgent - it will create its own trace via its handler
+                # Call VisionAgent - it will auto-detect WebSocket mode and use websocket_helper
                 result = vision_agent.run(
                     product_brief=product_brief, thread_id=f"{tool_session_id}_thread"
                 )
@@ -342,12 +360,27 @@ class POAgent:
                 # Create separate session_id for this tool call to create a new trace
                 tool_session_id = f"{self.session_id}_backlog_tool"
 
+                # Get WebSocket dependencies (same as VisionAgent)
+                event_loop = getattr(self, 'event_loop', None)
+                print(f"[Backlog Tool Call] event_loop: {event_loop}", flush=True)
+                print(f"[Backlog Tool Call] websocket_broadcast_fn: {getattr(self, 'websocket_broadcast_fn', None) is not None}", flush=True)
+                print(f"[Backlog Tool Call] project_id: {getattr(self, 'project_id', None)}", flush=True)
+                print(f"[Backlog Tool Call] response_manager: {getattr(self, 'response_manager', None) is not None}", flush=True)
+
                 # Create a new BacklogAgent instance with separate session_id
+                # Pass WebSocket dependencies if available (like VisionAgent)
                 backlog_agent = BacklogAgent(
-                    session_id=tool_session_id, user_id=self.user_id
+                    session_id=tool_session_id,
+                    user_id=self.user_id,
+                    websocket_broadcast_fn=getattr(self, 'websocket_broadcast_fn', None),
+                    project_id=getattr(self, 'project_id', None),
+                    response_manager=getattr(self, 'response_manager', None),
+                    event_loop=event_loop  # Use stored event loop
                 )
 
-                # Call BacklogAgent - it will create its own trace via its handler
+                print(f"[Backlog Tool Call] BacklogAgent created with WebSocket support", flush=True)
+
+                # Call BacklogAgent - it will auto-detect WebSocket mode and use websocket_helper
                 result = backlog_agent.run(
                     product_vision=product_vision, thread_id=f"{tool_session_id}_thread"
                 )
@@ -427,12 +460,27 @@ class POAgent:
                 # Create separate session_id for this tool call to create a new trace
                 tool_session_id = f"{self.session_id}_priority_tool"
 
+                # Get WebSocket dependencies (same as VisionAgent)
+                event_loop = getattr(self, 'event_loop', None)
+                print(f"[Priority Tool Call] event_loop: {event_loop}", flush=True)
+                print(f"[Priority Tool Call] websocket_broadcast_fn: {getattr(self, 'websocket_broadcast_fn', None) is not None}", flush=True)
+                print(f"[Priority Tool Call] project_id: {getattr(self, 'project_id', None)}", flush=True)
+                print(f"[Priority Tool Call] response_manager: {getattr(self, 'response_manager', None) is not None}", flush=True)
+
                 # Create a new PriorityAgent instance with separate session_id
+                # Pass WebSocket dependencies if available (like VisionAgent)
                 priority_agent = PriorityAgent(
-                    session_id=tool_session_id, user_id=self.user_id
+                    session_id=tool_session_id,
+                    user_id=self.user_id,
+                    websocket_broadcast_fn=getattr(self, 'websocket_broadcast_fn', None),
+                    project_id=getattr(self, 'project_id', None),
+                    response_manager=getattr(self, 'response_manager', None),
+                    event_loop=event_loop  # Use stored event loop
                 )
 
-                # Call PriorityAgent - it will create its own trace via its handler
+                print(f"[Priority Tool Call] PriorityAgent created with WebSocket support", flush=True)
+
+                # Call PriorityAgent - it will auto-detect WebSocket mode and use websocket_helper
                 sprint_plan = priority_agent.run(
                     product_backlog=product_backlog,
                     thread_id=f"{tool_session_id}_thread",
@@ -476,29 +524,42 @@ class POAgent:
             system_prompt=SYSTEM_PROMPT,
         )
 
-    def _is_website_intent(self, text: str) -> bool:
-        """Detect if user intends to create a website/web app.
+    def _is_product_idea_intent(self, text: str) -> bool:
+        """Detect if user intends to describe a product idea.
 
-        If detected, we can bypass the kickoff-only greeting and immediately
-        trigger sub-agents (e.g., GathererAgent) to collect details.
+        Returns True if user is describing a product idea (not just greeting).
+        This triggers Gatherer Agent to collect requirements.
         """
-        t = (text or "").lower()
-        keywords = [
-            "tao trang web",
-            "tạo trang web",
-            "trang web",
-            "website",
-            "web app",
-            "xay dung website",
-            "xây dựng website",
-            "lam website",
-            "làm website",
-            "xay dung trang web",
-            "xây dựng trang web",
-            "phat trien website",
-            "phát triển website",
+        t = (text or "").lower().strip()
+
+        # Greeting keywords that should NOT trigger product gathering
+        greeting_keywords = {
+            "bắt đầu", "bat dau", "start", "hi", "hello",
+            "chào", "chao", "xin chào", "xin chao"
+        }
+
+        # If it's just a greeting, return False
+        if t in greeting_keywords:
+            return False
+
+        # Product idea keywords that should trigger Gatherer Agent
+        product_keywords = [
+            "tao", "tạo",  # create
+            "xay dung", "xây dựng",  # build
+            "lam", "làm",  # make
+            "phat trien", "phát triển",  # develop
+            "app", "ung dung", "ứng dụng",  # application
+            "website", "trang web", "web",  # website
+            "san pham", "sản phẩm",  # product
+            "dich vu", "dịch vụ",  # service
+            "he thong", "hệ thống",  # system
+            "platform", "nen tang",  # platform
+            "tool", "cong cu",  # tool
+            "phan mem", "phần mềm",  # software
         ]
-        return any(k in t for k in keywords)
+
+        # If text contains any product-related keyword, it's likely a product idea
+        return any(k in t for k in product_keywords)
 
     def _needs_kickoff_only(self, user_input: str) -> bool:
         """Return True if we should only greet and ask for more info (no tools)."""
@@ -558,57 +619,12 @@ class POAgent:
             final_result = None
             step_count = 0
 
-            # Kickoff-only path (just greeting, no processing needed)
-            if self._needs_kickoff_only(user_input):
-                is_website = self._is_website_intent(user_input or "")
-
-                if is_website:
-
-                    # Send start indicator for website intent processing
-                    await websocket_broadcast_fn({
-                        "type": "agent_step",
-                        "step": "started",
-                        "agent": "PO Agent",
-                        "message": "🚀 PO Agent bắt đầu xử lý..."
-                    }, project_id)
-
-                    await websocket_broadcast_fn({
-                        "type": "agent_thinking",
-                        "content": "Phát hiện ý định tạo website. Bắt đầu thu thập thông tin..."
-                    }, project_id)
-
-                    tool_session_id = f"{self.session_id}_gatherer_tool"
-
-                    # Get current event loop
-                    import asyncio
-                    loop = asyncio.get_event_loop()
-
-                    gatherer_agent = GathererAgent(
-                        session_id=tool_session_id,
-                        user_id=self.user_id,
-                        websocket_broadcast_fn=websocket_broadcast_fn,
-                        project_id=project_id,
-                        response_manager=response_manager,
-                        event_loop=loop  # Pass event loop for async operations
-                    )
-
-                    # Call synchronously - GathererAgent.run() handles async internally
-                    gather_result = gatherer_agent.run(
-                        user_input,
-                        f"{tool_session_id}_thread"
-                    )
-
-                    brief = None
-                    if isinstance(gather_result, dict):
-                        for node_name, state_data in gather_result.items():
-                            if isinstance(state_data, dict):
-                                brief = state_data.get("brief")
-                                if brief:
-                                    break
-
-                    msg = "Đã nhận yêu cầu tạo trang web. Đã thu thập thông tin với GathererAgent."
-                    return {"messages": [{"type": "assistant", "content": msg}], "brief": brief, "gatherer": gather_result or {}}
-                else:
+            # Check if user is describing a product idea (not just greeting)
+            # If so, let Deep Agent handle the full workflow (Gatherer -> Vision -> Backlog -> Priority)
+            # Don't bypass it by calling Gatherer directly
+            if not self._is_product_idea_intent(user_input):
+                # Not a product idea, check if it's just a greeting
+                if self._needs_kickoff_only(user_input):
                     greeting = (
                         "Chào bạn! Tôi là Product Owner Agent (PO Agent). "
                         "Tôi có thể giúp lập kế hoạch và tạo Sprint Plan từ ý tưởng sản phẩm. "
@@ -617,7 +633,7 @@ class POAgent:
                     )
                     return {"messages": [{"type": "assistant", "content": greeting}]}
 
-            # Full execution path - send start indicator here
+            # Full execution path - product idea detected, run Deep Agent workflow
             await websocket_broadcast_fn({
                 "type": "agent_step",
                 "step": "started",
@@ -625,7 +641,7 @@ class POAgent:
                 "message": "🚀 PO Agent bắt đầu xử lý..."
             }, project_id)
 
-            for chunk in self.agent.stream(
+            async for chunk in self.agent.astream(
                 {"messages": [("user", user_input)]},
                 config=config,
                 stream_mode="updates"
@@ -716,6 +732,31 @@ class POAgent:
         Returns:
             dict: Final state với messages và outputs
         """
+        # Check if WebSocket mode is enabled
+        if self.websocket_broadcast_fn and self.project_id and self.response_manager:
+            print(f"[POAgent.run] WebSocket mode detected - using websocket_helper", flush=True)
+
+            # Import websocket helper
+            from app.core.websocket_helper import websocket_helper
+
+            # Run async version in dedicated WebSocket loop
+            print(f"[POAgent.run] Scheduling in WebSocket helper loop...", flush=True)
+            result = websocket_helper.run_coroutine(
+                self.run_with_streaming(
+                    user_input=user_input,
+                    websocket_broadcast_fn=self.websocket_broadcast_fn,
+                    project_id=self.project_id,
+                    response_manager=self.response_manager,
+                    thread_id=thread_id
+                ),
+                timeout=660  # 11 minutes
+            )
+            print(f"[POAgent.run] Execution completed!", flush=True)
+            return result
+
+        # Terminal mode: sync execution
+        print(f"[POAgent.run] Terminal mode - sync execution", flush=True)
+
         if thread_id is None:
             thread_id = self.session_id
 
@@ -739,34 +780,21 @@ class POAgent:
             final_result = None
             step_count = 0
 
-            # Kickoff-only path: if user intends to create a website, start gathering; otherwise, greet and ask for info
-            if self._needs_kickoff_only(user_input):
-                if self._is_website_intent(user_input or ""):
-                    print("Detected website intent; starting GathererAgent to collect details...")
-                    tool_session_id = f"{self.session_id}_gatherer_tool"
-                    gatherer_agent = GathererAgent(session_id=tool_session_id, user_id=self.user_id)
-                    gather_result = gatherer_agent.run(
-                        initial_context=user_input,
-                        thread_id=f"{tool_session_id}_thread"
-                    )
-                    brief = None
-                    if isinstance(gather_result, dict):
-                        for node_name, state_data in gather_result.items():
-                            if isinstance(state_data, dict):
-                                brief = state_data.get("brief")
-                                if brief:
-                                    break
-                    msg = "Đã nhận yêu cầu tạo trang web. Bắt đầu thu thập thông tin với GathererAgent."
-                    return {"messages": [{"type": "assistant", "content": msg}], "brief": brief, "gatherer": gather_result or {}}
-                else:
+            # Check if user is describing a product idea (not just greeting)
+            # If so, let Deep Agent handle the full workflow (Gatherer -> Vision -> Backlog -> Priority)
+            # Don't bypass it by calling Gatherer directly
+            if not self._is_product_idea_intent(user_input):
+                # Not a product idea, check if it's just a greeting
+                if self._needs_kickoff_only(user_input):
                     greeting = (
-                        "Chao ban! Toi la Product Owner Agent (PO Agent). "
-                        "Toi co the giup lap ke hoach va tao Sprint Plan tu y tuong san pham. "
-                        "Quy trinh: Gatherer -> Vision -> Backlog -> Priority. "
-                        "Vui long mo ta y tuong (ten, mo ta ngan, doi tuong, tinh nang chinh) de bat dau."
+                        "Chào bạn! Tôi là Product Owner Agent (PO Agent). "
+                        "Tôi có thể giúp lập kế hoạch và tạo Sprint Plan từ ý tưởng sản phẩm. "
+                        "Quy trình: Gatherer -> Vision -> Backlog -> Priority. "
+                        "Vui lòng mô tả ý tưởng để bắt đầu."
                     )
                     return {"messages": [{"type": "assistant", "content": greeting}]}
 
+            # Product idea detected, run Deep Agent workflow
             for chunk in self.agent.stream(
                 {"messages": [("user", user_input)]},
                 config=config,
