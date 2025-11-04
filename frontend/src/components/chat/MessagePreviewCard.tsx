@@ -90,7 +90,7 @@ export function MessagePreviewCard({ message, onEdit }: MessagePreviewCardProps)
             )}
             <div>
               <div className="text-sm font-semibold">{getTypeLabel()}</div>
-              <div className="text-xs text-muted-foreground">{message.content}</div>
+              {/* <div className="text-xs text-muted-foreground">{message.content}</div> */}
             </div>
           </div>
           {onEdit && (
