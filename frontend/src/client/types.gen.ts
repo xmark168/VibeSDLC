@@ -601,6 +601,10 @@ export type GithubUnlinkGithubRepositoryData = {
 
 export type GithubUnlinkGithubRepositoryResponse = (ProjectPublic);
 
+export type GithubCheckGithubInstallationStatusResponse = ({
+    [key: string]: unknown;
+});
+
 export type GithubListGithubInstallationsData = {
     limit?: number;
     skip?: number;

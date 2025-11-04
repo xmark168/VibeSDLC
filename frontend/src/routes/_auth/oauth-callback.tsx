@@ -1,9 +1,9 @@
-import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router"
-import { useEffect, useState, useRef } from "react"
-import { account } from "@/lib/appwrite"
-import useAuth from "@/hooks/useAuth"
-import { withToast } from "@/utils"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Loader2 } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import useAuth from "@/hooks/useAuth"
+import { account } from "@/lib/appwrite"
+import { withToast } from "@/utils"
 
 export const Route = createFileRoute("/_auth/oauth-callback")({
   component: OAuthCallback,
@@ -12,7 +12,7 @@ export const Route = createFileRoute("/_auth/oauth-callback")({
 function OAuthCallback() {
   const navigate = useNavigate()
   const { loginMutation } = useAuth()
-  const [isProcessing, setIsProcessing] = useState(true)
+  const [_isProcessing, setIsProcessing] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const hasCalledRef = useRef(false)
 
@@ -77,7 +77,7 @@ function OAuthCallback() {
     }
 
     handleOAuthCallback()
-  }, [])
+  }, [loginMutation.mutate, navigate])
 
   if (error) {
     return (
@@ -105,4 +105,3 @@ function OAuthCallback() {
     </div>
   )
 }
-

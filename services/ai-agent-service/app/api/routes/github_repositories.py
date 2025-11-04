@@ -244,6 +244,56 @@ async def unlink_github_repository(
         )
 
 
+@router.get("/installation-status", response_model=dict[str, Any])
+async def check_github_installation_status(
+    current_user: CurrentUser,
+    session: SessionDep,
+) -> dict[str, Any]:
+    """
+    Check if the current user has installed GitHub App.
+
+    Returns:
+    - has_installation: Boolean indicating if user has at least one GitHub installation
+    - installations_count: Total number of installations
+    - installations: List of installation summaries (max 5)
+    """
+    try:
+        # Get all installations for the user
+        installations = crud.github_installation.get_github_installations_by_user(
+            session, current_user.id, skip=0, limit=5
+        )
+
+        total = crud.github_installation.count_github_installations_by_user(
+            session, current_user.id
+        )
+
+        has_installation = total > 0
+
+        return {
+            "has_installation": has_installation,
+            "installations_count": total,
+            "installations": [
+                {
+                    "id": str(inst.id),
+                    "installation_id": inst.installation_id,
+                    "account_login": inst.account_login,
+                    "account_type": inst.account_type,
+                    "repositories_count": len(inst.repositories.get("repositories", []))
+                    if inst.repositories
+                    else 0,
+                }
+                for inst in installations
+            ],
+        }
+
+    except Exception as e:
+        logger.error(f"Error checking GitHub installation status: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error checking installation status"
+        )
+
+
 @router.get("/installations", response_model=dict[str, Any])
 async def list_github_installations(
     current_user: CurrentUser,
@@ -258,11 +308,11 @@ async def list_github_installations(
         installations = crud.github_installation.get_github_installations_by_user(
             session, current_user.id, skip=skip, limit=limit
         )
-        
+
         total = crud.github_installation.count_github_installations_by_user(
             session, current_user.id
         )
-        
+
         return {
             "data": [
                 {
@@ -280,7 +330,7 @@ async def list_github_installations(
             ],
             "count": total,
         }
-    
+
     except Exception as e:
         logger.error(f"Error listing GitHub installations: {e}")
         raise HTTPException(

@@ -1,16 +1,11 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useLocation, useNavigate } from "@tanstack/react-router"
+import { AnimatePresence } from "framer-motion"
 import { useEffect, useState } from "react"
-import { useLocation } from "@tanstack/react-router"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react"
+import { type ApiError, GithubService } from "@/client"
+import { GitHubLinkModal } from "@/components/projects/github-link-modal"
+import { handleError } from "@/utils"
+import toast from "react-hot-toast"
 
 interface GitHubInstallationHandlerProps {
   onSuccess?: () => void
@@ -22,17 +17,53 @@ export function GitHubInstallationHandler({
   onError,
 }: GitHubInstallationHandlerProps) {
   const location = useLocation()
+  const navigate = useNavigate()
   const token = localStorage.getItem("access_token")
-  const [linking, setLinking] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState(false)
-
+  const [_error, setError] = useState<string | null>(null)
+  const [_success, setSuccess] = useState(false)
+  const [showLinkModal, setShowLinkModal] = useState(false)
+  const queryClient = useQueryClient()
   // Parse query parameters from URL
   const searchParams = new URLSearchParams(location.search)
   const githubInstallation = searchParams.get("github_installation")
   const installationId = searchParams.get("installation_id")
   const errorParam = searchParams.get("error")
   const messageParam = searchParams.get("message")
+  // Debug logging
+  useEffect(() => {
+    console.log("GitHubInstallationHandler - URL params:", {
+      githubInstallation,
+      installationId,
+      errorParam,
+      messageParam,
+      showLinkModal,
+    })
+  }, [
+    githubInstallation,
+    installationId,
+    errorParam,
+    messageParam,
+    showLinkModal,
+  ])
+
+  const linkGithubMutation = useMutation({
+    mutationFn: GithubService.linkInstallationToUser,
+    onSuccess: () => {
+      setSuccess(true)
+      setShowLinkModal(false)
+      onSuccess?.()
+      localStorage.removeItem("installationId")
+      queryClient.invalidateQueries({
+        queryKey: ["github-installation-status"],
+      })
+    },
+    onError: (err) => {
+      handleError(err as ApiError)
+      setError("Failed to link GitHub installation")
+      setShowLinkModal(false)
+      onError?.("Failed to link GitHub installation")
+    },
+  })
 
   // Handle error from callback
   useEffect(() => {
@@ -43,118 +74,56 @@ export function GitHubInstallationHandler({
     }
   }, [errorParam, messageParam, onError])
 
-  // Handle pending installation - show link prompt
+  // Show link modal when installation is pending
+  useEffect(() => {
+    if (githubInstallation === "pending" && installationId) {
+      localStorage.setItem("installationId", installationId)
+      setShowLinkModal(true)
+    }
+  }, [githubInstallation, installationId])
+
+  // Handle link installation - called from modal
   const handleLinkInstallation = async () => {
     if (!installationId || !token) {
       setError("Missing installation ID or authentication token")
+      setShowLinkModal(false)
       return
     }
 
-    setLinking(true)
     try {
-      const response = await fetch(
-        `/api/v1/github/link-installation`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            installation_id: parseInt(installationId),
-          }),
-        }
-      )
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to link installation")
-      }
-
-      setSuccess(true)
-      onSuccess?.()
+      await linkGithubMutation.mutateAsync({
+        installationId: parseInt(installationId, 10),
+      })
+      // Success will be handled by mutation's onSuccess callback
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Unknown error"
       setError(errorMsg)
+      setShowLinkModal(false)
       onError?.(errorMsg)
-    } finally {
-      setLinking(false)
     }
   }
 
-  // Show error alert
-  if (error) {
-    return (
-      <Alert variant="destructive" className="mb-4">
-        <AlertCircle className="h-4 w-4" />
-        <AlertTitle>GitHub Installation Error</AlertTitle>
-        <AlertDescription>{error}</AlertDescription>
-      </Alert>
-    )
+  // Handle close modal
+  const handleCloseModal = () => {
+    setShowLinkModal(false)
+    // Remove query params from URL
+    navigate({ to: location.pathname, replace: true })
   }
 
-  // Show success alert
-  if (success) {
-    return (
-      <Alert className="mb-4 border-green-200 bg-green-50">
-        <CheckCircle2 className="h-4 w-4 text-green-600" />
-        <AlertTitle className="text-green-900">
-          GitHub App Linked Successfully
-        </AlertTitle>
-        <AlertDescription className="text-green-800">
-          Your GitHub App has been linked to your account. You can now use GitHub integration features.
-        </AlertDescription>
-      </Alert>
-    )
-  }
-
-  // Show link prompt for pending installation
-  if (githubInstallation === "pending" && installationId) {
-    return (
-      <AlertDialog open={true}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Link GitHub App with Your Account?</AlertDialogTitle>
-            <AlertDialogDescription>
-              GitHub App has been installed successfully. Would you like to link it with your VibeSDLC account now?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="flex gap-2">
-            <AlertDialogCancel
-              disabled={linking}
-            >
-              Later
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleLinkInstallation}
-              disabled={linking}
-              className="gap-2"
-            >
-              {linking && <Loader2 className="w-4 h-4 animate-spin" />}
-              {linking ? "Linking..." : "Link Now"}
-            </AlertDialogAction>
-          </div>
-        </AlertDialogContent>
-      </AlertDialog>
-    )
-  }
-
-  // Show success alert for existing installation
-  if (githubInstallation === "exists" && installationId) {
-    return (
-      <Alert className="mb-4 border-blue-200 bg-blue-50">
-        <CheckCircle2 className="h-4 w-4 text-blue-600" />
-        <AlertTitle className="text-blue-900">
-          GitHub App Already Installed
-        </AlertTitle>
-        <AlertDescription className="text-blue-800">
-          This GitHub App installation already exists. You can manage it from your GitHub settings.
-        </AlertDescription>
-      </Alert>
-    )
-  }
-
-  return null
+  return (
+    <>
+      {/* Show link modal for pending installation */}
+      <AnimatePresence>
+        {showLinkModal && (
+          <GitHubLinkModal
+            onClose={handleCloseModal}
+            onLinked={handleLinkInstallation}
+            installationId={
+              installationId ? parseInt(installationId, 10) : null
+            }
+          />
+        )}
+      </AnimatePresence>
+    </>
+  )
 }
-

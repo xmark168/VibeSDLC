@@ -1,4 +1,5 @@
 import { Github } from "lucide-react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -8,7 +9,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { useState } from "react"
 
 const GITHUB_APP_NAME = import.meta.env.VITE_GITHUB_APP_NAME || "vibesdlc"
 
@@ -49,14 +49,13 @@ export function GitHubInstallButton({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {button}
-      </DialogTrigger>
+      <DialogTrigger asChild>{button}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Install GitHub App</DialogTitle>
           <DialogDescription>
-            Connect your GitHub repositories to VibeSDLC to enable automated product backlog generation and AI-powered project management.
+            Connect your GitHub repositories to VibeSDLC to enable automated
+            product backlog generation and AI-powered project management.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -93,4 +92,3 @@ export function GitHubInstallButton({
     </Dialog>
   )
 }
-

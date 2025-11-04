@@ -1,31 +1,23 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router"
-import { useMemo, useState } from "react"
-import CreateProjectDialog from "@/components/projects/CreateProjectDialog"
-import { GitHubInstallButton } from "@/components/github/GitHubInstallButton"
-import { GitHubInstallationHandler } from "@/components/github/GitHubInstallationHandler"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { AnimatePresence, easeOut, motion } from "framer-motion"
+import { Loader2, Plus } from "lucide-react"
+import { useState } from "react"
+import { projectsApi } from "@/apis/projects"
+import { CreateProjectModal } from "@/components/projects/create-project-modal"
+import { GitHubInstallModal } from "@/components/projects/github-install-modal"
+import { GitHubLinkModal } from "@/components/projects/github-link-modal"
+import { ProjectList } from "@/components/projects/project-list"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Skeleton } from "@/components/ui/skeleton"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import useAuth, { isLoggedIn } from "@/hooks/useAuth"
 import { useProjects } from "@/queries/projects"
 import type { Project } from "@/types/project"
-
+import { CreateProjectContent } from "@/components/projects/create-project-content"
+import { HeaderProject } from "@/components/projects/header"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { ApiError, GithubCheckGithubInstallationStatusResponse, GithubService } from "@/client"
+import { GitHubInstallationHandler } from "@/components/github/GitHubInstallationHandler"
+import toast from "react-hot-toast"
+import { handleError } from "@/utils"
 
 export const Route = createFileRoute("/_user/projects")({
   beforeLoad: () => {
@@ -37,191 +29,224 @@ export const Route = createFileRoute("/_user/projects")({
 })
 
 function ProjectsPage() {
-  const navigate = useNavigate()
-  const [search, setSearch] = useState("")
-  const [_status, _setStatus] = useState<"all">("all")
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
-  const [openCreate, setOpenCreate] = useState(false)
-  const [githubSuccess, setGithubSuccess] = useState(false)
-
-  const { logout } = useAuth()
-
-  const { data, isLoading, isError, refetch } = useProjects({
-    search,
-    page,
-    pageSize,
+  const { user } = useAuth()
+  const _navigate = useNavigate()
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showGitHubInstallModal, setShowGitHubInstallModal] = useState(false)
+  const [showGitHubLinkModal, setShowGitHubLinkModal] = useState(false)
+  const [_githubLinked, setGithubLinked] = useState(false)
+  const [linkSuccess, setLinkSuccess] = useState(false)
+  const installationId = (localStorage.getItem("installationId"))
+  const queryClient = useQueryClient()
+  const { data: _githubStatus } = useQuery<GithubCheckGithubInstallationStatusResponse>({
+    queryKey: ["github-installation-status"],
+    queryFn: GithubService.checkGithubInstallationStatus,
   })
+  const linkInstallationMutation = useMutation({
+    mutationFn: GithubService.linkInstallationToUser,
+    onSuccess: () => {
+      toast.success("GitHub installation linked successfully")
+      setLinkSuccess(true)
+      localStorage.removeItem("installationId")
+      queryClient.invalidateQueries({
+        queryKey: ["github-installation-status"],
+      })
+    },
+    onError: (err) => {
+      handleError(err as ApiError)
+    },
+  })
+  console.log('_githubStatus', _githubStatus)
+  // Fetch projects
+  const { data, isLoading, refetch } = useProjects({ page: 1, pageSize: 50 })
 
-  const totalPages = useMemo(() => {
-    const total = data?.count ?? 0
-    return Math.max(1, Math.ceil(total / pageSize))
-  }, [data?.count, pageSize])
+  const projects = data?.data || []
 
-  return (
-    <div className="max-w-[1200px] mx-auto p-6">
-      <GitHubInstallationHandler
-        onSuccess={() => setGithubSuccess(true)}
-        onError={(error) => console.error("GitHub installation error:", error)}
-      />
+  // Transform API projects to match ProjectCard interface
+  const transformedProjects = projects.map((project: Project) => ({
+    code: project.code,
+    repositoryName: project.name,
+    createdAt: project.created_at || new Date().toISOString(),
+    mode: "private" as const, // Default to private for now
+  }))
 
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold">Projects</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage and track all your projects.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <GitHubInstallButton variant="outline" size="default" />
-          <Button variant="outline" onClick={logout}>
-            Logout
-          </Button>
-          <Button onClick={() => setOpenCreate(true)}>New Project</Button>
-        </div>
-      </div>
-
-      <div className="flex gap-3 mb-4">
-        <Input
-          placeholder="Search projects..."
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value)
-            setPage(1)
-          }}
-        />
-        {/* Status filter removed until backend supports it */}
-      </div>
-
-      {isError && (
-        <Alert variant="destructive" className="mb-4">
-          <AlertTitle>Failed to load projects</AlertTitle>
-          <AlertDescription>
-            Please try again.{" "}
-            <Button
-              variant="outline"
-              size="sm"
-              className="ml-2"
-              onClick={() => refetch()}
-            >
-              Retry
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {isLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-10 w-full" />
-          ))}
-        </div>
-      ) : (
-        <ProjectsTable
-          items={data?.data ?? []}
-          onCreate={() => setOpenCreate(true)}
-          onOpenProject={(id) =>
-            navigate({
-              to: "/workspace/$workspaceId",
-              params: { workspaceId: id },
-            })
-          }
-        />
-      )}
-
-      <div className="mt-4 flex items-center justify-between">
-        <div className="text-sm text-muted-foreground">
-          Page {page} of {totalPages}
-        </div>
-        <div className="flex gap-2 items-center">
-          <Button
-            variant="outline"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-          >
-            Prev
-          </Button>
-          <Button
-            variant="outline"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-          >
-            Next
-          </Button>
-          <Select
-            value={String(pageSize)}
-            onValueChange={(v) => {
-              setPageSize(Number(v))
-              setPage(1)
-            }}
-          >
-            <SelectTrigger className="w-[100px]">
-              <SelectValue placeholder="Page size" />
-            </SelectTrigger>
-            <SelectContent>
-              {[10, 20, 50].map((s) => (
-                <SelectItem key={s} value={String(s)}>
-                  {s} / page
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      <CreateProjectDialog open={openCreate} onOpenChange={setOpenCreate} />
-    </div>
-  )
-}
-
-function ProjectsTable({
-  items,
-  onCreate,
-  onOpenProject,
-}: {
-  items: Project[]
-  onCreate: () => void
-  onOpenProject: (id: string) => void
-}) {
-  if (items.length === 0) {
-    return (
-      <div className="border rounded-md p-10 text-center">
-        <p className="text-sm text-muted-foreground">No projects found.</p>
-        <Button className="mt-3" onClick={onCreate}>
-          Create your first project
-        </Button>
-      </div>
-    )
+  const _handleInstallGitHub = () => {
+    setShowGitHubInstallModal(true)
   }
 
+  const handleGitHubInstallComplete = () => {
+    setShowGitHubInstallModal(false)
+    setShowGitHubLinkModal(true)
+  }
+
+  const handleGitHubLinked = async () => {
+    try {
+      await linkInstallationMutation.mutateAsync({
+        installationId: parseInt(installationId || "0", 10),
+      })
+    } catch (err) {
+      console.error("Failed to link installation:", err)
+    }
+  }
+
+  const handleNewProjectClick = () => {
+    // Check if there's a pending installation ID
+    const pendingInstallationId = localStorage.getItem("installationId")
+
+    if (pendingInstallationId) {
+      // Show GitHub link modal to link installation with project
+      setShowGitHubLinkModal(true)
+    } else {
+      // Show create project modal as usual
+      setShowCreateModal(true)
+    }
+  }
+
+  const handleCreateProject = async (name: string, _isPrivate: boolean) => {
+    try {
+      if (!user?.id) return
+
+      // Generate project code from name
+      const code = name.toLowerCase().replace(/\s+/g, "-")
+
+      await projectsApi.create({
+        code,
+        name,
+        owner_id: user.id,
+        is_init: true,
+      })
+
+      setShowCreateModal(false)
+      refetch()
+    } catch (error) {
+      console.error("Failed to create project:", error)
+    }
+  }
+
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.1,
+        delayChildren: 0.2,
+      },
+    },
+  }
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: {
+      opacity: 1,
+      y: 0,
+      transition: { duration: 0.5, ease: easeOut },
+    },
+  }
+
+
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-[80px]">STT</TableHead>
-          <TableHead>Tên</TableHead>
-          <TableHead>Ngày tạo</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {items.map((p, idx) => (
-          <TableRow
-            key={p.id}
-            className="cursor-pointer"
-            onClick={() => onOpenProject(p.id)}
-          >
-            <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
-            <TableCell className="font-medium">{p.name}</TableCell>
-            <TableCell>
-              {(p.created_at ?? p.updated_at)
-                ? new Intl.DateTimeFormat(undefined, {
-                  dateStyle: "medium",
-                  timeStyle: "short",
-                }).format(new Date(p.created_at ?? p.updated_at!))
-                : "-"}
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <>
+      <div className="container mx-auto">
+        <GitHubInstallationHandler />
+      </div>
+      {
+        _githubStatus?.has_installation || (installationId !== null && !_githubStatus?.has_installation) ? (
+          <div className="min-h-screen">
+            <HeaderProject />
+            <div className="container mx-auto px-6 py-8">
+              <motion.div
+                variants={containerVariants}
+                initial="hidden"
+                animate="visible"
+              >
+                {/* Header */}
+                <motion.div
+                  variants={itemVariants}
+                  className="flex items-center justify-between mb-8"
+                >
+                  <div>
+                    <h1 className="text-4xl font-bold text-white mb-2">
+                      Your{" "}
+                      <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-purple-600">
+                        Projects
+                      </span>
+                    </h1>
+                    <p className="text-slate-400">
+                      Manage your AI-powered development projects
+                    </p>
+                  </div>
+
+                  <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                    <Button
+                      onClick={handleNewProjectClick}
+                      className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-semibold gap-2"
+                    >
+                      <Plus className="h-5 w-5" />
+                      New Project
+                    </Button>
+                  </motion.div>
+                </motion.div>
+
+                {/* Projects List */}
+                <motion.div variants={itemVariants}>
+                  {isLoading ? (
+                    <div className="flex items-center justify-center py-20">
+                      <Loader2 className="h-8 w-8 animate-spin text-purple-400" />
+                    </div>
+                  ) : (
+                    <ProjectList projects={transformedProjects} />
+                  )}
+                </motion.div>
+              </motion.div>
+            </div>
+
+            {/* Modals */}
+            <AnimatePresence>
+              {showCreateModal && (
+                <CreateProjectModal
+                  isOpen={showCreateModal}
+                  onClose={() => setShowCreateModal(false)}
+                  onCreateProject={handleCreateProject}
+                />
+              )}
+            </AnimatePresence>
+
+
+
+            <AnimatePresence>
+              {showGitHubLinkModal && (
+                <GitHubLinkModal
+                  onClose={() => {
+                    setShowGitHubLinkModal(false)
+                    setLinkSuccess(false)
+                  }}
+                  onLinked={handleGitHubLinked}
+                  installationId={installationId ? parseInt(installationId, 10) : null}
+                  isSuccess={linkSuccess}
+                />
+              )}
+            </AnimatePresence>
+          </div>
+        ) : (
+          <>
+            <HeaderProject />
+            <CreateProjectContent
+              onInstallGitHub={_handleInstallGitHub}
+              githubLinked={_githubLinked}
+            />
+            <AnimatePresence>
+              {showGitHubInstallModal && (
+                <GitHubInstallModal
+                  onClose={() => setShowGitHubInstallModal(false)}
+                  onOpen={() => setShowGitHubInstallModal(true)}
+                  onInstall={handleGitHubInstallComplete}
+                />
+              )}
+            </AnimatePresence>
+          </>
+        )
+      }
+
+    </>
   )
 }

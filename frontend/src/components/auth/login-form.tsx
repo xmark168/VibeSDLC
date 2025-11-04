@@ -1,14 +1,14 @@
 import { Link } from "@tanstack/react-router"
+import { OAuthProvider } from "appwrite"
 import { motion } from "framer-motion"
 import type React from "react"
 import { useState } from "react"
-import { OAuthProvider } from "appwrite"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import useAuth from "@/hooks/useAuth"
-import { withToast } from "@/utils"
 import { account } from "@/lib/appwrite"
+import { withToast } from "@/utils"
 export function LoginForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")

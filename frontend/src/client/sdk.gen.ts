@@ -3,7 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { AgentExecutionExecuteAgentData, AgentExecutionExecuteAgentResponse, AgentExecutionExecuteAgentSyncData, AgentExecutionExecuteAgentSyncResponse, AgentsListAgentsData, AgentsListAgentsResponse, AgentsCreateAgentData, AgentsCreateAgentResponse, AgentsGetAgentData, AgentsGetAgentResponse, AgentsUpdateAgentData, AgentsUpdateAgentResponse, AgentsDeleteAgentData, AgentsDeleteAgentResponse, AuthenticationLoginData, AuthenticationLoginResponse, AuthenticationRegisterData, AuthenticationRegisterResponse, AuthenticationConfirmCodeData, AuthenticationConfirmCodeResponse, AuthenticationResendCodeData, AuthenticationResendCodeResponse, AuthenticationRefreshTokenData, AuthenticationRefreshTokenResponse, AuthenticationForgotPasswordData, AuthenticationForgotPasswordResponse, AuthenticationResetPasswordData, AuthenticationResetPasswordResponse, BacklogItemsGetBacklogItemsData, BacklogItemsGetBacklogItemsResponse, BacklogItemsCreateBacklogItemData, BacklogItemsCreateBacklogItemResponse, BacklogItemsGetBacklogItemData, BacklogItemsGetBacklogItemResponse, BacklogItemsUpdateBacklogItemData, BacklogItemsUpdateBacklogItemResponse, BacklogItemsDeleteBacklogItemData, BacklogItemsDeleteBacklogItemResponse, BacklogItemsMoveBacklogItemData, BacklogItemsMoveBacklogItemResponse, BacklogItemsGetKanbanBoardData, BacklogItemsGetKanbanBoardResponse, ChatGetWebsocketInfoResponse, ChatGetConnectionStatsResponse, GithubGithubWebhookResponse, GithubGithubCallbackData, GithubGithubCallbackResponse, GithubLinkInstallationToUserData, GithubLinkInstallationToUserResponse, GithubListGithubRepositoriesData, GithubListGithubRepositoriesResponse, GithubLinkGithubRepositoryData, GithubLinkGithubRepositoryResponse, GithubUnlinkGithubRepositoryData, GithubUnlinkGithubRepositoryResponse, GithubListGithubInstallationsData, GithubListGithubInstallationsResponse, MessagesListMessagesData, MessagesListMessagesResponse, MessagesCreateMessageData, MessagesCreateMessageResponse, MessagesUpdateMessageData, MessagesUpdateMessageResponse, MessagesDeleteMessageData, MessagesDeleteMessageResponse, MessagesDeleteAllMessagesByProjectData, MessagesDeleteAllMessagesByProjectResponse, PrivateCreateUserData, PrivateCreateUserResponse, ProjectsListProjectsData, ProjectsListProjectsResponse, ProjectsCreateProjectData, ProjectsCreateProjectResponse, ProjectsGetProjectData, ProjectsGetProjectResponse, ProjectsUpdateProjectData, ProjectsUpdateProjectResponse, ProjectsDeleteProjectData, ProjectsDeleteProjectResponse, SprintsListSprintsData, SprintsListSprintsResponse, SprintsCreateSprintData, SprintsCreateSprintResponse, SprintsGetSprintData, SprintsGetSprintResponse, SprintsUpdateSprintData, SprintsUpdateSprintResponse, SprintsDeleteSprintData, SprintsDeleteSprintResponse, SprintsGetActiveSprintData, SprintsGetActiveSprintResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { AgentExecutionExecuteAgentData, AgentExecutionExecuteAgentResponse, AgentExecutionExecuteAgentSyncData, AgentExecutionExecuteAgentSyncResponse, AgentsListAgentsData, AgentsListAgentsResponse, AgentsCreateAgentData, AgentsCreateAgentResponse, AgentsGetAgentData, AgentsGetAgentResponse, AgentsUpdateAgentData, AgentsUpdateAgentResponse, AgentsDeleteAgentData, AgentsDeleteAgentResponse, AuthenticationLoginData, AuthenticationLoginResponse, AuthenticationRegisterData, AuthenticationRegisterResponse, AuthenticationConfirmCodeData, AuthenticationConfirmCodeResponse, AuthenticationResendCodeData, AuthenticationResendCodeResponse, AuthenticationRefreshTokenData, AuthenticationRefreshTokenResponse, AuthenticationForgotPasswordData, AuthenticationForgotPasswordResponse, AuthenticationResetPasswordData, AuthenticationResetPasswordResponse, BacklogItemsGetBacklogItemsData, BacklogItemsGetBacklogItemsResponse, BacklogItemsCreateBacklogItemData, BacklogItemsCreateBacklogItemResponse, BacklogItemsGetBacklogItemData, BacklogItemsGetBacklogItemResponse, BacklogItemsUpdateBacklogItemData, BacklogItemsUpdateBacklogItemResponse, BacklogItemsDeleteBacklogItemData, BacklogItemsDeleteBacklogItemResponse, BacklogItemsMoveBacklogItemData, BacklogItemsMoveBacklogItemResponse, BacklogItemsGetKanbanBoardData, BacklogItemsGetKanbanBoardResponse, ChatGetWebsocketInfoResponse, ChatGetConnectionStatsResponse, GithubGithubWebhookResponse, GithubGithubCallbackData, GithubGithubCallbackResponse, GithubLinkInstallationToUserData, GithubLinkInstallationToUserResponse, GithubListGithubRepositoriesData, GithubListGithubRepositoriesResponse, GithubLinkGithubRepositoryData, GithubLinkGithubRepositoryResponse, GithubUnlinkGithubRepositoryData, GithubUnlinkGithubRepositoryResponse, GithubCheckGithubInstallationStatusResponse, GithubListGithubInstallationsData, GithubListGithubInstallationsResponse, MessagesListMessagesData, MessagesListMessagesResponse, MessagesCreateMessageData, MessagesCreateMessageResponse, MessagesUpdateMessageData, MessagesUpdateMessageResponse, MessagesDeleteMessageData, MessagesDeleteMessageResponse, MessagesDeleteAllMessagesByProjectData, MessagesDeleteAllMessagesByProjectResponse, PrivateCreateUserData, PrivateCreateUserResponse, ProjectsListProjectsData, ProjectsListProjectsResponse, ProjectsCreateProjectData, ProjectsCreateProjectResponse, ProjectsGetProjectData, ProjectsGetProjectResponse, ProjectsUpdateProjectData, ProjectsUpdateProjectResponse, ProjectsDeleteProjectData, ProjectsDeleteProjectResponse, SprintsListSprintsData, SprintsListSprintsResponse, SprintsCreateSprintData, SprintsCreateSprintResponse, SprintsGetSprintData, SprintsGetSprintResponse, SprintsUpdateSprintData, SprintsUpdateSprintResponse, SprintsDeleteSprintData, SprintsDeleteSprintResponse, SprintsGetActiveSprintData, SprintsGetActiveSprintResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
 
 export class AgentExecutionService {
     /**
@@ -26,7 +26,7 @@ export class AgentExecutionService {
             }
         });
     }
-    
+
     /**
      * Execute Agent Sync
      * Execute an agent synchronously (blocking).
@@ -75,7 +75,7 @@ export class AgentsService {
             }
         });
     }
-    
+
     /**
      * Create Agent
      * @param data The data for the request.
@@ -94,7 +94,7 @@ export class AgentsService {
             }
         });
     }
-    
+
     /**
      * Get Agent
      * @param data The data for the request.
@@ -114,7 +114,7 @@ export class AgentsService {
             }
         });
     }
-    
+
     /**
      * Update Agent
      * @param data The data for the request.
@@ -137,7 +137,7 @@ export class AgentsService {
             }
         });
     }
-    
+
     /**
      * Delete Agent
      * @param data The data for the request.
@@ -179,7 +179,7 @@ export class AuthenticationService {
             }
         });
     }
-    
+
     /**
      * Register
      * Register API - create new account with credential
@@ -199,7 +199,7 @@ export class AuthenticationService {
             }
         });
     }
-    
+
     /**
      * Confirm Code
      * Confirm verification code and complete registration
@@ -219,7 +219,7 @@ export class AuthenticationService {
             }
         });
     }
-    
+
     /**
      * Resend Code
      * Resend verification code
@@ -239,7 +239,7 @@ export class AuthenticationService {
             }
         });
     }
-    
+
     /**
      * Refresh Token
      * Refresh access token using refresh token
@@ -263,7 +263,7 @@ export class AuthenticationService {
             }
         });
     }
-    
+
     /**
      * Forgot Password
      * Forgot Password API - send reset password link via email
@@ -283,7 +283,7 @@ export class AuthenticationService {
             }
         });
     }
-    
+
     /**
      * Reset Password
      * Reset Password API - set new password using token
@@ -340,7 +340,7 @@ export class BacklogItemsService {
             }
         });
     }
-    
+
     /**
      * Create Backlog Item
      * Tạo backlog item mới
@@ -360,7 +360,7 @@ export class BacklogItemsService {
             }
         });
     }
-    
+
     /**
      * Get Backlog Item
      * Lấy chi tiết một backlog item
@@ -381,7 +381,7 @@ export class BacklogItemsService {
             }
         });
     }
-    
+
     /**
      * Update Backlog Item
      * Cập nhật backlog item
@@ -405,7 +405,7 @@ export class BacklogItemsService {
             }
         });
     }
-    
+
     /**
      * Delete Backlog Item
      * Xóa backlog item
@@ -426,7 +426,7 @@ export class BacklogItemsService {
             }
         });
     }
-    
+
     /**
      * Move Backlog Item
      * Di chuyển item giữa các cột hoặc trong cùng cột
@@ -455,7 +455,7 @@ export class BacklogItemsService {
             }
         });
     }
-    
+
     /**
      * Get Kanban Board
      * Lấy dữ liệu Kanban board, nhóm theo status
@@ -503,7 +503,7 @@ export class ChatService {
             url: '/api/v1/chat/info'
         });
     }
-    
+
     /**
      * Get Connection Stats
      * Get current WebSocket connection statistics.
@@ -538,7 +538,7 @@ export class GithubService {
             url: '/api/v1/github/webhook'
         });
     }
-    
+
     /**
      * Github Callback
      * Handle GitHub App OAuth callback.
@@ -581,7 +581,7 @@ export class GithubService {
             }
         });
     }
-    
+
     /**
      * Link Installation To User
      * Link a pending GitHub installation with the current user.
@@ -621,7 +621,7 @@ export class GithubService {
             }
         });
     }
-    
+
     /**
      * List Github Repositories
      * List available GitHub repositories for the current user.
@@ -649,7 +649,7 @@ export class GithubService {
             }
         });
     }
-    
+
     /**
      * Link Github Repository
      * Link a GitHub repository to a project.
@@ -673,7 +673,7 @@ export class GithubService {
             }
         });
     }
-    
+
     /**
      * Unlink Github Repository
      * Unlink a GitHub repository from a project.
@@ -694,7 +694,25 @@ export class GithubService {
             }
         });
     }
-    
+
+    /**
+     * Check Github Installation Status
+     * Check if the current user has installed GitHub App.
+     *
+     * Returns:
+     * - has_installation: Boolean indicating if user has at least one GitHub installation
+     * - installations_count: Total number of installations
+     * - installations: List of installation summaries (max 5)
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static checkGithubInstallationStatus(): CancelablePromise<GithubCheckGithubInstallationStatusResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/github/installation-status'
+        });
+    }
+
     /**
      * List Github Installations
      * List all GitHub App installations for the current user.
@@ -743,7 +761,7 @@ export class MessagesService {
             }
         });
     }
-    
+
     /**
      * Create Message
      * @param data The data for the request.
@@ -762,7 +780,7 @@ export class MessagesService {
             }
         });
     }
-    
+
     /**
      * Update Message
      * @param data The data for the request.
@@ -785,7 +803,7 @@ export class MessagesService {
             }
         });
     }
-    
+
     /**
      * Delete Message
      * @param data The data for the request.
@@ -805,7 +823,7 @@ export class MessagesService {
             }
         });
     }
-    
+
     /**
      * Delete All Messages By Project
      * @param data The data for the request.
@@ -877,7 +895,7 @@ export class ProjectsService {
             }
         });
     }
-    
+
     /**
      * Create Project
      * @param data The data for the request.
@@ -896,7 +914,7 @@ export class ProjectsService {
             }
         });
     }
-    
+
     /**
      * Get Project
      * @param data The data for the request.
@@ -916,7 +934,7 @@ export class ProjectsService {
             }
         });
     }
-    
+
     /**
      * Update Project
      * @param data The data for the request.
@@ -939,7 +957,7 @@ export class ProjectsService {
             }
         });
     }
-    
+
     /**
      * Delete Project
      * @param data The data for the request.
@@ -990,7 +1008,7 @@ export class SprintsService {
             }
         });
     }
-    
+
     /**
      * Create Sprint
      * Tạo mới một sprint
@@ -1010,7 +1028,7 @@ export class SprintsService {
             }
         });
     }
-    
+
     /**
      * Get Sprint
      * Lấy chi tiết một sprint
@@ -1031,7 +1049,7 @@ export class SprintsService {
             }
         });
     }
-    
+
     /**
      * Update Sprint
      * Cập nhật một sprint
@@ -1055,7 +1073,7 @@ export class SprintsService {
             }
         });
     }
-    
+
     /**
      * Delete Sprint
      * Xóa sprint
@@ -1076,7 +1094,7 @@ export class SprintsService {
             }
         });
     }
-    
+
     /**
      * Get Active Sprint
      * Lấy sprint đang active của project
@@ -1122,7 +1140,7 @@ export class UsersService {
             }
         });
     }
-    
+
     /**
      * Create User
      * Create new user.
@@ -1142,7 +1160,7 @@ export class UsersService {
             }
         });
     }
-    
+
     /**
      * Read User Me
      * Get current user.
@@ -1155,7 +1173,7 @@ export class UsersService {
             url: '/api/v1/users/me'
         });
     }
-    
+
     /**
      * Delete User Me
      * Delete own user.
@@ -1168,7 +1186,7 @@ export class UsersService {
             url: '/api/v1/users/me'
         });
     }
-    
+
     /**
      * Update User Me
      * Update own user.
@@ -1188,7 +1206,7 @@ export class UsersService {
             }
         });
     }
-    
+
     /**
      * Update Password Me
      * Update own password.
@@ -1208,7 +1226,7 @@ export class UsersService {
             }
         });
     }
-    
+
     /**
      * Register User
      * Create new user without the need to be logged in.
@@ -1228,7 +1246,7 @@ export class UsersService {
             }
         });
     }
-    
+
     /**
      * Read User By Id
      * Get a specific user by id.
@@ -1249,7 +1267,7 @@ export class UsersService {
             }
         });
     }
-    
+
     /**
      * Update User
      * Update a user.
@@ -1273,7 +1291,7 @@ export class UsersService {
             }
         });
     }
-    
+
     /**
      * Delete User
      * Delete a user.
@@ -1317,7 +1335,7 @@ export class UtilsService {
             }
         });
     }
-    
+
     /**
      * Health Check
      * @returns boolean Successful Response
