@@ -2,7 +2,8 @@ from datetime import datetime, timezone
 from uuid import UUID, uuid4
 from enum import Enum
 from pydantic import EmailStr
-from sqlmodel import Field, SQLModel, Relationship
+from sqlmodel import Field, SQLModel, Relationship, Column
+from sqlalchemy import JSON
 from typing import Optional
 
 class Role(str, Enum):
@@ -218,6 +219,11 @@ class Message(BaseModel, table=True):
 
     # Message payload
     content: str
+
+    # Structured data fields for agent previews
+    message_type: str = Field(default="text", nullable=True)  # "text" | "product_brief" | "product_vision" | "product_backlog" | "sprint_plan"
+    structured_data: dict | None = Field(default=None, sa_column=Column(JSON))  # JSON data (brief/vision/backlog/sprint)
+    message_metadata: dict | None = Field(default=None, sa_column=Column(JSON))  # Message metadata (preview_id, quality_score, approved_by, etc.)
 
     # Relationship back to agent
     agent: Agent | None = Relationship(back_populates="messages")

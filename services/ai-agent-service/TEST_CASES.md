@@ -103,7 +103,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 tasklist /FI "IMAGENAME eq python.exe"
 
-taskkill /PID 13772 /T /F
+taskkill /PID 11696 /T /F
 
 uv run app/tests/test_agent.py 
 
@@ -111,3 +111,4 @@ front end
 netstat -ano | findstr :5173
 taskkill /PID 24844 /F
 
+đang có vấn đề là chỉ xem được Product Brief khi mới tạo xong lúc mấy giây thôi là sao, xong rồi nó bị fix cứng như hình ảnh C:\o_d\fpt\do_an\VibeSDLC\services\ai-agent-service\app\image\image.png, như này thì không xem được nữa

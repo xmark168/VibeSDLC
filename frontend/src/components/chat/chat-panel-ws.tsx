@@ -37,6 +37,7 @@ import { AuthorType, type Message } from "@/types/message";
 import { AgentQuestionModal } from "./agent-question-modal";
 import { AgentPreviewModal } from "./agent-preview-modal";
 import { AgentTestSelector, MOCK_DATA, type AgentTestMode } from "./agent-test-selector";
+import { MessagePreviewCard } from "./MessagePreviewCard";
 
 interface ChatPanelProps {
   sidebarCollapsed: boolean;
@@ -116,6 +117,7 @@ export function ChatPanelWS({
     sendMessage: wsSendMessage,
     submitAnswer,
     submitPreviewChoice,
+    reopenPreview,
   } = useChatWebSocket(projectId, token || undefined);
 
   // Combine existing messages with WebSocket messages
@@ -329,6 +331,42 @@ export function ChatPanelWS({
       console.error("Failed to copy:", err);
     }
   };
+
+  // Handle edit message - reopen preview modal with existing data
+  const handleEditMessage = (message: Message) => {
+    if (!message.message_type || !message.structured_data) return
+
+    // Convert Message to AgentPreview format
+    const preview: any = {
+      preview_id: `edit_${message.id}_${Date.now()}`, // New preview ID for edit
+      preview_type: message.message_type,
+      title: `Edit ${message.message_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}`,
+      prompt: 'You can edit or regenerate this preview',
+      options: ['approve', 'edit', 'regenerate'],
+    }
+
+    // Add structured data based on type
+    switch (message.message_type) {
+      case 'product_brief':
+        preview.brief = message.structured_data
+        preview.incomplete_flag = message.metadata?.incomplete_flag
+        break
+      case 'product_vision':
+        preview.vision = message.structured_data
+        preview.quality_score = message.metadata?.quality_score
+        preview.validation_result = message.metadata?.validation_result
+        break
+      case 'product_backlog':
+        preview.backlog = message.structured_data
+        break
+      case 'sprint_plan':
+        preview.sprint_plan = message.structured_data
+        break
+    }
+
+    // Reopen modal
+    reopenPreview(preview)
+  }
 
   const formatTimestamp = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -602,6 +640,27 @@ export function ChatPanelWS({
                       </button>
                     </div>
                   </div>
+                </div>
+              </div>
+            );
+          }
+
+          // Agent/System message
+          // Check if this is a structured message (preview)
+          if (msg.message_type && msg.message_type !== 'text' && msg.structured_data) {
+            return (
+              <div key={msg.id} className="flex gap-3">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
+                  {getAgentAvatar(msg.author_type)}
+                </div>
+                <div className="flex-1">
+                  <div className="text-xs font-medium text-muted-foreground mb-2">
+                    {getAgentName(msg)}
+                  </div>
+                  <MessagePreviewCard
+                    message={msg}
+                    onEdit={handleEditMessage}
+                  />
                 </div>
               </div>
             );
