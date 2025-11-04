@@ -16,9 +16,10 @@ import { ProductBriefPreview, ProductVisionPreview, BacklogPreview, SprintPlanPr
 interface AgentPreviewModalProps {
   preview: AgentPreview | null
   onSubmit: (preview_id: string, choice: string, edit_changes?: string) => void
+  onClose?: () => void  // NEW: Handler to close modal
 }
 
-export function AgentPreviewModal({ preview, onSubmit }: AgentPreviewModalProps) {
+export function AgentPreviewModal({ preview, onSubmit, onClose }: AgentPreviewModalProps) {
   const [editMode, setEditMode] = useState(false)
   const [editChanges, setEditChanges] = useState('')
 
@@ -117,7 +118,18 @@ export function AgentPreviewModal({ preview, onSubmit }: AgentPreviewModalProps)
   }
 
   return (
-    <Dialog open={!!preview} modal>
+    <Dialog
+      open={!!preview}
+      onOpenChange={(open) => {
+        // When dialog closes (user clicks X or outside), call onClose
+        if (!open && onClose) {
+          setEditMode(false)  // Reset edit mode
+          setEditChanges('')  // Clear edit changes
+          onClose()
+        }
+      }}
+      modal
+    >
       <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

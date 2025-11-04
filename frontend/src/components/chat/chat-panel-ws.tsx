@@ -118,6 +118,7 @@ export function ChatPanelWS({
     submitAnswer,
     submitPreviewChoice,
     reopenPreview,
+    closePreview,  // NEW: Get closePreview from hook
   } = useChatWebSocket(projectId, token || undefined);
 
   // Combine existing messages with WebSocket messages
@@ -933,6 +934,7 @@ export function ChatPanelWS({
       <AgentPreviewModal
         preview={pendingPreviews[0] || null}
         onSubmit={handleSubmitPreview}
+        onClose={closePreview}
       />
     </div>
   );

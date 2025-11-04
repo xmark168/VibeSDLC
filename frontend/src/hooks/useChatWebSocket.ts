@@ -439,6 +439,11 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     setPendingPreviews(prev => [...prev, preview])
   }, [])
 
+  // Function to close current preview (remove from queue)
+  const closePreview = useCallback(() => {
+    setPendingPreviews(prev => prev.slice(1)) // Remove first preview
+  }, [])
+
   return {
     isConnected,
     isReady,
@@ -451,6 +456,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     submitAnswer,
     submitPreviewChoice,
     reopenPreview,
+    closePreview,  // NEW: Export closePreview
     connect,
     disconnect,
   }
