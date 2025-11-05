@@ -32,6 +32,8 @@ Requires-Dist: redis>=7.0.1
 Requires-Dist: pygithub>=2.8.1
 Requires-Dist: email-validator>=2.3.0
 Requires-Dist: daytona>=0.112.2
+Requires-Dist: tavily>=1.1.0
+Requires-Dist: gitpython>=3.1.45
 Provides-Extra: dev
 Requires-Dist: ruff; extra == "dev"
 Requires-Dist: pylint; extra == "dev"

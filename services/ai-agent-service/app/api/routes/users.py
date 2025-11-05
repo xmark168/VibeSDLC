@@ -23,6 +23,7 @@ from app.schemas import (
     UsersPublic,
     UserUpdate,
     UserUpdateMe,
+    GitHubInstallationPublic,
 )
 from app.utils import generate_new_account_email, send_email
 
@@ -37,12 +38,30 @@ def user_to_public(user: User) -> UserPublic:
         user: User model instance (should have github_installations loaded)
 
     Returns:
-        UserPublic schema with github_installation_id populated
+        UserPublic schema with github_installation_id and full github_installations data
     """
     github_installation_id = None
+    github_installations_public = None
+
     if user.github_installations and len(user.github_installations) > 0:
-        # Get the first (primary) installation's installation_id
+        # Get the first (primary) installation's installation_id for backward compatibility
         github_installation_id = user.github_installations[0].installation_id
+
+        # Map all installations to GitHubInstallationPublic schema
+        github_installations_public = [
+            GitHubInstallationPublic(
+                id=installation.id,
+                installation_id=installation.installation_id,
+                account_login=installation.account_login,
+                account_type=installation.account_type,
+                account_status=installation.account_status,
+                repositories=installation.repositories,
+                user_id=installation.user_id,
+                created_at=installation.created_at,
+                updated_at=installation.updated_at,
+            )
+            for installation in user.github_installations
+        ]
 
     return UserPublic(
         id=user.id,
@@ -50,6 +69,7 @@ def user_to_public(user: User) -> UserPublic:
         email=user.email,
         role=user.role,
         github_installation_id=github_installation_id,
+        github_installations=github_installations_public,
     )
 
 

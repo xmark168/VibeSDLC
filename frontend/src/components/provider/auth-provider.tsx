@@ -11,7 +11,7 @@ export default function AuthProvider({
 }) {
   const setUser = useAppStore((state) => state.setUser)
 
-  const accessToken = localStorage.getItem("accessToken")
+  const accessToken = localStorage.getItem("access_token")
 
   const {
     data: user,
@@ -29,7 +29,7 @@ export default function AuthProvider({
       setUser(user)
     } else if (error) {
       setUser(undefined)
-      localStorage.removeItem("accessToken")
+      localStorage.removeItem("access_token")
     }
   }, [user, error, setUser])
 

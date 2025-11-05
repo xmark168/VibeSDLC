@@ -9,6 +9,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { useAppStore } from "@/stores/auth-store"
+import useAuth from "@/hooks/useAuth"
 
 interface HeaderProps {
   userName?: string
@@ -19,9 +21,10 @@ export const HeaderProject = ({
   userName = "John Doe",
   userEmail = "john.doe@example.com",
 }: HeaderProps) => {
+  const { logout } = useAuth()
+  const user = useAppStore((state) => state.user)
   const handleLogout = () => {
-    console.log("Logout clicked")
-    // Add logout logic here
+    logout.mutate()
   }
 
   const handleViewProfile = () => {
@@ -63,15 +66,16 @@ export const HeaderProject = ({
             >
               <Avatar className="h-8 w-8 ring-2 ring-primary/20">
                 <AvatarFallback className="bg-[var(--gradient-primary)] text-white text-sm font-semibold">
-                  {getInitials(userName)}
+                  {getInitials(user?.full_name || "")}
                 </AvatarFallback>
               </Avatar>
               <div className="hidden md:flex flex-col items-start">
                 <span className="text-sm font-medium text-foreground">
-                  {userName}
+                  {user?.full_name || ""}
                 </span>
+
                 <span className="text-xs text-muted-foreground">
-                  {userEmail}
+                  base user
                 </span>
               </div>
               <ChevronDown className="h-4 w-4 text-muted-foreground" />

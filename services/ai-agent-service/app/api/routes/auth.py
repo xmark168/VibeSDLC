@@ -37,6 +37,7 @@ from app.schemas import (
     ResendCodeRequest,
     ResendCodeResponse,
     RefreshTokenResponse,
+    LogoutResponse,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
     ResetPasswordRequest,
@@ -647,3 +648,52 @@ def reset_password(
     return ResetPasswordResponse(
         message="Đặt lại mật khẩu thành công"
     )
+
+
+@router.post("/logout", response_model=LogoutResponse)
+def logout(
+    response: Response,
+    current_user: CurrentUser,
+    session: SessionDep,
+) -> LogoutResponse:
+    """
+    Logout API - clear refresh token cookie and optionally revoke tokens from database
+
+    This endpoint:
+    1. Clears the refresh_token cookie from the client
+    2. Optionally revokes refresh tokens from database (if using RefreshToken model)
+
+    Args:
+        response: FastAPI Response object to manipulate cookies
+        current_user: Current authenticated user (from JWT token)
+        session: Database session
+
+    Returns:
+        LogoutResponse with success message
+    """
+    try:
+        # Clear refresh token cookie by setting max_age to 0
+        response.delete_cookie(
+            key="refresh_token",
+            httponly=True,
+            secure=True,
+            samesite="lax"
+        )
+
+        # Optional: Revoke all refresh tokens for this user from database
+        # Uncomment if you want to revoke tokens stored in RefreshToken table
+        # from app.crud.user import revoke_all_user_tokens
+        # revoke_all_user_tokens(session=session, user_id=current_user.id)
+
+        logger.info(f"User {current_user.email} logged out successfully")
+
+        return LogoutResponse(
+            message="Đăng xuất thành công"
+        )
+
+    except Exception as e:
+        logger.error(f"Error during logout for user {current_user.id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Lỗi khi đăng xuất"
+        )

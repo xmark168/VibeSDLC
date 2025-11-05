@@ -6,8 +6,12 @@ import { Sidebar } from "@/components/chat/sidebar"
 import { WelcomeDialog } from "@/components/chat/welcome-dialog"
 import { WorkspacePanel } from "@/components/chat/workspace-panel"
 import { useMessages } from "@/queries/messages"
+import { requireRole } from "@/utils/auth"
 
 export const Route = createFileRoute("/_user/workspace/$workspaceId")({
+  beforeLoad: async () => {
+    await requireRole('user')
+  },
   component: WorkspacePage,
 })
 

@@ -940,6 +940,86 @@ export const ForgotPasswordResponseSchema = {
     title: 'ForgotPasswordResponse'
 } as const;
 
+export const GitHubAccountTypeSchema = {
+    type: 'string',
+    enum: ['User', 'Organization'],
+    title: 'GitHubAccountType'
+} as const;
+
+export const GitHubInstallationPublicSchema = {
+    properties: {
+        installation_id: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Installation Id'
+        },
+        account_login: {
+            type: 'string',
+            title: 'Account Login'
+        },
+        account_type: {
+            '$ref': '#/components/schemas/GitHubAccountType'
+        },
+        account_status: {
+            '$ref': '#/components/schemas/GitHubInstallationStatus'
+        },
+        repositories: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Repositories'
+        },
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        user_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'User Id'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: ['installation_id', 'account_login', 'account_type', 'account_status', 'id', 'user_id', 'created_at', 'updated_at'],
+    title: 'GitHubInstallationPublic'
+} as const;
+
+export const GitHubInstallationStatusSchema = {
+    type: 'string',
+    enum: ['pending', 'installed', 'deleted'],
+    title: 'GitHubInstallationStatus'
+} as const;
+
 export const GitHubRepositoriesPublicSchema = {
     properties: {
         data: {
@@ -1075,6 +1155,18 @@ export const LoginResponseSchema = {
     type: 'object',
     required: ['user_id', 'access_token', 'refresh_token'],
     title: 'LoginResponse'
+} as const;
+
+export const LogoutResponseSchema = {
+    properties: {
+        message: {
+            type: 'string',
+            title: 'Message'
+        }
+    },
+    type: 'object',
+    required: ['message'],
+    title: 'LogoutResponse'
 } as const;
 
 export const MessageSchema = {
@@ -1792,6 +1884,20 @@ export const UserPublicSchema = {
                 }
             ],
             title: 'Github Installation Id'
+        },
+        github_installations: {
+            anyOf: [
+                {
+                    items: {
+                        '$ref': '#/components/schemas/GitHubInstallationPublic'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Github Installations'
         }
     },
     type: 'object',

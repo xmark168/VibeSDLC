@@ -1,4 +1,4 @@
-import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { AnimatePresence, easeOut, motion } from "framer-motion"
 import { Loader2, Plus } from "lucide-react"
 import { useState } from "react"
@@ -8,7 +8,7 @@ import { GitHubInstallModal } from "@/components/projects/github-install-modal"
 import { GitHubLinkModal } from "@/components/projects/github-link-modal"
 import { ProjectList } from "@/components/projects/project-list"
 import { Button } from "@/components/ui/button"
-import useAuth, { isLoggedIn } from "@/hooks/useAuth"
+import useAuth from "@/hooks/useAuth"
 import { useProjects } from "@/queries/projects"
 import type { Project } from "@/types/project"
 import { CreateProjectContent } from "@/components/projects/create-project-content"
@@ -18,19 +18,17 @@ import { ApiError, GithubCheckGithubInstallationStatusResponse, GithubService, P
 import { GitHubInstallationHandler } from "@/components/github/GitHubInstallationHandler"
 import toast from "react-hot-toast"
 import { handleError } from "@/utils"
+import { requireRole } from "@/utils/auth"
+import { useAppStore } from "@/stores/auth-store"
 
 export const Route = createFileRoute("/_user/projects")({
-  beforeLoad: () => {
-    if (!isLoggedIn()) {
-      throw redirect({ to: "/login" })
-    }
+  beforeLoad: async () => {
+    await requireRole('user')
   },
   component: ProjectsPage,
 })
 
 function ProjectsPage() {
-  const { user } = useAuth()
-  const _navigate = useNavigate()
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showGitHubInstallModal, setShowGitHubInstallModal] = useState(false)
   const [showGitHubLinkModal, setShowGitHubLinkModal] = useState(false)
@@ -38,6 +36,7 @@ function ProjectsPage() {
   const [linkSuccess, setLinkSuccess] = useState(false)
   const installationId = (localStorage.getItem("installationId"))
   const queryClient = useQueryClient()
+  const user = useAppStore((state) => state.user)
   const { data: _githubStatus } = useQuery<GithubCheckGithubInstallationStatusResponse>({
     queryKey: ["github-installation-status"],
     queryFn: GithubService.checkGithubInstallationStatus,
@@ -53,7 +52,7 @@ function ProjectsPage() {
       setLinkSuccess(true)
       localStorage.removeItem("installationId")
       queryClient.invalidateQueries({
-        queryKey: ["github-installation-status"],
+        queryKey: ["currentUser"],
       })
     },
     onError: (err) => {
@@ -84,8 +83,12 @@ function ProjectsPage() {
 
   const handleNewProjectClick = () => {
     const pendingInstallationId = localStorage.getItem("installationId")
-
-    if (pendingInstallationId) {
+    if (user?.github_installations && user.github_installations[0].account_status !== "installed") {
+      setShowGitHubInstallModal(true)
+      console.log('vo day')
+      return
+    }
+    if (pendingInstallationId && user?.github_installations === undefined) {
       setShowGitHubLinkModal(true)
     } else {
       setShowCreateModal(true)
@@ -120,7 +123,22 @@ function ProjectsPage() {
         <GitHubInstallationHandler />
       </div>
       {
-        _githubStatus?.has_installation || (installationId !== null && !_githubStatus?.has_installation) ? (
+        showGitHubInstallModal && (
+          <AnimatePresence>
+            {showGitHubInstallModal && (
+              <GitHubInstallModal
+                onClose={() => setShowGitHubInstallModal(false)}
+                onOpen={() => setShowGitHubInstallModal(true)}
+                onInstall={handleGitHubInstallComplete}
+              />
+            )}
+          </AnimatePresence>
+
+        )
+      }
+
+      {
+        (user?.github_installations != undefined) || (installationId !== null) ? (
           <div className="min-h-screen">
             <HeaderProject />
             <div className="container mx-auto px-6 py-8">
@@ -164,7 +182,10 @@ function ProjectsPage() {
                       <Loader2 className="h-8 w-8 animate-spin text-purple-400" />
                     </div>
                   ) : (
-                    <ProjectList projects={listProjectPublic?.data || []} />
+                    <ProjectList
+                      projects={listProjectPublic?.data || []}
+                      openLinkGithubModal={setShowGitHubInstallModal}
+                    />
                   )}
                 </motion.div>
               </motion.div>
@@ -204,15 +225,7 @@ function ProjectsPage() {
               onInstallGitHub={_handleInstallGitHub}
               githubLinked={_githubLinked}
             />
-            <AnimatePresence>
-              {showGitHubInstallModal && (
-                <GitHubInstallModal
-                  onClose={() => setShowGitHubInstallModal(false)}
-                  onOpen={() => setShowGitHubInstallModal(true)}
-                  onInstall={handleGitHubInstallComplete}
-                />
-              )}
-            </AnimatePresence>
+
           </>
         )
       }

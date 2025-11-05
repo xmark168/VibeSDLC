@@ -14,7 +14,8 @@ class UserPublic(SQLModel):
     full_name: str
     email: EmailStr
     role: Role
-    github_installation_id: Optional[int] = None  # GitHub installation_id from linked installation
+    github_installation_id: Optional[int] = None  # GitHub installation_id from linked installation (deprecated, use github_installations)
+    github_installations: Optional[list["GitHubInstallationPublic"]] = None  # Full GitHub installation data
 
 
 class UsersPublic(SQLModel):
@@ -140,6 +141,9 @@ class RefreshTokenResponse(SQLModel):
     user_id: UUID
     access_token: str
     refresh_token: str
+
+class LogoutResponse(SQLModel):
+    message: str
 
 class ForgotPasswordRequest(SQLModel):
     email: EmailStr
@@ -452,3 +456,7 @@ class CreateRepoFromTemplateResponse(SQLModel):
     repository_description: Optional[str] = Field(None, description="Description of the created repository")
     repository_private: Optional[bool] = Field(None, description="Whether the repository is private")
     message: Optional[str] = Field(None, description="Success or error message")
+
+
+# Rebuild models to resolve forward references
+UserPublic.model_rebuild()

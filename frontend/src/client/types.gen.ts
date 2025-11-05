@@ -222,6 +222,24 @@ export type ForgotPasswordResponse = {
     expires_in: number;
 };
 
+export type GitHubAccountType = 'User' | 'Organization';
+
+export type GitHubInstallationPublic = {
+    installation_id: (number | null);
+    account_login: string;
+    account_type: GitHubAccountType;
+    account_status: GitHubInstallationStatus;
+    repositories?: ({
+    [key: string]: unknown;
+} | null);
+    id: string;
+    user_id: (string | null);
+    created_at: string;
+    updated_at: string;
+};
+
+export type GitHubInstallationStatus = 'pending' | 'installed' | 'deleted';
+
 export type GitHubRepositoriesPublic = {
     data: Array<GitHubRepository>;
     count: number;
@@ -255,6 +273,10 @@ export type LoginResponse = {
     user_id: string;
     access_token: string;
     refresh_token: string;
+};
+
+export type LogoutResponse = {
+    message: string;
 };
 
 export type Message = {
@@ -460,6 +482,7 @@ export type UserPublic = {
     email: string;
     role: Role;
     github_installation_id?: (number | null);
+    github_installations?: (Array<GitHubInstallationPublic> | null);
 };
 
 export type UserRegister = {
@@ -580,6 +603,8 @@ export type AuthenticationResetPasswordData = {
 };
 
 export type AuthenticationResetPasswordResponse = (ResetPasswordResponse);
+
+export type AuthenticationLogoutResponse = (LogoutResponse);
 
 export type BacklogItemsGetBacklogItemsData = {
     assigneeId?: (string | null);

@@ -3,9 +3,9 @@
     "sprint_id": "test-sprint-1",
     "sprint_goal": "Implement core user authentication features (registration, login, password reset, and token refresh)",
     "execution_metadata": {
-      "start_time": "2025-11-05T12:51:49.617346",
-      "end_time": "2025-11-05T12:51:49.678454",
-      "total_duration_seconds": 0.061108,
+      "start_time": "2025-11-05T20:24:36.681458",
+      "end_time": "2025-11-05T20:24:41.432229",
+      "total_duration_seconds": 4.750771,
       "session_id": "test_session"
     },
     "task_statistics": {
@@ -25,11 +25,11 @@
       "task_type": "Development",
       "status": "failed",
       "execution_metadata": {
-        "start_time": "2025-11-05T12:51:49.624573",
-        "end_time": "2025-11-05T12:51:49.660753",
-        "duration_seconds": 0.03618
+        "start_time": "2025-11-05T20:24:36.689036",
+        "end_time": "2025-11-05T20:24:41.415331",
+        "duration_seconds": 4.726295
       },
-      "error_message": "Planning failed: Planner failed for TASK-001: No module named 'daytona'",
+      "error_message": "Planning failed: Planner failed for TASK-001: unsupported operand type(s) for |: 'NoneType' and 'NoneType'",
       "subagent_results": {
         "planner": {
           "success": false,
@@ -45,11 +45,11 @@
       "task_type": "Development",
       "status": "failed",
       "execution_metadata": {
-        "start_time": "2025-11-05T12:51:49.661003",
-        "end_time": "2025-11-05T12:51:49.665336",
-        "duration_seconds": 0.004333
+        "start_time": "2025-11-05T20:24:41.415566",
+        "end_time": "2025-11-05T20:24:41.419844",
+        "duration_seconds": 0.004278
       },
-      "error_message": "Planning failed: Planner failed for TASK-002: No module named 'daytona'",
+      "error_message": "Planning failed: Planner failed for TASK-002: unsupported operand type(s) for |: 'NoneType' and 'NoneType'",
       "subagent_results": {
         "planner": {
           "success": false,
@@ -65,11 +65,11 @@
       "task_type": "Development",
       "status": "failed",
       "execution_metadata": {
-        "start_time": "2025-11-05T12:51:49.665492",
-        "end_time": "2025-11-05T12:51:49.670407",
-        "duration_seconds": 0.004915
+        "start_time": "2025-11-05T20:24:41.420148",
+        "end_time": "2025-11-05T20:24:41.424779",
+        "duration_seconds": 0.004631
       },
-      "error_message": "Planning failed: Planner failed for TASK-003: No module named 'daytona'",
+      "error_message": "Planning failed: Planner failed for TASK-003: unsupported operand type(s) for |: 'NoneType' and 'NoneType'",
       "subagent_results": {
         "planner": {
           "success": false,
@@ -85,11 +85,11 @@
       "task_type": "Development",
       "status": "failed",
       "execution_metadata": {
-        "start_time": "2025-11-05T12:51:49.670722",
-        "end_time": "2025-11-05T12:51:49.676484",
-        "duration_seconds": 0.005762
+        "start_time": "2025-11-05T20:24:41.425025",
+        "end_time": "2025-11-05T20:24:41.430520",
+        "duration_seconds": 0.005495
       },
-      "error_message": "Planning failed: Planner failed for TASK-004: No module named 'daytona'",
+      "error_message": "Planning failed: Planner failed for TASK-004: unsupported operand type(s) for |: 'NoneType' and 'NoneType'",
       "subagent_results": {
         "planner": {
           "success": false,

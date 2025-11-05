@@ -1,7 +1,12 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router"
 import { motion } from "framer-motion"
 import { CheckCircle, ClipboardList, Code, Workflow } from "lucide-react"
+import { requireNoAuth } from "@/utils/auth"
+
 export const Route = createFileRoute("/_auth")({
+  beforeLoad: async () => {
+    await requireNoAuth()
+  },
   component: RouteComponent,
 })
 

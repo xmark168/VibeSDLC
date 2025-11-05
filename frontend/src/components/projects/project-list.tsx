@@ -1,11 +1,25 @@
-import { ProjectPublic } from "@/client"
+import { ApiError, GithubService, ProjectPublic } from "@/client"
 import { ProjectCard } from "./project-card"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
+import toast from "react-hot-toast"
+import { handleError } from "@/utils"
+import { useAppStore } from "@/stores/auth-store"
 
 interface ProjectListProps {
   projects: ProjectPublic[]
+  openLinkGithubModal: React.Dispatch<React.SetStateAction<boolean>>
 }
 
-export const ProjectList = ({ projects }: ProjectListProps) => {
+export const ProjectList = ({ projects, openLinkGithubModal }: ProjectListProps) => {
+  const queryClient = useQueryClient()
+  const user = useAppStore((state) => state.user)
+
+  const handleClickProject = () => {
+    if (user?.github_installations?.[0]?.account_status !== "installed") {
+      openLinkGithubModal(true)
+      return
+    }
+  }
   if (projects.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -25,7 +39,7 @@ export const ProjectList = ({ projects }: ProjectListProps) => {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {projects.map((project) => (
-        <ProjectCard key={project.code} project={project} />
+        <ProjectCard onClick={handleClickProject} key={project.code} project={project} />
       ))}
     </div>
   )
