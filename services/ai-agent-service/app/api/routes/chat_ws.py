@@ -960,9 +960,16 @@ async def trigger_agent_execution(session: Session, project_id: str, user_id: st
             return
 
     # ===== STEP 1: Classify với TL Agent (normal flow) =====
+    print(f"\n[TL Agent] ===== TEAM LEADER AGENT STARTED =====", flush=True)
+    print(f"[TL Agent] User message: {user_message[:100]}", flush=True)
+    print(f"[TL Agent] Project ID: {project_id}", flush=True)
+    print(f"[TL Agent] User ID: {user_id}", flush=True)
+
     try:
         tl_session_id = f"tl_agent_{project_id}"
+        print(f"[TL Agent] Creating TL Agent instance with session_id: {tl_session_id}", flush=True)
         tl_agent = TeamLeaderAgent(session_id=tl_session_id, user_id=user_id)
+        print(f"[TL Agent] ✓ TL Agent instance created", flush=True)
 
         # Get project context
         project_context = {}
@@ -971,15 +978,24 @@ async def trigger_agent_execution(session: Session, project_id: str, user_id: st
             if project:
                 # Có thể thêm project_phase nếu model có field này
                 # project_context["project_phase"] = project.phase
-                pass
-        except:
-            pass
+                print(f"[TL Agent] Project found: {project.name if hasattr(project, 'name') else 'N/A'}", flush=True)
+        except Exception as ctx_err:
+            print(f"[TL Agent] ⚠ Could not load project context: {ctx_err}", flush=True)
 
         # Classify intent
+        print(f"[TL Agent] Starting intent classification...", flush=True)
         routing_result = tl_agent.classify(user_message, project_context)
         agent_type = routing_result.agent
 
+        print(f"\n[TL Agent] ===== CLASSIFICATION RESULT =====", flush=True)
+        print(f"[TL Agent] Selected Agent: {agent_type}", flush=True)
+        print(f"[TL Agent] Confidence: {routing_result.confidence:.2f}", flush=True)
+        print(f"[TL Agent] User Intent: {routing_result.user_intent}", flush=True)
+        print(f"[TL Agent] Reasoning: {routing_result.reasoning}", flush=True)
+        print(f"[TL Agent] =====================================\n", flush=True)
+
         # Broadcast routing decision (optional, for transparency)
+        print(f"[TL Agent] Broadcasting routing decision to clients...", flush=True)
         await manager.broadcast_to_project({
             "type": "routing",
             "agent_selected": agent_type,
@@ -987,9 +1003,12 @@ async def trigger_agent_execution(session: Session, project_id: str, user_id: st
             "user_intent": routing_result.user_intent,
             "reasoning": routing_result.reasoning
         }, project_id)
+        print(f"[TL Agent] ✓ Routing decision broadcasted", flush=True)
 
     except Exception as e:
-        print(f"[TL Agent] Routing error: {e}, defaulting to PO")
+        print(f"[TL Agent] ✗ Routing error: {e}, defaulting to PO", flush=True)
+        import traceback
+        traceback.print_exc()
         agent_type = "po"  # Fallback to PO on error
 
     # STEP 2: Get agent name for typing indicator

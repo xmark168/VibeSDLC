@@ -79,6 +79,11 @@ class TeamLeaderAgent:
         self.user_id = user_id
         self.model = model
 
+        print(f"[TL Agent.__init__] Initializing Team Leader Agent", flush=True)
+        print(f"[TL Agent.__init__] Session ID: {self.session_id}", flush=True)
+        print(f"[TL Agent.__init__] User ID: {self.user_id}", flush=True)
+        print(f"[TL Agent.__init__] Model: {self.model}", flush=True)
+
         # LLM - fast and cheap model for classification
         self.llm = ChatOpenAI(
             model=self.model,
@@ -88,6 +93,7 @@ class TeamLeaderAgent:
             api_key=os.getenv("OPENAI_API_KEY"),
             base_url=os.getenv("OPENAI_BASE_URL")
         )
+        print(f"[TL Agent.__init__] ✓ ChatOpenAI initialized", flush=True)
 
         # Langfuse callback for observability
         try:
@@ -97,18 +103,23 @@ class TeamLeaderAgent:
                 flush_at=5,
                 flush_interval=1.0
             )
-        except Exception:
+            print(f"[TL Agent.__init__] ✓ Langfuse handler initialized", flush=True)
+        except Exception as e:
+            print(f"[TL Agent.__init__] ⚠ Langfuse handler failed: {e}", flush=True)
             self.langfuse_handler = None
 
         # JSON output parser
         self.parser = JsonOutputParser(pydantic_object=RoutingDecision)
+        print(f"[TL Agent.__init__] ✓ JSON parser initialized", flush=True)
 
         # Build classification chain
         self.chain = self._build_chain()
+        print(f"[TL Agent.__init__] ✓ LangChain pipeline built", flush=True)
 
         # Conversation history storage (in-memory)
         # In production, này nên được lưu vào database hoặc Redis
         self.conversations = {}  # session_id -> list of messages
+        print(f"[TL Agent.__init__] ✓ Team Leader Agent ready!", flush=True)
 
     def _build_chain(self):
         """Build LangChain classification chain."""
@@ -143,23 +154,30 @@ class TeamLeaderAgent:
         Returns:
             RoutingDecision with agent, confidence, reasoning
         """
+        print(f"[TL Agent.classify] Starting classification for session: {self.session_id}", flush=True)
+        print(f"[TL Agent.classify] Message length: {len(user_message)} chars", flush=True)
+
         # Get conversation history
         history = self.conversations.get(self.session_id, [])
         history_str = self._format_history(history)
+        print(f"[TL Agent.classify] History entries: {len(history)}", flush=True)
 
         # Add context if provided
         if project_context:
             phase = project_context.get("project_phase")
             if phase:
                 history_str += f"\n\n**Project Phase:** {phase}"
+                print(f"[TL Agent.classify] Project phase: {phase}", flush=True)
 
         # Prepare callbacks
         callbacks = []
         if self.langfuse_handler:
             callbacks.append(self.langfuse_handler)
+            print(f"[TL Agent.classify] Langfuse tracking enabled", flush=True)
 
         # Invoke chain
         try:
+            print(f"[TL Agent.classify] Invoking LLM chain (model: {self.model})...", flush=True)
             result_dict = self.chain.invoke(
                 {
                     "message": user_message,
@@ -168,28 +186,37 @@ class TeamLeaderAgent:
                 },
                 config={"callbacks": callbacks}
             )
+            print(f"[TL Agent.classify] ✓ LLM response received", flush=True)
 
             # Convert dict to Pydantic model
             result = RoutingDecision(**result_dict)
+            print(f"[TL Agent.classify] ✓ Parsed routing decision: agent={result.agent}, confidence={result.confidence:.2f}", flush=True)
 
         except Exception as e:
             # Fallback on error
-            print(f"[TL Agent] Classification error: {e}")
+            print(f"[TL Agent.classify] ✗ Classification error: {e}", flush=True)
+            print(f"[TL Agent.classify] Using fallback classification...", flush=True)
+            import traceback
+            traceback.print_exc()
             result = self._fallback_classification(user_message)
+            print(f"[TL Agent.classify] Fallback result: agent={result.agent}, confidence={result.confidence:.2f}", flush=True)
 
         # Save to conversation history
         self._save_to_history(user_message, result.agent)
+        print(f"[TL Agent.classify] ✓ Saved to conversation history", flush=True)
 
         return result
 
     def _fallback_classification(self, message: str) -> RoutingDecision:
         """Fallback classification dựa trên simple rules."""
+        print(f"[TL Agent._fallback] Using keyword-based fallback classification", flush=True)
         message_lower = message.lower()
 
         # Simple keyword matching as fallback
         if any(kw in message_lower for kw in [
             "tạo", "làm", "muốn", "app", "website", "trang web", "sản phẩm", "feature", "tính năng"
         ]):
+            print(f"[TL Agent._fallback] Matched PO keywords", flush=True)
             return RoutingDecision(
                 agent="po",
                 confidence=0.6,
@@ -199,6 +226,7 @@ class TeamLeaderAgent:
         elif any(kw in message_lower for kw in [
             "tiến độ", "bao giờ", "xong", "chậm", "nhanh", "velocity", "progress"
         ]):
+            print(f"[TL Agent._fallback] Matched Scrum Master keywords", flush=True)
             return RoutingDecision(
                 agent="scrum_master",
                 confidence=0.6,
@@ -208,6 +236,7 @@ class TeamLeaderAgent:
         elif any(kw in message_lower for kw in [
             "lỗi", "bug", "không hoạt động", "không chạy", "bị", "error"
         ]):
+            print(f"[TL Agent._fallback] Matched Tester keywords", flush=True)
             return RoutingDecision(
                 agent="tester",
                 confidence=0.6,
@@ -216,6 +245,7 @@ class TeamLeaderAgent:
             )
         else:
             # Default to PO for ambiguous cases
+            print(f"[TL Agent._fallback] No keywords matched - defaulting to PO", flush=True)
             return RoutingDecision(
                 agent="po",
                 confidence=0.5,
