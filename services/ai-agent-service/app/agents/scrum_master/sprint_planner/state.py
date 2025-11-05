@@ -131,6 +131,26 @@ class SprintPlannerState(BaseModel):
     )
 
     # ========================================================================
+    # Database Save Node Outputs
+    # ========================================================================
+    project_id: Optional[str] = Field(
+        default=None,
+        description="Project ID để lưu vào database"
+    )
+    db_save_status: str = Field(
+        default="pending",
+        description="Trạng thái database save: pending, success, error, skipped"
+    )
+    saved_sprint_ids: list[str] = Field(
+        default_factory=list,
+        description="Danh sách Sprint IDs đã lưu vào database"
+    )
+    saved_item_ids: list[str] = Field(
+        default_factory=list,
+        description="Danh sách BacklogItem IDs đã lưu vào database"
+    )
+
+    # ========================================================================
     # User Feedback & Loop Control
     # ========================================================================
     user_feedback: Optional[str] = Field(

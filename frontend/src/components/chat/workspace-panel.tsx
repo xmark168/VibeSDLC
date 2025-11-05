@@ -22,6 +22,7 @@ interface Tab {
 interface WorkspacePanelProps {
   chatCollapsed?: boolean
   onExpandChat?: () => void
+  kanbanData?: any
 }
 
 const agent = [
@@ -63,7 +64,7 @@ const agent = [
 ];
 
 
-export function WorkspacePanel({ chatCollapsed, onExpandChat }: WorkspacePanelProps) {
+export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData }: WorkspacePanelProps) {
   const [tabs, setTabs] = useState<Tab[]>([
     { id: "tab-1", view: "app-preview", label: "App Preview" },
     { id: "tab-2", view: "kanban", label: "Kanban" },
@@ -147,7 +148,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat }: WorkspacePanelPr
           <AppViewer />
         )
       case "kanban":
-        return <KanbanBoard />
+        return <KanbanBoard kanbanData={kanbanData} />
       case "file":
         return (
           <div className="flex h-full">

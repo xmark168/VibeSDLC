@@ -80,6 +80,9 @@ class POAgent:
         self.response_manager = response_manager
         self.event_loop = event_loop
 
+        # Storage for tool results (to extract after streaming)
+        self._sprint_plan_result = None
+
         # Initialize Langfuse callback handler (with batch size limit)
         # Note: session_id and user_id are NOT passed to constructor
         # They should be added via metadata in config when invoking
@@ -501,6 +504,10 @@ class POAgent:
                 )
                 print("=" * 80 + "\n")
 
+                # Save sprint_plan to PO Agent instance for later extraction
+                self._sprint_plan_result = sprint_plan
+                print(f"[Priority Tool] Saved sprint_plan to PO Agent instance")
+
                 return sprint_plan
 
             except Exception as e:
@@ -561,6 +568,46 @@ class POAgent:
         # If text contains any product-related keyword, it's likely a product idea
         return any(k in t for k in product_keywords)
 
+    async def _trigger_scrum_master_orchestrator(
+        self,
+        sprint_plan: dict,
+        backlog_items: list[dict],
+        websocket_broadcast_fn,
+        project_id: str
+    ) -> None:
+        """Trigger Scrum Master Orchestrator sau khi PO Agent hoàn thành.
+
+        Args:
+            sprint_plan: Sprint plan từ Priority Agent
+            backlog_items: Backlog items từ Priority Agent
+            websocket_broadcast_fn: Function để broadcast qua WebSocket
+            project_id: Project ID
+        """
+        try:
+            from app.agents.scrum_master.orchestrator import ScrumMasterOrchestrator
+
+            # Create orchestrator
+            orchestrator = ScrumMasterOrchestrator(
+                project_id=project_id,
+                user_id=self.user_id or "unknown",
+                session_id=self.session_id,
+                websocket_broadcast_fn=websocket_broadcast_fn
+            )
+
+            # Process PO output
+            result = await orchestrator.process_po_output(
+                sprint_plan=sprint_plan,
+                backlog_items=backlog_items
+            )
+
+            print(f"[PO Agent] Scrum Master Orchestrator completed: {result.get('total_sprints', 0)} sprints, {result.get('total_items', 0)} items")
+
+        except Exception as e:
+            print(f"[PO Agent] Error triggering Scrum Master Orchestrator: {e}")
+            import traceback
+            traceback.print_exc()
+            # Don't raise - PO Agent should still complete successfully
+
     def _needs_kickoff_only(self, user_input: str) -> bool:
         """Return True if we should only greet and ask for more info (no tools)."""
         text = (user_input or "").strip().lower()
@@ -616,6 +663,9 @@ class POAgent:
         }
 
         try:
+            # Reset sprint_plan result from previous runs
+            self._sprint_plan_result = None
+
             final_result = None
             step_count = 0
 
@@ -641,6 +691,8 @@ class POAgent:
                 "message": "🚀 PO Agent bắt đầu xử lý..."
             }, project_id)
 
+            final_result = {}
+
             async for chunk in self.agent.astream(
                 {"messages": [("user", user_input)]},
                 config=config,
@@ -651,6 +703,10 @@ class POAgent:
                 # Stream each chunk to WebSocket
                 if isinstance(chunk, dict):
                     for node_name, node_data in chunk.items():
+                        # Save latest node_data as final_result
+                        if isinstance(node_data, dict):
+                            final_result = node_data
+
                         # Broadcast node execution
                         await websocket_broadcast_fn({
                             "type": "agent_step",
@@ -701,7 +757,9 @@ class POAgent:
                                             "content": content
                                         }, project_id)
 
-                        final_result = node_data
+            print("\n[PO Agent] Stream completed, extracting sprint_plan from messages...")
+            print(f"   final_result type: {type(final_result)}")
+            print(f"   final_result keys: {list(final_result.keys()) if isinstance(final_result, dict) else 'N/A'}")
 
             # Send completion
             await websocket_broadcast_fn({
@@ -710,6 +768,42 @@ class POAgent:
                 "agent": "PO Agent",
                 "message": f"✅ Hoàn thành! Đã thực hiện {step_count} bước."
             }, project_id)
+
+            # Extract sprint plan from tool result saved in instance
+            sprint_plan_data = None
+            backlog_items = []
+
+            print("\n[PO Agent] Extracting sprint plan from tool result...")
+
+            # Check if Priority Agent tool was called and saved result
+            if self._sprint_plan_result:
+                sprint_plan_data = self._sprint_plan_result
+                print(f"   ✅ Found sprint_plan from Priority Agent tool")
+                print(f"   sprint_plan_data type: {type(sprint_plan_data)}")
+
+                if sprint_plan_data and isinstance(sprint_plan_data, dict):
+                    backlog_items = sprint_plan_data.get("prioritized_backlog", [])
+                    print(f"   backlog_items count: {len(backlog_items)}")
+                    print(f"   sprints count: {len(sprint_plan_data.get('sprints', []))}")
+            else:
+                print(f"   ⚠️ sprint_plan_data not found - Priority Agent tool may not have been called")
+
+            # Trigger Scrum Master Orchestrator if we have sprint plan
+            if sprint_plan_data and backlog_items:
+                print("\n[PO Agent] ✅ Triggering Scrum Master Orchestrator...")
+                print(f"   Sprint Plan: {len(sprint_plan_data.get('sprints', []))} sprints")
+                print(f"   Backlog Items: {len(backlog_items)} items")
+
+                await self._trigger_scrum_master_orchestrator(
+                    sprint_plan=sprint_plan_data,
+                    backlog_items=backlog_items,
+                    websocket_broadcast_fn=websocket_broadcast_fn,
+                    project_id=project_id
+                )
+            else:
+                print("\n[PO Agent] ⚠️ NOT triggering Scrum Master - missing data:")
+                print(f"   sprint_plan_data: {sprint_plan_data is not None}")
+                print(f"   backlog_items: {len(backlog_items) if backlog_items else 0}")
 
             return final_result or {}
 

@@ -1,10 +1,14 @@
 
 import type React from "react"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { KanbanColumn, type KanbanColumnData } from "./kanban-column"
 import { TaskDetailModal } from "./task-detail-modal"
 import type { KanbanCardData } from "./kanban-card"
+
+interface KanbanBoardProps {
+  kanbanData?: any
+}
 
 const initialColumns: KanbanColumnData[] = [
   { id: "backlog", title: "Backlog", color: "border-yellow-500", cards: [] },
@@ -32,12 +36,69 @@ const initialColumns: KanbanColumnData[] = [
   { id: "done", title: "Done", color: "border-cyan-500", cards: [] },
 ]
 
-export function KanbanBoard() {
+export function KanbanBoard({ kanbanData }: KanbanBoardProps) {
   const [columns, setColumns] = useState<KanbanColumnData[]>(initialColumns)
   const [draggedCard, setDraggedCard] = useState<KanbanCardData | null>(null)
   const [draggedOverColumn, setDraggedOverColumn] = useState<string | null>(null)
   const [selectedCard, setSelectedCard] = useState<KanbanCardData | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+
+  // Update columns when kanbanData changes
+  useEffect(() => {
+    if (kanbanData && kanbanData.kanban_board) {
+      console.log('Updating Kanban board with new data:', kanbanData)
+
+      // Map kanban_board data to columns
+      const newColumns: KanbanColumnData[] = [
+        {
+          id: "backlog",
+          title: "Backlog",
+          color: "border-yellow-500",
+          cards: (kanbanData.kanban_board.Backlog || []).map((item: any) => ({
+            id: item.id,
+            content: item.title,
+            columnId: "backlog",
+            taskId: item.item_id,
+          }))
+        },
+        {
+          id: "todo",
+          title: "ToDo",
+          color: "border-purple-500",
+          cards: (kanbanData.kanban_board.Todo || []).map((item: any) => ({
+            id: item.id,
+            content: item.title,
+            columnId: "todo",
+            taskId: item.item_id,
+          }))
+        },
+        {
+          id: "inprogress",
+          title: "InProgress",
+          color: "border-red-500",
+          cards: (kanbanData.kanban_board.Doing || []).map((item: any) => ({
+            id: item.id,
+            content: item.title,
+            columnId: "inprogress",
+            taskId: item.item_id,
+          }))
+        },
+        {
+          id: "done",
+          title: "Done",
+          color: "border-cyan-500",
+          cards: (kanbanData.kanban_board.Done || []).map((item: any) => ({
+            id: item.id,
+            content: item.title,
+            columnId: "done",
+            taskId: item.item_id,
+          }))
+        },
+      ]
+
+      setColumns(newColumns)
+    }
+  }, [kanbanData])
 
   const handleWheel = (e: React.WheelEvent) => {
     if (scrollContainerRef.current) {

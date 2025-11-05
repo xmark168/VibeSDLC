@@ -1,0 +1,237 @@
+"""Scrum Master Orchestrator - Điều phối flow từ PO Agent → Sprint Planner → Database.
+
+Workflow:
+1. Nhận sprint plan + backlog items từ PO Agent
+2. Trigger Sprint Planner để enrich & verify data (Sprint Planner tự lưu vào database)
+3. Broadcast kanban items qua WebSocket
+"""
+
+import json
+import asyncio
+from typing import Optional, Callable, Any
+from uuid import UUID
+from datetime import datetime
+
+from app.agents.scrum_master.sprint_planner.agent import SprintPlannerAgent
+from app.core.response_queue import response_manager
+
+
+class ScrumMasterOrchestrator:
+    """Orchestrator để điều phối flow từ PO Agent → Sprint Planner → Database."""
+
+    def __init__(
+        self,
+        project_id: str,
+        user_id: str,
+        session_id: Optional[str] = None,
+        websocket_broadcast_fn: Optional[Callable] = None,
+    ):
+        """Initialize Scrum Master Orchestrator.
+
+        Args:
+            project_id: Project ID
+            user_id: User ID
+            session_id: Session ID for tracing
+            websocket_broadcast_fn: Function để broadcast qua WebSocket
+        """
+        self.project_id = project_id
+        self.user_id = user_id
+        self.session_id = session_id or f"sm_orchestrator_{project_id}_{user_id}"
+        self.websocket_broadcast_fn = websocket_broadcast_fn
+
+    async def process_po_output(
+        self,
+        sprint_plan: dict,
+        backlog_items: list[dict],
+    ) -> dict:
+        """Process PO Agent output: trigger Sprint Planner & save to database.
+
+        Args:
+            sprint_plan: Sprint plan từ PO Agent
+            backlog_items: Backlog items từ PO Agent
+
+        Returns:
+            dict: Result với sprint + backlog items đã được enrich
+        """
+        print("\n" + "=" * 80)
+        print("🎯 SCRUM MASTER ORCHESTRATOR - Processing PO Output")
+        print("=" * 80)
+        print(f"   Project ID: {self.project_id}")
+        print(f"   User ID: {self.user_id}")
+        print(f"   Session ID: {self.session_id}")
+        print(f"   Sprints: {len(sprint_plan.get('sprints', []))}")
+        print(f"   Backlog Items: {len(backlog_items)}")
+        print(f"   Sprint Plan Keys: {list(sprint_plan.keys())}")
+        print("=" * 80 + "\n")
+
+        try:
+            # Step 1: Broadcast to WebSocket - Starting Sprint Planner
+            await self._broadcast({
+                "type": "scrum_master_step",
+                "step": "starting",
+                "message": "🚀 Scrum Master đang xử lý Sprint Plan từ PO Agent...",
+                "agent": "Scrum Master"
+            })
+
+            # Step 2: Trigger Sprint Planner (Sprint Planner sẽ tự lưu vào database)
+            print("\n[1/2] Triggering Sprint Planner Agent...")
+            sprint_planner = SprintPlannerAgent(
+                session_id=self.session_id,
+                user_id=self.user_id,
+                websocket_broadcast_fn=self.websocket_broadcast_fn,
+                project_id=self.project_id
+            )
+
+            # Prepare input for Sprint Planner
+            sprint_planner_input = {
+                "sprint_plan": sprint_plan,
+                "backlog_items": backlog_items
+            }
+
+            # Run Sprint Planner (sẽ enrich, verify, assign, và LƯU VÀO DATABASE)
+            enriched_result = await self._run_sprint_planner(
+                sprint_planner,
+                sprint_planner_input
+            )
+
+            # Step 3: Broadcast kanban items
+            print("\n[2/2] Broadcasting Kanban Items...")
+
+            # Get saved data from enriched_result
+            saved_sprints = enriched_result.get("saved_sprint_ids", [])
+            saved_items = enriched_result.get("saved_item_ids", [])
+
+            # Prepare data for broadcast
+            sprints_for_broadcast = []
+            items_for_broadcast = []
+
+            # Convert enriched data to broadcast format
+            if enriched_result.get("backlog_items"):
+                for item in enriched_result.get("backlog_items", []):
+                    items_for_broadcast.append({
+                        "id": item.get("id"),
+                        "title": item.get("title"),
+                        "status": item.get("status", "Backlog"),
+                        "type": item.get("type"),
+                        "story_point": item.get("story_point"),
+                        "estimate_value": item.get("estimate_value"),
+                        "sprint_id": item.get("sprint_id"),  # Add sprint_id
+                        "item_id": item.get("item_id")  # Original ID from PO Agent
+                    })
+
+            await self._broadcast_kanban_items(
+                sprints_for_broadcast,
+                items_for_broadcast
+            )
+
+            # Final broadcast
+            await self._broadcast({
+                "type": "scrum_master_step",
+                "step": "completed",
+                "message": "✅ Scrum Master hoàn thành! Sprint Plan đã được enrich & lưu vào database.",
+                "agent": "Scrum Master"
+            })
+
+            print("\n✅ Scrum Master Orchestrator completed successfully!")
+            print(f"   Saved Sprints: {len(saved_sprints)}")
+            print(f"   Saved Items: {len(saved_items)}")
+            print("=" * 80 + "\n")
+
+            return enriched_result
+
+        except Exception as e:
+            print(f"\n❌ Error in Scrum Master Orchestrator: {e}")
+            import traceback
+            traceback.print_exc()
+
+            await self._broadcast({
+                "type": "scrum_master_step",
+                "step": "error",
+                "message": f"❌ Lỗi: {str(e)}",
+                "agent": "Scrum Master"
+            })
+            raise
+
+    async def _run_sprint_planner(
+        self,
+        sprint_planner: SprintPlannerAgent,
+        input_data: dict
+    ) -> dict:
+        """Run Sprint Planner Agent.
+
+        Args:
+            sprint_planner: Sprint Planner Agent instance
+            input_data: Input data for Sprint Planner
+
+        Returns:
+            dict: Enriched result từ Sprint Planner
+        """
+        print("   - Running Sprint Planner Agent...")
+
+        # Extract sprint_plan and backlog_items
+        sprint_plan = input_data.get("sprint_plan", {})
+        backlog_items = input_data.get("backlog_items", [])
+
+        # Run Sprint Planner with WebSocket streaming
+        result = await sprint_planner.run_with_streaming(
+            sprint_plan=sprint_plan,
+            backlog_items=backlog_items
+        )
+
+        return result
+
+    async def _broadcast_kanban_items(
+        self,
+        sprints: list[dict],
+        backlog_items: list[dict]
+    ) -> None:
+        """Broadcast kanban items qua WebSocket.
+
+        Args:
+            sprints: List of sprints (with database IDs)
+            backlog_items: List of backlog items (with database IDs)
+        """
+        if not self.websocket_broadcast_fn:
+            return
+
+        # Group backlog items by status for Kanban board
+        kanban_columns = {
+            "Backlog": [],
+            "Todo": [],
+            "Doing": [],
+            "Done": []
+        }
+
+        for item in backlog_items:
+            status = item.get("status", "Backlog")
+            kanban_columns[status].append({
+                "id": item.get("id"),
+                "title": item.get("title"),
+                "sprint_id": item.get("sprint_id"),  # May be None for unassigned items
+                "item_id": item.get("item_id")  # Original ID from PO Agent
+            })
+
+        await self._broadcast({
+            "type": "kanban_update",
+            "data": {
+                "sprints": sprints,
+                "kanban_board": kanban_columns,
+                "total_items": len(backlog_items),
+                "timestamp": datetime.now().isoformat()
+            }
+        })
+
+    async def _broadcast(self, message: dict) -> None:
+        """Broadcast message qua WebSocket.
+
+        Args:
+            message: Message to broadcast
+        """
+        if not self.websocket_broadcast_fn:
+            return
+
+        try:
+            await self.websocket_broadcast_fn(message, self.project_id)
+        except Exception as e:
+            print(f"[Warning] Failed to broadcast: {e}")
+

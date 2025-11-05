@@ -67,15 +67,25 @@ class SprintPlannerAgent:
     2. verify: Verify enriched data, if issues found ask user for feedback
     """
 
-    def __init__(self, session_id: Optional[str] = None, user_id: Optional[str] = None):
+    def __init__(
+        self,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        websocket_broadcast_fn=None,
+        project_id: Optional[str] = None
+    ):
         """Initialize Sprint Planner Agent.
 
         Args:
             session_id: Session ID (optional)
             user_id: User ID (optional)
+            websocket_broadcast_fn: WebSocket broadcast function (optional)
+            project_id: Project ID for WebSocket broadcasting (optional)
         """
         self.session_id = session_id
         self.user_id = user_id
+        self.websocket_broadcast_fn = websocket_broadcast_fn
+        self.project_id = project_id
 
         # Initialize LangFuse handler
         try:
@@ -141,6 +151,7 @@ class SprintPlannerAgent:
         graph_builder.add_node("assign_to_dev", self.assign_to_dev)
         graph_builder.add_node("assign_to_tester", self.assign_to_tester)
         graph_builder.add_node("push_to_kanban", self.push_to_kanban)
+        graph_builder.add_node("save_to_database", self.save_to_database)
 
         # Add edges
         graph_builder.add_edge(START, "initialize")
@@ -152,23 +163,41 @@ class SprintPlannerAgent:
             {
                 "assign_to_dev": "assign_to_dev",
                 "enrich": "enrich",
-                "__end__": END
+                "save_to_database": "save_to_database"  # Go to save even if verification failed
             }
         )
         graph_builder.add_edge("assign_to_dev", "assign_to_tester")
         graph_builder.add_edge("assign_to_tester", "push_to_kanban")
-        graph_builder.add_edge("push_to_kanban", END)
+        graph_builder.add_edge("push_to_kanban", "save_to_database")
+        graph_builder.add_edge("save_to_database", END)
 
         checkpointer = MemorySaver()
         return graph_builder.compile(checkpointer=checkpointer)
 
     def initialize(self, state: SprintPlannerState) -> SprintPlannerState:
-        """Initialize - Load backlog.json and sprint.json."""
+        """Initialize - Load backlog.json and sprint.json.
+
+        If data is already provided (from PO Agent), skip file loading.
+        """
         print("\n" + "="*80)
         print("[*] INITIALIZE - LOAD DATA")
         print("="*80)
 
         try:
+            # Check if data is already provided (from PO Agent via run_with_streaming)
+            if state.backlog_items and state.sprints:
+                print(f"[+] Using provided data (from PO Agent)")
+                print(f"   - Backlog items: {len(state.backlog_items)}")
+                print(f"   - Sprints: {len(state.sprints)}")
+                state.status = "initialized"
+                state.total_items = len(state.backlog_items)
+                state.total_sprints = len(state.sprints)
+                print("="*80 + "\n")
+                return state
+
+            # Otherwise, load from files (for standalone testing)
+            print(f"[+] Loading data from files...")
+
             # Get base path
             base_path = Path(__file__).parent.parent
             backlog_path = base_path / "backlog.json"
@@ -610,13 +639,70 @@ class SprintPlannerAgent:
 
         return state
 
+    def save_to_database(self, state: SprintPlannerState) -> SprintPlannerState:
+        """Save Sprint and BacklogItem to database."""
+        print("\n" + "="*80)
+        print("[*] SAVE TO DATABASE")
+        print("="*80)
+
+        try:
+            # Check if we have project_id (from run_with_streaming)
+            if not hasattr(state, 'project_id') or not state.project_id:
+                print("[!] No project_id - skipping database save (standalone mode)")
+                state.db_save_status = "skipped"
+                return state
+
+            # Import persistence service
+            from app.services.sprint_persistence import SprintPersistenceService
+            from app.core.db import engine
+            from sqlmodel import Session
+            from uuid import UUID
+
+            print(f"\n[+] Saving to database for project: {state.project_id}")
+
+            # Prepare sprint_plan dict
+            sprint_plan = {
+                "sprints": state.sprints,
+                "metadata": {}
+            }
+
+            # Prepare backlog_items list (convert EnrichedItem to dict)
+            backlog_items = []
+            for item in state.enriched_items:
+                backlog_items.append(item.model_dump())
+
+            # Save to database
+            with Session(engine) as session:
+                result = SprintPersistenceService.save_sprint_plan(
+                    session=session,
+                    project_id=UUID(state.project_id),
+                    sprint_plan=sprint_plan,
+                    backlog_items=backlog_items
+                )
+
+                state.db_save_status = "success"
+                state.saved_sprint_ids = [s["id"] for s in result.get("sprints", [])]
+                state.saved_item_ids = [i["id"] for i in result.get("backlog_items", [])]
+
+                print(f"\n[+] Saved {len(result.get('sprints', []))} sprints and {len(result.get('backlog_items', []))} items")
+                print("="*80 + "\n")
+
+        except Exception as e:
+            print(f"[ERROR] Error saving to database: {e}")
+            import traceback
+            traceback.print_exc()
+            state.error_message = str(e)
+            state.db_save_status = "error"
+
+        return state
+
     def verify_branch(self, state: SprintPlannerState) -> str:
         """Branch after verify node.
 
         Decision logic:
         - If verification_passed: proceed to assign_to_dev (MANDATORY)
         - If verification_failed AND current_loop < max_loops: go back to enrich
-        - If verification_failed AND current_loop >= max_loops: end (don't proceed)
+        - If verification_failed AND current_loop >= max_loops: save to database anyway
         """
         print(f"\n[*] VERIFY_BRANCH DECISION:")
         print(f"   verification_passed: {state.verification_passed}")
@@ -630,10 +716,10 @@ class SprintPlannerAgent:
             print(f"   [!] DECISION: Go back to enrich (loop {state.current_loop + 1}/{state.max_loops})")
             return "enrich"
         else:
-            print(f"   [!] DECISION: End workflow (max loops reached)")
+            print(f"   [!] DECISION: Save to database (max loops reached, verification failed)")
             print(f"\n[!] Max enrichment loops ({state.max_loops}) reached")
-            print(f"[!] Verification failed, cannot proceed to assignment")
-            return "__end__"
+            print(f"[!] Verification failed, but will save enriched data to database")
+            return "save_to_database"
 
     def run(self, user_input: Optional[str] = None):
         """Run the sprint planner workflow."""
@@ -691,6 +777,114 @@ class SprintPlannerAgent:
                     import logging
                     logging.debug(f"Failed to log error: {log_e}")
             raise
+
+    async def run_with_streaming(
+        self,
+        sprint_plan: dict,
+        backlog_items: list[dict]
+    ) -> dict:
+        """Run Sprint Planner with WebSocket streaming.
+
+        Args:
+            sprint_plan: Sprint plan từ PO Agent
+            backlog_items: Backlog items từ PO Agent
+
+        Returns:
+            dict: Enriched and verified sprint plan
+        """
+        start_time = time.time()
+
+        if self.websocket_broadcast_fn and self.project_id:
+            await self.websocket_broadcast_fn({
+                "type": "scrum_master_step",
+                "step": "sprint_planner_started",
+                "message": "🔧 Sprint Planner đang enrich & verify data..."
+            }, self.project_id)
+
+        print("\n[Sprint Planner] Processing sprint plan...")
+        print(f"   Sprints: {len(sprint_plan.get('sprints', []))}")
+        print(f"   Backlog Items: {len(backlog_items)}")
+
+        try:
+            # Prepare initial state with data from PO Agent
+            initial_state = SprintPlannerState(
+                backlog_items=backlog_items,
+                sprints=sprint_plan.get('sprints', []),
+                status="initialized",
+                total_items=len(backlog_items),
+                total_sprints=len(sprint_plan.get('sprints', [])),
+                project_id=self.project_id  # Pass project_id for database save
+            )
+
+            config = {
+                "configurable": {
+                    "thread_id": self.session_id or "default"
+                }
+            }
+
+            # Add LangFuse handler to config if available
+            if self.langfuse_handler:
+                config["callbacks"] = [self.langfuse_handler]
+
+            # Stream the workflow
+            print("\n[Sprint Planner] Running workflow...")
+            for output in self.graph.stream(initial_state, config=config):
+                # Broadcast progress for each node
+                if self.websocket_broadcast_fn and self.project_id:
+                    node_name = list(output.keys())[0] if output else "unknown"
+                    await self.websocket_broadcast_fn({
+                        "type": "scrum_master_step",
+                        "step": f"sprint_planner_{node_name}",
+                        "message": f"🔧 Sprint Planner: {node_name}..."
+                    }, self.project_id)
+
+            # Get final state
+            final_state = self.graph.get_state(config).values
+
+            # Log execution time
+            execution_time = time.time() - start_time
+            print(f"\n[Sprint Planner] Completed in {execution_time:.2f}s")
+
+            if self.websocket_broadcast_fn and self.project_id:
+                await self.websocket_broadcast_fn({
+                    "type": "scrum_master_step",
+                    "step": "sprint_planner_completed",
+                    "message": "✅ Sprint Planner hoàn thành!"
+                }, self.project_id)
+
+            # Return enriched data
+            return {
+                "sprint_plan": {
+                    **sprint_plan,
+                    "sprints": final_state.get("enriched_sprints", sprint_plan.get('sprints', []))
+                },
+                "backlog_items": [item.model_dump() for item in final_state.get("enriched_items", [])] if final_state.get("enriched_items") else backlog_items,
+                "verification_passed": final_state.get("verification_passed", False),
+                "validation_issues": [issue.model_dump() for issue in final_state.get("validation_issues", [])],
+                "kanban_cards": final_state.get("kanban_cards", []),
+                "saved_sprint_ids": final_state.get("saved_sprint_ids", []),
+                "saved_item_ids": final_state.get("saved_item_ids", []),
+                "db_save_status": final_state.get("db_save_status", "unknown")
+            }
+
+        except Exception as e:
+            print(f"\n[ERROR] Sprint Planner failed: {e}")
+            import traceback
+            traceback.print_exc()
+
+            if self.websocket_broadcast_fn and self.project_id:
+                await self.websocket_broadcast_fn({
+                    "type": "scrum_master_step",
+                    "step": "sprint_planner_error",
+                    "message": f"❌ Sprint Planner lỗi: {str(e)}"
+                }, self.project_id)
+
+            # Return original data on error
+            return {
+                "sprint_plan": sprint_plan,
+                "backlog_items": backlog_items,
+                "error": str(e)
+            }
 
 
 if __name__ == "__main__":
