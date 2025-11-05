@@ -91,6 +91,7 @@ class Settings(BaseSettings):
     # GITHUB APP SETTINGS
     GITHUB_APP_ID: str = ""
     GITHUB_APP_PRIVATE_KEY: str = ""
+    GITHUB_APP_PRIVATE_KEY_PATH: str = ""
     GITHUB_WEBHOOK_SECRET: str = ""
 
     # CORS SETTINGS

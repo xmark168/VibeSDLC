@@ -145,6 +145,74 @@ export type ConfirmCodeResponse = {
     user_id: string;
 };
 
+/**
+ * Request schema for creating a repository from a template.
+ */
+export type CreateRepoFromTemplateRequest = {
+    /**
+     * Owner of the template repository (e.g., 'organization' or 'username')
+     */
+    template_owner: string;
+    /**
+     * Name of the template repository
+     */
+    template_repo: string;
+    /**
+     * Name for the new repository
+     */
+    new_repo_name: string;
+    /**
+     * Description for the new repository
+     */
+    new_repo_description?: (string | null);
+    /**
+     * Whether the new repository should be private
+     */
+    is_private?: boolean;
+    /**
+     * GitHub installation ID to use for creating the repository
+     */
+    github_installation_id: number;
+};
+
+/**
+ * Response schema for repository creation.
+ */
+export type CreateRepoFromTemplateResponse = {
+    /**
+     * Whether the repository was created successfully
+     */
+    success: boolean;
+    /**
+     * GitHub repository ID
+     */
+    repository_id?: (number | null);
+    /**
+     * Name of the created repository
+     */
+    repository_name?: (string | null);
+    /**
+     * Full name of the created repository (owner/name)
+     */
+    repository_full_name?: (string | null);
+    /**
+     * URL of the created repository
+     */
+    repository_url?: (string | null);
+    /**
+     * Description of the created repository
+     */
+    repository_description?: (string | null);
+    /**
+     * Whether the repository is private
+     */
+    repository_private?: (boolean | null);
+    /**
+     * Success or error message
+     */
+    message?: (string | null);
+};
+
 export type ForgotPasswordRequest = {
     email: string;
 };
@@ -200,11 +268,13 @@ export type PrivateUserCreate = {
     is_verified?: boolean;
 };
 
+/**
+ * Schema for creating a new project. Code is auto-generated.
+ */
 export type ProjectCreate = {
-    code: string;
     name: string;
-    is_init?: boolean;
-    owner_id: string;
+    is_private?: boolean;
+    tech_stack?: string;
 };
 
 export type ProjectGitHubLink = {
@@ -213,25 +283,40 @@ export type ProjectGitHubLink = {
     github_installation_id: string;
 };
 
+/**
+ * Schema for project response with all fields from model.
+ */
 export type ProjectPublic = {
+    id: string;
     code: string;
     name: string;
-    is_init?: boolean;
-    id: string;
     owner_id: string;
+    is_init: boolean;
+    is_private: boolean;
+    tech_stack: string;
+    github_repository_id?: (number | null);
+    github_repository_name?: (string | null);
+    github_installation_id?: (string | null);
     created_at: string;
     updated_at: string;
 };
 
+/**
+ * Schema for list of projects response.
+ */
 export type ProjectsPublic = {
     data: Array<ProjectPublic>;
     count: number;
 };
 
+/**
+ * Schema for updating a project. All fields are optional.
+ */
 export type ProjectUpdate = {
-    code?: (string | null);
     name?: (string | null);
     is_init?: (boolean | null);
+    is_private?: (boolean | null);
+    tech_stack?: (string | null);
 };
 
 export type RefreshTokenRequest = {
@@ -374,6 +459,7 @@ export type UserPublic = {
     full_name: string;
     email: string;
     role: Role;
+    github_installation_id?: (number | null);
 };
 
 export type UserRegister = {
@@ -614,6 +700,12 @@ export type GithubListGithubInstallationsResponse = ({
     [key: string]: unknown;
 });
 
+export type GithubCreateRepoFromTemplateEndpointData = {
+    requestBody: CreateRepoFromTemplateRequest;
+};
+
+export type GithubCreateRepoFromTemplateEndpointResponse = (CreateRepoFromTemplateResponse);
+
 export type MessagesListMessagesData = {
     limit?: number;
     projectId: string;
@@ -654,16 +746,7 @@ export type PrivateCreateUserData = {
 export type PrivateCreateUserResponse = (UserPublic);
 
 export type ProjectsListProjectsData = {
-    /**
-     * Tìm theo code
-     */
-    code?: (string | null);
     limit?: number;
-    /**
-     * Tìm theo name
-     */
-    name?: (string | null);
-    ownerId?: (string | null);
     skip?: number;
 };
 

@@ -1,22 +1,18 @@
 import { format } from "date-fns"
 import { Calendar, Globe, Lock } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { ProjectPublic } from "@/client"
 
-export interface Project {
-  code: string
-  repositoryName: string
-  createdAt: Date | string
-  mode: "public" | "private"
-}
+
 interface ProjectCardProps {
-  project: Project
+  project: ProjectPublic
 }
 
 export const ProjectCard = ({ project }: ProjectCardProps) => {
   const createdDate =
-    typeof project.createdAt === "string"
-      ? new Date(project.createdAt)
-      : project.createdAt
+    typeof project.created_at === "string"
+      ? new Date(project.created_at)
+      : project.created_at
 
   return (
     <div className="group relative overflow-hidden rounded-xl bg-gradient-to-b from-card to-card/80 p-6 shadow-[var(--shadow-sm)] transition-all duration-300 hover:shadow-[var(--shadow-hover)] hover:-translate-y-1">
@@ -35,15 +31,15 @@ export const ProjectCard = ({ project }: ProjectCardProps) => {
               </span>
             </div>
             <h3 className="text-xl font-semibold text-foreground truncate group-hover:text-primary transition-colors">
-              {project.repositoryName}
+              {project.name}
             </h3>
           </div>
 
           <Badge
-            variant={project.mode === "public" ? "default" : "secondary"}
+            variant={project.is_private === false ? "default" : "secondary"}
             className="flex items-center gap-1.5 px-3 py-1 font-medium"
           >
-            {project.mode === "public" ? (
+            {project.is_private === false ? (
               <>
                 <Globe className="w-3.5 h-3.5" />
                 Public

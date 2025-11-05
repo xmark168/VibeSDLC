@@ -16,6 +16,12 @@ class GitHubAccountType(str, Enum):
     ORGANIZATION = "Organization"
 
 
+class GitHubInstallationStatus(str, Enum):
+    PENDING = "pending"
+    INSTALLED = "installed"
+    DELETED = "deleted"
+
+
 class BaseModel(SQLModel):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     created_at: datetime = Field(
@@ -61,9 +67,14 @@ class User(BaseModel, table=True):
 class GitHubInstallation(BaseModel, table=True):
     __tablename__ = "github_installations"
 
-    installation_id: int = Field(unique=True, index=True, nullable=False)
+    installation_id: int | None = Field(default=None, unique=True, index=True, nullable=True)
     account_login: str = Field(nullable=False)
-    account_type: GitHubAccountType = Field(nullable=False)
+    account_type: GitHubAccountType = Field(nullable=False, default=GitHubAccountType.USER)
+    account_status: GitHubInstallationStatus = Field(
+        nullable=False,
+        default=GitHubInstallationStatus.PENDING,
+        index=True
+    )
     repositories: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     user_id: UUID | None = Field(default=None, foreign_key="users.id", nullable=True, ondelete="CASCADE")
 
@@ -85,7 +96,8 @@ class Project(BaseModel, table=True):
     github_installation_id: UUID | None = Field(
         default=None, foreign_key="github_installations.id", ondelete="SET NULL", nullable=True
     )
-
+    is_private: bool = Field(default=True)
+    tech_stack: str = Field(default="nodejs-react")
     owner: User = Relationship(back_populates="owned_projects")
     sprints: list["Sprint"] = Relationship(
         back_populates="project",

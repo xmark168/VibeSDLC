@@ -101,8 +101,11 @@ app/agents/team_leader/__init__.py
 app/agents/team_leader/tl_agent.py
 app/alembic/env.py
 app/alembic/versions/67643ee8d363_add_refreshtoken_model.py
+app/alembic/versions/7ceaf861e8dd_remove_github_login_field_from_users_.py
+app/alembic/versions/7e98c9337782_make_user_id_nullable_in_github_.py
 app/alembic/versions/8461d8b8caa9_initial_migration.py
 app/alembic/versions/add_github_integration.py
+app/alembic/versions/d8330df23ffd_add_github_login_field_to_user_model.py
 app/api/__init__.py
 app/api/deps.py
 app/api/main.py

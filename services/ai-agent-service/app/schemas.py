@@ -3,7 +3,7 @@ from token import OP
 from uuid import UUID, uuid4
 from pydantic import EmailStr
 from sqlmodel import Field, SQLModel
-from .models import Role, GitHubAccountType
+from .models import Role, GitHubAccountType, GitHubInstallationStatus
 from typing import Optional
 from enum import Enum
 from app.models import AuthorType
@@ -14,6 +14,7 @@ class UserPublic(SQLModel):
     full_name: str
     email: EmailStr
     role: Role
+    github_installation_id: Optional[int] = None  # GitHub installation_id from linked installation
 
 
 class UsersPublic(SQLModel):
@@ -280,26 +281,39 @@ class CommentsPublic(SQLModel):
     count: int
 
 # project
-class ProjectBase(SQLModel):
-    code: str = Field(min_length=1, max_length=50)
+class ProjectCreate(SQLModel):
+    """Schema for creating a new project. Code is auto-generated."""
     name: str = Field(min_length=1, max_length=255)
-    is_init: bool = False
+    is_private: bool = Field(default=True)
+    tech_stack: str = Field(default="nodejs-react")
 
-class ProjectCreate(ProjectBase):
-    owner_id: UUID
 
 class ProjectUpdate(SQLModel):
-    code: Optional[str] = None
-    name: Optional[str] = None
+    """Schema for updating a project. All fields are optional."""
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
     is_init: Optional[bool] = None
+    is_private: Optional[bool] = None
+    tech_stack: Optional[str] = None
 
-class ProjectPublic(ProjectBase):
+
+class ProjectPublic(SQLModel):
+    """Schema for project response with all fields from model."""
     id: UUID
+    code: str
+    name: str
     owner_id: UUID
+    is_init: bool
+    is_private: bool
+    tech_stack: str
+    github_repository_id: Optional[int] = None
+    github_repository_name: Optional[str] = None
+    github_installation_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
 
+
 class ProjectsPublic(SQLModel):
+    """Schema for list of projects response."""
     data: list[ProjectPublic]
     count: int
 
@@ -361,9 +375,10 @@ class AgentsPublic(SQLModel):
 
 # GitHub Integration schemas
 class GitHubInstallationBase(SQLModel):
-    installation_id: int
+    installation_id: int | None
     account_login: str
     account_type: GitHubAccountType
+    account_status: GitHubInstallationStatus
     repositories: Optional[dict] = None
 
 
@@ -373,11 +388,13 @@ class GitHubInstallationCreate(GitHubInstallationBase):
 
 class GitHubInstallationUpdate(SQLModel):
     repositories: Optional[dict] = None
+    account_status: Optional[GitHubInstallationStatus] = None
+    installation_id: Optional[int] = None
 
 
 class GitHubInstallationPublic(GitHubInstallationBase):
     id: UUID
-    user_id: UUID
+    user_id: UUID | None
     created_at: datetime
     updated_at: datetime
 
@@ -412,3 +429,26 @@ class ProjectGitHubLink(SQLModel):
 
 class ProjectGitHubUnlink(SQLModel):
     pass
+
+
+# Create repository from template schemas
+class CreateRepoFromTemplateRequest(SQLModel):
+    """Request schema for creating a repository from a template."""
+    template_owner: str = Field(description="Owner of the template repository (e.g., 'organization' or 'username')")
+    template_repo: str = Field(description="Name of the template repository")
+    new_repo_name: str = Field(min_length=1, max_length=255, description="Name for the new repository")
+    new_repo_description: Optional[str] = Field(None, max_length=1000, description="Description for the new repository")
+    is_private: bool = Field(default=False, description="Whether the new repository should be private")
+    github_installation_id: int = Field(description="GitHub installation ID to use for creating the repository")
+
+
+class CreateRepoFromTemplateResponse(SQLModel):
+    """Response schema for repository creation."""
+    success: bool = Field(description="Whether the repository was created successfully")
+    repository_id: Optional[int] = Field(None, description="GitHub repository ID")
+    repository_name: Optional[str] = Field(None, description="Name of the created repository")
+    repository_full_name: Optional[str] = Field(None, description="Full name of the created repository (owner/name)")
+    repository_url: Optional[str] = Field(None, description="URL of the created repository")
+    repository_description: Optional[str] = Field(None, description="Description of the created repository")
+    repository_private: Optional[bool] = Field(None, description="Whether the repository is private")
+    message: Optional[str] = Field(None, description="Success or error message")

@@ -3,7 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { AgentExecutionExecuteAgentData, AgentExecutionExecuteAgentResponse, AgentExecutionExecuteAgentSyncData, AgentExecutionExecuteAgentSyncResponse, AgentsListAgentsData, AgentsListAgentsResponse, AgentsCreateAgentData, AgentsCreateAgentResponse, AgentsGetAgentData, AgentsGetAgentResponse, AgentsUpdateAgentData, AgentsUpdateAgentResponse, AgentsDeleteAgentData, AgentsDeleteAgentResponse, AuthenticationLoginData, AuthenticationLoginResponse, AuthenticationRegisterData, AuthenticationRegisterResponse, AuthenticationConfirmCodeData, AuthenticationConfirmCodeResponse, AuthenticationResendCodeData, AuthenticationResendCodeResponse, AuthenticationRefreshTokenData, AuthenticationRefreshTokenResponse, AuthenticationForgotPasswordData, AuthenticationForgotPasswordResponse, AuthenticationResetPasswordData, AuthenticationResetPasswordResponse, BacklogItemsGetBacklogItemsData, BacklogItemsGetBacklogItemsResponse, BacklogItemsCreateBacklogItemData, BacklogItemsCreateBacklogItemResponse, BacklogItemsGetBacklogItemData, BacklogItemsGetBacklogItemResponse, BacklogItemsUpdateBacklogItemData, BacklogItemsUpdateBacklogItemResponse, BacklogItemsDeleteBacklogItemData, BacklogItemsDeleteBacklogItemResponse, BacklogItemsMoveBacklogItemData, BacklogItemsMoveBacklogItemResponse, BacklogItemsGetKanbanBoardData, BacklogItemsGetKanbanBoardResponse, ChatGetWebsocketInfoResponse, ChatGetConnectionStatsResponse, GithubGithubWebhookResponse, GithubGithubCallbackData, GithubGithubCallbackResponse, GithubLinkInstallationToUserData, GithubLinkInstallationToUserResponse, GithubListGithubRepositoriesData, GithubListGithubRepositoriesResponse, GithubLinkGithubRepositoryData, GithubLinkGithubRepositoryResponse, GithubUnlinkGithubRepositoryData, GithubUnlinkGithubRepositoryResponse, GithubCheckGithubInstallationStatusResponse, GithubListGithubInstallationsData, GithubListGithubInstallationsResponse, MessagesListMessagesData, MessagesListMessagesResponse, MessagesCreateMessageData, MessagesCreateMessageResponse, MessagesUpdateMessageData, MessagesUpdateMessageResponse, MessagesDeleteMessageData, MessagesDeleteMessageResponse, MessagesDeleteAllMessagesByProjectData, MessagesDeleteAllMessagesByProjectResponse, PrivateCreateUserData, PrivateCreateUserResponse, ProjectsListProjectsData, ProjectsListProjectsResponse, ProjectsCreateProjectData, ProjectsCreateProjectResponse, ProjectsGetProjectData, ProjectsGetProjectResponse, ProjectsUpdateProjectData, ProjectsUpdateProjectResponse, ProjectsDeleteProjectData, ProjectsDeleteProjectResponse, SprintsListSprintsData, SprintsListSprintsResponse, SprintsCreateSprintData, SprintsCreateSprintResponse, SprintsGetSprintData, SprintsGetSprintResponse, SprintsUpdateSprintData, SprintsUpdateSprintResponse, SprintsDeleteSprintData, SprintsDeleteSprintResponse, SprintsGetActiveSprintData, SprintsGetActiveSprintResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { AgentExecutionExecuteAgentData, AgentExecutionExecuteAgentResponse, AgentExecutionExecuteAgentSyncData, AgentExecutionExecuteAgentSyncResponse, AgentsListAgentsData, AgentsListAgentsResponse, AgentsCreateAgentData, AgentsCreateAgentResponse, AgentsGetAgentData, AgentsGetAgentResponse, AgentsUpdateAgentData, AgentsUpdateAgentResponse, AgentsDeleteAgentData, AgentsDeleteAgentResponse, AuthenticationLoginData, AuthenticationLoginResponse, AuthenticationRegisterData, AuthenticationRegisterResponse, AuthenticationConfirmCodeData, AuthenticationConfirmCodeResponse, AuthenticationResendCodeData, AuthenticationResendCodeResponse, AuthenticationRefreshTokenData, AuthenticationRefreshTokenResponse, AuthenticationForgotPasswordData, AuthenticationForgotPasswordResponse, AuthenticationResetPasswordData, AuthenticationResetPasswordResponse, BacklogItemsGetBacklogItemsData, BacklogItemsGetBacklogItemsResponse, BacklogItemsCreateBacklogItemData, BacklogItemsCreateBacklogItemResponse, BacklogItemsGetBacklogItemData, BacklogItemsGetBacklogItemResponse, BacklogItemsUpdateBacklogItemData, BacklogItemsUpdateBacklogItemResponse, BacklogItemsDeleteBacklogItemData, BacklogItemsDeleteBacklogItemResponse, BacklogItemsMoveBacklogItemData, BacklogItemsMoveBacklogItemResponse, BacklogItemsGetKanbanBoardData, BacklogItemsGetKanbanBoardResponse, ChatGetWebsocketInfoResponse, ChatGetConnectionStatsResponse, GithubGithubWebhookResponse, GithubGithubCallbackData, GithubGithubCallbackResponse, GithubLinkInstallationToUserData, GithubLinkInstallationToUserResponse, GithubListGithubRepositoriesData, GithubListGithubRepositoriesResponse, GithubLinkGithubRepositoryData, GithubLinkGithubRepositoryResponse, GithubUnlinkGithubRepositoryData, GithubUnlinkGithubRepositoryResponse, GithubCheckGithubInstallationStatusResponse, GithubListGithubInstallationsData, GithubListGithubInstallationsResponse, GithubCreateRepoFromTemplateEndpointData, GithubCreateRepoFromTemplateEndpointResponse, MessagesListMessagesData, MessagesListMessagesResponse, MessagesCreateMessageData, MessagesCreateMessageResponse, MessagesUpdateMessageData, MessagesUpdateMessageResponse, MessagesDeleteMessageData, MessagesDeleteMessageResponse, MessagesDeleteAllMessagesByProjectData, MessagesDeleteAllMessagesByProjectResponse, PrivateCreateUserData, PrivateCreateUserResponse, ProjectsListProjectsData, ProjectsListProjectsResponse, ProjectsCreateProjectData, ProjectsCreateProjectResponse, ProjectsGetProjectData, ProjectsGetProjectResponse, ProjectsUpdateProjectData, ProjectsUpdateProjectResponse, ProjectsDeleteProjectData, ProjectsDeleteProjectResponse, SprintsListSprintsData, SprintsListSprintsResponse, SprintsCreateSprintData, SprintsCreateSprintResponse, SprintsGetSprintData, SprintsGetSprintResponse, SprintsUpdateSprintData, SprintsUpdateSprintResponse, SprintsDeleteSprintData, SprintsDeleteSprintResponse, SprintsGetActiveSprintData, SprintsGetActiveSprintResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
 
 export class AgentExecutionService {
     /**
@@ -26,7 +26,7 @@ export class AgentExecutionService {
             }
         });
     }
-
+    
     /**
      * Execute Agent Sync
      * Execute an agent synchronously (blocking).
@@ -75,7 +75,7 @@ export class AgentsService {
             }
         });
     }
-
+    
     /**
      * Create Agent
      * @param data The data for the request.
@@ -94,7 +94,7 @@ export class AgentsService {
             }
         });
     }
-
+    
     /**
      * Get Agent
      * @param data The data for the request.
@@ -114,7 +114,7 @@ export class AgentsService {
             }
         });
     }
-
+    
     /**
      * Update Agent
      * @param data The data for the request.
@@ -137,7 +137,7 @@ export class AgentsService {
             }
         });
     }
-
+    
     /**
      * Delete Agent
      * @param data The data for the request.
@@ -179,7 +179,7 @@ export class AuthenticationService {
             }
         });
     }
-
+    
     /**
      * Register
      * Register API - create new account with credential
@@ -199,7 +199,7 @@ export class AuthenticationService {
             }
         });
     }
-
+    
     /**
      * Confirm Code
      * Confirm verification code and complete registration
@@ -219,7 +219,7 @@ export class AuthenticationService {
             }
         });
     }
-
+    
     /**
      * Resend Code
      * Resend verification code
@@ -239,7 +239,7 @@ export class AuthenticationService {
             }
         });
     }
-
+    
     /**
      * Refresh Token
      * Refresh access token using refresh token
@@ -263,7 +263,7 @@ export class AuthenticationService {
             }
         });
     }
-
+    
     /**
      * Forgot Password
      * Forgot Password API - send reset password link via email
@@ -283,7 +283,7 @@ export class AuthenticationService {
             }
         });
     }
-
+    
     /**
      * Reset Password
      * Reset Password API - set new password using token
@@ -340,7 +340,7 @@ export class BacklogItemsService {
             }
         });
     }
-
+    
     /**
      * Create Backlog Item
      * Tạo backlog item mới
@@ -360,7 +360,7 @@ export class BacklogItemsService {
             }
         });
     }
-
+    
     /**
      * Get Backlog Item
      * Lấy chi tiết một backlog item
@@ -381,7 +381,7 @@ export class BacklogItemsService {
             }
         });
     }
-
+    
     /**
      * Update Backlog Item
      * Cập nhật backlog item
@@ -405,7 +405,7 @@ export class BacklogItemsService {
             }
         });
     }
-
+    
     /**
      * Delete Backlog Item
      * Xóa backlog item
@@ -426,7 +426,7 @@ export class BacklogItemsService {
             }
         });
     }
-
+    
     /**
      * Move Backlog Item
      * Di chuyển item giữa các cột hoặc trong cùng cột
@@ -455,7 +455,7 @@ export class BacklogItemsService {
             }
         });
     }
-
+    
     /**
      * Get Kanban Board
      * Lấy dữ liệu Kanban board, nhóm theo status
@@ -503,7 +503,7 @@ export class ChatService {
             url: '/api/v1/chat/info'
         });
     }
-
+    
     /**
      * Get Connection Stats
      * Get current WebSocket connection statistics.
@@ -538,7 +538,7 @@ export class GithubService {
             url: '/api/v1/github/webhook'
         });
     }
-
+    
     /**
      * Github Callback
      * Handle GitHub App OAuth callback.
@@ -581,7 +581,7 @@ export class GithubService {
             }
         });
     }
-
+    
     /**
      * Link Installation To User
      * Link a pending GitHub installation with the current user.
@@ -621,7 +621,7 @@ export class GithubService {
             }
         });
     }
-
+    
     /**
      * List Github Repositories
      * List available GitHub repositories for the current user.
@@ -649,7 +649,7 @@ export class GithubService {
             }
         });
     }
-
+    
     /**
      * Link Github Repository
      * Link a GitHub repository to a project.
@@ -673,7 +673,7 @@ export class GithubService {
             }
         });
     }
-
+    
     /**
      * Unlink Github Repository
      * Unlink a GitHub repository from a project.
@@ -694,7 +694,7 @@ export class GithubService {
             }
         });
     }
-
+    
     /**
      * Check Github Installation Status
      * Check if the current user has installed GitHub App.
@@ -712,7 +712,7 @@ export class GithubService {
             url: '/api/v1/github/installation-status'
         });
     }
-
+    
     /**
      * List Github Installations
      * List all GitHub App installations for the current user.
@@ -730,6 +730,40 @@ export class GithubService {
                 skip: data.skip,
                 limit: data.limit
             },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Create Repo From Template Endpoint
+     * Create a new GitHub repository from a template.
+     *
+     * This endpoint allows authenticated users to create a new repository
+     * based on an existing template repository using their GitHub App installation.
+     *
+     * Args:
+     * request: Request containing template info and new repo details
+     * current_user: Current authenticated user
+     * session: Database session
+     *
+     * Returns:
+     * CreateRepoFromTemplateResponse with repository creation details
+     *
+     * Raises:
+     * HTTPException: If installation not found, user lacks permissions, or GitHub API fails
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns CreateRepoFromTemplateResponse Successful Response
+     * @throws ApiError
+     */
+    public static createRepoFromTemplateEndpoint(data: GithubCreateRepoFromTemplateEndpointData): CancelablePromise<GithubCreateRepoFromTemplateEndpointResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/github/create-repo-from-template',
+            body: data.requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: 'Validation Error'
             }
@@ -761,7 +795,7 @@ export class MessagesService {
             }
         });
     }
-
+    
     /**
      * Create Message
      * @param data The data for the request.
@@ -780,7 +814,7 @@ export class MessagesService {
             }
         });
     }
-
+    
     /**
      * Update Message
      * @param data The data for the request.
@@ -803,7 +837,7 @@ export class MessagesService {
             }
         });
     }
-
+    
     /**
      * Delete Message
      * @param data The data for the request.
@@ -823,7 +857,7 @@ export class MessagesService {
             }
         });
     }
-
+    
     /**
      * Delete All Messages By Project
      * @param data The data for the request.
@@ -870,10 +904,17 @@ export class PrivateService {
 export class ProjectsService {
     /**
      * List Projects
+     * Get all projects owned by the current user.
+     *
+     * Args:
+     * session: Database session
+     * current_user: Current authenticated user
+     * skip: Number of records to skip (pagination)
+     * limit: Maximum number of records to return
+     *
+     * Returns:
+     * ProjectsPublic: List of projects with total count
      * @param data The data for the request.
-     * @param data.ownerId
-     * @param data.code Tìm theo code
-     * @param data.name Tìm theo name
      * @param data.skip
      * @param data.limit
      * @returns ProjectsPublic Successful Response
@@ -884,9 +925,6 @@ export class ProjectsService {
             method: 'GET',
             url: '/api/v1/projects/',
             query: {
-                owner_id: data.ownerId,
-                code: data.code,
-                name: data.name,
                 skip: data.skip,
                 limit: data.limit
             },
@@ -895,9 +933,20 @@ export class ProjectsService {
             }
         });
     }
-
+    
     /**
      * Create Project
+     * Create a new project.
+     *
+     * The project code is automatically generated in format PRJ-001, PRJ-002, etc.
+     *
+     * Args:
+     * project_in: Project creation schema
+     * session: Database session
+     * current_user: Current authenticated user
+     *
+     * Returns:
+     * ProjectPublic: Created project details
      * @param data The data for the request.
      * @param data.requestBody
      * @returns ProjectPublic Successful Response
@@ -914,9 +963,21 @@ export class ProjectsService {
             }
         });
     }
-
+    
     /**
      * Get Project
+     * Get a specific project by ID.
+     *
+     * Args:
+     * project_id: UUID of the project
+     * session: Database session
+     * current_user: Current authenticated user
+     *
+     * Returns:
+     * ProjectPublic: Project details
+     *
+     * Raises:
+     * HTTPException: If project not found or user lacks access
      * @param data The data for the request.
      * @param data.projectId
      * @returns ProjectPublic Successful Response
@@ -934,9 +995,22 @@ export class ProjectsService {
             }
         });
     }
-
+    
     /**
      * Update Project
+     * Update a project.
+     *
+     * Args:
+     * project_id: UUID of the project to update
+     * project_in: Project update schema
+     * session: Database session
+     * current_user: Current authenticated user
+     *
+     * Returns:
+     * ProjectPublic: Updated project details
+     *
+     * Raises:
+     * HTTPException: If project not found or user lacks access
      * @param data The data for the request.
      * @param data.projectId
      * @param data.requestBody
@@ -945,7 +1019,7 @@ export class ProjectsService {
      */
     public static updateProject(data: ProjectsUpdateProjectData): CancelablePromise<ProjectsUpdateProjectResponse> {
         return __request(OpenAPI, {
-            method: 'PATCH',
+            method: 'PUT',
             url: '/api/v1/projects/{project_id}',
             path: {
                 project_id: data.projectId
@@ -957,9 +1031,18 @@ export class ProjectsService {
             }
         });
     }
-
+    
     /**
      * Delete Project
+     * Delete a project.
+     *
+     * Args:
+     * project_id: UUID of the project to delete
+     * session: Database session
+     * current_user: Current authenticated user
+     *
+     * Raises:
+     * HTTPException: If project not found or user lacks access
      * @param data The data for the request.
      * @param data.projectId
      * @returns void Successful Response
@@ -1008,7 +1091,7 @@ export class SprintsService {
             }
         });
     }
-
+    
     /**
      * Create Sprint
      * Tạo mới một sprint
@@ -1028,7 +1111,7 @@ export class SprintsService {
             }
         });
     }
-
+    
     /**
      * Get Sprint
      * Lấy chi tiết một sprint
@@ -1049,7 +1132,7 @@ export class SprintsService {
             }
         });
     }
-
+    
     /**
      * Update Sprint
      * Cập nhật một sprint
@@ -1073,7 +1156,7 @@ export class SprintsService {
             }
         });
     }
-
+    
     /**
      * Delete Sprint
      * Xóa sprint
@@ -1094,7 +1177,7 @@ export class SprintsService {
             }
         });
     }
-
+    
     /**
      * Get Active Sprint
      * Lấy sprint đang active của project
@@ -1120,7 +1203,7 @@ export class SprintsService {
 export class UsersService {
     /**
      * Read Users
-     * Retrieve users.
+     * Retrieve users with GitHub installation data.
      * @param data The data for the request.
      * @param data.skip
      * @param data.limit
@@ -1140,7 +1223,7 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Create User
      * Create new user.
@@ -1160,10 +1243,10 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Read User Me
-     * Get current user.
+     * Get current user with GitHub installation data.
      * @returns UserPublic Successful Response
      * @throws ApiError
      */
@@ -1173,7 +1256,7 @@ export class UsersService {
             url: '/api/v1/users/me'
         });
     }
-
+    
     /**
      * Delete User Me
      * Delete own user.
@@ -1186,7 +1269,7 @@ export class UsersService {
             url: '/api/v1/users/me'
         });
     }
-
+    
     /**
      * Update User Me
      * Update own user.
@@ -1206,7 +1289,7 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Update Password Me
      * Update own password.
@@ -1226,7 +1309,7 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Register User
      * Create new user without the need to be logged in.
@@ -1246,10 +1329,10 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Read User By Id
-     * Get a specific user by id.
+     * Get a specific user by id with GitHub installation data.
      * @param data The data for the request.
      * @param data.userId
      * @returns UserPublic Successful Response
@@ -1267,7 +1350,7 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Update User
      * Update a user.
@@ -1291,7 +1374,7 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Delete User
      * Delete a user.
@@ -1335,7 +1418,7 @@ export class UtilsService {
             }
         });
     }
-
+    
     /**
      * Health Check
      * @returns boolean Successful Response

@@ -14,7 +14,7 @@ import type { Project } from "@/types/project"
 import { CreateProjectContent } from "@/components/projects/create-project-content"
 import { HeaderProject } from "@/components/projects/header"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ApiError, GithubCheckGithubInstallationStatusResponse, GithubService } from "@/client"
+import { ApiError, GithubCheckGithubInstallationStatusResponse, GithubService, ProjectsListProjectsResponse, ProjectsService } from "@/client"
 import { GitHubInstallationHandler } from "@/components/github/GitHubInstallationHandler"
 import toast from "react-hot-toast"
 import { handleError } from "@/utils"
@@ -42,6 +42,10 @@ function ProjectsPage() {
     queryKey: ["github-installation-status"],
     queryFn: GithubService.checkGithubInstallationStatus,
   })
+  const { data: listProjectPublic, isLoading } = useQuery<ProjectsListProjectsResponse>({
+    queryKey: ["list-project"],
+    queryFn: () => ProjectsService.listProjects(),
+  })
   const linkInstallationMutation = useMutation({
     mutationFn: GithubService.linkInstallationToUser,
     onSuccess: () => {
@@ -57,18 +61,7 @@ function ProjectsPage() {
     },
   })
   console.log('_githubStatus', _githubStatus)
-  // Fetch projects
-  const { data, isLoading, refetch } = useProjects({ page: 1, pageSize: 50 })
 
-  const projects = data?.data || []
-
-  // Transform API projects to match ProjectCard interface
-  const transformedProjects = projects.map((project: Project) => ({
-    code: project.code,
-    repositoryName: project.name,
-    createdAt: project.created_at || new Date().toISOString(),
-    mode: "private" as const, // Default to private for now
-  }))
 
   const _handleInstallGitHub = () => {
     setShowGitHubInstallModal(true)
@@ -90,38 +83,15 @@ function ProjectsPage() {
   }
 
   const handleNewProjectClick = () => {
-    // Check if there's a pending installation ID
     const pendingInstallationId = localStorage.getItem("installationId")
 
     if (pendingInstallationId) {
-      // Show GitHub link modal to link installation with project
       setShowGitHubLinkModal(true)
     } else {
-      // Show create project modal as usual
       setShowCreateModal(true)
     }
   }
 
-  const handleCreateProject = async (name: string, _isPrivate: boolean) => {
-    try {
-      if (!user?.id) return
-
-      // Generate project code from name
-      const code = name.toLowerCase().replace(/\s+/g, "-")
-
-      await projectsApi.create({
-        code,
-        name,
-        owner_id: user.id,
-        is_init: true,
-      })
-
-      setShowCreateModal(false)
-      refetch()
-    } catch (error) {
-      console.error("Failed to create project:", error)
-    }
-  }
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -194,7 +164,7 @@ function ProjectsPage() {
                       <Loader2 className="h-8 w-8 animate-spin text-purple-400" />
                     </div>
                   ) : (
-                    <ProjectList projects={transformedProjects} />
+                    <ProjectList projects={listProjectPublic?.data || []} />
                   )}
                 </motion.div>
               </motion.div>
@@ -206,7 +176,7 @@ function ProjectsPage() {
                 <CreateProjectModal
                   isOpen={showCreateModal}
                   onClose={() => setShowCreateModal(false)}
-                  onCreateProject={handleCreateProject}
+                  setIsOpen={setShowCreateModal}
                 />
               )}
             </AnimatePresence>

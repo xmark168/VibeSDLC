@@ -1,6 +1,21 @@
 from fastapi import APIRouter
 
-from app.api.routes import auth, private, users, utils, backlog_items, projects, sprints, messages, agents, chat_ws, agent_execution, github_webhook, github_repositories
+from app.api.routes import (
+    auth,
+    private,
+    users,
+    utils,
+    backlog_items,
+    projects,
+    sprints,
+    messages,
+    agents,
+    chat_ws,
+    agent_execution,
+    github_webhook,
+    github_repositories,
+    github_create_repo,
+)
 from app.core.config import settings
 
 api_router = APIRouter()
@@ -16,6 +31,7 @@ api_router.include_router(chat_ws.router)
 api_router.include_router(agent_execution.router)
 api_router.include_router(github_webhook.router)
 api_router.include_router(github_repositories.router)
+api_router.include_router(github_create_repo.router)
 
 if settings.ENVIRONMENT == "local":
     api_router.include_router(private.router)

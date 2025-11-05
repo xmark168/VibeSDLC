@@ -151,35 +151,52 @@ async def handle_installation_created(
 ) -> dict[str, Any]:
     """Handle GitHub App installation.created event."""
     try:
+        from app.models import GitHubInstallationStatus
+
         installation = payload.get("installation", {})
         sender = payload.get("sender", {})
         repositories = payload.get("repositories", [])
-        
+
         installation_id = installation.get("id")
         account_login = installation.get("account", {}).get("login")
         account_type = installation.get("account", {}).get("type")
-        
+
         if not all([installation_id, account_login, account_type]):
             logger.error("Missing required fields in installation.created event")
             raise ValueError("Missing required fields")
-        
+
         # Convert account_type to enum
         try:
             account_type_enum = GitHubAccountType(account_type)
         except ValueError:
             logger.error(f"Invalid account type: {account_type}")
             raise ValueError(f"Invalid account type: {account_type}")
-        
-        # Check if installation already exists
-        existing = crud.github_installation.get_github_installation_by_installation_id(
+
+        # Check if installation already exists (by installation_id OR by account_login with DELETED status)
+        existing_by_id = crud.github_installation.get_github_installation_by_installation_id(
             session, installation_id
         )
-        if existing:
-            logger.info(f"Installation {installation_id} already exists, updating details...")
-            # Update account info and repositories from webhook
-            existing.account_login = account_login
-            existing.account_type = account_type_enum
-            existing.repositories = {
+
+        # Also check for deleted installations by this user that can be reactivated
+        from sqlmodel import select
+        from app.models import GitHubInstallation
+        deleted_installation = session.exec(
+            select(GitHubInstallation).where(
+                GitHubInstallation.account_login == account_login,
+                GitHubInstallation.account_status == GitHubInstallationStatus.DELETED
+            )
+        ).first()
+
+        # Case 1: Reinstall - Found a DELETED installation for this account
+        if deleted_installation and not existing_by_id:
+            logger.info(
+                f"Reactivating deleted installation for {account_login} "
+                f"(db_id: {deleted_installation.id}) with new installation_id: {installation_id}"
+            )
+            deleted_installation.installation_id = installation_id
+            deleted_installation.account_type = account_type_enum
+            deleted_installation.account_status = GitHubInstallationStatus.INSTALLED
+            deleted_installation.repositories = {
                 "repositories": [
                     {
                         "id": repo.get("id"),
@@ -191,21 +208,43 @@ async def handle_installation_created(
                     for repo in repositories
                 ]
             }
-            session.add(existing)
+            session.add(deleted_installation)
+            session.commit()
+            logger.info(f"Reactivated GitHub installation {installation_id}")
+            return {
+                "status": "reactivated",
+                "installation_id": installation_id,
+                "db_id": str(deleted_installation.id)
+            }
+
+        # Case 2: Update existing installation
+        if existing_by_id:
+            logger.info(f"Installation {installation_id} already exists, updating details...")
+            existing_by_id.account_login = account_login
+            existing_by_id.account_type = account_type_enum
+            existing_by_id.account_status = GitHubInstallationStatus.INSTALLED
+            existing_by_id.repositories = {
+                "repositories": [
+                    {
+                        "id": repo.get("id"),
+                        "name": repo.get("name"),
+                        "full_name": repo.get("full_name"),
+                        "url": repo.get("html_url"),
+                        "private": repo.get("private"),
+                    }
+                    for repo in repositories
+                ]
+            }
+            session.add(existing_by_id)
             session.commit()
             logger.info(f"Updated GitHub installation {installation_id}")
             return {
                 "status": "updated",
                 "installation_id": installation_id,
-                "db_id": str(existing.id)
+                "db_id": str(existing_by_id.id)
             }
 
-        # Installation doesn't exist yet
-        # This can happen if:
-        # 1. User installed app but callback endpoint wasn't called (old flow)
-        # 2. Webhook arrived before callback
-        # In this case, we create a placeholder installation without user_id
-        # It will be linked to user when callback is processed
+        # Case 3: New installation (first time install)
         logger.warning(
             f"Installation {installation_id} received via webhook but not yet linked to user. "
             f"Waiting for callback endpoint to be called."
@@ -215,6 +254,7 @@ async def handle_installation_created(
             installation_id=installation_id,
             account_login=account_login,
             account_type=account_type_enum,
+            account_status=GitHubInstallationStatus.PENDING,
             repositories={
                 "repositories": [
                     {
@@ -241,7 +281,7 @@ async def handle_installation_created(
             "db_id": str(db_installation.id),
             "note": "Installation created but not yet linked to user. Waiting for callback."
         }
-    
+
     except Exception as e:
         logger.error(f"Error handling installation.created: {e}")
         raise HTTPException(
@@ -257,23 +297,37 @@ async def handle_installation_deleted(
     try:
         installation = payload.get("installation", {})
         installation_id = installation.get("id")
-        
+
         if not installation_id:
             logger.error("Missing installation_id in installation.deleted event")
             raise ValueError("Missing installation_id")
-        
-        # Delete installation record
-        deleted = crud.github_installation.delete_github_installation_by_installation_id(
+
+        # Get installation record
+        db_installation = crud.github_installation.get_github_installation_by_installation_id(
             session, installation_id
         )
-        
-        if deleted:
-            logger.info(f"Deleted GitHub installation: {installation_id}")
-            return {"status": "deleted", "installation_id": installation_id}
-        else:
-            logger.warning(f"Installation not found: {installation_id}")
+
+        if not db_installation:
+            logger.warning(f"Installation {installation_id} not found in database")
             return {"status": "not_found", "installation_id": installation_id}
-    
+
+        # Instead of deleting, set installation_id to NULL and status to DELETED
+        from app.models import GitHubInstallationStatus
+        db_installation.installation_id = None
+        db_installation.account_status = GitHubInstallationStatus.DELETED
+        session.add(db_installation)
+        session.commit()
+
+        logger.info(
+            f"Marked GitHub installation {installation_id} as DELETED "
+            f"(db_id: {db_installation.id}, user_id: {db_installation.user_id})"
+        )
+        return {
+            "status": "marked_deleted",
+            "installation_id": installation_id,
+            "db_id": str(db_installation.id)
+        }
+
     except Exception as e:
         logger.error(f"Error handling installation.deleted: {e}")
         raise HTTPException(
@@ -445,10 +499,12 @@ async def github_callback(
 
         # Create new PENDING installation (user_id = NULL)
         # Webhook will update details, frontend will link with user
+        from app.models import GitHubInstallationStatus
         installation_create = GitHubInstallationCreate(
             installation_id=installation_id,
             account_login="",  # Will be updated by webhook
             account_type=GitHubAccountType.USER,  # Default, will be updated by webhook
+            account_status=GitHubInstallationStatus.PENDING,
             repositories={"repositories": []},  # Empty for now, will be updated by webhook
             user_id=None,  # PENDING - will be linked by frontend or user action
         )
@@ -530,13 +586,16 @@ async def link_installation_to_user(
                 "installation_id": installation_id
             }
 
-        # Link installation with current user
+        # Link installation with current user and set status to INSTALLED
+        from app.models import GitHubInstallationStatus
         installation.user_id = current_user.id
+        installation.account_status = GitHubInstallationStatus.INSTALLED
         session.add(installation)
         session.commit()
 
         logger.info(
-            f"Linked GitHub installation {installation_id} to user {current_user.id}"
+            f"Linked GitHub installation {installation_id} to user {current_user.id} "
+            f"and set status to INSTALLED"
         )
 
         return {

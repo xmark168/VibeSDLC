@@ -1,33 +1,107 @@
-import { AnimatePresence, motion } from "framer-motion"
-import { Globe, Lock, X } from "lucide-react"
+import { motion } from "framer-motion"
+import { Globe, Lock, X, Layers } from "lucide-react"
 import { useId, useState } from "react"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { CreateRepoFromTemplateRequest, GithubService, ProjectCreate, ProjectsService } from "@/client"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useAppStore } from "@/stores/auth-store"
+import toast from "react-hot-toast"
+import { withToast } from "@/utils"
 
 interface CreateProjectModalProps {
   isOpen: boolean
   onClose: () => void
-  onCreateProject: (name: string, isPrivate: boolean) => void
+  setIsOpen: React.Dispatch<React.SetStateAction<boolean>>
 }
+
+const TECH_STACK_OPTIONS = [
+  {
+    value: "nodejs-react",
+    label: "Node.js + Express + React Vite",
+    icon: "🟢⚛️",
+    description: "Fast development with modern tooling",
+    template_owner: "trong03",
+    template_repo: "boilerplate-vibe-sdlc"
+  }
+]
 
 export function CreateProjectModal({
   isOpen,
   onClose,
-  onCreateProject,
+  setIsOpen,
 }: CreateProjectModalProps) {
   const projectNameId = useId()
+  const descriptionId = useId()
   const [projectName, setProjectName] = useState("")
+  const [description, setDescription] = useState("")
   const [isPrivate, setIsPrivate] = useState(true)
+  const [techStack, setTechStack] = useState("nodejs-react")
   const [isLoading, setIsLoading] = useState(false)
+  const user = useAppStore((state) => state.user)
+  const queryClient = useQueryClient()
+  const templateOwner = TECH_STACK_OPTIONS.find((item) => item.value === techStack)?.template_owner || ""
+  const templateRepo = TECH_STACK_OPTIONS.find((item) => item.value === techStack)?.template_repo || ""
+  const createRepositoryTemplateMutation = useMutation({
+    mutationFn: (data: CreateRepoFromTemplateRequest) =>
+      GithubService.createRepoFromTemplateEndpoint({
+        requestBody: data,
+      }),
+
+  })
+  const createProjectMutation = useMutation({
+    mutationFn: (data: ProjectCreate) =>
+      ProjectsService.createProject({
+        requestBody: data,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["list-project"] })
+    },
+  })
 
   const handleCreate = async () => {
     if (!projectName.trim()) return
-
     setIsLoading(true)
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 800))
-    onCreateProject(projectName, isPrivate)
-    setProjectName("")
-    setIsLoading(false)
+    try {
+      const dataRepoCreate: CreateRepoFromTemplateRequest = {
+        template_owner: templateOwner,
+        template_repo: templateRepo,
+        new_repo_name: projectName,
+        new_repo_description: description,
+        is_private: isPrivate,
+        github_installation_id: user?.github_installation_id || 0,
+      }
+
+      const dataProjectCreate: ProjectCreate = {
+        name: projectName,
+        is_private: isPrivate,
+        tech_stack: techStack,
+      }
+
+      // Wrap both mutations inside withToast to show proper loading/success/error states
+      const [repoCreateResponse, projectCreateResponse] = await withToast(
+        Promise.all([
+          createRepositoryTemplateMutation.mutateAsync(dataRepoCreate),
+          createProjectMutation.mutateAsync(dataProjectCreate)
+        ]),
+        {
+          loading: "Creating project...",
+          success: <b>Project created successfully!</b>,
+          error: <b>Project creation failed. Please try again.</b>,
+        },
+      )
+    } catch (error) {
+      console.error("Error creating project:", error)
+    } finally {
+      setProjectName("")
+      setDescription("")
+      setTechStack("nodejs-react")
+      setIsLoading(false)
+      setIsOpen(false)
+    }
+
   }
 
   const modalVariants = {
@@ -50,163 +124,201 @@ export function CreateProjectModal({
     exit: { opacity: 0 },
   }
 
-  return (
-    // <AnimatePresence>
-    <div>
-      {isOpen && (
-        <>
-          <motion.div
-            variants={backdropVariants}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-            onClick={onClose}
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50"
-          />
+  if (!isOpen) return null
 
-          <motion.div
-            variants={modalVariants}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-            className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md z-50"
+  return (
+    <>
+      <motion.div
+        variants={backdropVariants}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+        onClick={onClose}
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50"
+      />
+
+      <motion.div
+        variants={modalVariants}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+        className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl max-h-[90vh] overflow-y-auto z-50"
+      >
+        <div className="relative bg-card border border-border rounded-2xl p-8 shadow-[var(--shadow-lg)]">
+          {/* Close Button */}
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={onClose}
+            disabled={isLoading}
+            className="absolute top-4 right-4 p-2 rounded-lg hover:bg-accent transition-colors disabled:opacity-50"
           >
-            <div className="relative bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-purple-500/30 rounded-2xl p-8 shadow-2xl">
-              {/* Close Button */}
+            <X className="h-5 w-5 text-muted-foreground hover:text-foreground transition-colors" />
+          </motion.button>
+
+          {/* Header */}
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6"
+          >
+            <h2 className="text-2xl font-bold text-foreground mb-2">
+              Create New Project
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Set up your project with AI agents
+            </p>
+          </motion.div>
+
+          {/* Form */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.1 }}
+            className="space-y-6"
+          >
+            {/* Project Name Input */}
+            <div>
+              <Label htmlFor={projectNameId} className="text-foreground mb-2">
+                Project Name
+              </Label>
+              <Input
+                id={projectNameId}
+                type="text"
+                placeholder="Enter project name"
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                disabled={isLoading}
+                className="disabled:opacity-50"
+              />
+            </div>
+
+            {/* Description Input */}
+            <div>
+              <Label htmlFor={descriptionId} className="text-foreground mb-2">
+                Description
+              </Label>
+              <Textarea
+                id={descriptionId}
+                placeholder="Enter project description (optional)"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                disabled={isLoading}
+                className="disabled:opacity-50 min-h-[80px]"
+              />
+            </div>
+
+            {/* Privacy Toggle */}
+            <div className="space-y-3">
+              <Label className="text-foreground">Visibility</Label>
+
+              <div className="grid grid-cols-2 gap-3">
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => setIsPrivate(true)}
+                  disabled={isLoading}
+                  className={`relative p-4 rounded-lg border-2 transition-all ${isPrivate
+                    ? "border-primary bg-primary/10"
+                    : "border-border bg-muted hover:border-primary/50"
+                    } disabled:opacity-50`}
+                >
+                  <Lock
+                    className={`h-5 w-5 mx-auto mb-2 ${isPrivate ? "text-primary" : "text-muted-foreground"}`}
+                  />
+                  <p
+                    className={`text-sm font-semibold ${isPrivate ? "text-foreground" : "text-muted-foreground"}`}
+                  >
+                    Private
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Only you can access
+                  </p>
+                </motion.button>
+
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => setIsPrivate(false)}
+                  disabled={isLoading}
+                  className={`relative p-4 rounded-lg border-2 transition-all ${!isPrivate
+                    ? "border-primary bg-primary/10"
+                    : "border-border bg-muted hover:border-primary/50"
+                    } disabled:opacity-50`}
+                >
+                  <Globe
+                    className={`h-5 w-5 mx-auto mb-2 ${!isPrivate ? "text-primary" : "text-muted-foreground"}`}
+                  />
+                  <p
+                    className={`text-sm font-semibold ${!isPrivate ? "text-foreground" : "text-muted-foreground"}`}
+                  >
+                    Public
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Everyone can see
+                  </p>
+                </motion.button>
+              </div>
+            </div>
+
+            {/* Tech Stack Selection */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Layers className="h-4 w-4 text-primary" />
+                <Label className="text-foreground">Tech Stack</Label>
+              </div>
+              <RadioGroup value={techStack} onValueChange={setTechStack} disabled={isLoading}>
+                <div className="space-y-3">
+                  {TECH_STACK_OPTIONS.map((option) => (
+                    <motion.div
+                      key={option.value}
+                      whileHover={{ scale: 1.01 }}
+                      className={`flex items-center space-x-3 p-4 rounded-lg border transition-all ${techStack === option.value
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/50"
+                        }`}
+                    >
+                      <RadioGroupItem value={option.value} id={option.value} />
+                      <Label
+                        htmlFor={option.value}
+                        className="cursor-pointer flex-1"
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-lg">{option.icon}</span>
+                          <span className="text-sm font-semibold">{option.label}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">{option.description}</p>
+                      </Label>
+                    </motion.div>
+                  ))}
+                </div>
+              </RadioGroup>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 pt-4">
               <motion.button
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.95 }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
                 onClick={onClose}
                 disabled={isLoading}
-                className="absolute top-4 right-4 p-2 rounded-lg hover:bg-white/10 transition-colors disabled:opacity-50"
+                className="flex-1 px-4 py-3 rounded-lg border border-border text-foreground font-semibold hover:bg-accent transition-colors disabled:opacity-50"
               >
-                <X className="h-5 w-5 text-slate-400 hover:text-white transition-colors" />
+                Cancel
               </motion.button>
-
-              {/* Header */}
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mb-6"
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleCreate}
+                disabled={!projectName.trim() || isLoading}
+                className="flex-1 px-4 py-3 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <h2 className="text-2xl font-bold text-white mb-2">
-                  Create New Project
-                </h2>
-                <p className="text-sm text-slate-400">
-                  Set up your project with AI agents
-                </p>
-              </motion.div>
-
-              {/* Form */}
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.1 }}
-                className="space-y-6"
-              >
-                {/* Project Name Input */}
-                <div>
-                  <label
-                    htmlFor={projectNameId}
-                    className="block text-sm font-semibold text-white mb-2"
-                  >
-                    Project Name
-                  </label>
-                  <Input
-                    id={projectNameId}
-                    type="text"
-                    placeholder="Enter project name"
-                    value={projectName}
-                    onChange={(e) => setProjectName(e.target.value)}
-                    disabled={isLoading}
-                    className="bg-slate-800/50 border-purple-500/30 text-white placeholder:text-slate-500 focus:border-purple-500/50 disabled:opacity-50"
-                  />
-                </div>
-
-                {/* Privacy Toggle */}
-                <div className="space-y-3">
-                  <span className="block text-sm font-semibold text-white">
-                    Visibility
-                  </span>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    {/* Private Option */}
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={() => setIsPrivate(true)}
-                      disabled={isLoading}
-                      className={`relative p-4 rounded-lg border-2 transition-all ${isPrivate
-                          ? "border-purple-500/50 bg-purple-500/10"
-                          : "border-slate-700 bg-slate-800/30 hover:border-slate-600"
-                        } disabled:opacity-50`}
-                    >
-                      <Lock
-                        className={`h-5 w-5 mx-auto mb-2 ${isPrivate ? "text-purple-400" : "text-slate-400"}`}
-                      />
-                      <p
-                        className={`text-sm font-semibold ${isPrivate ? "text-white" : "text-slate-400"}`}
-                      >
-                        Private
-                      </p>
-                      <p className="text-xs text-slate-500 mt-1">
-                        Only you can access
-                      </p>
-                    </motion.button>
-
-                    {/* Public Option */}
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={() => setIsPrivate(false)}
-                      disabled={isLoading}
-                      className={`relative p-4 rounded-lg border-2 transition-all ${!isPrivate
-                          ? "border-purple-500/50 bg-purple-500/10"
-                          : "border-slate-700 bg-slate-800/30 hover:border-slate-600"
-                        } disabled:opacity-50`}
-                    >
-                      <Globe
-                        className={`h-5 w-5 mx-auto mb-2 ${!isPrivate ? "text-purple-400" : "text-slate-400"}`}
-                      />
-                      <p
-                        className={`text-sm font-semibold ${!isPrivate ? "text-white" : "text-slate-400"}`}
-                      >
-                        Public
-                      </p>
-                      <p className="text-xs text-slate-500 mt-1">
-                        Everyone can see
-                      </p>
-                    </motion.button>
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex gap-3 pt-4">
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={onClose}
-                    disabled={isLoading}
-                    className="flex-1 px-4 py-3 rounded-lg border border-slate-700 text-white font-semibold hover:border-slate-600 transition-colors disabled:opacity-50"
-                  >
-                    Cancel
-                  </motion.button>
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={handleCreate}
-                    disabled={!projectName.trim() || isLoading}
-                    className="flex-1 px-4 py-3 rounded-lg bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isLoading ? "Creating..." : "Create Project"}
-                  </motion.button>
-                </div>
-              </motion.div>
+                {isLoading ? "Creating..." : "Create Project"}
+              </motion.button>
             </div>
           </motion.div>
-        </>
-      )}
-    </div>
-    // </AnimatePresence>
+        </div>
+      </motion.div>
+    </>
   )
 }

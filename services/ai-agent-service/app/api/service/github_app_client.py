@@ -15,7 +15,7 @@ class GitHubAppClient:
     Automatically renews the token when expired.
 
     Can be initialized with either:
-    1. Direct installation_id and private_key_path
+    1. Direct installation_id and private_key or private_key_path
     2. Database session and installation_id (will fetch from DB)
     """
 
@@ -23,16 +23,22 @@ class GitHubAppClient:
         self,
         app_id: str,
         installation_id: int,
-        private_key_path: str,
+        private_key: Optional[str] = None,
+        private_key_path: Optional[str] = None,
         session: Optional[Session] = None,
     ):
         self.app_id = app_id
         self.installation_id = installation_id
+        self.private_key = private_key
         self.private_key_path = private_key_path
         self.session = session
 
         self._cached_token = None
         self._expiry = 0
+
+        # Validate that at least one key source is provided
+        if not self.private_key and not self.private_key_path:
+            raise ValueError("Either private_key or private_key_path must be provided")
 
     def validate_installation_exists(self) -> bool:
         """
@@ -58,8 +64,14 @@ class GitHubAppClient:
 
     def _generate_jwt(self) -> str:
         """Generate a JWT signed with the app's private key (valid for 10 minutes)."""
-        with open(self.private_key_path, "r") as f:
-            private_key = f.read()
+        # Get private key from either direct content or file path
+        if self.private_key:
+            private_key_content = self.private_key
+        elif self.private_key_path:
+            with open(self.private_key_path, "r") as f:
+                private_key_content = f.read()
+        else:
+            raise ValueError("No private key available")
 
         now = int(time.time())
         payload = {
@@ -68,7 +80,7 @@ class GitHubAppClient:
             "iss": self.app_id
         }
 
-        return jwt.encode(payload, private_key, algorithm="RS256")
+        return jwt.encode(payload, private_key_content, algorithm="RS256")
 
     def _fetch_installation_token(self) -> dict:
         """Fetch a new installation access token from GitHub."""

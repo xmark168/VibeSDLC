@@ -35,6 +35,7 @@ dependencies = [
     "redis>=7.0.1",
     "pygithub>=2.8.1",
     "email-validator>=2.3.0",
+    "daytona>=0.112.2",
 ]
 
 

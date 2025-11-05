@@ -3,6 +3,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import func, select
+from sqlalchemy.orm import selectinload
 
 from app import crud
 from app.api.deps import (
@@ -12,7 +13,7 @@ from app.api.deps import (
 )
 from app.core.config import settings
 from app.core.security import get_password_hash, verify_password
-from app.models import User, Role
+from app.models import User, Role, GitHubInstallation
 from app.schemas import (
     Message,
     UpdatePassword,
@@ -28,6 +29,30 @@ from app.utils import generate_new_account_email, send_email
 router = APIRouter(prefix="/users", tags=["users"])
 
 
+def user_to_public(user: User) -> UserPublic:
+    """
+    Convert User model to UserPublic schema with GitHub installation data.
+
+    Args:
+        user: User model instance (should have github_installations loaded)
+
+    Returns:
+        UserPublic schema with github_installation_id populated
+    """
+    github_installation_id = None
+    if user.github_installations and len(user.github_installations) > 0:
+        # Get the first (primary) installation's installation_id
+        github_installation_id = user.github_installations[0].installation_id
+
+    return UserPublic(
+        id=user.id,
+        full_name=user.full_name,
+        email=user.email,
+        role=user.role,
+        github_installation_id=github_installation_id,
+    )
+
+
 @router.get(
     "/",
     dependencies=[Depends(get_current_active_superuser)],
@@ -35,16 +60,20 @@ router = APIRouter(prefix="/users", tags=["users"])
 )
 def read_users(session: SessionDep, skip: int = 0, limit: int = 100) -> Any:
     """
-    Retrieve users.
+    Retrieve users with GitHub installation data.
     """
 
     count_statement = select(func.count()).select_from(User)
     count = session.exec(count_statement).one()
 
-    statement = select(User).offset(skip).limit(limit)
+    # Eager load github_installations relationship
+    statement = select(User).options(selectinload(User.github_installations)).offset(skip).limit(limit)
     users = session.exec(statement).all()
 
-    return UsersPublic(data=users, count=count)
+    # Convert to UserPublic with github_installation_id
+    users_public = [user_to_public(user) for user in users]
+
+    return UsersPublic(data=users_public, count=count)
 
 
 @router.post(
@@ -71,7 +100,10 @@ def create_user(*, session: SessionDep, user_in: UserCreate) -> Any:
             subject=email_data.subject,
             html_content=email_data.html_content,
         )
-    return user
+
+    # Refresh to load relationships
+    session.refresh(user, attribute_names=["github_installations"])
+    return user_to_public(user)
 
 
 @router.patch("/me", response_model=UserPublic)
@@ -92,8 +124,8 @@ def update_user_me(
     current_user.sqlmodel_update(user_data)
     session.add(current_user)
     session.commit()
-    session.refresh(current_user)
-    return current_user
+    session.refresh(current_user, attribute_names=["github_installations"])
+    return user_to_public(current_user)
 
 
 @router.patch("/me/password", response_model=Message)
@@ -117,11 +149,13 @@ def update_password_me(
 
 
 @router.get("/me", response_model=UserPublic)
-def read_user_me(current_user: CurrentUser) -> Any:
+def read_user_me(session: SessionDep, current_user: CurrentUser) -> Any:
     """
-    Get current user.
+    Get current user with GitHub installation data.
     """
-    return current_user
+    # Refresh to load github_installations relationship
+    session.refresh(current_user, attribute_names=["github_installations"])
+    return user_to_public(current_user)
 
 
 @router.delete("/me", response_model=Message)
@@ -151,7 +185,10 @@ def register_user(session: SessionDep, user_in: UserRegister) -> Any:
         )
     user_create = UserCreate.model_validate(user_in)
     user = crud.create_user(session=session, user_create=user_create)
-    return user
+
+    # Refresh to load relationships
+    session.refresh(user, attribute_names=["github_installations"])
+    return user_to_public(user)
 
 
 @router.get("/{user_id}", response_model=UserPublic)
@@ -159,17 +196,21 @@ def read_user_by_id(
     user_id: uuid.UUID, session: SessionDep, current_user: CurrentUser
 ) -> Any:
     """
-    Get a specific user by id.
+    Get a specific user by id with GitHub installation data.
     """
     user = session.get(User, user_id)
-    if user == current_user:
-        return user
-    if current_user.role != Role.ADMIN:
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user.id != current_user.id and current_user.role != Role.ADMIN:
         raise HTTPException(
             status_code=403,
             detail="The user doesn't have enough privileges",
         )
-    return user
+
+    # Refresh to load github_installations relationship
+    session.refresh(user, attribute_names=["github_installations"])
+    return user_to_public(user)
 
 
 @router.patch(
@@ -201,7 +242,10 @@ def update_user(
             )
 
     db_user = crud.update_user(session=session, db_user=db_user, user_in=user_in)
-    return db_user
+
+    # Refresh to load github_installations relationship
+    session.refresh(db_user, attribute_names=["github_installations"])
+    return user_to_public(db_user)
 
 
 @router.delete("/{user_id}", dependencies=[Depends(get_current_active_superuser)])

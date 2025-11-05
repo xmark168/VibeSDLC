@@ -763,6 +763,154 @@ export const ConfirmCodeResponseSchema = {
     title: 'ConfirmCodeResponse'
 } as const;
 
+export const CreateRepoFromTemplateRequestSchema = {
+    properties: {
+        template_owner: {
+            type: 'string',
+            title: 'Template Owner',
+            description: "Owner of the template repository (e.g., 'organization' or 'username')"
+        },
+        template_repo: {
+            type: 'string',
+            title: 'Template Repo',
+            description: 'Name of the template repository'
+        },
+        new_repo_name: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'New Repo Name',
+            description: 'Name for the new repository'
+        },
+        new_repo_description: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 1000
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'New Repo Description',
+            description: 'Description for the new repository'
+        },
+        is_private: {
+            type: 'boolean',
+            title: 'Is Private',
+            description: 'Whether the new repository should be private',
+            default: false
+        },
+        github_installation_id: {
+            type: 'integer',
+            title: 'Github Installation Id',
+            description: 'GitHub installation ID to use for creating the repository'
+        }
+    },
+    type: 'object',
+    required: ['template_owner', 'template_repo', 'new_repo_name', 'github_installation_id'],
+    title: 'CreateRepoFromTemplateRequest',
+    description: 'Request schema for creating a repository from a template.'
+} as const;
+
+export const CreateRepoFromTemplateResponseSchema = {
+    properties: {
+        success: {
+            type: 'boolean',
+            title: 'Success',
+            description: 'Whether the repository was created successfully'
+        },
+        repository_id: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Repository Id',
+            description: 'GitHub repository ID'
+        },
+        repository_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Repository Name',
+            description: 'Name of the created repository'
+        },
+        repository_full_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Repository Full Name',
+            description: 'Full name of the created repository (owner/name)'
+        },
+        repository_url: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Repository Url',
+            description: 'URL of the created repository'
+        },
+        repository_description: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Repository Description',
+            description: 'Description of the created repository'
+        },
+        repository_private: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Repository Private',
+            description: 'Whether the repository is private'
+        },
+        message: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Message',
+            description: 'Success or error message'
+        }
+    },
+    type: 'object',
+    required: ['success'],
+    title: 'CreateRepoFromTemplateResponse',
+    description: 'Response schema for repository creation.'
+} as const;
+
 export const ForgotPasswordRequestSchema = {
     properties: {
         email: {
@@ -968,32 +1116,27 @@ export const PrivateUserCreateSchema = {
 
 export const ProjectCreateSchema = {
     properties: {
-        code: {
-            type: 'string',
-            maxLength: 50,
-            minLength: 1,
-            title: 'Code'
-        },
         name: {
             type: 'string',
             maxLength: 255,
             minLength: 1,
             title: 'Name'
         },
-        is_init: {
+        is_private: {
             type: 'boolean',
-            title: 'Is Init',
-            default: false
+            title: 'Is Private',
+            default: true
         },
-        owner_id: {
+        tech_stack: {
             type: 'string',
-            format: 'uuid',
-            title: 'Owner Id'
+            title: 'Tech Stack',
+            default: 'nodejs-react'
         }
     },
     type: 'object',
-    required: ['code', 'name', 'owner_id'],
-    title: 'ProjectCreate'
+    required: ['name'],
+    title: 'ProjectCreate',
+    description: 'Schema for creating a new project. Code is auto-generated.'
 } as const;
 
 export const ProjectGitHubLinkSchema = {
@@ -1019,32 +1162,69 @@ export const ProjectGitHubLinkSchema = {
 
 export const ProjectPublicSchema = {
     properties: {
-        code: {
-            type: 'string',
-            maxLength: 50,
-            minLength: 1,
-            title: 'Code'
-        },
-        name: {
-            type: 'string',
-            maxLength: 255,
-            minLength: 1,
-            title: 'Name'
-        },
-        is_init: {
-            type: 'boolean',
-            title: 'Is Init',
-            default: false
-        },
         id: {
             type: 'string',
             format: 'uuid',
             title: 'Id'
         },
+        code: {
+            type: 'string',
+            title: 'Code'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
         owner_id: {
             type: 'string',
             format: 'uuid',
             title: 'Owner Id'
+        },
+        is_init: {
+            type: 'boolean',
+            title: 'Is Init'
+        },
+        is_private: {
+            type: 'boolean',
+            title: 'Is Private'
+        },
+        tech_stack: {
+            type: 'string',
+            title: 'Tech Stack'
+        },
+        github_repository_id: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Github Repository Id'
+        },
+        github_repository_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Github Repository Name'
+        },
+        github_installation_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Github Installation Id'
         },
         created_at: {
             type: 'string',
@@ -1058,27 +1238,19 @@ export const ProjectPublicSchema = {
         }
     },
     type: 'object',
-    required: ['code', 'name', 'id', 'owner_id', 'created_at', 'updated_at'],
-    title: 'ProjectPublic'
+    required: ['id', 'code', 'name', 'owner_id', 'is_init', 'is_private', 'tech_stack', 'created_at', 'updated_at'],
+    title: 'ProjectPublic',
+    description: 'Schema for project response with all fields from model.'
 } as const;
 
 export const ProjectUpdateSchema = {
     properties: {
-        code: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Code'
-        },
         name: {
             anyOf: [
                 {
-                    type: 'string'
+                    type: 'string',
+                    maxLength: 255,
+                    minLength: 1
                 },
                 {
                     type: 'null'
@@ -1096,10 +1268,33 @@ export const ProjectUpdateSchema = {
                 }
             ],
             title: 'Is Init'
+        },
+        is_private: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Is Private'
+        },
+        tech_stack: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Tech Stack'
         }
     },
     type: 'object',
-    title: 'ProjectUpdate'
+    title: 'ProjectUpdate',
+    description: 'Schema for updating a project. All fields are optional.'
 } as const;
 
 export const ProjectsPublicSchema = {
@@ -1118,7 +1313,8 @@ export const ProjectsPublicSchema = {
     },
     type: 'object',
     required: ['data', 'count'],
-    title: 'ProjectsPublic'
+    title: 'ProjectsPublic',
+    description: 'Schema for list of projects response.'
 } as const;
 
 export const RefreshTokenRequestSchema = {
@@ -1585,6 +1781,17 @@ export const UserPublicSchema = {
         },
         role: {
             '$ref': '#/components/schemas/Role'
+        },
+        github_installation_id: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Github Installation Id'
         }
     },
     type: 'object',

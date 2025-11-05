@@ -1,7 +1,8 @@
-import { type Project, ProjectCard } from "./project-card"
+import { ProjectPublic } from "@/client"
+import { ProjectCard } from "./project-card"
 
 interface ProjectListProps {
-  projects: Project[]
+  projects: ProjectPublic[]
 }
 
 export const ProjectList = ({ projects }: ProjectListProps) => {
