@@ -5,71 +5,98 @@ GENERATE_PROMPT = """Bạn là Product Owner chuyên nghiệp, nhiệm vụ là 
 **Product Brief:**
 {brief}
 
+**🌐 NGÔN NGỮ OUTPUT - BẮT BUỘC:**
+- **Vision Statement, Problem Summary, Descriptions**: TIẾNG VIỆT
+- **Experience Principles, Capabilities, Non-Goals**: TIẾNG VIỆT
+- **Audience Segments**: description, needs, pain_points = TIẾNG VIỆT (name có thể Tiếng Anh)
+- **Functional Requirements**:
+  * name: Có thể Tiếng Anh (technical term OK)
+  * description: TIẾNG VIỆT
+  * user_stories: GIỮ format Anh "As a [role], I want [feature], so that [benefit]" (chuẩn Agile quốc tế)
+  * acceptance_criteria: TIẾNG VIỆT
+- **Non-Functional Requirements**: TIẾNG VIỆT
+- **Dependencies, Risks, Assumptions**: TIẾNG VIỆT
+
 **Nhiệm vụ:**
 Dựa trên Product Brief, hãy tạo Product Vision bao gồm:
 
-1. **Vision Statement** (solution-free):
+1. **Vision Statement** (solution-free) - TIẾNG VIỆT:
    - Tuyên bố tầm nhìn ngắn gọn (2-3 câu)
    - Tập trung vào giá trị và tác động, KHÔNG nói về giải pháp kỹ thuật
    - Truyền cảm hứng và rõ ràng
+   - **Ví dụ**: "TaskMaster Pro giúp cá nhân và nhóm làm việc đạt được tiềm năng cao nhất thông qua trải nghiệm quản lý công việc liền mạch và cá nhân hóa, nâng cao năng suất và giảm căng thẳng."
 
-2. **Experience Principles** (3-5 nguyên tắc):
+2. **Experience Principles** (3-5 nguyên tắc) - TIẾNG VIỆT:
    - Các nguyên tắc trải nghiệm người dùng cốt lõi
    - Mỗi nguyên tắc là 1 câu ngắn gọn
+   - **Ví dụ**: "Trải nghiệm người dùng đơn giản và trực quan."
 
-3. **Problem Summary**:
+3. **Problem Summary** - TIẾNG VIỆT:
    - Tóm tắt vấn đề cần giải quyết (2-3 câu)
+   - **Ví dụ**: "Người dùng gặp khó khăn trong việc quản lý nhiều đầu việc và tối ưu hóa hiệu suất làm việc..."
 
-4. **Audience Segments**:
+4. **Audience Segments** - Hybrid:
    - Phân tích chi tiết từng nhóm đối tượng mục tiêu
-   - Mỗi segment bao gồm: name, description, needs, pain_points
+   - Mỗi segment bao gồm:
+     * name: Có thể Tiếng Anh (VD: "Office Workers", "Freelancers")
+     * description: TIẾNG VIỆT
+     * needs: TIẾNG VIỆT (list)
+     * pain_points: TIẾNG VIỆT (list)
 
-5. **Scope - Capabilities**:
+5. **Scope - Capabilities** - TIẾNG VIỆT:
    - Danh sách khả năng cốt lõi của sản phẩm (KHÔNG phải tính năng cụ thể)
    - Mô tả những gì sản phẩm CÓ THỂ làm được
+   - **Ví dụ**: "Cá nhân hóa trải nghiệm quản lý công việc."
 
-6. **Scope - Non-Goals**:
+6. **Scope - Non-Goals** - TIẾNG VIỆT:
    - Danh sách những gì sản phẩm KHÔNG hướng tới trong phiên bản này
    - Giúp định rõ ranh giới
+   - **Ví dụ**: "Không hỗ trợ quản lý dự án lớn và phức tạp."
 
-7. **Dependencies**:
+7. **Dependencies** - TIẾNG VIỆT:
    - Các phụ thuộc kỹ thuật, dịch vụ bên ngoài cần thiết
+   - **Ví dụ**: "Tích hợp với các công cụ lịch và email"
 
-8. **Risks**:
+8. **Risks** - TIẾNG VIỆT:
    - Các rủi ro tiềm ẩn
+   - **Ví dụ**: "Rủi ro về bảo mật dữ liệu người dùng."
 
-9. **Assumptions**:
+9. **Assumptions** - TIẾNG VIỆT:
    - Các giả định quan trọng
+   - **Ví dụ**: "Người dùng có kiến thức cơ bản về công nghệ."
 
 **--- PRD (Product Requirements Document) ---**
 
 10. **Functional Requirements** (Tính năng cụ thể):
     - Danh sách các tính năng cần implement
     - Mỗi tính năng bao gồm:
-      - name: Tên tính năng
-      - description: Mô tả chi tiết
+      - name: Tên tính năng (có thể Tiếng Anh, VD: "AI Priority Suggestions")
+      - description: Mô tả chi tiết - TIẾNG VIỆT
       - priority: High / Medium / Low
-      - user_stories: Danh sách user stories (As a [role], I want [feature], so that [benefit])
-      - acceptance_criteria: Tiêu chí chấp nhận cụ thể (3-5 criteria cho mỗi tính năng)
+      - user_stories: Danh sách user stories - **GIỮ format Tiếng Anh** (As a [role], I want [feature], so that [benefit])
+        * **LƯU Ý**: User stories PHẢI giữ format Anh (chuẩn Agile quốc tế)
+        * **Ví dụ**: "As an office worker, I want AI to suggest task priorities, so that I can focus on important tasks."
+      - acceptance_criteria: Tiêu chí chấp nhận - TIẾNG VIỆT (3-5 criteria cho mỗi tính năng)
         * Phải cụ thể, đo lường được, có thể test
-        * Ví dụ: "User có thể tạo task với title, description, due date"
-        * "Hiển thị error message nếu title trống"
+        * **Ví dụ**: "Người dùng có thể tạo task với tiêu đề, mô tả và deadline"
+        * "Hiển thị thông báo lỗi nếu tiêu đề trống"
         * "Task được lưu và đồng bộ trong vòng 2 giây"
 
-11. **Non-Functional Requirements**:
-    - **Performance Requirements**: Yêu cầu về hiệu năng (response time, throughput, etc.)
-    - **Security Requirements**: Yêu cầu về bảo mật (authentication, authorization, data encryption, etc.)
-    - **UX Requirements**: Yêu cầu về trải nghiệm người dùng (accessibility, responsive design, etc.)
+11. **Non-Functional Requirements** - TIẾNG VIỆT:
+    - **Performance Requirements**: Yêu cầu về hiệu năng
+      * **Ví dụ**: "Thời gian phản hồi dưới 2 giây cho mọi thao tác."
+    - **Security Requirements**: Yêu cầu về bảo mật
+      * **Ví dụ**: "Dữ liệu người dùng được mã hóa khi lưu trữ và truyền tải."
+    - **UX Requirements**: Yêu cầu về trải nghiệm người dùng
+      * **Ví dụ**: "Thiết kế đáp ứng trên mọi thiết bị."
 
-**Lưu ý:**
+**Quy tắc quan trọng:**
 - Vision statement phải solution-free (không nói về công nghệ/giải pháp cụ thể)
 - Functional requirements phải cụ thể, đo lường được
-- User stories phải follow format: "As a [role], I want [feature], so that [benefit]"
-- Acceptance criteria phải:
-  * Cụ thể, đo lường được, có thể test
-  * Định nghĩa điều kiện để tính năng "đúng yêu cầu nghiệp vụ"
-  * Mỗi tính năng có 3-5 acceptance criteria
+- **User stories BẮT BUỘC giữ format Anh**: "As a [role], I want [feature], so that [benefit]"
+- **Acceptance criteria PHẢI bằng Tiếng Việt**
 - Ưu tiên rõ ràng: High (MVP), Medium (V1.1), Low (Future)
+- Tất cả mô tả, giải thích, requirements descriptions phải bằng TIẾNG VIỆT
 - Rõ ràng, súc tích, truyền cảm hứng
 """
 
@@ -93,7 +120,12 @@ VALIDATE_PROMPT = """Bạn là Product Owner reviewer, nhiệm vụ là validate
    - Tất cả các trường bắt buộc đã đầy đủ chưa?
    - Mỗi phần có đủ chi tiết chưa?
 
-4. **Quality Score** (0.0-1.0):
+4. **Language Consistency**:
+   - Vision statement, descriptions có bằng Tiếng Việt không?
+   - User stories có giữ format Anh không?
+   - Acceptance criteria có bằng Tiếng Việt không?
+
+5. **Quality Score** (0.0-1.0):
    - Tính toán điểm chất lượng tổng thể
    - >= 0.7: đạt yêu cầu
    - < 0.7: cần cải thiện

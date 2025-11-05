@@ -141,7 +141,7 @@ export function SprintPlanPreview({ sprintPlan }: SprintPlanPreviewProps) {
                 <ChevronRight className="w-5 h-5 text-muted-foreground" />
               )}
               <div className="flex-1">
-                <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex flex-col">
                   <CardTitle className="text-base">
                     Sprint {sprint.sprint_number}
                   </CardTitle>
@@ -229,7 +229,7 @@ export function SprintPlanPreview({ sprintPlan }: SprintPlanPreviewProps) {
           <TrendingUp className="w-4 h-4" />
           Tóm tắt Sprint Plan
         </h4>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+        <div className="grid grid-cols-2 md:grid-cols-2 gap-2 text-xs">
           <div>
             <span className="text-muted-foreground">Sản phẩm:</span>
             <span className="ml-2 font-medium">{metadata.product_name}</span>
