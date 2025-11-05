@@ -104,15 +104,34 @@ VERIFY_VALIDATION_PROMPT = """Bạn là Sprint Planner Expert. Nhiệm vụ củ
    - Estimates có hợp lý không?
    - Dependencies có valid không?
 
-3. **Calculate Readiness Score:**
-   - 0-0.5: Not ready (many critical issues)
-   - 0.5-0.7: Partially ready (some issues need fixing)
-   - 0.7-0.85: Ready with minor issues
-   - 0.85-1.0: Ready to proceed
+3. **Calculate Readiness Score (0.0 - 1.0):**
+
+   **Công thức tính:**
+   - Bắt đầu với base_score = 1.0
+   - Trừ điểm cho mỗi vấn đề:
+     * Critical issue: -0.15 mỗi issue
+     * High severity issue: -0.10 mỗi issue
+     * Medium severity issue: -0.05 mỗi issue
+     * Low severity issue: -0.02 mỗi issue
+   - Minimum score = 0.0
+
+   **Ví dụ:**
+   - 0 issues → score = 1.0 (perfect)
+   - 1 medium issue → score = 0.95 (excellent)
+   - 2 medium issues → score = 0.90 (very good)
+   - 1 high + 2 medium → score = 0.80 (good, can proceed)
+   - 2 high + 3 medium → score = 0.65 (needs improvement)
+   - 1 critical + 2 high → score = 0.55 (not ready)
+
+   **Ngưỡng quyết định:**
+   - 0.85-1.0: Excellent - Ready to proceed
+   - 0.75-0.84: Good - Ready with minor issues
+   - 0.50-0.74: Fair - Needs more enrichment
+   - 0.0-0.49: Poor - Many critical issues
 
 4. **Identify Blocking Issues:**
-   - Issues that MUST be fixed before proceeding
-   - Issues that CAN be fixed later
+   - Issues that MUST be fixed before proceeding (critical/high severity)
+   - Issues that CAN be fixed later (medium/low severity)
 
 **Output Format (ONLY JSON, no markdown):**
 ```json
@@ -130,14 +149,23 @@ VERIFY_VALIDATION_PROMPT = """Bạn là Sprint Planner Expert. Nhiệm vụ củ
 ```
 
 **IMPORTANT - DECISION RULES:**
-- Set `can_proceed: true` if readiness_score >= 0.75 AND no critical issues
-  * This allows proceeding with minor/medium issues that can be fixed during sprint
-  * Only blocking issues should prevent proceeding
-- Set `can_proceed: false` if readiness_score < 0.75 OR critical issues exist
-  * This requires another enrichment loop to fix issues
-- Return ONLY valid JSON
-- No markdown code blocks
-- No explanations outside JSON
+
+1. **Tính readiness_score CHÍNH XÁC:**
+   - Đếm số lượng issues theo severity
+   - Áp dụng công thức trừ điểm như trên
+   - Đảm bảo score nằm trong khoảng 0.0 - 1.0
+
+2. **Quyết định can_proceed:**
+   - Set `can_proceed: true` if readiness_score >= 0.75 AND critical_issues_count == 0
+     * Cho phép proceed với minor/medium issues (sẽ fix trong sprint)
+     * Chỉ critical issues mới block
+   - Set `can_proceed: false` if readiness_score < 0.75 OR critical_issues_count > 0
+     * Cần enrichment loop khác để fix issues
+
+3. **Lưu ý:**
+   - Nếu KHÔNG có validation_issues → readiness_score = 1.0, can_proceed = true
+   - Nếu chỉ có low/medium issues → score cao (0.8-0.95), can_proceed = true
+   - Return ONLY valid JSON, no markdown, no explanations
 """
 
 # ============================================================================

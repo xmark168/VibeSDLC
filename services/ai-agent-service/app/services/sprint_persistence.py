@@ -115,7 +115,7 @@ class SprintPersistenceService:
                             type=item_data.get("type", "Task"),
                             title=item_data.get("title", ""),
                             description=item_data.get("description", ""),
-                            status=item_data.get("status", "Backlog"),
+                            status="Todo",  # ✅ Items assigned to Sprint → status = "Todo"
                             reviewer_id=None,
                             assignee_id=None,
                             rank=item_data.get("rank"),

@@ -105,8 +105,28 @@ class ScrumMasterOrchestrator:
             sprints_for_broadcast = []
             items_for_broadcast = []
 
-            # Convert enriched data to broadcast format
-            if enriched_result.get("backlog_items"):
+            # Use assigned_items (with assignment data) instead of backlog_items
+            # assigned_items have: assigned_to_dev, assigned_to_tester, and status="Todo"
+            assigned_items = enriched_result.get("assigned_items", [])
+
+            if assigned_items:
+                print(f"   Broadcasting {len(assigned_items)} assigned items...")
+                for item in assigned_items:
+                    items_for_broadcast.append({
+                        "id": item.get("id"),
+                        "title": item.get("title"),
+                        "status": "Todo",  # All assigned items go to Todo column
+                        "type": item.get("type"),
+                        "story_point": item.get("story_point"),
+                        "estimate_value": item.get("estimate_value"),
+                        "sprint_id": item.get("sprint_id"),
+                        "item_id": item.get("item_id"),
+                        "assigned_to_dev": item.get("assigned_to_dev"),
+                        "assigned_to_tester": item.get("assigned_to_tester")
+                    })
+            else:
+                # Fallback to backlog_items if no assigned_items (shouldn't happen)
+                print("   [!] No assigned_items found, using backlog_items as fallback")
                 for item in enriched_result.get("backlog_items", []):
                     items_for_broadcast.append({
                         "id": item.get("id"),
@@ -115,8 +135,8 @@ class ScrumMasterOrchestrator:
                         "type": item.get("type"),
                         "story_point": item.get("story_point"),
                         "estimate_value": item.get("estimate_value"),
-                        "sprint_id": item.get("sprint_id"),  # Add sprint_id
-                        "item_id": item.get("item_id")  # Original ID from PO Agent
+                        "sprint_id": item.get("sprint_id"),
+                        "item_id": item.get("item_id")
                     })
 
             await self._broadcast_kanban_items(

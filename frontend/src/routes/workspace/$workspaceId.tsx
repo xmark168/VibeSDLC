@@ -106,6 +106,7 @@ function WorkspacePage() {
               chatCollapsed={chatCollapsed}
               onExpandChat={() => setChatCollapsed(false)}
               kanbanData={kanbanData}
+              projectId={workspaceId}
             />
           </div>
         </div>

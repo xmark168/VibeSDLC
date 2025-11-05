@@ -8,3 +8,12 @@ export function useProjects(params: FetchProjectsParams) {
     queryFn: () => projectsApi.list(params),
   })
 }
+
+export function useActiveSprint(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['active-sprint', projectId],
+    queryFn: () => projectsApi.getActiveSprint(projectId!),
+    enabled: !!projectId,
+    retry: false, // Don't retry if no active sprint
+  })
+}

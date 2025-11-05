@@ -26,6 +26,9 @@
       "@/*": [
         "./src/*"
       ],
+      "@client": [
+        "./src/client"
+      ],
       "@client/*": [
         "./src/client/*"
       ]

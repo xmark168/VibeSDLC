@@ -26,7 +26,7 @@ except ImportError:
 
 # Try to import agents - handle both relative and absolute imports
 try:
-    from ...developer.developer_agent import DeveloperAgent
+    from ...developer.task_receiver import TaskReceiverAgent
     from ...tester.tester_agent import TesterAgent
 except ImportError:
     # Fallback for direct script execution
@@ -34,7 +34,7 @@ except ImportError:
     from pathlib import Path
     app_path = Path(__file__).parent.parent.parent
     sys.path.insert(0, str(app_path))
-    from developer.developer_agent import DeveloperAgent
+    from developer.task_receiver import TaskReceiverAgent
     from tester.tester_agent import TesterAgent
 
 # Try to import prompts - handle both relative and absolute imports
@@ -148,10 +148,11 @@ class SprintPlannerAgent:
         graph_builder.add_node("initialize", self.initialize)
         graph_builder.add_node("enrich", self.enrich)
         graph_builder.add_node("verify", self.verify)
+        graph_builder.add_node("save_to_database", self.save_to_database)
         graph_builder.add_node("assign_to_dev", self.assign_to_dev)
         graph_builder.add_node("assign_to_tester", self.assign_to_tester)
+        graph_builder.add_node("update_database", self.update_database)
         graph_builder.add_node("push_to_kanban", self.push_to_kanban)
-        graph_builder.add_node("save_to_database", self.save_to_database)
 
         # Add edges
         graph_builder.add_edge(START, "initialize")
@@ -161,15 +162,15 @@ class SprintPlannerAgent:
             "verify",
             self.verify_branch,
             {
-                "assign_to_dev": "assign_to_dev",
-                "enrich": "enrich",
-                "save_to_database": "save_to_database"  # Go to save even if verification failed
+                "save_to_database": "save_to_database",  # Always save after verify (OK or max loops)
+                "enrich": "enrich"  # Re-enrich if verification failed and loop < max
             }
         )
+        graph_builder.add_edge("save_to_database", "assign_to_dev")
         graph_builder.add_edge("assign_to_dev", "assign_to_tester")
-        graph_builder.add_edge("assign_to_tester", "push_to_kanban")
-        graph_builder.add_edge("push_to_kanban", "save_to_database")
-        graph_builder.add_edge("save_to_database", END)
+        graph_builder.add_edge("assign_to_tester", "update_database")
+        graph_builder.add_edge("update_database", "push_to_kanban")
+        graph_builder.add_edge("push_to_kanban", END)
 
         checkpointer = MemorySaver()
         return graph_builder.compile(checkpointer=checkpointer)
@@ -437,14 +438,14 @@ class SprintPlannerAgent:
         return state
 
     def assign_to_dev(self, state: SprintPlannerState) -> SprintPlannerState:
-        """Assign all tasks to development team using Developer Agent with project rules."""
+        """Assign all tasks to development team using Task Receiver with project rules."""
         print("\n" + "="*80)
         print("[*] ASSIGN TO DEVELOPMENT TEAM")
         print("="*80)
 
         try:
-            # Initialize Developer Agent
-            dev_agent = DeveloperAgent(
+            # Initialize Task Receiver Agent
+            task_receiver = TaskReceiverAgent(
                 session_id=self.session_id,
                 user_id=self.user_id
             )
@@ -482,8 +483,8 @@ class SprintPlannerAgent:
                 for rule in project_rules[:3]:  # Show top 3
                     print(f"   - {rule.title} (Tags: {', '.join(rule.tags[:3])})")
 
-            # Assign all tasks to development team with rules context
-            result = dev_agent.assign_all_tasks(
+            # Send all tasks to Task Receiver with rules context
+            result = task_receiver.assign_all_tasks(
                 items_dict,
                 project_rules=[r.model_dump() for r in project_rules]
             )
@@ -640,9 +641,13 @@ class SprintPlannerAgent:
         return state
 
     def save_to_database(self, state: SprintPlannerState) -> SprintPlannerState:
-        """Save Sprint and BacklogItem to database."""
+        """Save Sprint and BacklogItem to database.
+
+        Note: This runs BEFORE assignment, so we save enriched_items first.
+        Items will be updated with assignment data in update_database node.
+        """
         print("\n" + "="*80)
-        print("[*] SAVE TO DATABASE")
+        print("[*] SAVE TO DATABASE (Initial Save)")
         print("="*80)
 
         try:
@@ -667,9 +672,12 @@ class SprintPlannerAgent:
             }
 
             # Prepare backlog_items list (convert EnrichedItem to dict)
+            # Use enriched_items here (assignment happens later)
             backlog_items = []
             for item in state.enriched_items:
                 backlog_items.append(item.model_dump())
+
+            print(f"[*] Saving {len(backlog_items)} items (without assignment data yet)")
 
             # Save to database
             with Session(engine) as session:
@@ -685,6 +693,7 @@ class SprintPlannerAgent:
                 state.saved_item_ids = [i["id"] for i in result.get("backlog_items", [])]
 
                 print(f"\n[+] Saved {len(result.get('sprints', []))} sprints and {len(result.get('backlog_items', []))} items")
+                print("[*] Items will be updated with assignment data in next step")
                 print("="*80 + "\n")
 
         except Exception as e:
@@ -696,13 +705,81 @@ class SprintPlannerAgent:
 
         return state
 
+    def update_database(self, state: SprintPlannerState) -> SprintPlannerState:
+        """Update database with assignment data after assignment is complete.
+
+        Note: BacklogItem model only has assignee_id (not assigned_to_dev/tester).
+        This method just ensures status is set to "Todo" for assigned items.
+        Assignment to specific developers/testers is tracked in state but not persisted.
+        """
+        print("\n" + "="*80)
+        print("[*] UPDATE DATABASE - SET STATUS TO TODO")
+        print("="*80)
+
+        try:
+            # Check if we have project_id and saved items
+            if not hasattr(state, 'project_id') or not state.project_id:
+                print("[!] No project_id - skipping database update")
+                state.db_update_status = "skipped"
+                return state
+
+            if not state.assigned_items:
+                print("[!] No assigned items to update")
+                state.db_update_status = "no_items"
+                return state
+
+            # Import database dependencies
+            from app.core.db import engine
+            from sqlmodel import Session, select
+            from app.models import BacklogItem
+            from uuid import UUID
+
+            print(f"\n[+] Updating {len(state.assigned_items)} items to Todo status")
+
+            # Update each item in database
+            with Session(engine) as session:
+                updated_count = 0
+                for item in state.assigned_items:
+                    try:
+                        # Find item by ID
+                        db_item = session.exec(
+                            select(BacklogItem).where(BacklogItem.id == UUID(item.id))
+                        ).first()
+
+                        if db_item:
+                            # Update status to Todo (assignment tracking is in state only)
+                            db_item.status = "Todo"  # Move to Todo column
+                            session.add(db_item)
+                            updated_count += 1
+                            print(f"   [+] Updated {item.id}: status=Todo")
+                        else:
+                            print(f"   [!] Item {item.id} not found in database")
+
+                    except Exception as e:
+                        print(f"   [ERROR] Failed to update item {item.id}: {e}")
+
+                # Commit all updates
+                session.commit()
+                print(f"\n[+] Successfully updated {updated_count}/{len(state.assigned_items)} items to Todo")
+                state.db_update_status = "success"
+                print("="*80 + "\n")
+
+        except Exception as e:
+            print(f"[ERROR] Error updating database: {e}")
+            import traceback
+            traceback.print_exc()
+            state.error_message = str(e)
+            state.db_update_status = "error"
+
+        return state
+
     def verify_branch(self, state: SprintPlannerState) -> str:
         """Branch after verify node.
 
         Decision logic:
-        - If verification_passed: proceed to assign_to_dev (MANDATORY)
+        - If verification_passed: proceed to save_to_database (then assign)
         - If verification_failed AND current_loop < max_loops: go back to enrich
-        - If verification_failed AND current_loop >= max_loops: save to database anyway
+        - If verification_failed AND current_loop >= max_loops: proceed to save_to_database (then assign anyway)
         """
         print(f"\n[*] VERIFY_BRANCH DECISION:")
         print(f"   verification_passed: {state.verification_passed}")
@@ -710,15 +787,15 @@ class SprintPlannerAgent:
         print(f"   max_loops: {state.max_loops}")
 
         if state.verification_passed:
-            print(f"   [+] DECISION: Go to assign_to_dev (MANDATORY)")
-            return "assign_to_dev"
+            print(f"   [+] DECISION: Go to save_to_database → assign_to_dev (verification OK)")
+            return "save_to_database"
         elif state.current_loop < state.max_loops:
             print(f"   [!] DECISION: Go back to enrich (loop {state.current_loop + 1}/{state.max_loops})")
             return "enrich"
         else:
-            print(f"   [!] DECISION: Save to database (max loops reached, verification failed)")
+            print(f"   [!] DECISION: Go to save_to_database → assign_to_dev (max loops reached)")
             print(f"\n[!] Max enrichment loops ({state.max_loops}) reached")
-            print(f"[!] Verification failed, but will save enriched data to database")
+            print(f"[!] Verification failed, but will save and assign anyway")
             return "save_to_database"
 
     def run(self, user_input: Optional[str] = None):
@@ -859,12 +936,14 @@ class SprintPlannerAgent:
                     "sprints": final_state.get("enriched_sprints", sprint_plan.get('sprints', []))
                 },
                 "backlog_items": [item.model_dump() for item in final_state.get("enriched_items", [])] if final_state.get("enriched_items") else backlog_items,
+                "assigned_items": [item.model_dump() for item in final_state.get("assigned_items", [])] if final_state.get("assigned_items") else [],
                 "verification_passed": final_state.get("verification_passed", False),
                 "validation_issues": [issue.model_dump() for issue in final_state.get("validation_issues", [])],
                 "kanban_cards": final_state.get("kanban_cards", []),
                 "saved_sprint_ids": final_state.get("saved_sprint_ids", []),
                 "saved_item_ids": final_state.get("saved_item_ids", []),
-                "db_save_status": final_state.get("db_save_status", "unknown")
+                "db_save_status": final_state.get("db_save_status", "unknown"),
+                "db_update_status": final_state.get("db_update_status", "unknown")
             }
 
         except Exception as e:

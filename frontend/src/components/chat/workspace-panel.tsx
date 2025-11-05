@@ -11,6 +11,7 @@ import { CodeViewer } from "../shared/code-viewer"
 import { AnimatedTooltip } from "../ui/animated-tooltip"
 import { AppViewer } from "./app-viewer"
 import Loggings from "./loggings"
+import { useActiveSprint } from "@/queries/projects"
 type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings"
 
 interface Tab {
@@ -23,6 +24,7 @@ interface WorkspacePanelProps {
   chatCollapsed?: boolean
   onExpandChat?: () => void
   kanbanData?: any
+  projectId?: string
 }
 
 const agent = [
@@ -64,7 +66,10 @@ const agent = [
 ];
 
 
-export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData }: WorkspacePanelProps) {
+export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projectId }: WorkspacePanelProps) {
+  // Get active sprint for this project
+  const { data: activeSprint } = useActiveSprint(projectId)
+
   const [tabs, setTabs] = useState<Tab[]>([
     { id: "tab-1", view: "app-preview", label: "App Preview" },
     { id: "tab-2", view: "kanban", label: "Kanban" },
@@ -148,7 +153,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData }: Work
           <AppViewer />
         )
       case "kanban":
-        return <KanbanBoard kanbanData={kanbanData} />
+        return <KanbanBoard kanbanData={kanbanData} projectId={projectId} sprintId={activeSprint?.id} />
       case "file":
         return (
           <div className="flex h-full">

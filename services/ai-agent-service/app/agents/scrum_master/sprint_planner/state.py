@@ -141,6 +141,10 @@ class SprintPlannerState(BaseModel):
         default="pending",
         description="Trạng thái database save: pending, success, error, skipped"
     )
+    db_update_status: str = Field(
+        default="pending",
+        description="Trạng thái database update (assignment): pending, success, error, skipped, no_items"
+    )
     saved_sprint_ids: list[str] = Field(
         default_factory=list,
         description="Danh sách Sprint IDs đã lưu vào database"
