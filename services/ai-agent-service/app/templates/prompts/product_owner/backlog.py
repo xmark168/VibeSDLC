@@ -30,6 +30,18 @@ GENERATE_PROMPT = """Bạn là Product Owner chuyên nghiệp, nhiệm vụ là 
 **Nhiệm vụ:**
 Tạo Product Backlog Items (Epic, User Story, Task, Sub-task) theo template đã định nghĩa.
 
+**🚨 SCOPE CONTROL - BẮT BUỘC:**
+- CHỈ tạo backlog items dựa trên functional_requirements RÕ RÀNG TRONG Product Vision
+- KHÔNG tự thêm security features (encryption, RBAC, password hashing, authentication phức tạp) nếu Vision KHÔNG có security_requirements hoặc KHÔNG explicitly mention
+- KHÔNG tự thêm performance optimization (caching, CDN, load balancing, rate limiting) nếu Vision KHÔNG có performance_requirements
+- KHÔNG tự thêm compliance/monitoring/audit features nếu Vision không yêu cầu
+- Focus 100% vào CORE FUNCTIONAL FEATURES mà user đã mô tả trong Vision
+- Ví dụ minh họa:
+  * Vision nói "tạo todo app với CRUD tasks" → CHỈ tạo: create task, view tasks, edit task, delete task. KHÔNG tạo: user authentication, encryption, audit logs
+  * Vision nói "task app với user login" → Tạo: simple login (email/password), task CRUD. KHÔNG tạo: OAuth, 2FA, password encryption, session management phức tạp
+  * Vision có security_requirements → Mới tạo security items
+- Nguyên tắc: Simple Vision → Simple Backlog. Complex Vision → Complex Backlog.
+
 **QUY TẮC QUAN TRỌNG:**
 
 1. **ID Format** (BẮT BUỘC):
@@ -124,6 +136,9 @@ Tạo Product Backlog Items (Epic, User Story, Task, Sub-task) theo template đ�
    - Ví dụ: US-001 có 2 sub-tasks Development (SUB-001, SUB-002) thì cần 1-2 sub-tasks Testing (SUB-003, SUB-004)
 
 **Lưu ý:**
+- **CHỈ tạo items cho functional_requirements từ Vision, KHÔNG tự thêm features không được mention**
+- **KHÔNG hallucinate thêm security/performance features nếu Vision không yêu cầu**
+- **Simple Vision (chỉ CRUD) → Simple Backlog (chỉ CRUD items)**
 - Tập trung vào MVP features (High priority từ vision)
 - Mỗi User Story phải có giá trị độc lập (có thể ship riêng)
 - Sub-task phải cụ thể, actionable, mô tả rõ cần code gì

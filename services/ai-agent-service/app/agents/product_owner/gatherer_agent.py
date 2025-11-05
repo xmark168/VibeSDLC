@@ -1307,7 +1307,7 @@ class GathererAgent:
             print(f"[GathererAgent.run] Scheduling in WebSocket helper loop...", flush=True)
             result = websocket_helper.run_coroutine(
                 self.run_async(initial_context, thread_id),
-                timeout=660  # 11 minutes
+                timeout=1200  # 20 minutes (increased for multiple iteration cycles)
             )
             print(f"[GathererAgent.run] Execution completed!", flush=True)
             return result

@@ -126,7 +126,7 @@ class POAgent:
         """
 
         @tool
-        def gather_product_info(
+        async def gather_product_info(
             user_input: str,
         ) -> Annotated[dict, "Product Brief với full data"]:
             """Thu thập thông tin sản phẩm từ user, tạo Product Brief.
@@ -182,14 +182,14 @@ class POAgent:
                     event_loop=event_loop  # Use stored event loop
                 )
 
-                print(f"[Tool Call] GathererAgent created, about to call run()...", flush=True)
+                print(f"[Tool Call] GathererAgent created, about to call run_async()...", flush=True)
 
-                # Call GathererAgent - it will create its own trace via its handler
-                result = gatherer_agent.run(
+                # Call GathererAgent async version - it will create its own trace via its handler
+                result = await gatherer_agent.run_async(
                     initial_context=user_input, thread_id=f"{tool_session_id}_thread"
                 )
 
-                print(f"[Tool Call] GathererAgent.run() returned!", flush=True)
+                print(f"[Tool Call] GathererAgent.run_async() returned!", flush=True)
 
                 # Extract brief from final state
                 # Result structure: {node_name: state_data}
@@ -216,7 +216,7 @@ class POAgent:
                 raise
 
         @tool
-        def create_vision(
+        async def create_vision(
             product_brief: dict,
         ) -> Annotated[dict, "Product Vision với PRD full data"]:
             """Tạo Product Vision và PRD từ Product Brief.
@@ -282,8 +282,8 @@ class POAgent:
 
                 print(f"[Vision Tool Call] VisionAgent created with WebSocket support", flush=True)
 
-                # Call VisionAgent - it will auto-detect WebSocket mode and use websocket_helper
-                result = vision_agent.run(
+                # Call VisionAgent async version - it will create its own trace via its handler
+                result = await vision_agent.run_async(
                     product_brief=product_brief, thread_id=f"{tool_session_id}_thread"
                 )
 
@@ -316,7 +316,7 @@ class POAgent:
                 raise
 
         @tool
-        def create_backlog(
+        async def create_backlog(
             product_vision: dict,
         ) -> Annotated[dict, "Product Backlog với full data"]:
             """Tạo Product Backlog từ Product Vision.
@@ -370,21 +370,20 @@ class POAgent:
                 print(f"[Backlog Tool Call] project_id: {getattr(self, 'project_id', None)}", flush=True)
                 print(f"[Backlog Tool Call] response_manager: {getattr(self, 'response_manager', None) is not None}", flush=True)
 
-                # Create a new BacklogAgent instance with separate session_id
-                # Pass WebSocket dependencies if available (like VisionAgent)
+                # Create a new BacklogAgent instance with separate session_id + WebSocket deps
                 backlog_agent = BacklogAgent(
                     session_id=tool_session_id,
                     user_id=self.user_id,
                     websocket_broadcast_fn=getattr(self, 'websocket_broadcast_fn', None),
                     project_id=getattr(self, 'project_id', None),
                     response_manager=getattr(self, 'response_manager', None),
-                    event_loop=event_loop  # Use stored event loop
+                    event_loop=event_loop
                 )
 
                 print(f"[Backlog Tool Call] BacklogAgent created with WebSocket support", flush=True)
 
-                # Call BacklogAgent - it will auto-detect WebSocket mode and use websocket_helper
-                result = backlog_agent.run(
+                # Call BacklogAgent async version - it will create its own trace via its handler
+                result = await backlog_agent.run_async(
                     product_vision=product_vision, thread_id=f"{tool_session_id}_thread"
                 )
 
@@ -416,7 +415,7 @@ class POAgent:
                 raise
 
         @tool
-        def create_sprint_plan(
+        async def create_sprint_plan(
             product_backlog: dict,
         ) -> Annotated[dict, "Sprint Plan với full data"]:
             """Tạo Sprint Plan từ Product Backlog.
@@ -470,21 +469,20 @@ class POAgent:
                 print(f"[Priority Tool Call] project_id: {getattr(self, 'project_id', None)}", flush=True)
                 print(f"[Priority Tool Call] response_manager: {getattr(self, 'response_manager', None) is not None}", flush=True)
 
-                # Create a new PriorityAgent instance with separate session_id
-                # Pass WebSocket dependencies if available (like VisionAgent)
+                # Create a new PriorityAgent instance with separate session_id + WebSocket deps
                 priority_agent = PriorityAgent(
                     session_id=tool_session_id,
                     user_id=self.user_id,
                     websocket_broadcast_fn=getattr(self, 'websocket_broadcast_fn', None),
                     project_id=getattr(self, 'project_id', None),
                     response_manager=getattr(self, 'response_manager', None),
-                    event_loop=event_loop  # Use stored event loop
+                    event_loop=event_loop
                 )
 
                 print(f"[Priority Tool Call] PriorityAgent created with WebSocket support", flush=True)
 
-                # Call PriorityAgent - it will auto-detect WebSocket mode and use websocket_helper
-                sprint_plan = priority_agent.run(
+                # Call PriorityAgent async version - it will create its own trace via its handler
+                sprint_plan = await priority_agent.run_async(
                     product_backlog=product_backlog,
                     thread_id=f"{tool_session_id}_thread",
                 )
@@ -669,12 +667,57 @@ class POAgent:
             final_result = None
             step_count = 0
 
-            # Check if user is describing a product idea (not just greeting)
-            # If so, let Deep Agent handle the full workflow (Gatherer -> Vision -> Backlog -> Priority)
-            # Don't bypass it by calling Gatherer directly
-            if not self._is_product_idea_intent(user_input):
-                # Not a product idea, check if it's just a greeting
-                if self._needs_kickoff_only(user_input):
+            # Kickoff-only path (just greeting, no processing needed)
+            if self._needs_kickoff_only(user_input):
+                is_website = self._is_website_intent(user_input or "")
+
+                if is_website:
+
+                    # Send start indicator for website intent processing
+                    await websocket_broadcast_fn({
+                        "type": "agent_step",
+                        "step": "started",
+                        "agent": "PO Agent",
+                        "message": "🚀 PO Agent bắt đầu xử lý..."
+                    }, project_id)
+
+                    await websocket_broadcast_fn({
+                        "type": "agent_thinking",
+                        "content": "Phát hiện ý định tạo website. Bắt đầu thu thập thông tin..."
+                    }, project_id)
+
+                    tool_session_id = f"{self.session_id}_gatherer_tool"
+
+                    # Get current event loop
+                    import asyncio
+                    loop = asyncio.get_event_loop()
+
+                    gatherer_agent = GathererAgent(
+                        session_id=tool_session_id,
+                        user_id=self.user_id,
+                        websocket_broadcast_fn=websocket_broadcast_fn,
+                        project_id=project_id,
+                        response_manager=response_manager,
+                        event_loop=loop  # Pass event loop for async operations
+                    )
+
+                    # Call async version - we're in async context
+                    gather_result = await gatherer_agent.run_async(
+                        initial_context=user_input,
+                        thread_id=f"{tool_session_id}_thread"
+                    )
+
+                    brief = None
+                    if isinstance(gather_result, dict):
+                        for node_name, state_data in gather_result.items():
+                            if isinstance(state_data, dict):
+                                brief = state_data.get("brief")
+                                if brief:
+                                    break
+
+                    msg = "Đã nhận yêu cầu tạo trang web. Đã thu thập thông tin với GathererAgent."
+                    return {"messages": [{"type": "assistant", "content": msg}], "brief": brief, "gatherer": gather_result or {}}
+                else:
                     greeting = (
                         "Chào bạn! Tôi là Product Owner Agent (PO Agent). "
                         "Tôi có thể giúp lập kế hoạch và tạo Sprint Plan từ ý tưởng sản phẩm. "
@@ -690,9 +733,6 @@ class POAgent:
                 "agent": "PO Agent",
                 "message": "🚀 PO Agent bắt đầu xử lý..."
             }, project_id)
-
-            final_result = {}
-
             async for chunk in self.agent.astream(
                 {"messages": [("user", user_input)]},
                 config=config,

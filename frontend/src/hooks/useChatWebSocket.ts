@@ -61,6 +61,8 @@ export type AgentPreview = {
   title: string
   brief?: any  // For Gatherer Agent (product_brief)
   vision?: any  // For Vision Agent (product_vision)
+  backlog?: any  // For Backlog Agent (product_backlog)
+  sprint_plan?: any  // For Priority Agent (sprint_plan)
   quality_score?: number  // For Vision Agent
   validation_result?: string  // For Vision Agent
   incomplete_flag: boolean
@@ -144,13 +146,20 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
 
           case 'message':
           case 'agent_message':
+            console.log('[WebSocket] Received message:', data.type, data.data?.content?.substring(0, 100))
             if (data.data) {
               setMessages((prev) => {
                 // Check if message already exists
                 const exists = prev.some(m => m.id === data.data!.id)
-                if (exists) return prev
+                if (exists) {
+                  console.log('[WebSocket] Message already exists, skipping:', data.data!.id)
+                  return prev
+                }
+                console.log('[WebSocket] Adding new message:', data.data!.id)
                 return [...prev, data.data!]
               })
+            } else {
+              console.warn('[WebSocket] Received message without data:', data)
             }
             break
 
@@ -275,6 +284,8 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
                 title: data.title,
                 brief: data.brief,  // For Gatherer Agent
                 vision: data.vision,  // For Vision Agent
+                backlog: data.backlog,  // For Backlog Agent
+                sprint_plan: data.sprint_plan,  // For Priority Agent
                 quality_score: data.quality_score,  // For Vision Agent
                 validation_result: data.validation_result,  // For Vision Agent
                 incomplete_flag: data.incomplete_flag || false,
@@ -386,7 +397,10 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
   }, [])
 
   const submitPreviewChoice = useCallback((preview_id: string, choice: string, edit_changes?: string) => {
-    console.log('[submitPreviewChoice] Called with:', { preview_id, choice, edit_changes })
+    console.log('[submitPreviewChoice] ===== SUBMITTING PREVIEW CHOICE =====')
+    console.log('[submitPreviewChoice] preview_id:', preview_id)
+    console.log('[submitPreviewChoice] choice:', choice)
+    console.log('[submitPreviewChoice] edit_changes:', edit_changes)
     console.log('[submitPreviewChoice] WebSocket state:', wsRef.current?.readyState)
 
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
@@ -458,6 +472,16 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     return () => clearInterval(interval)
   }, [isConnected])
 
+  // Function to programmatically open preview (for edit functionality)
+  const reopenPreview = useCallback((preview: AgentPreview) => {
+    setPendingPreviews(prev => [...prev, preview])
+  }, [])
+
+  // Function to close current preview (remove from queue)
+  const closePreview = useCallback(() => {
+    setPendingPreviews(prev => prev.slice(1)) // Remove first preview
+  }, [])
+
   return {
     isConnected,
     isReady,
@@ -470,6 +494,8 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     sendMessage,
     submitAnswer,
     submitPreviewChoice,
+    reopenPreview,
+    closePreview,  // NEW: Export closePreview
     connect,
     disconnect,
   }

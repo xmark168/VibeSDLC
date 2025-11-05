@@ -14,6 +14,11 @@ from app.core.response_queue import response_manager
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
+# Global cache for pending previews (key: preview_id, value: preview_data)
+# This stores preview data temporarily until user approves/edits/regenerates
+pending_previews: dict[str, dict[str, Any]] = {}
+
+
 class ConnectionManager:
     def __init__(self):
         # Store connections by project_id
@@ -26,30 +31,311 @@ class ConnectionManager:
         self.active_connections[project_id].append(websocket)
 
     def disconnect(self, websocket: WebSocket, project_id: str):
+        print(f"[ConnectionManager] Disconnecting websocket from project {project_id}", flush=True)
         if project_id in self.active_connections:
-            self.active_connections[project_id].remove(websocket)
+            if websocket in self.active_connections[project_id]:
+                self.active_connections[project_id].remove(websocket)
+                print(f"[ConnectionManager] ✓ Removed connection. Remaining: {len(self.active_connections[project_id])}", flush=True)
             if not self.active_connections[project_id]:
                 del self.active_connections[project_id]
+                print(f"[ConnectionManager] ✓ Removed project {project_id} (no more connections)", flush=True)
+        else:
+            print(f"[ConnectionManager] ⚠ Project {project_id} not found in active connections", flush=True)
 
     async def send_personal_message(self, message: str, websocket: WebSocket):
         await websocket.send_text(message)
 
     async def broadcast_to_project(self, message: dict, project_id: str):
         """Broadcast message to all connections in a project"""
+        print(f"[ConnectionManager] broadcast_to_project called: type={message.get('type')}, project_id={project_id}", flush=True)
+
+        # Cache agent_preview messages for later retrieval when user approves
+        if message.get("type") == "agent_preview" and "preview_id" in message:
+            preview_id = message["preview_id"]
+            pending_previews[preview_id] = message
+            print(f"[Cache] Stored preview {preview_id} in cache", flush=True)
+
         if project_id in self.active_connections:
+            num_connections = len(self.active_connections[project_id])
+            print(f"[ConnectionManager] Found {num_connections} connections for project {project_id}", flush=True)
             disconnected = []
-            for connection in self.active_connections[project_id]:
+            for i, connection in enumerate(self.active_connections[project_id]):
                 try:
+                    print(f"[ConnectionManager] Sending to connection {i+1}/{num_connections}...", flush=True)
                     await connection.send_json(message)
-                except:
+                    print(f"[ConnectionManager] ✓ Sent to connection {i+1}", flush=True)
+                except Exception as e:
+                    print(f"[ConnectionManager] ✗ Failed to send to connection {i+1}: {e}", flush=True)
                     disconnected.append(connection)
-            
+
             # Clean up disconnected clients
             for conn in disconnected:
                 self.disconnect(conn, project_id)
+        else:
+            print(f"[ConnectionManager] ⚠ No connections found for project {project_id}", flush=True)
+            print(f"[ConnectionManager] Active projects: {list(self.active_connections.keys())}", flush=True)
 
 
 manager = ConnectionManager()
+
+
+# ===== Step-by-Step Workflow Helpers =====
+
+def get_next_agent_from_message_type(message_type: str) -> str | None:
+    """Determine next agent to run based on approved message type"""
+    step_map = {
+        "product_brief": "vision",      # Brief approved → Run Vision Agent
+        "product_vision": "backlog",    # Vision approved → Run Backlog Agent
+        "product_backlog": "priority",  # Backlog approved → Run Priority Agent
+    }
+    return step_map.get(message_type)
+
+
+async def trigger_next_step_auto(
+    project_id: str,
+    user_id: str,
+    approved_message_id: str,  # Pass ID instead of object
+    websocket_broadcast_fn,
+    response_manager,
+    event_loop
+):
+    """Auto-trigger next agent after user approves a preview in step-by-step mode"""
+
+    # Create new session for this task
+    from app.core.db import engine
+    step_session = Session(engine)
+
+    try:
+        # Query approved message to get type and data
+        approved_message = step_session.exec(
+            select(MessageModel).where(MessageModel.id == UUID(approved_message_id))
+        ).first()
+
+        if not approved_message:
+            print(f"[Auto-Trigger] ⚠ Approved message not found: {approved_message_id}", flush=True)
+            return
+
+        next_agent = get_next_agent_from_message_type(approved_message.message_type)
+
+        if not next_agent:
+            # No next step (Priority is final step)
+            print(f"[Auto-Trigger] Workflow complete for project {project_id}", flush=True)
+            await websocket_broadcast_fn({
+                "type": "agent_step",
+                "step": "completed",
+                "agent": "PO Agent",
+                "message": "✅ Workflow hoàn thành! Tất cả 4 bước đã xong."
+            }, project_id)
+            return
+
+        print(f"\n[Auto-Trigger] ===== TRIGGERING NEXT AGENT =====", flush=True)
+        print(f"[Auto-Trigger] Current step: {approved_message.message_type}", flush=True)
+        print(f"[Auto-Trigger] Next agent: {next_agent}", flush=True)
+        print(f"[Auto-Trigger] Project: {project_id}", flush=True)
+
+        # Wait a bit for user to see approved message
+        await asyncio.sleep(1.5)
+
+        if next_agent == "vision":
+            # Get approved brief from DB
+            brief_msg = step_session.exec(
+                select(MessageModel)
+                .where(MessageModel.project_id == UUID(project_id))
+                .where(MessageModel.message_type == "product_brief")
+                .order_by(MessageModel.created_at.desc())
+            ).first()
+
+            if brief_msg and brief_msg.structured_data:
+                print(f"[Auto-Trigger] Found brief in DB: {brief_msg.structured_data.get('product_name')}", flush=True)
+
+                # Send agent_step to show progress indicator
+                await websocket_broadcast_fn({
+                    "type": "agent_step",
+                    "step": "started",
+                    "agent": "Vision Agent",
+                    "message": "🔄 Đang tạo Product Vision..."
+                }, project_id)
+
+                # Trigger Vision Agent
+                from app.agents.product_owner.vision_agent import VisionAgent
+
+                vision_agent = VisionAgent(
+                    session_id=f"vision_auto_{project_id}",
+                    user_id=user_id,
+                    websocket_broadcast_fn=websocket_broadcast_fn,
+                    project_id=project_id,
+                    response_manager=response_manager,
+                    event_loop=event_loop
+                )
+
+                print(f"[Auto-Trigger] Starting Vision Agent...", flush=True)
+                await vision_agent.run_async(
+                    product_brief=brief_msg.structured_data,
+                    thread_id=f"vision_auto_{project_id}"
+                )
+                print(f"[Auto-Trigger] Vision Agent completed", flush=True)
+            else:
+                print(f"[Auto-Trigger] ⚠ Brief not found in DB", flush=True)
+                # Send error message and turn off typing indicator
+                await websocket_broadcast_fn({
+                    "type": "agent_step",
+                    "step": "error",
+                    "agent": "Vision Agent",
+                    "message": "❌ Không tìm thấy Product Brief. Vui lòng chạy lại Gatherer Agent."
+                }, project_id)
+                await websocket_broadcast_fn({
+                    "type": "typing",
+                    "agent_name": "PO Agent",
+                    "is_typing": False
+                }, project_id)
+
+        elif next_agent == "backlog":
+            # Get approved vision from DB
+            vision_msg = step_session.exec(
+                select(MessageModel)
+                .where(MessageModel.project_id == UUID(project_id))
+                .where(MessageModel.message_type == "product_vision")
+                .order_by(MessageModel.created_at.desc())
+            ).first()
+
+            if vision_msg and vision_msg.structured_data:
+                print(f"[Auto-Trigger] Found vision in DB", flush=True)
+
+                # Send agent_step to show progress indicator
+                await websocket_broadcast_fn({
+                    "type": "agent_step",
+                    "step": "started",
+                    "agent": "Backlog Agent",
+                    "message": "🔄 Đang tạo Product Backlog..."
+                }, project_id)
+
+                # Trigger Backlog Agent
+                from app.agents.product_owner.backlog_agent import BacklogAgent
+
+                backlog_agent = BacklogAgent(
+                    session_id=f"backlog_auto_{project_id}",
+                    user_id=user_id,
+                    websocket_broadcast_fn=websocket_broadcast_fn,
+                    project_id=project_id,
+                    response_manager=response_manager,
+                    event_loop=event_loop
+                )
+
+                print(f"[Auto-Trigger] Starting Backlog Agent...", flush=True)
+                await backlog_agent.run_async(
+                    product_vision=vision_msg.structured_data,
+                    thread_id=f"backlog_auto_{project_id}"
+                )
+                print(f"[Auto-Trigger] Backlog Agent completed", flush=True)
+            else:
+                print(f"[Auto-Trigger] ⚠ Vision not found in DB", flush=True)
+                # Send error message and turn off typing indicator
+                await websocket_broadcast_fn({
+                    "type": "agent_step",
+                    "step": "error",
+                    "agent": "Backlog Agent",
+                    "message": "❌ Không tìm thấy Product Vision. Vui lòng chạy lại Vision Agent."
+                }, project_id)
+                await websocket_broadcast_fn({
+                    "type": "typing",
+                    "agent_name": "PO Agent",
+                    "is_typing": False
+                }, project_id)
+
+        elif next_agent == "priority":
+            # Get approved backlog from DB
+            backlog_msg = step_session.exec(
+                select(MessageModel)
+                .where(MessageModel.project_id == UUID(project_id))
+                .where(MessageModel.message_type == "product_backlog")
+                .order_by(MessageModel.created_at.desc())
+            ).first()
+
+            if backlog_msg and backlog_msg.structured_data:
+                print(f"[Auto-Trigger] Found backlog in DB", flush=True)
+
+                # Send agent_step to show progress indicator
+                await websocket_broadcast_fn({
+                    "type": "agent_step",
+                    "step": "started",
+                    "agent": "Priority Agent",
+                    "message": "🔄 Đang sắp xếp ưu tiên và tạo Sprint Plan..."
+                }, project_id)
+
+                # Trigger Priority Agent
+                from app.agents.product_owner.priority_agent import PriorityAgent
+
+                priority_agent = PriorityAgent(
+                    session_id=f"priority_auto_{project_id}",
+                    user_id=user_id,
+                    websocket_broadcast_fn=websocket_broadcast_fn,
+                    project_id=project_id,
+                    response_manager=response_manager,
+                    event_loop=event_loop
+                )
+
+                print(f"[Auto-Trigger] Starting Priority Agent...", flush=True)
+                await priority_agent.run_async(
+                    product_backlog=backlog_msg.structured_data,
+                    thread_id=f"priority_auto_{project_id}"
+                )
+                print(f"[Auto-Trigger] Priority Agent completed", flush=True)
+
+                # Priority Agent is the last step - send completion messages
+                print(f"[Auto-Trigger] Workflow complete for project {project_id}", flush=True)
+
+                # Send workflow completed message
+                await websocket_broadcast_fn({
+                    "type": "agent_step",
+                    "step": "completed",
+                    "agent": "PO Agent",
+                    "message": "✅ Hoàn thành workflow PO Agent! Sprint Plan đã sẵn sàng."
+                }, project_id)
+
+                # Turn off typing indicator
+                await websocket_broadcast_fn({
+                    "type": "typing",
+                    "agent_name": "PO Agent",
+                    "is_typing": False
+                }, project_id)
+
+            else:
+                print(f"[Auto-Trigger] ⚠ Backlog not found in DB", flush=True)
+                # Send error message and turn off typing indicator
+                await websocket_broadcast_fn({
+                    "type": "agent_step",
+                    "step": "error",
+                    "agent": "Priority Agent",
+                    "message": "❌ Không tìm thấy Product Backlog. Vui lòng chạy lại Backlog Agent."
+                }, project_id)
+                await websocket_broadcast_fn({
+                    "type": "typing",
+                    "agent_name": "PO Agent",
+                    "is_typing": False
+                }, project_id)
+
+    except Exception as e:
+        print(f"[Auto-Trigger] ✗ Error: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+
+        await websocket_broadcast_fn({
+            "type": "agent_step",
+            "step": "error",
+            "agent": next_agent.capitalize() + " Agent" if 'next_agent' in locals() else "Agent",
+            "message": f"❌ Lỗi khi chạy agent: {str(e)}"
+        }, project_id)
+
+        # Turn off typing indicator on error
+        await websocket_broadcast_fn({
+            "type": "typing",
+            "agent_name": "PO Agent",
+            "is_typing": False
+        }, project_id)
+    finally:
+        step_session.close()
+        print(f"[Auto-Trigger] Session closed", flush=True)
+
 
 
 @router.get("/info")
@@ -206,23 +492,26 @@ async def websocket_endpoint(
         # Listen for messages
         while True:
             try:
-                print(f"\n[WebSocket] Waiting for message...", flush=True)
                 data = await websocket.receive_text()
-                print(f"\n[WebSocket] ===== Raw message received =====", flush=True)
-                print(f"[WebSocket] Raw data: {data[:200] if len(data) > 200 else data}", flush=True)
             except Exception as e:
                 print(f"[WebSocket] Error receiving message: {e}", flush=True)
                 raise
 
             try:
                 message_data = json.loads(data)
-                print(f"[WebSocket] Parsed message_data: {message_data}", flush=True)
             except json.JSONDecodeError as e:
                 print(f"[WebSocket] JSON decode error: {e}", flush=True)
                 continue
 
             msg_type = message_data.get("type")
-            print(f"[WebSocket] Message type: {msg_type}", flush=True)
+
+            # Skip logging for ping/pong messages (keep-alive)
+            if msg_type != "ping":
+                print(f"\n[WebSocket] Waiting for message...", flush=True)
+                print(f"\n[WebSocket] ===== Raw message received =====", flush=True)
+                print(f"[WebSocket] Raw data: {data[:200] if len(data) > 200 else data}", flush=True)
+                print(f"[WebSocket] Parsed message_data: {message_data}", flush=True)
+                print(f"[WebSocket] Message type: {msg_type}", flush=True)
 
             if msg_type == "message":
                 # Save user message to database
@@ -286,8 +575,125 @@ async def websocket_endpoint(
                 print(f"[WebSocket] answer: {answer}", flush=True)
 
                 if question_id and answer is not None:
+                    print(f"\n[WebSocket] ===== PROCESSING USER ANSWER =====", flush=True)
+                    print(f"[WebSocket] question_id: {question_id}", flush=True)
+                    print(f"[WebSocket] answer: {answer}", flush=True)
+                    print(f"[WebSocket] answer type: {type(answer)}", flush=True)
+
+                    # Check if this is an approved preview BEFORE submitting to ResponseManager
+                    # This ensures approval message is broadcast BEFORE agent continues
+                    is_approval = (
+                        answer == "approve" or
+                        (isinstance(answer, dict) and answer.get("choice") == "approve")
+                    )
+                    print(f"[WebSocket] is_approval: {is_approval}", flush=True)
+
+                    # If approval, create and broadcast approval message FIRST
+                    if is_approval:
+                        preview_id = question_id
+                        print(f"[WebSocket] Looking for preview_id: {preview_id} in cache...", flush=True)
+                        print(f"[WebSocket] Cache keys: {list(pending_previews.keys())}", flush=True)
+
+                        if preview_id in pending_previews:
+                            preview_data = pending_previews[preview_id]
+                            print(f"[WebSocket] User approved preview {preview_id}, saving to database...", flush=True)
+
+                            # Extract structured data and metadata
+                            preview_type = preview_data.get("preview_type", "text")
+                            structured_data = None
+                            message_summary = "✅ Approved preview"
+
+                            # Map preview type to data field
+                            type_field_map = {
+                                "product_brief": "brief",
+                                "product_vision": "vision",
+                                "product_backlog": "backlog",
+                                "sprint_plan": "sprint_plan"
+                            }
+
+                            if preview_type in type_field_map:
+                                field_name = type_field_map[preview_type]
+                                structured_data = preview_data.get(field_name)
+                                if structured_data:
+                                    # Create summary text
+                                    if preview_type == "product_brief":
+                                        message_summary = f"✅ Product Brief: {structured_data.get('product_name', 'N/A')}"
+                                    elif preview_type == "product_vision":
+                                        message_summary = f"✅ Product Vision: {structured_data.get('vision_statement', 'N/A')[:100]}..."
+                                    elif preview_type == "product_backlog":
+                                        total_items = structured_data.get('metadata', {}).get('total_items', 0)
+                                        message_summary = f"✅ Product Backlog: {total_items} items"
+                                    elif preview_type == "sprint_plan":
+                                        total_sprints = structured_data.get('metadata', {}).get('total_sprints', 0)
+                                        message_summary = f"✅ Sprint Plan: {total_sprints} sprints"
+
+                            # Create message with structured data
+                            approved_message = MessageModel(
+                                project_id=UUID(project_id),
+                                author_type=AuthorType.AGENT,
+                                user_id=None,
+                                agent_id=None,
+                                content=message_summary,
+                                message_type=preview_type,
+                                structured_data=structured_data,
+                                message_metadata={
+                                    "preview_id": preview_id,
+                                    "approved_by_user_id": user_id,
+                                    "approved_at": datetime.utcnow().isoformat(),
+                                    "quality_score": preview_data.get("quality_score"),
+                                    "validation_result": preview_data.get("validation_result")
+                                }
+                            )
+
+                            session.add(approved_message)
+                            session.commit()
+                            session.refresh(approved_message)
+
+                            # Broadcast the approved message to chat BEFORE unblocking agent
+                            await manager.broadcast_to_project({
+                                "type": "agent_message",
+                                "data": {
+                                    "id": str(approved_message.id),
+                                    "project_id": str(approved_message.project_id),
+                                    "author_type": approved_message.author_type,
+                                    "user_id": str(approved_message.user_id) if approved_message.user_id else None,
+                                    "agent_id": str(approved_message.agent_id) if approved_message.agent_id else None,
+                                    "content": approved_message.content,
+                                    "message_type": approved_message.message_type,
+                                    "structured_data": approved_message.structured_data,
+                                    "metadata": approved_message.message_metadata,
+                                    "created_at": approved_message.created_at.isoformat(),
+                                    "updated_at": approved_message.updated_at.isoformat(),
+                                }
+                            }, project_id)
+
+                            # Add small delay to ensure message is displayed before next step
+                            await asyncio.sleep(0.5)
+
+                            # Clean up cache
+                            del pending_previews[preview_id]
+                            print(f"[WebSocket] ✓ Approved preview saved and broadcasted", flush=True)
+
+                            # Auto-trigger next step (run in background to not block WebSocket)
+                            # This will trigger Vision → Backlog → Priority agents sequentially
+                            print(f"[WebSocket] Checking if need to auto-trigger next agent...", flush=True)
+                            asyncio.create_task(
+                                trigger_next_step_auto(
+                                    project_id=project_id,
+                                    user_id=user_id,
+                                    approved_message_id=str(approved_message.id),  # Pass ID, not object
+                                    websocket_broadcast_fn=manager.broadcast_to_project,
+                                    response_manager=response_manager,
+                                    event_loop=asyncio.get_event_loop()
+                                )
+                            )
+                            print(f"[WebSocket] ✓ Auto-trigger task created", flush=True)
+                        else:
+                            print(f"[WebSocket] ⚠ Preview {preview_id} not found in cache", flush=True)
+
+                    # NOW submit response to ResponseManager to unblock agent
+                    # This happens AFTER approval message is broadcast
                     print(f"[WebSocket] Submitting to ResponseManager...", flush=True)
-                    # Submit response to ResponseManager
                     success = await response_manager.submit_response(
                         project_id,
                         question_id,
@@ -306,14 +712,23 @@ async def websocket_endpoint(
                 await websocket.send_json({"type": "pong"})
                 
     except WebSocketDisconnect:
+        print(f"\n[WebSocket] ===== CONNECTION DISCONNECTED =====", flush=True)
+        print(f"[WebSocket] Project: {project_id}", flush=True)
+        print(f"[WebSocket] User: {user_id}", flush=True)
         manager.disconnect(websocket, project_id)
         poll_task.cancel()  # Cancel broadcast polling task
+        print(f"[WebSocket] ✓ Cleanup completed", flush=True)
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        print(f"\n[WebSocket] ===== ERROR OCCURRED =====", flush=True)
+        print(f"[WebSocket] Error: {e}", flush=True)
+        print(f"[WebSocket] Project: {project_id}", flush=True)
+        import traceback
+        traceback.print_exc()
         manager.disconnect(websocket, project_id)
         poll_task.cancel()  # Cancel broadcast polling task
     finally:
         session.close()
+        print(f"[WebSocket] Session closed for project {project_id}", flush=True)
 
 
 async def trigger_agent_execution_bg(project_id: str, user_id: str, user_message: str):
@@ -348,6 +763,8 @@ async def trigger_agent_execution(session: Session, project_id: str, user_id: st
     from app.agents.product_owner.po_agent import POAgent
     from app.agents.product_owner.vision_agent import VisionAgent
     from app.agents.product_owner.gatherer_agent import GathererAgent
+    from app.agents.product_owner.backlog_agent import BacklogAgent
+    from app.agents.product_owner.priority_agent import PriorityAgent
     import traceback
 
     # ===== STEP 0: Check for test commands =====
@@ -437,6 +854,92 @@ async def trigger_agent_execution(session: Session, project_id: str, user_id: st
 
                 return
 
+            elif test_agent == "backlog":
+                # Parse mock product_vision from message
+                product_vision = json.loads(test_data_str)
+
+                print(f"[TEST MODE] Running Backlog Agent with mock data", flush=True)
+
+                # Create Backlog Agent with WebSocket support
+                session_id = f"backlog_test_{project_id}_{user_id}"
+                backlog_agent = BacklogAgent(
+                    session_id=session_id,
+                    user_id=user_id,
+                    websocket_broadcast_fn=manager.broadcast_to_project,
+                    project_id=project_id,
+                    response_manager=response_manager,
+                    event_loop=asyncio.get_event_loop()
+                )
+
+                # Run Backlog Agent
+                result = backlog_agent.run(
+                    product_vision=product_vision,
+                    thread_id=f"{session_id}_thread"
+                )
+
+                # Send completion message
+                await manager.broadcast_to_project({
+                    "type": "agent_message",
+                    "content": "✅ Backlog Agent test completed! Check the preview above.",
+                    "agent_name": "Backlog Agent"
+                }, project_id)
+
+                # Save to database
+                agent_message = MessageModel(
+                    project_id=UUID(project_id),
+                    author_type=AuthorType.AGENT,
+                    user_id=None,
+                    agent_id=None,
+                    content="[Test Mode] Backlog Agent executed with mock data. Product Backlog generated."
+                )
+                session.add(agent_message)
+                session.commit()
+
+                return
+
+            elif test_agent == "priority":
+                # Parse mock product_backlog from message
+                product_backlog = json.loads(test_data_str)
+
+                print(f"[TEST MODE] Running Priority Agent with mock data", flush=True)
+
+                # Create Priority Agent with WebSocket support
+                session_id = f"priority_test_{project_id}_{user_id}"
+                priority_agent = PriorityAgent(
+                    session_id=session_id,
+                    user_id=user_id,
+                    websocket_broadcast_fn=manager.broadcast_to_project,
+                    project_id=project_id,
+                    response_manager=response_manager,
+                    event_loop=asyncio.get_event_loop()
+                )
+
+                # Run Priority Agent
+                result = priority_agent.run(
+                    product_backlog=product_backlog,
+                    thread_id=f"{session_id}_thread"
+                )
+
+                # Send completion message
+                await manager.broadcast_to_project({
+                    "type": "agent_message",
+                    "content": "✅ Priority Agent test completed! Check the preview above.",
+                    "agent_name": "Priority Agent"
+                }, project_id)
+
+                # Save to database
+                agent_message = MessageModel(
+                    project_id=UUID(project_id),
+                    author_type=AuthorType.AGENT,
+                    user_id=None,
+                    agent_id=None,
+                    content="[Test Mode] Priority Agent executed with mock data. Sprint Plan generated."
+                )
+                session.add(agent_message)
+                session.commit()
+
+                return
+
             else:
                 # Unknown test agent
                 await manager.broadcast_to_project({
@@ -457,9 +960,16 @@ async def trigger_agent_execution(session: Session, project_id: str, user_id: st
             return
 
     # ===== STEP 1: Classify với TL Agent (normal flow) =====
+    print(f"\n[TL Agent] ===== TEAM LEADER AGENT STARTED =====", flush=True)
+    print(f"[TL Agent] User message: {user_message[:100]}", flush=True)
+    print(f"[TL Agent] Project ID: {project_id}", flush=True)
+    print(f"[TL Agent] User ID: {user_id}", flush=True)
+
     try:
         tl_session_id = f"tl_agent_{project_id}"
+        print(f"[TL Agent] Creating TL Agent instance with session_id: {tl_session_id}", flush=True)
         tl_agent = TeamLeaderAgent(session_id=tl_session_id, user_id=user_id)
+        print(f"[TL Agent] ✓ TL Agent instance created", flush=True)
 
         # Get project context
         project_context = {}
@@ -468,15 +978,24 @@ async def trigger_agent_execution(session: Session, project_id: str, user_id: st
             if project:
                 # Có thể thêm project_phase nếu model có field này
                 # project_context["project_phase"] = project.phase
-                pass
-        except:
-            pass
+                print(f"[TL Agent] Project found: {project.name if hasattr(project, 'name') else 'N/A'}", flush=True)
+        except Exception as ctx_err:
+            print(f"[TL Agent] ⚠ Could not load project context: {ctx_err}", flush=True)
 
         # Classify intent
+        print(f"[TL Agent] Starting intent classification...", flush=True)
         routing_result = tl_agent.classify(user_message, project_context)
         agent_type = routing_result.agent
 
+        print(f"\n[TL Agent] ===== CLASSIFICATION RESULT =====", flush=True)
+        print(f"[TL Agent] Selected Agent: {agent_type}", flush=True)
+        print(f"[TL Agent] Confidence: {routing_result.confidence:.2f}", flush=True)
+        print(f"[TL Agent] User Intent: {routing_result.user_intent}", flush=True)
+        print(f"[TL Agent] Reasoning: {routing_result.reasoning}", flush=True)
+        print(f"[TL Agent] =====================================\n", flush=True)
+
         # Broadcast routing decision (optional, for transparency)
+        print(f"[TL Agent] Broadcasting routing decision to clients...", flush=True)
         await manager.broadcast_to_project({
             "type": "routing",
             "agent_selected": agent_type,
@@ -484,9 +1003,12 @@ async def trigger_agent_execution(session: Session, project_id: str, user_id: st
             "user_intent": routing_result.user_intent,
             "reasoning": routing_result.reasoning
         }, project_id)
+        print(f"[TL Agent] ✓ Routing decision broadcasted", flush=True)
 
     except Exception as e:
-        print(f"[TL Agent] Routing error: {e}, defaulting to PO")
+        print(f"[TL Agent] ✗ Routing error: {e}, defaulting to PO", flush=True)
+        import traceback
+        traceback.print_exc()
         agent_type = "po"  # Fallback to PO on error
 
     # STEP 2: Get agent name for typing indicator
@@ -507,106 +1029,52 @@ async def trigger_agent_execution(session: Session, project_id: str, user_id: st
 
     try:
         # STEP 3: Create appropriate agent instance
-        # Agent factory pattern
-        agent_factory = {
-            "po": lambda: POAgent(
-                session_id=f"po_agent_{project_id}_{user_id}",
-                user_id=user_id
-            ),
-            # TODO: Implement other agents
-            # "scrum_master": lambda: ScrumMasterAgent(...),
-            # "developer": lambda: DeveloperAgent(...),
-            # "tester": lambda: TesterAgent(...),
-        }
+        # For PO agent type, only run Gatherer Agent first (step-by-step workflow)
+        # Auto-trigger will handle Vision → Backlog → Priority after approval
+        if agent_type == "po":
+            print(f"\n[Agent Execution] Using step-by-step workflow: Starting with Gatherer Agent only", flush=True)
 
-        # Get agent or fallback to PO
-        if agent_type in agent_factory:
-            agent = agent_factory[agent_type]()
+            # Send agent_step to show progress indicator
+            await manager.broadcast_to_project({
+                "type": "agent_step",
+                "step": "started",
+                "agent": "Gatherer Agent",
+                "message": "🔄 Đang thu thập thông tin sản phẩm..."
+            }, project_id)
+
+            # Create Gatherer Agent with WebSocket support
+            gatherer_agent = GathererAgent(
+                session_id=f"gatherer_{project_id}_{user_id}",
+                user_id=user_id,
+                websocket_broadcast_fn=manager.broadcast_to_project,
+                project_id=project_id,
+                response_manager=response_manager,
+                event_loop=asyncio.get_event_loop()
+            )
+
+            # Run only Gatherer Agent (will show preview and wait for approval)
+            result = await gatherer_agent.run_async(
+                initial_context=user_message,
+                thread_id=f"gatherer_{project_id}_thread"
+            )
+
+            print(f"[Agent Execution] Gatherer Agent completed. Waiting for approval before next step.", flush=True)
         else:
-            print(f"[WARNING] Agent type '{agent_type}' not implemented yet, using PO Agent")
-            agent = agent_factory["po"]()
-            agent_display_name = "PO Agent"
+            # TODO: Implement other agents (Scrum Master, Developer, Tester)
+            print(f"[WARNING] Agent type '{agent_type}' not implemented yet")
+            agent_display_name = "System"
 
-        # Run agent with WebSocket streaming
-        result = await agent.run_with_streaming(
-            user_input=user_message,
-            websocket_broadcast_fn=manager.broadcast_to_project,
-            project_id=project_id,
-            response_manager=response_manager
-        )
+            await manager.broadcast_to_project({
+                "type": "agent_message",
+                "content": f"⚠️ Agent type '{agent_type}' is not implemented yet. Please contact support.",
+                "agent_name": "System"
+            }, project_id)
+            return
 
-        # Extract response from result
-        response_content = ""
-        if isinstance(result, dict):
-            # Try to get messages from result
-            messages = result.get("messages", [])
-            if messages:
-                last_message = messages[-1]
-                if isinstance(last_message, dict):
-                    response_content = last_message.get("content", "")
-                elif hasattr(last_message, 'content'):
-                    # LangChain message object
-                    response_content = last_message.content
-                else:
-                    # Convert to string and try to extract content
-                    msg_str = str(last_message)
-                    if "content=" in msg_str:
-                        # Extract content from string representation
-                        import re
-                        match = re.search(r"content='([^']*)'", msg_str)
-                        if match:
-                            response_content = match.group(1)
-                        else:
-                            response_content = msg_str
-                    else:
-                        response_content = msg_str
-            
-            # If no messages, try to get other fields
-            if not response_content:
-                for key in ["sprint_plan", "backlog", "vision", "brief"]:
-                    if key in result and result[key]:
-                        response_content = f"✅ Generated {key}:\n\n{result[key]}"
-                        break
-        
-        if not response_content:
-            response_content = "✅ Agent execution completed successfully."
-
-        # Clean up escaped newlines
-        response_content = response_content.replace('\\n', '\n')
-
-        # Save agent response to database
-        agent_message = MessageModel(
-            project_id=UUID(project_id),
-            author_type=AuthorType.AGENT,
-            user_id=None,
-            agent_id=None,
-            content=response_content
-        )
-        session.add(agent_message)
-        session.commit()
-        session.refresh(agent_message)
-
-        # Send typing stopped
-        await manager.broadcast_to_project({
-            "type": "typing",
-            "agent_name": "PO Agent",
-            "is_typing": False
-        }, project_id)
-
-        # Broadcast agent message
-        await manager.broadcast_to_project({
-            "type": "agent_message",
-            "data": {
-                "id": str(agent_message.id),
-                "project_id": str(agent_message.project_id),
-                "author_type": agent_message.author_type,
-                "user_id": str(agent_message.user_id) if agent_message.user_id else None,
-                "agent_id": str(agent_message.agent_id) if agent_message.agent_id else None,
-                "content": agent_message.content,
-                "created_at": agent_message.created_at.isoformat(),
-                "updated_at": agent_message.updated_at.isoformat(),
-            }
-        }, project_id)
+        # Gatherer Agent completed successfully
+        # Wait for user to approve preview, then auto-trigger will run next agent
+        # Keep progress indicator and typing indicator active (don't send typing stopped)
+        print(f"[Agent Execution] ✓ Gatherer Agent workflow initiated successfully", flush=True)
 
     except Exception as e:
         error_msg = f"❌ Agent execution failed: {str(e)}"

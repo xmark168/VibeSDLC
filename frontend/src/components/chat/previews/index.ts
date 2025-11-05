@@ -10,7 +10,5 @@
 
 export { ProductBriefPreview } from './ProductBriefPreview'
 export { ProductVisionPreview } from './ProductVisionPreview'
-
-// Future agent previews:
-// export { BacklogPreview } from './BacklogPreview'
-// export { SprintPlanPreview } from './SprintPlanPreview'
+export { BacklogPreview } from './BacklogPreview'
+export { SprintPlanPreview } from './SprintPlanPreview'
