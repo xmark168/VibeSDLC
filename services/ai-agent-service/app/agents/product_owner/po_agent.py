@@ -1,26 +1,24 @@
-"""Product Owner Agent - Deep Agent orchestrator cho workflow PO.
+"""Product Owner Agent - LangGraph orchestrator cho workflow PO.
 
 Architecture:
-- Deep Agent pattern (deepagents library) với advanced features
-- Planning tool: LLM tạo plan trước khi execute
-- Virtual file system: Lưu trữ intermediate outputs
-- Sub agents với context quarantine
-- PO Agent tự reasoning và quyết định gọi tool nào tiếp theo
-- Sub agents (Gatherer, Vision, Backlog, Priority) được wrap thành tools
-- Human-in-the-loop: Built-in support với tool_configs
+- LangGraph pattern với state management
+- LLM-driven routing: LLM quyết định sub-agent nào cần gọi tiếp theo
+- Sub agents (Gatherer, Vision, Backlog, Priority) được gọi như nodes
+- Human-in-the-loop: Built-in support trong sub-agents
+- State persistence với checkpointer
 """
 
 import json
 import os
-from typing import Any, Annotated
+from typing import Any, Literal, Optional
 
 from dotenv import load_dotenv
-from langchain_core.messages import HumanMessage
-from langchain_core.tools import tool
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain_openai import ChatOpenAI
 from langfuse.langchain import CallbackHandler
-from deepagents import create_deep_agent
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph
+from pydantic import BaseModel, Field
 
 from app.agents.product_owner.gatherer_agent import GathererAgent
 from app.agents.product_owner.vision_agent import VisionAgent
@@ -28,27 +26,55 @@ from app.agents.product_owner.backlog_agent import BacklogAgent
 from app.agents.product_owner.priority_agent import PriorityAgent
 
 # Import prompts for PO Agent
-from app.templates.prompts.product_owner.po_agent import SYSTEM_PROMPT
+from app.templates.prompts.product_owner.po_agent import SYSTEM_PROMPT, ROUTER_PROMPT
 
 load_dotenv()
 
 
+class RouterDecision(BaseModel):
+    """Decision from router node."""
+    next_agent: Literal["gatherer", "vision", "backlog", "priority", "finalize"] = Field(
+        description="Next agent to call"
+    )
+    reasoning: str = Field(description="Why this agent should be called next")
+
+
+class POAgentState(BaseModel):
+    """State for PO Agent workflow."""
+
+    # Messages and input
+    messages: list[BaseMessage] = Field(default_factory=list)
+    user_input: str = ""
+
+    # Outputs from sub-agents
+    product_brief: dict = Field(default_factory=dict)
+    product_vision: dict = Field(default_factory=dict)
+    product_backlog: dict = Field(default_factory=dict)
+    sprint_plan: dict = Field(default_factory=dict)
+
+    # Control flow
+    current_step: str = "initial"
+    status: str = "pending"
+
+    # Kickoff logic
+    is_website_intent: bool = False
+    needs_kickoff_only: bool = False
+
+
 class POAgent:
-    """Product Owner Agent - Orchestrator sử dụng Deep Agent pattern (deepagents library).
+    """Product Owner Agent - Orchestrator sử dụng LangGraph pattern.
 
     Workflow:
-    1. Thu thập thông tin sản phẩm (GathererAgent tool)
-    2. Tạo Product Vision (VisionAgent tool)
-    3. Tạo Product Backlog (BacklogAgent tool)
-    4. Tạo Sprint Plan (PriorityAgent tool)
+    1. Thu thập thông tin sản phẩm (GathererAgent node)
+    2. Tạo Product Vision (VisionAgent node)
+    3. Tạo Product Backlog (BacklogAgent node)
+    4. Tạo Sprint Plan (PriorityAgent node)
 
-    Features (từ deepagents library):
-    - Planning Tool: LLM tạo plan trước khi thực thi workflow
-    - Virtual File System: Lưu intermediate outputs
-    - Sub-agents với context quarantine
-    - Built-in human-in-the-loop support
-    - LLM tự reasoning và quyết định workflow
-    - Tools trả về full data (cho frontend), terminal show summary (Langfuse)
+    Features:
+    - LangGraph state management
+    - LLM-driven routing: LLM quyết định sub-agent nào cần gọi tiếp theo
+    - Sub-agents được gọi như nodes
+    - Human-in-the-loop support trong sub-agents
     - State persistence với checkpointer
     """
 
@@ -63,27 +89,16 @@ class POAgent:
         self.user_id = user_id
 
         # Initialize Langfuse callback handler (with batch size limit)
-        # Note: session_id and user_id are NOT passed to constructor
-        # They should be added via metadata in config when invoking
-        # Set flush_at to smaller value to avoid 413 errors with large traces
         try:
             self.langfuse_handler = CallbackHandler(
-                flush_at=5,  # Flush every 5 events instead of default (15)
-                flush_interval=1.0,  # Flush every 1 second
+                flush_at=5,
+                flush_interval=1.0,
             )
         except Exception:
-            # Fallback if flush_at not supported in this version
             self.langfuse_handler = CallbackHandler()
 
-        # Note: Sub agents are NOT initialized here
-        # They will be created on-demand in each tool call with separate Langfuse handlers
-        # This ensures each tool call gets its own tracing
-
-        # Build tools
-        self.tools = self._build_tools()
-
-        # Create Deep Agent (from deepagents library)
-        self.agent = self._build_agent()
+        # Build LangGraph
+        self.graph = self._build_graph()
 
     def _llm(self, model: str, temperature: float) -> ChatOpenAI:
         """Initialize LLM instance."""
@@ -98,414 +113,292 @@ class POAgent:
         except Exception as e:
             raise RuntimeError(f"Failed to initialize LLM: {e}")
 
-    def _build_tools(self) -> list:
-        """Build tools từ sub agents.
+    def _build_graph(self) -> StateGraph:
+        """Build LangGraph workflow."""
+        graph_builder = StateGraph(POAgentState)
 
-        NOTE: Tools được định nghĩa như nested functions để access self.
-        """
+        # Add nodes
+        graph_builder.add_node("initialize", self.initialize)
+        graph_builder.add_node("router", self.router)
+        graph_builder.add_node("run_gatherer", self.run_gatherer)
+        graph_builder.add_node("run_vision", self.run_vision)
+        graph_builder.add_node("run_backlog", self.run_backlog)
+        graph_builder.add_node("run_priority", self.run_priority)
+        graph_builder.add_node("finalize", self.finalize)
 
-        @tool
-        async def gather_product_info(
-            user_input: str,
-        ) -> Annotated[dict, "Product Brief với full data"]:
-            """Thu thập thông tin sản phẩm từ user, tạo Product Brief.
+        # Add edges
+        graph_builder.add_edge(START, "initialize")
+        graph_builder.add_conditional_edges("initialize", self.initialize_branch)
+        graph_builder.add_conditional_edges("router", self.router_branch)
+        graph_builder.add_edge("run_gatherer", "router")
+        graph_builder.add_edge("run_vision", "router")
+        graph_builder.add_edge("run_backlog", "router")
+        graph_builder.add_edge("run_priority", "router")
+        graph_builder.add_edge("finalize", END)
 
-            Tool này sẽ tương tác với user qua terminal để:
-            - Đánh giá độ đầy đủ thông tin
-            - Hỏi thêm câu hỏi nếu thiếu thông tin
-            - Tạo Product Brief hoàn chỉnh
-            - Preview và yêu cầu user approve/edit
+        checkpointer = MemorySaver()
+        return graph_builder.compile(checkpointer=checkpointer)
 
-            Args:
-                user_input: Thông tin ban đầu từ user về sản phẩm (mô tả ý tưởng)
+    # ========================================================================
+    # Nodes
+    # ========================================================================
 
-            Returns:
-                dict: Product Brief với các trường:
-                    - product_name: Tên sản phẩm
-                    - description: Mô tả chi tiết
-                    - target_audience: Danh sách đối tượng mục tiêu
-                    - key_features: Danh sách tính năng chính
-                    - benefits: Danh sách lợi ích
-                    - competitors: Danh sách đối thủ
-                    - completeness_note: Ghi chú về độ hoàn thiện
+    def initialize(self, state: POAgentState) -> POAgentState:
+        """Initialize - Xử lý kickoff logic và chuẩn bị state."""
+        print("\n" + "=" * 80)
+        print("🚀 INITIALIZE - PO AGENT")
+        print("=" * 80)
+        print(f"📝 User Input: {state.user_input[:200]}...")
+        print("=" * 80 + "\n")
 
-            Notes:
-                - Tool này có human-in-the-loop (preview/approve ở GathererAgent)
-                - Trả về full data cho frontend
-                - Terminal output được track qua Langfuse
-            """
-            print("\n" + "=" * 80)
-            print("🔧 PO AGENT - Calling Tool: gather_product_info")
-            print("=" * 80)
-            print(f"📥 Input: {user_input[:100]}...")
+        # Check kickoff logic
+        state.needs_kickoff_only = self._needs_kickoff_only(state.user_input)
+        state.is_website_intent = self._is_website_intent(state.user_input)
 
-            try:
-                # Create separate session_id for this tool call to create a new trace
-                tool_session_id = f"{self.session_id}_gatherer_tool"
+        # Add user input to messages
+        if state.user_input:
+            state.messages.append(HumanMessage(content=state.user_input))
 
-                # Get event loop from self
-                event_loop = getattr(self, 'event_loop', None)
-                print(f"[Tool Call] event_loop: {event_loop}", flush=True)
-                print(f"[Tool Call] websocket_broadcast_fn: {getattr(self, 'websocket_broadcast_fn', None) is not None}", flush=True)
-                print(f"[Tool Call] project_id: {getattr(self, 'project_id', None)}", flush=True)
-                print(f"[Tool Call] response_manager: {getattr(self, 'response_manager', None) is not None}", flush=True)
+        state.status = "initialized"
+        return state
 
-                # Create a new GathererAgent instance with separate session_id
-                # Pass WebSocket dependencies if available
-                gatherer_agent = GathererAgent(
-                    session_id=tool_session_id,
-                    user_id=self.user_id,
-                    websocket_broadcast_fn=getattr(self, 'websocket_broadcast_fn', None),
-                    project_id=getattr(self, 'project_id', None),
-                    response_manager=getattr(self, 'response_manager', None),
-                    event_loop=event_loop  # Use stored event loop
-                )
+    def router(self, state: POAgentState) -> POAgentState:
+        """Router - LLM quyết định sub-agent nào cần gọi tiếp theo."""
+        print("\n" + "=" * 80)
+        print("🔀 ROUTER - DECIDING NEXT AGENT")
+        print("=" * 80)
 
-                print(f"[Tool Call] GathererAgent created, about to call run_async()...", flush=True)
+        # Prepare context for LLM
+        context = {
+            "current_step": state.current_step,
+            "has_product_brief": bool(state.product_brief),
+            "has_product_vision": bool(state.product_vision),
+            "has_product_backlog": bool(state.product_backlog),
+            "has_sprint_plan": bool(state.sprint_plan),
+        }
 
-                # Call GathererAgent async version - it will create its own trace via its handler
-                result = await gatherer_agent.run_async(
-                    initial_context=user_input, thread_id=f"{tool_session_id}_thread"
-                )
+        context_text = json.dumps(context, ensure_ascii=False, indent=2)
+        prompt = ROUTER_PROMPT.format(context=context_text)
 
-                print(f"[Tool Call] GathererAgent.run_async() returned!", flush=True)
+        try:
+            structured_llm = self._llm("gpt-4o", 0.2).with_structured_output(RouterDecision)
+            decision = structured_llm.invoke([HumanMessage(content=prompt)])
 
-                # Extract brief from final state
-                # Result structure: {node_name: state_data}
-                brief = None
-                for node_name, state_data in result.items():
-                    if isinstance(state_data, dict):
-                        brief = state_data.get("brief")
-                        if brief:
-                            break
+            state.current_step = decision.next_agent
 
-                if not brief:
-                    raise ValueError("GathererAgent did not return a brief")
+            print(f"✓ Decision: {decision.next_agent}")
+            print(f"  Reasoning: {decision.reasoning}")
+            print("=" * 80 + "\n")
 
-                print(f"\n✅ Tool completed - Product Brief created")
-                print(f"   Product: {brief.get('product_name', 'N/A')}")
-                print(f"   Features: {len(brief.get('key_features', []))}")
-                print("=" * 80 + "\n")
+        except Exception as e:
+            print(f"❌ Router error: {e}")
+            # Fallback logic
+            if not state.product_brief:
+                state.current_step = "gatherer"
+            elif not state.product_vision:
+                state.current_step = "vision"
+            elif not state.product_backlog:
+                state.current_step = "backlog"
+            elif not state.sprint_plan:
+                state.current_step = "priority"
+            else:
+                state.current_step = "finalize"
 
-                return brief
+        return state
 
-            except Exception as e:
-                print(f"\n❌ Tool error: {e}")
-                print("=" * 80 + "\n")
-                raise
+    async def run_gatherer(self, state: POAgentState) -> POAgentState:
+        """Run Gatherer Agent."""
+        print("\n" + "=" * 80)
+        print("🔧 RUNNING GATHERER AGENT")
+        print("=" * 80)
 
-        @tool
-        async def create_vision(
-            product_brief: dict,
-        ) -> Annotated[dict, "Product Vision với PRD full data"]:
-            """Tạo Product Vision và PRD từ Product Brief.
+        tool_session_id = f"{self.session_id}_gatherer"
 
-            Tool này sẽ:
-            - Tạo Vision Statement (solution-free)
-            - Định nghĩa Experience Principles
-            - Phân tích Problem & Audience Segments
-            - Tạo Functional Requirements với acceptance criteria
-            - Tạo Non-Functional Requirements (Performance, Security, UX)
-            - Preview và yêu cầu user approve/edit
-
-            Args:
-                product_brief: Product Brief từ gather_product_info tool
-
-            Returns:
-                dict: Product Vision với các trường:
-                    - product_name: Tên sản phẩm
-                    - vision_statement_final: Vision statement cuối cùng
-                    - experience_principles: Nguyên tắc trải nghiệm
-                    - problem_summary: Tóm tắt vấn đề
-                    - audience_segments: Phân tích đối tượng mục tiêu
-                    - scope_capabilities: Khả năng cốt lõi
-                    - scope_non_goals: Những gì không làm
-                    - functional_requirements: Tính năng cụ thể với AC
-                    - performance_requirements: Yêu cầu hiệu năng
-                    - security_requirements: Yêu cầu bảo mật
-                    - ux_requirements: Yêu cầu UX
-                    - dependencies: Phụ thuộc
-                    - risks: Rủi ro
-                    - assumptions: Giả định
-
-            Notes:
-                - Tool này có human-in-the-loop (preview/approve ở VisionAgent)
-                - Trả về full data cho frontend
-            """
-            print("\n" + "=" * 80)
-            print("🔧 PO AGENT - Calling Tool: create_vision")
-            print("=" * 80)
-            print(f"📥 Input Product Brief: {product_brief.get('product_name', 'N/A')}")
-
-            try:
-                # Create separate session_id for this tool call to create a new trace
-                tool_session_id = f"{self.session_id}_vision_tool"
-
-                # Get WebSocket dependencies (same as GathererAgent)
-                event_loop = getattr(self, 'event_loop', None)
-                print(f"[Vision Tool Call] event_loop: {event_loop}", flush=True)
-                print(f"[Vision Tool Call] websocket_broadcast_fn: {getattr(self, 'websocket_broadcast_fn', None) is not None}", flush=True)
-                print(f"[Vision Tool Call] project_id: {getattr(self, 'project_id', None)}", flush=True)
-                print(f"[Vision Tool Call] response_manager: {getattr(self, 'response_manager', None) is not None}", flush=True)
-
-                # Create a new VisionAgent instance with separate session_id
-                # Pass WebSocket dependencies if available (like GathererAgent)
-                vision_agent = VisionAgent(
-                    session_id=tool_session_id,
-                    user_id=self.user_id,
-                    websocket_broadcast_fn=getattr(self, 'websocket_broadcast_fn', None),
-                    project_id=getattr(self, 'project_id', None),
-                    response_manager=getattr(self, 'response_manager', None),
-                    event_loop=event_loop  # Use stored event loop
-                )
-
-                print(f"[Vision Tool Call] VisionAgent created with WebSocket support", flush=True)
-
-                # Call VisionAgent async version - it will create its own trace via its handler
-                result = await vision_agent.run_async(
-                    product_brief=product_brief, thread_id=f"{tool_session_id}_thread"
-                )
-
-                # Extract vision from final state
-                vision = None
-                for node_name, state_data in result.items():
-                    if isinstance(state_data, dict):
-                        vision = state_data.get("product_vision")
-                        if vision:
-                            break
-
-                if not vision:
-                    raise ValueError("VisionAgent did not return a vision")
-
-                print(f"\n✅ Tool completed - Product Vision created")
-                print(f"   Product: {vision.get('product_name', 'N/A')}")
-                print(
-                    f"   Vision: {vision.get('vision_statement_final', 'N/A')[:80]}..."
-                )
-                print(
-                    f"   Functional Reqs: {len(vision.get('functional_requirements', []))}"
-                )
-                print("=" * 80 + "\n")
-
-                return vision
-
-            except Exception as e:
-                print(f"\n❌ Tool error: {e}")
-                print("=" * 80 + "\n")
-                raise
-
-        @tool
-        async def create_backlog(
-            product_vision: dict,
-        ) -> Annotated[dict, "Product Backlog với full data"]:
-            """Tạo Product Backlog từ Product Vision.
-
-            Tool này sẽ:
-            - Tạo Epics, User Stories, Tasks, Sub-tasks
-            - Viết User Stories theo INVEST
-            - Thêm Acceptance Criteria dạng Gherkin (Given-When-Then)
-            - Ước lượng story points và effort
-            - Xác định dependencies
-            - Đánh giá và refine nếu cần
-            - Preview và yêu cầu user approve/edit
-
-            Args:
-                product_vision: Product Vision từ create_vision tool
-
-            Returns:
-                dict: Product Backlog với cấu trúc:
-                    - metadata: Thông tin meta (product_name, version, totals, etc.)
-                    - items: Danh sách backlog items:
-                        * id: EPIC-001, US-001, TASK-001, SUB-001
-                        * type: Epic / User Story / Task / Sub-task
-                        * parent_id: ID của parent item
-                        * title: Tiêu đề
-                        * description: Mô tả chi tiết
-                        * acceptance_criteria: Tiêu chí chấp nhận
-                        * story_point: Story point (cho User Story)
-                        * estimate_value: Giờ ước lượng (cho Task/Sub-task)
-                        * dependencies: Dependencies
-                        * labels: Labels
-
-            Notes:
-                - Tool này có human-in-the-loop (preview/approve ở BacklogAgent)
-                - Trả về full data với metadata và items
-            """
-            print("\n" + "=" * 80)
-            print("🔧 PO AGENT - Calling Tool: create_backlog")
-            print("=" * 80)
-            print(
-                f"📥 Input Product Vision: {product_vision.get('product_name', 'N/A')}"
-            )
-
-            try:
-                # Create separate session_id for this tool call to create a new trace
-                tool_session_id = f"{self.session_id}_backlog_tool"
-
-                # Create a new BacklogAgent instance with separate session_id + WebSocket deps
-                backlog_agent = BacklogAgent(
-                    session_id=tool_session_id,
-                    user_id=self.user_id,
-                    websocket_broadcast_fn=getattr(self, 'websocket_broadcast_fn', None),
-                    project_id=getattr(self, 'project_id', None),
-                    response_manager=getattr(self, 'response_manager', None),
-                    event_loop=getattr(self, 'event_loop', None)
-                )
-
-                # Call BacklogAgent async version - it will create its own trace via its handler
-                result = await backlog_agent.run_async(
-                    product_vision=product_vision, thread_id=f"{tool_session_id}_thread"
-                )
-
-                # Extract backlog from final state
-                backlog = None
-                for node_name, state_data in result.items():
-                    if isinstance(state_data, dict):
-                        backlog = state_data.get("product_backlog")
-                        if backlog:
-                            break
-
-                if not backlog:
-                    raise ValueError("BacklogAgent did not return a backlog")
-
-                metadata = backlog.get("metadata", {})
-                print(f"\n✅ Tool completed - Product Backlog created")
-                print(f"   Product: {metadata.get('product_name', 'N/A')}")
-                print(f"   Total Items: {metadata.get('total_items', 0)}")
-                print(f"   Epics: {metadata.get('total_epics', 0)}")
-                print(f"   User Stories: {metadata.get('total_user_stories', 0)}")
-                print(f"   Tasks: {metadata.get('total_tasks', 0)}")
-                print("=" * 80 + "\n")
-
-                return backlog
-
-            except Exception as e:
-                print(f"\n❌ Tool error: {e}")
-                print("=" * 80 + "\n")
-                raise
-
-        @tool
-        async def create_sprint_plan(
-            product_backlog: dict,
-        ) -> Annotated[dict, "Sprint Plan với full data"]:
-            """Tạo Sprint Plan từ Product Backlog.
-
-            Tool này sẽ:
-            - Tính WSJF (Weighted Shortest Job First) cho prioritization
-            - Rank items theo WSJF score
-            - Pack items vào sprints với capacity planning
-            - Xử lý dependencies giữa items
-            - Đánh giá và refine sprint plan
-            - Preview và yêu cầu user approve/edit/reprioritize
-
-            Args:
-                product_backlog: Product Backlog từ create_backlog tool
-
-            Returns:
-                dict: Sprint Plan với cấu trúc:
-                    - metadata: Thông tin meta (product_name, sprint config, totals, etc.)
-                    - prioritized_backlog: Backlog items đã được rank theo WSJF
-                    - wsjf_calculations: Chi tiết WSJF calculations cho từng item
-                    - sprints: Danh sách sprints:
-                        * sprint_id: sprint-1, sprint-2, ...
-                        * sprint_number: Số thứ tự
-                        * sprint_goal: Mục tiêu sprint
-                        * start_date, end_date: Ngày bắt đầu/kết thúc
-                        * velocity_plan: Story points planned
-                        * assigned_items: IDs của items được assign
-                        * status: Planned / Active / Completed
-                    - unassigned_items: Items chưa được assign (nếu có)
-
-            Notes:
-                - Tool này có human-in-the-loop (preview/approve ở PriorityAgent)
-                - Trả về full data với metadata, prioritized backlog, và sprints
-            """
-            print("\n" + "=" * 80)
-            print("🔧 PO AGENT - Calling Tool: create_sprint_plan")
-            print("=" * 80)
-
-            metadata = product_backlog.get("metadata", {})
-            print(f"📥 Input Product Backlog: {metadata.get('product_name', 'N/A')}")
-            print(f"   Total Items: {metadata.get('total_items', 0)}")
-
-            try:
-                # Create separate session_id for this tool call to create a new trace
-                tool_session_id = f"{self.session_id}_priority_tool"
-
-                # Create a new PriorityAgent instance with separate session_id + WebSocket deps
-                priority_agent = PriorityAgent(
-                    session_id=tool_session_id,
-                    user_id=self.user_id,
-                    websocket_broadcast_fn=getattr(self, 'websocket_broadcast_fn', None),
-                    project_id=getattr(self, 'project_id', None),
-                    response_manager=getattr(self, 'response_manager', None),
-                    event_loop=getattr(self, 'event_loop', None)
-                )
-
-                # Call PriorityAgent async version - it will create its own trace via its handler
-                sprint_plan = await priority_agent.run_async(
-                    product_backlog=product_backlog,
-                    thread_id=f"{tool_session_id}_thread",
-                )
-
-                if not sprint_plan:
-                    raise ValueError("PriorityAgent did not return a sprint plan")
-
-                sp_metadata = sprint_plan.get("metadata", {})
-                print(f"\n✅ Tool completed - Sprint Plan created")
-                print(f"   Product: {sp_metadata.get('product_name', 'N/A')}")
-                print(f"   Total Sprints: {sp_metadata.get('total_sprints', 0)}")
-                print(
-                    f"   Total Items Assigned: {sp_metadata.get('total_items_assigned', 0)}"
-                )
-                print(
-                    f"   Total Story Points: {sp_metadata.get('total_story_points', 0)}"
-                )
-                print("=" * 80 + "\n")
-
-                return sprint_plan
-
-            except Exception as e:
-                print(f"\n❌ Tool error: {e}")
-                print("=" * 80 + "\n")
-                raise
-
-        return [
-            gather_product_info,
-            create_vision,
-            create_backlog,
-            create_sprint_plan,
-        ]
-
-    def _build_agent(self):
-        """Build Deep Agent với tools và system instructions."""
-        return create_deep_agent(
-            tools=self.tools,
-            model=self._llm("gpt-4o", 0.2),
-            # model=self._llm("claude-sonnet-4-5", 0.2),
-            system_prompt=SYSTEM_PROMPT,
+        gatherer_agent = GathererAgent(
+            session_id=tool_session_id,
+            user_id=self.user_id,
+            websocket_broadcast_fn=getattr(self, 'websocket_broadcast_fn', None),
+            project_id=getattr(self, 'project_id', None),
+            response_manager=getattr(self, 'response_manager', None),
+            event_loop=getattr(self, 'event_loop', None)
         )
 
-    def _is_website_intent(self, text: str) -> bool:
-        """Detect if user intends to create a website/web app.
+        result = await gatherer_agent.run_async(
+            initial_context=state.user_input,
+            thread_id=f"{tool_session_id}_thread"
+        )
 
-        If detected, we can bypass the kickoff-only greeting and immediately
-        trigger sub-agents (e.g., GathererAgent) to collect details.
-        """
+        # Extract brief from result
+        brief = None
+        for node_name, state_data in result.items():
+            if isinstance(state_data, dict):
+                brief = state_data.get("brief")
+                if brief:
+                    break
+
+        if brief:
+            state.product_brief = brief
+            print(f"✅ Gatherer completed - Product Brief created")
+        else:
+            print(f"⚠️ Gatherer completed but no brief returned")
+
+        print("=" * 80 + "\n")
+        return state
+
+    async def run_vision(self, state: POAgentState) -> POAgentState:
+        """Run Vision Agent."""
+        print("\n" + "=" * 80)
+        print("🔧 RUNNING VISION AGENT")
+        print("=" * 80)
+
+        tool_session_id = f"{self.session_id}_vision"
+
+        vision_agent = VisionAgent(
+            session_id=tool_session_id,
+            user_id=self.user_id,
+            websocket_broadcast_fn=getattr(self, 'websocket_broadcast_fn', None),
+            project_id=getattr(self, 'project_id', None),
+            response_manager=getattr(self, 'response_manager', None),
+            event_loop=getattr(self, 'event_loop', None)
+        )
+
+        result = await vision_agent.run_async(
+            product_brief=state.product_brief,
+            thread_id=f"{tool_session_id}_thread"
+        )
+
+        # Extract vision from result
+        vision = None
+        for node_name, state_data in result.items():
+            if isinstance(state_data, dict):
+                vision = state_data.get("product_vision")
+                if vision:
+                    break
+
+        if vision:
+            state.product_vision = vision
+            print(f"✅ Vision completed - Product Vision created")
+        else:
+            print(f"⚠️ Vision completed but no vision returned")
+
+        print("=" * 80 + "\n")
+        return state
+
+    async def run_backlog(self, state: POAgentState) -> POAgentState:
+        """Run Backlog Agent."""
+        print("\n" + "=" * 80)
+        print("🔧 RUNNING BACKLOG AGENT")
+        print("=" * 80)
+
+        tool_session_id = f"{self.session_id}_backlog"
+
+        backlog_agent = BacklogAgent(
+            session_id=tool_session_id,
+            user_id=self.user_id,
+            websocket_broadcast_fn=getattr(self, 'websocket_broadcast_fn', None),
+            project_id=getattr(self, 'project_id', None),
+            response_manager=getattr(self, 'response_manager', None),
+            event_loop=getattr(self, 'event_loop', None)
+        )
+
+        result = await backlog_agent.run_async(
+            product_vision=state.product_vision,
+            thread_id=f"{tool_session_id}_thread"
+        )
+
+        # Extract backlog from result
+        backlog = None
+        for node_name, state_data in result.items():
+            if isinstance(state_data, dict):
+                backlog = state_data.get("product_backlog")
+                if backlog:
+                    break
+
+        if backlog:
+            state.product_backlog = backlog
+            print(f"✅ Backlog completed - Product Backlog created")
+        else:
+            print(f"⚠️ Backlog completed but no backlog returned")
+
+        print("=" * 80 + "\n")
+        return state
+
+    async def run_priority(self, state: POAgentState) -> POAgentState:
+        """Run Priority Agent."""
+        print("\n" + "=" * 80)
+        print("🔧 RUNNING PRIORITY AGENT")
+        print("=" * 80)
+
+        tool_session_id = f"{self.session_id}_priority"
+
+        priority_agent = PriorityAgent(
+            session_id=tool_session_id,
+            user_id=self.user_id,
+            websocket_broadcast_fn=getattr(self, 'websocket_broadcast_fn', None),
+            project_id=getattr(self, 'project_id', None),
+            response_manager=getattr(self, 'response_manager', None),
+            event_loop=getattr(self, 'event_loop', None)
+        )
+
+        result = await priority_agent.run_async(
+            product_backlog=state.product_backlog,
+            thread_id=f"{tool_session_id}_thread"
+        )
+
+        # Extract sprint_plan from result
+        sprint_plan = result if isinstance(result, dict) and "metadata" in result else None
+
+        if sprint_plan:
+            state.sprint_plan = sprint_plan
+            print(f"✅ Priority completed - Sprint Plan created")
+        else:
+            print(f"⚠️ Priority completed but no sprint plan returned")
+
+        print("=" * 80 + "\n")
+        return state
+
+    def finalize(self, state: POAgentState) -> POAgentState:
+        """Finalize - Hoàn tất workflow."""
+        print("\n" + "=" * 80)
+        print("✅ FINALIZE - WORKFLOW COMPLETED")
+        print("=" * 80)
+        print(f"✓ Product Brief: {'✅' if state.product_brief else '❌'}")
+        print(f"✓ Product Vision: {'✅' if state.product_vision else '❌'}")
+        print(f"✓ Product Backlog: {'✅' if state.product_backlog else '❌'}")
+        print(f"✓ Sprint Plan: {'✅' if state.sprint_plan else '❌'}")
+        print("=" * 80 + "\n")
+
+        state.status = "completed"
+        return state
+
+    # ========================================================================
+    # Conditional Branches
+    # ========================================================================
+
+    def initialize_branch(self, state: POAgentState) -> str:
+        """Branch after initialize."""
+        if state.needs_kickoff_only and not state.is_website_intent:
+            # Just greeting, return finalize to end
+            return "finalize"
+        else:
+            # Start workflow with router
+            return "router"
+
+    def router_branch(self, state: POAgentState) -> str:
+        """Branch after router."""
+        return f"run_{state.current_step}" if state.current_step != "finalize" else "finalize"
+
+    # ========================================================================
+    # Helper Methods
+    # ========================================================================
+
+    def _is_website_intent(self, text: str) -> bool:
+        """Detect if user intends to create a website/web app."""
         t = (text or "").lower()
         keywords = [
-            "tao trang web",
-            "tạo trang web",
-            "trang web",
-            "website",
-            "web app",
-            "xay dung website",
-            "xây dựng website",
-            "lam website",
-            "làm website",
-            "xay dung trang web",
-            "xây dựng trang web",
-            "phat trien website",
+            "tao trang web", "tạo trang web", "trang web", "website", "web app",
+            "xay dung website", "xây dựng website", "lam website", "làm website",
+            "xay dung trang web", "xây dựng trang web", "phat trien website",
             "phát triển website",
         ]
         return any(k in t for k in keywords)
@@ -513,13 +406,13 @@ class POAgent:
     def _needs_kickoff_only(self, user_input: str) -> bool:
         """Return True if we should only greet and ask for more info (no tools)."""
         text = (user_input or "").strip().lower()
-        # Only block on explicit greeting keywords, not on length
-        # This allows short but meaningful inputs like "Tạo website" to trigger full workflow
         if text in {"bắt đầu", "bat dau", "start", "hi", "hello", "chào", "chao", "xin chào", "xin chao"}:
             return True
-        # Removed: length check that was blocking short but valid inputs
-        # Old logic: return len(text) < 20
         return False
+
+    # ========================================================================
+    # Run Methods
+    # ========================================================================
 
     async def run_with_streaming(
         self,
@@ -541,18 +434,16 @@ class POAgent:
         Returns:
             dict: Final state với messages và outputs
         """
-        # Store dependencies for tool access
+        # Store dependencies for node access
         self.websocket_broadcast_fn = websocket_broadcast_fn
         self.project_id = project_id
         self.response_manager = response_manager
 
-        # Store event loop for tools that need async operations
+        # Store event loop for nodes that need async operations
         import asyncio
         try:
-            # Try to get the currently running loop (preferred)
             self.event_loop = asyncio.get_running_loop()
         except RuntimeError:
-            # Fallback to get_event_loop (might return None or a new loop)
             self.event_loop = asyncio.get_event_loop()
 
         if thread_id is None:
@@ -565,69 +456,7 @@ class POAgent:
         }
 
         try:
-            final_result = None
-            step_count = 0
-
-            # Kickoff-only path (just greeting, no processing needed)
-            if self._needs_kickoff_only(user_input):
-                is_website = self._is_website_intent(user_input or "")
-
-                if is_website:
-
-                    # Send start indicator for website intent processing
-                    await websocket_broadcast_fn({
-                        "type": "agent_step",
-                        "step": "started",
-                        "agent": "PO Agent",
-                        "message": "🚀 PO Agent bắt đầu xử lý..."
-                    }, project_id)
-
-                    await websocket_broadcast_fn({
-                        "type": "agent_thinking",
-                        "content": "Phát hiện ý định tạo website. Bắt đầu thu thập thông tin..."
-                    }, project_id)
-
-                    tool_session_id = f"{self.session_id}_gatherer_tool"
-
-                    # Get current event loop
-                    import asyncio
-                    loop = asyncio.get_event_loop()
-
-                    gatherer_agent = GathererAgent(
-                        session_id=tool_session_id,
-                        user_id=self.user_id,
-                        websocket_broadcast_fn=websocket_broadcast_fn,
-                        project_id=project_id,
-                        response_manager=response_manager,
-                        event_loop=loop  # Pass event loop for async operations
-                    )
-
-                    # Call async version - we're in async context
-                    gather_result = await gatherer_agent.run_async(
-                        initial_context=user_input,
-                        thread_id=f"{tool_session_id}_thread"
-                    )
-
-                    brief = None
-                    if isinstance(gather_result, dict):
-                        for node_name, state_data in gather_result.items():
-                            if isinstance(state_data, dict):
-                                brief = state_data.get("brief")
-                                if brief:
-                                    break
-
-                    msg = "Đã nhận yêu cầu tạo trang web. Đã thu thập thông tin với GathererAgent."
-                    return {"messages": [{"type": "assistant", "content": msg}], "brief": brief, "gatherer": gather_result or {}}
-                else:
-                    greeting = (
-                        "Chào bạn! Tôi là Product Owner Agent (PO Agent). "
-                        "Tôi có thể giúp lập kế hoạch và tạo Sprint Plan từ ý tưởng sản phẩm. "
-                        "Quy trình: Gatherer -> Vision -> Backlog -> Priority. "
-                        "Vui lòng mô tả ý tưởng để bắt đầu."
-                    )
-                    return {"messages": [{"type": "assistant", "content": greeting}]}
-
-            # Full execution path - send start indicator here
+            # Send start indicator
             await websocket_broadcast_fn({
                 "type": "agent_step",
                 "step": "started",
@@ -635,8 +464,15 @@ class POAgent:
                 "message": "🚀 PO Agent bắt đầu xử lý..."
             }, project_id)
 
-            async for chunk in self.agent.astream(
-                {"messages": [("user", user_input)]},
+            # Create initial state
+            initial_state = POAgentState(user_input=user_input)
+
+            final_result = None
+            step_count = 0
+
+            # Stream graph execution
+            async for chunk in self.graph.astream(
+                initial_state.model_dump(),
                 config=config,
                 stream_mode="updates"
             ):
@@ -652,48 +488,6 @@ class POAgent:
                             "node": node_name,
                             "step_number": step_count
                         }, project_id)
-
-                        if isinstance(node_data, dict):
-                            messages = node_data.get("messages", [])
-                            if messages:
-                                last_msg = messages[-1] if isinstance(messages, list) else messages
-
-                                # Check for tool calls
-                                if hasattr(last_msg, "tool_calls"):
-                                    tool_calls = last_msg.tool_calls
-                                    if tool_calls:
-                                        for tc in tool_calls:
-                                            tool_name = tc.get('name', 'unknown')
-                                            # Map tool names to friendly names
-                                            agent_names = {
-                                                "gatherer_agent_tool": "Gatherer Agent - Thu thập thông tin",
-                                                "vision_agent_tool": "Vision Agent - Tạo tài liệu tầm nhìn",
-                                                "backlog_agent_tool": "Backlog Agent - Tạo Product Backlog",
-                                                "priority_agent_tool": "Priority Agent - Ưu tiên & tạo Sprint Plan"
-                                            }
-                                            friendly_name = agent_names.get(tool_name, tool_name)
-
-                                            await websocket_broadcast_fn({
-                                                "type": "tool_call",
-                                                "tool": tool_name,
-                                                "display_name": friendly_name
-                                            }, project_id)
-                                    else:
-                                        # AI response without tool calls
-                                        if hasattr(last_msg, "content"):
-                                            content = last_msg.content
-                                            if content and len(content.strip()) > 0:
-                                                await websocket_broadcast_fn({
-                                                    "type": "agent_thinking",
-                                                    "content": content
-                                                }, project_id)
-                                elif hasattr(last_msg, "content"):
-                                    content = last_msg.content
-                                    if content and len(content.strip()) > 0:
-                                        await websocket_broadcast_fn({
-                                            "type": "agent_thinking",
-                                            "content": content
-                                        }, project_id)
 
                         final_result = node_data
 
@@ -717,7 +511,7 @@ class POAgent:
             raise
 
     def run(self, user_input: str, thread_id: str | None = None) -> dict[str, Any]:
-        """Run PO Agent workflow.
+        """Run PO Agent workflow (sync version for terminal).
 
         Args:
             user_input: Ý tưởng sản phẩm hoặc yêu cầu từ user
@@ -743,42 +537,15 @@ class POAgent:
         print("=" * 80 + "\n")
 
         try:
-            # Stream agent execution để xem từng bước
-            print("📡 Streaming agent execution...\n")
+            # Create initial state
+            initial_state = POAgentState(user_input=user_input)
 
             final_result = None
             step_count = 0
 
-            # Kickoff-only path: if user intends to create a website, start gathering; otherwise, greet and ask for info
-            if self._needs_kickoff_only(user_input):
-                if self._is_website_intent(user_input or ""):
-                    print("Detected website intent; starting GathererAgent to collect details...")
-                    tool_session_id = f"{self.session_id}_gatherer_tool"
-                    gatherer_agent = GathererAgent(session_id=tool_session_id, user_id=self.user_id)
-                    gather_result = gatherer_agent.run(
-                        initial_context=user_input,
-                        thread_id=f"{tool_session_id}_thread"
-                    )
-                    brief = None
-                    if isinstance(gather_result, dict):
-                        for node_name, state_data in gather_result.items():
-                            if isinstance(state_data, dict):
-                                brief = state_data.get("brief")
-                                if brief:
-                                    break
-                    msg = "Đã nhận yêu cầu tạo trang web. Bắt đầu thu thập thông tin với GathererAgent."
-                    return {"messages": [{"type": "assistant", "content": msg}], "brief": brief, "gatherer": gather_result or {}}
-                else:
-                    greeting = (
-                        "Chao ban! Toi la Product Owner Agent (PO Agent). "
-                        "Toi co the giup lap ke hoach va tao Sprint Plan tu y tuong san pham. "
-                        "Quy trinh: Gatherer -> Vision -> Backlog -> Priority. "
-                        "Vui long mo ta y tuong (ten, mo ta ngan, doi tuong, tinh nang chinh) de bat dau."
-                    )
-                    return {"messages": [{"type": "assistant", "content": greeting}]}
-
-            for chunk in self.agent.stream(
-                {"messages": [("user", user_input)]},
+            # Stream graph execution
+            for chunk in self.graph.stream(
+                initial_state.model_dump(),
                 config=config,
                 stream_mode="updates",
             ):
@@ -787,40 +554,9 @@ class POAgent:
                 print(f"📍 STEP {step_count}")
                 print(f"{'='*80}")
 
-                # Log chunk structure
                 if isinstance(chunk, dict):
                     for node_name, node_data in chunk.items():
                         print(f"🔹 Node: {node_name}")
-
-                        if isinstance(node_data, dict):
-                            # Check for messages
-                            messages = node_data.get("messages", [])
-                            if messages:
-                                last_msg = (
-                                    messages[-1]
-                                    if isinstance(messages, list)
-                                    else messages
-                                )
-                                print(f"   Type: {type(last_msg).__name__}")
-
-                                # Check if AI message with tool calls
-                                if hasattr(last_msg, "tool_calls"):
-                                    tool_calls = last_msg.tool_calls
-                                    if tool_calls:
-                                        print(f"   🔧 Tool Calls: {len(tool_calls)}")
-                                        for tc in tool_calls:
-                                            print(
-                                                f"      - {tc.get('name', 'unknown')}"
-                                            )
-                                    else:
-                                        print(f"   💬 AI Response (no tool calls)")
-                                        if hasattr(last_msg, "content"):
-                                            content = last_msg.content
-                                            print(f"      Content: {content[:150]}...")
-                                elif hasattr(last_msg, "content"):
-                                    content = last_msg.content
-                                    print(f"   📝 Content: {content[:150]}...")
-
                         final_result = node_data
 
                 print(f"{'='*80}\n")
@@ -829,9 +565,6 @@ class POAgent:
             print("✅ PO AGENT COMPLETED")
             print("=" * 80)
             print(f"📊 Total Steps: {step_count}")
-            if final_result and isinstance(final_result, dict):
-                messages = final_result.get("messages", [])
-                print(f"💬 Total Messages: {len(messages)}")
             print("=" * 80 + "\n")
 
             return final_result or {}
@@ -842,7 +575,6 @@ class POAgent:
             print("=" * 80)
             print(f"Error: {e}")
             import traceback
-
             traceback.print_exc()
             print("=" * 80 + "\n")
             raise

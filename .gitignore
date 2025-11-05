@@ -25,6 +25,8 @@ frontend/src/routeTree.gen.ts
 
 .env
 
+services/ai-agent-service/.env
+
 # Logs
 logs
 *.log
