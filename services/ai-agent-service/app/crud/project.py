@@ -57,6 +57,7 @@ def create_project(
     Create a new project with auto-generated code.
 
     The project name is also used as the github_repository_name.
+    If repository_url is provided, it will be saved to github_repository_url field.
 
     Args:
         session: Database session
@@ -69,15 +70,22 @@ def create_project(
     # Generate unique project code
     project_code = generate_project_code(session=session)
 
-    # Create project with auto-generated code and set github_repository_name to project name
+    # Prepare update dict with required fields
+    update_dict = {
+        "code": project_code,
+        "owner_id": owner_id,
+        "github_repository_name": project_in.name,  # Use project name as repository name
+        "is_init": False,  # Default value for new projects
+    }
+
+    # Add repository_url if provided
+    if project_in.repository_url:
+        update_dict["github_repository_url"] = project_in.repository_url
+
+    # Create project with auto-generated code
     db_project = Project.model_validate(
         project_in,
-        update={
-            "code": project_code,
-            "owner_id": owner_id,
-            "github_repository_name": project_in.name,  # Use project name as repository name
-            "is_init": False,  # Default value for new projects
-        },
+        update=update_dict,
     )
 
     session.add(db_project)

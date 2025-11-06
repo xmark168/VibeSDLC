@@ -290,6 +290,7 @@ class ProjectCreate(SQLModel):
     name: str = Field(min_length=1, max_length=255)
     is_private: bool = Field(default=True)
     tech_stack: str = Field(default="nodejs-react")
+    repository_url: Optional[str] = Field(default=None, max_length=500)
 
 
 class ProjectUpdate(SQLModel):
@@ -298,6 +299,7 @@ class ProjectUpdate(SQLModel):
     is_init: Optional[bool] = None
     is_private: Optional[bool] = None
     tech_stack: Optional[str] = None
+    repository_url: Optional[str] = Field(None, max_length=500)
 
 
 class ProjectPublic(SQLModel):
@@ -309,6 +311,7 @@ class ProjectPublic(SQLModel):
     is_init: bool
     is_private: bool
     tech_stack: str
+    github_repository_url: Optional[str] = None
     github_repository_id: Optional[int] = None
     github_repository_name: Optional[str] = None
     github_installation_id: Optional[UUID] = None

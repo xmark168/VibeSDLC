@@ -121,6 +121,7 @@ def create_project(
         session=session,
         project_in=project_in,
         owner_id=current_user.id,
+        
     )
 
     logger.info(f"Project created successfully: {project.code} (ID: {project.id})")

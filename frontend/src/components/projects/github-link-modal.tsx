@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion"
 import { ArrowRight, CheckCircle2, Github, Loader2, X } from "lucide-react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 
 interface GitHubLinkModalProps {
@@ -18,6 +18,16 @@ export function GitHubLinkModal({
   isSuccess = false,
 }: GitHubLinkModalProps) {
   const [isLoading, setIsLoading] = useState(false)
+
+
+  useEffect(() => {
+    if (isSuccess) {
+      const timer = setTimeout(() => {
+        onClose()
+      }, 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [isSuccess, onClose])
 
   const handleLink = async () => {
     setIsLoading(true)
@@ -57,7 +67,7 @@ export function GitHubLinkModal({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.3 }}
-        onClick={() => (isSuccess ? null : onClose())}
+        onClick={() => onClose()}
         className="absolute inset-0 bg-black/60 backdrop-blur-md"
       />
 

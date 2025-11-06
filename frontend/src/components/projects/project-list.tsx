@@ -8,17 +8,19 @@ import { useAppStore } from "@/stores/auth-store"
 interface ProjectListProps {
   projects: ProjectPublic[]
   openLinkGithubModal: React.Dispatch<React.SetStateAction<boolean>>
+  openInstallGithubModal: React.Dispatch<React.SetStateAction<boolean>>
 }
 
-export const ProjectList = ({ projects, openLinkGithubModal }: ProjectListProps) => {
+export const ProjectList = ({ projects, openLinkGithubModal, openInstallGithubModal }: ProjectListProps) => {
   const queryClient = useQueryClient()
   const user = useAppStore((state) => state.user)
 
   const handleClickProject = () => {
-    if (user?.github_installations?.[0]?.account_status !== "installed") {
+    if (user?.github_installations === null) {
       openLinkGithubModal(true)
       return
     }
+
   }
   if (projects.length === 0) {
     return (

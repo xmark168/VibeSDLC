@@ -82,15 +82,10 @@ function ProjectsPage() {
   }
 
   const handleNewProjectClick = () => {
-    const pendingInstallationId = localStorage.getItem("installationId")
-    if (user?.github_installations && user.github_installations[0].account_status !== "installed") {
-      setShowGitHubInstallModal(true)
-      console.log('vo day')
-      return
-    }
-    if (pendingInstallationId && user?.github_installations === undefined) {
+    if (user?.github_installations === null) {
       setShowGitHubLinkModal(true)
-    } else {
+    }
+    else {
       setShowCreateModal(true)
     }
   }
@@ -138,96 +133,99 @@ function ProjectsPage() {
       }
 
       {
-        (user?.github_installations != undefined) || (installationId !== null) ? (
-          <div className="min-h-screen">
-            <HeaderProject />
-            <div className="container mx-auto px-6 py-8">
-              <motion.div
-                variants={containerVariants}
-                initial="hidden"
-                animate="visible"
-              >
-                {/* Header */}
+        (user?.github_installations === null && listProjectPublic && listProjectPublic?.count > 0)
+          || (user?.github_installations !== null && listProjectPublic && listProjectPublic?.count > 0)
+          ? (
+            <div className="min-h-screen">
+              <HeaderProject />
+              <div className="container mx-auto px-6 py-8">
                 <motion.div
-                  variants={itemVariants}
-                  className="flex items-center justify-between mb-8"
+                  variants={containerVariants}
+                  initial="hidden"
+                  animate="visible"
                 >
-                  <div>
-                    <h1 className="text-4xl font-bold text-white mb-2">
-                      Your{" "}
-                      <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-purple-600">
-                        Projects
-                      </span>
-                    </h1>
-                    <p className="text-slate-400">
-                      Manage your AI-powered development projects
-                    </p>
-                  </div>
+                  {/* Header */}
+                  <motion.div
+                    variants={itemVariants}
+                    className="flex items-center justify-between mb-8"
+                  >
+                    <div>
+                      <h1 className="text-4xl font-bold text-white mb-2">
+                        Your{" "}
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-purple-600">
+                          Projects
+                        </span>
+                      </h1>
+                      <p className="text-slate-400">
+                        Manage your AI-powered development projects
+                      </p>
+                    </div>
 
-                  <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                    <Button
-                      onClick={handleNewProjectClick}
-                      className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-semibold gap-2"
-                    >
-                      <Plus className="h-5 w-5" />
-                      New Project
-                    </Button>
+                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                      <Button
+                        onClick={handleNewProjectClick}
+                        className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-semibold gap-2"
+                      >
+                        <Plus className="h-5 w-5" />
+                        New Project
+                      </Button>
+                    </motion.div>
+                  </motion.div>
+
+                  {/* Projects List */}
+                  <motion.div variants={itemVariants}>
+                    {isLoading ? (
+                      <div className="flex items-center justify-center py-20">
+                        <Loader2 className="h-8 w-8 animate-spin text-purple-400" />
+                      </div>
+                    ) : (
+                      <ProjectList
+                        projects={listProjectPublic?.data || []}
+                        openLinkGithubModal={setShowGitHubLinkModal}
+                        openInstallGithubModal={setShowGitHubInstallModal}
+                      />
+                    )}
                   </motion.div>
                 </motion.div>
+              </div>
 
-                {/* Projects List */}
-                <motion.div variants={itemVariants}>
-                  {isLoading ? (
-                    <div className="flex items-center justify-center py-20">
-                      <Loader2 className="h-8 w-8 animate-spin text-purple-400" />
-                    </div>
-                  ) : (
-                    <ProjectList
-                      projects={listProjectPublic?.data || []}
-                      openLinkGithubModal={setShowGitHubInstallModal}
-                    />
-                  )}
-                </motion.div>
-              </motion.div>
+              {/* Modals */}
+              <AnimatePresence>
+                {showCreateModal && (
+                  <CreateProjectModal
+                    isOpen={showCreateModal}
+                    onClose={() => setShowCreateModal(false)}
+                    setIsOpen={setShowCreateModal}
+                  />
+                )}
+              </AnimatePresence>
+
+
+
+              <AnimatePresence>
+                {showGitHubLinkModal && (
+                  <GitHubLinkModal
+                    onClose={() => {
+                      setShowGitHubLinkModal(false)
+                      setLinkSuccess(false)
+                    }}
+                    onLinked={handleGitHubLinked}
+                    installationId={installationId ? parseInt(installationId, 10) : null}
+                    isSuccess={linkSuccess}
+                  />
+                )}
+              </AnimatePresence>
             </div>
+          ) : (
+            <>
+              <HeaderProject />
+              <CreateProjectContent
+                onInstallGitHub={_handleInstallGitHub}
+                githubLinked={_githubLinked}
+              />
 
-            {/* Modals */}
-            <AnimatePresence>
-              {showCreateModal && (
-                <CreateProjectModal
-                  isOpen={showCreateModal}
-                  onClose={() => setShowCreateModal(false)}
-                  setIsOpen={setShowCreateModal}
-                />
-              )}
-            </AnimatePresence>
-
-
-
-            <AnimatePresence>
-              {showGitHubLinkModal && (
-                <GitHubLinkModal
-                  onClose={() => {
-                    setShowGitHubLinkModal(false)
-                    setLinkSuccess(false)
-                  }}
-                  onLinked={handleGitHubLinked}
-                  installationId={installationId ? parseInt(installationId, 10) : null}
-                  isSuccess={linkSuccess}
-                />
-              )}
-            </AnimatePresence>
-          </div>
-        ) : (
-          <>
-            <HeaderProject />
-            <CreateProjectContent
-              onInstallGitHub={_handleInstallGitHub}
-              githubLinked={_githubLinked}
-            />
-
-          </>
-        )
+            </>
+          )
       }
 
     </>

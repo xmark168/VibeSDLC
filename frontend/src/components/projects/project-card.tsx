@@ -1,7 +1,14 @@
 import { format } from "date-fns"
-import { Calendar, Globe, Lock } from "lucide-react"
+import { Calendar, Globe, Lock, ExternalLink } from "lucide-react"
+import { motion } from "framer-motion"
 import { Badge } from "@/components/ui/badge"
 import { ProjectPublic } from "@/client"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 
 interface ProjectCardProps {
@@ -61,6 +68,32 @@ export const ProjectCard = ({ project, onClick }: ProjectCardProps) => {
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Calendar className="w-4 h-4" />
           <span>Created {format(createdDate, "MMM dd, yyyy")}</span>
+        </div>
+
+        {/* Actions footer */}
+        <div className="flex items-center justify-end pt-2">
+          {project.github_repository_url && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <motion.a
+                    href={project.github_repository_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="inline-flex items-center justify-center p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-accent transition-colors"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </motion.a>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  <p>Open GitHub Repository</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
         </div>
 
         {/* Bottom gradient line on hover */}

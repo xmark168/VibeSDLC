@@ -79,7 +79,6 @@ class GitHubInstallation(BaseModel, table=True):
     user_id: UUID | None = Field(default=None, foreign_key="users.id", nullable=True, ondelete="CASCADE")
 
     user: User = Relationship(back_populates="github_installations")
-    projects: list["Project"] = Relationship(back_populates="github_installation")
 
 
 class Project(BaseModel, table=True):
@@ -91,11 +90,8 @@ class Project(BaseModel, table=True):
     is_init: bool = Field(default=False)
 
     # GitHub integration fields
-    github_repository_id: int | None = Field(default=None, unique=True, nullable=True)
+    github_repository_url: str | None = Field(default=None, unique=True, nullable=True)
     github_repository_name: str | None = Field(default=None, nullable=True)
-    github_installation_id: UUID | None = Field(
-        default=None, foreign_key="github_installations.id", ondelete="SET NULL", nullable=True
-    )
     is_private: bool = Field(default=True)
     tech_stack: str = Field(default="nodejs-react")
     owner: User = Relationship(back_populates="owned_projects")
@@ -103,7 +99,6 @@ class Project(BaseModel, table=True):
         back_populates="project",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
-    github_installation: Optional["GitHubInstallation"] = Relationship(back_populates="projects")
 
 
 class Sprint(BaseModel, table=True):

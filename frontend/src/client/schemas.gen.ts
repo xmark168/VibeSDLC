@@ -1223,6 +1223,18 @@ export const ProjectCreateSchema = {
             type: 'string',
             title: 'Tech Stack',
             default: 'nodejs-react'
+        },
+        repository_url: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 500
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Repository Url'
         }
     },
     type: 'object',
@@ -1283,6 +1295,17 @@ export const ProjectPublicSchema = {
         tech_stack: {
             type: 'string',
             title: 'Tech Stack'
+        },
+        github_repository_url: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Github Repository Url'
         },
         github_repository_id: {
             anyOf: [
@@ -1382,6 +1405,18 @@ export const ProjectUpdateSchema = {
                 }
             ],
             title: 'Tech Stack'
+        },
+        repository_url: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 500
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Repository Url'
         }
     },
     type: 'object',

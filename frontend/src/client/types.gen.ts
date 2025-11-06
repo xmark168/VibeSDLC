@@ -297,6 +297,7 @@ export type ProjectCreate = {
     name: string;
     is_private?: boolean;
     tech_stack?: string;
+    repository_url?: (string | null);
 };
 
 export type ProjectGitHubLink = {
@@ -316,6 +317,7 @@ export type ProjectPublic = {
     is_init: boolean;
     is_private: boolean;
     tech_stack: string;
+    github_repository_url?: (string | null);
     github_repository_id?: (number | null);
     github_repository_name?: (string | null);
     github_installation_id?: (string | null);
@@ -339,6 +341,7 @@ export type ProjectUpdate = {
     is_init?: (boolean | null);
     is_private?: (boolean | null);
     tech_stack?: (string | null);
+    repository_url?: (string | null);
 };
 
 export type RefreshTokenRequest = {

@@ -172,52 +172,12 @@ async def handle_installation_created(
             logger.error(f"Invalid account type: {account_type}")
             raise ValueError(f"Invalid account type: {account_type}")
 
-        # Check if installation already exists (by installation_id OR by account_login with DELETED status)
+        # Check if installation already exists by installation_id
         existing_by_id = crud.github_installation.get_github_installation_by_installation_id(
             session, installation_id
         )
 
-        # Also check for deleted installations by this user that can be reactivated
-        from sqlmodel import select
-        from app.models import GitHubInstallation
-        deleted_installation = session.exec(
-            select(GitHubInstallation).where(
-                GitHubInstallation.account_login == account_login,
-                GitHubInstallation.account_status == GitHubInstallationStatus.DELETED
-            )
-        ).first()
-
-        # Case 1: Reinstall - Found a DELETED installation for this account
-        if deleted_installation and not existing_by_id:
-            logger.info(
-                f"Reactivating deleted installation for {account_login} "
-                f"(db_id: {deleted_installation.id}) with new installation_id: {installation_id}"
-            )
-            deleted_installation.installation_id = installation_id
-            deleted_installation.account_type = account_type_enum
-            deleted_installation.account_status = GitHubInstallationStatus.INSTALLED
-            deleted_installation.repositories = {
-                "repositories": [
-                    {
-                        "id": repo.get("id"),
-                        "name": repo.get("name"),
-                        "full_name": repo.get("full_name"),
-                        "url": repo.get("html_url"),
-                        "private": repo.get("private"),
-                    }
-                    for repo in repositories
-                ]
-            }
-            session.add(deleted_installation)
-            session.commit()
-            logger.info(f"Reactivated GitHub installation {installation_id}")
-            return {
-                "status": "reactivated",
-                "installation_id": installation_id,
-                "db_id": str(deleted_installation.id)
-            }
-
-        # Case 2: Update existing installation
+        # Update existing installation if found
         if existing_by_id:
             logger.info(f"Installation {installation_id} already exists, updating details...")
             existing_by_id.account_login = account_login
@@ -244,7 +204,7 @@ async def handle_installation_created(
                 "db_id": str(existing_by_id.id)
             }
 
-        # Case 3: New installation (first time install)
+        # New installation (first time install)
         logger.warning(
             f"Installation {installation_id} received via webhook but not yet linked to user. "
             f"Waiting for callback endpoint to be called."
@@ -311,21 +271,20 @@ async def handle_installation_deleted(
             logger.warning(f"Installation {installation_id} not found in database")
             return {"status": "not_found", "installation_id": installation_id}
 
-        # Instead of deleting, set installation_id to NULL and status to DELETED
-        from app.models import GitHubInstallationStatus
-        db_installation.installation_id = None
-        db_installation.account_status = GitHubInstallationStatus.DELETED
-        session.add(db_installation)
+        # Delete the installation record completely
+        db_id = str(db_installation.id)
+        user_id = db_installation.user_id
+        session.delete(db_installation)
         session.commit()
 
         logger.info(
-            f"Marked GitHub installation {installation_id} as DELETED "
-            f"(db_id: {db_installation.id}, user_id: {db_installation.user_id})"
+            f"Deleted GitHub installation {installation_id} "
+            f"(db_id: {db_id}, user_id: {user_id})"
         )
         return {
-            "status": "marked_deleted",
+            "status": "deleted",
             "installation_id": installation_id,
-            "db_id": str(db_installation.id)
+            "db_id": db_id
         }
 
     except Exception as e:

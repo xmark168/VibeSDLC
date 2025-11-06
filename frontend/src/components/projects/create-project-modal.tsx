@@ -61,8 +61,42 @@ export function CreateProjectModal({
     },
   })
 
+  // Validation function for project name
+  const validateProjectName = (name: string): { isValid: boolean; error?: string } => {
+    if (!name.trim()) {
+      return { isValid: false, error: "Project name is required" }
+    }
+
+    if (name.length < 1 || name.length > 50) {
+      return { isValid: false, error: "Project name must be between 1 and 50 characters" }
+    }
+
+    // Check if starts or ends with hyphen
+    if (name.startsWith("-") || name.endsWith("-")) {
+      return { isValid: false, error: "Project name cannot start or end with a hyphen" }
+    }
+
+    // Check for consecutive hyphens
+    if (name.includes("--")) {
+      return { isValid: false, error: "Project name cannot contain consecutive hyphens" }
+    }
+
+    // Check for valid characters (a-z, A-Z, 0-9, -, _)
+    if (!/^[a-zA-Z0-9\-_]+$/.test(name)) {
+      return { isValid: false, error: "Project name can only contain letters, numbers, hyphens, and underscores" }
+    }
+
+    return { isValid: true }
+  }
+
   const handleCreate = async () => {
-    if (!projectName.trim()) return
+    // Validate project name
+    const validation = validateProjectName(projectName)
+    if (!validation.isValid) {
+      toast.error(validation.error || "Invalid project name")
+      return
+    }
+
     setIsLoading(true)
     try {
       const dataRepoCreate: CreateRepoFromTemplateRequest = {
@@ -74,18 +108,26 @@ export function CreateProjectModal({
         github_installation_id: user?.github_installation_id || 0,
       }
 
+      // Step 1: Create repository first
+      await withToast(
+        createRepositoryTemplateMutation.mutateAsync(dataRepoCreate),
+        {
+          loading: "Creating repository...",
+          success: <b>Repository created successfully!</b>,
+          error: <b>Repository creation failed. Please try again.</b>,
+        },
+      )
+
+      // Step 2: Only if repository creation succeeds, create project
       const dataProjectCreate: ProjectCreate = {
         name: projectName,
         is_private: isPrivate,
         tech_stack: techStack,
+        repository_url: `https://github.com/${user?.github_installations?.[0]?.account_login}/${projectName}`,
       }
 
-      // Wrap both mutations inside withToast to show proper loading/success/error states
-      const [repoCreateResponse, projectCreateResponse] = await withToast(
-        Promise.all([
-          createRepositoryTemplateMutation.mutateAsync(dataRepoCreate),
-          createProjectMutation.mutateAsync(dataProjectCreate)
-        ]),
+      await withToast(
+        createProjectMutation.mutateAsync(dataProjectCreate),
         {
           loading: "Creating project...",
           success: <b>Project created successfully!</b>,
@@ -94,6 +136,7 @@ export function CreateProjectModal({
       )
     } catch (error) {
       console.error("Error creating project:", error)
+      toast.error("Failed to create project. Please try again.")
     } finally {
       setProjectName("")
       setDescription("")
