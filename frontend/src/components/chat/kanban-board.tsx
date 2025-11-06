@@ -32,10 +32,17 @@ export function KanbanBoard({ kanbanData, projectId, sprintId }: KanbanBoardProp
   // Load initial data from database
   const { data: dbKanbanData, isLoading } = useKanbanBoard(sprintId)
 
+  // Reset columns when sprintId changes
+  useEffect(() => {
+    if (!sprintId) {
+      setColumns(initialColumns)
+    }
+  }, [sprintId])
+
   // Load initial data from database when component mounts
   useEffect(() => {
     if (dbKanbanData && dbKanbanData.board) {
-      console.log('Loading Kanban board from database:', dbKanbanData)
+      console.log('[KanbanBoard] Loading Kanban board from database:', dbKanbanData)
 
       const newColumns: KanbanColumnData[] = [
         {
@@ -50,6 +57,11 @@ export function KanbanBoard({ kanbanData, projectId, sprintId }: KanbanBoardProp
             description: item.description,
             status: item.status,
             type: item.type,
+            story_point: item.story_point,
+            estimate_value: item.estimate_value,
+            rank: item.rank,
+            assignee_id: item.assignee_id,
+            reviewer_id: item.reviewer_id,
           }))
         },
         {
@@ -64,6 +76,11 @@ export function KanbanBoard({ kanbanData, projectId, sprintId }: KanbanBoardProp
             description: item.description,
             status: item.status,
             type: item.type,
+            story_point: item.story_point,
+            estimate_value: item.estimate_value,
+            rank: item.rank,
+            assignee_id: item.assignee_id,
+            reviewer_id: item.reviewer_id,
           }))
         },
         {
@@ -78,6 +95,11 @@ export function KanbanBoard({ kanbanData, projectId, sprintId }: KanbanBoardProp
             description: item.description,
             status: item.status,
             type: item.type,
+            story_point: item.story_point,
+            estimate_value: item.estimate_value,
+            rank: item.rank,
+            assignee_id: item.assignee_id,
+            reviewer_id: item.reviewer_id,
           }))
         },
         {
@@ -92,6 +114,11 @@ export function KanbanBoard({ kanbanData, projectId, sprintId }: KanbanBoardProp
             description: item.description,
             status: item.status,
             type: item.type,
+            story_point: item.story_point,
+            estimate_value: item.estimate_value,
+            rank: item.rank,
+            assignee_id: item.assignee_id,
+            reviewer_id: item.reviewer_id,
           }))
         },
       ]
@@ -115,7 +142,15 @@ export function KanbanBoard({ kanbanData, projectId, sprintId }: KanbanBoardProp
             id: item.id,
             content: item.title,
             columnId: "backlog",
-            taskId: item.item_id,
+            taskId: item.item_id || item.id,
+            description: item.description,
+            status: item.status,
+            type: item.type,
+            story_point: item.story_point,
+            estimate_value: item.estimate_value,
+            rank: item.rank,
+            assignee_id: item.assignee_id,
+            reviewer_id: item.reviewer_id,
           }))
         },
         {
@@ -126,7 +161,15 @@ export function KanbanBoard({ kanbanData, projectId, sprintId }: KanbanBoardProp
             id: item.id,
             content: item.title,
             columnId: "todo",
-            taskId: item.item_id,
+            taskId: item.item_id || item.id,
+            description: item.description,
+            status: item.status,
+            type: item.type,
+            story_point: item.story_point,
+            estimate_value: item.estimate_value,
+            rank: item.rank,
+            assignee_id: item.assignee_id,
+            reviewer_id: item.reviewer_id,
           }))
         },
         {
@@ -137,7 +180,15 @@ export function KanbanBoard({ kanbanData, projectId, sprintId }: KanbanBoardProp
             id: item.id,
             content: item.title,
             columnId: "inprogress",
-            taskId: item.item_id,
+            taskId: item.item_id || item.id,
+            description: item.description,
+            status: item.status,
+            type: item.type,
+            story_point: item.story_point,
+            estimate_value: item.estimate_value,
+            rank: item.rank,
+            assignee_id: item.assignee_id,
+            reviewer_id: item.reviewer_id,
           }))
         },
         {
@@ -148,7 +199,15 @@ export function KanbanBoard({ kanbanData, projectId, sprintId }: KanbanBoardProp
             id: item.id,
             content: item.title,
             columnId: "done",
-            taskId: item.item_id,
+            taskId: item.item_id || item.id,
+            description: item.description,
+            status: item.status,
+            type: item.type,
+            story_point: item.story_point,
+            estimate_value: item.estimate_value,
+            rank: item.rank,
+            assignee_id: item.assignee_id,
+            reviewer_id: item.reviewer_id,
           }))
         },
       ]

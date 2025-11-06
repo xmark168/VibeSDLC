@@ -73,6 +73,13 @@ class ScrumMasterOrchestrator:
                 "agent": "Scrum Master"
             })
 
+            # Auto-switch to Kanban tab
+            await self._broadcast({
+                "type": "switch_tab",
+                "tab": "kanban",
+                "message": "Đang chuyển sang tab Kanban để xem cập nhật..."
+            })
+
             # Step 2: Trigger Sprint Planner (Sprint Planner sẽ tự lưu vào database)
             print("\n[1/2] Triggering Sprint Planner Agent...")
             sprint_planner = SprintPlannerAgent(
@@ -144,12 +151,42 @@ class ScrumMasterOrchestrator:
                 items_for_broadcast
             )
 
+            # Broadcast task assignment summary
+            total_assigned = len(assigned_items) if assigned_items else 0
+            await self._broadcast({
+                "type": "agent_step",
+                "step": "task_assignment",
+                "agent": "Scrum Master",
+                "message": f"✅ Đã giao việc cho team: {total_assigned} tasks đã được assign cho Developer và Tester."
+            })
+
+            # Broadcast kanban update notification
+            await self._broadcast({
+                "type": "agent_step",
+                "step": "kanban_updated",
+                "agent": "Scrum Master",
+                "message": f"📋 Kanban Board đã được cập nhật! Bạn có thể chuyển sang tab Kanban để xem chi tiết."
+            })
+
             # Final broadcast
             await self._broadcast({
                 "type": "scrum_master_step",
                 "step": "completed",
-                "message": "✅ Scrum Master hoàn thành! Sprint Plan đã được enrich & lưu vào database.",
+                "message": "✅ Scrum Master hoàn thành! Sprint Plan đã được lưu vào database.",
                 "agent": "Scrum Master"
+            })
+
+            # Turn off typing indicators
+            await self._broadcast({
+                "type": "typing",
+                "agent_name": "PO Agent",
+                "is_typing": False
+            })
+
+            await self._broadcast({
+                "type": "typing",
+                "agent_name": "Scrum Master",
+                "is_typing": False
             })
 
             print("\n✅ Scrum Master Orchestrator completed successfully!")
@@ -170,6 +207,20 @@ class ScrumMasterOrchestrator:
                 "message": f"❌ Lỗi: {str(e)}",
                 "agent": "Scrum Master"
             })
+
+            # Turn off typing indicators on error
+            await self._broadcast({
+                "type": "typing",
+                "agent_name": "PO Agent",
+                "is_typing": False
+            })
+
+            await self._broadcast({
+                "type": "typing",
+                "agent_name": "Scrum Master",
+                "is_typing": False
+            })
+
             raise
 
     async def _run_sprint_planner(
@@ -227,6 +278,14 @@ class ScrumMasterOrchestrator:
             kanban_columns[status].append({
                 "id": item.get("id"),
                 "title": item.get("title"),
+                "description": item.get("description"),
+                "type": item.get("type"),
+                "status": status,
+                "story_point": item.get("story_point"),
+                "estimate_value": item.get("estimate_value"),
+                "rank": item.get("rank"),
+                "assignee_id": item.get("assigned_to_dev") or item.get("assignee_id"),
+                "reviewer_id": item.get("assigned_to_tester") or item.get("reviewer_id"),
                 "sprint_id": item.get("sprint_id"),  # May be None for unassigned items
                 "item_id": item.get("item_id")  # Original ID from PO Agent
             })

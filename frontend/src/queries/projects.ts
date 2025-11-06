@@ -15,5 +15,17 @@ export function useActiveSprint(projectId: string | undefined) {
     queryFn: () => projectsApi.getActiveSprint(projectId!),
     enabled: !!projectId,
     retry: false, // Don't retry if no active sprint
+    refetchOnMount: true, // Always refetch when component mounts
+    staleTime: 0, // Consider data stale immediately
+  })
+}
+
+export function useSprints(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['sprints', projectId],
+    queryFn: () => projectsApi.getSprints(projectId!),
+    enabled: !!projectId,
+    refetchOnMount: true,
+    staleTime: 0,
   })
 }

@@ -133,7 +133,7 @@ class TaskReceiverAgent:
 
         for item in dev_items:
             # Calculate estimated hours from story points
-            story_point = item.get("story_point", 5)
+            story_point = item.get("story_point") or 5  # Default to 5 if None or missing
             estimated_hours = story_point * 2  # 1 story point = ~2 hours
 
             # Determine priority

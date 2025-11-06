@@ -87,6 +87,7 @@ def get_next_agent_from_message_type(message_type: str) -> str | None:
         "product_brief": "vision",      # Brief approved → Run Vision Agent
         "product_vision": "backlog",    # Vision approved → Run Backlog Agent
         "product_backlog": "priority",  # Backlog approved → Run Priority Agent
+        "sprint_plan": "scrum_master",  # Sprint Plan approved → Run Scrum Master Agent
     }
     return step_map.get(message_type)
 
@@ -281,23 +282,9 @@ async def trigger_next_step_auto(
                 )
                 print(f"[Auto-Trigger] Priority Agent completed", flush=True)
 
-                # Priority Agent is the last step - send completion messages
-                print(f"[Auto-Trigger] Workflow complete for project {project_id}", flush=True)
-
-                # Send workflow completed message
-                await websocket_broadcast_fn({
-                    "type": "agent_step",
-                    "step": "completed",
-                    "agent": "PO Agent",
-                    "message": "✅ Hoàn thành workflow PO Agent! Sprint Plan đã sẵn sàng."
-                }, project_id)
-
-                # Turn off typing indicator
-                await websocket_broadcast_fn({
-                    "type": "typing",
-                    "agent_name": "PO Agent",
-                    "is_typing": False
-                }, project_id)
+                # NOTE: Priority Agent is no longer the last step
+                # Scrum Master Agent will be triggered after user approves sprint plan
+                print(f"[Auto-Trigger] Waiting for user to approve Sprint Plan...", flush=True)
 
             else:
                 print(f"[Auto-Trigger] ⚠ Backlog not found in DB", flush=True)
@@ -311,6 +298,84 @@ async def trigger_next_step_auto(
                 await websocket_broadcast_fn({
                     "type": "typing",
                     "agent_name": "PO Agent",
+                    "is_typing": False
+                }, project_id)
+
+        elif next_agent == "scrum_master":
+            # Get approved sprint plan from DB
+            sprint_plan_msg = step_session.exec(
+                select(MessageModel)
+                .where(MessageModel.project_id == UUID(project_id))
+                .where(MessageModel.message_type == "sprint_plan")
+                .order_by(MessageModel.created_at.desc())
+            ).first()
+
+            if sprint_plan_msg and sprint_plan_msg.structured_data:
+                print(f"[Auto-Trigger] Found sprint plan in DB", flush=True)
+
+                # Send agent_step to show progress indicator
+                await websocket_broadcast_fn({
+                    "type": "agent_step",
+                    "step": "started",
+                    "agent": "Scrum Master",
+                    "message": "🔄 Đang lưu Sprint Plan vào database..."
+                }, project_id)
+
+                # Trigger Scrum Master Agent to persist sprint plan
+                from app.agents.scrum_master.scrum_master_agent import ScrumMasterAgent
+
+                scrum_master_agent = ScrumMasterAgent(
+                    session_id=f"scrum_master_auto_{project_id}",
+                    user_id=user_id
+                )
+
+                print(f"[Auto-Trigger] Starting Scrum Master Agent to persist sprint plan...", flush=True)
+
+                # Call new method to persist sprint plan
+                await scrum_master_agent.persist_sprint_plan(
+                    sprint_plan_data=sprint_plan_msg.structured_data,
+                    project_id=project_id,
+                    websocket_broadcast_fn=websocket_broadcast_fn
+                )
+
+                print(f"[Auto-Trigger] Scrum Master Agent completed", flush=True)
+
+                # Scrum Master is the final step - send completion messages
+                print(f"[Auto-Trigger] Workflow complete for project {project_id}", flush=True)
+
+                # Send workflow completed message
+                await websocket_broadcast_fn({
+                    "type": "agent_step",
+                    "step": "completed",
+                    "agent": "Scrum Master",
+                    "message": "✅ Hoàn thành! Sprint Plan đã được lưu vào database."
+                }, project_id)
+
+                # Turn off ALL typing indicators (PO Agent and Scrum Master)
+                await websocket_broadcast_fn({
+                    "type": "typing",
+                    "agent_name": "PO Agent",
+                    "is_typing": False
+                }, project_id)
+
+                await websocket_broadcast_fn({
+                    "type": "typing",
+                    "agent_name": "Scrum Master",
+                    "is_typing": False
+                }, project_id)
+
+            else:
+                print(f"[Auto-Trigger] ⚠ Sprint Plan not found in DB", flush=True)
+                # Send error message and turn off typing indicator
+                await websocket_broadcast_fn({
+                    "type": "agent_step",
+                    "step": "error",
+                    "agent": "Scrum Master",
+                    "message": "❌ Không tìm thấy Sprint Plan. Vui lòng chạy lại Priority Agent."
+                }, project_id)
+                await websocket_broadcast_fn({
+                    "type": "typing",
+                    "agent_name": "Scrum Master",
                     "is_typing": False
                 }, project_id)
 

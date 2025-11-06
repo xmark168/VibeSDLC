@@ -75,4 +75,14 @@ export const projectsApi = {
       url: `/api/v1/sprints/project/${projectId}/active`,
     })
   },
+  getSprints: async (projectId: string): Promise<{ data: Sprint[]; count: number }> => {
+    return __request<{ data: Sprint[]; count: number }>(OpenAPI, {
+      method: 'GET',
+      url: '/api/v1/sprints/',
+      query: {
+        project_id: projectId,
+        limit: 100,
+      },
+    })
+  },
 }

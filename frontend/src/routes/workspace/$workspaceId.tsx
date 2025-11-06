@@ -21,6 +21,7 @@ function WorkspacePage() {
   const [isWebSocketConnected, setIsWebSocketConnected] = useState(false)
   const sendMessageRef = useRef<((params: { content: string; author_type: string }) => boolean) | null>(null)
   const [kanbanData, setKanbanData] = useState<any>(null)
+  const [activeTab, setActiveTab] = useState<string | null>(null)
 
   // Fetch messages to check if project is new
   const { data: messagesData, isLoading } = useMessages({
@@ -89,6 +90,7 @@ function WorkspacePage() {
                   }}
                   onConnectionChange={setIsWebSocketConnected}
                   onKanbanDataChange={setKanbanData}
+                  onActiveTabChange={setActiveTab}
                 />
               </div>
 
@@ -107,6 +109,7 @@ function WorkspacePage() {
               onExpandChat={() => setChatCollapsed(false)}
               kanbanData={kanbanData}
               projectId={workspaceId}
+              activeTab={activeTab}
             />
           </div>
         </div>

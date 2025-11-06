@@ -99,7 +99,7 @@ class TesterAgent:
             tester_index += 1
 
             # Calculate estimated test hours (usually 30-50% of dev hours)
-            story_point = item.get("story_point", 5)
+            story_point = item.get("story_point") or 5  # Default to 5 if None or missing
             dev_hours = story_point * 2
             estimated_hours = dev_hours * 0.4  # 40% of dev time for testing
 
@@ -211,7 +211,7 @@ class TesterAgent:
 
         for item in test_items:
             # Calculate estimated test hours (usually 30-50% of dev hours)
-            story_point = item.get("story_point", 5)
+            story_point = item.get("story_point") or 5  # Default to 5 if None or missing
             dev_hours = story_point * 2
             estimated_hours = dev_hours * 0.4  # 40% of dev time for testing
 

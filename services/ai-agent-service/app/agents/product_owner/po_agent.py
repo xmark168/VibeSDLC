@@ -566,45 +566,11 @@ class POAgent:
         # If text contains any product-related keyword, it's likely a product idea
         return any(k in t for k in product_keywords)
 
-    async def _trigger_scrum_master_orchestrator(
-        self,
-        sprint_plan: dict,
-        backlog_items: list[dict],
-        websocket_broadcast_fn,
-        project_id: str
-    ) -> None:
-        """Trigger Scrum Master Orchestrator sau khi PO Agent hoàn thành.
-
-        Args:
-            sprint_plan: Sprint plan từ Priority Agent
-            backlog_items: Backlog items từ Priority Agent
-            websocket_broadcast_fn: Function để broadcast qua WebSocket
-            project_id: Project ID
-        """
-        try:
-            from app.agents.scrum_master.orchestrator import ScrumMasterOrchestrator
-
-            # Create orchestrator
-            orchestrator = ScrumMasterOrchestrator(
-                project_id=project_id,
-                user_id=self.user_id or "unknown",
-                session_id=self.session_id,
-                websocket_broadcast_fn=websocket_broadcast_fn
-            )
-
-            # Process PO output
-            result = await orchestrator.process_po_output(
-                sprint_plan=sprint_plan,
-                backlog_items=backlog_items
-            )
-
-            print(f"[PO Agent] Scrum Master Orchestrator completed: {result.get('total_sprints', 0)} sprints, {result.get('total_items', 0)} items")
-
-        except Exception as e:
-            print(f"[PO Agent] Error triggering Scrum Master Orchestrator: {e}")
-            import traceback
-            traceback.print_exc()
-            # Don't raise - PO Agent should still complete successfully
+    # REMOVED: _trigger_scrum_master_orchestrator()
+    # Refactored to follow router-based architecture:
+    # - PO Agent only creates artifacts (Vision, Backlog, Sprint Plan)
+    # - Scrum Master Agent (via auto-trigger) persists data to database
+    # - Team Leader Agent handles routing between agents
 
     def _needs_kickoff_only(self, user_input: str) -> bool:
         """Return True if we should only greet and ask for more info (no tools)."""
@@ -828,22 +794,14 @@ class POAgent:
             else:
                 print(f"   ⚠️ sprint_plan_data not found - Priority Agent tool may not have been called")
 
-            # Trigger Scrum Master Orchestrator if we have sprint plan
-            if sprint_plan_data and backlog_items:
-                print("\n[PO Agent] ✅ Triggering Scrum Master Orchestrator...")
+            # REMOVED: Trigger Scrum Master Orchestrator
+            # Refactored: Scrum Master will be triggered via auto-trigger flow after user approves sprint plan
+            # This follows router-based architecture where agents don't call each other directly
+            print("\n[PO Agent] ✅ Sprint Plan created successfully")
+            print(f"   Sprint Plan will be persisted by Scrum Master Agent via auto-trigger")
+            if sprint_plan_data:
                 print(f"   Sprint Plan: {len(sprint_plan_data.get('sprints', []))} sprints")
                 print(f"   Backlog Items: {len(backlog_items)} items")
-
-                await self._trigger_scrum_master_orchestrator(
-                    sprint_plan=sprint_plan_data,
-                    backlog_items=backlog_items,
-                    websocket_broadcast_fn=websocket_broadcast_fn,
-                    project_id=project_id
-                )
-            else:
-                print("\n[PO Agent] ⚠️ NOT triggering Scrum Master - missing data:")
-                print(f"   sprint_plan_data: {sprint_plan_data is not None}")
-                print(f"   backlog_items: {len(backlog_items) if backlog_items else 0}")
 
             return final_result or {}
 

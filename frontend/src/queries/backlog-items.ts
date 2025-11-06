@@ -7,7 +7,8 @@ export function useKanbanBoard(sprintId: string | undefined) {
     queryFn: () => backlogItemsApi.getKanbanBoard(sprintId!),
     enabled: !!sprintId,
     refetchOnWindowFocus: true,
-    staleTime: 30000, // 30 seconds
+    refetchOnMount: true, // Always refetch when component mounts
+    staleTime: 0, // Consider data stale immediately to ensure fresh data
   })
 }
 

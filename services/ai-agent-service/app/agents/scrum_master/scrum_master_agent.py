@@ -266,6 +266,81 @@ class ScrumMasterAgent:
             except Exception:
                 pass
 
+    async def persist_sprint_plan(
+        self,
+        sprint_plan_data: dict,
+        project_id: str,
+        websocket_broadcast_fn
+    ) -> dict:
+        """Persist sprint plan to database.
+
+        This method is called by auto-trigger flow after user approves sprint plan.
+        It uses ScrumMasterOrchestrator to persist sprint plan and backlog items to database.
+
+        Args:
+            sprint_plan_data: Sprint plan data from Priority Agent (structured_data from message)
+            project_id: Project ID
+            websocket_broadcast_fn: Async function to broadcast messages
+
+        Returns:
+            dict: Result with saved sprint and item IDs
+        """
+        print(f"\n[ScrumMasterAgent.persist_sprint_plan] ENTERED", flush=True)
+        print(f"[ScrumMasterAgent.persist_sprint_plan] project_id: {project_id}", flush=True)
+
+        try:
+            # Import orchestrator
+            from .orchestrator import ScrumMasterOrchestrator
+
+            # Extract sprint plan and backlog items from structured data
+            sprint_plan = sprint_plan_data
+            backlog_items = sprint_plan_data.get("prioritized_backlog", [])
+
+            print(f"[ScrumMasterAgent] Sprint Plan: {len(sprint_plan.get('sprints', []))} sprints")
+            print(f"[ScrumMasterAgent] Backlog Items: {len(backlog_items)} items")
+
+            # Create orchestrator
+            orchestrator = ScrumMasterOrchestrator(
+                project_id=project_id,
+                user_id=self.user_id,
+                session_id=self.session_id,
+                websocket_broadcast_fn=websocket_broadcast_fn
+            )
+
+            # Process sprint plan and persist to database
+            result = await orchestrator.process_po_output(
+                sprint_plan=sprint_plan,
+                backlog_items=backlog_items
+            )
+
+            print(f"[ScrumMasterAgent] Orchestrator completed: {result.get('total_sprints', 0)} sprints, {result.get('total_items', 0)} items")
+
+            return {
+                "status": "success",
+                "total_sprints": result.get("total_sprints", 0),
+                "total_items": result.get("total_items", 0),
+                "saved_sprint_ids": result.get("saved_sprint_ids", []),
+                "saved_item_ids": result.get("saved_item_ids", [])
+            }
+
+        except Exception as e:
+            print(f"[ScrumMasterAgent] Error persisting sprint plan: {e}")
+            import traceback
+            traceback.print_exc()
+
+            # Broadcast error
+            await websocket_broadcast_fn({
+                "type": "agent_step",
+                "step": "error",
+                "agent": "Scrum Master",
+                "message": f"❌ Lỗi khi lưu Sprint Plan: {str(e)}"
+            }, project_id)
+
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+
 
 
 

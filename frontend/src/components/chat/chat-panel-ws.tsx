@@ -50,6 +50,7 @@ interface ChatPanelProps {
   ) => void;
   onConnectionChange?: (connected: boolean) => void;
   onKanbanDataChange?: (data: any) => void;
+  onActiveTabChange?: (tab: string | null) => void;
 }
 
 interface AttachedFile {
@@ -78,6 +79,7 @@ export function ChatPanelWS({
   onSendMessageReady,
   onConnectionChange,
   onKanbanDataChange,
+  onActiveTabChange,
 }: ChatPanelProps) {
   const [message, setMessage] = useState("");
   const [showMentions, setShowMentions] = useState(false);
@@ -117,6 +119,7 @@ export function ChatPanelWS({
     pendingQuestions,
     pendingPreviews,
     kanbanData,
+    activeTab,
     sendMessage: wsSendMessage,
     submitAnswer,
     submitPreviewChoice,
@@ -141,6 +144,13 @@ export function ChatPanelWS({
       onKanbanDataChange(kanbanData);
     }
   }, [kanbanData, onKanbanDataChange]);
+
+  // Notify parent when activeTab changes
+  useEffect(() => {
+    if (activeTab && onActiveTabChange) {
+      onActiveTabChange(activeTab);
+    }
+  }, [activeTab, onActiveTabChange]);
 
   const toggleExpand = (id: string) => {
     setExpandedMessages((prev) => {
