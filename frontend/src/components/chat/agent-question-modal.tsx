@@ -116,7 +116,6 @@ export function AgentQuestionModal({
           </div>
           <DialogDescription className="text-base">
             Câu hỏi {question.question_number} / {question.total_questions}
-            {question.context && ` • ${question.context}`}
           </DialogDescription>
         </DialogHeader>
 
@@ -143,9 +142,6 @@ export function AgentQuestionModal({
               className="min-h-[120px] text-base p-3"
               autoFocus
             />
-            <p className="text-xs text-muted-foreground">
-              💡 Gõ "skip" để bỏ qua câu này, hoặc "skip_all" để bỏ qua tất cả
-            </p>
           </div>
         </div>
 

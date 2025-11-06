@@ -995,7 +995,7 @@ class GathererAgent:
             # Terminal mode - run sync version in executor
             print(f"[preview_async] Routing to terminal mode (via executor)", flush=True)
             import asyncio
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             return await loop.run_in_executor(None, self.preview, state)
 
         # WebSocket mode
@@ -1307,7 +1307,7 @@ class GathererAgent:
             print(f"[GathererAgent.run] Scheduling in WebSocket helper loop...", flush=True)
             result = websocket_helper.run_coroutine(
                 self.run_async(initial_context, thread_id),
-                timeout=660  # 11 minutes
+                timeout=1200  # 20 minutes (increased for multiple iteration cycles)
             )
             print(f"[GathererAgent.run] Execution completed!", flush=True)
             return result

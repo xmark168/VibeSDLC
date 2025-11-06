@@ -1,6 +1,4 @@
-import { CheckCircle, Edit, RefreshCw } from "lucide-react"
 import { useState } from "react"
-import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -8,20 +6,20 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog"
-import { Textarea } from "@/components/ui/textarea"
-import type { AgentPreview } from "@/hooks/useChatWebSocket"
-import { ProductBriefPreview, ProductVisionPreview } from "./previews"
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { CheckCircle, Edit, RefreshCw } from 'lucide-react'
+import type { AgentPreview } from '@/hooks/useChatWebSocket'
+import { ProductBriefPreview, ProductVisionPreview, BacklogPreview, SprintPlanPreview } from './previews'
 
 interface AgentPreviewModalProps {
   preview: AgentPreview | null
   onSubmit: (preview_id: string, choice: string, edit_changes?: string) => void
+  onClose?: () => void  // NEW: Handler to close modal
 }
 
-export function AgentPreviewModal({
-  preview,
-  onSubmit,
-}: AgentPreviewModalProps) {
+export function AgentPreviewModal({ preview, onSubmit, onClose }: AgentPreviewModalProps) {
   const [editMode, setEditMode] = useState(false)
   const [editChanges, setEditChanges] = useState("")
 
@@ -73,6 +71,18 @@ export function AgentPreviewModal({
             validationResult={preview.validation_result}
           />
         )
+      case 'product_backlog':
+        return (
+          <BacklogPreview
+            backlog={preview.backlog}
+          />
+        )
+      case 'sprint_plan':
+        return (
+          <SprintPlanPreview
+            sprintPlan={preview.sprint_plan}
+          />
+        )
       default:
         // Fallback: try to render whatever is available
         if (preview.vision) {
@@ -91,6 +101,18 @@ export function AgentPreviewModal({
               incompleteFlag={preview.incomplete_flag}
             />
           )
+        } else if (preview.backlog) {
+          return (
+            <BacklogPreview
+              backlog={preview.backlog}
+            />
+          )
+        } else if (preview.sprint_plan) {
+          return (
+            <SprintPlanPreview
+              sprintPlan={preview.sprint_plan}
+            />
+          )
         }
         return (
           <div className="text-sm text-muted-foreground">
@@ -101,8 +123,19 @@ export function AgentPreviewModal({
   }
 
   return (
-    <Dialog open={!!preview} modal>
-      <DialogContent className="max-w-3xl">
+    <Dialog
+      open={!!preview}
+      onOpenChange={(open) => {
+        // When dialog closes (user clicks X or outside), call onClose
+        if (!open && onClose) {
+          setEditMode(false)  // Reset edit mode
+          setEditChanges('')  // Clear edit changes
+          onClose()
+        }
+      }}
+      modal
+    >
+      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <span>{preview.title}</span>
@@ -112,9 +145,11 @@ export function AgentPreviewModal({
 
         {!editMode ? (
           <>
-            {renderContent()}
-            <DialogFooter className="flex gap-2">
-              {preview.options.includes("regenerate") && (
+            <div className="overflow-y-auto flex-1 -mx-6 px-6">
+              {renderContent()}
+            </div>
+            <DialogFooter className="flex gap-2 flex-shrink-0">
+              {preview.options.includes('regenerate') && (
                 <Button
                   variant="outline"
                   onClick={handleRegenerate}
@@ -147,22 +182,27 @@ export function AgentPreviewModal({
           </>
         ) : (
           <>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-foreground mb-2 block">
-                  Nhập các thay đổi bạn muốn áp dụng:
-                </label>
-                <Textarea
-                  value={editChanges}
-                  onChange={(e) => setEditChanges(e.target.value)}
-                  placeholder="Ví dụ: Thay đổi tên sản phẩm thành 'TaskMaster Pro Plus', thêm tính năng AI chatbot..."
-                  className="min-h-[120px] p-3"
-                  autoFocus
-                />
+            <div className="overflow-y-auto flex-1 -mx-6 px-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-2 block">
+                    Nhập các thay đổi bạn muốn áp dụng:
+                  </label>
+                  <Textarea
+                    value={editChanges}
+                    onChange={(e) => setEditChanges(e.target.value)}
+                    placeholder="Ví dụ: Thay đổi tên sản phẩm thành 'TaskMaster Pro Plus', thêm tính năng AI chatbot..."
+                    className="min-h-[120px] p-3 focus-visible:ring-0 focus-visible:ring-offset-0"
+                    autoFocus
+                  />
+                </div>
               </div>
             </div>
-            <DialogFooter className="flex gap-2">
-              <Button variant="outline" onClick={handleCancelEdit}>
+            <DialogFooter className="flex gap-2 flex-shrink-0">
+              <Button
+                variant="outline"
+                onClick={handleCancelEdit}
+              >
                 Hủy
               </Button>
               <Button onClick={handleSubmitEdit} disabled={!editChanges.trim()}>
