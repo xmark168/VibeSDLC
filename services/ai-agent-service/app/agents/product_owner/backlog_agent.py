@@ -176,6 +176,7 @@ class BacklogAgent:
         graph_builder.add_node("evaluate", self.evaluate)
         graph_builder.add_node("refine", self.refine)
         graph_builder.add_node("finalize", self.finalize)
+        # Use async version for preview (supports both WebSocket and terminal modes)
 
         # Always use async version for preview (like gatherer agent)
         graph_builder.add_node("preview", self.preview_async)
@@ -1058,6 +1059,83 @@ class BacklogAgent:
         print("=" * 80 + "\n")
         return state
 
+    async def preview_async(self, state: BacklogState) -> BacklogState:
+        """Async version of preview - supports both WebSocket and terminal modes."""
+        import uuid
+
+        print("\n[preview_async] ===== ENTERED =====", flush=True)
+        print(f"[preview_async] use_websocket: {self.use_websocket}", flush=True)
+
+        if not self.use_websocket:
+            # Terminal mode - run sync version in executor
+            print(f"[preview_async] Routing to terminal mode (via executor)", flush=True)
+            import asyncio
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, self.preview, state)
+
+        # WebSocket mode
+        print(f"[preview_async] WebSocket mode, queuing preview...", flush=True)
+
+        # Generate unique preview ID
+        preview_id = str(uuid.uuid4())
+
+        # Queue preview message for broadcast
+        preview_message = {
+            "type": "agent_preview",
+            "preview_id": preview_id,
+            "agent": "Backlog Agent",
+            "preview_type": "product_backlog",
+            "title": "📋 PREVIEW - Product Backlog",
+            "backlog": state.product_backlog,
+            "options": ["approve", "edit"],
+            "prompt": "Bạn muốn làm gì với Product Backlog này?"
+        }
+
+        await self.response_manager.queue_broadcast(preview_message, self.project_id)
+        print(f"[preview_async] ✓ Preview queued!", flush=True)
+
+        # Wait for user response
+        print(f"[preview_async] Waiting for user response...", flush=True)
+        user_choice = await self.response_manager.await_response(self.project_id, preview_id, timeout=600)
+        print(f"[preview_async] ✓ Got response: {user_choice}", flush=True)
+
+        if user_choice == "approve":
+            state.user_approval = "approve"
+            state.user_feedback = None
+            state.status = "approved"
+            print(f"[preview_async] User approved!", flush=True)
+        elif user_choice == "edit":
+            state.user_approval = "edit"
+            state.status = "needs_edit"
+            print(f"[preview_async] User requested edit, waiting for feedback...", flush=True)
+
+            # Queue question for feedback
+            question_id = str(uuid.uuid4())
+            question_message = {
+                "type": "agent_question",
+                "question_id": question_id,
+                "agent": "Backlog Agent",
+                "question_type": "text",
+                "question_text": "Mô tả những điểm bạn muốn chỉnh sửa trong Product Backlog. Ví dụ: 'Thêm user story cho tính năng thanh toán', 'Chia nhỏ Epic-001', 'Bổ sung AC cho US-003'",
+                "timeout": 600,
+                "context": "Edit Request"
+            }
+
+            await self.response_manager.queue_broadcast(question_message, self.project_id)
+            print(f"[preview_async] ✓ Question queued!", flush=True)
+
+            # Wait for feedback
+            feedback = await self.response_manager.await_response(self.project_id, question_id, timeout=600)
+            print(f"[preview_async] ✓ Got feedback: {feedback}", flush=True)
+
+            if feedback:
+                state.user_feedback = feedback
+            else:
+                state.user_feedback = "Cải thiện chất lượng backlog dựa trên các recommendations hiện có."
+
+        print(f"[preview_async] ===== EXITING =====", flush=True)
+        return state
+
     # ========================================================================
     # Conditional Branch
     # ========================================================================
@@ -1105,8 +1183,8 @@ class BacklogAgent:
     # Run Method
     # ========================================================================
 
-    def run(self, product_vision: dict, thread_id: str | None = None) -> dict[str, Any]:
-        """Chạy Backlog Agent workflow.
+    async def run_async(self, product_vision: dict, thread_id: str | None = None) -> dict[str, Any]:
+        """Async version - Chạy Backlog Agent workflow.
 
         Args:
             product_vision: Product Vision từ Vision Agent
@@ -1130,6 +1208,66 @@ class BacklogAgent:
             result = websocket_helper.run_coroutine(
                 self.run_async(product_vision, thread_id),
                 timeout=1200  # 20 minutes (increased for large backlogs with refine cycles)
+            )
+            print(f"[BacklogAgent.run] Execution completed!", flush=True)
+            return result
+
+        # Terminal mode: sync execution
+        print(f"[BacklogAgent.run] Terminal mode - sync execution", flush=True)
+
+        if thread_id is None:
+            thread_id = self.session_id or "default_backlog_thread"
+
+        initial_state = BacklogState(product_vision=product_vision)
+
+        # Build metadata for Langfuse tracing with session_id and user_id
+        metadata = {}
+        if self.session_id:
+            metadata["langfuse_session_id"] = self.session_id
+        if self.user_id:
+            metadata["langfuse_user_id"] = self.user_id
+        # Add tags
+        metadata["langfuse_tags"] = ["backlog_agent"]
+
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "callbacks": [self.langfuse_handler],
+            "metadata": metadata,  # Pass session_id/user_id via metadata
+            "recursion_limit": 50,
+        }
+
+        final_state = None
+        async for output in self.graph.astream(
+            initial_state.model_dump(),
+            config=config,
+        ):
+            final_state = output
+
+        # Return final state (last node output)
+        return final_state or {}
+
+    def run(self, product_vision: dict, thread_id: str | None = None) -> dict[str, Any]:
+        """Chạy Backlog Agent workflow (sync version).
+
+        Args:
+            product_vision: Product Vision từ Vision Agent
+            thread_id: Thread ID cho checkpointer
+
+        Returns:
+            dict: Final state với product_backlog
+        """
+        # Check if WebSocket mode is enabled
+        if self.use_websocket:
+            print(f"[BacklogAgent.run] WebSocket mode detected - using websocket_helper", flush=True)
+
+            # Import websocket helper
+            from app.core.websocket_helper import websocket_helper
+
+            # Run async version in dedicated WebSocket loop
+            print(f"[BacklogAgent.run] Scheduling in WebSocket helper loop...", flush=True)
+            result = websocket_helper.run_coroutine(
+                self.run_async(product_vision, thread_id),
+                timeout=660  # 11 minutes
             )
             print(f"[BacklogAgent.run] Execution completed!", flush=True)
             return result

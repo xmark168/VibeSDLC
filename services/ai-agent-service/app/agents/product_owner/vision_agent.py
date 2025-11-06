@@ -438,7 +438,7 @@ class VisionAgent:
         if not self.use_websocket:
             # Terminal mode - run sync version in executor
             print(f"[preview_async] Routing to terminal mode (via executor)", flush=True)
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             return await loop.run_in_executor(None, self.preview, state)
 
         # WebSocket mode
@@ -508,7 +508,7 @@ class VisionAgent:
         if not self.use_websocket:
             # Terminal mode - run sync version in executor
             print(f"[reason_async] Routing to terminal mode (via executor)", flush=True)
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             return await loop.run_in_executor(None, self.reason, state)
 
         # WebSocket mode
@@ -836,8 +836,8 @@ class VisionAgent:
 
         return final_state or {}
 
-    def run(self, product_brief: dict, thread_id: str | None = None) -> dict[str, Any]:
-        """Chạy quy trình làm việc của vision agent.
+    async def run_async(self, product_brief: dict, thread_id: str | None = None) -> dict[str, Any]:
+        """Async version - Chạy quy trình làm việc của vision agent.
 
         Args:
             product_brief: Product brief từ gatherer_agent (dict chứa product info)
@@ -846,6 +846,87 @@ class VisionAgent:
         Returns:
             dict: Trạng thái cuối cùng chứa product_vision và summary
         """
+        import asyncio
+
+        if thread_id is None:
+            thread_id = self.session_id or "default_vision_thread"
+
+        initial_state = VisionState(product_brief=product_brief)
+
+        # Build metadata for Langfuse tracing with session_id and user_id
+        metadata = {}
+        if self.session_id:
+            metadata["langfuse_session_id"] = self.session_id
+        if self.user_id:
+            metadata["langfuse_user_id"] = self.user_id
+        # Add tags
+        metadata["langfuse_tags"] = ["vision_agent"]
+
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "callbacks": [self.langfuse_handler],
+            "metadata": metadata,  # Pass session_id/user_id via metadata
+            "recursion_limit": 50,
+        }
+
+        final_state = None
+        async for output in self.graph.astream(
+            initial_state.model_dump(),
+            config=config,
+        ):
+            final_state = output
+
+        # Convert messages to serializable format before returning
+        if final_state:
+            # Extract the actual state from the output (it's wrapped in a node key)
+            for node_name, state_data in final_state.items():
+                if isinstance(state_data, dict) and "messages" in state_data:
+                    # Convert BaseMessage objects to dicts
+                    serializable_messages = []
+                    for msg in state_data.get("messages", []):
+                        if hasattr(msg, "dict"):  # Pydantic v1
+                            serializable_messages.append(msg.dict())
+                        elif hasattr(msg, "model_dump"):  # Pydantic v2
+                            serializable_messages.append(msg.model_dump())
+                        else:
+                            # Fallback for plain objects
+                            serializable_messages.append({
+                                "type": msg.__class__.__name__,
+                                "content": str(msg.content) if hasattr(msg, "content") else str(msg)
+                            })
+                    state_data["messages"] = serializable_messages
+
+        return final_state or {}
+
+    def run(self, product_brief: dict, thread_id: str | None = None) -> dict[str, Any]:
+        """Chạy quy trình làm việc của vision agent (sync version).
+
+        Args:
+            product_brief: Product brief từ gatherer_agent (dict chứa product info)
+            thread_id: ID để resume state (nếu None, dùng session_id hoặc default)
+
+        Returns:
+            dict: Trạng thái cuối cùng chứa product_vision và summary
+        """
+        # Check if WebSocket mode is enabled
+        if self.use_websocket:
+            print(f"[VisionAgent.run] WebSocket mode detected - using websocket_helper", flush=True)
+
+            # Import websocket helper
+            from app.core.websocket_helper import websocket_helper
+
+            # Run async version in dedicated WebSocket loop
+            print(f"[VisionAgent.run] Scheduling in WebSocket helper loop...", flush=True)
+            result = websocket_helper.run_coroutine(
+                self.run_async(product_brief, thread_id),
+                timeout=660  # 11 minutes
+            )
+            print(f"[VisionAgent.run] Execution completed!", flush=True)
+            return result
+
+        # Terminal mode: sync execution
+        print(f"[VisionAgent.run] Terminal mode - sync execution", flush=True)
+
         if thread_id is None:
             thread_id = self.session_id or "default_vision_thread"
 

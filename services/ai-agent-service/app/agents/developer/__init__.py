@@ -50,3 +50,7 @@ result = await run_developer_agent(
 - Checks performance implications
 - Provides actionable feedback
 """
+
+from .agent import DeveloperAgent
+
+__all__ = ["DeveloperAgent"]

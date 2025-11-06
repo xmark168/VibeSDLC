@@ -1,0 +1,63 @@
+[
+  {
+    "id": "TASK-001",
+    "type": "Task",
+    "title": "Implement authentication",
+    "description": "Add user authentication with JWT tokens",
+    "status": "Ready",
+    "story_point": 5,
+    "estimate_value": 8,
+    "acceptance_criteria": [
+      "User can register with email",
+      "User can login with credentials",
+      "JWT token is generated and stored"
+    ],
+    "dependencies": [],
+    "labels": ["backend", "security"],
+    "assigned_to_dev": "dev-001",
+    "assigned_to_tester": "tester-001",
+    "dev_status": "pending",
+    "test_status": "pending"
+  },
+  {
+    "id": "TASK-002",
+    "type": "Task",
+    "title": "Create API endpoints",
+    "description": "Build REST API for user management",
+    "status": "Ready",
+    "story_point": 8,
+    "estimate_value": 12,
+    "acceptance_criteria": [
+      "GET /users endpoint returns user list",
+      "POST /users endpoint creates new user",
+      "Error handling returns proper status codes"
+    ],
+    "dependencies": ["TASK-001"],
+    "labels": ["backend", "api"],
+    "assigned_to_dev": "dev-002",
+    "assigned_to_tester": "tester-001",
+    "dev_status": "pending",
+    "test_status": "pending"
+  },
+  {
+    "id": "US-001",
+    "type": "User Story",
+    "title": "User can login",
+    "description": "As a user, I want to login to the system",
+    "status": "Ready",
+    "story_point": 3,
+    "estimate_value": 5,
+    "acceptance_criteria": [
+      "Login form is displayed on home page",
+      "User can enter email and password",
+      "User is redirected to dashboard after login"
+    ],
+    "dependencies": [],
+    "labels": ["frontend"],
+    "assigned_to_dev": "dev-001",
+    "assigned_to_tester": "tester-002",
+    "dev_status": "pending",
+    "test_status": "pending"
+  }
+]
+

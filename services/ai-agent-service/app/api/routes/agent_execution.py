@@ -33,15 +33,30 @@ async def execute_agent_background(
     Execute agent in background and save responses to messages
     """
     from app.agents.product_owner.po_agent import POAgent
+    from app.api.routes.chat_ws import manager
+    from app.core.response_queue import response_manager
     import traceback
-    
+    import asyncio
+
     try:
-        # Create agent instance
+        # Create agent instance with WebSocket support
         session_id = f"po_agent_{project_id}_{user_id}"
-        agent = POAgent(session_id=session_id, user_id=str(user_id))
-        
-        # Run agent
-        result = agent.run(user_input=user_input)
+        agent = POAgent(
+            session_id=session_id,
+            user_id=str(user_id),
+            websocket_broadcast_fn=manager.broadcast_to_project,
+            project_id=str(project_id),
+            response_manager=response_manager,
+            event_loop=asyncio.get_event_loop()
+        )
+
+        # Run agent with streaming (async version)
+        result = await agent.run_with_streaming(
+            user_input=user_input,
+            websocket_broadcast_fn=manager.broadcast_to_project,
+            project_id=str(project_id),
+            response_manager=response_manager
+        )
         
         # Extract response from result
         response_content = ""
@@ -172,17 +187,27 @@ def execute_agent_sync(
     Use this for testing or when you need immediate response.
     """
     from app.agents.product_owner.po_agent import POAgent
-    
+    from app.api.routes.chat_ws import manager
+    from app.core.response_queue import response_manager
+    import asyncio
+
     # Validate project
     project = session.get(Project, request.project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    
+
     try:
-        # Create agent instance
+        # Create agent instance with WebSocket support
         session_id = f"po_agent_{request.project_id}_{current_user.id}"
-        agent = POAgent(session_id=session_id, user_id=str(current_user.id))
-        
+        agent = POAgent(
+            session_id=session_id,
+            user_id=str(current_user.id),
+            websocket_broadcast_fn=manager.broadcast_to_project,
+            project_id=str(request.project_id),
+            response_manager=response_manager,
+            event_loop=asyncio.get_event_loop()
+        )
+
         # Run agent
         result = agent.run(user_input=request.user_input)
         
