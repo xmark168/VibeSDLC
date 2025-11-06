@@ -64,9 +64,8 @@ export function KanbanCard({
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onClick={onClick}
-      className={`bg-card rounded-lg border border-border p-3 group relative hover:shadow-md transition-all cursor-pointer ${
-        isDragging ? "opacity-50" : ""
-      }`}
+      className={`bg-card rounded-lg border border-border p-3 group relative hover:shadow-md transition-all cursor-pointer ${isDragging ? "opacity-50" : ""
+        }`}
     >
       {/* Action Buttons */}
       <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
@@ -126,13 +125,12 @@ export function KanbanCard({
             {card.rank !== undefined && card.rank !== null && (
               <Badge
                 variant="outline"
-                className={`text-xs ${
-                  card.rank <= 3
+                className={`text-xs ${card.rank <= 3
                     ? "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20"
                     : card.rank <= 7
-                    ? "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20"
-                    : "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
-                }`}
+                      ? "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20"
+                      : "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
+                  }`}
               >
                 #{card.rank}
               </Badge>

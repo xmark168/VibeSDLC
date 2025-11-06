@@ -1,8 +1,14 @@
-
-import { Button } from "@/components/ui/button"
-import { Menu, Plus, Sparkles, ChevronRight, ChevronDown, PanelRightClose, PanelLeftClose } from "lucide-react"
-import { cn } from "@/lib/utils"
+import {
+  ChevronDown,
+  ChevronRight,
+  PanelLeftClose,
+  PanelRightClose,
+  Plus,
+  Sparkles,
+} from "lucide-react"
 import { useState } from "react"
+import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 
 interface SidebarProps {
   collapsed: boolean
@@ -11,7 +17,12 @@ interface SidebarProps {
   onHoverChange: (hovered: boolean) => void
 }
 
-export function Sidebar({ collapsed, onToggle,hovered, onHoverChange }: SidebarProps) {
+export function Sidebar({
+  collapsed,
+  onToggle,
+  hovered,
+  onHoverChange,
+}: SidebarProps) {
   const [myChatsExpanded, setMyChatsExpanded] = useState(true)
 
   const chats = [
@@ -22,13 +33,17 @@ export function Sidebar({ collapsed, onToggle,hovered, onHoverChange }: SidebarP
     { id: "5", title: "T-shirt Costume Website Code", active: false },
   ]
 
- const isVisible = !collapsed || hovered
+  const _isVisible = !collapsed || hovered
 
   return (
     <div
       className={cn(
         "flex flex-col bg-sidebar transition-all duration-300 ease-in-out w-[280px] h-full",
-        !collapsed ? "relative translate-x-0 z-50" : hovered ? "fixed translate-x-0 z-50" : "absolute -translate-x-full z-50",
+        !collapsed
+          ? "relative translate-x-0 z-50"
+          : hovered
+            ? "fixed translate-x-0 z-50"
+            : "absolute -translate-x-full z-50",
         hovered && collapsed && "shadow-2xl",
       )}
       onMouseLeave={() => {
@@ -45,11 +60,17 @@ export function Sidebar({ collapsed, onToggle,hovered, onHoverChange }: SidebarP
             onClick={onToggle}
             className="w-6 h-6 text-sidebar-foreground hover:bg-sidebar-accent"
           >
-            {collapsed ? <PanelRightClose className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+            {collapsed ? (
+              <PanelRightClose className="w-4 h-4" />
+            ) : (
+              <PanelLeftClose className="w-4 h-4" />
+            )}
           </Button>
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-sidebar-foreground" />
-            <span className="font-semibold text-sidebar-foreground">VibeSDLC</span>
+            <span className="font-semibold text-sidebar-foreground">
+              VibeSDLC
+            </span>
           </div>
         </div>
       </div>
@@ -74,7 +95,11 @@ export function Sidebar({ collapsed, onToggle,hovered, onHoverChange }: SidebarP
           className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent rounded-lg transition-colors mb-1"
         >
           <span>My Chats</span>
-          {myChatsExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          {myChatsExpanded ? (
+            <ChevronDown className="w-4 h-4" />
+          ) : (
+            <ChevronRight className="w-4 h-4" />
+          )}
         </button>
 
         {myChatsExpanded && (
@@ -108,7 +133,9 @@ export function Sidebar({ collapsed, onToggle,hovered, onHoverChange }: SidebarP
             T
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-sidebar-foreground truncate">Tra Do Son</p>
+            <p className="text-sm font-medium text-sidebar-foreground truncate">
+              Tra Do Son
+            </p>
             <p className="text-xs text-muted-foreground">Free</p>
           </div>
           <ChevronDown className="w-4 h-4 text-muted-foreground" />
@@ -120,7 +147,10 @@ export function Sidebar({ collapsed, onToggle,hovered, onHoverChange }: SidebarP
             <span>0.32 left</span>
           </div>
           <div className="h-1 bg-sidebar-accent rounded-full overflow-hidden">
-            <div className="h-full bg-[#8b5cf6] rounded-full" style={{ width: "32%" }} />
+            <div
+              className="h-full bg-[#8b5cf6] rounded-full"
+              style={{ width: "32%" }}
+            />
           </div>
         </div>
       </div>

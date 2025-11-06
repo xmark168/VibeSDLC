@@ -8,11 +8,13 @@ import { createRouter, RouterProvider } from "@tanstack/react-router"
 import { StrictMode } from "react"
 import ReactDOM from "react-dom/client"
 import { ApiError } from "./client"
-import "@client/setup"
+import "@/config/setup"
 import { routeTree } from "./routeTree.gen"
 
 import "./index.css"
-import "../public/assets/fonts/ibm-plex-sans.regular.ttf"
+import "./assets/fonts/ibm-plex-sans.regular.ttf"
+import { Toaster } from "react-hot-toast"
+import AuthProvider from "./components/provider/auth-provider"
 import { ThemeProvider } from "./components/provider/theme-provider"
 
 // OpenAPI is configured in @client/setup
@@ -43,7 +45,10 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
+        <AuthProvider>
+          <RouterProvider router={router} />
+          <Toaster />
+        </AuthProvider>
       </QueryClientProvider>
     </ThemeProvider>
   </StrictMode>,

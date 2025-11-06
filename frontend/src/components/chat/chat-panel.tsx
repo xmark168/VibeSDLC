@@ -1,32 +1,34 @@
-
-import type React from "react"
-
-import { useState, useRef, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import {
-  Menu,
-  ChevronDown,
-  ChevronUp,
   ArrowUp,
-  Copy,
+  AtSign,
   Check,
-  Paperclip,
-  X,
-  FileText,
-  ImageIcon,
+  ChevronDown,
+  ChevronsLeft,
+  ChevronUp,
+  Copy,
   Download,
   File,
+  FileText,
+  ImageIcon,
   Moon,
-  Sun,
-  AtSign,
-  PanelRightClose,
   PanelLeftClose,
-  ChevronsLeft,
+  PanelRightClose,
+  Paperclip,
+  Sun,
+  X,
 } from "lucide-react"
-import { TechStackDialog } from "./tech-stack-dialog"
+import type React from "react"
+import { useEffect, useRef, useState } from "react"
 import { useTheme } from "@/components/provider/theme-provider"
+import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import { TechStackDialog } from "./tech-stack-dialog"
 
 interface ChatPanelProps {
   sidebarCollapsed: boolean
@@ -67,7 +69,13 @@ const AGENTS = [
   { name: "Tester", role: "Tester", avatar: "🧪" },
 ]
 
-export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSidebarHover, projectId }: ChatPanelProps) {
+export function ChatPanel({
+  sidebarCollapsed,
+  onToggleSidebar,
+  onCollapse,
+  onSidebarHover,
+  projectId,
+}: ChatPanelProps) {
   const [message, setMessage] = useState("")
   const [showMentions, setShowMentions] = useState(false)
   const [mentionSearch, setMentionSearch] = useState("")
@@ -135,16 +143,22 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
     },
   ])
 
-  const activeAgent = {
+  const _activeAgent = {
     name: "Developer",
     avatar: "🔧",
   }
 
   const toggleExpand = (id: string) => {
-    setMessages(messages.map((msg) => (msg.id === id ? { ...msg, expanded: !msg.expanded } : msg)))
+    setMessages(
+      messages.map((msg) =>
+        msg.id === id ? { ...msg, expanded: !msg.expanded } : msg,
+      ),
+    )
   }
 
-  const filteredAgents = AGENTS.filter((agent) => agent.name.toLowerCase().includes(mentionSearch.toLowerCase()))
+  const filteredAgents = AGENTS.filter((agent) =>
+    agent.name.toLowerCase().includes(mentionSearch.toLowerCase()),
+  )
 
   const insertMention = (agentName: string) => {
     const textarea = textareaRef.current
@@ -155,7 +169,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
     const textAfterCursor = message.slice(cursorPos)
 
     const atIndex = textBeforeCursor.lastIndexOf("@")
-    const newText = textBeforeCursor.slice(0, atIndex) + `@${agentName} ` + textAfterCursor
+    const newText = `${textBeforeCursor.slice(0, atIndex)}@${agentName} ${textAfterCursor}`
 
     setMessage(newText)
     setShowMentions(false)
@@ -224,7 +238,9 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
         setSelectedMentionIndex((prev) => (prev + 1) % filteredAgents.length)
       } else if (e.key === "ArrowUp") {
         e.preventDefault()
-        setSelectedMentionIndex((prev) => (prev - 1 + filteredAgents.length) % filteredAgents.length)
+        setSelectedMentionIndex(
+          (prev) => (prev - 1 + filteredAgents.length) % filteredAgents.length,
+        )
       } else if (e.key === "Tab" || e.key === "Enter") {
         if (showMentions) {
           e.preventDefault()
@@ -251,7 +267,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
   }
 
   const formatTimestamp = (id: string) => {
-    const date = new Date(Number.parseInt(id))
+    const date = new Date(Number.parseInt(id, 10))
     const hours = date.getHours()
     const minutes = date.getMinutes().toString().padStart(2, "0")
     const ampm = hours >= 12 ? "PM" : "AM"
@@ -290,9 +306,9 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
   }
 
   const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return bytes + " B"
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB"
-    return (bytes / (1024 * 1024)).toFixed(1) + " MB"
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
   }
 
   const getFileIcon = (type: string) => {
@@ -332,11 +348,19 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
         className="flex items-center gap-3 px-4 py-3 bg-muted hover:bg-muted/80 rounded-lg border border-border transition-colors group max-w-sm"
       >
         <div className="p-2 bg-background rounded">
-          {isPDF ? <FileText className="w-5 h-5 text-red-500" /> : <File className="w-5 h-5 text-blue-500" />}
+          {isPDF ? (
+            <FileText className="w-5 h-5 text-red-500" />
+          ) : (
+            <File className="w-5 h-5 text-blue-500" />
+          )}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm text-foreground font-medium truncate">{file.name}</div>
-          <div className="text-xs text-muted-foreground">{formatFileSize(file.size)}</div>
+          <div className="text-sm text-foreground font-medium truncate">
+            {file.name}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {formatFileSize(file.size)}
+          </div>
         </div>
         <Download className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors flex-shrink-0" />
       </a>
@@ -353,7 +377,7 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
     if (!textarea) return
 
     const cursorPos = textarea.selectionStart
-    const newMessage = message.slice(0, cursorPos) + "@" + message.slice(cursorPos)
+    const newMessage = `${message.slice(0, cursorPos)}@${message.slice(cursorPos)}`
 
     setMessage(newMessage)
     setShowMentions(true)
@@ -387,8 +411,12 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
 
   useEffect(() => {
     // Only auto-scroll if a new message was added, not when updating existing messages
-    if (messagesContainerRef.current && messages.length > prevMessagesLengthRef.current) {
-      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+    if (
+      messagesContainerRef.current &&
+      messages.length > prevMessagesLengthRef.current
+    ) {
+      messagesContainerRef.current.scrollTop =
+        messagesContainerRef.current.scrollHeight
     }
     prevMessagesLengthRef.current = messages.length
   }, [messages])
@@ -414,7 +442,11 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
             className="w-8 h-8 text-foreground hover:bg-accent"
             title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
           >
-            {theme === "light" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+            {theme === "light" ? (
+              <Moon className="w-4 h-4" />
+            ) : (
+              <Sun className="w-4 h-4" />
+            )}
           </Button>
           <Button
             variant="ghost"
@@ -437,7 +469,11 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
             className="w-8 h-8 text-foreground hover:bg-accent"
             title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
           >
-            {theme === "light" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+            {theme === "light" ? (
+              <Moon className="w-4 h-4" />
+            ) : (
+              <Sun className="w-4 h-4" />
+            )}
           </Button>
           <Button
             variant="ghost"
@@ -451,7 +487,10 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
         </div>
       )}
 
-      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
+      <div
+        ref={messagesContainerRef}
+        className="flex-1 overflow-y-auto px-6 py-6 space-y-4"
+      >
         {messages.map((msg) => {
           const isUserMessage = msg.agent.name === "User"
 
@@ -462,10 +501,14 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
                   {msg.content && (
                     <div className="space-y-1.5">
                       <div className="rounded-lg px-3 py-2 bg-muted w-fit ml-auto">
-                        <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">{msg.content}</div>
+                        <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
+                          {msg.content}
+                        </div>
                       </div>
                       <div className="flex items-center justify-end gap-2 px-1">
-                        <span className="text-xs text-muted-foreground">{formatTimestamp(msg.id)}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {formatTimestamp(msg.id)}
+                        </span>
                         <button
                           onClick={() => copyToClipboard(msg.content, msg.id)}
                           className="p-1 rounded hover:bg-accent transition-colors"
@@ -481,7 +524,9 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
                     </div>
                   )}
                   {msg.attachments && msg.attachments.length > 0 && (
-                    <div className="flex flex-col gap-2">{msg.attachments.map((file) => renderAttachment(file))}</div>
+                    <div className="flex flex-col gap-2">
+                      {msg.attachments.map((file) => renderAttachment(file))}
+                    </div>
                   )}
                 </div>
               </div>
@@ -495,13 +540,19 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
               </div>
 
               <div className="flex-1 space-y-2">
-                <div className="text-xs font-medium text-muted-foreground">{msg.agent.name}</div>
+                <div className="text-xs font-medium text-muted-foreground">
+                  {msg.agent.name}
+                </div>
 
                 {msg.type === "thinking" && (
                   <div className="space-y-1.5">
-                    <div className="text-sm text-foreground/80 leading-loose whitespace-pre-wrap">{msg.content}</div>
+                    <div className="text-sm text-foreground/80 leading-loose whitespace-pre-wrap">
+                      {msg.content}
+                    </div>
                     <div className="flex items-center gap-2 px-1">
-                      <span className="text-xs text-muted-foreground">{formatTimestamp(msg.id)}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {formatTimestamp(msg.id)}
+                      </span>
                       <button
                         onClick={() => copyToClipboard(msg.content, msg.id)}
                         className="p-1 rounded hover:bg-accent transition-colors"
@@ -521,11 +572,15 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
                   <div className="space-y-1.5">
                     <div className="rounded-lg px-3 py-2 bg-muted w-fit">
                       <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
-                        {msg.expanded ? msg.content : msg.content.slice(0, 100) + "..."}
+                        {msg.expanded
+                          ? msg.content
+                          : `${msg.content.slice(0, 100)}...`}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 px-1">
-                      <span className="text-xs text-muted-foreground">{formatTimestamp(msg.id)}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {formatTimestamp(msg.id)}
+                      </span>
                       <button
                         onClick={() => copyToClipboard(msg.content, msg.id)}
                         className="p-1 rounded hover:bg-accent transition-colors"
@@ -562,7 +617,9 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
                           </div>
                         </div>
                         <div className="flex items-center gap-2 px-1">
-                          <span className="text-xs text-muted-foreground">{formatTimestamp(msg.id)}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {formatTimestamp(msg.id)}
+                          </span>
                           <button
                             onClick={() => copyToClipboard(msg.content, msg.id)}
                             className="p-1 rounded hover:bg-accent transition-colors"
@@ -578,7 +635,9 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
                       </div>
                     )}
                     {msg.attachments && msg.attachments.length > 0 && (
-                      <div className="flex flex-col gap-2">{msg.attachments.map((file) => renderAttachment(file))}</div>
+                      <div className="flex flex-col gap-2">
+                        {msg.attachments.map((file) => renderAttachment(file))}
+                      </div>
                     )}
                   </div>
                 )}
@@ -595,9 +654,13 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
             className="absolute bottom-full left-0 right-0 mb-2 mx-1 bg-card border border-border rounded-lg shadow-lg overflow-hidden"
           >
             <div className="flex items-center justify-between px-4 py-2 border-b border-border">
-              <span className="text-sm font-medium text-foreground">Group Members</span>
+              <span className="text-sm font-medium text-foreground">
+                Group Members
+              </span>
               <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 text-xs bg-accent rounded">Tab</kbd>
+                <kbd className="px-1.5 py-0.5 text-xs bg-accent rounded">
+                  Tab
+                </kbd>
                 to select
               </span>
             </div>
@@ -606,15 +669,20 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
                 <button
                   key={agent.name}
                   onClick={() => insertMention(agent.name)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors ${index === selectedMentionIndex ? "bg-accent/50" : ""
-                    }`}
+                  className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors ${
+                    index === selectedMentionIndex ? "bg-accent/50" : ""
+                  }`}
                 >
                   <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0 bg-muted">
                     {agent.avatar}
                   </div>
                   <div className="flex-1 text-left">
-                    <div className="text-sm font-medium text-foreground">{agent.name}</div>
-                    <div className="text-xs text-muted-foreground">{agent.role}</div>
+                    <div className="text-sm font-medium text-foreground">
+                      {agent.name}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {agent.role}
+                    </div>
                   </div>
                 </button>
               ))}
@@ -632,8 +700,12 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
                 >
                   {getFileIcon(file.type)}
                   <div className="flex flex-col min-w-0">
-                    <span className="text-foreground truncate max-w-[150px]">{file.name}</span>
-                    <span className="text-xs text-muted-foreground">{formatFileSize(file.size)}</span>
+                    <span className="text-foreground truncate max-w-[150px]">
+                      {file.name}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {formatFileSize(file.size)}
+                    </span>
                   </div>
                   <button
                     onClick={() => removeFile(file.id)}
@@ -675,7 +747,12 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-accent" onClick={triggerMention}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 hover:bg-accent"
+                      onClick={triggerMention}
+                    >
                       <AtSign className="w-4 h-4" />
                     </Button>
                   </TooltipTrigger>
@@ -697,7 +774,11 @@ export function ChatPanel({ sidebarCollapsed, onToggleSidebar, onCollapse, onSid
                 </Tooltip>
               </TooltipProvider>
             </div>
-            <Button size="icon" className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90" onClick={handleSend}>
+            <Button
+              size="icon"
+              className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90"
+              onClick={handleSend}
+            >
               <ArrowUp className="w-4 h-4" />
             </Button>
           </div>

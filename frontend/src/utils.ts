@@ -1,5 +1,47 @@
+import type { JSX } from "react"
+import toast from "react-hot-toast"
 import type { ApiError } from "./client"
 
+/**
+ * Toast message configuration for async operations
+ */
+export interface ToastMessages {
+  loading: string | JSX.Element
+  success: string | JSX.Element
+  error: string | JSX.Element
+}
+
+/**
+ * Wraps an async operation with react-hot-toast loading states
+ * @param promise - Promise or async function to execute
+ * @param messages - Toast messages for loading, success, and error states
+ * @returns Promise that resolves with the operation result
+ *
+ * @example
+ * ```tsx
+ * const result = await withToast(
+ *   saveSettings(settings),
+ *   {
+ *     loading: 'Saving settings...',
+ *     success: <b>Settings saved successfully!</b>,
+ *     error: <b>Failed to save settings.</b>,
+ *   }
+ * );
+ * ```
+ */
+export const withToast = async <T>(
+  promise: Promise<T> | (() => Promise<T>),
+  messages: ToastMessages,
+): Promise<T> => {
+  // If a function is passed, execute it to get the promise
+  const actualPromise = typeof promise === "function" ? promise() : promise
+
+  return toast.promise(actualPromise, {
+    loading: messages.loading,
+    success: messages.success,
+    error: messages.error,
+  })
+}
 
 export const emailPattern = {
   value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
@@ -44,15 +86,14 @@ export const confirmPasswordRules = (
   return rules
 }
 
-// export const handleError = (err: ApiError) => {
-//   const { showErrorToast } = useCustomToast()
-//   const errDetail = (err.body as any)?.detail
-//   let errorMessage = errDetail || "Something went wrong."
-//   if (Array.isArray(errDetail) && errDetail.length > 0) {
-//     errorMessage = errDetail[0].msg
-//   }
-//   showErrorToast(errorMessage)
-// }
+export const handleError = (err: ApiError) => {
+  const errDetail = (err.body as any)?.detail
+  let errorMessage = errDetail || "Something went wrong."
+  if (Array.isArray(errDetail) && errDetail.length > 0) {
+    errorMessage = errDetail[0].msg
+  }
+  toast.error(errorMessage)
+}
 
 // Password validation utilities
 export const hasMinLength = (password: string): boolean => {
@@ -72,7 +113,7 @@ export const hasNumber = (password: string): boolean => {
 }
 
 export const hasSpecialChar = (password: string): boolean => {
-  return /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)
+  return /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password)
 }
 
 export const calculatePasswordStrength = (password: string): number => {

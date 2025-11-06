@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Rocket, Sparkles } from "lucide-react"
+import { useState } from "react"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -7,14 +8,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Sparkles, Rocket } from "lucide-react";
+} from "@/components/ui/dialog"
 
 interface WelcomeDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSendMessage: (content: string) => boolean;
-  isConnected: boolean; // This receives isReady value from parent
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onSendMessage: (content: string) => boolean
+  isConnected: boolean // This receives isReady value from parent
 }
 
 export function WelcomeDialog({
@@ -23,24 +23,24 @@ export function WelcomeDialog({
   onSendMessage,
   isConnected,
 }: WelcomeDialogProps) {
-  const [isStarting, setIsStarting] = useState(false);
+  const [isStarting, setIsStarting] = useState(false)
 
   const handleStart = () => {
     if (!isConnected) {
-      console.warn('WebSocket not connected yet');
-      return;
+      console.warn("WebSocket not connected yet")
+      return
     }
 
-    setIsStarting(true);
-    
+    setIsStarting(true)
+
     // Send message immediately
-    const success = onSendMessage("Bắt đầu");
-    console.log('Message sent:', success);
-    
+    const success = onSendMessage("Bắt đầu")
+    console.log("Message sent:", success)
+
     // Close dialog
-    onOpenChange(false);
-    setIsStarting(false);
-  };
+    onOpenChange(false)
+    setIsStarting(false)
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -78,5 +78,5 @@ export function WelcomeDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
+  )
 }

@@ -1,7 +1,6 @@
-
+import { Plus } from "lucide-react"
 import type React from "react"
 import { useState } from "react"
-import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { KanbanCard, type KanbanCardData } from "./kanban-card"
@@ -53,16 +52,27 @@ export function KanbanColumn({
   }
 
   return (
-    <div className="w-72 flex-shrink-0" onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
+    <div
+      className="w-72 flex-shrink-0"
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       {/* Column Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-medium text-foreground">{column.title}</h3>
-          <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{column.cards.length}</span>
+          <h3 className="text-sm font-medium text-foreground">
+            {column.title}
+          </h3>
+          <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+            {column.cards.length}
+          </span>
         </div>
       </div>
 
-      <div className={`space-y-3 min-h-[100px] rounded-lg p-2 transition-colors ${isDraggedOver ? "bg-muted/50" : ""}`}>
+      <div
+        className={`space-y-3 min-h-[100px] rounded-lg p-2 transition-colors ${isDraggedOver ? "bg-muted/50" : ""}`}
+      >
         {/* Cards */}
         {column.cards.map((card) => (
           <KanbanCard

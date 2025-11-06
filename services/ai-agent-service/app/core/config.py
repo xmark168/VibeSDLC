@@ -16,6 +16,7 @@ from pydantic import (
     AnyUrl,
     BeforeValidator,
     EmailStr,
+    Field,
     HttpUrl,
     PostgresDsn,
     computed_field,
@@ -66,9 +67,10 @@ class Settings(BaseSettings):
     """Unified application settings with pydantic validation."""
 
     model_config = SettingsConfigDict(
-        env_file="../.env",
+        env_file=".env",
         env_ignore_empty=True,
         extra="ignore",
+        case_sensitive=True,
     )
 
     # GENERAL APPLICATION SETTINGS
@@ -82,9 +84,15 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     # SECURITY SETTINGS
-    SECRET_KEY: str = secrets.token_urlsafe(32)
+    SECRET_KEY: str = Field(default="your-fixed-secret-key-min-32-chars-change-this-in-production")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7  # 7 days
+
+    # GITHUB APP SETTINGS
+    GITHUB_APP_ID: str = ""
+    GITHUB_APP_PRIVATE_KEY: str = ""
+    GITHUB_APP_PRIVATE_KEY_PATH: str = ""
+    GITHUB_WEBHOOK_SECRET: str = ""
 
     # CORS SETTINGS
     FRONTEND_HOST: str = "http://localhost:5173"
@@ -155,6 +163,23 @@ class Settings(BaseSettings):
 
     # MONITORING
     SENTRY_DSN: HttpUrl | None = None
+
+    # REDIS SETTINGS
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_PASSWORD: str | None = None
+    REDIS_DB: int = 0
+    REDIS_URL: str | None = None
+
+    @computed_field
+    @property
+    def redis_url(self) -> str:
+        """Build Redis connection URL"""
+        if self.REDIS_URL:
+            return self.REDIS_URL
+
+        auth = f":{self.REDIS_PASSWORD}@" if self.REDIS_PASSWORD else ""
+        return f"redis://{auth}{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
 
     # VALIDATORS
     @model_validator(mode="after")

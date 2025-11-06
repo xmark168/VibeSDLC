@@ -426,7 +426,7 @@ export default function Home() {
           </button> */}
       </div>
       <div className="border border-3 mb-3 mr-3 shadow-2xs rounded-2xl h-screen overflow-auto">
-        {renderView()}  
+        {renderView()}
       </div>
     </div>
   )

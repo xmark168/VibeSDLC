@@ -14,7 +14,6 @@ const config = require('./config');
 const logger = require('./utils/logger');
 const connectDB = require('./config/database');
 const errorHandler = require('./middleware/errorHandler');
-const setupSwagger = require('./swagger');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -74,9 +73,6 @@ app.get('/health', (req, res) => {
     version: '1.0.0',
   });
 });
-
-// Swagger documentation
-setupSwagger(app);
 
 // API routes
 app.use('/api/v1/health', healthRoutes);

@@ -818,12 +818,8 @@ async def trigger_agent_execution(session: Session, project_id: str, user_id: st
     1. TL Agent classifies user intent
     2. Route to appropriate agent (PO/SM/Dev/Tester)
     3. Execute agent and return response
-
-    Special: Detect [TEST_*] commands for direct agent testing with mock data
     """
     import asyncio
-    import json
-    import re
     from app.agents.team_leader.tl_agent import TeamLeaderAgent
     from app.agents.product_owner.po_agent import POAgent
     from app.agents.product_owner.vision_agent import VisionAgent

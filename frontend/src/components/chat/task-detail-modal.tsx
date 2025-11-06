@@ -69,13 +69,12 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
                 {card.rank !== undefined && card.rank !== null && (
                   <Badge
                     variant="outline"
-                    className={`gap-1 ${
-                      card.rank <= 3
+                    className={`gap-1 ${card.rank <= 3
                         ? "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20"
                         : card.rank <= 7
-                        ? "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20"
-                        : "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
-                    }`}
+                          ? "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20"
+                          : "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
+                      }`}
                   >
                     <Flag className="w-3 h-3" />
                     Thứ tự: {card.rank}
@@ -135,7 +134,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {card.type === "Task" && card.estimate_value ? "Developer" :
-                     card.type === "Sub-task" ? "Developer/Tester" : "Developer"}
+                      card.type === "Sub-task" ? "Developer/Tester" : "Developer"}
                   </div>
                 </div>
               </div>

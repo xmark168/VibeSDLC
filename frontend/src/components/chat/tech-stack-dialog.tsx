@@ -1,9 +1,15 @@
-
-import { useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Layers, Check, Plus } from "lucide-react"
 import { motion } from "framer-motion"
+import { Check, Layers, Plus } from "lucide-react"
+import { useState } from "react"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 
 interface TechOption {
@@ -28,18 +34,78 @@ const TECH_CATEGORIES: TechCategory[] = [
     description: "User interface frameworks for web and mobile",
     allowMultiple: true,
     options: [
-      { id: "nextjs", name: "Next.js", description: "React framework for production", icon: "▲" },
-      { id: "react", name: "React", description: "UI library for building interfaces", icon: "⚛️" },
-      { id: "vue", name: "Vue.js", description: "Progressive JavaScript framework", icon: "🟢" },
-      { id: "angular", name: "Angular", description: "Platform for building web apps", icon: "🅰️" },
-      { id: "svelte", name: "Svelte", description: "Cybernetically enhanced web apps", icon: "🔥" },
-      { id: "tailwind", name: "Tailwind CSS", description: "Utility-first CSS framework", icon: "🎨" },
-      { id: "react-native", name: "React Native", description: "Build native apps with React", icon: "📱" },
-      { id: "flutter", name: "Flutter", description: "Google's UI toolkit for mobile", icon: "🦋" },
-      { id: "ionic", name: "Ionic", description: "Hybrid mobile app framework", icon: "⚡" },
-      { id: "expo", name: "Expo", description: "Platform for React Native apps", icon: "🎯" },
-      { id: "swift", name: "Swift", description: "Native iOS development", icon: "🍎" },
-      { id: "kotlin", name: "Kotlin", description: "Native Android development", icon: "🤖" },
+      {
+        id: "nextjs",
+        name: "Next.js",
+        description: "React framework for production",
+        icon: "▲",
+      },
+      {
+        id: "react",
+        name: "React",
+        description: "UI library for building interfaces",
+        icon: "⚛️",
+      },
+      {
+        id: "vue",
+        name: "Vue.js",
+        description: "Progressive JavaScript framework",
+        icon: "🟢",
+      },
+      {
+        id: "angular",
+        name: "Angular",
+        description: "Platform for building web apps",
+        icon: "🅰️",
+      },
+      {
+        id: "svelte",
+        name: "Svelte",
+        description: "Cybernetically enhanced web apps",
+        icon: "🔥",
+      },
+      {
+        id: "tailwind",
+        name: "Tailwind CSS",
+        description: "Utility-first CSS framework",
+        icon: "🎨",
+      },
+      {
+        id: "react-native",
+        name: "React Native",
+        description: "Build native apps with React",
+        icon: "📱",
+      },
+      {
+        id: "flutter",
+        name: "Flutter",
+        description: "Google's UI toolkit for mobile",
+        icon: "🦋",
+      },
+      {
+        id: "ionic",
+        name: "Ionic",
+        description: "Hybrid mobile app framework",
+        icon: "⚡",
+      },
+      {
+        id: "expo",
+        name: "Expo",
+        description: "Platform for React Native apps",
+        icon: "🎯",
+      },
+      {
+        id: "swift",
+        name: "Swift",
+        description: "Native iOS development",
+        icon: "🍎",
+      },
+      {
+        id: "kotlin",
+        name: "Kotlin",
+        description: "Native Android development",
+        icon: "🤖",
+      },
     ],
   },
   {
@@ -48,15 +114,60 @@ const TECH_CATEGORIES: TechCategory[] = [
     description: "Server-side frameworks and runtime",
     allowMultiple: true,
     options: [
-      { id: "nodejs", name: "Node.js", description: "JavaScript runtime", icon: "🟩" },
-      { id: "express", name: "Express", description: "Fast Node.js web framework", icon: "🚂" },
-      { id: "nestjs", name: "NestJS", description: "Progressive Node.js framework", icon: "🐱" },
-      { id: "python", name: "Python", description: "High-level programming language", icon: "🐍" },
-      { id: "django", name: "Django", description: "Python web framework", icon: "🎸" },
-      { id: "fastapi", name: "FastAPI", description: "Modern Python web framework", icon: "⚡" },
-      { id: "go", name: "Go", description: "Google's programming language", icon: "🔵" },
-      { id: "java", name: "Java", description: "Enterprise programming language", icon: "☕" },
-      { id: "spring", name: "Spring Boot", description: "Java application framework", icon: "🍃" },
+      {
+        id: "nodejs",
+        name: "Node.js",
+        description: "JavaScript runtime",
+        icon: "🟩",
+      },
+      {
+        id: "express",
+        name: "Express",
+        description: "Fast Node.js web framework",
+        icon: "🚂",
+      },
+      {
+        id: "nestjs",
+        name: "NestJS",
+        description: "Progressive Node.js framework",
+        icon: "🐱",
+      },
+      {
+        id: "python",
+        name: "Python",
+        description: "High-level programming language",
+        icon: "🐍",
+      },
+      {
+        id: "django",
+        name: "Django",
+        description: "Python web framework",
+        icon: "🎸",
+      },
+      {
+        id: "fastapi",
+        name: "FastAPI",
+        description: "Modern Python web framework",
+        icon: "⚡",
+      },
+      {
+        id: "go",
+        name: "Go",
+        description: "Google's programming language",
+        icon: "🔵",
+      },
+      {
+        id: "java",
+        name: "Java",
+        description: "Enterprise programming language",
+        icon: "☕",
+      },
+      {
+        id: "spring",
+        name: "Spring Boot",
+        description: "Java application framework",
+        icon: "🍃",
+      },
     ],
   },
   {
@@ -65,13 +176,48 @@ const TECH_CATEGORIES: TechCategory[] = [
     description: "Data storage and management systems",
     allowMultiple: true,
     options: [
-      { id: "postgresql", name: "PostgreSQL", description: "Advanced relational database", icon: "🐘" },
-      { id: "mysql", name: "MySQL", description: "Popular relational database", icon: "🐬" },
-      { id: "mongodb", name: "MongoDB", description: "NoSQL document database", icon: "🍃" },
-      { id: "redis", name: "Redis", description: "In-memory data store", icon: "🔴" },
-      { id: "supabase", name: "Supabase", description: "Open source Firebase alternative", icon: "⚡" },
-      { id: "firebase", name: "Firebase", description: "Google's app platform", icon: "🔥" },
-      { id: "prisma", name: "Prisma", description: "Next-generation ORM", icon: "💎" },
+      {
+        id: "postgresql",
+        name: "PostgreSQL",
+        description: "Advanced relational database",
+        icon: "🐘",
+      },
+      {
+        id: "mysql",
+        name: "MySQL",
+        description: "Popular relational database",
+        icon: "🐬",
+      },
+      {
+        id: "mongodb",
+        name: "MongoDB",
+        description: "NoSQL document database",
+        icon: "🍃",
+      },
+      {
+        id: "redis",
+        name: "Redis",
+        description: "In-memory data store",
+        icon: "🔴",
+      },
+      {
+        id: "supabase",
+        name: "Supabase",
+        description: "Open source Firebase alternative",
+        icon: "⚡",
+      },
+      {
+        id: "firebase",
+        name: "Firebase",
+        description: "Google's app platform",
+        icon: "🔥",
+      },
+      {
+        id: "prisma",
+        name: "Prisma",
+        description: "Next-generation ORM",
+        icon: "💎",
+      },
     ],
   },
 ]
@@ -84,8 +230,10 @@ const DEFAULT_SELECTED = {
 
 export function TechStackDialog() {
   const [isEditing, setIsEditing] = useState(false)
-  const [selected, setSelected] = useState<Record<string, string[]>>(DEFAULT_SELECTED)
-  const [tempSelected, setTempSelected] = useState<Record<string, string[]>>(DEFAULT_SELECTED)
+  const [selected, setSelected] =
+    useState<Record<string, string[]>>(DEFAULT_SELECTED)
+  const [tempSelected, setTempSelected] =
+    useState<Record<string, string[]>>(DEFAULT_SELECTED)
 
   const handleToggleTech = (categoryId: string, techId: string) => {
     setTempSelected((prev) => {
@@ -94,9 +242,8 @@ export function TechStackDialog() {
 
       if (isSelected) {
         return { ...prev, [categoryId]: current.filter((id) => id !== techId) }
-      } else {
-        return { ...prev, [categoryId]: [...current, techId] }
       }
+      return { ...prev, [categoryId]: [...current, techId] }
     })
   }
 
@@ -142,8 +289,12 @@ export function TechStackDialog() {
         <div className="space-y-6 mt-4">
           {TECH_CATEGORIES.map((category, categoryIndex) => {
             const selectedTechs = currentSelected[category.id] || []
-            const selectedOptions = category.options.filter((opt) => selectedTechs.includes(opt.id))
-            const availableOptions = category.options.filter((opt) => !selectedTechs.includes(opt.id))
+            const selectedOptions = category.options.filter((opt) =>
+              selectedTechs.includes(opt.id),
+            )
+            const availableOptions = category.options.filter(
+              (opt) => !selectedTechs.includes(opt.id),
+            )
 
             return (
               <motion.div
@@ -154,8 +305,12 @@ export function TechStackDialog() {
                 className="space-y-3"
               >
                 <div>
-                  <h3 className="text-sm font-semibold text-foreground">{category.name}</h3>
-                  <p className="text-xs text-muted-foreground">{category.description}</p>
+                  <h3 className="text-sm font-semibold text-foreground">
+                    {category.name}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {category.description}
+                  </p>
                 </div>
 
                 {/* Selected Technologies */}
@@ -174,17 +329,23 @@ export function TechStackDialog() {
                             ? "bg-primary/5 border-primary/20 cursor-pointer hover:bg-primary/10"
                             : "bg-muted/50 border-border",
                         )}
-                        onClick={() => isEditing && handleToggleTech(category.id, tech.id)}
+                        onClick={() =>
+                          isEditing && handleToggleTech(category.id, tech.id)
+                        }
                       >
                         <div className="w-10 h-10 rounded-lg bg-background flex items-center justify-center text-lg flex-shrink-0 border border-border">
                           {tech.icon}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="font-medium text-foreground text-sm">{tech.name}</span>
+                            <span className="font-medium text-foreground text-sm">
+                              {tech.name}
+                            </span>
                             <Check className="w-4 h-4 text-green-500 ml-auto" />
                           </div>
-                          <p className="text-xs text-muted-foreground mt-0.5">{tech.description}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {tech.description}
+                          </p>
                         </div>
                       </motion.div>
                     ))}
@@ -194,7 +355,9 @@ export function TechStackDialog() {
                 {/* Available Technologies (only in edit mode) */}
                 {isEditing && availableOptions.length > 0 && (
                   <div className="space-y-2">
-                    <p className="text-xs text-muted-foreground">Available options:</p>
+                    <p className="text-xs text-muted-foreground">
+                      Available options:
+                    </p>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                       {availableOptions.map((tech) => (
                         <motion.button
@@ -209,7 +372,9 @@ export function TechStackDialog() {
                             {tech.icon}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium text-foreground truncate">{tech.name}</p>
+                            <p className="text-xs font-medium text-foreground truncate">
+                              {tech.name}
+                            </p>
                           </div>
                           <Plus className="w-3 h-3 text-muted-foreground flex-shrink-0" />
                         </motion.button>
@@ -220,7 +385,9 @@ export function TechStackDialog() {
 
                 {/* Empty state */}
                 {selectedOptions.length === 0 && !isEditing && (
-                  <div className="text-sm text-muted-foreground italic">No technologies selected</div>
+                  <div className="text-sm text-muted-foreground italic">
+                    No technologies selected
+                  </div>
                 )}
               </motion.div>
             )
