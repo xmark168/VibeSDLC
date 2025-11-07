@@ -1,8 +1,8 @@
 """Description of changes
 
-Revision ID: 130645a15623
+Revision ID: 5337a21c49c1
 Revises: 
-Create Date: 2025-11-02 11:03:58.622332
+Create Date: 2025-11-07 15:30:25.172943
 
 """
 from alembic import op
@@ -11,7 +11,7 @@ import sqlmodel.sql.sqltypes
 
 
 # revision identifiers, used by Alembic.
-revision = '130645a15623'
+revision = '5337a21c49c1'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -31,18 +31,33 @@ def upgrade():
     sa.Column('id', sa.Uuid(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
-    sa.Column('username', sqlmodel.sql.sqltypes.AutoString(length=50), nullable=False),
-    sa.Column('hashed_password', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    sa.Column('full_name', sqlmodel.sql.sqltypes.AutoString(length=50), nullable=True),
+    sa.Column('hashed_password', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('email', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=False),
     sa.Column('role', sa.Enum('ADMIN', 'USER', name='role'), nullable=True),
-    sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.Column('is_active', sa.Boolean(), nullable=True),
     sa.Column('is_locked', sa.Boolean(), nullable=False),
     sa.Column('locked_until', sa.DateTime(), nullable=True),
     sa.Column('failed_login_attempts', sa.Integer(), nullable=False),
+    sa.Column('login_provider', sa.Boolean(), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
-    op.create_index(op.f('ix_users_username'), 'users', ['username'], unique=True)
+    op.create_table('github_installations',
+    sa.Column('id', sa.Uuid(), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('updated_at', sa.DateTime(), nullable=False),
+    sa.Column('installation_id', sa.Integer(), nullable=True),
+    sa.Column('account_login', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    sa.Column('account_type', sa.Enum('USER', 'ORGANIZATION', name='githubaccounttype'), nullable=False),
+    sa.Column('account_status', sa.Enum('PENDING', 'INSTALLED', 'DELETED', name='githubinstallationstatus'), nullable=False),
+    sa.Column('repositories', sa.JSON(), nullable=True),
+    sa.Column('user_id', sa.Uuid(), nullable=True),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_github_installations_account_status'), 'github_installations', ['account_status'], unique=False)
+    op.create_index(op.f('ix_github_installations_installation_id'), 'github_installations', ['installation_id'], unique=True)
     op.create_table('projects',
     sa.Column('id', sa.Uuid(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
@@ -51,19 +66,25 @@ def upgrade():
     sa.Column('name', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('owner_id', sa.Uuid(), nullable=False),
     sa.Column('is_init', sa.Boolean(), nullable=False),
+    sa.Column('github_repository_url', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column('github_repository_name', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column('is_private', sa.Boolean(), nullable=False),
+    sa.Column('tech_stack', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.ForeignKeyConstraint(['owner_id'], ['users.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('github_repository_url')
     )
     op.create_table('refresh_tokens',
     sa.Column('id', sa.Uuid(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
-    sa.Column('token', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=False),
+    sa.Column('token', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=False),
     sa.Column('user_id', sa.Uuid(), nullable=False),
     sa.Column('expires_at', sa.DateTime(), nullable=False),
     sa.Column('is_revoked', sa.Boolean(), nullable=False),
     sa.Column('family_id', sa.Uuid(), nullable=False),
     sa.Column('parent_token_id', sa.Uuid(), nullable=True),
+    sa.ForeignKeyConstraint(['parent_token_id'], ['refresh_tokens.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
@@ -78,6 +99,9 @@ def upgrade():
     sa.Column('user_id', sa.Uuid(), nullable=True),
     sa.Column('agent_id', sa.Uuid(), nullable=True),
     sa.Column('content', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    sa.Column('message_type', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column('structured_data', sa.JSON(), nullable=True),
+    sa.Column('message_metadata', sa.JSON(), nullable=True),
     sa.ForeignKeyConstraint(['agent_id'], ['agents.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['project_id'], ['projects.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='SET NULL'),
@@ -178,7 +202,9 @@ def downgrade():
     op.drop_index(op.f('ix_refresh_tokens_family_id'), table_name='refresh_tokens')
     op.drop_table('refresh_tokens')
     op.drop_table('projects')
-    op.drop_index(op.f('ix_users_username'), table_name='users')
+    op.drop_index(op.f('ix_github_installations_installation_id'), table_name='github_installations')
+    op.drop_index(op.f('ix_github_installations_account_status'), table_name='github_installations')
+    op.drop_table('github_installations')
     op.drop_index(op.f('ix_users_email'), table_name='users')
     op.drop_table('users')
     op.drop_table('agents')

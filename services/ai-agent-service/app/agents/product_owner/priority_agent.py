@@ -1039,7 +1039,7 @@ class PriorityAgent:
 
         try:
             print("\n🤖 Calling LLM to evaluate sprint plan...")
-            llm = self._llm("gpt-4.1", 0.3)
+            llm = self._llm("gpt-4.1-mini", 0.3)
 
             # Call LLM without structured output (to avoid API 500 error)
             response = llm.invoke([HumanMessage(content=prompt)])

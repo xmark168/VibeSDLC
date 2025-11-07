@@ -11,7 +11,7 @@ from app.models import AuthorType
 # user
 class UserPublic(SQLModel):
     id: UUID
-    full_name: str
+    full_name: Optional[str] = None
     email: EmailStr
     role: Role
     github_installation_id: Optional[int] = None  # GitHub installation_id from linked installation (deprecated, use github_installations)

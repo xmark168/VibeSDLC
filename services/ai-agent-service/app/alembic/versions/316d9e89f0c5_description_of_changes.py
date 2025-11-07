@@ -1,8 +1,8 @@
-"""renamev1
+"""Description of changes
 
-Revision ID: 019736a63079
-Revises: 08cd0bb094d6
-Create Date: 2025-11-06 21:38:08.463206
+Revision ID: 316d9e89f0c5
+Revises: 5337a21c49c1
+Create Date: 2025-11-07 16:24:24.893106
 
 """
 from alembic import op
@@ -11,8 +11,8 @@ import sqlmodel.sql.sqltypes
 
 
 # revision identifiers, used by Alembic.
-revision = '019736a63079'
-down_revision = '08cd0bb094d6'
+revision = '316d9e89f0c5'
+down_revision = '5337a21c49c1'
 branch_labels = None
 depends_on = None
 
