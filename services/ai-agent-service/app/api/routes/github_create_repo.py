@@ -74,10 +74,12 @@ async def create_repo_from_template_endpoint(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You don't have access to this GitHub installation",
             )
-        
+
+        # Get the installation owner (user or organization) for creating the repo
+        installation_owner = installation.account_login
         logger.info(
             f"Creating repository from template: {request.template_owner}/{request.template_repo} "
-            f"-> {request.new_repo_name} (user: {current_user.id})"
+            f"-> {request.new_repo_name} in account: {installation_owner} (user: {current_user.id})"
         )
 
         # Initialize GitHub client using the installation
@@ -100,6 +102,7 @@ async def create_repo_from_template_endpoint(
             new_repo_name=request.new_repo_name,
             description=request.new_repo_description,
             is_private=request.is_private,
+            target_owner=installation_owner,  # Pass the installation owner to create repo in correct account
         )
         
         if not result:
