@@ -15,6 +15,7 @@ def create_repo_from_template(
     new_repo_name: str,
     description: Optional[str] = None,
     is_private: bool = False,
+    target_owner: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Tạo repository mới từ template trên GitHub.
@@ -25,6 +26,7 @@ def create_repo_from_template(
         new_repo_name: Tên của repository mới cần tạo
         description: Mô tả cho repository mới (optional)
         is_private: Có phải repository private hay không (default: False)
+        target_owner: Owner (user/org) where to create the new repo. If None, uses template owner (for backward compatibility)
 
     Returns:
         Dict chứa thông tin repository đã tạo, hoặc None nếu có lỗi
@@ -52,18 +54,24 @@ def create_repo_from_template(
         token = github_client._Github__requester._Requester__auth.token
 
         # Parse owner from template_repo_name
-        owner_name = template_repo_name.split('/')[0]
+        template_owner_name = template_repo_name.split('/')[0]
         template_name = template_repo_name.split('/')[1]
 
+        # Determine the actual owner for the new repository
+        # If target_owner is provided, use it; otherwise fall back to template owner
+        actual_owner = target_owner if target_owner else template_owner_name
+
+        logger.info(f"📋 Will create repo in account: {actual_owner} (template from: {template_owner_name})")
+
         # Use GitHub REST API to create repo from template
-        url = f"https://api.github.com/repos/{owner_name}/{template_name}/generate"
+        url = f"https://api.github.com/repos/{template_owner_name}/{template_name}/generate"
         headers = {
             "Authorization": f"token {token}",
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28"
         }
         payload = {
-            "owner": owner_name,
+            "owner": actual_owner,  # Use the correct owner here
             "name": new_repo_name,
             "description": description or f"Created from template {template_repo_name}",
             "private": is_private,
