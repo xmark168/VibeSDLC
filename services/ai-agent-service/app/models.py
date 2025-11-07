@@ -39,7 +39,7 @@ class BaseModel(SQLModel):
 class User(BaseModel, table=True):
     __tablename__ = "users"
 
-    full_name: str = Field(max_length=50, nullable=True)
+    full_name: str | None = Field(default=None, max_length=50, nullable=True)
     hashed_password: str = Field(nullable=True)
     email: EmailStr = Field(unique=True, index=True, max_length=255)
     role: Role = Field(default=Role.USER, nullable=True)
