@@ -1,18 +1,17 @@
-import { AnimatedSection } from '@/components/landing/animated-section'
-import { BentoSection } from '@/components/landing/bento-section'
-import { CTASection } from '@/components/landing/cta-section'
-import { DashboardPreview } from '@/components/landing/dashboard-preview'
-import { FAQSection } from '@/components/landing/faq-section'
-import { FooterSection } from '@/components/landing/footer-section'
-import { HeroSection } from '@/components/landing/hero-section'
-import { LargeTestimonial } from '@/components/landing/large-testimonial'
-import { PricingSection } from '@/components/landing/pricing-section'
-import { SocialProof } from '@/components/landing/social-proof'
-import { TestimonialGridSection } from '@/components/landing/testimonial-grid-section'
-import { AIAgentsSection } from '@/components/landing/ai-agents-section'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute } from "@tanstack/react-router"
+import { AIAgentsSection } from "@/components/landing/ai-agents-section"
+import { AnimatedSection } from "@/components/landing/animated-section"
+import { BentoSection } from "@/components/landing/bento-section"
+import { CTASection } from "@/components/landing/cta-section"
+import { DashboardPreview } from "@/components/landing/dashboard-preview"
+import { FAQSection } from "@/components/landing/faq-section"
+import { FooterSection } from "@/components/landing/footer-section"
+import { HeroSection } from "@/components/landing/hero-section"
+import { LargeTestimonial } from "@/components/landing/large-testimonial"
+import { PricingSection } from "@/components/landing/pricing-section"
+import { TestimonialGridSection } from "@/components/landing/testimonial-grid-section"
 
-export const Route = createFileRoute('/')({
+export const Route = createFileRoute("/")({
   component: RouteComponent,
 })
 
@@ -34,13 +33,24 @@ function RouteComponent() {
 
 
         </AnimatedSection> */}
-        <AnimatedSection id="features-section" className="relative z-10 max-w-[1320px] mx-auto mt-16" delay={0.2}>
+        <AnimatedSection
+          id="features-section"
+          className="relative z-10 max-w-[1320px] mx-auto mt-16"
+          delay={0.2}
+        >
           <BentoSection />
         </AnimatedSection>
-        <AnimatedSection id="ai-agents-section" className="relative z-10 max-w-[1320px] mx-auto mt-8 md:mt-16" delay={0.2}>
+        <AnimatedSection
+          id="ai-agents-section"
+          className="relative z-10 max-w-[1320px] mx-auto mt-8 md:mt-16"
+          delay={0.2}
+        >
           <AIAgentsSection />
         </AnimatedSection>
-        <AnimatedSection className="relative z-10 max-w-[1320px] mx-auto mt-8 md:mt-16" delay={0.2}>
+        <AnimatedSection
+          className="relative z-10 max-w-[1320px] mx-auto mt-8 md:mt-16"
+          delay={0.2}
+        >
           <LargeTestimonial />
         </AnimatedSection>
         <AnimatedSection
@@ -57,13 +67,23 @@ function RouteComponent() {
         >
           <TestimonialGridSection />
         </AnimatedSection>
-        <AnimatedSection id="faq-section" className="relative z-10 max-w-[1320px] mx-auto mt-8 md:mt-16" delay={0.2}>
+        <AnimatedSection
+          id="faq-section"
+          className="relative z-10 max-w-[1320px] mx-auto mt-8 md:mt-16"
+          delay={0.2}
+        >
           <FAQSection />
         </AnimatedSection>
-        <AnimatedSection className="relative z-10 max-w-[1320px] mx-auto mt-8 md:mt-16" delay={0.2}>
+        <AnimatedSection
+          className="relative z-10 max-w-[1320px] mx-auto mt-8 md:mt-16"
+          delay={0.2}
+        >
           <CTASection />
         </AnimatedSection>
-        <AnimatedSection className="relative z-10 max-w-[1320px] mx-auto mt-8 md:mt-16" delay={0.2}>
+        <AnimatedSection
+          className="relative z-10 max-w-[1320px] mx-auto mt-8 md:mt-16"
+          delay={0.2}
+        >
           <FooterSection />
         </AnimatedSection>
       </div>

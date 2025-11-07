@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState } from "react"
 import {
   Dialog,
   DialogContent,
@@ -21,12 +21,12 @@ interface AgentPreviewModalProps {
 
 export function AgentPreviewModal({ preview, onSubmit, onClose }: AgentPreviewModalProps) {
   const [editMode, setEditMode] = useState(false)
-  const [editChanges, setEditChanges] = useState('')
+  const [editChanges, setEditChanges] = useState("")
 
   if (!preview) return null
 
   const handleApprove = () => {
-    onSubmit(preview.preview_id, 'approve')
+    onSubmit(preview.preview_id, "approve")
   }
 
   const handleEdit = () => {
@@ -39,31 +39,31 @@ export function AgentPreviewModal({ preview, onSubmit, onClose }: AgentPreviewMo
       setEditMode(false)
       return
     }
-    onSubmit(preview.preview_id, 'edit', editChanges)
+    onSubmit(preview.preview_id, "edit", editChanges)
     setEditMode(false)
-    setEditChanges('')
+    setEditChanges("")
   }
 
   const handleRegenerate = () => {
-    onSubmit(preview.preview_id, 'regenerate')
+    onSubmit(preview.preview_id, "regenerate")
   }
 
   const handleCancelEdit = () => {
     setEditMode(false)
-    setEditChanges('')
+    setEditChanges("")
   }
 
   const renderContent = () => {
     // Route based on preview_type
     switch (preview.preview_type) {
-      case 'product_brief':
+      case "product_brief":
         return (
           <ProductBriefPreview
             brief={preview.brief}
             incompleteFlag={preview.incomplete_flag}
           />
         )
-      case 'product_vision':
+      case "product_vision":
         return (
           <ProductVisionPreview
             vision={preview.vision}
@@ -93,7 +93,8 @@ export function AgentPreviewModal({ preview, onSubmit, onClose }: AgentPreviewMo
               validationResult={preview.validation_result}
             />
           )
-        } else if (preview.brief) {
+        }
+        if (preview.brief) {
           return (
             <ProductBriefPreview
               brief={preview.brief}
@@ -113,7 +114,11 @@ export function AgentPreviewModal({ preview, onSubmit, onClose }: AgentPreviewMo
             />
           )
         }
-        return <div className="text-sm text-muted-foreground">No preview data available</div>
+        return (
+          <div className="text-sm text-muted-foreground">
+            No preview data available
+          </div>
+        )
     }
   }
 
@@ -135,9 +140,7 @@ export function AgentPreviewModal({ preview, onSubmit, onClose }: AgentPreviewMo
           <DialogTitle className="flex items-center gap-2">
             <span>{preview.title}</span>
           </DialogTitle>
-          <DialogDescription>
-            {preview.prompt}
-          </DialogDescription>
+          <DialogDescription>{preview.prompt}</DialogDescription>
         </DialogHeader>
 
         {!editMode ? (
@@ -156,7 +159,7 @@ export function AgentPreviewModal({ preview, onSubmit, onClose }: AgentPreviewMo
                   Tạo lại
                 </Button>
               )}
-              {preview.options.includes('edit') && (
+              {preview.options.includes("edit") && (
                 <Button
                   variant="outline"
                   onClick={handleEdit}
@@ -166,7 +169,7 @@ export function AgentPreviewModal({ preview, onSubmit, onClose }: AgentPreviewMo
                   Chỉnh sửa
                 </Button>
               )}
-              {preview.options.includes('approve') && (
+              {preview.options.includes("approve") && (
                 <Button
                   onClick={handleApprove}
                   className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
@@ -202,10 +205,7 @@ export function AgentPreviewModal({ preview, onSubmit, onClose }: AgentPreviewMo
               >
                 Hủy
               </Button>
-              <Button
-                onClick={handleSubmitEdit}
-                disabled={!editChanges.trim()}
-              >
+              <Button onClick={handleSubmitEdit} disabled={!editChanges.trim()}>
                 Áp dụng thay đổi
               </Button>
             </DialogFooter>

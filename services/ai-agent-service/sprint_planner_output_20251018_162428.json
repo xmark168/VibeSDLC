@@ -1,0 +1,481 @@
+{
+  "sprints": [
+    {
+      "id": "SPRINT-001",
+      "project_id": "project-001",
+      "name": "Sprint 1 - Authentication Foundation",
+      "number": 1,
+      "goal": "Implement basic user authentication",
+      "status": "Planned",
+      "start_date": null,
+      "end_date": null,
+      "velocity_plan": 0,
+      "velocity_actual": 0,
+      "created_at": "2025-10-18 16:22:11.987137",
+      "updated_at": "2025-10-18 16:22:11.987140"
+    }
+  ],
+  "backlog_items": [
+    {
+      "id": "TASK-001",
+      "sprint_id": "SPRINT-001",
+      "parent_id": "US-001",
+      "type": "Task",
+      "title": "Implement login API endpoint",
+      "description": "Create POST /api/auth/login endpoint with JWT token generation",
+      "status": "Ready",
+      "reviewer_id": "rev-001",
+      "assignee_id": "dev-001",
+      "rank": 1,
+      "estimate_value": 5.0,
+      "story_point": 5,
+      "pause": false,
+      "deadline": "2025-10-20",
+      "created_at": "2025-10-18 16:22:11.987211",
+      "updated_at": "2025-10-18 16:22:11.987211",
+      "acceptance_criteria": [
+        "The endpoint must accept a POST request with 'username' and 'password' in the request body.",
+        "If the credentials are valid, the response must return a 200 status code and a JSON object containing a JWT token.",
+        "If the credentials are invalid, the response must return a 401 status code with an appropriate error message.",
+        "The JWT token must be signed using a secure algorithm and include necessary claims such as 'sub' (subject) and 'exp' (expiration).",
+        "The endpoint must include input validation to ensure 'username' and 'password' are provided and meet defined criteria.",
+        "The implementation must include unit tests to verify the functionality of the login endpoint.",
+        "The endpoint must log failed login attempts for security monitoring purposes."
+      ],
+      "dependencies": [],
+      "labels": [],
+      "task_type": "Development"
+    },
+    {
+      "id": "TASK-002",
+      "sprint_id": "SPRINT-001",
+      "parent_id": "US-001",
+      "type": "Task",
+      "title": "Create login UI component",
+      "description": "Build React login form with email and password fields",
+      "status": "Ready",
+      "reviewer_id": "rev-001",
+      "assignee_id": "dev-002",
+      "rank": 2,
+      "estimate_value": 5.0,
+      "story_point": 3,
+      "pause": false,
+      "deadline": "2025-10-22",
+      "created_at": "2025-10-18 16:22:11.987221",
+      "updated_at": "2025-10-18 16:22:11.987222",
+      "acceptance_criteria": [
+        "The login form must include fields for email and password.",
+        "The email field must validate the format of the email address.",
+        "The password field must mask input characters.",
+        "The form must have a 'Submit' button that is disabled until both fields are filled out correctly.",
+        "Upon successful submission, the form should trigger a login action.",
+        "If the login fails, an appropriate error message should be displayed.",
+        "The UI must be responsive and work on both desktop and mobile devices.",
+        "The component must be styled according to the existing application design guidelines."
+      ],
+      "dependencies": [],
+      "labels": [],
+      "task_type": "Development"
+    },
+    {
+      "id": "TASK-003",
+      "sprint_id": "SPRINT-001",
+      "parent_id": "US-001",
+      "type": "Task",
+      "title": "Write API integration tests",
+      "description": "Test login API with valid and invalid credentials",
+      "status": "Ready",
+      "reviewer_id": "rev-001",
+      "assignee_id": "qa-001",
+      "rank": 3,
+      "estimate_value": 5.0,
+      "story_point": 5,
+      "pause": false,
+      "deadline": "2025-10-21",
+      "created_at": "2025-10-18 16:22:11.987230",
+      "updated_at": "2025-10-18 16:22:11.987230",
+      "acceptance_criteria": [
+        "Test case for successful login with valid credentials returns a 200 status code and a valid token.",
+        "Test case for login with invalid username returns a 401 status code with an appropriate error message.",
+        "Test case for login with invalid password returns a 401 status code with an appropriate error message.",
+        "Test case for login with empty username returns a 400 status code with an appropriate error message.",
+        "Test case for login with empty password returns a 400 status code with an appropriate error message.",
+        "Test case for login with SQL injection attempts returns a 400 status code with an appropriate error message."
+      ],
+      "dependencies": [],
+      "labels": [],
+      "task_type": "Testing"
+    },
+    {
+      "id": "TASK-004",
+      "sprint_id": "SPRINT-001",
+      "parent_id": "US-001",
+      "type": "Task",
+      "title": "Design login page mockup",
+      "description": "Create UI/UX design for login page",
+      "status": "Ready",
+      "reviewer_id": "rev-001",
+      "assignee_id": "design-001",
+      "rank": 4,
+      "estimate_value": 8.0,
+      "story_point": 8,
+      "pause": false,
+      "deadline": "2025-10-20",
+      "created_at": "2025-10-18 16:22:11.987237",
+      "updated_at": "2025-10-18 16:22:11.987238",
+      "acceptance_criteria": [
+        "The login page mockup includes fields for username and password.",
+        "The design incorporates a 'Forgot Password?' link.",
+        "The login button is prominently displayed and clearly labeled.",
+        "The mockup is responsive and displays correctly on both desktop and mobile devices.",
+        "The color scheme and typography align with the overall branding guidelines.",
+        "User feedback mechanisms (like error messages) are included in the design.",
+        "The mockup is delivered in a format compatible with design tools (e.g., Figma, Sketch)."
+      ],
+      "dependencies": [],
+      "labels": [],
+      "task_type": "Design"
+    },
+    {
+      "id": "TASK-005",
+      "sprint_id": "SPRINT-001",
+      "parent_id": "US-002",
+      "type": "Task",
+      "title": "Implement password reset API",
+      "description": "Create POST /api/auth/reset-password endpoint",
+      "status": "Ready",
+      "reviewer_id": "rev-001",
+      "assignee_id": "dev-003",
+      "rank": 5,
+      "estimate_value": 8.0,
+      "story_point": 8,
+      "pause": false,
+      "deadline": "2025-10-23",
+      "created_at": "2025-10-18 16:22:11.987253",
+      "updated_at": "2025-10-18 16:22:11.987254",
+      "acceptance_criteria": [
+        "The API endpoint POST /api/auth/reset-password must accept a JSON payload containing a valid email address.",
+        "If the email address is associated with a user account, a password reset link should be sent to that email address.",
+        "If the email address is not associated with any user account, the API should return a 404 status code with an appropriate error message.",
+        "The API should validate the email format and return a 400 status code for invalid email formats.",
+        "The response should include a success message when the email is sent successfully.",
+        "The API should implement rate limiting to prevent abuse (e.g., limit to 5 requests per hour per IP address).",
+        "The implementation should include unit tests covering all scenarios, including valid and invalid email addresses."
+      ],
+      "dependencies": [],
+      "labels": [],
+      "task_type": "Development"
+    },
+    {
+      "id": "TASK-006",
+      "sprint_id": "SPRINT-001",
+      "parent_id": "US-001",
+      "type": "Task",
+      "title": "Write E2E tests for login flow",
+      "description": "Automated E2E tests using Playwright",
+      "status": "Ready",
+      "reviewer_id": "rev-001",
+      "assignee_id": "qa-002",
+      "rank": 6,
+      "estimate_value": 8.0,
+      "story_point": 8,
+      "pause": false,
+      "deadline": "2025-10-29",
+      "created_at": "2025-10-18 16:22:11.987261",
+      "updated_at": "2025-10-18 16:22:11.987261",
+      "acceptance_criteria": [
+        "The E2E tests cover all scenarios for the login flow, including valid login, invalid login, and password recovery.",
+        "Tests should run successfully in a clean environment without any manual intervention.",
+        "All tests should be documented with clear instructions on how to run them.",
+        "Tests should be integrated into the CI/CD pipeline to ensure they run on every commit.",
+        "The tests should provide clear and actionable error messages in case of failure."
+      ],
+      "dependencies": [],
+      "labels": [],
+      "task_type": "Testing"
+    },
+    {
+      "id": "TASK-007",
+      "sprint_id": "SPRINT-001",
+      "parent_id": "US-001",
+      "type": "Task",
+      "title": "Validate user input on login form",
+      "description": "Implement client-side and server-side validation for email and password fields",
+      "status": "Ready",
+      "reviewer_id": "rev-001",
+      "assignee_id": "dev-001",
+      "rank": 7,
+      "estimate_value": 5.0,
+      "story_point": 5,
+      "pause": false,
+      "deadline": "2025-10-24",
+      "created_at": "2025-10-18 16:22:11.987268",
+      "updated_at": "2025-10-18 16:22:11.987268",
+      "acceptance_criteria": [
+        "The email field must accept valid email formats and reject invalid formats with an appropriate error message.",
+        "The password field must enforce a minimum length of 8 characters and must include at least one uppercase letter, one lowercase letter, one number, and one special character.",
+        "Client-side validation must provide real-time feedback as the user types in the email and password fields.",
+        "Server-side validation must also check the email and password fields and return appropriate error messages if validation fails.",
+        "Both client-side and server-side validations must be tested with various valid and invalid inputs to ensure robustness."
+      ],
+      "dependencies": [],
+      "labels": [],
+      "task_type": "Development"
+    },
+    {
+      "id": "TASK-008",
+      "sprint_id": "SPRINT-001",
+      "parent_id": "US-002",
+      "type": "Task",
+      "title": "Create password reset UI component",
+      "description": "Build React form for entering email to receive password reset link",
+      "status": "Ready",
+      "reviewer_id": "rev-001",
+      "assignee_id": "dev-002",
+      "rank": 8,
+      "estimate_value": 5.0,
+      "story_point": 5,
+      "pause": false,
+      "deadline": "2025-10-24",
+      "created_at": "2025-10-18 16:22:11.987275",
+      "updated_at": "2025-10-18 16:22:11.987275",
+      "acceptance_criteria": [
+        "The UI component must include an input field for the user to enter their email address.",
+        "The email input field must have proper validation to ensure it is in a valid email format.",
+        "There must be a 'Submit' button that is disabled until a valid email is entered.",
+        "Upon submission, the UI should display a success message indicating that a password reset link has been sent, or an error message if the email is not found.",
+        "The component must be styled according to the existing design system.",
+        "The component should be responsive and function correctly on both desktop and mobile devices.",
+        "The component must include accessibility features, such as appropriate ARIA labels and keyboard navigation."
+      ],
+      "dependencies": [],
+      "labels": [],
+      "task_type": "Development"
+    },
+    {
+      "id": "TASK-009",
+      "sprint_id": "SPRINT-001",
+      "parent_id": "US-002",
+      "type": "Task",
+      "title": "Test password reset flow",
+      "description": "Write integration and E2E tests for the password reset process",
+      "status": "Ready",
+      "reviewer_id": "rev-001",
+      "assignee_id": "qa-001",
+      "rank": 9,
+      "estimate_value": 8.0,
+      "story_point": 8,
+      "pause": false,
+      "deadline": "2025-10-30",
+      "created_at": "2025-10-18 16:22:11.987282",
+      "updated_at": "2025-10-18 16:22:11.987283",
+      "acceptance_criteria": [
+        "Integration tests cover all API endpoints involved in the password reset process, including request and validation.",
+        "E2E tests simulate the entire user journey for password reset, from requesting a reset link to successfully updating the password.",
+        "Tests should validate error handling for invalid email addresses and expired reset tokens.",
+        "All tests should run successfully in the CI/CD pipeline without any failures.",
+        "Documentation is updated to reflect the testing strategy and any new test cases added."
+      ],
+      "dependencies": [],
+      "labels": [],
+      "task_type": "Testing"
+    },
+    {
+      "id": "TASK-010",
+      "sprint_id": "SPRINT-001",
+      "parent_id": "EPIC-001",
+      "type": "Task",
+      "title": "Delete Account feature",
+      "description": "Perform heuristic evaluation of UI for login and password reset pages, suggest improvements",
+      "status": "Ready",
+      "reviewer_id": "rev-001",
+      "assignee_id": "design-001",
+      "rank": 10,
+      "estimate_value": 8.0,
+      "story_point": 8,
+      "pause": false,
+      "deadline": "2025-10-31",
+      "created_at": "2025-10-18 16:22:11.987294",
+      "updated_at": "2025-10-18 16:22:11.987294",
+      "acceptance_criteria": [
+        "Heuristic evaluation is completed for both login and password reset pages.",
+        "At least 5 usability issues are identified and documented for each page.",
+        "Each identified issue includes a suggested improvement or solution.",
+        "A summary report is created that outlines the findings and recommendations.",
+        "Stakeholder review of the report is conducted and feedback is incorporated."
+      ],
+      "dependencies": [],
+      "labels": [],
+      "task_type": "Design"
+    }
+  ],
+  "assignments": [
+    {
+      "item_id": "TASK-001",
+      "assignee_id": "dev-001",
+      "assignee_name": "Alice Nguyen",
+      "reviewer_id": "rev-001",
+      "reviewer_name": "Grace Nguyen",
+      "status": "Ready",
+      "reason": "Development task"
+    },
+    {
+      "item_id": "TASK-002",
+      "assignee_id": "dev-002",
+      "assignee_name": "Bob Tran",
+      "reviewer_id": "rev-001",
+      "reviewer_name": "Grace Nguyen",
+      "status": "Ready",
+      "reason": "Development task"
+    },
+    {
+      "item_id": "TASK-003",
+      "assignee_id": "qa-001",
+      "assignee_name": "David Pham",
+      "reviewer_id": "rev-001",
+      "reviewer_name": "Grace Nguyen",
+      "status": "Ready",
+      "reason": "Testing task"
+    },
+    {
+      "item_id": "TASK-004",
+      "assignee_id": "design-001",
+      "assignee_name": "Frank Hoang",
+      "reviewer_id": "rev-001",
+      "reviewer_name": "Grace Nguyen",
+      "status": "Ready",
+      "reason": "Design task"
+    },
+    {
+      "item_id": "TASK-005",
+      "assignee_id": "dev-003",
+      "assignee_name": "Charlie Le",
+      "reviewer_id": "rev-001",
+      "reviewer_name": "Grace Nguyen",
+      "status": "Ready",
+      "reason": "Development task"
+    },
+    {
+      "item_id": "TASK-006",
+      "assignee_id": "qa-002",
+      "assignee_name": "Eve Vo",
+      "reviewer_id": "rev-001",
+      "reviewer_name": "Grace Nguyen",
+      "status": "Ready",
+      "reason": "Testing task"
+    },
+    {
+      "item_id": "TASK-007",
+      "assignee_id": "dev-001",
+      "assignee_name": "Alice Nguyen",
+      "reviewer_id": "rev-001",
+      "reviewer_name": "Grace Nguyen",
+      "status": "Ready",
+      "reason": "Development task"
+    },
+    {
+      "item_id": "TASK-008",
+      "assignee_id": "dev-002",
+      "assignee_name": "Bob Tran",
+      "reviewer_id": "rev-001",
+      "reviewer_name": "Grace Nguyen",
+      "status": "Ready",
+      "reason": "Development task"
+    },
+    {
+      "item_id": "TASK-009",
+      "assignee_id": "qa-001",
+      "assignee_name": "David Pham",
+      "reviewer_id": "rev-001",
+      "reviewer_name": "Grace Nguyen",
+      "status": "Ready",
+      "reason": "Testing task"
+    },
+    {
+      "item_id": "TASK-010",
+      "assignee_id": "design-001",
+      "assignee_name": "Frank Hoang",
+      "reviewer_id": "rev-001",
+      "reviewer_name": "Grace Nguyen",
+      "status": "Ready",
+      "reason": "Design task"
+    }
+  ],
+  "dor_results": [
+    {
+      "item_id": "TASK-001",
+      "passed": true,
+      "issues": [],
+      "recommendations": []
+    },
+    {
+      "item_id": "TASK-002",
+      "passed": true,
+      "issues": [],
+      "recommendations": []
+    },
+    {
+      "item_id": "TASK-003",
+      "passed": true,
+      "issues": [],
+      "recommendations": []
+    },
+    {
+      "item_id": "TASK-004",
+      "passed": true,
+      "issues": [],
+      "recommendations": []
+    },
+    {
+      "item_id": "TASK-005",
+      "passed": true,
+      "issues": [],
+      "recommendations": []
+    },
+    {
+      "item_id": "TASK-006",
+      "passed": true,
+      "issues": [],
+      "recommendations": []
+    },
+    {
+      "item_id": "TASK-007",
+      "passed": true,
+      "issues": [],
+      "recommendations": []
+    },
+    {
+      "item_id": "TASK-008",
+      "passed": true,
+      "issues": [],
+      "recommendations": []
+    },
+    {
+      "item_id": "TASK-009",
+      "passed": true,
+      "issues": [],
+      "recommendations": []
+    },
+    {
+      "item_id": "TASK-010",
+      "passed": true,
+      "issues": [],
+      "recommendations": []
+    }
+  ],
+  "summary": {
+    "total_sprints": 1,
+    "total_items": 13,
+    "items_by_type": {
+      "Epic": 1,
+      "User Story": 2,
+      "Task": 10,
+      "Sub-task": 0
+    },
+    "total_story_points": 1,
+    "total_estimate_hours": 0,
+    "dor_pass_rate": 1.0,
+    "total_assigned": 10,
+    "processed_at": "2025-10-18T16:24:28.944413"
+  }
+}

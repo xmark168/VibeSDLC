@@ -1,0 +1,103 @@
+{
+  "sprint_execution_summary": {
+    "sprint_id": "test-sprint-1",
+    "sprint_goal": "Implement core user authentication features (registration, login, password reset, and token refresh)",
+    "execution_metadata": {
+      "start_time": "2025-11-05T20:55:00.262205",
+      "end_time": "2025-11-05T20:55:04.280276",
+      "total_duration_seconds": 4.018071,
+      "session_id": "test_session"
+    },
+    "task_statistics": {
+      "total_assigned_items": 7,
+      "eligible_tasks_count": 4,
+      "processed_tasks_count": 4,
+      "successful_tasks_count": 0,
+      "failed_tasks_count": 4,
+      "skipped_tasks_count": 0,
+      "success_rate_percentage": 0.0
+    }
+  },
+  "task_results": [
+    {
+      "task_id": "TASK-001",
+      "task_title": "Implement user registration functionality",
+      "task_type": "Development",
+      "status": "failed",
+      "execution_metadata": {
+        "start_time": "2025-11-05T20:55:00.266270",
+        "end_time": "2025-11-05T20:55:04.258793",
+        "duration_seconds": 3.992523
+      },
+      "error_message": "Planning failed: Planner failed for TASK-001: unsupported operand type(s) for |: 'NoneType' and 'NoneType'",
+      "subagent_results": {
+        "planner": {
+          "success": false,
+          "ready_for_implementation": false,
+          "complexity_score": 0,
+          "estimated_hours": 0
+        }
+      }
+    },
+    {
+      "task_id": "TASK-002",
+      "task_title": "Implement user login functionality",
+      "task_type": "Development",
+      "status": "failed",
+      "execution_metadata": {
+        "start_time": "2025-11-05T20:55:04.258841",
+        "end_time": "2025-11-05T20:55:04.264851",
+        "duration_seconds": 0.00601
+      },
+      "error_message": "Planning failed: Planner failed for TASK-002: unsupported operand type(s) for |: 'NoneType' and 'NoneType'",
+      "subagent_results": {
+        "planner": {
+          "success": false,
+          "ready_for_implementation": false,
+          "complexity_score": 0,
+          "estimated_hours": 0
+        }
+      }
+    },
+    {
+      "task_id": "TASK-003",
+      "task_title": "Implement password reset functionality",
+      "task_type": "Development",
+      "status": "failed",
+      "execution_metadata": {
+        "start_time": "2025-11-05T20:55:04.264883",
+        "end_time": "2025-11-05T20:55:04.272562",
+        "duration_seconds": 0.007679
+      },
+      "error_message": "Planning failed: Planner failed for TASK-003: unsupported operand type(s) for |: 'NoneType' and 'NoneType'",
+      "subagent_results": {
+        "planner": {
+          "success": false,
+          "ready_for_implementation": false,
+          "complexity_score": 0,
+          "estimated_hours": 0
+        }
+      }
+    },
+    {
+      "task_id": "TASK-004",
+      "task_title": "Implement JWT token refresh mechanism",
+      "task_type": "Development",
+      "status": "failed",
+      "execution_metadata": {
+        "start_time": "2025-11-05T20:55:04.272598",
+        "end_time": "2025-11-05T20:55:04.279351",
+        "duration_seconds": 0.006753
+      },
+      "error_message": "Planning failed: Planner failed for TASK-004: unsupported operand type(s) for |: 'NoneType' and 'NoneType'",
+      "subagent_results": {
+        "planner": {
+          "success": false,
+          "ready_for_implementation": false,
+          "complexity_score": 0,
+          "estimated_hours": 0
+        }
+      }
+    }
+  ]
+}

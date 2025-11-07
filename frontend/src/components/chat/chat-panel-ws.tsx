@@ -49,6 +49,8 @@ interface ChatPanelProps {
     sendFn: (params: { content: string; author_type: string }) => boolean
   ) => void;
   onConnectionChange?: (connected: boolean) => void;
+  onKanbanDataChange?: (data: any) => void;
+  onActiveTabChange?: (tab: string | null) => void;
 }
 
 interface AttachedFile {
@@ -76,6 +78,8 @@ export function ChatPanelWS({
   projectId,
   onSendMessageReady,
   onConnectionChange,
+  onKanbanDataChange,
+  onActiveTabChange,
 }: ChatPanelProps) {
   const [message, setMessage] = useState("");
   const [showMentions, setShowMentions] = useState(false);
@@ -114,6 +118,8 @@ export function ChatPanelWS({
     agentProgress,
     pendingQuestions,
     pendingPreviews,
+    kanbanData,
+    activeTab,
     sendMessage: wsSendMessage,
     submitAnswer,
     submitPreviewChoice,
@@ -131,6 +137,20 @@ export function ChatPanelWS({
   const uniqueMessages = allMessages.filter(
     (msg, index, self) => index === self.findIndex((m) => m.id === msg.id)
   );
+
+  // Notify parent when kanbanData changes
+  useEffect(() => {
+    if (kanbanData && onKanbanDataChange) {
+      onKanbanDataChange(kanbanData);
+    }
+  }, [kanbanData, onKanbanDataChange]);
+
+  // Notify parent when activeTab changes
+  useEffect(() => {
+    if (activeTab && onActiveTabChange) {
+      onActiveTabChange(activeTab);
+    }
+  }, [activeTab, onActiveTabChange]);
 
   const toggleExpand = (id: string) => {
     setExpandedMessages((prev) => {
@@ -792,9 +812,8 @@ export function ChatPanelWS({
                 <button
                   key={agent.name}
                   onClick={() => insertMention(agent.name)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors ${
-                    index === selectedMentionIndex ? "bg-accent/50" : ""
-                  }`}
+                  className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors ${index === selectedMentionIndex ? "bg-accent/50" : ""
+                    }`}
                 >
                   <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0 bg-muted">
                     {agent.avatar}

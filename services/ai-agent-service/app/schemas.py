@@ -3,7 +3,7 @@ from token import OP
 from uuid import UUID, uuid4
 from pydantic import EmailStr
 from sqlmodel import Field, SQLModel
-from .models import Role
+from .models import Role, GitHubAccountType, GitHubInstallationStatus
 from typing import Optional
 from enum import Enum
 from app.models import AuthorType
@@ -11,9 +11,11 @@ from app.models import AuthorType
 # user
 class UserPublic(SQLModel):
     id: UUID
-    username: str
+    full_name: str
     email: EmailStr
     role: Role
+    github_installation_id: Optional[int] = None  # GitHub installation_id from linked installation (deprecated, use github_installations)
+    github_installations: Optional[list["GitHubInstallationPublic"]] = None  # Full GitHub installation data
 
 
 class UsersPublic(SQLModel):
@@ -98,6 +100,68 @@ class ChatMessagesPublic(SQLModel):
 class NewPassword(SQLModel):
     token: str
     new_password: str = Field(min_length=8)
+
+# Authentication schemas
+class LoginRequest(SQLModel):
+    email: EmailStr
+    password: Optional[str] = None
+    fullname: Optional[str] = None
+    login_provider: bool = Field(description="false = credential login, true = OAuth provider login")
+
+class LoginResponse(SQLModel):
+    user_id: UUID
+    access_token: str
+    refresh_token: str
+
+class RegisterRequest(SQLModel):
+    email: EmailStr = Field(description="Email address")
+    fullname: str = Field(min_length=1, max_length=50, description="Full name")
+    password: str = Field(min_length=8, description="Password (min 8 chars, must contain letter and number)")
+    confirm_password: str = Field(description="Password confirmation")
+
+class RegisterResponse(SQLModel):
+    message: str
+    email: EmailStr
+    expires_in: int
+
+class ConfirmCodeRequest(SQLModel):
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6, description="6-digit verification code")
+
+class ConfirmCodeResponse(SQLModel):
+    message: str
+    user_id: UUID
+
+class ResendCodeRequest(SQLModel):
+    email: EmailStr
+
+class ResendCodeResponse(SQLModel):
+    message: str
+    email: EmailStr
+    expires_in: int
+
+class RefreshTokenResponse(SQLModel):
+    user_id: UUID
+    access_token: str
+    refresh_token: str
+
+class LogoutResponse(SQLModel):
+    message: str
+
+class ForgotPasswordRequest(SQLModel):
+    email: EmailStr
+
+class ForgotPasswordResponse(SQLModel):
+    message: str
+    expires_in: int
+
+class ResetPasswordRequest(SQLModel):
+    token: str
+    new_password: str = Field(min_length=8)
+    confirm_password: str
+
+class ResetPasswordResponse(SQLModel):
+    message: str
 
 # backlog
 
@@ -224,26 +288,42 @@ class CommentsPublic(SQLModel):
     count: int
 
 # project
-class ProjectBase(SQLModel):
-    code: str = Field(min_length=1, max_length=50)
+class ProjectCreate(SQLModel):
+    """Schema for creating a new project. Code is auto-generated."""
     name: str = Field(min_length=1, max_length=255)
-    is_init: bool = False
+    is_private: bool = Field(default=True)
+    tech_stack: str = Field(default="nodejs-react")
+    repository_url: Optional[str] = Field(default=None, max_length=500)
 
-class ProjectCreate(ProjectBase):
-    owner_id: UUID
 
 class ProjectUpdate(SQLModel):
-    code: Optional[str] = None
-    name: Optional[str] = None
+    """Schema for updating a project. All fields are optional."""
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
     is_init: Optional[bool] = None
+    is_private: Optional[bool] = None
+    tech_stack: Optional[str] = None
+    repository_url: Optional[str] = Field(None, max_length=500)
 
-class ProjectPublic(ProjectBase):
+
+class ProjectPublic(SQLModel):
+    """Schema for project response with all fields from model."""
     id: UUID
+    code: str
+    name: str
     owner_id: UUID
+    is_init: bool
+    is_private: bool
+    tech_stack: str
+    github_repository_url: Optional[str] = None
+    github_repository_id: Optional[int] = None
+    github_repository_name: Optional[str] = None
+    github_installation_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
 
+
 class ProjectsPublic(SQLModel):
+    """Schema for list of projects response."""
     data: list[ProjectPublic]
     count: int
 
@@ -301,3 +381,88 @@ class AgentPublic(AgentBase):
 class AgentsPublic(SQLModel):
     data: list[AgentPublic]
     count: int
+
+
+# GitHub Integration schemas
+class GitHubInstallationBase(SQLModel):
+    installation_id: int | None
+    account_login: str
+    account_type: GitHubAccountType
+    account_status: GitHubInstallationStatus
+    repositories: Optional[dict] = None
+
+
+class GitHubInstallationCreate(GitHubInstallationBase):
+    user_id: UUID | None = None
+
+
+class GitHubInstallationUpdate(SQLModel):
+    repositories: Optional[dict] = None
+    account_status: Optional[GitHubInstallationStatus] = None
+    installation_id: Optional[int] = None
+
+
+class GitHubInstallationPublic(GitHubInstallationBase):
+    id: UUID
+    user_id: UUID | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class GitHubInstallationsPublic(SQLModel):
+    data: list[GitHubInstallationPublic]
+    count: int
+
+
+# GitHub Repository schemas
+class GitHubRepository(SQLModel):
+    id: int
+    name: str
+    full_name: str
+    url: str
+    description: Optional[str] = None
+    private: bool
+    owner: str
+
+
+class GitHubRepositoriesPublic(SQLModel):
+    data: list[GitHubRepository]
+    count: int
+
+
+# Project GitHub linking schemas
+class ProjectGitHubLink(SQLModel):
+    github_repository_id: int
+    github_repository_name: str
+    github_installation_id: UUID
+
+
+class ProjectGitHubUnlink(SQLModel):
+    pass
+
+
+# Create repository from template schemas
+class CreateRepoFromTemplateRequest(SQLModel):
+    """Request schema for creating a repository from a template."""
+    template_owner: str = Field(description="Owner of the template repository (e.g., 'organization' or 'username')")
+    template_repo: str = Field(description="Name of the template repository")
+    new_repo_name: str = Field(min_length=1, max_length=255, description="Name for the new repository")
+    new_repo_description: Optional[str] = Field(None, max_length=1000, description="Description for the new repository")
+    is_private: bool = Field(default=False, description="Whether the new repository should be private")
+    github_installation_id: int = Field(description="GitHub installation ID to use for creating the repository")
+
+
+class CreateRepoFromTemplateResponse(SQLModel):
+    """Response schema for repository creation."""
+    success: bool = Field(description="Whether the repository was created successfully")
+    repository_id: Optional[int] = Field(None, description="GitHub repository ID")
+    repository_name: Optional[str] = Field(None, description="Name of the created repository")
+    repository_full_name: Optional[str] = Field(None, description="Full name of the created repository (owner/name)")
+    repository_url: Optional[str] = Field(None, description="URL of the created repository")
+    repository_description: Optional[str] = Field(None, description="Description of the created repository")
+    repository_private: Optional[bool] = Field(None, description="Whether the repository is private")
+    message: Optional[str] = Field(None, description="Success or error message")
+
+
+# Rebuild models to resolve forward references
+UserPublic.model_rebuild()

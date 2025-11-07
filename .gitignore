@@ -57,3 +57,4 @@ openapi.json
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+github_private_key.pem

@@ -26,6 +26,9 @@
       "@/*": [
         "./src/*"
       ],
+      "@client": [
+        "./src/client"
+      ],
       "@client/*": [
         "./src/client/*"
       ]
@@ -40,5 +43,5 @@
     {
       "path": "./tsconfig.node.json"
     }
-  ],
+  ]
 }

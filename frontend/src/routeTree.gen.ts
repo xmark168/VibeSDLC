@@ -12,15 +12,16 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LayoutRouteImport } from './routes/_layout'
 import { Route as AuthRouteRouteImport } from './routes/_auth/route'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as WorkspaceWorkspaceIdRouteImport } from './routes/workspace/$workspaceId'
-import { Route as ChatChatIdRouteImport } from './routes/chat/$chatId'
-import { Route as LayoutProjectsRouteImport } from './routes/_layout/projects'
-import { Route as LayoutAdminRouteImport } from './routes/_layout/admin'
+import { Route as UserProjectsRouteImport } from './routes/_user/projects'
 import { Route as AuthVerifyOtpRouteImport } from './routes/_auth/verify-otp'
 import { Route as AuthSignupRouteImport } from './routes/_auth/signup'
 import { Route as AuthResetPasswordRouteImport } from './routes/_auth/reset-password'
+import { Route as AuthOauthCallbackRouteImport } from './routes/_auth/oauth-callback'
 import { Route as AuthLoginRouteImport } from './routes/_auth/login'
 import { Route as AuthForgotPasswordRouteImport } from './routes/_auth/forgot-password'
+import { Route as AdminAdminRouteImport } from './routes/_admin/admin'
+import { Route as UserWorkspaceWorkspaceIdRouteImport } from './routes/_user/workspace/$workspaceId'
+import { Route as UserChatChatIdRouteImport } from './routes/_user/chat/$chatId'
 
 const LayoutRoute = LayoutRouteImport.update({
   id: '/_layout',
@@ -35,25 +36,10 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WorkspaceWorkspaceIdRoute = WorkspaceWorkspaceIdRouteImport.update({
-  id: '/workspace/$workspaceId',
-  path: '/workspace/$workspaceId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ChatChatIdRoute = ChatChatIdRouteImport.update({
-  id: '/chat/$chatId',
-  path: '/chat/$chatId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LayoutProjectsRoute = LayoutProjectsRouteImport.update({
-  id: '/projects',
+const UserProjectsRoute = UserProjectsRouteImport.update({
+  id: '/_user/projects',
   path: '/projects',
-  getParentRoute: () => LayoutRoute,
-} as any)
-const LayoutAdminRoute = LayoutAdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
-  getParentRoute: () => LayoutRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthVerifyOtpRoute = AuthVerifyOtpRouteImport.update({
   id: '/verify-otp',
@@ -70,6 +56,11 @@ const AuthResetPasswordRoute = AuthResetPasswordRouteImport.update({
   path: '/reset-password',
   getParentRoute: () => AuthRouteRoute,
 } as any)
+const AuthOauthCallbackRoute = AuthOauthCallbackRouteImport.update({
+  id: '/oauth-callback',
+  path: '/oauth-callback',
+  getParentRoute: () => AuthRouteRoute,
+} as any)
 const AuthLoginRoute = AuthLoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -80,68 +71,89 @@ const AuthForgotPasswordRoute = AuthForgotPasswordRouteImport.update({
   path: '/forgot-password',
   getParentRoute: () => AuthRouteRoute,
 } as any)
+const AdminAdminRoute = AdminAdminRouteImport.update({
+  id: '/_admin/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UserWorkspaceWorkspaceIdRoute =
+  UserWorkspaceWorkspaceIdRouteImport.update({
+    id: '/_user/workspace/$workspaceId',
+    path: '/workspace/$workspaceId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const UserChatChatIdRoute = UserChatChatIdRouteImport.update({
+  id: '/_user/chat/$chatId',
+  path: '/chat/$chatId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminAdminRoute
   '/forgot-password': typeof AuthForgotPasswordRoute
   '/login': typeof AuthLoginRoute
+  '/oauth-callback': typeof AuthOauthCallbackRoute
   '/reset-password': typeof AuthResetPasswordRoute
   '/signup': typeof AuthSignupRoute
   '/verify-otp': typeof AuthVerifyOtpRoute
-  '/admin': typeof LayoutAdminRoute
-  '/projects': typeof LayoutProjectsRoute
-  '/chat/$chatId': typeof ChatChatIdRoute
-  '/workspace/$workspaceId': typeof WorkspaceWorkspaceIdRoute
+  '/projects': typeof UserProjectsRoute
+  '/chat/$chatId': typeof UserChatChatIdRoute
+  '/workspace/$workspaceId': typeof UserWorkspaceWorkspaceIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminAdminRoute
   '/forgot-password': typeof AuthForgotPasswordRoute
   '/login': typeof AuthLoginRoute
+  '/oauth-callback': typeof AuthOauthCallbackRoute
   '/reset-password': typeof AuthResetPasswordRoute
   '/signup': typeof AuthSignupRoute
   '/verify-otp': typeof AuthVerifyOtpRoute
-  '/admin': typeof LayoutAdminRoute
-  '/projects': typeof LayoutProjectsRoute
-  '/chat/$chatId': typeof ChatChatIdRoute
-  '/workspace/$workspaceId': typeof WorkspaceWorkspaceIdRoute
+  '/projects': typeof UserProjectsRoute
+  '/chat/$chatId': typeof UserChatChatIdRoute
+  '/workspace/$workspaceId': typeof UserWorkspaceWorkspaceIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_auth': typeof AuthRouteRouteWithChildren
-  '/_layout': typeof LayoutRouteWithChildren
+  '/_layout': typeof LayoutRoute
+  '/_admin/admin': typeof AdminAdminRoute
   '/_auth/forgot-password': typeof AuthForgotPasswordRoute
   '/_auth/login': typeof AuthLoginRoute
+  '/_auth/oauth-callback': typeof AuthOauthCallbackRoute
   '/_auth/reset-password': typeof AuthResetPasswordRoute
   '/_auth/signup': typeof AuthSignupRoute
   '/_auth/verify-otp': typeof AuthVerifyOtpRoute
-  '/_layout/admin': typeof LayoutAdminRoute
-  '/_layout/projects': typeof LayoutProjectsRoute
-  '/chat/$chatId': typeof ChatChatIdRoute
-  '/workspace/$workspaceId': typeof WorkspaceWorkspaceIdRoute
+  '/_user/projects': typeof UserProjectsRoute
+  '/_user/chat/$chatId': typeof UserChatChatIdRoute
+  '/_user/workspace/$workspaceId': typeof UserWorkspaceWorkspaceIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/admin'
     | '/forgot-password'
     | '/login'
+    | '/oauth-callback'
     | '/reset-password'
     | '/signup'
     | '/verify-otp'
-    | '/admin'
     | '/projects'
     | '/chat/$chatId'
     | '/workspace/$workspaceId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/admin'
     | '/forgot-password'
     | '/login'
+    | '/oauth-callback'
     | '/reset-password'
     | '/signup'
     | '/verify-otp'
-    | '/admin'
     | '/projects'
     | '/chat/$chatId'
     | '/workspace/$workspaceId'
@@ -150,23 +162,26 @@ export interface FileRouteTypes {
     | '/'
     | '/_auth'
     | '/_layout'
+    | '/_admin/admin'
     | '/_auth/forgot-password'
     | '/_auth/login'
+    | '/_auth/oauth-callback'
     | '/_auth/reset-password'
     | '/_auth/signup'
     | '/_auth/verify-otp'
-    | '/_layout/admin'
-    | '/_layout/projects'
-    | '/chat/$chatId'
-    | '/workspace/$workspaceId'
+    | '/_user/projects'
+    | '/_user/chat/$chatId'
+    | '/_user/workspace/$workspaceId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRouteRoute: typeof AuthRouteRouteWithChildren
-  LayoutRoute: typeof LayoutRouteWithChildren
-  ChatChatIdRoute: typeof ChatChatIdRoute
-  WorkspaceWorkspaceIdRoute: typeof WorkspaceWorkspaceIdRoute
+  LayoutRoute: typeof LayoutRoute
+  AdminAdminRoute: typeof AdminAdminRoute
+  UserProjectsRoute: typeof UserProjectsRoute
+  UserChatChatIdRoute: typeof UserChatChatIdRoute
+  UserWorkspaceWorkspaceIdRoute: typeof UserWorkspaceWorkspaceIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -192,33 +207,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/workspace/$workspaceId': {
-      id: '/workspace/$workspaceId'
-      path: '/workspace/$workspaceId'
-      fullPath: '/workspace/$workspaceId'
-      preLoaderRoute: typeof WorkspaceWorkspaceIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/chat/$chatId': {
-      id: '/chat/$chatId'
-      path: '/chat/$chatId'
-      fullPath: '/chat/$chatId'
-      preLoaderRoute: typeof ChatChatIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_layout/projects': {
-      id: '/_layout/projects'
+    '/_user/projects': {
+      id: '/_user/projects'
       path: '/projects'
       fullPath: '/projects'
-      preLoaderRoute: typeof LayoutProjectsRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/admin': {
-      id: '/_layout/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof LayoutAdminRouteImport
-      parentRoute: typeof LayoutRoute
+      preLoaderRoute: typeof UserProjectsRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_auth/verify-otp': {
       id: '/_auth/verify-otp'
@@ -241,6 +235,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthResetPasswordRouteImport
       parentRoute: typeof AuthRouteRoute
     }
+    '/_auth/oauth-callback': {
+      id: '/_auth/oauth-callback'
+      path: '/oauth-callback'
+      fullPath: '/oauth-callback'
+      preLoaderRoute: typeof AuthOauthCallbackRouteImport
+      parentRoute: typeof AuthRouteRoute
+    }
     '/_auth/login': {
       id: '/_auth/login'
       path: '/login'
@@ -255,12 +256,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthForgotPasswordRouteImport
       parentRoute: typeof AuthRouteRoute
     }
+    '/_admin/admin': {
+      id: '/_admin/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminAdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_user/workspace/$workspaceId': {
+      id: '/_user/workspace/$workspaceId'
+      path: '/workspace/$workspaceId'
+      fullPath: '/workspace/$workspaceId'
+      preLoaderRoute: typeof UserWorkspaceWorkspaceIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_user/chat/$chatId': {
+      id: '/_user/chat/$chatId'
+      path: '/chat/$chatId'
+      fullPath: '/chat/$chatId'
+      preLoaderRoute: typeof UserChatChatIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 interface AuthRouteRouteChildren {
   AuthForgotPasswordRoute: typeof AuthForgotPasswordRoute
   AuthLoginRoute: typeof AuthLoginRoute
+  AuthOauthCallbackRoute: typeof AuthOauthCallbackRoute
   AuthResetPasswordRoute: typeof AuthResetPasswordRoute
   AuthSignupRoute: typeof AuthSignupRoute
   AuthVerifyOtpRoute: typeof AuthVerifyOtpRoute
@@ -269,6 +292,7 @@ interface AuthRouteRouteChildren {
 const AuthRouteRouteChildren: AuthRouteRouteChildren = {
   AuthForgotPasswordRoute: AuthForgotPasswordRoute,
   AuthLoginRoute: AuthLoginRoute,
+  AuthOauthCallbackRoute: AuthOauthCallbackRoute,
   AuthResetPasswordRoute: AuthResetPasswordRoute,
   AuthSignupRoute: AuthSignupRoute,
   AuthVerifyOtpRoute: AuthVerifyOtpRoute,
@@ -278,25 +302,14 @@ const AuthRouteRouteWithChildren = AuthRouteRoute._addFileChildren(
   AuthRouteRouteChildren,
 )
 
-interface LayoutRouteChildren {
-  LayoutAdminRoute: typeof LayoutAdminRoute
-  LayoutProjectsRoute: typeof LayoutProjectsRoute
-}
-
-const LayoutRouteChildren: LayoutRouteChildren = {
-  LayoutAdminRoute: LayoutAdminRoute,
-  LayoutProjectsRoute: LayoutProjectsRoute,
-}
-
-const LayoutRouteWithChildren =
-  LayoutRoute._addFileChildren(LayoutRouteChildren)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRouteRoute: AuthRouteRouteWithChildren,
-  LayoutRoute: LayoutRouteWithChildren,
-  ChatChatIdRoute: ChatChatIdRoute,
-  WorkspaceWorkspaceIdRoute: WorkspaceWorkspaceIdRoute,
+  LayoutRoute: LayoutRoute,
+  AdminAdminRoute: AdminAdminRoute,
+  UserProjectsRoute: UserProjectsRoute,
+  UserChatChatIdRoute: UserChatChatIdRoute,
+  UserWorkspaceWorkspaceIdRoute: UserWorkspaceWorkspaceIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

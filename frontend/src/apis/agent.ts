@@ -1,10 +1,10 @@
-import { OpenAPI } from '@client'
-import { request as __request } from '@client/core/request'
+import { OpenAPI } from "@client"
+import { request as __request } from "@client/core/request"
 
 export type ExecuteAgentRequest = {
   project_id: string
   user_input: string
-  agent_type?: 'po_agent'
+  agent_type?: "po_agent"
 }
 
 export type ExecuteAgentResponse = {
@@ -25,8 +25,8 @@ export const agentApi = {
    */
   execute: async (body: ExecuteAgentRequest): Promise<ExecuteAgentResponse> => {
     return __request<ExecuteAgentResponse>(OpenAPI, {
-      method: 'POST',
-      url: '/api/v1/agent/execute',
+      method: "POST",
+      url: "/api/v1/agent/execute",
       body,
     })
   },
@@ -35,10 +35,12 @@ export const agentApi = {
    * Execute agent synchronously (blocking)
    * Use for testing or when you need immediate response
    */
-  executeSync: async (body: ExecuteAgentRequest): Promise<ExecuteAgentSyncResponse> => {
+  executeSync: async (
+    body: ExecuteAgentRequest,
+  ): Promise<ExecuteAgentSyncResponse> => {
     return __request<ExecuteAgentSyncResponse>(OpenAPI, {
-      method: 'POST',
-      url: '/api/v1/agent/execute-sync',
+      method: "POST",
+      url: "/api/v1/agent/execute-sync",
       body,
     })
   },

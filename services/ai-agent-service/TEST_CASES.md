@@ -38,66 +38,11 @@ Theo bạn, điểm khác biệt nổi bật nhất của SmartTask so với Tre
 
  Các lệnh Alembic thường dùng:
 
-  # 1. Tạo migration mới (autogenerate từ models)
-  alembic revision --autogenerate -m "Description of changes"
+# 1. Tạo migration mới (autogenerate từ models)
+alembic revision --autogenerate -m "Description of changes"
 
-  # 2. Áp dụng migration
-  alembic upgrade head          # Upgrade lên version mới nhất
-  alembic upgrade +1            # Upgrade lên 1 version
-  alembic upgrade <revision>    # Upgrade đến revision cụ thể
-
-  # 3. Rollback migration
-  alembic downgrade -1          # Rollback 1 version
-  alembic downgrade base        # Rollback về trạng thái ban đầu
-
-  # 4. Xem history
-  alembic history               # Xem tất cả migrations
-  alembic current               # Xem version hiện tại
-
-  # 5. Tạo migration thủ công (không autogenerate)
-  alembic revision -m "Manual migration"
-
-================================================================
-
-  1. API Comments (comments.py) - ƯU TIÊN CAO
-
-  Kanban board cần comment cho từng card/item:
-  - GET /api/v1/comments?backlog_item_id={id} - Lấy comments của item
-  - POST /api/v1/comments - Tạo comment mới
-  - PATCH /api/v1/comments/{id} - Sửa comment
-  - DELETE /api/v1/comments/{id} - Xóa comment
-
-  2. API Sprints (sprints.py) - ƯU TIÊN CAO
-
-  Kanban board phụ thuộc vào sprint:
-  - GET /api/v1/projects/{project_id}/sprints - Lấy danh sách sprints
-  - GET /api/v1/sprints/{id} - Chi tiết sprint
-  - POST /api/v1/sprints - Tạo sprint mới
-  - PATCH /api/v1/sprints/{id} - Cập nhật sprint
-  - DELETE /api/v1/sprints/{id} - Xóa sprint
-
-  3. API Projects (projects.py) - ƯU TIÊN TRUNG BÌNH
-
-  Để quản lý projects chứa sprints:
-  - GET /api/v1/projects - Lấy danh sách projects
-  - GET /api/v1/projects/{id} - Chi tiết project
-  - POST /api/v1/projects - Tạo project mới
-  - PATCH /api/v1/projects/{id} - Cập nhật project
-  - DELETE /api/v1/projects/{id} - Xóa project
-  - GET /api/v1/projects/{id}/members - Lấy members (cho assign)
-
-  4. API Issue Activities (issue_activities.py) - ƯU TIÊN THẤP
-
-  Để xem lịch sử thay đổi của items:
-  - GET /api/v1/backlog-items/{item_id}/activities - Lấy lịch sử
-
-  ---
-  Khuyến nghị thứ tự làm:
-
-  1. Sprints API       (Vì backlog_items đã depend vào sprint)
-  2. Comments API      (Để có thể comment trong kanban cards)
-  3. Projects API      (Để quản lý projects và members)
-  4. Issue Activities  (Để xem history - optional)
+# 2. Áp dụng migration
+alembic upgrade head          # Upgrade lên version mới nhất
 
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
@@ -106,7 +51,7 @@ tasklist /FI "IMAGENAME eq python.exe"
 taskkill /PID 23784 /T /F
 
 uv run app/tests/test_agent.py 
-làm giải pháp 2 đi
+
 front end 
 netstat -ano | findstr :5173
 taskkill /PID 24844 /F

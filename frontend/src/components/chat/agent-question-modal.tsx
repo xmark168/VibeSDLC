@@ -1,4 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { Clock, Send, SkipForward } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -6,18 +8,16 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Progress } from "@/components/ui/progress";
-import { Clock, Send, SkipForward } from "lucide-react";
-import type { AgentQuestion } from "@/hooks/useChatWebSocket";
+} from "@/components/ui/dialog"
+import { Progress } from "@/components/ui/progress"
+import { Textarea } from "@/components/ui/textarea"
+import type { AgentQuestion } from "@/hooks/useChatWebSocket"
 
 interface AgentQuestionModalProps {
-  question: AgentQuestion | null;
-  onSubmit: (question_id: string, answer: string) => void;
-  onSkip: (question_id: string) => void;
-  onSkipAll: (question_id: string) => void;
+  question: AgentQuestion | null
+  onSubmit: (question_id: string, answer: string) => void
+  onSkip: (question_id: string) => void
+  onSkipAll: (question_id: string) => void
 }
 
 export function AgentQuestionModal({
@@ -26,89 +26,91 @@ export function AgentQuestionModal({
   onSkip,
   onSkipAll,
 }: AgentQuestionModalProps) {
-  const [answer, setAnswer] = useState("");
-  const [timeRemaining, setTimeRemaining] = useState(0);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [answer, setAnswer] = useState("")
+  const [timeRemaining, setTimeRemaining] = useState(0)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Reset answer when question changes
   useEffect(() => {
     if (question) {
-      setAnswer("");
+      setAnswer("")
       // Auto-focus on textarea
       setTimeout(() => {
-        textareaRef.current?.focus();
-      }, 100);
+        textareaRef.current?.focus()
+      }, 100)
     }
-  }, [question?.question_id]);
+  }, [question?.question_id, question])
 
   // Countdown timer
   useEffect(() => {
-    if (!question) return;
+    if (!question) return
 
-    const startTime = question.receivedAt;
-    const timeout = question.timeout * 1000; // convert to ms
+    const startTime = question.receivedAt
+    const timeout = question.timeout * 1000 // convert to ms
 
     const updateTimer = () => {
-      const elapsed = Date.now() - startTime;
-      const remaining = Math.max(0, timeout - elapsed);
-      setTimeRemaining(remaining);
+      const elapsed = Date.now() - startTime
+      const remaining = Math.max(0, timeout - elapsed)
+      setTimeRemaining(remaining)
 
       if (remaining <= 0) {
         // Auto-skip on timeout
-        handleSkip();
+        handleSkip()
       }
-    };
+    }
 
-    updateTimer();
-    const interval = setInterval(updateTimer, 1000);
+    updateTimer()
+    const interval = setInterval(updateTimer, 1000)
 
-    return () => clearInterval(interval);
-  }, [question]);
+    return () => clearInterval(interval)
+  }, [
+    question, // Auto-skip on timeout
+    handleSkip,
+  ])
 
   const handleSubmit = () => {
-    if (!question || !answer.trim()) return;
-    onSubmit(question.question_id, answer.trim());
-    setAnswer("");
-  };
+    if (!question || !answer.trim()) return
+    onSubmit(question.question_id, answer.trim())
+    setAnswer("")
+  }
 
   const handleSkip = () => {
-    if (!question) return;
-    onSkip(question.question_id);
-    setAnswer("");
-  };
+    if (!question) return
+    onSkip(question.question_id)
+    setAnswer("")
+  }
 
   const handleSkipAll = () => {
-    if (!question) return;
-    onSkipAll(question.question_id);
-    setAnswer("");
-  };
+    if (!question) return
+    onSkipAll(question.question_id)
+    setAnswer("")
+  }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
+      e.preventDefault()
+      handleSubmit()
     }
-  };
+  }
 
-  if (!question) return null;
+  if (!question) return null
 
-  const timeRemainingSeconds = Math.ceil(timeRemaining / 1000);
-  const timeRemainingMinutes = Math.floor(timeRemainingSeconds / 60);
-  const timeRemainingSecondsDisplay = timeRemainingSeconds % 60;
-  const progressPercentage = (timeRemaining / (question.timeout * 1000)) * 100;
+  const timeRemainingSeconds = Math.ceil(timeRemaining / 1000)
+  const timeRemainingMinutes = Math.floor(timeRemainingSeconds / 60)
+  const timeRemainingSecondsDisplay = timeRemainingSeconds % 60
+  const progressPercentage = (timeRemaining / (question.timeout * 1000)) * 100
 
   return (
     <Dialog open={!!question} onOpenChange={() => {}}>
       <DialogContent className="sm:max-w-2xl" showCloseButton={false}>
         <DialogHeader>
           <div className="flex items-center justify-between">
-            <DialogTitle className="text-xl">
-              {question.agent}
-            </DialogTitle>
+            <DialogTitle className="text-xl">{question.agent}</DialogTitle>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Clock className="w-4 h-4" />
               <span>
-                {timeRemainingMinutes}:{timeRemainingSecondsDisplay.toString().padStart(2, "0")}
+                {timeRemainingMinutes}:
+                {timeRemainingSecondsDisplay.toString().padStart(2, "0")}
               </span>
             </div>
           </div>
@@ -151,11 +153,7 @@ export function AgentQuestionModal({
           >
             Bỏ qua tất cả
           </Button>
-          <Button
-            variant="outline"
-            onClick={handleSkip}
-            className="sm:flex-1"
-          >
+          <Button variant="outline" onClick={handleSkip} className="sm:flex-1">
             <SkipForward className="w-4 h-4 mr-2" />
             Bỏ qua câu này
           </Button>
@@ -170,5 +168,5 @@ export function AgentQuestionModal({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
+  )
 }

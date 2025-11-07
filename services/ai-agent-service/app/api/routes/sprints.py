@@ -168,18 +168,41 @@ def get_active_sprint(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
-    """Lấy sprint đang active của project"""
+    """Lấy sprint đang active hoặc planned của project.
+
+    Priority:
+    1. Active sprint (nếu có)
+    2. Planned sprint (nếu không có Active)
+    3. Sprint mới nhất (nếu không có Active hoặc Planned)
+    """
     project = session.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    
+
+    # Try to get Active sprint first
     stmt = select(Sprint).where(
         Sprint.project_id == project_id,
         Sprint.status == "Active"
     ).order_by(Sprint.number.desc())
-    
+
     sprint = session.exec(stmt).first()
+
+    # If no Active sprint, try Planned
     if not sprint:
-        raise HTTPException(status_code=404, detail="No active sprint found")
-    
+        stmt = select(Sprint).where(
+            Sprint.project_id == project_id,
+            Sprint.status == "Planned"
+        ).order_by(Sprint.number.desc())
+        sprint = session.exec(stmt).first()
+
+    # If still no sprint, get the latest one regardless of status
+    if not sprint:
+        stmt = select(Sprint).where(
+            Sprint.project_id == project_id
+        ).order_by(Sprint.number.desc())
+        sprint = session.exec(stmt).first()
+
+    if not sprint:
+        raise HTTPException(status_code=404, detail="No sprint found for this project")
+
     return sprint

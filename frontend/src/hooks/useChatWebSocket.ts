@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import type { Message } from '@/types/message'
 
 export type WebSocketMessage = {
-  type: 'connected' | 'message' | 'agent_message' | 'typing' | 'pong' | 'error' | 'routing' | 'agent_step' | 'agent_thinking' | 'tool_call' | 'agent_question' | 'agent_preview'
-  data?: Message
+  type: 'connected' | 'message' | 'agent_message' | 'typing' | 'pong' | 'error' | 'routing' | 'agent_step' | 'agent_thinking' | 'tool_call' | 'agent_question' | 'agent_preview' | 'kanban_update' | 'scrum_master_step' | 'switch_tab'
+  data?: Message | any
   agent_name?: string
   is_typing?: boolean
   message?: string
@@ -39,6 +39,8 @@ export type WebSocketMessage = {
   brief?: any
   incomplete_flag?: boolean
   prompt?: string
+  // For switch_tab messages
+  tab?: string
 }
 
 export type AgentQuestion = {
@@ -92,6 +94,18 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
   }>({
     isExecuting: false
   })
+  const [kanbanData, setKanbanData] = useState<{
+    sprints: any[]
+    kanban_board: {
+      Backlog: any[]
+      Todo: any[]
+      Doing: any[]
+      Done: any[]
+    }
+    total_items: number
+    timestamp?: string
+  } | null>(null)
+  const [activeTab, setActiveTab] = useState<string | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>()
   const reconnectAttemptsRef = useRef(0)
@@ -213,6 +227,41 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
               ...prev,
               currentTool: data.display_name || data.tool
             }))
+            break
+
+          case 'scrum_master_step':
+            // Scrum Master progress updates
+            if (data.step === 'sprint_planner_started' || data.step === 'starting' || data.step === 'saving') {
+              setAgentProgress({
+                isExecuting: true,
+                currentAgent: 'Scrum Master',
+                currentStep: data.message
+              })
+            } else if (data.step === 'sprint_planner_completed' || data.step === 'completed') {
+              setAgentProgress({
+                isExecuting: false,
+                currentStep: data.message
+              })
+              setTimeout(() => {
+                setAgentProgress({ isExecuting: false })
+              }, 2000)
+            }
+            break
+
+          case 'kanban_update':
+            // Update kanban board data
+            console.log('Kanban update received:', data.data)
+            if (data.data) {
+              setKanbanData(data.data)
+            }
+            break
+
+          case 'switch_tab':
+            // Auto-switch to specified tab
+            console.log('Switch tab request:', data.tab)
+            if (data.tab) {
+              setActiveTab(data.tab)
+            }
             break
 
           case 'agent_question':
@@ -452,6 +501,8 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     agentProgress,
     pendingQuestions,
     pendingPreviews,
+    kanbanData,
+    activeTab,
     sendMessage,
     submitAnswer,
     submitPreviewChoice,

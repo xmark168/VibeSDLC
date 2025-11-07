@@ -1,7 +1,7 @@
-import { Copy, Download, Check } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import Editor from "@monaco-editor/react"
+import { Check, Copy, Download } from "lucide-react"
 import { useState } from "react"
+import { Button } from "@/components/ui/button"
 
 interface CodeViewerProps {
   filePath: string
@@ -9,7 +9,6 @@ interface CodeViewerProps {
 }
 
 export function CodeViewer({ filePath, content }: CodeViewerProps) {
-  
   const [copied, setCopied] = useState(false)
 
   const handleCopy = () => {
@@ -63,15 +62,39 @@ export function CodeViewer({ filePath, content }: CodeViewerProps) {
           {pathParts.map((part, index) => (
             <div key={index} className="flex items-center gap-2">
               {index > 0 && <span>›</span>}
-              <span className={index === pathParts.length - 1 ? "text-foreground font-medium" : ""}>{part}</span>
+              <span
+                className={
+                  index === pathParts.length - 1
+                    ? "text-foreground font-medium"
+                    : ""
+                }
+              >
+                {part}
+              </span>
             </div>
           ))}
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleCopy} title="Copy code">
-            {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={handleCopy}
+            title="Copy code"
+          >
+            {copied ? (
+              <Check className="w-4 h-4 text-green-500" />
+            ) : (
+              <Copy className="w-4 h-4" />
+            )}
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleDownload} title="Download file">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={handleDownload}
+            title="Download file"
+          >
             <Download className="w-4 h-4" />
           </Button>
         </div>
@@ -106,7 +129,9 @@ export function CodeViewer({ filePath, content }: CodeViewerProps) {
             overviewRulerBorder: false,
           }}
           loading={
-            <div className="flex items-center justify-center h-full text-muted-foreground">Loading editor...</div>
+            <div className="flex items-center justify-center h-full text-muted-foreground">
+              Loading editor...
+            </div>
           }
         />
       </div>
