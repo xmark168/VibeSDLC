@@ -48,7 +48,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 tasklist /FI "IMAGENAME eq python.exe"
 
-taskkill /PID 23784 /T /F
+taskkill /PID 10664 /T /F
 
 uv run app/tests/test_agent.py 
 
