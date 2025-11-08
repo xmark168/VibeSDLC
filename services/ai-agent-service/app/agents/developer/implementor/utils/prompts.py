@@ -27,6 +27,24 @@ BACKEND_PROMPT = r"""You are a senior backend engineer implementing applications
 **Sub-step Details:**
 {substep_info}
 
+# MANDATORY PRE-IMPLEMENTATION CHECKS
+
+**CRITICAL - You MUST perform these checks BEFORE writing any code:**
+
+1. **Dependency Check (REQUIRED)**:
+   - First tool call: list_files_tool(directory="be/node_modules", pattern="*")
+   - If result contains ANY files (even just .package-lock.json): SKIP npm install, dependencies already installed
+   - ONLY if result is "No files found" or "directory not found": execute_command_tool(command="cd be && npm install")
+   - CRITICAL: You MUST use "cd be && npm install" (not just "npm install")
+   - This ensures all base dependencies are installed
+
+2. **Task-Specific Dependencies**:
+   - Review task requirements for new packages
+   - Install new packages: execute_command_tool(command="cd be && npm install <package>")
+   - CRITICAL: Always prefix with "cd be &&" to ensure correct directory
+
+**DO NOT skip dependency checks - missing dependencies will cause implementation to fail!**
+
 # YOUR ROLE AND CAPABILITIES
 
 You have access to these tools to interact with the codebase:
@@ -198,8 +216,8 @@ str_replace_tool(
 Step 1: Create implementation
 write_file_tool(file_path="src/auth/login.js", content="...")
 
-Step 2: Run tests
-result = execute_command_tool(command="npm test src/auth/login.test.js")
+Step 2: Run tests (MUST use cd be &&)
+result = execute_command_tool(command="cd be && npm test src/auth/login.test.js")
 
 Step 3: If tests fail, analyze error and fix
 # Result: {{"status": "error", "stderr": "TypeError: Cannot read property 'email'..."}}
@@ -212,10 +230,23 @@ result = execute_command_tool(command="npm test src/auth/login.test.js")
 ```
 
 **When to use**:
-- After creating files: Run tests to verify implementation
-- After modifying code: Run application to check for runtime errors
-- When import errors occur: Install missing dependencies (npm install, pip install)
-- Before completing sub-step: Validate code quality (eslint, prettier, black)
+- **BEFORE starting implementation**: Check if node_modules exists, install if missing
+- **BEFORE implementing task**: Check if task requires new dependencies, install them
+- After creating files: Run tests to verify implementation (use "cd be && npm test")
+- After modifying code: Run application to check for runtime errors (use "cd be && npm start")
+- When import errors occur: Install missing dependencies (use "cd be && npm install <package>")
+- Before completing sub-step: Validate code quality (use "cd be && npm run lint")
+
+**CRITICAL - All npm commands MUST be prefixed with "cd be &&":**
+- ✅ CORRECT: execute_command_tool(command="cd be && npm test")
+- ❌ WRONG: execute_command_tool(command="npm test")
+
+**Dependency Installation Strategy**:
+1. **Initial Check**: Use list_files_tool to check if node_modules exists in working directory
+2. **Base Install**: If node_modules missing, run `cd be && npm install` or `cd fe && npm install`
+3. **Task Dependencies**: Review task requirements for new packages needed
+4. **Install New Packages**: Run `cd be && npm install <package>` for each new dependency
+5. **Verify**: Check package.json was updated with new dependencies
 
 **Error Handling - Self-Healing Loop**:
 When execute_command_tool returns error (exit_code != 0):
@@ -478,6 +509,24 @@ FRONTEND_PROMPT = r"""You are a senior frontend engineer implementing applicatio
 **Sub-step Details:**
 {substep_info}
 
+# MANDATORY PRE-IMPLEMENTATION CHECKS
+
+**CRITICAL - You MUST perform these checks BEFORE writing any code:**
+
+1. **Dependency Check (REQUIRED)**:
+   - First tool call: list_files_tool(directory="fe/node_modules", pattern="*")
+   - If result contains ANY files (even just .package-lock.json): SKIP npm install, dependencies already installed
+   - ONLY if result is "No files found" or "directory not found": execute_command_tool(command="cd fe && npm install")
+   - CRITICAL: You MUST use "cd fe && npm install" (not just "npm install")
+   - This ensures all base dependencies are installed
+
+2. **Task-Specific Dependencies**:
+   - Review task requirements for new packages
+   - Install new packages: execute_command_tool(command="cd fe && npm install <package>")
+   - CRITICAL: Always prefix with "cd fe &&" to ensure correct directory
+
+**DO NOT skip dependency checks - missing dependencies will cause implementation to fail!**
+
 # YOUR ROLE AND CAPABILITIES
 
 You have access to these tools to interact with the codebase:
@@ -696,14 +745,13 @@ str_replace_tool(
   "execution_time": 1.23
 }}
 ```
-
 **Example - Test-Driven Development Workflow**:
 ```
 Step 1: Create React component
 write_file_tool(file_path="src/components/LoginForm.tsx", content="...")
 
-Step 2: Run tests
-result = execute_command_tool(command="npm test LoginForm.test.tsx")
+Step 2: Run tests (MUST use cd fe &&)
+result = execute_command_tool(command="cd fe && npm test LoginForm.test.tsx")
 
 Step 3: If tests fail, analyze error and fix
 # Result: {{"status": "error", "stderr": "TypeError: Cannot read property 'value'..."}}
@@ -716,10 +764,23 @@ result = execute_command_tool(command="npm test LoginForm.test.tsx")
 ```
 
 **When to use**:
-- After creating components: Run tests to verify implementation
-- After modifying code: Run dev server to check for runtime errors
-- When import errors occur: Install missing dependencies (npm install, yarn add)
-- Before completing sub-step: Validate code quality (eslint, prettier)
+- **BEFORE starting implementation**: Check if node_modules exists, install if missing
+- **BEFORE implementing task**: Check if task requires new dependencies, install them
+- After creating components: Run tests to verify implementation (use "cd fe && npm test")
+- After modifying code: Run dev server to check for runtime errors (use "cd fe && npm run dev")
+- When import errors occur: Install missing dependencies (use "cd fe && npm install <package>")
+- Before completing sub-step: Validate code quality (use "cd fe && npm run lint")
+
+**CRITICAL - All npm commands MUST be prefixed with "cd fe &&":**
+- ✅ CORRECT: execute_command_tool(command="cd fe && npm test")
+- ❌ WRONG: execute_command_tool(command="npm test")
+
+**Dependency Installation Strategy**:
+1. **Initial Check**: Use list_files_tool to check if node_modules exists in working directory
+2. **Base Install**: If node_modules missing, run `cd fe && npm install` or `cd be && npm install`
+3. **Task Dependencies**: Review task requirements for new packages needed
+4. **Install New Packages**: Run `cd fe && npm install <package>` for each new dependency
+5. **Verify**: Check package.json was updated with new dependencies
 
 **Error Handling - Self-Healing Loop**:
 When execute_command_tool returns error (exit_code != 0):
@@ -984,9 +1045,9 @@ Example of CORRECT output for write_file_tool:
 import React from 'react';
 import {{ useAuth }} from '@/hooks/useAuth';
 
-export const LoginPage: React.FC = () => {
+export const LoginPage: React.FC = () => {{
   // ... component code
-};
+}};
 ```
 
 Example of WRONG output:

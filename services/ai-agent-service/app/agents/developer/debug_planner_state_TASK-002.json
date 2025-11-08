@@ -1,143 +1,381 @@
 {
     "success": true,
     "final_plan": {
-        "task_id": "TSK-2477",
+        "task_id": "TSK-2418",
         "description": "Task: Implement user login functionality\nTask Description: Create user login API endpoint with authe...",
-        "complexity_score": 7,
+        "complexity_score": 8,
         "plan_type": "complex",
         "functional_requirements": [
-            "Create a POST /api/auth/login endpoint that accepts email and password.",
-            "Validate user credentials against the database.",
-            "Compare hashed password using bcrypt.",
-            "Return a JWT token with user information upon successful login.",
-            "Implement rate limiting to prevent brute force attacks.",
-            "Log failed login attempts for security monitoring.",
-            "Return appropriate error messages for invalid credentials.",
-            "Ensure the token includes user ID, email, and expiration time.",
-            "Include comprehensive unit tests for authentication scenarios.",
-            "Update API documentation with endpoint details."
+            "Create a POST /api/auth/login endpoint that accepts email and password in the request body.",
+            "Validate user credentials against the user database.",
+            "Compare provided password with stored hashed password using bcrypt.",
+            "Return a JWT token containing user ID, email, and expiration time upon successful authentication.",
+            "Implement rate limiting on the login endpoint to prevent brute force attacks.",
+            "Log all failed login attempts for security monitoring and auditing.",
+            "Return clear and appropriate error messages for invalid credentials or failed authentication.",
+            "Include comprehensive unit tests covering all authentication scenarios.",
+            "Update API documentation to include details of the login endpoint, request/response formats, and error codes."
         ],
         "steps": [
             {
                 "step": 1,
-                "title": "Setup JWT and bcrypt authentication foundation",
-                "description": "Install necessary dependencies and configure JWT and bcrypt for authentication.",
+                "title": "Create User Model",
+                "description": "Define User model with Mongoose schema for storing user credentials.",
                 "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "1.1",
-                        "title": "Install jsonwebtoken and bcryptjs libraries",
-                        "description": "Add jsonwebtoken and bcryptjs libraries to package.json for token generation and password hashing."
+                        "title": "Define User schema with email, password_hash, is_verified, created_at, updated_at fields."
                     },
                     {
                         "sub_step": "1.2",
-                        "title": "Add JWT_SECRET to environment config",
-                        "description": "Add JWT_SECRET variable to .env file and ensure it's loaded in the application."
+                        "title": "Add unique index on email field and timestamps."
+                    },
+                    {
+                        "sub_step": "1.3",
+                        "title": "Add pre-save hook for password hashing using bcrypt."
+                    },
+                    {
+                        "sub_step": "1.4",
+                        "title": "Export User model for use in repositories."
                     }
                 ]
             },
             {
                 "step": 2,
-                "title": "Implement login API endpoint",
-                "description": "Create the login endpoint with credential validation and JWT generation.",
+                "title": "Create User Repository",
+                "description": "Implement data access layer for user-related database operations.",
                 "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "2.1",
-                        "title": "Create auth router and login route",
-                        "description": "Setup POST /api/auth/login route in the auth router using Express."
+                        "title": "Create UserRepository class with methods for finding users by email and ID."
                     },
                     {
                         "sub_step": "2.2",
-                        "title": "Implement login controller logic",
-                        "description": "Create controller function to validate user credentials and generate JWT token upon successful login."
+                        "title": "Implement findByEmail() method to retrieve user by email."
                     },
                     {
                         "sub_step": "2.3",
-                        "title": "Add request validation middleware",
-                        "description": "Implement middleware to validate email format and password presence using Joi."
+                        "title": "Implement create() method for creating new users."
                     },
                     {
                         "sub_step": "2.4",
-                        "title": "Implement password comparison logic",
-                        "description": "Use bcrypt to compare the hashed password stored in the database with the provided password."
-                    },
-                    {
-                        "sub_step": "2.5",
-                        "title": "Log failed login attempts",
-                        "description": "Implement logging of failed login attempts for security monitoring."
-                    },
-                    {
-                        "sub_step": "2.6",
-                        "title": "Implement rate limiting",
-                        "description": "Add rate limiting middleware to prevent brute force attacks on the login endpoint."
+                        "title": "Add updateVerificationStatus() method for updating user verification status."
                     }
                 ]
             },
             {
                 "step": 3,
-                "title": "Create comprehensive unit tests for authentication scenarios",
-                "description": "Write tests to validate the login functionality and error handling.",
-                "category": "testing",
+                "title": "Create Input Validation Schemas",
+                "description": "Define validation schemas using Joi for login requests.",
+                "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "3.1",
-                        "title": "Test successful login flow",
-                        "description": "Write tests to verify that a valid email and password return a JWT token."
+                        "title": "Create loginSchema with email and password validation rules."
                     },
                     {
                         "sub_step": "3.2",
-                        "title": "Test invalid credentials handling",
-                        "description": "Write tests to ensure appropriate error messages are returned for invalid credentials."
-                    },
-                    {
-                        "sub_step": "3.3",
-                        "title": "Test rate limiting behavior",
-                        "description": "Write tests to verify that rate limiting blocks further login attempts after multiple failures."
+                        "title": "Implement validation middleware to validate incoming requests."
                     }
                 ]
             },
             {
                 "step": 4,
-                "title": "Update API documentation",
-                "description": "Ensure that the API documentation reflects the new login endpoint and its usage.",
-                "category": "documentation",
+                "title": "Implement Auth Service",
+                "description": "Create business logic layer for authentication processes.",
+                "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "4.1",
-                        "title": "Document login API endpoint",
-                        "description": "Add details about the /api/auth/login endpoint, including request and response formats."
+                        "title": "Create AuthService class with loginUser() method for handling login logic."
+                    },
+                    {
+                        "sub_step": "4.2",
+                        "title": "Implement password verification logic using bcrypt."
+                    },
+                    {
+                        "sub_step": "4.3",
+                        "title": "Generate JWT token upon successful authentication."
+                    },
+                    {
+                        "sub_step": "4.4",
+                        "title": "Add logging for failed login attempts."
+                    }
+                ]
+            },
+            {
+                "step": 5,
+                "title": "Create Auth Controller",
+                "description": "Implement thin controller layer to handle HTTP requests.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "5.1",
+                        "title": "Create AuthController with login() handler delegating to AuthService."
+                    },
+                    {
+                        "sub_step": "5.2",
+                        "title": "Implement error handling and response formatting in login() method."
+                    }
+                ]
+            },
+            {
+                "step": 6,
+                "title": "Define Authentication Routes",
+                "description": "Setup API endpoints for authentication.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "6.1",
+                        "title": "Create auth router with POST /api/auth/login route."
+                    },
+                    {
+                        "sub_step": "6.2",
+                        "title": "Add rate limiting middleware to the login route."
+                    },
+                    {
+                        "sub_step": "6.3",
+                        "title": "Attach validation middleware to the login route."
+                    }
+                ]
+            },
+            {
+                "step": 7,
+                "title": "Implement Error Handling Middleware",
+                "description": "Create global error handler for the application.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "7.1",
+                        "title": "Define AppError class for custom error handling."
+                    },
+                    {
+                        "sub_step": "7.2",
+                        "title": "Implement error handling middleware to catch and format errors."
+                    }
+                ]
+            },
+            {
+                "step": 8,
+                "title": "Setup Request Logging",
+                "description": "Implement logging for requests and failed login attempts.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "8.1",
+                        "title": "Install and configure Winston or Morgan for logging."
+                    },
+                    {
+                        "sub_step": "8.2",
+                        "title": "Log all failed login attempts with relevant details."
+                    }
+                ]
+            },
+            {
+                "step": 9,
+                "title": "Environment Configuration",
+                "description": "Setup environment variables for sensitive configurations.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "9.1",
+                        "title": "Create .env file for environment variables."
+                    },
+                    {
+                        "sub_step": "9.2",
+                        "title": "Implement config validation using dotenv and Joi."
+                    }
+                ]
+            },
+            {
+                "step": 10,
+                "title": "Database Connection Setup",
+                "description": "Establish connection to MongoDB database.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "10.1",
+                        "title": "Install Mongoose for MongoDB interaction."
+                    },
+                    {
+                        "sub_step": "10.2",
+                        "title": "Create database connection file using Mongoose."
+                    },
+                    {
+                        "sub_step": "10.3",
+                        "title": "Handle connection errors and log them."
+                    }
+                ]
+            },
+            {
+                "step": 11,
+                "title": "API Documentation",
+                "description": "Document the login API endpoint using Swagger or similar tools.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "11.1",
+                        "title": "Define API documentation structure for the login endpoint."
+                    },
+                    {
+                        "sub_step": "11.2",
+                        "title": "Include request/response formats and error codes in documentation."
+                    }
+                ]
+            },
+            {
+                "step": 12,
+                "title": "Write Unit Tests",
+                "description": "Create unit tests for the authentication service and controller.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "12.1",
+                        "title": "Write unit tests for AuthService methods."
+                    },
+                    {
+                        "sub_step": "12.2",
+                        "title": "Write unit tests for AuthController methods."
+                    }
+                ]
+            },
+            {
+                "step": 13,
+                "title": "Write Integration Tests",
+                "description": "Create integration tests for the login endpoint.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "13.1",
+                        "title": "Write integration tests for POST /api/auth/login."
+                    },
+                    {
+                        "sub_step": "13.2",
+                        "title": "Test various scenarios including valid and invalid credentials."
+                    }
+                ]
+            },
+            {
+                "step": 14,
+                "title": "Main Application Setup",
+                "description": "Update main application file to include routes and middleware.",
+                "category": "backend",
+                "sub_steps": [
+                    {
+                        "sub_step": "14.1",
+                        "title": "Import and use auth routes in app.js."
+                    },
+                    {
+                        "sub_step": "14.2",
+                        "title": "Add middleware for error handling and logging."
                     }
                 ]
             }
         ],
         "database_changes": [
             {
-                "change": "Add login attempt logging collection",
+                "change": "Add users collection",
                 "fields": [
-                    "id",
+                    "_id",
                     "email",
-                    "timestamp",
-                    "success"
+                    "password_hash",
+                    "is_verified",
+                    "created_at",
+                    "updated_at"
                 ],
-                "affected_step": 2
+                "affected_step": 1
             }
         ],
         "external_dependencies": [
             {
-                "package": "jsonwebtoken",
-                "version": "^9.0.0",
-                "purpose": "JWT token generation"
+                "package": "mongoose",
+                "version": "^8.0.0",
+                "purpose": "MongoDB ODM for user data storage",
+                "category": "backend",
+                "already_installed": false,
+                "installation_method": "npm",
+                "install_command": "cd be && npm install mongoose@^8.0.0",
+                "package_file": "be/package.json",
+                "dependency_type": "production"
             },
             {
                 "package": "bcryptjs",
                 "version": "^2.4.3",
-                "purpose": "Password hashing"
+                "purpose": "Password hashing for security",
+                "category": "backend",
+                "already_installed": false,
+                "installation_method": "npm",
+                "install_command": "cd be && npm install bcryptjs@^2.4.3",
+                "package_file": "be/package.json",
+                "dependency_type": "production"
+            },
+            {
+                "package": "joi",
+                "version": "^17.11.0",
+                "purpose": "Input validation schemas",
+                "category": "backend",
+                "already_installed": false,
+                "installation_method": "npm",
+                "install_command": "cd be && npm install joi@^17.11.0",
+                "package_file": "be/package.json",
+                "dependency_type": "production"
             },
             {
                 "package": "express-rate-limit",
-                "version": "^5.3.0",
-                "purpose": "Rate limiting middleware"
+                "version": "^6.6.0",
+                "purpose": "Rate limiting middleware for login endpoint",
+                "category": "backend",
+                "already_installed": false,
+                "installation_method": "npm",
+                "install_command": "cd be && npm install express-rate-limit@^6.6.0",
+                "package_file": "be/package.json",
+                "dependency_type": "production"
+            },
+            {
+                "package": "winston",
+                "version": "^3.3.3",
+                "purpose": "Logging library for request and error logging",
+                "category": "backend",
+                "already_installed": false,
+                "installation_method": "npm",
+                "install_command": "cd be && npm install winston@^3.3.3",
+                "package_file": "be/package.json",
+                "dependency_type": "production"
+            },
+            {
+                "package": "dotenv",
+                "version": "^16.0.0",
+                "purpose": "Environment variable management",
+                "category": "backend",
+                "already_installed": false,
+                "installation_method": "npm",
+                "install_command": "cd be && npm install dotenv@^16.0.0",
+                "package_file": "be/package.json",
+                "dependency_type": "production"
+            },
+            {
+                "package": "jsonwebtoken",
+                "version": "^9.0.0",
+                "purpose": "JWT token generation and verification",
+                "category": "backend",
+                "already_installed": false,
+                "installation_method": "npm",
+                "install_command": "cd be && npm install jsonwebtoken@^9.0.0",
+                "package_file": "be/package.json",
+                "dependency_type": "production"
+            },
+            {
+                "package": "supertest",
+                "version": "^6.3.3",
+                "purpose": "Testing library for HTTP assertions",
+                "category": "backend",
+                "already_installed": false,
+                "installation_method": "npm",
+                "install_command": "cd be && npm install supertest@^6.3.3",
+                "package_file": "be/package.json",
+                "dependency_type": "development"
             }
         ],
         "internal_dependencies": [
@@ -146,23 +384,60 @@
                 "required_by_step": 2
             },
             {
-                "module": "Validation middleware",
-                "required_by_step": 2
+                "module": "UserRepository",
+                "required_by_step": 4
+            },
+            {
+                "module": "AuthService",
+                "required_by_step": 5
+            },
+            {
+                "module": "loginSchema",
+                "required_by_step": 6
+            },
+            {
+                "module": "AppError",
+                "required_by_step": 7
+            },
+            {
+                "module": "Logger",
+                "required_by_step": 8
+            },
+            {
+                "module": "dotenv",
+                "required_by_step": 9
+            },
+            {
+                "module": "Mongoose",
+                "required_by_step": 10
+            },
+            {
+                "module": "AuthController",
+                "required_by_step": 11
+            },
+            {
+                "module": "AuthService tests",
+                "required_by_step": 12
+            },
+            {
+                "module": "AuthController tests",
+                "required_by_step": 12
+            },
+            {
+                "module": "Integration tests",
+                "required_by_step": 13
             }
         ],
-        "story_points": 8,
+        "story_points": 13,
         "execution_order": [
-            "Execute steps sequentially: 1 → 2 → 3 → 4",
-            "Within each step, execute sub-steps in order",
-            "Test after each sub-step before proceeding",
-            "Commit code after each completed sub-step"
+            "Backend (1-14): Models → Repository → Validation → Service → Controller → Routes → Middleware → Logging → Environment Config → Database Connection → API Docs → Unit Tests → Integration Tests → Main Application Setup"
         ]
     },
     "ready_for_implementation": true,
-    "task_id": "TSK-2477",
-    "complexity_score": 7,
-    "story_points": 8,
-    "validation_score": 0.9,
+    "task_id": "TSK-2418",
+    "complexity_score": 8,
+    "story_points": 13,
+    "validation_score": 0.925,
     "status": "finalized",
     "iterations": 3,
     "metadata": {

@@ -256,15 +256,22 @@ def _execute_substep_with_llm(
         )
 
         print("    🔧 Formatting prompt with placeholders...")
-        formatted_prompt = prompt_template.format(
-            agent_md=agents_md_content or "No architecture guidelines available.",
-            step_info=step_info,
-            substep_info=substep_info,
-            files_affected=files_affected,
-        )
-        print(
-            f"    ✅ Prompt formatted successfully (length: {len(formatted_prompt)} chars)"
-        )
+        try:
+            formatted_prompt = prompt_template.format(
+                agent_md=agents_md_content or "No architecture guidelines available.",
+                step_info=step_info,
+                substep_info=substep_info,
+            )
+            print(
+                f"    ✅ Prompt formatted successfully (length: {len(formatted_prompt)} chars)"
+            )
+        except KeyError as e:
+            print(f"    ⚠️ KeyError during format: {e}")
+            print(f"    🔧 Using safe replacement method instead...")
+            formatted_prompt = prompt_template.replace("{agent_md}", agents_md_content or "No architecture guidelines available.")
+            formatted_prompt = formatted_prompt.replace("{step_info}", step_info)
+            formatted_prompt = formatted_prompt.replace("{substep_info}", substep_info)
+            print(f"    ✅ Prompt formatted with replacement (length: {len(formatted_prompt)} chars)")
 
         # Add working directory context
         formatted_prompt += f"\n\n**Working Directory:** {working_dir}\n"

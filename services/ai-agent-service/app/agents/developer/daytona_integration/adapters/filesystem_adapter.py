@@ -81,6 +81,15 @@ class LocalFilesystemAdapter(FilesystemAdapter):
     ) -> str:
         """Write content to file on local filesystem."""
         try:
+            # Validate file_path must start with be/ or fe/
+            if not (file_path.startswith("be/") or file_path.startswith("fe/")):
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "message": f"Access denied - file must be in 'be/' or 'fe/' directory. Got: '{file_path}'",
+                    }
+                )
+
             # Resolve full path
             full_path = Path(working_directory) / file_path
             full_path = full_path.resolve()
@@ -541,6 +550,8 @@ class LocalFilesystemAdapter(FilesystemAdapter):
                 cwd=str(working_dir_resolved),
                 capture_output=capture_output,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=timeout,
             )
 

@@ -45,7 +45,7 @@ def parse_task(state: PlannerState) -> PlannerState:
 
         # Initialize LLM
         llm = ChatOpenAI(
-            model="gpt-4o-mini",
+            model="gpt-4.1",
             temperature=0.3,
             api_key=os.getenv("OPENAI_API_KEY"),
             base_url=os.getenv("OPENAI_BASE_URL"),
