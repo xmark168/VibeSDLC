@@ -15,6 +15,7 @@ from app.api.routes import (
     github_webhook,
     github_repositories,
     github_create_repo,
+    scrum_master_test,  # TraDS: Test endpoint for Sprint Planner
 )
 from app.core.config import settings
 
@@ -32,6 +33,7 @@ api_router.include_router(agent_execution.router)
 api_router.include_router(github_webhook.router)
 api_router.include_router(github_repositories.router)
 api_router.include_router(github_create_repo.router)
+api_router.include_router(scrum_master_test.router)  # TraDS: Test endpoint for Sprint Planner
 
 if settings.ENVIRONMENT == "local":
     api_router.include_router(private.router)

@@ -18,6 +18,16 @@ export type ExecuteAgentSyncResponse = {
   result: any
 }
 
+// TraDS: Sprint Planner Test Types
+export type TestSprintPlannerRequest = {
+  project_id: string
+}
+
+export type TestSprintPlannerResponse = {
+  status: string
+  message: string
+}
+
 export const agentApi = {
   /**
    * Execute agent asynchronously (recommended for production)
@@ -41,6 +51,17 @@ export const agentApi = {
     return __request<ExecuteAgentSyncResponse>(OpenAPI, {
       method: "POST",
       url: "/api/v1/agent/execute-sync",
+      body,
+    })
+  },
+
+  // TraDS: Test Sprint Planner with mock PO output
+  testSprintPlanner: async (
+    body: TestSprintPlannerRequest,
+  ): Promise<TestSprintPlannerResponse> => {
+    return __request<TestSprintPlannerResponse>(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/scrum-master-test/test-sprint-planner",
       body,
     })
   },
