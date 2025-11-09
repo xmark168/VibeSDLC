@@ -110,6 +110,39 @@ def get_project(*, session: Session, project_id: UUID) -> Optional[Project]:
     return session.get(Project, project_id)
 
 
+def get_projects(
+    *,
+    session: Session,
+    skip: int = 0,
+    limit: int = 100,
+) -> tuple[list[Project], int]:
+    """
+    Get all projects with pagination (for admin).
+
+    Args:
+        session: Database session
+        skip: Number of records to skip
+        limit: Maximum number of records to return
+
+    Returns:
+        Tuple of (projects list, total count)
+    """
+    # Get total count
+    count_statement = select(func.count(Project.id))
+    total_count = session.exec(count_statement).one()
+
+    # Get paginated results
+    statement = (
+        select(Project)
+        .offset(skip)
+        .limit(limit)
+        .order_by(Project.created_at.desc())
+    )
+    projects = session.exec(statement).all()
+
+    return projects, total_count
+
+
 def get_projects_by_owner(
     *,
     session: Session,
@@ -119,20 +152,20 @@ def get_projects_by_owner(
 ) -> tuple[list[Project], int]:
     """
     Get all projects owned by a user with pagination.
-    
+
     Args:
         session: Database session
         owner_id: UUID of the project owner
         skip: Number of records to skip
         limit: Maximum number of records to return
-    
+
     Returns:
         Tuple of (projects list, total count)
     """
     # Get total count
     count_statement = select(func.count(Project.id)).where(Project.owner_id == owner_id)
     total_count = session.exec(count_statement).one()
-    
+
     # Get paginated results
     statement = (
         select(Project)
@@ -142,7 +175,7 @@ def get_projects_by_owner(
         .order_by(Project.created_at.desc())
     )
     projects = session.exec(statement).all()
-    
+
     return projects, total_count
 
 

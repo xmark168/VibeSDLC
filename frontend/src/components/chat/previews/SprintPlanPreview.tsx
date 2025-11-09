@@ -314,7 +314,7 @@ export function SprintPlanPreview({ sprintPlan }: SprintPlanPreviewProps) {
       </div>
 
       {/* Unassigned Items Warning */}
-      {unassigned_items && unassigned_items.length > 0 && (
+      {/* {unassigned_items && unassigned_items.length > 0 && (
         <Card className="border-yellow-500/50 bg-yellow-50 dark:bg-yellow-950/20">
           <CardHeader>
             <CardTitle className="text-sm flex items-center gap-2 text-yellow-700 dark:text-yellow-400">
@@ -346,7 +346,7 @@ export function SprintPlanPreview({ sprintPlan }: SprintPlanPreviewProps) {
             </div>
           </CardContent>
         </Card>
-      )}
+      )} */}
 
       {/* Prioritized Backlog Toggle */}
       <div className="border-t pt-3">

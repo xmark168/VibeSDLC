@@ -232,6 +232,12 @@ class PriorityState(BaseModel):
         default=False, description="Flag để track việc vừa adjust theo user feedback"
     )
 
+    # Non-prioritizable items (Sub-tasks, etc.)
+    non_prioritizable_items: list[dict] = Field(
+        default_factory=list,
+        description="Items không được prioritize (Sub-tasks, etc.) - sẽ được add vào unassigned_items"
+    )
+
     # Final Output
     sprint_plan: dict = Field(
         default_factory=dict,
@@ -585,6 +591,17 @@ class PriorityAgent:
             # Update state
             state.wsjf_calculations = wsjf_calculations
             state.prioritized_backlog = prioritized_backlog
+
+            # Store non-prioritizable items (Sub-tasks, etc.) separately
+            # These will be added to unassigned_items later
+            non_prioritizable_items = [
+                item for item in items if item.get("type") not in ["Epic", "User Story", "Task"]
+            ]
+
+            print(f"\n📦 Non-prioritizable items (Sub-tasks, etc.): {len(non_prioritizable_items)}")
+
+            # Store in state for later use
+            state.non_prioritizable_items = non_prioritizable_items
 
             # Print summary
             print(f"\n✓ Calculate Priority completed")
@@ -1424,6 +1441,11 @@ class PriorityAgent:
                             "reason": "Dependencies not met or capacity exceeded",
                         }
                     )
+
+        # Add non-prioritizable items (Sub-tasks, etc.) to unassigned_items
+        if state.non_prioritizable_items:
+            print(f"\n📦 Adding {len(state.non_prioritizable_items)} non-prioritizable items (Sub-tasks, etc.) to unassigned_items")
+            unassigned_items_data.extend(state.non_prioritizable_items)
 
         # Build final sprint plan
         state.sprint_plan = {
