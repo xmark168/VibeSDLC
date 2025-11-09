@@ -82,6 +82,28 @@ def generate_verification_code() -> str:
     return str(random.randint(100000, 999999))
 
 
+@router.post("/login/access-token", response_model=LoginResponse)
+@limiter.limit("5/minute")
+def login_access_token(
+    request: Request,
+    response: Response,
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    session: SessionDep
+) -> LoginResponse:
+    """
+    OAuth2 compatible token login, get an access token for future requests
+    """
+    # Convert OAuth2 form to LoginRequest format
+    login_data = LoginRequest(
+        email=form_data.username,  # OAuth2 uses 'username' field for email
+        password=form_data.password,
+        login_provider=False
+    )
+
+    # Reuse the main login logic
+    return login(request=request, response=response, login_data=login_data, session=session)
+
+
 @router.post("/login", response_model=LoginResponse)
 @limiter.limit("5/minute")
 def login(
@@ -118,11 +140,11 @@ def login(
 
     else:
         # Provider Login
-        if not login_data.email or not login_data.fullname or login_data.password is not None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email và fullname không được để trống, password phải null với provider login"
-            )
+        # if not login_data.email or not login_data.fullname or login_data.password is not None:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_400_BAD_REQUEST,
+        #         detail="Email và fullname không được để trống, password phải null với provider login"
+        #     )
 
         # Find or create user with provider login
         user = crud.get_user_by_email(session=session, email=str(login_data.email))

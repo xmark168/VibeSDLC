@@ -10,6 +10,7 @@ from app.api.deps import get_current_user, get_db
 from app.models import Message as MessageModel, Project, User, AuthorType
 from app.core.config import settings
 from app.core.response_queue import response_manager
+from app.services.sprint_persistence import SprintPersistenceService
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -648,6 +649,94 @@ async def websocket_endpoint(
                             session.add(approved_message)
                             session.commit()
                             session.refresh(approved_message)
+
+                            # Save to specific database tables based on preview type
+                            db_persistence_status = {"success": False, "message": ""}
+
+                            try:
+                                if preview_type == "sprint_plan" and structured_data:
+                                    # Extract sprint data and backlog items for sprint plan persistence
+                                    sprint_plan_data = structured_data
+
+                                    # Extract backlog items from prioritized_backlog (not backlog_items)
+                                    backlog_items_data = structured_data.get("prioritized_backlog", [])
+
+                                    # If not found, try backlog_items as fallback
+                                    if not backlog_items_data:
+                                        backlog_items_data = structured_data.get("backlog_items", [])
+
+                                    print(f"[WebSocket] Saving sprint plan to database: {len(sprint_plan_data.get('sprints', []))} sprints, {len(backlog_items_data)} items")
+
+                                    db_result = SprintPersistenceService.save_sprint_plan(
+                                        session=session,
+                                        project_id=UUID(project_id),
+                                        sprint_plan=sprint_plan_data,
+                                        backlog_items=backlog_items_data
+                                    )
+
+                                    db_persistence_status = {
+                                        "success": True,
+                                        "message": f"✅ Saved {db_result.get('total_sprints', 0)} sprints and {db_result.get('total_items', 0)} items to database"
+                                    }
+
+                                    await manager.broadcast_to_project({
+                                        "type": "notification",
+                                        "data": {
+                                            "level": "success",
+                                            "message": db_persistence_status["message"]
+                                        }
+                                    }, project_id)
+
+                                elif preview_type == "product_backlog" and structured_data:
+                                    # For product backlog, save items to database (not yet assigned to sprint)
+                                    backlog_items_data = structured_data.get("backlog_items", [])
+
+                                    print(f"[WebSocket] Saving product backlog to database: {len(backlog_items_data)} items")
+
+                                    db_result = SprintPersistenceService.save_product_backlog(
+                                        session=session,
+                                        project_id=UUID(project_id),
+                                        backlog_items=backlog_items_data
+                                    )
+
+                                    db_persistence_status = {
+                                        "success": True,
+                                        "message": f"✅ Product backlog saved: {db_result.get('total_items', 0)} items"
+                                    }
+
+                                    await manager.broadcast_to_project({
+                                        "type": "notification",
+                                        "data": {
+                                            "level": "success",
+                                            "message": db_persistence_status["message"]
+                                        }
+                                    }, project_id)
+
+                            except Exception as e:
+                                print(f"[WebSocket] ❌ Database persistence error: {e}", flush=True)
+                                db_persistence_status = {
+                                    "success": False,
+                                    "message": f"❌ Database save failed: {str(e)}"
+                                }
+
+                                await manager.broadcast_to_project({
+                                    "type": "notification",
+                                    "data": {
+                                        "level": "error",
+                                        "message": db_persistence_status["message"]
+                                    }
+                                }, project_id)
+
+                                # Don't rollback message save - keep the approval record
+                                session.commit()
+
+                            # Update message metadata with persistence status
+                            approved_message.message_metadata = {
+                                **approved_message.message_metadata,
+                                "db_persistence": db_persistence_status
+                            }
+                            session.add(approved_message)
+                            session.commit()
 
                             # Broadcast the approved message to chat BEFORE unblocking agent
                             await manager.broadcast_to_project({
