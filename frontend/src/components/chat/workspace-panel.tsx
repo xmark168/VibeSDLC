@@ -14,6 +14,9 @@ import Loggings from "./loggings"
 import { useActiveSprint, useSprints } from "@/queries/projects"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Calendar } from "lucide-react"
+// TraDS: Import API client for Sprint Planner test
+import { agentApi } from "@/apis/agent"
+import { useQueryClient } from "@tanstack/react-query"
 type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings"
 
 interface Tab {
@@ -70,6 +73,9 @@ const agent = [
 
 
 export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projectId, activeTab: wsActiveTab }: WorkspacePanelProps) {
+  // TraDS: Query client for invalidating queries after test
+  const queryClient = useQueryClient()
+
   // Get active sprint for this project
   const { data: activeSprint, isLoading: isLoadingSprint, error: sprintError } = useActiveSprint(projectId)
 
@@ -79,6 +85,9 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
 
   // Selected sprint state (default to active sprint)
   const [selectedSprintId, setSelectedSprintId] = useState<string | null>(null)
+
+  // TraDS: Test Sprint Planner state
+  const [isTestingSprintPlanner, setIsTestingSprintPlanner] = useState(false)
 
   // Update selectedSprintId when activeSprint changes
   useEffect(() => {
@@ -276,6 +285,37 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
         return null
     }
   }
+  // TraDS: Test Sprint Planner handler
+  const handleTestSprintPlanner = async () => {
+    if (!projectId) {
+      alert("No project selected")
+      return
+    }
+
+    setIsTestingSprintPlanner(true)
+    try {
+      const response = await agentApi.testSprintPlanner({
+        project_id: projectId
+      })
+
+      console.log("Test Sprint Planner started:", response)
+
+      // Switch to Kanban tab to see results
+      setActiveTabId("tab-2")
+
+      // Invalidate queries to refresh data after a delay
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["sprints", projectId] })
+        queryClient.invalidateQueries({ queryKey: ["backlog-items", projectId] })
+      }, 5000)
+    } catch (error) {
+      console.error("Test Sprint Planner failed:", error)
+      alert("Test failed. Check console for details.")
+    } finally {
+      setIsTestingSprintPlanner(false)
+    }
+  }
+
   const getFileContent = (path: string): string => {
     // Mock file contents - in a real app, this would fetch from an API
     const contents: Record<string, string> = {
@@ -389,6 +429,15 @@ export default function Home() {
 
           <div className="flex items-center gap-10">
             <AnimatedTooltip items={agent} />
+            {/* TraDS: Test Sprint Planner Button */}
+            <Button
+              size="sm"
+              className="h-8 text-xs bg-orange-500 hover:bg-orange-600"
+              onClick={handleTestSprintPlanner}
+              disabled={isTestingSprintPlanner || !projectId}
+            >
+              {isTestingSprintPlanner ? "Testing..." : "🧪 Test Assigner"}
+            </Button>
             <Button size="sm" className="h-8 text-xs bg-[#6366f1] hover:bg-[#5558e3]">
               Share
             </Button>
