@@ -24,6 +24,10 @@ open-swe/
 frontend/src/routeTree.gen.ts
 
 .env
+.env.*
+*.env
+**/.env
+**/.env.*
 
 # Logs
 logs

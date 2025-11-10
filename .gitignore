@@ -22,8 +22,14 @@ __pycache__/
 open-swe/
 .idea/
 frontend/src/routeTree.gen.ts
-
+C:\o_d\fpt\do_an\VibeSDLC\services\ai-agent-service\.env
 .env
+.env.*
+*.env
+**/.env
+**/.env.*
+
+services/ai-agent-service/.env
 
 # Logs
 logs

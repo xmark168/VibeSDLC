@@ -3,13 +3,17 @@ from uuid import UUID, uuid4
 from enum import Enum
 from pydantic import EmailStr
 from sqlmodel import Field, SQLModel, Relationship, Column
-from sqlalchemy import JSON
+from sqlalchemy import JSON, Text
 from typing import Optional
-from sqlalchemy import JSON, Column
 
 class Role(str, Enum):
     ADMIN = "admin"
     USER = "user"
+
+
+class BlockerType(str, Enum):
+    DEV_BLOCKER = "DEV_BLOCKER"
+    TEST_BLOCKER = "TEST_BLOCKER"
 
 
 class GitHubAccountType(str, Enum):
@@ -39,7 +43,7 @@ class BaseModel(SQLModel):
 class User(BaseModel, table=True):
     __tablename__ = "users"
 
-    full_name: str = Field(max_length=50, nullable=True)
+    full_name: str | None = Field(default=None, max_length=50, nullable=True)
     hashed_password: str = Field(nullable=True)
     email: EmailStr = Field(unique=True, index=True, max_length=255)
     role: Role = Field(default=Role.USER, nullable=True)
@@ -99,6 +103,12 @@ class Project(BaseModel, table=True):
     sprints: list["Sprint"] = Relationship(
         back_populates="project",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    # TraDS ============= Sprint Retrospective Rules
+
+    rules: Optional["ProjectRules"] = Relationship(
+        back_populates="project",
+        sa_relationship_kwargs={"uselist": False, "cascade": "all, delete-orphan"}
     )
 
 
@@ -161,6 +171,11 @@ class BacklogItem(BaseModel, table=True):
     )
     activities: list["IssueActivity"] = Relationship(
         back_populates="issue", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    # TraDS ============= Sprint Retrospective Blockers
+    blockers: list["Blocker"] = Relationship(
+        back_populates="backlog_item",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
 
@@ -267,4 +282,31 @@ class RefreshToken(BaseModel, table=True):
         sa_relationship_kwargs={"remote_side": "RefreshToken.id"},
     )
     children: list["RefreshToken"] = Relationship(back_populates="parent")
-    
+
+
+# TraDS ============= Sprint Retrospective Models
+class ProjectRules(BaseModel, table=True):
+    __tablename__ = "projectrules"
+
+    project_id: UUID = Field(foreign_key="projects.id", unique=True, nullable=False, ondelete="CASCADE")
+
+    po_prompt: str | None = Field(default=None, sa_column=Column(Text))
+    dev_prompt: str | None = Field(default=None, sa_column=Column(Text))
+    tester_prompt: str | None = Field(default=None, sa_column=Column(Text))
+
+    # Relationship
+    project: Project = Relationship(back_populates="rules")
+
+
+class Blocker(BaseModel, table=True):
+    __tablename__ = "blockers"
+
+    backlog_item_id: UUID = Field(foreign_key="backlog_items.id", nullable=False, ondelete="CASCADE")
+    reported_by_user_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")
+    blocker_type: BlockerType = Field(nullable=False)
+    description: str = Field(sa_column=Column(Text))
+
+    # Relationships
+    backlog_item: BacklogItem = Relationship(back_populates="blockers")
+    reported_by: User = Relationship()
+

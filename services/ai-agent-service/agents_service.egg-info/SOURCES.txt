@@ -11,7 +11,6 @@ app/schemas.py
 app/agents/__init__.py
 app/agents/developer/__init__.py
 app/agents/developer/agent.py
-app/agents/developer/developer_agent.py
 app/agents/developer/state.py
 app/agents/developer/test_developer_agent.py
 app/agents/developer/code_reviewer/__init__.py
@@ -80,6 +79,8 @@ app/agents/developer/planner/tools/tavily_search.py
 app/agents/developer/planner/utils/__init__.py
 app/agents/developer/planner/utils/prompts.py
 app/agents/developer/planner/utils/validators.py
+app/agents/developer/task_receiver/__init__.py
+app/agents/developer/task_receiver/agent.py
 app/agents/developer/tools/__init__.py
 app/agents/developer/tools/codebase_tools.py
 app/agents/developer/tools/external_file_tools.py
@@ -100,6 +101,7 @@ app/agents/product_owner/priority_agent.py
 app/agents/product_owner/vision_agent.py
 app/agents/scrum_master/__init__.py
 app/agents/scrum_master/models.py
+app/agents/scrum_master/orchestrator.py
 app/agents/scrum_master/scrum_master_agent.py
 app/agents/scrum_master/test_data.py
 app/agents/scrum_master/tools.py
@@ -121,15 +123,7 @@ app/agents/team_leader/tl_agent.py
 app/agents/tester/__init__.py
 app/agents/tester/tester_agent.py
 app/alembic/env.py
-app/alembic/versions/52a9559cb2a7_new_change.py
-app/alembic/versions/67643ee8d363_add_refreshtoken_model.py
-app/alembic/versions/79cc072c7d18_add_account_status_to_github_.py
-app/alembic/versions/7ceaf861e8dd_remove_github_login_field_from_users_.py
-app/alembic/versions/7e98c9337782_make_user_id_nullable_in_github_.py
-app/alembic/versions/8461d8b8caa9_initial_migration.py
-app/alembic/versions/add_github_integration.py
-app/alembic/versions/d8330df23ffd_add_github_login_field_to_user_model.py
-app/alembic/versions/130645a15623_description_of_changes.py
+app/alembic/versions/5337a21c49c1_description_of_changes.py
 app/api/__init__.py
 app/api/deps.py
 app/api/main.py
@@ -169,6 +163,7 @@ app/crud/project.py
 app/crud/user.py
 app/services/__init__.py
 app/services/rule_service.py
+app/services/sprint_persistence.py
 app/templates/__init__.py
 app/templates/prompts/__init__.py
 app/templates/prompts/product_owner/__init__.py
@@ -185,11 +180,5 @@ app/templates/prompts/scrum_master/sprint_planner.py
 app/templates/prompts/team_leader/__init__.py
 app/templates/prompts/team_leader/tl_prompt.py
 app/utils/__init__.py
-<<<<<<< HEAD
 app/utils/email.py
-=======
-app/utils/custom_llm.py
-app/utils/langfuse_tracer.py
 app/utils/langfuse_utils.py
-app/utils/llm_config.py
->>>>>>> b5ac552496aa52ba2ea59876b9061821e709807e

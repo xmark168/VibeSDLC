@@ -57,7 +57,67 @@ async def execute_agent_background(
             project_id=str(project_id),
             response_manager=response_manager
         )
-        
+
+        # ========================================================================
+        # SAVE SPRINT PLAN & BACKLOG TO DATABASE
+        # ========================================================================
+        if isinstance(result, dict):
+            # Extract sprint_plan and product_backlog from result
+            sprint_plan = result.get("sprint_plan")
+            product_backlog = result.get("product_backlog")
+
+            # Debug: Check what we got
+            print(f"\n[DEBUG] Result keys: {list(result.keys())}")
+            print(f"[DEBUG] Has sprint_plan: {bool(sprint_plan)}")
+            print(f"[DEBUG] Has product_backlog: {bool(product_backlog)}")
+
+            if sprint_plan:
+                print(f"[DEBUG] sprint_plan keys: {list(sprint_plan.keys()) if isinstance(sprint_plan, dict) else 'not a dict'}")
+            if product_backlog:
+                print(f"[DEBUG] product_backlog keys: {list(product_backlog.keys()) if isinstance(product_backlog, dict) else 'not a dict'}")
+
+            # Extract backlog items from sprint_plan if not in product_backlog
+            backlog_items = []
+            if product_backlog and isinstance(product_backlog, dict):
+                backlog_items = product_backlog.get("items", [])
+            elif sprint_plan and isinstance(sprint_plan, dict):
+                # Try to get from sprint_plan.prioritized_backlog
+                prioritized_backlog = sprint_plan.get("prioritized_backlog", [])
+                if prioritized_backlog:
+                    backlog_items = prioritized_backlog
+                    print(f"[DEBUG] Using prioritized_backlog with {len(backlog_items)} items")
+
+            # Save to database if we have sprint_plan and items
+            if sprint_plan and backlog_items:
+                try:
+                    from app.services.sprint_persistence import SprintPersistenceService
+
+                    # Save sprint plan and backlog items to database
+                    saved_data = SprintPersistenceService.save_sprint_plan(
+                        session=session,
+                        project_id=project_id,
+                        sprint_plan=sprint_plan,
+                        backlog_items=backlog_items
+                    )
+
+                    print(f"✅ Saved to database: {saved_data.get('total_sprints')} sprints, {saved_data.get('total_items')} backlog items")
+
+                    # Broadcast success message
+                    await manager.broadcast_to_project({
+                        "type": "agent_message",
+                        "data": {
+                            "content": f"✅ Đã lưu {saved_data.get('total_sprints')} sprint và {saved_data.get('total_items')} backlog items vào database",
+                            "author_type": "SYSTEM"
+                        }
+                    }, str(project_id))
+
+                except Exception as e:
+                    print(f"❌ Error saving to database: {e}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print(f"⚠️ Cannot save: sprint_plan={bool(sprint_plan)}, backlog_items={len(backlog_items)}")
+
         # Extract response from result
         response_content = ""
         if isinstance(result, dict):
@@ -69,7 +129,7 @@ async def execute_agent_background(
                     response_content = last_message.get("content", "")
                 else:
                     response_content = str(last_message)
-            
+
             # If no messages, try to get other fields
             if not response_content:
                 # Get brief, vision, backlog, or sprint_plan
@@ -77,7 +137,7 @@ async def execute_agent_background(
                     if key in result and result[key]:
                         response_content = f"Generated {key}:\n{result[key]}"
                         break
-        
+
         if not response_content:
             response_content = "Agent execution completed successfully."
         
@@ -210,7 +270,53 @@ def execute_agent_sync(
 
         # Run agent
         result = agent.run(user_input=request.user_input)
-        
+
+        # ========================================================================
+        # SAVE SPRINT PLAN & BACKLOG TO DATABASE
+        # ========================================================================
+        if isinstance(result, dict):
+            # Extract sprint_plan and product_backlog from result
+            sprint_plan = result.get("sprint_plan")
+            product_backlog = result.get("product_backlog")
+
+            # Debug: Check what we got
+            print(f"\n[DEBUG] Result keys: {list(result.keys())}")
+            print(f"[DEBUG] Has sprint_plan: {bool(sprint_plan)}")
+            print(f"[DEBUG] Has product_backlog: {bool(product_backlog)}")
+
+            # Extract backlog items from sprint_plan if not in product_backlog
+            backlog_items = []
+            if product_backlog and isinstance(product_backlog, dict):
+                backlog_items = product_backlog.get("items", [])
+            elif sprint_plan and isinstance(sprint_plan, dict):
+                # Try to get from sprint_plan.prioritized_backlog
+                prioritized_backlog = sprint_plan.get("prioritized_backlog", [])
+                if prioritized_backlog:
+                    backlog_items = prioritized_backlog
+                    print(f"[DEBUG] Using prioritized_backlog with {len(backlog_items)} items")
+
+            # Save to database if we have sprint_plan and items
+            if sprint_plan and backlog_items:
+                try:
+                    from app.services.sprint_persistence import SprintPersistenceService
+
+                    # Save sprint plan and backlog items to database
+                    saved_data = SprintPersistenceService.save_sprint_plan(
+                        session=session,
+                        project_id=request.project_id,
+                        sprint_plan=sprint_plan,
+                        backlog_items=backlog_items
+                    )
+
+                    print(f"✅ Saved to database: {saved_data.get('total_sprints')} sprints, {saved_data.get('total_items')} backlog items")
+
+                except Exception as e:
+                    print(f"❌ Error saving to database: {e}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print(f"⚠️ Cannot save: sprint_plan={bool(sprint_plan)}, backlog_items={len(backlog_items)}")
+
         return {
             "status": "completed",
             "result": result

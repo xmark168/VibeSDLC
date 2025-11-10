@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import toast from "react-hot-toast"
 import { handleError } from "@/utils"
 import { useAppStore } from "@/stores/auth-store"
+import { useNavigate } from "@tanstack/react-router"
 
 interface ProjectListProps {
   projects: ProjectPublic[]
@@ -14,11 +15,15 @@ interface ProjectListProps {
 export const ProjectList = ({ projects, openLinkGithubModal, openInstallGithubModal }: ProjectListProps) => {
   const queryClient = useQueryClient()
   const user = useAppStore((state) => state.user)
+  const naviagate = useNavigate()
 
-  const handleClickProject = () => {
+  const handleClickProject = (project: ProjectPublic) => {
     if (user?.github_installations === null) {
       openLinkGithubModal(true)
       return
+    }
+    else {
+      naviagate({ to: "/workspace/$workspaceId", params: { workspaceId: project.id }})
     }
 
   }
@@ -41,7 +46,7 @@ export const ProjectList = ({ projects, openLinkGithubModal, openInstallGithubMo
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {projects.map((project) => (
-        <ProjectCard onClick={handleClickProject} key={project.code} project={project} />
+        <ProjectCard onClick={() => handleClickProject(project)} key={project.code} project={project} />
       ))}
     </div>
   )

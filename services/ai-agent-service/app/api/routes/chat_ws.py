@@ -10,6 +10,7 @@ from app.api.deps import get_current_user, get_db
 from app.models import Message as MessageModel, Project, User, AuthorType
 from app.core.config import settings
 from app.core.response_queue import response_manager
+from app.services.sprint_persistence import SprintPersistenceService
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -87,7 +88,6 @@ def get_next_agent_from_message_type(message_type: str) -> str | None:
         "product_brief": "vision",      # Brief approved → Run Vision Agent
         "product_vision": "backlog",    # Vision approved → Run Backlog Agent
         "product_backlog": "priority",  # Backlog approved → Run Priority Agent
-        "sprint_plan": "scrum_master",  # Sprint Plan approved → Run Scrum Master Agent
     }
     return step_map.get(message_type)
 
@@ -282,9 +282,23 @@ async def trigger_next_step_auto(
                 )
                 print(f"[Auto-Trigger] Priority Agent completed", flush=True)
 
-                # NOTE: Priority Agent is no longer the last step
-                # Scrum Master Agent will be triggered after user approves sprint plan
-                print(f"[Auto-Trigger] Waiting for user to approve Sprint Plan...", flush=True)
+                # Priority Agent is the last step - send completion messages
+                print(f"[Auto-Trigger] Workflow complete for project {project_id}", flush=True)
+
+                # Send workflow completed message
+                await websocket_broadcast_fn({
+                    "type": "agent_step",
+                    "step": "completed",
+                    "agent": "PO Agent",
+                    "message": "✅ Hoàn thành workflow PO Agent! Sprint Plan đã sẵn sàng."
+                }, project_id)
+
+                # Turn off typing indicator
+                await websocket_broadcast_fn({
+                    "type": "typing",
+                    "agent_name": "PO Agent",
+                    "is_typing": False
+                }, project_id)
 
             else:
                 print(f"[Auto-Trigger] ⚠ Backlog not found in DB", flush=True)
@@ -298,84 +312,6 @@ async def trigger_next_step_auto(
                 await websocket_broadcast_fn({
                     "type": "typing",
                     "agent_name": "PO Agent",
-                    "is_typing": False
-                }, project_id)
-
-        elif next_agent == "scrum_master":
-            # Get approved sprint plan from DB
-            sprint_plan_msg = step_session.exec(
-                select(MessageModel)
-                .where(MessageModel.project_id == UUID(project_id))
-                .where(MessageModel.message_type == "sprint_plan")
-                .order_by(MessageModel.created_at.desc())
-            ).first()
-
-            if sprint_plan_msg and sprint_plan_msg.structured_data:
-                print(f"[Auto-Trigger] Found sprint plan in DB", flush=True)
-
-                # Send agent_step to show progress indicator
-                await websocket_broadcast_fn({
-                    "type": "agent_step",
-                    "step": "started",
-                    "agent": "Scrum Master",
-                    "message": "🔄 Đang lưu Sprint Plan vào database..."
-                }, project_id)
-
-                # Trigger Scrum Master Agent to persist sprint plan
-                from app.agents.scrum_master.scrum_master_agent import ScrumMasterAgent
-
-                scrum_master_agent = ScrumMasterAgent(
-                    session_id=f"scrum_master_auto_{project_id}",
-                    user_id=user_id
-                )
-
-                print(f"[Auto-Trigger] Starting Scrum Master Agent to persist sprint plan...", flush=True)
-
-                # Call new method to persist sprint plan
-                await scrum_master_agent.persist_sprint_plan(
-                    sprint_plan_data=sprint_plan_msg.structured_data,
-                    project_id=project_id,
-                    websocket_broadcast_fn=websocket_broadcast_fn
-                )
-
-                print(f"[Auto-Trigger] Scrum Master Agent completed", flush=True)
-
-                # Scrum Master is the final step - send completion messages
-                print(f"[Auto-Trigger] Workflow complete for project {project_id}", flush=True)
-
-                # Send workflow completed message
-                await websocket_broadcast_fn({
-                    "type": "agent_step",
-                    "step": "completed",
-                    "agent": "Scrum Master",
-                    "message": "✅ Hoàn thành! Sprint Plan đã được lưu vào database."
-                }, project_id)
-
-                # Turn off ALL typing indicators (PO Agent and Scrum Master)
-                await websocket_broadcast_fn({
-                    "type": "typing",
-                    "agent_name": "PO Agent",
-                    "is_typing": False
-                }, project_id)
-
-                await websocket_broadcast_fn({
-                    "type": "typing",
-                    "agent_name": "Scrum Master",
-                    "is_typing": False
-                }, project_id)
-
-            else:
-                print(f"[Auto-Trigger] ⚠ Sprint Plan not found in DB", flush=True)
-                # Send error message and turn off typing indicator
-                await websocket_broadcast_fn({
-                    "type": "agent_step",
-                    "step": "error",
-                    "agent": "Scrum Master",
-                    "message": "❌ Không tìm thấy Sprint Plan. Vui lòng chạy lại Priority Agent."
-                }, project_id)
-                await websocket_broadcast_fn({
-                    "type": "typing",
-                    "agent_name": "Scrum Master",
                     "is_typing": False
                 }, project_id)
 
@@ -714,6 +650,94 @@ async def websocket_endpoint(
                             session.commit()
                             session.refresh(approved_message)
 
+                            # Save to specific database tables based on preview type
+                            db_persistence_status = {"success": False, "message": ""}
+
+                            try:
+                                if preview_type == "sprint_plan" and structured_data:
+                                    # Extract sprint data and backlog items for sprint plan persistence
+                                    sprint_plan_data = structured_data
+
+                                    # Extract backlog items from prioritized_backlog (not backlog_items)
+                                    backlog_items_data = structured_data.get("prioritized_backlog", [])
+
+                                    # If not found, try backlog_items as fallback
+                                    if not backlog_items_data:
+                                        backlog_items_data = structured_data.get("backlog_items", [])
+
+                                    print(f"[WebSocket] Saving sprint plan to database: {len(sprint_plan_data.get('sprints', []))} sprints, {len(backlog_items_data)} items")
+
+                                    db_result = SprintPersistenceService.save_sprint_plan(
+                                        session=session,
+                                        project_id=UUID(project_id),
+                                        sprint_plan=sprint_plan_data,
+                                        backlog_items=backlog_items_data
+                                    )
+
+                                    db_persistence_status = {
+                                        "success": True,
+                                        "message": f"✅ Saved {db_result.get('total_sprints', 0)} sprints and {db_result.get('total_items', 0)} items to database"
+                                    }
+
+                                    await manager.broadcast_to_project({
+                                        "type": "notification",
+                                        "data": {
+                                            "level": "success",
+                                            "message": db_persistence_status["message"]
+                                        }
+                                    }, project_id)
+
+                                elif preview_type == "product_backlog" and structured_data:
+                                    # For product backlog, save items to database (not yet assigned to sprint)
+                                    backlog_items_data = structured_data.get("backlog_items", [])
+
+                                    print(f"[WebSocket] Saving product backlog to database: {len(backlog_items_data)} items")
+
+                                    db_result = SprintPersistenceService.save_product_backlog(
+                                        session=session,
+                                        project_id=UUID(project_id),
+                                        backlog_items=backlog_items_data
+                                    )
+
+                                    db_persistence_status = {
+                                        "success": True,
+                                        "message": f"✅ Product backlog saved: {db_result.get('total_items', 0)} items"
+                                    }
+
+                                    await manager.broadcast_to_project({
+                                        "type": "notification",
+                                        "data": {
+                                            "level": "success",
+                                            "message": db_persistence_status["message"]
+                                        }
+                                    }, project_id)
+
+                            except Exception as e:
+                                print(f"[WebSocket] ❌ Database persistence error: {e}", flush=True)
+                                db_persistence_status = {
+                                    "success": False,
+                                    "message": f"❌ Database save failed: {str(e)}"
+                                }
+
+                                await manager.broadcast_to_project({
+                                    "type": "notification",
+                                    "data": {
+                                        "level": "error",
+                                        "message": db_persistence_status["message"]
+                                    }
+                                }, project_id)
+
+                                # Don't rollback message save - keep the approval record
+                                session.commit()
+
+                            # Update message metadata with persistence status
+                            approved_message.message_metadata = {
+                                **approved_message.message_metadata,
+                                "db_persistence": db_persistence_status
+                            }
+                            session.add(approved_message)
+                            session.commit()
+
                             # Broadcast the approved message to chat BEFORE unblocking agent
                             await manager.broadcast_to_project({
                                 "type": "agent_message",
@@ -818,8 +842,12 @@ async def trigger_agent_execution(session: Session, project_id: str, user_id: st
     1. TL Agent classifies user intent
     2. Route to appropriate agent (PO/SM/Dev/Tester)
     3. Execute agent and return response
+
+    Special: Detect [TEST_*] commands for direct agent testing with mock data
     """
     import asyncio
+    import json
+    import re
     from app.agents.team_leader.tl_agent import TeamLeaderAgent
     from app.agents.product_owner.po_agent import POAgent
     from app.agents.product_owner.vision_agent import VisionAgent

@@ -14,8 +14,15 @@ import Loggings from "./loggings"
 import { useActiveSprint, useSprints } from "@/queries/projects"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Calendar } from "lucide-react"
-type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings"
-
+// TraDS: Import API client for Sprint Planner test
+import { agentApi } from "@/apis/agent"
+import { useQueryClient } from "@tanstack/react-query"
+//type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings"
+// TraDS ============= Sprint Retrospective
+import { SprintRetrospective } from "./sprint-retrospective"
+import { Users } from "lucide-react"
+type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings" | "retrospective"
+// ==============================
 interface Tab {
   id: string
   view: WorkspaceView
@@ -70,6 +77,9 @@ const agent = [
 
 
 export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projectId, activeTab: wsActiveTab }: WorkspacePanelProps) {
+  // TraDS: Query client for invalidating queries after test
+  const queryClient = useQueryClient()
+
   // Get active sprint for this project
   const { data: activeSprint, isLoading: isLoadingSprint, error: sprintError } = useActiveSprint(projectId)
 
@@ -80,6 +90,9 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
   // Selected sprint state (default to active sprint)
   const [selectedSprintId, setSelectedSprintId] = useState<string | null>(null)
 
+  // TraDS: Test Sprint Planner state
+  const [isTestingSprintPlanner, setIsTestingSprintPlanner] = useState(false)
+
   // Update selectedSprintId when activeSprint changes
   useEffect(() => {
     if (activeSprint && !selectedSprintId) {
@@ -87,12 +100,15 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
     }
   }, [activeSprint, selectedSprintId])
 
+  // TraDS ============= Added Retrospective Tab
   const [tabs, setTabs] = useState<Tab[]>([
     { id: "tab-1", view: "app-preview", label: "App Preview" },
     { id: "tab-2", view: "kanban", label: "Kanban" },
-    { id: "tab-3", view: "file", label: "File" },
-    { id: "tab-4", view: "loggings", label: "Loggings" },
+    { id: "tab-3", view: "retrospective", label: "Retrospective" },
+    { id: "tab-4", view: "file", label: "File" },
+    { id: "tab-5", view: "loggings", label: "Loggings" },
   ])
+  // ==============================
   const [activeTabId, setActiveTabId] = useState("tab-1")
 
   // Auto-switch tab when wsActiveTab changes from WebSocket
@@ -162,12 +178,15 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
     }
   }
 
+  // TraDS ============= Added Retrospective Icon
   const getViewIcon = (view: WorkspaceView) => {
     switch (view) {
       case "app-preview":
         return <Globe className="w-3.5 h-3.5" />
       case "kanban":
         return <LayoutGrid className="w-3.5 h-3.5" />
+      case "retrospective":
+        return <Users className="w-3.5 h-3.5" />
       case "file":
         return <Code2 className="w-3.5 h-3.5" />
       case "loggings":
@@ -176,6 +195,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
         return <Globe className="w-3.5 h-3.5" />
     }
   }
+  // ==============================
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId)
   const activeView = activeTab?.view || "app-preview"
@@ -272,10 +292,45 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
             <Loggings />
           </>
         )
+      // TraDS ============= Retrospective View
+      case "retrospective":
+        return <SprintRetrospective projectId={projectId} sprintId={selectedSprintId || activeSprint?.id} />
+      // ==============================
       default:
         return null
     }
   }
+  // TraDS: Test Sprint Planner handler
+  const handleTestSprintPlanner = async () => {
+    if (!projectId) {
+      alert("No project selected")
+      return
+    }
+
+    setIsTestingSprintPlanner(true)
+    try {
+      const response = await agentApi.testSprintPlanner({
+        project_id: projectId
+      })
+
+      console.log("Test Sprint Planner started:", response)
+
+      // Switch to Kanban tab to see results
+      setActiveTabId("tab-2")
+
+      // Invalidate queries to refresh data after a delay
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["sprints", projectId] })
+        queryClient.invalidateQueries({ queryKey: ["backlog-items", projectId] })
+      }, 5000)
+    } catch (error) {
+      console.error("Test Sprint Planner failed:", error)
+      alert("Test failed. Check console for details.")
+    } finally {
+      setIsTestingSprintPlanner(false)
+    }
+  }
+
   const getFileContent = (path: string): string => {
     // Mock file contents - in a real app, this would fetch from an API
     const contents: Record<string, string> = {
@@ -389,6 +444,15 @@ export default function Home() {
 
           <div className="flex items-center gap-10">
             <AnimatedTooltip items={agent} />
+            {/* TraDS: Test Sprint Planner Button */}
+            <Button
+              size="sm"
+              className="h-8 text-xs bg-orange-500 hover:bg-orange-600"
+              onClick={handleTestSprintPlanner}
+              disabled={isTestingSprintPlanner || !projectId}
+            >
+              {isTestingSprintPlanner ? "Testing..." : "🧪 Test Assigner"}
+            </Button>
             <Button size="sm" className="h-8 text-xs bg-[#6366f1] hover:bg-[#5558e3]">
               Share
             </Button>

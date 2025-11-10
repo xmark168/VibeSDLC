@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from app import crud
 from app.api.deps import CurrentUser, SessionDep
-from app.models import Project
+from app.models import Project, Role
 from app.schemas import (
     ProjectCreate,
     ProjectUpdate,
@@ -29,7 +29,7 @@ def list_projects(
     limit: int = Query(100, ge=1, le=100),
 ) -> ProjectsPublic:
     """
-    Get all projects owned by the current user.
+    Get all projects owned by the current user, or all projects if admin.
 
     Args:
         session: Database session
@@ -40,12 +40,19 @@ def list_projects(
     Returns:
         ProjectsPublic: List of projects with total count
     """
-    projects, total_count = crud.project.get_projects_by_owner(
-        session=session,
-        owner_id=current_user.id,
-        skip=skip,
-        limit=limit,
-    )
+    if current_user.role == Role.ADMIN:
+        projects, total_count = crud.project.get_projects(
+            session=session,
+            skip=skip,
+            limit=limit,
+        )
+    else:
+        projects, total_count = crud.project.get_projects_by_owner(
+            session=session,
+            owner_id=current_user.id,
+            skip=skip,
+            limit=limit,
+        )
 
     return ProjectsPublic(
         data=[ProjectPublic.model_validate(p) for p in projects],
@@ -82,8 +89,8 @@ def get_project(
             detail="Project not found",
         )
 
-    # Check if user owns the project
-    if project.owner_id != current_user.id:
+    # Check if user owns the project or is admin
+    if current_user.role != Role.ADMIN and project.owner_id != current_user.id:
         logger.warning(
             f"User {current_user.id} attempted to access project {project_id} "
             f"owned by {project.owner_id}"
@@ -159,8 +166,8 @@ def update_project(
             detail="Project not found",
         )
 
-    # Check if user owns the project
-    if project.owner_id != current_user.id:
+    # Check if user owns the project or is admin
+    if current_user.role != Role.ADMIN and project.owner_id != current_user.id:
         logger.warning(
             f"User {current_user.id} attempted to update project {project_id} "
             f"owned by {project.owner_id}"
@@ -207,8 +214,8 @@ def delete_project(
             detail="Project not found",
         )
 
-    # Check if user owns the project
-    if project.owner_id != current_user.id:
+    # Check if user owns the project or is admin
+    if current_user.role != Role.ADMIN and project.owner_id != current_user.id:
         logger.warning(
             f"User {current_user.id} attempted to delete project {project_id} "
             f"owned by {project.owner_id}"

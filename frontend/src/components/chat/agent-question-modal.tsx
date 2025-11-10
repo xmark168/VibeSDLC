@@ -1,5 +1,5 @@
 import { Clock, Send, SkipForward } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -29,6 +29,25 @@ export function AgentQuestionModal({
   const [answer, setAnswer] = useState("")
   const [timeRemaining, setTimeRemaining] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Handler functions (defined before useEffect to avoid "Cannot access before initialization")
+  const handleSubmit = () => {
+    if (!question || !answer.trim()) return
+    onSubmit(question.question_id, answer.trim())
+    setAnswer("")
+  }
+
+  const handleSkip = useCallback(() => {
+    if (!question) return
+    onSkip(question.question_id)
+    setAnswer("")
+  }, [question, onSkip])
+
+  const handleSkipAll = () => {
+    if (!question) return
+    onSkipAll(question.question_id)
+    setAnswer("")
+  }
 
   // Reset answer when question changes
   useEffect(() => {
@@ -67,24 +86,6 @@ export function AgentQuestionModal({
     question, // Auto-skip on timeout
     handleSkip,
   ])
-
-  const handleSubmit = () => {
-    if (!question || !answer.trim()) return
-    onSubmit(question.question_id, answer.trim())
-    setAnswer("")
-  }
-
-  const handleSkip = () => {
-    if (!question) return
-    onSkip(question.question_id)
-    setAnswer("")
-  }
-
-  const handleSkipAll = () => {
-    if (!question) return
-    onSkipAll(question.question_id)
-    setAnswer("")
-  }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
