@@ -2,6 +2,132 @@
 
 from typing import List, Dict, Optional
 from collections import defaultdict
+from uuid import UUID
+from sqlmodel import Session, select
+
+# TraDS ============= New tools for Blocker & ProjectRules integration
+def get_sprint_blockers(session: Session, sprint_id: UUID) -> List[Dict]:
+    """Get all blockers for a sprint from database.
+
+    Args:
+        session: Database session
+        sprint_id: Sprint UUID
+
+    Returns:
+        List of blockers with details
+    """
+    try:
+        from ....models import Blocker, BacklogItem, User
+        from ....crud import blocker as crud_blocker
+
+        blockers = crud_blocker.get_blockers_by_sprint(session=session, sprint_id=sprint_id)
+
+        result = []
+        for blocker in blockers:
+            # Get backlog item and user details
+            backlog_item = session.get(BacklogItem, blocker.backlog_item_id)
+            user = session.get(User, blocker.reported_by_user_id)
+
+            result.append({
+                "id": str(blocker.id),
+                "type": blocker.blocker_type,
+                "description": blocker.description,
+                "backlog_item_title": backlog_item.title if backlog_item else "Unknown",
+                "reported_by": user.full_name if user else "Unknown",
+                "created_at": blocker.created_at.isoformat()
+            })
+
+        return result
+    except Exception as e:
+        print(f"Error getting blockers: {e}")
+        return []
+
+
+def get_sprint_metrics(session: Session, sprint_id: UUID) -> Dict:
+    """Calculate sprint metrics from database.
+
+    Args:
+        session: Database session
+        sprint_id: Sprint UUID
+
+    Returns:
+        Dict with sprint metrics
+    """
+    try:
+        from ....models import BacklogItem, Sprint
+
+        sprint = session.get(Sprint, sprint_id)
+        if not sprint:
+            return {}
+
+        # Get all backlog items for sprint
+        statement = select(BacklogItem).where(BacklogItem.sprint_id == sprint_id)
+        items = list(session.exec(statement).all())
+
+        total_points = sum(item.story_point or 0 for item in items)
+        completed_items = [item for item in items if item.status == "Done"]
+        completed_points = sum(item.story_point or 0 for item in completed_items)
+
+        return {
+            "total_tasks": len(items),
+            "completed_tasks": len(completed_items),
+            "total_points": total_points,
+            "completed_points": completed_points,
+            "velocity": completed_points,
+            "completion_rate": round(len(completed_items) / len(items) * 100) if items else 0
+        }
+    except Exception as e:
+        print(f"Error calculating metrics: {e}")
+        return {}
+
+
+def update_project_rules(session: Session, project_id: UUID, po_prompt: str, dev_prompt: str, tester_prompt: str) -> bool:
+    """Update or create project rules in database.
+
+    Args:
+        session: Database session
+        project_id: Project UUID
+        po_prompt: Rules for Product Owner
+        dev_prompt: Rules for Developer
+        tester_prompt: Rules for Tester
+
+    Returns:
+        True if successful
+    """
+    try:
+        from ....crud import project_rules as crud_rules
+        from ....schemas import ProjectRulesCreate, ProjectRulesUpdate
+
+        # Check if rules exist
+        existing_rules = crud_rules.get_project_rules(session=session, project_id=project_id)
+
+        if existing_rules:
+            # Update existing rules
+            rules_update = ProjectRulesUpdate(
+                po_prompt=po_prompt,
+                dev_prompt=dev_prompt,
+                tester_prompt=tester_prompt
+            )
+            crud_rules.update_project_rules(
+                session=session,
+                db_rules=existing_rules,
+                rules_in=rules_update
+            )
+        else:
+            # Create new rules
+            rules_create = ProjectRulesCreate(
+                project_id=project_id,
+                po_prompt=po_prompt,
+                dev_prompt=dev_prompt,
+                tester_prompt=tester_prompt
+            )
+            crud_rules.create_project_rules(session=session, rules_in=rules_create)
+
+        return True
+    except Exception as e:
+        print(f"Error updating project rules: {e}")
+        return False
+# ==============================
 
 
 def categorize_feedback(all_feedback: List[Dict]) -> List[Dict]:

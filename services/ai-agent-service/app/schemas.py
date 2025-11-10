@@ -464,5 +464,44 @@ class CreateRepoFromTemplateResponse(SQLModel):
     message: Optional[str] = Field(None, description="Success or error message")
 
 
+# TraDS ============= Sprint Retrospective Schemas
+class BlockerCreate(SQLModel):
+    backlog_item_id: UUID
+    blocker_type: str  # "DEV_BLOCKER" or "TEST_BLOCKER"
+    description: str
+
+class BlockerPublic(SQLModel):
+    id: UUID
+    backlog_item_id: UUID
+    reported_by_user_id: UUID
+    blocker_type: str
+    description: str
+    created_at: datetime
+
+class BlockersPublic(SQLModel):
+    data: list[BlockerPublic]
+    count: int
+
+class ProjectRulesCreate(SQLModel):
+    project_id: UUID
+    po_prompt: Optional[str] = None
+    dev_prompt: Optional[str] = None
+    tester_prompt: Optional[str] = None
+
+class ProjectRulesUpdate(SQLModel):
+    po_prompt: Optional[str] = None
+    dev_prompt: Optional[str] = None
+    tester_prompt: Optional[str] = None
+
+class ProjectRulesPublic(SQLModel):
+    id: UUID
+    project_id: UUID
+    po_prompt: Optional[str] = None
+    dev_prompt: Optional[str] = None
+    tester_prompt: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
 # Rebuild models to resolve forward references
 UserPublic.model_rebuild()

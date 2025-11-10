@@ -28,6 +28,33 @@ export type TestSprintPlannerResponse = {
   message: string
 }
 
+// TraDS: Retro Coordinator Types
+export type RetroAnalyzeRequest = {
+  sprint_id: string
+  project_id: string
+  user_feedback?: string
+}
+
+export type RetroAnalyzeResponse = {
+  status: string
+  data?: {
+    sprint_metrics: any
+    agent_reports: {
+      po: string
+      dev: string
+      tester: string
+    }
+    overview_summary: string
+    what_went_well: string
+    blockers_summary: string
+    blockers: any[]
+    po_rules: string
+    dev_rules: string
+    tester_rules: string
+  }
+  error?: string
+}
+
 export const agentApi = {
   /**
    * Execute agent asynchronously (recommended for production)
@@ -62,6 +89,17 @@ export const agentApi = {
     return __request<TestSprintPlannerResponse>(OpenAPI, {
       method: "POST",
       url: "/api/v1/scrum-master-test/test-sprint-planner",
+      body,
+    })
+  },
+
+  // TraDS: Retro Coordinator - Analyze sprint retrospective
+  analyzeRetrospective: async (
+    body: RetroAnalyzeRequest,
+  ): Promise<RetroAnalyzeResponse> => {
+    return __request<RetroAnalyzeResponse>(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/retro-coordinator/analyze",
       body,
     })
   },
