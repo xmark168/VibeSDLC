@@ -16,6 +16,9 @@ from app.api.routes import (
     github_repositories,
     github_create_repo,
     scrum_master_test,  # TraDS: Test endpoint for Sprint Planner
+    blockers,  # TraDS: Sprint Retrospective Blockers
+    project_rules,  # TraDS: Sprint Retrospective Project Rules
+    retro_coordinator,  # TraDS: Sprint Retrospective Agent
 )
 from app.core.config import settings
 
@@ -34,6 +37,9 @@ api_router.include_router(github_webhook.router)
 api_router.include_router(github_repositories.router)
 api_router.include_router(github_create_repo.router)
 api_router.include_router(scrum_master_test.router)  # TraDS: Test endpoint for Sprint Planner
+api_router.include_router(blockers.router)  # TraDS: Sprint Retrospective Blockers
+api_router.include_router(project_rules.router)  # TraDS: Sprint Retrospective Project Rules
+api_router.include_router(retro_coordinator.router)  # TraDS: Sprint Retrospective Agent
 
 if settings.ENVIRONMENT == "local":
     api_router.include_router(private.router)
