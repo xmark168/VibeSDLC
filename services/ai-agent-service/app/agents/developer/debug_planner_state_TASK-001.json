@@ -1,20 +1,21 @@
 {
     "success": true,
     "final_plan": {
-        "task_id": "TSK-4900",
+        "task_id": "TSK-8064",
         "description": "Task: Implement user registration functionality\nTask Description: Create user registration API endpo...",
         "complexity_score": 8,
         "plan_type": "complex",
         "functional_requirements": [
-            "Create a POST /api/auth/register endpoint that accepts email, password, and confirm_password.",
-            "Implement password validation to ensure it has a minimum of 8 characters, includes uppercase, lowercase, number, and special character.",
-            "Ensure email validation checks for proper format and uniqueness.",
-            "Hash the password using bcrypt before storing it in the database.",
+            "Create POST /api/auth/register endpoint accepting email, password, and confirm_password fields.",
+            "Validate password to ensure minimum 8 characters, at least one uppercase letter, one lowercase letter, one number, and one special character.",
+            "Validate email for correct format and uniqueness in the database.",
+            "Hash password using bcrypt before storing in the database.",
             "Store user data in the database with a created_at timestamp.",
+            "Send email verification to the user's email address after registration.",
             "Return a JWT token upon successful registration.",
-            "Return appropriate error messages for validation failures.",
-            "Include comprehensive unit tests for all scenarios.",
-            "Update API documentation with endpoint details."
+            "Return clear and specific error messages for all validation failures.",
+            "Include comprehensive unit tests covering all registration scenarios.",
+            "Update API documentation to include endpoint details, request/response schema, and possible error codes."
         ],
         "steps": [
             {
@@ -25,7 +26,7 @@
                 "sub_steps": [
                     {
                         "sub_step": "1.1",
-                        "title": "Define User schema with email, password_hash, created_at fields."
+                        "title": "Define User schema with email, password_hash, is_verified, created_at, updated_at fields."
                     },
                     {
                         "sub_step": "1.2",
@@ -34,6 +35,10 @@
                     {
                         "sub_step": "1.3",
                         "title": "Add pre-save hook for password hashing using bcrypt."
+                    },
+                    {
+                        "sub_step": "1.4",
+                        "title": "Implement validation for email format and uniqueness."
                     }
                 ]
             },
@@ -45,7 +50,7 @@
                 "sub_steps": [
                     {
                         "sub_step": "2.1",
-                        "title": "Create UserRepository class with methods for create and find by email."
+                        "title": "Create UserRepository class with methods for findByEmail() and create()."
                     },
                     {
                         "sub_step": "2.2",
@@ -53,7 +58,11 @@
                     },
                     {
                         "sub_step": "2.3",
-                        "title": "Add findByEmail() method to retrieve user by email."
+                        "title": "Add findById() and updateVerificationStatus() methods."
+                    },
+                    {
+                        "sub_step": "2.4",
+                        "title": "Ensure methods return promises for async handling."
                     }
                 ]
             },
@@ -65,15 +74,15 @@
                 "sub_steps": [
                     {
                         "sub_step": "3.1",
-                        "title": "Create registerSchema with email and password validation rules."
+                        "title": "Create registerSchema with email, password, and confirm_password validation rules."
                     },
                     {
                         "sub_step": "3.2",
-                        "title": "Add confirm_password validation to ensure it matches password."
+                        "title": "Implement password complexity validation."
                     },
                     {
                         "sub_step": "3.3",
-                        "title": "Implement error messages for validation failures."
+                        "title": "Add error messages for validation failures."
                     }
                 ]
             },
@@ -85,15 +94,19 @@
                 "sub_steps": [
                     {
                         "sub_step": "4.1",
-                        "title": "Create AuthService class with registerUser() method."
+                        "title": "Create AuthService class with registerUser() method including duplicate check."
                     },
                     {
                         "sub_step": "4.2",
-                        "title": "Implement password hashing and user creation logic."
+                        "title": "Implement sendVerificationEmail() method to handle email sending."
                     },
                     {
                         "sub_step": "4.3",
-                        "title": "Generate JWT token upon successful registration."
+                        "title": "Add generateJWT() method to create JWT tokens."
+                    },
+                    {
+                        "sub_step": "4.4",
+                        "title": "Handle errors and return appropriate messages."
                     }
                 ]
             },
@@ -109,11 +122,11 @@
                     },
                     {
                         "sub_step": "5.2",
-                        "title": "Implement error handling and response formatting."
+                        "title": "Implement error handling and response formatting in register()."
                     },
                     {
                         "sub_step": "5.3",
-                        "title": "Return appropriate error messages for validation failures."
+                        "title": "Add logging for registration attempts."
                     }
                 ]
             },
@@ -125,31 +138,35 @@
                 "sub_steps": [
                     {
                         "sub_step": "6.1",
-                        "title": "Create auth router with POST /api/auth/register route."
+                        "title": "Create auth router with POST /api/auth/register route and validation middleware."
                     },
                     {
                         "sub_step": "6.2",
-                        "title": "Add validation middleware to the registration route."
+                        "title": "Add POST /api/auth/login route with appropriate middleware."
                     },
                     {
                         "sub_step": "6.3",
-                        "title": "Implement logging for registration attempts."
+                        "title": "Ensure routes are documented with Swagger/OpenAPI."
                     }
                 ]
             },
             {
                 "step": 7,
-                "title": "Setup Error Handling Middleware",
-                "description": "Implement global error handling for the application.",
+                "title": "Implement Error Handling Middleware",
+                "description": "Setup global error handling for the application.",
                 "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "7.1",
-                        "title": "Create custom error handler middleware."
+                        "title": "Create error handling middleware to catch errors."
                     },
                     {
                         "sub_step": "7.2",
-                        "title": "Integrate error handling middleware into the application."
+                        "title": "Format error responses consistently."
+                    },
+                    {
+                        "sub_step": "7.3",
+                        "title": "Log errors for monitoring."
                     }
                 ]
             },
@@ -161,18 +178,22 @@
                 "sub_steps": [
                     {
                         "sub_step": "8.1",
-                        "title": "Install and configure Winston for logging."
+                        "title": "Integrate Winston or Morgan for logging."
                     },
                     {
                         "sub_step": "8.2",
-                        "title": "Create logging middleware to log request details."
+                        "title": "Log all incoming requests with details."
+                    },
+                    {
+                        "sub_step": "8.3",
+                        "title": "Log errors with stack traces."
                     }
                 ]
             },
             {
                 "step": 9,
-                "title": "Setup Environment Configuration",
-                "description": "Configure environment variables for the application.",
+                "title": "Environment Configuration",
+                "description": "Setup environment variables for configuration.",
                 "category": "backend",
                 "sub_steps": [
                     {
@@ -181,45 +202,57 @@
                     },
                     {
                         "sub_step": "9.2",
-                        "title": "Implement configuration loading in the app."
+                        "title": "Load environment variables in the application."
+                    },
+                    {
+                        "sub_step": "9.3",
+                        "title": "Validate required environment variables."
                     }
                 ]
             },
             {
                 "step": 10,
-                "title": "Setup Database Connection",
-                "description": "Establish connection to MongoDB database.",
+                "title": "Database Connection",
+                "description": "Setup MongoDB connection using Mongoose.",
                 "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "10.1",
-                        "title": "Install Mongoose for MongoDB interaction."
+                        "title": "Create database connection file."
                     },
                     {
                         "sub_step": "10.2",
-                        "title": "Create database connection utility."
+                        "title": "Implement connection pooling."
+                    },
+                    {
+                        "sub_step": "10.3",
+                        "title": "Handle connection errors gracefully."
                     }
                 ]
             },
             {
                 "step": 11,
-                "title": "Create API Documentation",
-                "description": "Document the API endpoints using Swagger.",
+                "title": "API Documentation",
+                "description": "Document API endpoints using Swagger/OpenAPI.",
                 "category": "backend",
                 "sub_steps": [
                     {
                         "sub_step": "11.1",
-                        "title": "Install Swagger UI and setup documentation."
+                        "title": "Setup Swagger UI for API documentation."
                     },
                     {
                         "sub_step": "11.2",
-                        "title": "Document the /api/auth/register endpoint."
+                        "title": "Document POST /api/auth/register endpoint."
+                    },
+                    {
+                        "sub_step": "11.3",
+                        "title": "Include request/response schemas and error codes."
                     }
                 ]
             },
             {
                 "step": 12,
-                "title": "Write Unit Tests",
+                "title": "Write Backend Unit Tests",
                 "description": "Create unit tests for backend components.",
                 "category": "backend",
                 "sub_steps": [
@@ -230,12 +263,16 @@
                     {
                         "sub_step": "12.2",
                         "title": "Write unit tests for AuthService methods."
+                    },
+                    {
+                        "sub_step": "12.3",
+                        "title": "Ensure tests cover all edge cases."
                     }
                 ]
             },
             {
                 "step": 13,
-                "title": "Write Integration Tests",
+                "title": "Write Backend Integration Tests",
                 "description": "Create integration tests for API endpoints.",
                 "category": "backend",
                 "sub_steps": [
@@ -245,30 +282,38 @@
                     },
                     {
                         "sub_step": "13.2",
-                        "title": "Test validation error responses."
+                        "title": "Test validation errors and success responses."
+                    },
+                    {
+                        "sub_step": "13.3",
+                        "title": "Use Supertest for API testing."
                     }
                 ]
             },
             {
                 "step": 14,
-                "title": "Define TypeScript Types",
-                "description": "Create TypeScript types for user data.",
+                "title": "Create TypeScript Types",
+                "description": "Define TypeScript types for frontend usage.",
                 "category": "frontend",
                 "sub_steps": [
                     {
                         "sub_step": "14.1",
-                        "title": "Define User interface with id, email, and isVerified properties."
+                        "title": "Create User interface with id, email, isVerified properties."
                     },
                     {
                         "sub_step": "14.2",
                         "title": "Define RegisterRequest and AuthResponse types."
+                    },
+                    {
+                        "sub_step": "14.3",
+                        "title": "Ensure types are exported for use in components."
                     }
                 ]
             },
             {
                 "step": 15,
-                "title": "Create API Client Config",
-                "description": "Setup Axios for API calls.",
+                "title": "Create API Client Configuration",
+                "description": "Setup Axios instance for API requests.",
                 "category": "frontend",
                 "sub_steps": [
                     {
@@ -278,29 +323,37 @@
                     {
                         "sub_step": "15.2",
                         "title": "Implement request interceptors for token management."
+                    },
+                    {
+                        "sub_step": "15.3",
+                        "title": "Handle errors globally in the API client."
                     }
                 ]
             },
             {
                 "step": 16,
                 "title": "Create Auth API Service",
-                "description": "Implement service functions for authentication.",
+                "description": "Implement API service functions for authentication.",
                 "category": "frontend",
                 "sub_steps": [
                     {
                         "sub_step": "16.1",
-                        "title": "Create register() method for user registration."
+                        "title": "Create authService with register() and login() methods."
                     },
                     {
                         "sub_step": "16.2",
-                        "title": "Handle API responses and errors."
+                        "title": "Handle API responses and errors in service methods."
+                    },
+                    {
+                        "sub_step": "16.3",
+                        "title": "Implement token storage logic in local storage."
                     }
                 ]
             },
             {
                 "step": 17,
                 "title": "Create Registration Form Component",
-                "description": "Build React registration form.",
+                "description": "Build React registration form component.",
                 "category": "frontend",
                 "sub_steps": [
                     {
@@ -313,14 +366,14 @@
                     },
                     {
                         "sub_step": "17.3",
-                        "title": "Implement submit handler with loading state."
+                        "title": "Implement submit handler with loading state and error handling."
                     }
                 ]
             },
             {
                 "step": 18,
                 "title": "Setup Frontend Routing",
-                "description": "Configure React Router for navigation.",
+                "description": "Configure React Router for application navigation.",
                 "category": "frontend",
                 "sub_steps": [
                     {
@@ -330,13 +383,17 @@
                     {
                         "sub_step": "18.2",
                         "title": "Create ProtectedRoute component for authentication checks."
+                    },
+                    {
+                        "sub_step": "18.3",
+                        "title": "Implement navigation links and guards."
                     }
                 ]
             },
             {
                 "step": 19,
                 "title": "Implement Global State Management",
-                "description": "Setup Zustand for user authentication state.",
+                "description": "Setup Zustand store for authentication state.",
                 "category": "frontend",
                 "sub_steps": [
                     {
@@ -345,55 +402,71 @@
                     },
                     {
                         "sub_step": "19.2",
-                        "title": "Integrate authStore with RegistrationForm component."
+                        "title": "Implement actions for login, logout, and registration."
+                    },
+                    {
+                        "sub_step": "19.3",
+                        "title": "Ensure store updates on successful registration."
                     }
                 ]
             },
             {
                 "step": 20,
-                "title": "Setup Error Handling in Frontend",
-                "description": "Implement error boundaries and notifications.",
+                "title": "Implement Error Handling in Frontend",
+                "description": "Setup error boundaries and notifications.",
                 "category": "frontend",
                 "sub_steps": [
                     {
                         "sub_step": "20.1",
-                        "title": "Create ErrorBoundary component."
+                        "title": "Create ErrorBoundary component for catching errors."
                     },
                     {
                         "sub_step": "20.2",
-                        "title": "Implement toast notifications for errors."
+                        "title": "Implement toast notifications for user feedback."
+                    },
+                    {
+                        "sub_step": "20.3",
+                        "title": "Handle loading states in UI components."
                     }
                 ]
             },
             {
                 "step": 21,
-                "title": "Implement Loading States",
-                "description": "Add loading indicators for async operations.",
+                "title": "Token Management",
+                "description": "Implement logic for handling JWT tokens.",
                 "category": "frontend",
                 "sub_steps": [
                     {
                         "sub_step": "21.1",
-                        "title": "Create LoadingSpinner component."
+                        "title": "Create utility functions for token storage and retrieval."
                     },
                     {
                         "sub_step": "21.2",
-                        "title": "Integrate loading state in RegistrationForm."
+                        "title": "Implement token expiration handling."
+                    },
+                    {
+                        "sub_step": "21.3",
+                        "title": "Ensure tokens are sent with API requests."
                     }
                 ]
             },
             {
                 "step": 22,
-                "title": "Manage Token Storage",
-                "description": "Implement logic for storing JWT tokens.",
+                "title": "Write Frontend Tests",
+                "description": "Create unit and integration tests for frontend components.",
                 "category": "frontend",
                 "sub_steps": [
                     {
                         "sub_step": "22.1",
-                        "title": "Create tokenManager utility for handling tokens."
+                        "title": "Write tests for RegistrationForm component."
                     },
                     {
                         "sub_step": "22.2",
-                        "title": "Store token in local storage upon successful registration."
+                        "title": "Write tests for authService methods."
+                    },
+                    {
+                        "sub_step": "22.3",
+                        "title": "Ensure tests cover all edge cases."
                     }
                 ]
             }
@@ -405,6 +478,7 @@
                     "_id",
                     "email",
                     "password_hash",
+                    "is_verified",
                     "created_at"
                 ],
                 "affected_step": 1
@@ -414,7 +488,7 @@
             {
                 "package": "mongoose",
                 "version": "^8.0.0",
-                "purpose": "MongoDB ODM for user data storage",
+                "purpose": "MongoDB ODM for user data storage.",
                 "category": "backend",
                 "already_installed": false,
                 "installation_method": "npm",
@@ -425,7 +499,7 @@
             {
                 "package": "bcrypt",
                 "version": "^5.1.0",
-                "purpose": "Password hashing for security",
+                "purpose": "Password hashing for security.",
                 "category": "backend",
                 "already_installed": false,
                 "installation_method": "npm",
@@ -436,7 +510,7 @@
             {
                 "package": "joi",
                 "version": "^17.11.0",
-                "purpose": "Input validation schemas",
+                "purpose": "Input validation schemas.",
                 "category": "backend",
                 "already_installed": false,
                 "installation_method": "npm",
@@ -445,20 +519,31 @@
                 "dependency_type": "production"
             },
             {
-                "package": "winston",
-                "version": "^3.3.3",
-                "purpose": "Logging library for request and error logging",
+                "package": "jsonwebtoken",
+                "version": "^9.0.0",
+                "purpose": "JWT for token issuance.",
                 "category": "backend",
                 "already_installed": false,
                 "installation_method": "npm",
-                "install_command": "cd be && npm install winston@^3.3.3",
+                "install_command": "cd be && npm install jsonwebtoken@^9.0.0",
+                "package_file": "be/package.json",
+                "dependency_type": "production"
+            },
+            {
+                "package": "nodemailer",
+                "version": "^6.9.0",
+                "purpose": "Email service for sending verification emails.",
+                "category": "backend",
+                "already_installed": false,
+                "installation_method": "npm",
+                "install_command": "cd be && npm install nodemailer@^6.9.0",
                 "package_file": "be/package.json",
                 "dependency_type": "production"
             },
             {
                 "package": "react-hook-form",
                 "version": "^7.48.0",
-                "purpose": "Form validation and state management",
+                "purpose": "Form validation and state management.",
                 "category": "frontend",
                 "already_installed": false,
                 "installation_method": "npm",
@@ -468,19 +553,19 @@
             },
             {
                 "package": "zod",
-                "version": "^3.19.0",
-                "purpose": "Schema validation for forms",
+                "version": "^3.20.0",
+                "purpose": "Schema validation for forms.",
                 "category": "frontend",
                 "already_installed": false,
                 "installation_method": "npm",
-                "install_command": "cd fe && npm install zod@^3.19.0",
+                "install_command": "cd fe && npm install zod@^3.20.0",
                 "package_file": "fe/package.json",
                 "dependency_type": "production"
             },
             {
                 "package": "axios",
                 "version": "^0.27.2",
-                "purpose": "HTTP client for making API requests",
+                "purpose": "HTTP client for making API requests.",
                 "category": "frontend",
                 "already_installed": false,
                 "installation_method": "npm",
@@ -507,22 +592,34 @@
                 "required_by_step": 6
             },
             {
-                "module": "Auth API Service",
+                "module": "Auth types",
+                "required_by_step": 14
+            },
+            {
+                "module": "axios instance",
+                "required_by_step": 15
+            },
+            {
+                "module": "authService",
                 "required_by_step": 16
             },
             {
                 "module": "RegistrationForm",
                 "required_by_step": 17
+            },
+            {
+                "module": "authStore",
+                "required_by_step": 19
             }
         ],
         "story_points": 13,
         "execution_order": [
             "Backend (1-13): Models → Repository → Validation → Service → Controller → Routes → Middleware → Testing → Documentation",
-            "Frontend (14-22): Types → API Config → Services → Components → Routing → State Management → Error Handling → Loading → Tokens"
+            "Frontend (14-22): Types → API Config → Services → Components → Routing → Guards → Context → Error Handling → Loading → Tokens → Integration"
         ]
     },
     "ready_for_implementation": true,
-    "task_id": "TSK-4900",
+    "task_id": "TSK-8064",
     "complexity_score": 8,
     "story_points": 13,
     "validation_score": 0.925,

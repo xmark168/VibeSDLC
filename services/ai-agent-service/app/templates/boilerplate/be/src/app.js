@@ -11,20 +11,13 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 
 const config = require('./config');
-const logger = require('./utils/logger');
-const connectDB = require('./config/database');
-const errorHandler = require('./middleware/errorHandler');
 
-// Import routes
-const authRoutes = require('./routes/auth');
-const userRoutes = require('./routes/users');
-const healthRoutes = require('./routes/health');
+
+
 
 // Create Express app
 const app = express();
 
-// Connect to database
-connectDB();
 
 // Security middleware
 app.use(helmet());
@@ -63,22 +56,6 @@ if (config.NODE_ENV !== 'test') {
   }));
 }
 
-// Health check endpoint (before API routes)
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    environment: config.NODE_ENV,
-    version: '1.0.0',
-  });
-});
-
-// API routes
-app.use('/api/v1/health', healthRoutes);
-app.use('/api/v1/auth', authRoutes);
-app.use('/api/v1/users', userRoutes);
-
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({
@@ -98,8 +75,6 @@ app.use('*', (req, res) => {
   });
 });
 
-// Error handling middleware (must be last)
-app.use(errorHandler);
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
@@ -113,13 +88,14 @@ process.on('SIGINT', () => {
 });
 
 // Start server
-const PORT = config.PORT || 3000;
+// const PORT = config.PORT || 3000;
 
 if (require.main === module) {
-  app.listen(PORT, () => {
-    logger.info(`🚀 Server running on port ${PORT}`);
-    logger.info(`📚 Environment: ${config.NODE_ENV}`);
-    logger.info(`🔗 Health check: http://localhost:${PORT}/health`);
+  app.listen(3000, () => {
+    // logger.info(`🚀 Server running on port ${PORT}`);
+    // logger.info(`📚 Environment: ${config.NODE_ENV}`);
+    // logger.info(`🔗 Health check: http://localhost:${PORT}/health`);
+    console.log('success')
   });
 }
 

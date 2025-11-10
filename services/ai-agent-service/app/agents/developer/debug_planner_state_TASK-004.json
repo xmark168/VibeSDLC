@@ -1,221 +1,346 @@
 {
     "success": true,
     "final_plan": {
-        "task_id": "TSK-6291",
+        "task_id": "TSK-5838",
         "description": "Task: Implement JWT token refresh mechanism\nTask Description: Create token refresh endpoint to allow...",
         "complexity_score": 7,
         "plan_type": "complex",
         "functional_requirements": [
-            "Create a POST /api/auth/refresh endpoint that accepts a refresh token.",
-            "Validate the refresh token's signature and expiration.",
-            "Verify that the refresh token exists in the database and is not revoked.",
-            "Issue a new access token with an updated expiration time.",
-            "Issue a new refresh token and invalidate the old one (token rotation).",
-            "Ensure the access token expires in 15 minutes and the refresh token in 7 days.",
-            "Return appropriate error messages for invalid or expired refresh tokens.",
-            "Implement a token blacklist for revoked refresh tokens.",
-            "Include comprehensive unit tests for various token refresh scenarios.",
-            "Update API documentation to include details of the token refresh flow."
+            "Create POST /api/auth/refresh endpoint that accepts a refresh token",
+            "Validate refresh token signature and expiration",
+            "Verify refresh token exists in the database and is not revoked",
+            "Issue new access token with updated expiration time (15 minutes)",
+            "Issue new refresh token and invalidate the old one (token rotation)",
+            "Implement token blacklist to track and reject revoked refresh tokens",
+            "Return appropriate error responses for invalid or expired refresh tokens",
+            "Include comprehensive unit tests covering all token refresh scenarios",
+            "Update API documentation to include details of the token refresh flow"
         ],
         "steps": [
             {
                 "step": 1,
-                "title": "Create Refresh Token Model",
-                "description": "Define a Mongoose model for storing refresh tokens with necessary fields.",
-                "category": "database",
+                "title": "Define TypeScript Types",
+                "description": "Create interfaces for token structures and API responses.",
+                "category": "frontend",
                 "sub_steps": [
                     {
                         "sub_step": "1.1",
-                        "title": "Define RefreshToken schema",
-                        "description": "Create a schema for refresh tokens including fields for user ID, token value, expiration date, and revoked status."
+                        "title": "Create TokenResponse interface with accessToken and refreshToken properties."
                     },
                     {
                         "sub_step": "1.2",
-                        "title": "Export RefreshToken model",
-                        "description": "Export the RefreshToken model for use in repositories."
+                        "title": "Define RefreshTokenRequest interface for the refresh token payload."
+                    },
+                    {
+                        "sub_step": "1.3",
+                        "title": "Create ErrorResponse interface for standardized error handling."
                     }
                 ]
             },
             {
                 "step": 2,
-                "title": "Implement Refresh Token Repository",
-                "description": "Create a repository for managing refresh tokens in the database.",
-                "category": "backend",
+                "title": "Setup API Client Configuration",
+                "description": "Configure Axios instance for API calls, including interceptors for token management.",
+                "category": "frontend",
                 "sub_steps": [
                     {
                         "sub_step": "2.1",
-                        "title": "Create refreshTokenRepository.js",
-                        "description": "Implement methods to find, save, and invalidate refresh tokens."
+                        "title": "Create axios instance with base URL for API calls."
                     },
                     {
                         "sub_step": "2.2",
-                        "title": "Add method to check if token is revoked",
-                        "description": "Implement a method to check if a refresh token is revoked."
+                        "title": "Implement request interceptor to attach access token to headers."
+                    },
+                    {
+                        "sub_step": "2.3",
+                        "title": "Implement response interceptor to handle token expiration and refresh logic."
                     }
                 ]
             },
             {
                 "step": 3,
-                "title": "Implement Auth Service Logic",
-                "description": "Add business logic to handle refresh token operations.",
-                "category": "backend",
+                "title": "Create API Service for Authentication",
+                "description": "Implement service functions for authentication-related API calls.",
+                "category": "frontend",
                 "sub_steps": [
                     {
                         "sub_step": "3.1",
-                        "title": "Add refreshToken method",
-                        "description": "Create a method in authService to handle the logic for refreshing tokens."
+                        "title": "Create refreshToken function to call the refresh endpoint."
                     },
                     {
                         "sub_step": "3.2",
-                        "title": "Generate new tokens",
-                        "description": "Implement logic to generate new access and refresh tokens with appropriate expiration."
+                        "title": "Implement error handling for refreshToken function."
                     },
                     {
                         "sub_step": "3.3",
-                        "title": "Invalidate old refresh token",
-                        "description": "Add logic to invalidate the old refresh token after issuing a new one."
+                        "title": "Create a function to store tokens in local storage."
                     }
                 ]
             },
             {
                 "step": 4,
-                "title": "Create Refresh Token Controller",
-                "description": "Implement the controller to handle requests to the refresh token endpoint.",
-                "category": "backend",
+                "title": "Implement Form Validation for Token Refresh",
+                "description": "Define validation schemas for the refresh token request using Zod.",
+                "category": "frontend",
                 "sub_steps": [
                     {
                         "sub_step": "4.1",
-                        "title": "Create refreshToken controller method",
-                        "description": "Implement the controller method to handle the POST /api/auth/refresh request."
+                        "title": "Create refreshTokenSchema to validate refresh token format."
                     },
                     {
                         "sub_step": "4.2",
-                        "title": "Handle errors",
-                        "description": "Implement error handling for invalid or expired tokens."
+                        "title": "Implement error messages for invalid refresh token scenarios."
                     }
                 ]
             },
             {
                 "step": 5,
-                "title": "Define Refresh Token Route",
-                "description": "Set up the route for the refresh token endpoint.",
-                "category": "backend",
+                "title": "Create Custom Hook for Token Management",
+                "description": "Implement a hook to manage token refresh logic and state.",
+                "category": "frontend",
                 "sub_steps": [
                     {
                         "sub_step": "5.1",
-                        "title": "Add POST /api/auth/refresh route",
-                        "description": "Define the route in auth.js and link it to the refresh token controller."
+                        "title": "Create useToken hook to manage access and refresh tokens."
                     },
                     {
                         "sub_step": "5.2",
-                        "title": "Add validation middleware",
-                        "description": "Implement middleware to validate the refresh token format."
+                        "title": "Implement logic to trigger refreshToken function when access token is expired."
+                    },
+                    {
+                        "sub_step": "5.3",
+                        "title": "Handle loading and error states within the hook."
                     }
                 ]
             },
             {
                 "step": 6,
-                "title": "Implement Token Blacklist",
-                "description": "Create a mechanism to blacklist revoked refresh tokens.",
-                "category": "backend",
+                "title": "Create UI Components for Token Refresh",
+                "description": "Build components for displaying token refresh status and errors.",
+                "category": "frontend",
                 "sub_steps": [
                     {
                         "sub_step": "6.1",
-                        "title": "Create blacklist repository",
-                        "description": "Implement a repository to manage blacklisted tokens."
+                        "title": "Create RefreshStatus component to show loading and error states."
                     },
                     {
                         "sub_step": "6.2",
-                        "title": "Check blacklist in refresh logic",
-                        "description": "Integrate blacklist checks in the refresh token logic."
+                        "title": "Implement UI for displaying token refresh success or failure messages."
                     }
                 ]
             },
             {
                 "step": 7,
-                "title": "Write Unit Tests",
-                "description": "Create comprehensive tests for the refresh token functionality.",
-                "category": "testing",
+                "title": "Setup Page Component for Token Refresh",
+                "description": "Create a dedicated page for managing token refresh actions.",
+                "category": "frontend",
                 "sub_steps": [
                     {
                         "sub_step": "7.1",
-                        "title": "Test valid refresh token flow",
-                        "description": "Write tests to verify that valid refresh tokens return new tokens."
+                        "title": "Create RefreshPage component to handle refresh token requests."
                     },
                     {
                         "sub_step": "7.2",
-                        "title": "Test expired and revoked token scenarios",
-                        "description": "Write tests to ensure proper error handling for expired and revoked tokens."
+                        "title": "Integrate useToken hook to manage refresh logic within the page."
                     }
                 ]
             },
             {
                 "step": 8,
-                "title": "Update API Documentation",
-                "description": "Document the new refresh token endpoint and its usage.",
-                "category": "backend",
+                "title": "Define Application Routing",
+                "description": "Setup routing for the token refresh page and any protected routes.",
+                "category": "frontend",
                 "sub_steps": [
                     {
                         "sub_step": "8.1",
-                        "title": "Add endpoint details",
-                        "description": "Include details about the POST /api/auth/refresh endpoint in the API documentation."
+                        "title": "Add route for /refresh to the application router."
                     },
                     {
                         "sub_step": "8.2",
-                        "title": "Document token structure",
-                        "description": "Provide information on the structure of access and refresh tokens."
+                        "title": "Implement navigation guards to protect routes requiring authentication."
+                    }
+                ]
+            },
+            {
+                "step": 9,
+                "title": "Implement Global State Management",
+                "description": "Setup Zustand or Context API for managing authentication state globally.",
+                "category": "frontend",
+                "sub_steps": [
+                    {
+                        "sub_step": "9.1",
+                        "title": "Create AuthStore to manage authentication state and tokens."
+                    },
+                    {
+                        "sub_step": "9.2",
+                        "title": "Integrate AuthStore with the useToken hook for seamless state updates."
+                    }
+                ]
+            },
+            {
+                "step": 10,
+                "title": "Add Error Handling Components",
+                "description": "Implement components to handle and display errors globally.",
+                "category": "frontend",
+                "sub_steps": [
+                    {
+                        "sub_step": "10.1",
+                        "title": "Create ErrorBoundary component to catch errors in the application."
+                    },
+                    {
+                        "sub_step": "10.2",
+                        "title": "Implement toast notifications for displaying error messages."
+                    }
+                ]
+            },
+            {
+                "step": 11,
+                "title": "Implement Loading States",
+                "description": "Create loading indicators for token refresh actions.",
+                "category": "frontend",
+                "sub_steps": [
+                    {
+                        "sub_step": "11.1",
+                        "title": "Create Spinner component for loading states."
+                    },
+                    {
+                        "sub_step": "11.2",
+                        "title": "Integrate Spinner component in RefreshPage during token refresh."
+                    }
+                ]
+            },
+            {
+                "step": 12,
+                "title": "Manage Token Storage and Expiration",
+                "description": "Implement logic for storing and managing token expiration.",
+                "category": "frontend",
+                "sub_steps": [
+                    {
+                        "sub_step": "12.1",
+                        "title": "Create tokenManager utility for handling token storage and retrieval."
+                    },
+                    {
+                        "sub_step": "12.2",
+                        "title": "Implement logic to clear tokens on logout."
+                    }
+                ]
+            },
+            {
+                "step": 13,
+                "title": "Write Integration Tests",
+                "description": "Create tests for the token refresh functionality.",
+                "category": "frontend",
+                "sub_steps": [
+                    {
+                        "sub_step": "13.1",
+                        "title": "Write tests for the refreshToken API service function."
+                    },
+                    {
+                        "sub_step": "13.2",
+                        "title": "Implement tests for the useToken hook to ensure correct behavior."
                     }
                 ]
             }
         ],
         "database_changes": [
             {
-                "change": "Add refresh_tokens collection",
+                "change": "Add refresh_tokens table",
                 "fields": [
-                    "userId",
+                    "id",
+                    "user_id",
                     "token",
-                    "expiresAt",
-                    "isRevoked"
+                    "is_revoked",
+                    "expires_at"
                 ],
                 "affected_step": 1
             }
         ],
         "external_dependencies": [
             {
-                "package": "jsonwebtoken",
-                "version": "^9.0.0",
-                "purpose": "JWT token generation and verification"
+                "package": "axios",
+                "version": "^0.27.2",
+                "purpose": "HTTP client for making API requests.",
+                "category": "frontend",
+                "already_installed": false,
+                "installation_method": "npm",
+                "install_command": "cd fe && npm install axios@^0.27.2",
+                "package_file": "fe/package.json",
+                "dependency_type": "production"
             },
             {
-                "package": "bcrypt",
-                "version": "^5.1.0",
-                "purpose": "Password hashing for token security"
+                "package": "zod",
+                "version": "^3.19.1",
+                "purpose": "Schema validation library for form validation.",
+                "category": "frontend",
+                "already_installed": false,
+                "installation_method": "npm",
+                "install_command": "cd fe && npm install zod@^3.19.1",
+                "package_file": "fe/package.json",
+                "dependency_type": "production"
+            },
+            {
+                "package": "zustand",
+                "version": "^4.0.0",
+                "purpose": "State management library for global state management.",
+                "category": "frontend",
+                "already_installed": false,
+                "installation_method": "npm",
+                "install_command": "cd fe && npm install zustand@^4.0.0",
+                "package_file": "fe/package.json",
+                "dependency_type": "production"
+            },
+            {
+                "package": "react-toastify",
+                "version": "^9.0.0",
+                "purpose": "Toast notifications for error handling.",
+                "category": "frontend",
+                "already_installed": false,
+                "installation_method": "npm",
+                "install_command": "cd fe && npm install react-toastify@^9.0.0",
+                "package_file": "fe/package.json",
+                "dependency_type": "production"
+            },
+            {
+                "package": "react-hook-form",
+                "version": "^7.48.0",
+                "purpose": "Form validation and state management.",
+                "category": "frontend",
+                "already_installed": true,
+                "installation_method": "npm",
+                "install_command": "Already installed",
+                "package_file": "fe/package.json",
+                "dependency_type": "production"
             }
         ],
         "internal_dependencies": [
             {
-                "module": "RefreshToken model",
+                "module": "Token types",
+                "required_by_step": 3
+            },
+            {
+                "module": "API Client",
                 "required_by_step": 2
             },
             {
-                "module": "AuthService",
+                "module": "Validation schemas",
                 "required_by_step": 4
             },
             {
-                "module": "Validation middleware",
+                "module": "Token management logic",
                 "required_by_step": 5
+            },
+            {
+                "module": "Global state management",
+                "required_by_step": 9
             }
         ],
         "story_points": 8,
         "execution_order": [
-            "Execute steps sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8",
-            "Within each step, execute sub-steps in order",
-            "Test after each sub-step before proceeding",
-            "Commit code after each completed sub-step"
+            "Frontend (1-13): Types → API Config → Services → Validation → Hooks → Components → Pages → Routing → State Management → Error Handling → Loading States → Token Management → Integration"
         ]
     },
     "ready_for_implementation": true,
-    "task_id": "TSK-6291",
+    "task_id": "TSK-5838",
     "complexity_score": 7,
     "story_points": 8,
     "validation_score": 0.925,

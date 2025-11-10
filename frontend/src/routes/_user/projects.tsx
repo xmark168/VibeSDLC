@@ -133,9 +133,8 @@ function ProjectsPage() {
       }
 
       {
-        (user?.github_installations === null && listProjectPublic && listProjectPublic?.count > 0)
-          || (user?.github_installations !== null && listProjectPublic && listProjectPublic?.count > 0)
-          || (user?.github_installations !== null && listProjectPublic && listProjectPublic?.count === 0)
+        (user?.github_installations !== null)
+          || (installationId === undefined && listProjectPublic && listProjectPublic?.count === 0)
           ? (
             <div className="min-h-screen">
               <HeaderProject />
