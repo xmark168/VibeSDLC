@@ -7,7 +7,6 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const logger = require('./utils/logger');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 
@@ -52,14 +51,10 @@ app.use(compression());
 if (config.NODE_ENV !== 'test') {
   app.use(morgan('combined', {
     stream: {
-      write: (message) => logger.http(message.trim()),
+      write: (message) => logger.info(message.trim()),
     },
   }));
 }
-
-// Swagger API docs
-const { swaggerUi, specs } = require('./swagger');
-app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(specs));
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -80,9 +75,6 @@ app.use('*', (req, res) => {
   });
 });
 
-// Error handling middleware (must be last)
-const errorHandler = require('./middleware/errorHandler');
-app.use(errorHandler);
 
 // Graceful shutdown
 process.on('SIGTERM', () => {

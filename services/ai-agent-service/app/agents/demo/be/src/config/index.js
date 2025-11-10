@@ -3,37 +3,33 @@
  * Centralized configuration management with environment variables
  */
 
-const envVars = require('./validateConfig');
+require('dotenv').config();
 
 const config = {
   // Basic app settings
-  NODE_ENV: envVars.NODE_ENV,
-  PORT: envVars.PORT,
+  NODE_ENV: process.env.NODE_ENV || 'development',
+  PORT: parseInt(process.env.PORT, 10) || 3000,
 
   // Security
-  JWT_SECRET: envVars.JWT_SECRET,
-  JWT_EXPIRE: envVars.JWT_EXPIRE,
-  JWT_REFRESH_EXPIRE: envVars.JWT_REFRESH_EXPIRE,
-  BCRYPT_ROUNDS: envVars.BCRYPT_ROUNDS,
+  JWT_SECRET: process.env.JWT_SECRET,
+  JWT_EXPIRE: process.env.JWT_EXPIRE || '1h',
+  JWT_REFRESH_EXPIRE: process.env.JWT_REFRESH_EXPIRE || '7d',
+  BCRYPT_ROUNDS: parseInt(process.env.BCRYPT_ROUNDS, 10) || 12,
 
   // Database
-  MONGODB_URI: envVars.MONGODB_URI,
+  MONGODB_URI: process.env.MONGODB_URI,
 
   // Redis
-  REDIS_URL: envVars.REDIS_URL,
+  REDIS_URL: process.env.REDIS_URL || 'redis://localhost:6379',
 
   // CORS
-  CORS_ORIGINS: envVars.CORS_ORIGINS.split(',').map(origin => origin.trim()),
+  CORS_ORIGINS: process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim())
+    : ['http://localhost:3000', 'http://localhost:8080'],
 
   // File uploads
-  MAX_FILE_SIZE: envVars.MAX_FILE_SIZE,
-  UPLOAD_DIR: envVars.UPLOAD_DIR,
+  MAX_FILE_SIZE: parseInt(process.env.MAX_FILE_SIZE, 10) || 10 * 1024 * 1024, // 10MB
+  UPLOAD_DIR: process.env.UPLOAD_DIR || 'uploads',
+}
 
-  // Email (optional)
-  EMAIL_SERVICE: envVars.EMAIL_SERVICE,
-  EMAIL_USER: envVars.EMAIL_USER,
-  EMAIL_PASS: envVars.EMAIL_PASS,
-  EMAIL_FROM: envVars.EMAIL_FROM
-};
-
-module.exports = config;
+module.exports = config

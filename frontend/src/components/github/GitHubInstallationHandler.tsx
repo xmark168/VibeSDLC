@@ -2,9 +2,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useLocation, useNavigate } from "@tanstack/react-router"
 import { AnimatePresence } from "framer-motion"
 import { useEffect, useState } from "react"
-import { type ApiError, GithubService } from "@/client"
+import { type ApiError, GithubService, UserPublic } from "@/client"
 import { GitHubLinkModal } from "@/components/projects/github-link-modal"
 import { handleError } from "@/utils"
+import { useAppStore } from "@/stores/auth-store"
 import toast from "react-hot-toast"
 
 interface GitHubInstallationHandlerProps {
@@ -23,12 +24,14 @@ export function GitHubInstallationHandler({
   const [_success, setSuccess] = useState(false)
   const [showLinkModal, setShowLinkModal] = useState(false)
   const queryClient = useQueryClient()
+  const { setUser } = useAppStore()
   // Parse query parameters from URL
   const searchParams = new URLSearchParams(location.search)
   const githubInstallation = searchParams.get("github_installation")
   const installationId = searchParams.get("installation_id")
   const errorParam = searchParams.get("error")
   const messageParam = searchParams.get("message")
+  const naviagte = useNavigate()
   // Debug logging
   useEffect(() => {
     console.log("GitHubInstallationHandler - URL params:", {
@@ -48,14 +51,16 @@ export function GitHubInstallationHandler({
 
   const linkGithubMutation = useMutation({
     mutationFn: GithubService.linkInstallationToUser,
-    onSuccess: () => {
+    onSuccess: async () => {
       setSuccess(true)
       setShowLinkModal(false)
       onSuccess?.()
       localStorage.removeItem("installationId")
-      queryClient.invalidateQueries({
-        queryKey: ["github-installation-status"],
+      const userData = await queryClient.fetchQuery({
+        queryKey: ["currentUser"],
       })
+      setUser(userData as UserPublic)
+      navigate({ to: "/projects", replace: true })
     },
     onError: (err) => {
       handleError(err as ApiError)

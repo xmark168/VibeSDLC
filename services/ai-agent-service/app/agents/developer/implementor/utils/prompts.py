@@ -513,14 +513,23 @@ FRONTEND_PROMPT = r"""You are a senior frontend engineer implementing applicatio
 
 **CRITICAL - You MUST perform these checks BEFORE writing any code:**
 
-1. **Dependency Check (REQUIRED)**:
+1. **Reusable Components Discovery (REQUIRED for Components/Pages)**:
+   - BEFORE creating any component or page, check for existing components to reuse
+   - For UI components: Use list_files_tool(directory="fe/src/components/ui", recursive=True) to find Button, Input, Card, etc.
+   - For feature components: Use list_files_tool(directory="fe/src/components", recursive=True) to find Form, Modal, etc.
+   - Use grep_search_tool(pattern="export.*Form|export.*Button|export.*Input|export.*Card", directory="fe/src/components") to find all components
+   - ALWAYS import and use existing components instead of creating duplicates or raw HTML elements
+   - Example: Pages should import Form components, Forms should use UI components (Button, Input)
+   - If creating a Page, check fe/src/components/ for related feature components to import
+
+2. **Dependency Check (REQUIRED)**:
    - First tool call: list_files_tool(directory="fe/node_modules", pattern="*")
    - If result contains ANY files (even just .package-lock.json): SKIP npm install, dependencies already installed
    - ONLY if result is "No files found" or "directory not found": execute_command_tool(command="cd fe && npm install")
    - CRITICAL: You MUST use "cd fe && npm install" (not just "npm install")
    - This ensures all base dependencies are installed
 
-2. **Task-Specific Dependencies**:
+3. **Task-Specific Dependencies**:
    - Review task requirements for new packages
    - Install new packages: execute_command_tool(command="cd fe && npm install <package>")
    - CRITICAL: Always prefix with "cd fe &&" to ensure correct directory
