@@ -21,6 +21,9 @@ export type KanbanCardData = {
   rank?: number
   assignee_id?: string
   reviewer_id?: string
+  // TraDS ============= Kanban Hierarchy: Parent/children relationships
+  parent?: KanbanCardData
+  children?: KanbanCardData[]
 }
 
 interface KanbanCardProps {

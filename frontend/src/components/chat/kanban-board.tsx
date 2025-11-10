@@ -14,7 +14,6 @@ interface KanbanBoardProps {
 }
 
 const initialColumns: KanbanColumnData[] = [
-  { id: "backlog", title: "Backlog", color: "border-yellow-500", cards: [] },
   { id: "todo", title: "ToDo", color: "border-purple-500", cards: [] },
   { id: "inprogress", title: "InProgress", color: "border-red-500", cards: [] },
   { id: "review", title: "Review", color: "border-blue-500", cards: [] },
@@ -44,82 +43,68 @@ export function KanbanBoard({ kanbanData, projectId, sprintId }: KanbanBoardProp
     if (dbKanbanData && dbKanbanData.board) {
       console.log('[KanbanBoard] Loading Kanban board from database:', dbKanbanData)
 
+      // TraDS ============= Kanban Hierarchy: Filter out Epics and Sub-tasks from board display
+      const filterItems = (items: any[]) => items.filter((item: any) =>
+        item.type !== "Epic" && item.type !== "Sub-task"
+      )
+
+      // TraDS ============= Kanban Hierarchy: Map items with parent/children relationships
+      const mapItem = (item: any, columnId: string) => ({
+        id: item.id,
+        content: item.title,
+        columnId,
+        taskId: item.id,
+        description: item.description,
+        status: item.status,
+        type: item.type,
+        story_point: item.story_point,
+        estimate_value: item.estimate_value,
+        rank: item.rank,
+        assignee_id: item.assignee_id,
+        reviewer_id: item.reviewer_id,
+        parent: item.parent ? {
+          id: item.parent.id,
+          content: item.parent.title,
+          columnId: item.parent.status?.toLowerCase() || "",
+          taskId: item.parent.id,
+          type: item.parent.type,
+          title: item.parent.title,
+        } : undefined,
+        children: item.children ? item.children.map((child: any) => ({
+          id: child.id,
+          content: child.title,
+          columnId: child.status?.toLowerCase() || "",
+          taskId: child.id,
+          description: child.description,
+          status: child.status,
+          type: child.type,
+          story_point: child.story_point,
+          estimate_value: child.estimate_value,
+          rank: child.rank,
+          assignee_id: child.assignee_id,
+          reviewer_id: child.reviewer_id,
+          title: child.title,
+        })) : [],
+      })
+
       const newColumns: KanbanColumnData[] = [
-        {
-          id: "backlog",
-          title: "Backlog",
-          color: "border-yellow-500",
-          cards: (dbKanbanData.board.Backlog || []).map((item: any) => ({
-            id: item.id,
-            content: item.title,
-            columnId: "backlog",
-            taskId: item.id,
-            description: item.description,
-            status: item.status,
-            type: item.type,
-            story_point: item.story_point,
-            estimate_value: item.estimate_value,
-            rank: item.rank,
-            assignee_id: item.assignee_id,
-            reviewer_id: item.reviewer_id,
-          }))
-        },
         {
           id: "todo",
           title: "ToDo",
           color: "border-purple-500",
-          cards: (dbKanbanData.board.Todo || []).map((item: any) => ({
-            id: item.id,
-            content: item.title,
-            columnId: "todo",
-            taskId: item.id,
-            description: item.description,
-            status: item.status,
-            type: item.type,
-            story_point: item.story_point,
-            estimate_value: item.estimate_value,
-            rank: item.rank,
-            assignee_id: item.assignee_id,
-            reviewer_id: item.reviewer_id,
-          }))
+          cards: filterItems(dbKanbanData.board.Todo || []).map((item: any) => mapItem(item, "todo"))
         },
         {
           id: "inprogress",
           title: "InProgress",
           color: "border-red-500",
-          cards: (dbKanbanData.board.Doing || []).map((item: any) => ({
-            id: item.id,
-            content: item.title,
-            columnId: "inprogress",
-            taskId: item.id,
-            description: item.description,
-            status: item.status,
-            type: item.type,
-            story_point: item.story_point,
-            estimate_value: item.estimate_value,
-            rank: item.rank,
-            assignee_id: item.assignee_id,
-            reviewer_id: item.reviewer_id,
-          }))
+          cards: filterItems(dbKanbanData.board.Doing || []).map((item: any) => mapItem(item, "inprogress"))
         },
         {
           id: "done",
           title: "Done",
           color: "border-cyan-500",
-          cards: (dbKanbanData.board.Done || []).map((item: any) => ({
-            id: item.id,
-            content: item.title,
-            columnId: "done",
-            taskId: item.id,
-            description: item.description,
-            status: item.status,
-            type: item.type,
-            story_point: item.story_point,
-            estimate_value: item.estimate_value,
-            rank: item.rank,
-            assignee_id: item.assignee_id,
-            reviewer_id: item.reviewer_id,
-          }))
+          cards: filterItems(dbKanbanData.board.Done || []).map((item: any) => mapItem(item, "done"))
         },
       ]
 
@@ -132,96 +117,74 @@ export function KanbanBoard({ kanbanData, projectId, sprintId }: KanbanBoardProp
     if (kanbanData && kanbanData.kanban_board) {
       console.log('Updating Kanban board with WebSocket data:', kanbanData)
 
-      // Map kanban_board data to columns
+      // TraDS ============= Kanban Hierarchy: Filter out Epics and Sub-tasks from board display
+      const filterItems = (items: any[]) => items.filter((item: any) =>
+        item.type !== "Epic" && item.type !== "Sub-task"
+      )
+
+      // TraDS ============= Kanban Hierarchy: Map items with parent/children relationships
+      const mapItem = (item: any, columnId: string) => ({
+        id: item.id,
+        content: item.title,
+        columnId,
+        taskId: item.item_id || item.id,
+        description: item.description,
+        status: item.status,
+        type: item.type,
+        story_point: item.story_point,
+        estimate_value: item.estimate_value,
+        rank: item.rank,
+        assignee_id: item.assignee_id,
+        reviewer_id: item.reviewer_id,
+        parent: item.parent ? {
+          id: item.parent.id,
+          content: item.parent.title,
+          columnId: item.parent.status?.toLowerCase() || "",
+          taskId: item.parent.id,
+          type: item.parent.type,
+          title: item.parent.title,
+        } : undefined,
+        children: item.children ? item.children.map((child: any) => ({
+          id: child.id,
+          content: child.title,
+          columnId: child.status?.toLowerCase() || "",
+          taskId: child.id,
+          description: child.description,
+          status: child.status,
+          type: child.type,
+          story_point: child.story_point,
+          estimate_value: child.estimate_value,
+          rank: child.rank,
+          assignee_id: child.assignee_id,
+          reviewer_id: child.reviewer_id,
+          title: child.title,
+        })) : [],
+      })
+
       const newColumns: KanbanColumnData[] = [
-        {
-          id: "backlog",
-          title: "Backlog",
-          color: "border-yellow-500",
-          cards: (kanbanData.kanban_board.Backlog || []).map((item: any) => ({
-            id: item.id,
-            content: item.title,
-            columnId: "backlog",
-            taskId: item.item_id || item.id,
-            description: item.description,
-            status: item.status,
-            type: item.type,
-            story_point: item.story_point,
-            estimate_value: item.estimate_value,
-            rank: item.rank,
-            assignee_id: item.assignee_id,
-            reviewer_id: item.reviewer_id,
-          }))
-        },
         {
           id: "todo",
           title: "ToDo",
           color: "border-purple-500",
-          cards: (kanbanData.kanban_board.Todo || []).map((item: any) => ({
-            id: item.id,
-            content: item.title,
-            columnId: "todo",
-            taskId: item.item_id || item.id,
-            description: item.description,
-            status: item.status,
-            type: item.type,
-            story_point: item.story_point,
-            estimate_value: item.estimate_value,
-            rank: item.rank,
-            assignee_id: item.assignee_id,
-            reviewer_id: item.reviewer_id,
-          }))
+          cards: filterItems(kanbanData.kanban_board.Todo || []).map((item: any) => mapItem(item, "todo"))
         },
         {
           id: "inprogress",
           title: "InProgress",
           color: "border-red-500",
-          cards: (kanbanData.kanban_board.Doing || []).map((item: any) => ({
-            id: item.id,
-            content: item.title,
-            columnId: "inprogress",
-            taskId: item.item_id || item.id,
-            description: item.description,
-            status: item.status,
-            type: item.type,
-            story_point: item.story_point,
-            estimate_value: item.estimate_value,
-            rank: item.rank,
-            assignee_id: item.assignee_id,
-            reviewer_id: item.reviewer_id,
-          }))
+          cards: filterItems(kanbanData.kanban_board.Doing || []).map((item: any) => mapItem(item, "inprogress"))
         },
         {
           id: "done",
           title: "Done",
           color: "border-cyan-500",
-          cards: (kanbanData.kanban_board.Done || []).map((item: any) => ({
-            id: item.id,
-            content: item.title,
-            columnId: "done",
-            taskId: item.item_id || item.id,
-            description: item.description,
-            status: item.status,
-            type: item.type,
-            story_point: item.story_point,
-            estimate_value: item.estimate_value,
-            rank: item.rank,
-            assignee_id: item.assignee_id,
-            reviewer_id: item.reviewer_id,
-          }))
+          cards: filterItems(kanbanData.kanban_board.Done || []).map((item: any) => mapItem(item, "done"))
         },
       ]
 
       setColumns(newColumns)
     }
   }, [kanbanData])
-
-  const handleWheel = (e: React.WheelEvent) => {
-    if (scrollContainerRef.current) {
-      e.preventDefault()
-      scrollContainerRef.current.scrollLeft += e.deltaY + 1
-    }
-  }
 
   const handleDownloadResult = (card: KanbanCardData) => {
     if (!card.result) return
@@ -326,7 +289,6 @@ export function KanbanBoard({ kanbanData, projectId, sprintId }: KanbanBoardProp
     <>
       <div
         ref={scrollContainerRef}
-        onWheel={handleWheel}
         className="h-full overflow-x-auto bg-background p-6 border-t"
         style={{ scrollBehavior: "smooth" }}
       >

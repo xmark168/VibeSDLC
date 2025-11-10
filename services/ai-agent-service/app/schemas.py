@@ -200,11 +200,23 @@ class BacklogItemUpdate(SQLModel):
     sprint_id: Optional[UUID] = None
 
 
-class BacklogItemPublic(BacklogItemBase):
+# TraDS ============= Kanban Hierarchy Support
+class BacklogItemSimple(BacklogItemBase):
+    """Simple schema without nested relationships to prevent recursion"""
     id: UUID
     sprint_id: UUID
     created_at: datetime
     updated_at: datetime
+
+
+class BacklogItemPublic(BacklogItemBase):
+    """Public schema with parent/children for Kanban hierarchy display"""
+    id: UUID
+    sprint_id: UUID
+    created_at: datetime
+    updated_at: datetime
+    parent: Optional[BacklogItemSimple] = None
+    children: list[BacklogItemSimple] = []
 
 
 class BacklogItemsPublic(SQLModel):

@@ -2,16 +2,6 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Loader2, CheckCircle2 } from "lucide-react"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { Textarea } from "@/components/ui/textarea"
-import { Label } from "@/components/ui/label"
 import { agentApi } from "@/apis/agent"
 
 interface SprintRetrospectiveProps {
@@ -31,6 +21,7 @@ interface AgentReport {
 export function SprintRetrospective({ projectId, sprintId }: SprintRetrospectiveProps) {
   const [stage, setStage] = useState<"idle" | "reporting" | "analyzing" | "summary">("idle")
   const [currentAgentIndex, setCurrentAgentIndex] = useState(0)
+  const [useTestData, setUseTestData] = useState(false)
 
   const [agents, setAgents] = useState<AgentReport[]>([
     {
@@ -78,77 +69,61 @@ export function SprintRetrospective({ projectId, sprintId }: SprintRetrospective
 
   const [overviewSummary, setOverviewSummary] = useState("")
 
-  const [showPOFeedbackDialog, setShowPOFeedbackDialog] = useState(false)
-  const [poFeedback, setPOFeedback] = useState({
-    achievements: "",
-    challenges: "",
-    priorities: ""
-  })
-
-  const startRetrospective = () => {
-    // Show PO feedback dialog first
-    setShowPOFeedbackDialog(true)
-  }
-
-  const handlePOFeedbackSubmit = () => {
-    setShowPOFeedbackDialog(false)
-
-    // Build PO report from feedback
-    let poReport = ""
-    if (poFeedback.achievements) poReport += `✅ Hài lòng với sản phẩm:\n${poFeedback.achievements}\n\n`
-    if (poFeedback.challenges) poReport += `🚧 Chưa hài lòng/Cần sửa:\n${poFeedback.challenges}\n\n`
-    if (poFeedback.priorities) poReport += `🎯 Mong muốn cho sprint sau:\n${poFeedback.priorities}`
-
-    if (!poReport.trim()) {
-      poReport = "✅ Đã hoàn thành:\n• Sprint đang trong quá trình thực hiện\n\n🚧 Vấn đề gặp phải:\n• Chưa có feedback cụ thể"
+  const startRetrospective = (testMode: boolean) => {
+    setUseTestData(testMode)
+    setStage("analyzing")
+    if (testMode) {
+      loadTestData()
+    } else {
+      callBackendAPI()
     }
-
-    // Set PO report directly
-    setAgents(prev => prev.map((agent, i) =>
-      i === 0 ? { ...agent, report: poReport, isSubmitted: true } : agent
-    ))
-
-    setStage("reporting")
-    setCurrentAgentIndex(1)
-    generateReport(1)
   }
 
-  const generateReport = async (index: number) => {
-    if (index >= agents.length) {
-      // All agents done, call backend API
-      setStage("analyzing")
+  const loadTestData = () => {
+    // Mock data for testing
+    setTimeout(() => {
+      setSummary({
+        wentWell: "✅ Team hoàn thành 8/10 user stories với chất lượng cao\n✅ Code review process được cải thiện đáng kể\n✅ Daily standup hiệu quả, mọi người tham gia tích cực\n✅ Tích hợp CI/CD pipeline thành công\n✅ Performance optimization giảm load time 40%",
+        blockers: "🚧 API documentation từ team backend chưa đầy đủ\n🚧 Môi trường staging bị down 2 ngày\n🚧 Thiếu thiết bị test cho iOS\n🚧 Requirements thay đổi giữa sprint\n🚧 Database migration gặp conflict",
+        poRules: "📋 Freeze requirements sau planning meeting\n📋 Cung cấp acceptance criteria chi tiết hơn\n📋 Review mockup với team trước khi sprint\n📋 Tăng cường demo với stakeholders",
+        devRules: "💻 Áp dụng pair programming cho complex tasks\n💻 Viết unit test trước khi code (TDD)\n💻 Code review trong vòng 4 giờ\n💻 Document API ngay khi implement\n💻 Refactor code cũ khi có cơ hội",
+        testerRules: "🧪 Tạo test plan ngay sau planning\n🧪 Automation test cho regression\n🧪 Bug report phải có steps to reproduce\n🧪 Test trên nhiều browsers/devices\n🧪 Performance testing cho critical features",
+      })
+      setSprintMetrics({
+        total_tasks: 21,
+        completed_tasks: 18,
+        total_points: 47,
+        completed_points: 40,
+        velocity: 40,
+        completion_rate: 85,
+      })
 
-      try {
-        // Format PO feedback
-        const poFeedbackText = poFeedback.achievements || poFeedback.challenges || poFeedback.priorities
-          ? `Hài lòng với sản phẩm: ${poFeedback.achievements}\n\nChưa hài lòng/Cần sửa: ${poFeedback.challenges}\n\nMong muốn cho sprint sau: ${poFeedback.priorities}`
-          : undefined
+      const mockReports = {
+        po: "Sprint này team đã làm việc rất tốt! Tôi đặc biệt ấn tượng với tốc độ delivery và chất lượng sản phẩm. Tuy nhiên, chúng ta cần cải thiện việc communication về requirements. Một số user stories bị hiểu sai dẫn đến phải rework. Tôi sẽ cố gắng làm rõ acceptance criteria hơn và tổ chức refinement session thường xuyên hơn.",
+        dev: "Code quality trong sprint này khá tốt. Chúng tôi đã áp dụng code review nghiêm ngặt hơn và kết quả rất khả quan. Tuy nhiên, API documentation từ backend team chưa đầy đủ khiến frontend gặp khó khăn. Môi trường staging cũng bị down 2 ngày ảnh hưởng đến testing. Chúng tôi cần có backup environment và improve documentation process.",
+        tester: "Testing process được cải thiện đáng kể. Automation coverage tăng lên 65%. Tuy nhiên, chúng tôi gặp blocker về thiết bị test iOS và môi trường staging không ổn định. Một số bugs được phát hiện muộn do requirements không rõ ràng. Cần có test plan sớm hơn và môi trường test ổn định hơn cho sprint sau.",
+      }
 
-        // Call backend API
-        const response = await agentApi.analyzeRetrospective({
-          sprint_id: sprintId || "",
-          project_id: projectId || "",
-          user_feedback: poFeedbackText,
-        })
+      setStage("reporting")
+      setTimeout(() => setAgents(prev => prev.map((a, i) => i === 0 ? { ...a, report: mockReports.po, isSubmitted: true } : a)), 500)
+      setTimeout(() => setAgents(prev => prev.map((a, i) => i === 1 ? { ...a, report: mockReports.dev, isSubmitted: true } : a)), 1500)
+      setTimeout(() => setAgents(prev => prev.map((a, i) => i === 2 ? { ...a, report: mockReports.tester, isSubmitted: true } : a)), 2500)
+      setTimeout(() => setStage("summary"), 4500)
+    }, 2000)
+  }
+
+  const callBackendAPI = async () => {
+    try {
+      // Call backend API
+      const response = await agentApi.analyzeRetrospective({
+        sprint_id: sprintId || "",
+        project_id: projectId || "",
+      })
 
         if (response.status === "success" && response.data) {
-          console.log("Backend response:", response.data)
-          console.log("Agent reports:", response.data.agent_reports)
-
-          // Update agents with real reports from backend
           const agentReports = response.data.agent_reports || {}
-          console.log("PO report:", agentReports.po)
-          console.log("Dev report:", agentReports.dev)
-          console.log("Tester report:", agentReports.tester)
 
-          setAgents(prev => prev.map((agent, i) => {
-            if (i === 0) return { ...agent, report: agentReports.po || "Không có báo cáo PO", isSubmitted: true }
-            if (i === 1) return { ...agent, report: agentReports.dev || "Không có báo cáo Dev", isSubmitted: true }
-            if (i === 2) return { ...agent, report: agentReports.tester || "Không có báo cáo Tester", isSubmitted: true }
-            return agent
-          }))
-
-          // Update summary with real data
+          // Update summary with real data (store for later)
           setSummary({
             wentWell: response.data.what_went_well || "Không có dữ liệu",
             blockers: response.data.blockers_summary || "Không có blockers",
@@ -156,41 +131,43 @@ export function SprintRetrospective({ projectId, sprintId }: SprintRetrospective
             devRules: response.data.dev_rules || "Không có quy tắc",
             testerRules: response.data.tester_rules || "Không có quy tắc",
           })
-
-          // Store metrics for display
           setSprintMetrics(response.data.sprint_metrics)
 
-          // Show reporting stage first, then summary
+          // Show reports one by one with animation
           setStage("reporting")
-          setTimeout(() => setStage("summary"), 3000)
-        } else {
-          alert(`Lỗi: ${response.error || "Không thể phân tích retrospective"}`)
-          setStage("idle")
-        }
-      } catch (error) {
-        console.error("Error calling retro API:", error)
-        alert("Lỗi khi gọi API. Vui lòng thử lại.")
+
+          // Show PO report (index 0)
+          setTimeout(() => {
+            setAgents(prev => prev.map((agent, i) =>
+              i === 0 ? { ...agent, report: agentReports.po || "Không có báo cáo", isSubmitted: true } : agent
+            ))
+          }, 500)
+
+          // Show Dev report (index 1)
+          setTimeout(() => {
+            setAgents(prev => prev.map((agent, i) =>
+              i === 1 ? { ...agent, report: agentReports.dev || "Không có báo cáo", isSubmitted: true } : agent
+            ))
+          }, 1500)
+
+          // Show Tester report (index 2)
+          setTimeout(() => {
+            setAgents(prev => prev.map((agent, i) =>
+              i === 2 ? { ...agent, report: agentReports.tester || "Không có báo cáo", isSubmitted: true } : agent
+            ))
+          }, 2500)
+
+          // Move to summary
+          setTimeout(() => setStage("summary"), 4500)
+      } else {
+        alert(`Lỗi: ${response.error || "Không thể phân tích retrospective"}`)
         setStage("idle")
       }
-      return
+    } catch (error) {
+      console.error("Error calling retro API:", error)
+      alert("Lỗi khi gọi API. Vui lòng thử lại.")
+      setStage("idle")
     }
-
-    // Show loading for current agent
-    setAgents(prev => prev.map((a, i) =>
-      i === index ? { ...a, isLoading: true } : a
-    ))
-
-    // Simulate agent reporting (will be replaced by real data from API)
-    setTimeout(() => {
-      setAgents(prev => prev.map((a, i) =>
-        i === index ? { ...a, isLoading: false, isSubmitted: true } : a
-      ))
-
-      setTimeout(() => {
-        setCurrentAgentIndex(index + 1)
-        generateReport(index + 1)
-      }, 500)
-    }, 1500)
   }
 
   return (
@@ -217,15 +194,24 @@ export function SprintRetrospective({ projectId, sprintId }: SprintRetrospective
             )}
             {sprintId && (
               <>
-                <Button
-                  onClick={startRetrospective}
-                  size="lg"
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  Bắt đầu Sprint Retrospective
-                </Button>
+                <div className="flex gap-3">
+                  <Button
+                    onClick={() => startRetrospective(false)}
+                    size="lg"
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    Chạy thật (Real Data)
+                  </Button>
+                  <Button
+                    onClick={() => startRetrospective(true)}
+                    size="lg"
+                    variant="outline"
+                  >
+                    Test Mode (Mock Data)
+                  </Button>
+                </div>
                 <p className="text-xs text-muted-foreground">
-                  💡 Development mode: Có thể test với bất kỳ sprint nào
+                  💡 Chọn "Test Mode" để xem demo với dữ liệu mẫu đầy đủ
                 </p>
               </>
             )}
@@ -306,36 +292,7 @@ export function SprintRetrospective({ projectId, sprintId }: SprintRetrospective
         {stage === "summary" && (
           <div className="space-y-6">
             {/* Sprint Overview */}
-            <Card className="p-6 space-y-4">
-              <h3 className="text-lg font-semibold">📊 Sprint Overview</h3>
-
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                Sprint tổng thể rất tốt! Chúng ta đã hoàn thành 40 story points với chất lượng cao. Team thể hiện sự phối hợp tốt giữa dev và QA. Tuy nhiên, chúng ta đã xác định được các vấn đề cần cải thiện: yêu cầu tích hợp cổng thanh toán cần làm rõ, tài liệu API bên thứ ba là điểm nghẽn, và môi trường test cần ổn định hơn. Hãy tập trung vào những cải tiến này cho sprint tiếp theo.
-              </p>
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2">
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Story Points</p>
-                  <p className="text-2xl font-bold">40/47</p>
-                  <p className="text-xs text-green-600">85% completed</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Velocity</p>
-                  <p className="text-2xl font-bold">40</p>
-                  <p className="text-xs text-muted-foreground">points/sprint</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Tasks Completed</p>
-                  <p className="text-2xl font-bold">18/21</p>
-                  <p className="text-xs text-green-600">86% done</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Blockers Found</p>
-                  <p className="text-2xl font-bold text-red-600">5</p>
-                  <p className="text-xs text-muted-foreground">across team</p>
-                </div>
-              </div>
-            </Card>
+             
 
             {/* What Went Well */}
             <Card className="p-6 space-y-3">
@@ -411,7 +368,6 @@ export function SprintRetrospective({ projectId, sprintId }: SprintRetrospective
                   setStage("idle")
                   setCurrentAgentIndex(0)
                   setAgents(agents.map(a => ({ ...a, report: "", isLoading: false, isSubmitted: false })))
-                  setPOFeedback({ achievements: "", challenges: "", priorities: "" })
                 }}
                 variant="outline"
               >
@@ -421,75 +377,6 @@ export function SprintRetrospective({ projectId, sprintId }: SprintRetrospective
           </div>
         )}
       </div>
-
-      {/* PO Feedback Dialog */}
-      <Dialog open={showPOFeedbackDialog} onOpenChange={setShowPOFeedbackDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Product Owner Feedback</DialogTitle>
-            <DialogDescription>
-              Vui lòng chia sẻ góc nhìn của bạn về sprint này trước khi bắt đầu retrospective
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="achievements">Bạn có hài lòng với sản phẩm trong sprint này không? 😊</Label>
-              <Textarea
-                id="achievements"
-                placeholder="Ví dụ: Tính năng đăng nhập hoạt động tốt, giao diện đẹp, người dùng thích..."
-                value={poFeedback.achievements}
-                onChange={(e) => setPOFeedback({...poFeedback, achievements: e.target.value})}
-                className="min-h-[80px]"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="challenges">Có tính năng nào chưa hài lòng hoặc cần sửa không? 🤔</Label>
-              <Textarea
-                id="challenges"
-                placeholder="Ví dụ: Trang chủ load chậm, nút thanh toán khó tìm, thiếu tính năng tìm kiếm..."
-                value={poFeedback.challenges}
-                onChange={(e) => setPOFeedback({...poFeedback, challenges: e.target.value})}
-                className="min-h-[80px]"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="priorities">Bạn muốn thêm hoặc sửa đổi gì cho lần sau? 🎯</Label>
-              <Textarea
-                id="priorities"
-                placeholder="Ví dụ: Thêm chức năng lọc sản phẩm, sửa màu nút cho dễ nhìn, làm app mượt hơn..."
-                value={poFeedback.priorities}
-                onChange={(e) => setPOFeedback({...poFeedback, priorities: e.target.value})}
-                className="min-h-[80px]"
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowPOFeedbackDialog(false)
-                // Skip PO feedback, use empty report
-                setAgents(prev => prev.map((agent, i) =>
-                  i === 0 ? { ...agent, report: "", isSubmitted: true } : agent
-                ))
-                setStage("reporting")
-                setCurrentAgentIndex(1) // Start from Dev
-                generateReport(1)
-              }}
-            >
-              Bỏ qua
-            </Button>
-            <Button onClick={handlePOFeedbackSubmit} className="bg-blue-600 hover:bg-blue-700">
-              Tiếp tục
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
     </div>
   )
 }
