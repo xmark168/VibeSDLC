@@ -245,7 +245,7 @@ class ImplementorAgent:
                 "configurable": {"thread_id": thread_id or "default"},
                 "callbacks": callbacks,
                 "metadata": metadata,
-                "recursion_limit": 50,
+                "recursion_limit": 150,
             }
 
             # Run workflow
