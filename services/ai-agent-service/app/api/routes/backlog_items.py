@@ -272,9 +272,13 @@ def get_kanban_board(
     if not sprint:
         raise HTTPException(status_code=404, detail="Sprint not found")
 
-    # Get all items, order by rank
+    # TraDS ============= Kanban Hierarchy Support: Load parent/children relationships
+    from sqlalchemy.orm import selectinload
     statement = select(BacklogItem).where(
         BacklogItem.sprint_id == sprint_id
+    ).options(
+        selectinload(BacklogItem.parent),
+        selectinload(BacklogItem.children)
     ).order_by(BacklogItem.status, BacklogItem.rank)
 
     items = session.exec(statement).all()

@@ -1,11 +1,12 @@
 
-import { Download, Zap, User, Users, Flag, Calendar } from "lucide-react"
+import { Download, Zap, User, Users, Flag, Calendar, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import type { KanbanCardData } from "./kanban-card"
+import { useState } from "react"
 
 interface TaskDetailModalProps {
   card: KanbanCardData | null
@@ -15,6 +16,8 @@ interface TaskDetailModalProps {
 }
 
 export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: TaskDetailModalProps) {
+  const [selectedChild, setSelectedChild] = useState<KanbanCardData | null>(null)
+
   if (!card) return null
 
   // Get type badge color
@@ -157,6 +160,54 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
 
           <Separator />
 
+          {/* TraDS ============= Kanban Hierarchy: Parent Epic Display */}
+          {card.parent && card.parent.type === "Epic" && (
+            <div>
+              <h4 className="text-sm font-semibold text-foreground mb-2">Epic</h4>
+              <div className="flex items-center gap-2 p-2 rounded border border-border bg-muted/50">
+                <Badge variant="outline" className={getTypeBadgeColor(card.parent.type)}>
+                  {card.parent.type}
+                </Badge>
+                <span className="text-sm flex-1">{card.parent.content || card.parent.title}</span>
+              </div>
+            </div>
+          )}
+
+          {/* TraDS ============= Kanban Hierarchy: Children (Tasks or Sub-tasks) Display */}
+          {card.children && card.children.length > 0 && (
+            <div>
+              <h4 className="text-sm font-semibold text-foreground mb-2">
+                {card.type === "User Story" ? "Tasks" : "Sub-tasks"} ({card.children.length})
+              </h4>
+              <div className="space-y-2">
+                {card.children.map((child) => (
+                  <div
+                    key={child.id}
+                    onClick={() => setSelectedChild(child)}
+                    className="flex items-center gap-2 p-2 rounded border border-border hover:bg-muted/50 cursor-pointer transition-colors"
+                  >
+                    <Badge variant="outline" className={getTypeBadgeColor(child.type)}>
+                      {child.type}
+                    </Badge>
+                    <span className="text-sm flex-1">{child.content || child.title}</span>
+                    {child.status && (
+                      <Badge variant="outline" className={getStatusBadgeColor(child.status)}>
+                        {child.status}
+                      </Badge>
+                    )}
+                    {child.story_point !== undefined && child.story_point !== null && (
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Zap className="w-3 h-3" />
+                        {child.story_point} SP
+                      </div>
+                    )}
+                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Agent Info (Legacy) */}
           {card.agentName && (
             <div>
@@ -213,6 +264,16 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
           )}
         </div>
       </DialogContent>
+
+      {/* TraDS ============= Kanban Hierarchy: Nested dialog for viewing child items */}
+      {selectedChild && (
+        <TaskDetailModal
+          card={selectedChild}
+          open={!!selectedChild}
+          onOpenChange={() => setSelectedChild(null)}
+          onDownloadResult={onDownloadResult}
+        />
+      )}
     </Dialog>
   )
 }

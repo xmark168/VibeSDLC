@@ -18,6 +18,9 @@ export interface BacklogItem {
   deadline?: string | null
   created_at: string
   updated_at: string
+  // TraDS ============= Kanban Hierarchy: Parent/children relationships
+  parent?: BacklogItem | null
+  children?: BacklogItem[]
 }
 
 export interface KanbanBoard {
