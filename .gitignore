@@ -1,0 +1,3 @@
+# Backend
+.venv
+backend/uv.lock
