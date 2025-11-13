@@ -2,7 +2,7 @@
 .venv
 backend/uv.lock
 .claude
-__
+__pycache__
 #Frontend
 # Logs
 logs
