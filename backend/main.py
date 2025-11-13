@@ -19,17 +19,44 @@ async def lifespan(app: FastAPI):
     print("VibeSDLC Backend is running...")
 
     yield
-
-    # Shutdown
     await engine.dispose()
-    print("👋 Shutting down...")
+    print("Shutting down...")
+
+# API Metadata
+tags_metadata = [
+    {
+        "name": "Health",
+        "description": "Health check endpoints để kiểm tra trạng thái server và database",
+    },
+    {
+        "name": "Authentication",
+        "description": "Authentication endpoints: đăng ký, đăng nhập, refresh token, logout",
+    },
+    {
+        "name": "Users",
+        "description": "User management endpoints (yêu cầu authentication)",
+    },
+]
 
 # Khởi tạo FastAPI app
 app = FastAPI(
     title="VibeSDLC API",
-    description="Backend API cho VibeSDLC - Software Development Lifecycle Multi-agent System",
+    description="""
+## VibeSDLC - Software Development Lifecycle Multi-agent System
+    """,
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    openapi_tags=tags_metadata,
+    contact={
+        "name": "VibeSDLC Team",
+        "url": "https://github.com/xmark168/VibeSDLC",
+        "email": "support@vibesdlc.com",
+    },
+    license_info={
+        "name": "MIT License",
+        "url": "https://opensource.org/licenses/MIT",
+    },
+    terms_of_service="https://vibesdlc.com/terms",
 )
 
 # CORS Middleware
@@ -67,7 +94,7 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
+        host="localhost",
         port=8000,
         reload=True
     )

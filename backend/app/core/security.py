@@ -4,6 +4,7 @@ import jwt
 from passlib.context import CryptContext
 import bcrypt
 import secrets
+import hashlib
 from app.core.config import settings
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -24,14 +25,24 @@ def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 def create_refresh_token() -> tuple[str, str]:
-    """Tạo refresh token và hash của nó"""
+    """
+    Tạo refresh token và hash của nó
+    Pre-hash với SHA256 trước khi hash với bcrypt để tránh giới hạn 72 bytes
+    """
     token = secrets.token_urlsafe(64)  # 64 bytes ~ 86 chars
-    token_hash = bcrypt.hashpw(token.encode(), bcrypt.gensalt()).decode()
+    # Pre-hash token với SHA256 vì bcrypt chỉ hỗ trợ tối đa 72 bytes
+    token_prehash = hashlib.sha256(token.encode()).hexdigest()
+    token_hash = bcrypt.hashpw(token_prehash.encode(), bcrypt.gensalt()).decode()
     return token, token_hash
 
 def verify_refresh_token(stored_hash: str, provided_token: str) -> bool:
-    """Verify refresh token với hash đã lưu"""
-    return bcrypt.checkpw(provided_token.encode(), stored_hash.encode())
+    """
+    Verify refresh token với hash đã lưu
+    Pre-hash với SHA256 trước khi verify với bcrypt
+    """
+    # Pre-hash token giống như lúc tạo
+    token_prehash = hashlib.sha256(provided_token.encode()).hexdigest()
+    return bcrypt.checkpw(token_prehash.encode(), stored_hash.encode())
 
 def create_email_verification_token(email: str) -> str:
     """Token xác thực email"""

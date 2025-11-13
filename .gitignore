@@ -3,6 +3,7 @@
 backend/uv.lock
 .claude
 __pycache__
+.env
 #Frontend
 # Logs
 logs
