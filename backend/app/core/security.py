@@ -41,3 +41,15 @@ def create_email_verification_token(email: str) -> str:
         settings.SECRET_KEY,
         algorithm=settings.ALGORITHM
     )
+
+def decode_access_token(token: str) -> dict:
+    """Decode và verify JWT access token"""
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        if payload.get("type") != "access":
+            raise JWTError("Invalid token type")
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise JWTError("Token has expired")
+    except jwt.InvalidTokenError:
+        raise JWTError("Invalid token")

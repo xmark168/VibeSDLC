@@ -1,4 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
+from datetime import datetime
+from typing import Optional
 
 class UserRegister(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
@@ -19,3 +21,29 @@ class TokenResponse(BaseModel):
 class TwoFactorVerify(BaseModel):
     user_id: int
     code: str
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    email: str
+    fullname: Optional[str] = None
+    is_active: bool
+    balance: float
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class UserUpdate(BaseModel):
+    fullname: Optional[str] = None
+    address: Optional[str] = None
+
+class ChangePassword(BaseModel):
+    old_password: str = Field(..., min_length=8)
+    new_password: str = Field(..., min_length=8)
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+class MessageResponse(BaseModel):
+    message: str
