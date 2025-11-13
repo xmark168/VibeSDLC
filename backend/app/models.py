@@ -6,18 +6,32 @@ from sqlalchemy.orm import  Mapped, mapped_column, relationship
 
 class User(Base):
     __tablename__ = "users"
-    
+
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    fullname: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     address: Mapped[Optional[dict]] = mapped_column(String(500), nullable=True)
     balance: Mapped[float] = mapped_column(Float, default=0.0)
     # current_plan_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("plans.id"), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    two_factor_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
 
     social_accounts: Mapped[List["UserSocialAccount"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", lazy="selectin"
+    )
+    refresh_tokens: Mapped[List["RefreshToken"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", lazy="selectin"
+    )
+    password_reset_tokens: Mapped[List["PasswordResetToken"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", lazy="selectin"
+    )
+    backup_codes: Mapped[List["TwoFactorBackupCode"]] = relationship(
         back_populates="user", cascade="all, delete-orphan", lazy="selectin"
     )
 
