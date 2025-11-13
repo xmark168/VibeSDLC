@@ -48,7 +48,7 @@ class AgentBase(BaseModel):
 
 class AgentCreate(AgentBase):
     """Schema for creating a new agent"""
-    pass
+    project_id: int = Field(..., description="Project ID that this agent belongs to")
 
 
 class AgentUpdate(BaseModel):
@@ -57,11 +57,13 @@ class AgentUpdate(BaseModel):
     type: Optional[AgentType] = None
     description: Optional[str] = None
     is_active: Optional[bool] = None
+    project_id: Optional[int] = None
 
 
 class AgentResponse(AgentBase):
     """Schema for agent response"""
     id: int
+    project_id: int
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None

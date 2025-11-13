@@ -138,6 +138,7 @@ class Agent(Base):
     __tablename__ = "agents"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
     type: Mapped[AgentType] = mapped_column(Enum(AgentType), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -147,6 +148,7 @@ class Agent(Base):
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
 
     # Relationships
+    project: Mapped["Project"] = relationship(back_populates="agents")
     story_assignments: Mapped[List["StoryAgentAssignment"]] = relationship(
         back_populates="agent", cascade="all, delete-orphan", lazy="selectin"
     )
@@ -171,6 +173,9 @@ class Project(Base):
     owner: Mapped["User"] = relationship(back_populates="projects")
     tech_stack: Mapped[Optional["TechStack"]] = relationship(back_populates="projects")
     epics: Mapped[List["Epic"]] = relationship(
+        back_populates="project", cascade="all, delete-orphan", lazy="selectin"
+    )
+    agents: Mapped[List["Agent"]] = relationship(
         back_populates="project", cascade="all, delete-orphan", lazy="selectin"
     )
 
