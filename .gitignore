@@ -1,3 +1,4 @@
 # Backend
 .venv
 backend/uv.lock
+.claude
