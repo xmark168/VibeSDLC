@@ -2,8 +2,10 @@
 Story Router - API endpoints for story and Kanban workflow management
 """
 from typing import List, Optional
-from fastapi import APIRouter, Depends, status, Query, Body
+from fastapi import APIRouter, Depends, status, Query, Body, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.database import get_db
 from app.dependencies import get_current_active_user
@@ -14,6 +16,7 @@ from app.enums import StoryStatus, StoryType, StoryPriority
 
 
 router = APIRouter(prefix="/stories", tags=["Stories"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.post(
@@ -22,13 +25,17 @@ router = APIRouter(prefix="/stories", tags=["Stories"])
     status_code=status.HTTP_201_CREATED,
     summary="Create story"
 )
+@limiter.limit("50/hour")
 async def create_story(
+    request: Request,
     data: StoryCreate,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Create a new story
+
+    **Rate Limit:** 50 requests per hour
 
     **Authorization**: Project owner only (via epic)
 
