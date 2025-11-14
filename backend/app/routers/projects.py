@@ -2,8 +2,10 @@
 Project Router - API endpoints for project and Kanban board management
 """
 from typing import List
-from fastapi import APIRouter, Depends, status, Body
+from fastapi import APIRouter, Depends, status, Body, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.database import get_db
 from app.dependencies import get_current_active_user
@@ -13,6 +15,7 @@ from app.kanban_schemas import ProjectCreate, ProjectUpdate, ProjectResponse
 
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.post(
@@ -21,13 +24,17 @@ router = APIRouter(prefix="/projects", tags=["Projects"])
     status_code=status.HTTP_201_CREATED,
     summary="Create project"
 )
+@limiter.limit("10/hour")
 async def create_project(
+    request: Request,
     data: ProjectCreate,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Create a new project with default Kanban policy
+
+    **Rate Limit:** 10 requests per hour
 
     **Authorization**: Authenticated user (becomes owner)
 

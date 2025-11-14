@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from app.database import get_db
 from app.schemas import (
     UserRegister,
@@ -16,6 +18,7 @@ from app.models import RefreshToken
 from app.core.security import verify_refresh_token
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+limiter = Limiter(key_func=get_remote_address)
 
 def get_device_fingerprint(x_device_fingerprint: str = Header(None)) -> str:
     """Extract device fingerprint from header"""
@@ -26,7 +29,9 @@ def get_client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 @router.post("/register", response_model=dict, status_code=status.HTTP_201_CREATED)
+@limiter.limit("3/hour")
 async def register(
+    request: Request,
     data: UserRegister,
     db: AsyncSession = Depends(get_db),
     device_fingerprint: str = Depends(get_device_fingerprint),
@@ -34,6 +39,9 @@ async def register(
 ):
     """
     Đăng ký tài khoản mới
+
+    **Rate Limit:** 3 requests per hour
+
     Returns: Token response và thông tin user
     """
     token_response, user = await AuthService.register(data, device_fingerprint, ip, db)
@@ -45,7 +53,9 @@ async def register(
     }
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit("5/minute")
 async def login(
+    request: Request,
     data: UserLogin,
     db: AsyncSession = Depends(get_db),
     device_fingerprint: str = Depends(get_device_fingerprint),
@@ -53,6 +63,8 @@ async def login(
 ):
     """
     Đăng nhập
+
+    **Rate Limit:** 5 requests per minute
 
     - **username_or_email**: Username hoặc email
     - **password**: Mật khẩu
@@ -71,7 +83,9 @@ async def login(
     return result
 
 @router.post("/refresh", response_model=TokenResponse)
+@limiter.limit("10/minute")
 async def refresh_token(
+    request: Request,
     data: RefreshTokenRequest,
     db: AsyncSession = Depends(get_db),
     device_fingerprint: str = Depends(get_device_fingerprint),
@@ -79,6 +93,8 @@ async def refresh_token(
 ):
     """
     Làm mới access token bằng refresh token
+
+    **Rate Limit:** 10 requests per minute
 
     - **refresh_token**: Refresh token nhận được từ login/register
 
@@ -120,12 +136,16 @@ async def refresh_token(
     return new_tokens
 
 @router.post("/logout", response_model=MessageResponse)
+@limiter.limit("20/minute")
 async def logout(
+    request: Request,
     data: RefreshTokenRequest,
     db: AsyncSession = Depends(get_db)
 ):
     """
     Đăng xuất - revoke refresh token
+
+    **Rate Limit:** 20 requests per minute
 
     - **refresh_token**: Refresh token cần revoke
 
