@@ -140,16 +140,26 @@ class MetricsService:
         # Calculate cycle times for each story
         cycle_times = []
 
-        for story_id in story_ids:
-            # Get first IN_PROGRESS and first DONE from history
-            history_query = (
-                select(StoryStatusHistory)
-                .where(StoryStatusHistory.story_id == story_id)
-                .order_by(StoryStatusHistory.changed_at.asc())
-            )
+        # Fetch all history records for all stories in one query
+        history_query = (
+            select(StoryStatusHistory)
+            .where(StoryStatusHistory.story_id.in_(story_ids))
+            .order_by(StoryStatusHistory.story_id.asc(), StoryStatusHistory.changed_at.asc())
+        )
 
-            result = await db.execute(history_query)
-            history = result.scalars().all()
+        result = await db.execute(history_query)
+        all_history = result.scalars().all()
+
+        # Group history by story_id
+        history_by_story = {}
+        for h in all_history:
+            if h.story_id not in history_by_story:
+                history_by_story[h.story_id] = []
+            history_by_story[h.story_id].append(h)
+
+        # Process each story's history
+        for story_id in story_ids:
+            history = history_by_story.get(story_id, [])
 
             first_in_progress = next(
                 (h for h in history if h.new_status == StoryStatus.IN_PROGRESS),
@@ -243,16 +253,26 @@ class MetricsService:
         # Calculate lead times for each story
         lead_times = []
 
-        for story_id in story_ids:
-            # Get first TODO (creation) and first DONE from history
-            history_query = (
-                select(StoryStatusHistory)
-                .where(StoryStatusHistory.story_id == story_id)
-                .order_by(StoryStatusHistory.changed_at.asc())
-            )
+        # Fetch all history records for all stories in one query
+        history_query = (
+            select(StoryStatusHistory)
+            .where(StoryStatusHistory.story_id.in_(story_ids))
+            .order_by(StoryStatusHistory.story_id.asc(), StoryStatusHistory.changed_at.asc())
+        )
 
-            result = await db.execute(history_query)
-            history = result.scalars().all()
+        result = await db.execute(history_query)
+        all_history = result.scalars().all()
+
+        # Group history by story_id
+        history_by_story = {}
+        for h in all_history:
+            if h.story_id not in history_by_story:
+                history_by_story[h.story_id] = []
+            history_by_story[h.story_id].append(h)
+
+        # Process each story's history
+        for story_id in story_ids:
+            history = history_by_story.get(story_id, [])
 
             # First record should be creation (TODO)
             first_todo = next(
@@ -366,6 +386,56 @@ class MetricsService:
         # Verify project exists
         await get_project_or_404(project_id, db)
 
+        # Get all stories that existed during the time period
+        period_end = end_date.replace(hour=23, minute=59, second=59)
+
+        story_query = (
+            select(Story.id, Story.created_at)
+            .join(Epic, Story.epic_id == Epic.id)
+            .where(
+                and_(
+                    Epic.project_id == project_id,
+                    Story.created_at <= period_end,
+                    Epic.deleted_at == None
+                )
+            )
+        )
+
+        result = await db.execute(story_query)
+        all_stories = {row[0]: row[1] for row in result.fetchall()}  # {story_id: created_at}
+        story_ids = list(all_stories.keys())
+
+        if not story_ids:
+            return {
+                "project_id": project_id,
+                "start_date": start_date.date().isoformat(),
+                "end_date": end_date.date().isoformat(),
+                "data_points": 0,
+                "cfd_data": []
+            }
+
+        # Fetch all history records for all stories in one query
+        history_query = (
+            select(StoryStatusHistory.story_id, StoryStatusHistory.new_status, StoryStatusHistory.changed_at)
+            .where(
+                and_(
+                    StoryStatusHistory.story_id.in_(story_ids),
+                    StoryStatusHistory.changed_at <= period_end
+                )
+            )
+            .order_by(StoryStatusHistory.story_id.asc(), StoryStatusHistory.changed_at.asc())
+        )
+
+        result = await db.execute(history_query)
+        all_history = result.fetchall()
+
+        # Group history by story_id
+        history_by_story = {}
+        for story_id, new_status, changed_at in all_history:
+            if story_id not in history_by_story:
+                history_by_story[story_id] = []
+            history_by_story[story_id].append((changed_at, new_status))
+
         # Generate daily data points
         current_date = start_date
         cfd_data = []
@@ -373,45 +443,25 @@ class MetricsService:
         while current_date <= end_date:
             # For each day, count stories in each status at end of day
             day_end = current_date.replace(hour=23, minute=59, second=59)
-
-            # Get all stories that existed at this point
-            story_query = (
-                select(Story.id)
-                .join(Epic, Story.epic_id == Epic.id)
-                .where(
-                    and_(
-                        Epic.project_id == project_id,
-                        Story.created_at <= day_end,
-                        Epic.deleted_at == None
-                    )
-                )
-            )
-
-            result = await db.execute(story_query)
-            story_ids = [row[0] for row in result.fetchall()]
-
-            # For each story, determine its status at day_end
             status_counts = {status: 0 for status in StoryStatus}
 
             for story_id in story_ids:
-                # Get latest status change before day_end
-                history_query = (
-                    select(StoryStatusHistory.new_status)
-                    .where(
-                        and_(
-                            StoryStatusHistory.story_id == story_id,
-                            StoryStatusHistory.changed_at <= day_end
-                        )
-                    )
-                    .order_by(StoryStatusHistory.changed_at.desc())
-                    .limit(1)
-                )
+                # Skip stories created after this day
+                if all_stories[story_id] > day_end:
+                    continue
 
-                result = await db.execute(history_query)
-                status = result.scalar()
+                # Find the latest status change before day_end
+                story_history = history_by_story.get(story_id, [])
+                current_status = None
 
-                if status:
-                    status_counts[status] += 1
+                for changed_at, new_status in story_history:
+                    if changed_at <= day_end:
+                        current_status = new_status
+                    else:
+                        break  # History is sorted by time
+
+                if current_status:
+                    status_counts[current_status] += 1
 
             cfd_data.append({
                 "date": current_date.date().isoformat(),
@@ -466,29 +516,46 @@ class MetricsService:
         result = await db.execute(query)
         blocked_stories = result.scalars().all()
 
+        if not blocked_stories:
+            return {
+                "project_id": project_id,
+                "blocked_count": 0,
+                "blocked_stories": []
+            }
+
+        blocked_story_ids = [story.id for story in blocked_stories]
+
+        # Get the most recent BLOCKED status change for each story
+        history_query = (
+            select(StoryStatusHistory.story_id, StoryStatusHistory.changed_at)
+            .where(
+                and_(
+                    StoryStatusHistory.story_id.in_(blocked_story_ids),
+                    StoryStatusHistory.new_status == StoryStatus.BLOCKED
+                )
+            )
+            .order_by(StoryStatusHistory.story_id.asc(), StoryStatusHistory.changed_at.desc())
+        )
+
+        result = await db.execute(history_query)
+        all_blocked_history = result.fetchall()
+
+        # Get the most recent blocked timestamp for each story
+        blocked_at_by_story = {}
+        for story_id, changed_at in all_blocked_history:
+            if story_id not in blocked_at_by_story:
+                blocked_at_by_story[story_id] = changed_at
+
         # Calculate how long each has been blocked
         blocked_details = []
+        now = datetime.utcnow()
 
         for story in blocked_stories:
-            # Find when it was blocked
-            history_query = (
-                select(StoryStatusHistory.changed_at)
-                .where(
-                    and_(
-                        StoryStatusHistory.story_id == story.id,
-                        StoryStatusHistory.new_status == StoryStatus.BLOCKED
-                    )
-                )
-                .order_by(StoryStatusHistory.changed_at.desc())
-                .limit(1)
-            )
-
-            result = await db.execute(history_query)
-            blocked_at = result.scalar()
+            blocked_at = blocked_at_by_story.get(story.id)
 
             blocked_duration = None
             if blocked_at:
-                duration_seconds = (datetime.utcnow() - blocked_at).total_seconds()
+                duration_seconds = (now - blocked_at).total_seconds()
                 blocked_duration = round(duration_seconds / 3600, 2)  # hours
 
             blocked_details.append({
