@@ -1,10 +1,13 @@
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from app.database import engine
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+import time
+from app.database import engine, get_db
 from app.models import Base
 from app.routers import auth, users, tech_stacks, agents, projects, epics, stories, metrics
 
@@ -32,7 +35,7 @@ limiter = Limiter(key_func=get_remote_address)
 tags_metadata = [
     {
         "name": "Health",
-        "description": "Health check endpoints để kiểm tra trạng thái server và database",
+        "description": "Health check endpoints with database connectivity verification and connection pool monitoring",
     },
     {
         "name": "Authentication",
@@ -125,12 +128,120 @@ async def root():
     }
 
 @app.get("/health", tags=["Health"])
-async def health_check():
-    """Health check endpoint"""
+async def health_check(db: AsyncSession = Depends(get_db)):
+    """
+    Health check endpoint with actual database connectivity verification
+
+    This endpoint verifies:
+    - API service is running
+    - Database connection is working
+    - Response time measurement
+    """
+    start_time = time.time()
+
+    try:
+        # Verify database connectivity with a simple query
+        result = await db.execute(text("SELECT 1"))
+        result.scalar()
+
+        database_status = "connected"
+        database_healthy = True
+    except Exception as e:
+        database_status = f"error: {str(e)}"
+        database_healthy = False
+
+    response_time = round((time.time() - start_time) * 1000, 2)  # milliseconds
+
+    # Overall health status
+    overall_status = "healthy" if database_healthy else "unhealthy"
+
     return {
-        "status": "healthy",
-        "database": "connected"
+        "status": overall_status,
+        "database": {
+            "status": database_status,
+            "healthy": database_healthy
+        },
+        "response_time_ms": response_time,
+        "version": "1.0.0"
     }
+
+@app.get("/health/detailed", tags=["Health"])
+async def detailed_health_check(db: AsyncSession = Depends(get_db)):
+    """
+    Detailed health check with database connection pool metrics
+
+    Provides comprehensive health information including:
+    - Database connectivity
+    - Connection pool statistics
+    - Query performance
+    """
+    start_time = time.time()
+    health_data = {
+        "status": "healthy",
+        "timestamp": time.time(),
+        "checks": {}
+    }
+
+    # Database connectivity check
+    try:
+        result = await db.execute(text("SELECT 1"))
+        result.scalar()
+
+        health_data["checks"]["database"] = {
+            "status": "healthy",
+            "message": "Database connection successful"
+        }
+    except Exception as e:
+        health_data["status"] = "unhealthy"
+        health_data["checks"]["database"] = {
+            "status": "unhealthy",
+            "message": f"Database connection failed: {str(e)}"
+        }
+
+    # Connection pool statistics
+    try:
+        pool = engine.pool
+        health_data["checks"]["connection_pool"] = {
+            "status": "healthy",
+            "size": pool.size(),
+            "checked_in": pool.checkedin(),
+            "checked_out": pool.checkedout(),
+            "overflow": pool.overflow(),
+            "max_overflow": engine.pool._max_overflow if hasattr(pool, '_max_overflow') else "N/A"
+        }
+
+        # Warn if pool is nearly exhausted
+        if pool.checkedout() > pool.size() * 0.8:
+            health_data["checks"]["connection_pool"]["warning"] = "Connection pool usage is high"
+    except Exception as e:
+        health_data["checks"]["connection_pool"] = {
+            "status": "error",
+            "message": f"Failed to get pool stats: {str(e)}"
+        }
+
+    # Database query performance test
+    try:
+        query_start = time.time()
+        result = await db.execute(text("SELECT COUNT(*) FROM users"))
+        result.scalar()
+        query_time = round((time.time() - query_start) * 1000, 2)
+
+        health_data["checks"]["database_performance"] = {
+            "status": "healthy",
+            "query_time_ms": query_time
+        }
+
+        if query_time > 1000:  # Warn if query takes more than 1 second
+            health_data["checks"]["database_performance"]["warning"] = "Database queries are slow"
+    except Exception as e:
+        health_data["checks"]["database_performance"] = {
+            "status": "error",
+            "message": f"Performance check failed: {str(e)}"
+        }
+
+    health_data["response_time_ms"] = round((time.time() - start_time) * 1000, 2)
+
+    return health_data
 
 if __name__ == "__main__":
     import uvicorn
