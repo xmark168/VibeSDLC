@@ -1,5 +1,14 @@
 """
-SDLC Schemas - Pydantic models for request/response validation
+Kanban Schemas - Pydantic models for request/response validation
+
+This module contains all schemas for the Lean Kanban system:
+- Tech Stacks
+- Agents
+- Projects (with Kanban policies)
+- Epics
+- Stories (with workflow and status transitions)
+- Agent Assignments
+- Status History
 """
 from datetime import datetime
 from typing import Optional, List
@@ -231,6 +240,13 @@ class AssignmentResponse(BaseModel):
 
 # ==================== StoryStatusHistory Schemas ====================
 
+class StatusHistoryCreate(BaseModel):
+    """Schema for creating status history"""
+    story_id: int
+    old_status: Optional[StoryStatus] = None
+    new_status: StoryStatus
+    changed_by_id: int
+
 class StatusHistoryResponse(BaseModel):
     """Schema for status history response"""
     id: int
@@ -266,3 +282,26 @@ class ProjectDetailedResponse(ProjectResponse):
     epics: List[EpicResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ==================== Internal Create Schemas ====================
+
+class ProjectCreateInternal(BaseModel):
+    """Internal schema for creating project with owner_id"""
+    code: str
+    name: str
+    working_directory: Optional[str] = None
+    owner_id: int
+    tech_stack_id: Optional[int] = None
+    kanban_policy: Optional[dict] = None
+
+class StoryCreateInternal(BaseModel):
+    """Internal schema for creating story with status and created_by_id"""
+    title: str
+    description: Optional[str] = None
+    epic_id: int
+    type: StoryType
+    priority: StoryPriority
+    acceptance_criteria: Optional[str] = None
+    status: StoryStatus
+    created_by_id: int

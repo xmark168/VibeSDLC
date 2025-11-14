@@ -30,6 +30,11 @@ class UserResponse(BaseModel):
     is_active: bool
     balance: float
     created_at: datetime
+    updated_at: datetime
+    locked_until: Optional[datetime] = None
+    failed_login_attempts: int = 0
+    two_factor_enabled: bool = False
+    address: Optional[str] = None  # Changed from dict to str to match database
 
     class Config:
         from_attributes = True
@@ -47,3 +52,20 @@ class RefreshTokenRequest(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+# ==================== Create Schemas ====================
+
+class UserCreate(BaseModel):
+    """Schema for creating a new user"""
+    username: str
+    email: str
+    password_hash: str
+    fullname: Optional[str] = None
+
+class RefreshTokenCreate(BaseModel):
+    """Schema for creating a refresh token"""
+    user_id: int
+    token_hash: str
+    device_fingerprint: Optional[str] = None
+    ip_address: Optional[str] = None
+    expires_at: datetime

@@ -13,7 +13,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     fullname: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    address: Mapped[Optional[dict]] = mapped_column(String(500), nullable=True)
+    address: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # Fixed: str not dict
     balance: Mapped[float] = mapped_column(Float, default=0.0)
     # current_plan_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("plans.id"), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)

@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.database import engine
 from app.models import Base
-from app.routers import auth, users
+from app.routers import auth, users, tech_stacks, agents, projects, epics, stories, metrics
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -35,6 +35,30 @@ tags_metadata = [
     {
         "name": "Users",
         "description": "User management endpoints (yêu cầu authentication)",
+    },
+    {
+        "name": "Tech Stacks",
+        "description": "Technology stack management for project configuration",
+    },
+    {
+        "name": "Agents",
+        "description": "AI agent management with workload tracking",
+    },
+    {
+        "name": "Projects",
+        "description": "Project management with Lean Kanban board configuration",
+    },
+    {
+        "name": "Epics",
+        "description": "Epic management with progress tracking",
+    },
+    {
+        "name": "Stories",
+        "description": "Story management with full Kanban workflow (WIP limits, status transitions, agent assignments)",
+    },
+    {
+        "name": "Metrics",
+        "description": "Lean Kanban metrics and analytics (throughput, cycle time, lead time, CFD)",
     },
 ]
 
@@ -71,6 +95,14 @@ app.add_middleware(
 # Include routers
 app.include_router(auth.router)
 app.include_router(users.router)
+
+# Kanban system routers
+app.include_router(tech_stacks.router)
+app.include_router(agents.router)
+app.include_router(projects.router)
+app.include_router(epics.router)
+app.include_router(stories.router)
+app.include_router(metrics.router)
 
 # Health check endpoint
 @app.get("/", tags=["Health"])

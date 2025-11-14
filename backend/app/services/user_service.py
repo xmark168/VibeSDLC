@@ -1,17 +1,17 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastcrud import FastCRUD
+from sqlalchemy import select
 from fastapi import HTTPException, status
 from app.models import User
-from app.schemas import UserUpdate, ChangePassword
+from app.schemas import UserUpdate, ChangePassword, UserResponse
 from app.core.security import hash_password, verify_password
-
-user_crud = FastCRUD(User)
 
 class UserService:
     @staticmethod
     async def get_user_by_id(user_id: int, db: AsyncSession) -> User:
         """Lấy user theo ID"""
-        user = await user_crud.get(db, id=user_id)
+        stmt = select(User).where(User.id == user_id)
+        result = await db.execute(stmt)
+        user = result.scalar_one_or_none()
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -22,7 +22,9 @@ class UserService:
     @staticmethod
     async def update_user_profile(user_id: int, data: UserUpdate, db: AsyncSession) -> User:
         """Cập nhật thông tin user"""
-        user = await user_crud.get(db, id=user_id)
+        stmt = select(User).where(User.id == user_id)
+        result = await db.execute(stmt)
+        user = result.scalar_one_or_none()
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -33,21 +35,19 @@ class UserService:
         update_data = data.model_dump(exclude_unset=True)
 
         if update_data:
-            updated_user = await user_crud.update(
-                db,
-                object=user,
-                **update_data
-            )
+            for key, value in update_data.items():
+                setattr(user, key, value)
             await db.commit()
-            await db.refresh(updated_user)
-            return updated_user
+            await db.refresh(user)
 
         return user
 
     @staticmethod
     async def change_password(user_id: int, data: ChangePassword, db: AsyncSession) -> dict:
         """Đổi password"""
-        user = await user_crud.get(db, id=user_id)
+        stmt = select(User).where(User.id == user_id)
+        result = await db.execute(stmt)
+        user = result.scalar_one_or_none()
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -62,12 +62,7 @@ class UserService:
             )
 
         # Update with new password
-        new_hash = hash_password(data.new_password)
-        await user_crud.update(
-            db,
-            object=user,
-            password_hash=new_hash
-        )
+        user.password_hash = hash_password(data.new_password)
         await db.commit()
 
         return {"message": "Password changed successfully"}

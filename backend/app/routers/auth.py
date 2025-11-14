@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from datetime import datetime
 from app.database import get_db
 from app.schemas import (
@@ -13,10 +14,8 @@ from app.schemas import (
 from app.services.auth_service import AuthService
 from app.models import RefreshToken
 from app.core.security import verify_refresh_token
-from fastcrud import FastCRUD
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
-refresh_token_crud = FastCRUD(RefreshToken)
 
 def get_device_fingerprint(x_device_fingerprint: str = Header(None)) -> str:
     """Extract device fingerprint from header"""
@@ -85,8 +84,20 @@ async def refresh_token(
 
     Returns: Access token và refresh token mới
     """
-    # Tìm refresh token trong database
-    token_record = await refresh_token_crud.get(db, token_hash=data.refresh_token)
+    # Query all active (non-revoked, non-expired) tokens
+    stmt = select(RefreshToken).where(
+        RefreshToken.is_revoked == False,
+        RefreshToken.expires_at > datetime.utcnow()
+    )
+    result = await db.execute(stmt)
+    active_tokens = result.scalars().all()
+
+    # Find matching token by verifying hash
+    token_record = None
+    for token in active_tokens:
+        if verify_refresh_token(token.token_hash, data.refresh_token):
+            token_record = token
+            break
 
     if not token_record:
         raise HTTPException(
@@ -94,33 +105,8 @@ async def refresh_token(
             detail="Invalid refresh token"
         )
 
-    # Kiểm tra token có bị revoke không
-    if token_record.is_revoked:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has been revoked"
-        )
-
-    # Kiểm tra token có hết hạn không
-    if token_record.expires_at < datetime.utcnow():
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has expired"
-        )
-
-    # Verify token
-    if not verify_refresh_token(token_record.token_hash, data.refresh_token):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token"
-        )
-
     # Revoke token cũ
-    await refresh_token_crud.update(
-        db,
-        object=token_record,
-        is_revoked=True
-    )
+    token_record.is_revoked = True
     await db.commit()
 
     # Tạo token mới
@@ -145,15 +131,21 @@ async def logout(
 
     Returns: Success message
     """
-    # Tìm và revoke token
-    token_record = await refresh_token_crud.get(db, token_hash=data.refresh_token)
+    # Query all non-revoked tokens
+    stmt = select(RefreshToken).where(RefreshToken.is_revoked == False)
+    result = await db.execute(stmt)
+    active_tokens = result.scalars().all()
 
-    if token_record and not token_record.is_revoked:
-        await refresh_token_crud.update(
-            db,
-            object=token_record,
-            is_revoked=True
-        )
+    # Find matching token by verifying hash
+    token_record = None
+    for token in active_tokens:
+        if verify_refresh_token(token.token_hash, data.refresh_token):
+            token_record = token
+            break
+
+    # Revoke token if found
+    if token_record:
+        token_record.is_revoked = True
         await db.commit()
 
     return MessageResponse(message="Logged out successfully")
