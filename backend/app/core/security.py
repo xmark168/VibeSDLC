@@ -64,3 +64,29 @@ def decode_access_token(token: str) -> dict:
         raise JWTError("Token has expired")
     except jwt.InvalidTokenError:
         raise JWTError("Invalid token")
+
+def create_csrf_token() -> str:
+    """
+    Tạo CSRF token
+    Returns: JWT token with type 'csrf'
+    """
+    expire = datetime.utcnow() + timedelta(minutes=settings.CSRF_TOKEN_EXPIRE_MINUTES)
+    csrf_secret = settings.CSRF_SECRET_KEY or settings.SECRET_KEY
+    token_data = {
+        "jti": secrets.token_urlsafe(32),  # Unique identifier
+        "exp": expire,
+        "type": "csrf"
+    }
+    return jwt.encode(token_data, csrf_secret, algorithm=settings.ALGORITHM)
+
+def verify_csrf_token(token: str) -> bool:
+    """
+    Verify CSRF token
+    Returns: True if valid, False otherwise
+    """
+    try:
+        csrf_secret = settings.CSRF_SECRET_KEY or settings.SECRET_KEY
+        payload = jwt.decode(token, csrf_secret, algorithms=[settings.ALGORITHM])
+        return payload.get("type") == "csrf"
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+        return False

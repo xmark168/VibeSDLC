@@ -70,3 +70,115 @@
     min-height: 100vh;
   }
 }
+
+@layer utilities {
+  /* Glassmorphism utilities */
+  .glass {
+    @apply bg-white/20 backdrop-blur-xl border border-white/30 shadow-2xl;
+  }
+
+  .glass-dark {
+    @apply bg-slate-800/40 backdrop-blur-xl border border-slate-700/60 shadow-2xl;
+  }
+
+  .glass-card {
+    @apply glass rounded-2xl p-6 transition-all duration-500 hover:bg-white/25 hover:shadow-[0_20px_70px_rgba(0,0,0,0.15)] hover:scale-[1.02] hover:border-white/40;
+  }
+
+  .glass-card-dark {
+    @apply glass-dark rounded-2xl p-6 transition-all duration-500 hover:bg-slate-800/50 hover:shadow-[0_20px_70px_rgba(0,0,0,0.3)] hover:scale-[1.02];
+  }
+
+  /* Premium glassmorphism card */
+  .glass-premium {
+    @apply bg-gradient-to-br from-white/25 to-white/10 backdrop-blur-2xl border border-white/40 rounded-3xl shadow-[0_8px_32px_0_rgba(31,38,135,0.37)];
+  }
+
+  /* Animated gradient background */
+  .gradient-bg {
+    background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
+    background-size: 400% 400%;
+    animation: gradient 15s ease infinite;
+  }
+
+  @keyframes gradient {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  /* Smooth fade in animations */
+  .fade-in {
+    animation: fadeIn 0.8s ease-in-out;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .fade-in-delay-1 {
+    animation: fadeIn 0.8s ease-in-out 0.1s both;
+  }
+
+  .fade-in-delay-2 {
+    animation: fadeIn 0.8s ease-in-out 0.2s both;
+  }
+
+  .fade-in-delay-3 {
+    animation: fadeIn 0.8s ease-in-out 0.3s both;
+  }
+
+  .fade-in-delay-4 {
+    animation: fadeIn 0.8s ease-in-out 0.4s both;
+  }
+
+  /* Shine effect */
+  .shine {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .shine::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+    transition: left 0.5s;
+  }
+
+  .shine:hover::before {
+    left: 100%;
+  }
+
+  /* Gradient text */
+  .gradient-text {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600;
+  }
+
+  /* Additional blur utilities */
+  .backdrop-blur-xs {
+    backdrop-filter: blur(2px);
+  }
+
+  .backdrop-blur-xl {
+    backdrop-filter: blur(20px);
+  }
+
+  .backdrop-blur-2xl {
+    backdrop-filter: blur(40px);
+  }
+
+  .backdrop-blur-3xl {
+    backdrop-filter: blur(60px);
+  }
+}

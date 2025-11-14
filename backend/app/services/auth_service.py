@@ -30,7 +30,8 @@ class AuthService:
             username=data.username,
             email=data.email,
             password_hash=hashed_pwd,
-            fullname=data.fullname
+            fullname=data.fullname,
+            is_active=True  # Explicitly set active for new users
         )
         db.add(new_user)
         await db.commit()

@@ -161,6 +161,9 @@ class Project(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    color: Mapped[Optional[str]] = mapped_column(String(7), nullable=True)  # Hex color code, e.g., #FF5733
+    icon: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # Icon name or emoji
     working_directory: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     owner_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     tech_stack_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("tech_stacks.id", ondelete="SET NULL"), nullable=True, index=True)

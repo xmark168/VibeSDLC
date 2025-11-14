@@ -1,0 +1,18 @@
+{
+  "loading": "Đang tải...",
+  "error": {
+    "generic": "Có lỗi xảy ra. Vui lòng thử lại.",
+    "network": "Lỗi kết nối. Vui lòng kiểm tra internet.",
+    "unauthorized": "Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại."
+  },
+  "action": {
+    "submit": "Gửi",
+    "cancel": "Hủy",
+    "confirm": "Xác nhận",
+    "save": "Lưu",
+    "delete": "Xóa",
+    "edit": "Sửa",
+    "close": "Đóng",
+    "back": "Quay lại"
+  }
+}

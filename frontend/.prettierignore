@@ -1,0 +1,18 @@
+# Dependencies
+node_modules
+dist
+build
+
+# Generated files
+*.log
+.DS_Store
+
+# IDE
+.vscode
+.idea
+
+# Misc
+coverage
+.env
+.env.local
+.env.*.local

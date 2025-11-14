@@ -86,6 +86,9 @@ class ProjectBase(BaseModel):
     """Base Project schema"""
     code: str = Field(..., min_length=1, max_length=50, description="Project code identifier")
     name: str = Field(..., min_length=1, max_length=255, description="Project name")
+    description: Optional[str] = Field(None, description="Project description")
+    color: Optional[str] = Field(None, max_length=7, pattern="^#[0-9A-Fa-f]{6}$", description="Hex color code (e.g., #FF5733)")
+    icon: Optional[str] = Field(None, max_length=50, description="Icon name or emoji")
     working_directory: Optional[str] = Field(None, max_length=500, description="Project working directory path")
     tech_stack_id: Optional[int] = Field(None, description="Technology stack ID")
     kanban_policy: Optional[dict] = Field(None, description="Kanban board configuration")
@@ -100,6 +103,9 @@ class ProjectUpdate(BaseModel):
     """Schema for updating a project"""
     code: Optional[str] = Field(None, min_length=1, max_length=50)
     name: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = None
+    color: Optional[str] = Field(None, max_length=7, pattern="^#[0-9A-Fa-f]{6}$")
+    icon: Optional[str] = Field(None, max_length=50)
     working_directory: Optional[str] = Field(None, max_length=500)
     tech_stack_id: Optional[int] = None
     kanban_policy: Optional[dict] = None
