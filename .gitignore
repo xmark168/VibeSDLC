@@ -1,36 +1,10 @@
-.vscode
-node_modules/
-/test-results/
-/playwright-report/
-/blob-report/
-/playwright/.cache/
-
-.cursor/
-CONTEXT.md
-MCP_USAGE_LOG.md
-mcp.json
-PLAN.md
-TASKS.md
-
-#BACKEND
+# Backend
+.venv
+backend/uv.lock
 .claude
-.egg-info
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-open-swe/
-.idea/
-frontend/src/routeTree.gen.ts
-C:\o_d\fpt\do_an\VibeSDLC\services\ai-agent-service\.env
+__pycache__
 .env
-.env.*
-*.env
-**/.env
-**/.env.*
-
-services/ai-agent-service/.env
-
+#Frontend
 # Logs
 logs
 *.log
@@ -44,7 +18,6 @@ node_modules
 dist
 dist-ssr
 *.local
-openapi.json
 
 # Editor directories and files
 .vscode/*
@@ -56,9 +29,3 @@ openapi.json
 *.njsproj
 *.sln
 *.sw?
-/test-results/
-/playwright-report/
-/blob-report/
-/playwright/.cache/
-/playwright/.auth/
-github_private_key.pem
