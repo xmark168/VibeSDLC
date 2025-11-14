@@ -5,7 +5,24 @@ import type {
   UpdateProjectData,
   ProjectFilters,
 } from '@/features/projects/types'
-import type { BoardView } from '@/features/projects/types/board'
+import type { BoardView, Story } from '@/features/projects/types/board'
+import type { Epic, CreateEpicData, UpdateEpicData } from '@/features/projects/types/epic'
+
+// Story creation data
+export interface CreateStoryData {
+  title: string
+  description?: string
+  epic_id: number
+  type: string
+  priority: string
+  acceptance_criteria?: string
+}
+
+// Story response from backend
+export interface StoryResponse extends Story {
+  created_by_id: number
+  token_used?: number
+}
 
 export const projectsAPI = {
   // Get all projects for the current user with optional filters
@@ -47,6 +64,45 @@ export const projectsAPI = {
   async getProjectBoard(id: number): Promise<BoardView> {
     const response = await axiosInstance.get<BoardView>(`/projects/${id}/board`)
     return response.data
+  },
+
+  // Create a new story
+  async createStory(data: CreateStoryData): Promise<StoryResponse> {
+    const response = await axiosInstance.post<StoryResponse>('/stories', data)
+    return response.data
+  },
+
+  // Update story status (for Kanban workflow)
+  async updateStoryStatus(storyId: number, newStatus: string): Promise<Story> {
+    const response = await axiosInstance.put<Story>(`/stories/${storyId}/status`, {
+      new_status: newStatus
+    })
+    return response.data
+  },
+
+  // Epic Management
+  async getEpicsByProject(projectId: number): Promise<Epic[]> {
+    const response = await axiosInstance.get<Epic[]>(`/epics?project_id=${projectId}`)
+    return response.data
+  },
+
+  async getEpic(epicId: number): Promise<Epic> {
+    const response = await axiosInstance.get<Epic>(`/epics/${epicId}`)
+    return response.data
+  },
+
+  async createEpic(data: CreateEpicData): Promise<Epic> {
+    const response = await axiosInstance.post<Epic>('/epics', data)
+    return response.data
+  },
+
+  async updateEpic(epicId: number, data: UpdateEpicData): Promise<Epic> {
+    const response = await axiosInstance.put<Epic>(`/epics/${epicId}`, data)
+    return response.data
+  },
+
+  async deleteEpic(epicId: number): Promise<void> {
+    await axiosInstance.delete(`/epics/${epicId}`)
   },
 }
 

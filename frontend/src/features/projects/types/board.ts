@@ -55,8 +55,10 @@ export interface BoardColumn {
   status: StoryStatus
   name: string
   wip_limit: number | null
-  current_wip: number
+  current_count: number
   stories: Story[]
+  position?: number
+  is_over_limit?: boolean
 }
 
 /**
@@ -64,6 +66,7 @@ export interface BoardColumn {
  */
 export interface BoardView {
   project_id: number
+  project_name?: string
   columns: BoardColumn[]
   total_stories: number
   blocked_count: number

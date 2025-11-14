@@ -31,6 +31,11 @@ const ProjectsPage = lazy(() =>
     default: module.ProjectsPage,
   }))
 )
+const ProjectDetailPage = lazy(() =>
+  import('@/features/projects/pages/ProjectDetailPage').then((module) => ({
+    default: module.ProjectDetailPage,
+  }))
+)
 
 function App() {
   return (
@@ -84,6 +89,14 @@ function App() {
                   <AppLayout>
                     <ProjectsPage />
                   </AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/projects/:id"
+              element={
+                <ProtectedRoute>
+                  <ProjectDetailPage />
                 </ProtectedRoute>
               }
             />

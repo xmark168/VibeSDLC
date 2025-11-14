@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     EMAIL_VERIFICATION_TOKEN_EXPIRE_HOURS: int = 24
 
+    # Development Mode
+    DEV_MODE: bool = True  # Set to False in production
+
     # CSRF Protection
     CSRF_SECRET_KEY: Optional[str] = None  # Will use SECRET_KEY if not provided
     CSRF_TOKEN_EXPIRE_MINUTES: int = 60

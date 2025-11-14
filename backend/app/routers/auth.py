@@ -56,6 +56,10 @@ def get_csrf_header(x_csrf_token: str = Header(None, alias="X-CSRF-Token")) -> O
 
 def validate_csrf_token(csrf_token: Optional[str] = Depends(get_csrf_header)):
     """Validate CSRF token for state-changing operations"""
+    # Skip CSRF validation in development mode
+    if settings.DEV_MODE:
+        return
+
     if not csrf_token or not verify_csrf_token(csrf_token):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

@@ -72,8 +72,10 @@ export const IconPicker = ({ value, onChange, label = 'Project Icon' }: IconPick
   )
 
   return (
-    <div className="space-y-3">
-      {label && <label className="text-sm font-semibold text-foreground">{label}</label>}
+    <div className="space-y-4">
+      {label && (
+        <label className="text-base font-bold text-gray-900">{label}</label>
+      )}
 
       {/* Search */}
       <Input
@@ -81,11 +83,11 @@ export const IconPicker = ({ value, onChange, label = 'Project Icon' }: IconPick
         placeholder="Search icons..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        className="bg-white/50 backdrop-blur-xl border-white/30"
+        className="h-11 bg-white border-2 border-gray-200 focus:border-blue-500 rounded-lg transition-all"
       />
 
       {/* Icon Grid */}
-      <div className="grid grid-cols-6 gap-2 max-h-64 overflow-y-auto p-2 glass rounded-xl">
+      <div className="grid grid-cols-6 gap-2.5 max-h-52 overflow-y-auto p-3 bg-white border-2 border-gray-200 rounded-xl">
         {filteredIcons.map(({ name, Icon }) => {
           const isSelected = value === name
           return (
@@ -94,26 +96,23 @@ export const IconPicker = ({ value, onChange, label = 'Project Icon' }: IconPick
               type="button"
               onClick={() => onChange(name)}
               className={cn(
-                'flex items-center justify-center h-12 w-12 rounded-lg transition-all duration-300 hover:scale-110 hover:bg-white/40',
+                'flex items-center justify-center h-14 w-14 rounded-xl transition-all duration-200 hover:scale-105',
                 isSelected
-                  ? 'bg-gradient-to-br from-blue-500/20 to-purple-600/20 ring-2 ring-blue-500 scale-110'
-                  : 'bg-white/20 hover:bg-white/30'
+                  ? 'bg-blue-500 text-white shadow-lg scale-105'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 shadow-sm hover:shadow-md'
               )}
               title={name}
             >
-              <Icon
-                className={cn(
-                  'h-5 w-5 transition-colors',
-                  isSelected ? 'text-blue-600' : 'text-slate-600'
-                )}
-              />
+              <Icon className="h-6 w-6" />
             </button>
           )
         })}
       </div>
 
       {filteredIcons.length === 0 && (
-        <div className="text-center text-sm text-muted-foreground py-4">No icons found</div>
+        <div className="text-center text-sm text-gray-500 py-6 bg-gray-50 rounded-lg border-2 border-gray-200 border-dashed">
+          No icons found
+        </div>
       )}
     </div>
   )
