@@ -138,7 +138,6 @@ class MetricsService:
             }
 
         # Calculate cycle times for each story
-        # OPTIMIZED: Batch load all history records in one query instead of N queries
         cycle_times = []
 
         # Fetch all history records for all stories in one query
@@ -252,7 +251,6 @@ class MetricsService:
             }
 
         # Calculate lead times for each story
-        # OPTIMIZED: Batch load all history records in one query instead of N queries
         lead_times = []
 
         # Fetch all history records for all stories in one query
@@ -388,7 +386,6 @@ class MetricsService:
         # Verify project exists
         await get_project_or_404(project_id, db)
 
-        # OPTIMIZED: Load all data once, then process in Python
         # Get all stories that existed during the time period
         period_end = end_date.replace(hour=23, minute=59, second=59)
 
@@ -526,7 +523,6 @@ class MetricsService:
                 "blocked_stories": []
             }
 
-        # OPTIMIZED: Batch load all blocking timestamps in one query
         blocked_story_ids = [story.id for story in blocked_stories]
 
         # Get the most recent BLOCKED status change for each story
