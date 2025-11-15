@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Header, Request, 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime, timedelta
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from app.database import get_db
 from app.schemas import (
     UserRegister,
@@ -18,6 +20,7 @@ from app.core.config import settings
 from typing import Optional
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+limiter = Limiter(key_func=get_remote_address)
 
 def get_device_fingerprint(x_device_fingerprint: str = Header(None)) -> str:
     """Extract device fingerprint from header"""
@@ -76,7 +79,9 @@ async def get_csrf_token():
     return {"csrf_token": token}
 
 @router.post("/register", response_model=dict, status_code=status.HTTP_201_CREATED)
+@limiter.limit("3/hour")
 async def register(
+    request: Request,
     response: Response,
     data: UserRegister,
     db: AsyncSession = Depends(get_db),
@@ -85,6 +90,9 @@ async def register(
 ):
     """
     Đăng ký tài khoản mới
+
+    **Rate Limit:** 3 requests per hour
+
     Returns: Token response và thông tin user
     """
     token_response, user = await AuthService.register(data, device_fingerprint, ip, db)
@@ -103,7 +111,9 @@ async def register(
     }
 
 @router.post("/login")
+@limiter.limit("5/minute")
 async def login(
+    request: Request,
     response: Response,
     data: UserLogin,
     db: AsyncSession = Depends(get_db),
@@ -112,6 +122,8 @@ async def login(
 ):
     """
     Đăng nhập
+
+    **Rate Limit:** 5 requests per minute
 
     - **username_or_email**: Username hoặc email
     - **password**: Mật khẩu
@@ -137,7 +149,9 @@ async def login(
     }
 
 @router.post("/refresh")
+@limiter.limit("10/minute")
 async def refresh_token(
+    request: Request,
     response: Response,
     refresh_token: Optional[str] = Cookie(None),
     db: AsyncSession = Depends(get_db),
@@ -147,6 +161,8 @@ async def refresh_token(
 ):
     """
     Làm mới access token bằng refresh token từ cookie
+
+    **Rate Limit:** 10 requests per minute
 
     Returns: Access token mới (refresh token mới set as httpOnly cookie)
     """
@@ -201,7 +217,9 @@ async def refresh_token(
     }
 
 @router.post("/logout", response_model=MessageResponse)
+@limiter.limit("20/minute")
 async def logout(
+    request: Request,
     response: Response,
     refresh_token: Optional[str] = Cookie(None),
     db: AsyncSession = Depends(get_db),
@@ -209,6 +227,8 @@ async def logout(
 ):
     """
     Đăng xuất - revoke refresh token và xóa cookie
+
+    **Rate Limit:** 20 requests per minute
 
     Returns: Success message
     """
