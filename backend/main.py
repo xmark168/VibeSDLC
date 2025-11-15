@@ -1,9 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import asyncio
 from app.database import engine
 from app.models import Base
-from app.routers import auth, users, tech_stacks, agents, projects, epics, stories, metrics
+from app.routers import auth, users, tech_stacks, agents, projects, epics, stories, metrics, kafka_test
+from app.kafka.producer import kafka_producer
+from app.kafka.consumer import agent_task_consumer
+from app.agents.developer_agent import developer_agent
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -16,9 +20,35 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
 
     print("Database tables created successfully")
+
+    # Initialize Kafka producer
+    try:
+        kafka_producer.initialize()
+        print("Kafka producer initialized")
+        # Wait a bit for topics to be created
+        await asyncio.sleep(2)
+        print("Kafka topics ready")
+    except Exception as e:
+        print(f"Warning: Kafka producer initialization failed: {e}")
+
+    # Start developer agent in background
+    try:
+        asyncio.create_task(developer_agent.start())
+        print("Developer agent started")
+    except Exception as e:
+        print(f"Warning: Developer agent failed to start: {e}")
+
     print("VibeSDLC Backend is running...")
 
     yield
+
+    # Shutdown: Clean up resources
+    try:
+        kafka_producer.close()
+        print("Kafka producer closed")
+    except Exception as e:
+        print(f"Error closing Kafka producer: {e}")
+
     await engine.dispose()
     print("Shutting down...")
 
@@ -59,6 +89,10 @@ tags_metadata = [
     {
         "name": "Metrics",
         "description": "Lean Kanban metrics and analytics (throughput, cycle time, lead time, CFD)",
+    },
+    {
+        "name": "Kafka Testing",
+        "description": "Kafka integration testing endpoints for agents and event streaming",
     },
 ]
 
@@ -114,6 +148,9 @@ app.include_router(projects.router)
 app.include_router(epics.router)
 app.include_router(stories.router)
 app.include_router(metrics.router)
+
+# Kafka testing router
+app.include_router(kafka_test.router)
 
 # Health check endpoint
 @app.get("/", tags=["Health"])

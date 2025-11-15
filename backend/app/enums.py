@@ -1,6 +1,3 @@
-"""
-Enums for VibeSDLC application
-"""
 import enum
 
 
