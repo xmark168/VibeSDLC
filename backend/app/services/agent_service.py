@@ -38,8 +38,9 @@ class AgentService:
         project = await get_project_or_404(data.project_id, db)
         await verify_project_owner(project, current_user)
 
-        # 2. Check if agent with same name already exists
+        # 2. Check if agent with same name already exists in this project
         stmt = select(Agent).where(
+            Agent.project_id == data.project_id,
             Agent.name == data.name,
             Agent.deleted_at == None
         )
@@ -49,7 +50,7 @@ class AgentService:
         if existing:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Agent with name '{data.name}' already exists"
+                detail=f"Agent with name '{data.name}' already exists in this project"
             )
 
         # 3. Create agent
@@ -157,6 +158,7 @@ class AgentService:
         # 3. Check name conflict if name is being changed
         if data.name and data.name != agent.name:
             stmt = select(Agent).where(
+                Agent.project_id == agent.project_id,
                 Agent.name == data.name,
                 Agent.deleted_at == None
             )
@@ -166,7 +168,7 @@ class AgentService:
             if existing:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Agent with name '{data.name}' already exists"
+                    detail=f"Agent with name '{data.name}' already exists in this project"
                 )
 
         # 4. If changing project_id, verify new project ownership
@@ -218,7 +220,7 @@ class AgentService:
             db: Database session
 
         Returns:
-            Dictionary with workload stats
+            Dictionary with workload stats including capacity information
 
         Raises:
             HTTPException: 404 if agent not found
@@ -243,12 +245,62 @@ class AgentService:
         # Calculate total
         total_stories = sum(workload_by_status.values())
 
+        # Calculate available capacity
+        available_capacity = None
+        if agent.capacity is not None:
+            available_capacity = agent.capacity - total_stories
+
         return {
             "agent_id": agent_id,
             "agent_name": agent.name,
+            "capacity": agent.capacity,
             "total_stories": total_stories,
+            "available_capacity": available_capacity,
             "by_status": workload_by_status
         }
+
+    @staticmethod
+    async def validate_capacity(agent_id: int, db: AsyncSession) -> bool:
+        """
+        Validate if agent has capacity for new assignment
+
+        Args:
+            agent_id: Agent ID
+            db: Database session
+
+        Returns:
+            True if agent has capacity or no capacity limit set
+
+        Raises:
+            HTTPException: 400 if agent has reached capacity
+            HTTPException: 404 if agent not found
+        """
+        agent = await AgentService.get_by_id(agent_id, db)
+
+        # If no capacity limit, always allow
+        if agent.capacity is None:
+            return True
+
+        # Count current assignments
+        query = (
+            select(func.count(StoryAgentAssignment.id))
+            .join(Story, Story.id == StoryAgentAssignment.story_id)
+            .where(
+                StoryAgentAssignment.agent_id == agent_id,
+                Story.deleted_at == None
+            )
+        )
+
+        result = await db.execute(query)
+        current_count = result.scalar() or 0
+
+        if current_count >= agent.capacity:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Agent '{agent.name}' has reached maximum capacity ({current_count}/{agent.capacity} stories)"
+            )
+
+        return True
 
     @staticmethod
     async def get_assigned_stories(agent_id: int, db: AsyncSession) -> List[Story]:

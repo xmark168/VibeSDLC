@@ -139,9 +139,10 @@ class Agent(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
-    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     type: Mapped[AgentType] = mapped_column(Enum(AgentType), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    capacity: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
@@ -151,6 +152,11 @@ class Agent(Base):
     project: Mapped["Project"] = relationship(back_populates="agents")
     story_assignments: Mapped[List["StoryAgentAssignment"]] = relationship(
         back_populates="agent", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+    # Table constraints
+    __table_args__ = (
+        UniqueConstraint("project_id", "name", name="uq_project_agent_name"),
     )
 
 

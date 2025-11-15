@@ -1,4 +1,4 @@
-"""Developer Agent for VibeSDLC - Implements features and writes code"""
+"""Tester Agent for VibeSDLC - Validates functionality and ensures quality"""
 
 import logging
 import asyncio
@@ -12,14 +12,14 @@ from app.kafka.topics import KafkaTopics
 logger = logging.getLogger(__name__)
 
 
-class DeveloperAgent:
-    """Developer Agent that processes story status change events"""
+class TesterAgent:
+    """Tester Agent that processes story status change events"""
 
     def __init__(self):
-        self.agent_id = "developer_001"
-        self.agent_type = "DEVELOPER"
-        self.consumer = KafkaConsumerService(group_id="developer-consumer-group")
-        logger.info(f"Developer agent '{self.agent_id}' initialized")
+        self.agent_id = "tester_001"
+        self.agent_type = "TESTER"
+        self.consumer = KafkaConsumerService(group_id="tester-consumer-group")
+        logger.info(f"Tester agent '{self.agent_id}' initialized")
 
     async def handle_story_event(self, event_data: dict):
         """Handle incoming story status change event from Kafka"""
@@ -35,11 +35,11 @@ class DeveloperAgent:
             old_status = changes.get("old_status")
             new_status = changes.get("new_status")
 
-            # Developer handles IN_PROGRESS status
-            if new_status != "IN_PROGRESS":
+            # Tester handles TESTING status
+            if new_status != "TESTING":
                 return
 
-            logger.info(f"💻 Developer {self.agent_id} processing story {event.story_id}")
+            logger.info(f"🧪 Tester {self.agent_id} processing story {event.story_id}")
             logger.info(f"   Status: {old_status} → {new_status}")
 
             start_time = time.time()
@@ -51,7 +51,7 @@ class DeveloperAgent:
 
             # Send response back to Kafka
             response = AgentResponse(
-                task_id=f"story_{event.story_id}_developer",
+                task_id=f"story_{event.story_id}_tester",
                 agent_id=self.agent_id,
                 agent_type=self.agent_type,
                 status=AgentTaskStatus.COMPLETED,
@@ -61,13 +61,13 @@ class DeveloperAgent:
             )
 
             kafka_producer.send_agent_response(response)
-            logger.info(f"✅ Developer completed processing in {execution_time}ms")
+            logger.info(f"✅ Tester completed processing in {execution_time}ms")
 
         except Exception as e:
-            logger.error(f"❌ Developer error handling event: {e}")
+            logger.error(f"❌ Tester error handling event: {e}")
             # Send error response
             response = AgentResponse(
-                task_id=f"story_{event_data.get('story_id', 'unknown')}_developer",
+                task_id=f"story_{event_data.get('story_id', 'unknown')}_tester",
                 agent_id=self.agent_id,
                 agent_type=self.agent_type,
                 status=AgentTaskStatus.FAILED,
@@ -80,23 +80,24 @@ class DeveloperAgent:
     def _process_status_change(self, event: StoryEvent, old_status: str, new_status: str) -> dict:
         """Process status change - simple test logic"""
 
-        message = f"Story {event.story_id} is IN_PROGRESS. Developer analyzing requirements and implementing solution."
-        action = "Implement features, write code, and deliver technical solutions"
+        message = f"Story {event.story_id} is in TESTING. Tester generating test scenarios and validating quality."
+        action = "Create test cases from acceptance criteria and perform comprehensive testing"
 
-        # Mock development results
-        development_plan = {
-            "estimated_complexity": "medium",
-            "technical_approach": "REST API with FastAPI",
-            "components_to_modify": [
-                "Backend service layer",
-                "API endpoints",
-                "Database models"
+        # Mock test results
+        test_plan = {
+            "test_cases_generated": 5,
+            "test_scenarios": [
+                "Happy path user flow",
+                "Edge case handling",
+                "Error handling validation",
+                "Performance testing",
+                "Security validation"
             ],
-            "suggested_implementation": [
-                "Create database migration if needed",
-                "Implement service layer business logic",
-                "Add API endpoints with proper validation",
-                "Write unit tests"
+            "coverage_estimate": "85%",
+            "suggested_tests": [
+                "Unit tests for business logic",
+                "Integration tests for API endpoints",
+                "E2E tests for user workflows"
             ]
         }
 
@@ -106,7 +107,7 @@ class DeveloperAgent:
             "project_id": event.project_id,
             "message": message,
             "action_taken": action,
-            "development_plan": development_plan,
+            "test_plan": test_plan,
             "old_status": old_status,
             "new_status": new_status,
             "timestamp": datetime.utcnow().isoformat()
@@ -114,7 +115,7 @@ class DeveloperAgent:
 
     async def start(self):
         """Start the agent and begin consuming story events"""
-        logger.info(f"🚀 Starting Developer agent: {self.agent_id}")
+        logger.info(f"🚀 Starting Tester agent: {self.agent_id}")
 
         # Register event handler
         self.consumer.register_handler(
@@ -129,5 +130,5 @@ class DeveloperAgent:
         await self.consumer.start_consuming()
 
 
-# Global developer agent instance
-developer_agent = DeveloperAgent()
+# Global tester agent instance
+tester_agent = TesterAgent()

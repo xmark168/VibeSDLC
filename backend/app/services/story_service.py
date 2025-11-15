@@ -21,6 +21,8 @@ from app.kanban_schemas import StoryCreate, StoryUpdate, StoryCreateInternal, St
 from app.dependencies import get_story_with_project, get_epic_with_project, get_project_or_404, verify_project_owner
 from app.enums import StoryStatus, StoryType, StoryPriority
 from app.services.project_service import DEFAULT_KANBAN_POLICY
+from app.kafka.producer import kafka_producer
+from app.kafka.schemas import StoryEvent
 
 
 class StoryService:
@@ -188,6 +190,18 @@ class StoryService:
         db.add(history)
         await db.commit()
 
+        # 9. Send Kafka event to trigger agents
+        event = StoryEvent(
+            event_type="status_changed",
+            story_id=story.id,
+            project_id=project.id,
+            epic_id=story.epic_id,
+            changes={"old_status": old_status, "new_status": new_status},
+            triggered_by=current_user.id,
+            timestamp=datetime.utcnow()
+        )
+        kafka_producer.send_story_event(event)
+
         return story
 
     @staticmethod
@@ -294,6 +308,10 @@ class StoryService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot assign inactive agent"
             )
+
+        # 4.5 Validate agent capacity
+        from app.services.agent_service import AgentService
+        await AgentService.validate_capacity(agent_id, db)
 
         # 5. Check not already assigned
         stmt = select(StoryAgentAssignment).where(

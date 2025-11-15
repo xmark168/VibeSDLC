@@ -52,6 +52,7 @@ class AgentBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, description="Agent name")
     type: AgentType = Field(..., description="Agent type")
     description: Optional[str] = Field(None, description="Agent description")
+    capacity: Optional[int] = Field(None, ge=1, description="Maximum number of stories agent can handle")
     is_active: bool = Field(True, description="Is agent active")
 
 
@@ -65,6 +66,7 @@ class AgentUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     type: Optional[AgentType] = None
     description: Optional[str] = None
+    capacity: Optional[int] = Field(None, ge=1)
     is_active: Optional[bool] = None
     project_id: Optional[int] = None
 

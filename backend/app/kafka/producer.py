@@ -40,7 +40,7 @@ class KafkaProducerService:
 
             logger.info("Creating Kafka producer...")
             self.producer = Producer(producer_config)
-            logger.info("✓ Producer created")
+            logger.info("[OK] Producer created")
 
             # Admin client for topic management
             admin_config = {
@@ -48,7 +48,7 @@ class KafkaProducerService:
             }
             logger.info("Creating Kafka admin client...")
             self.admin_client = AdminClient(admin_config)
-            logger.info(f"✓ Admin client created: {self.admin_client is not None}")
+            logger.info(f"[OK] Admin client created: {self.admin_client is not None}")
 
             # Create topics
             logger.info("Creating topics...")
@@ -94,9 +94,9 @@ class KafkaProducerService:
                 for topic, f in fs.items():
                     try:
                         f.result(timeout=30)  # Wait for creation with timeout
-                        logger.info(f"✓ Topic '{topic}' created successfully")
+                        logger.info(f"[OK] Topic '{topic}' created successfully")
                     except Exception as e:
-                        logger.error(f"✗ Failed to create topic '{topic}': {e}")
+                        logger.error(f"[ERROR] Failed to create topic '{topic}': {e}")
             else:
                 logger.info("All topics already exist")
 

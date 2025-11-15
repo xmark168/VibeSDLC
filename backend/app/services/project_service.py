@@ -7,10 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from fastapi import HTTPException, status
 
-from app.models import Project, User, Epic, Story
+from app.models import Project, User, Epic, Story, Agent
 from app.kanban_schemas import ProjectCreate, ProjectUpdate, ProjectCreateInternal, ProjectResponse
 from app.dependencies import get_project_or_404, verify_project_owner
-from app.enums import StoryStatus
+from app.enums import StoryStatus, AgentType
 
 
 # Default Kanban Policy following Lean Kanban principles
@@ -91,7 +91,7 @@ class ProjectService:
     @staticmethod
     async def create(data: ProjectCreate, current_user: User, db: AsyncSession) -> Project:
         """
-        Create a new project with default Kanban policy
+        Create a new project with default Kanban policy and 4 default agents
 
         Args:
             data: Project creation data
@@ -99,7 +99,7 @@ class ProjectService:
             db: Database session
 
         Returns:
-            Created project
+            Created project with default agents
 
         Raises:
             HTTPException: 400 if project code already exists
@@ -130,6 +130,48 @@ class ProjectService:
             kanban_policy=kanban_policy
         )
         db.add(project)
+        await db.commit()
+        await db.refresh(project)
+
+        # 4. Create 4 default agents for the project
+        default_agents = [
+            {
+                "name": f"{project.code}-FLOW_MANAGER",
+                "type": AgentType.FLOW_MANAGER,
+                "description": "Coordinates workflow, manages task distribution, and ensures smooth project execution",
+                "capacity": 5
+            },
+            {
+                "name": f"{project.code}-BUSINESS_ANALYST",
+                "type": AgentType.BUSINESS_ANALYST,
+                "description": "Analyzes requirements, refines user stories, and ensures business value alignment",
+                "capacity": 5
+            },
+            {
+                "name": f"{project.code}-DEVELOPER",
+                "type": AgentType.DEVELOPER,
+                "description": "Implements features, writes code, and delivers technical solutions",
+                "capacity": 5
+            },
+            {
+                "name": f"{project.code}-TESTER",
+                "type": AgentType.TESTER,
+                "description": "Validates functionality, ensures quality, and performs comprehensive testing",
+                "capacity": 5
+            }
+        ]
+
+        for agent_data in default_agents:
+            agent = Agent(
+                project_id=project.id,
+                name=agent_data["name"],
+                type=agent_data["type"],
+                description=agent_data["description"],
+                capacity=agent_data["capacity"],
+                is_active=True
+            )
+            db.add(agent)
+
         await db.commit()
         await db.refresh(project)
 

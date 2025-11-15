@@ -8,6 +8,10 @@ from app.routers import auth, users, tech_stacks, agents, projects, epics, stori
 from app.kafka.producer import kafka_producer
 from app.kafka.consumer import agent_task_consumer
 from app.agents.developer_agent import developer_agent
+from app.agents.flow_manager_agent import flow_manager_agent
+from app.agents.business_analyst_agent import business_analyst_agent
+from app.agents.tester_agent import tester_agent
+from app.kafka.response_logger import response_logger
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -31,14 +35,38 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Warning: Kafka producer initialization failed: {e}")
 
-    # Start developer agent in background
+    # Start all 4 agents + response logger in background
+    try:
+        asyncio.create_task(flow_manager_agent.start())
+        print("[OK] Flow Manager agent started")
+    except Exception as e:
+        print(f"[ERROR] Warning: Flow Manager agent failed to start: {e}")
+
+    try:
+        asyncio.create_task(business_analyst_agent.start())
+        print("[OK] Business Analyst agent started")
+    except Exception as e:
+        print(f"[ERROR] Warning: Business Analyst agent failed to start: {e}")
+
     try:
         asyncio.create_task(developer_agent.start())
-        print("Developer agent started")
+        print("[OK] Developer agent started")
     except Exception as e:
-        print(f"Warning: Developer agent failed to start: {e}")
+        print(f"[ERROR] Warning: Developer agent failed to start: {e}")
 
-    print("VibeSDLC Backend is running...")
+    try:
+        asyncio.create_task(tester_agent.start())
+        print("[OK] Tester agent started")
+    except Exception as e:
+        print(f"[ERROR] Warning: Tester agent failed to start: {e}")
+
+    try:
+        asyncio.create_task(response_logger.start())
+        print("[OK] Response Logger started")
+    except Exception as e:
+        print(f"[ERROR] Warning: Response Logger failed to start: {e}")
+
+    print("=== VibeSDLC Backend is running with 4 CrewAI agents ===")
 
     yield
 
