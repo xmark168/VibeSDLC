@@ -35,17 +35,17 @@ def get_blockers_by_backlog_item(
     return list(session.exec(statement).all())
 
 
-def get_blockers_by_sprint(
+def get_blockers_by_project(
     *,
     session: Session,
-    sprint_id: UUID,
+    project_id: UUID,
 ) -> list[Blocker]:
-    """Get all blockers for a sprint."""
+    """Get all blockers for a project."""
     from app.models import BacklogItem
 
     statement = (
         select(Blocker)
         .join(BacklogItem)
-        .where(BacklogItem.sprint_id == sprint_id)
+        .where(BacklogItem.project_id == project_id)
     )
     return list(session.exec(statement).all())

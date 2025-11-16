@@ -181,7 +181,7 @@ class BacklogItemBase(SQLModel):
 
 
 class BacklogItemCreate(BacklogItemBase):
-    sprint_id: UUID
+    project_id: UUID
 
 
 class BacklogItemUpdate(SQLModel):
@@ -197,14 +197,14 @@ class BacklogItemUpdate(SQLModel):
     assignee_id: Optional[UUID] = None
     reviewer_id: Optional[UUID] = None
     parent_id: Optional[UUID] = None
-    sprint_id: Optional[UUID] = None
+    project_id: Optional[UUID] = None
 
 
 # TraDS ============= Kanban Hierarchy Support
 class BacklogItemSimple(BacklogItemBase):
     """Simple schema without nested relationships to prevent recursion"""
     id: UUID
-    sprint_id: UUID
+    project_id: UUID
     created_at: datetime
     updated_at: datetime
 
@@ -212,7 +212,7 @@ class BacklogItemSimple(BacklogItemBase):
 class BacklogItemPublic(BacklogItemBase):
     """Public schema with parent/children for Kanban hierarchy display"""
     id: UUID
-    sprint_id: UUID
+    project_id: UUID
     created_at: datetime
     updated_at: datetime
     parent: Optional[BacklogItemSimple] = None
@@ -253,8 +253,6 @@ class IssueActivityBase(SQLModel):
     estimate_to: Optional[int] = None
     deadline_from: Optional[datetime] = None
     deadline_to: Optional[datetime] = None
-    sprint_from: Optional[str] = None
-    sprint_to: Optional[str] = None
     type_from: Optional[str] = None
     type_to: Optional[str] = None
     note: Optional[str] = None
@@ -337,40 +335,6 @@ class ProjectPublic(SQLModel):
 class ProjectsPublic(SQLModel):
     """Schema for list of projects response."""
     data: list[ProjectPublic]
-    count: int
-
-#sprint
-class SprintBase(SQLModel):
-    name: str = Field(min_length=1, max_length=255)
-    number: int = Field(ge=1, description="Sprint number (1, 2, 3...)")
-    goal: str = Field(min_length=1, max_length=1000)
-    status: str = Field(description="Status: Planning, Active, Completed, Cancelled")
-    start_date: datetime
-    end_date: datetime
-    velocity_plan: str = Field(default="0", description="Planned velocity")
-    velocity_actual: str = Field(default="0", description="Actual velocity")
-
-class SprintCreate(SprintBase):
-    project_id: UUID
-
-class SprintUpdate(SQLModel):
-    name: Optional[str] = None
-    number: Optional[int] = Field(None, ge=1)
-    goal: Optional[str] = None
-    status: Optional[str] = None
-    start_date: Optional[datetime] = None
-    end_date: Optional[datetime] = None
-    velocity_plan: Optional[str] = None
-    velocity_actual: Optional[str] = None
-
-class SprintPublic(SprintBase):
-    id: UUID
-    project_id: UUID
-    created_at: datetime
-    updated_at: datetime
-
-class SprintsPublic(SQLModel):
-    data: list[SprintPublic]
     count: int
 
 # agent

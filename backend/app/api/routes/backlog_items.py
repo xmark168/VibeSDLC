@@ -3,7 +3,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import select, func, col
 from app.api.deps import CurrentUser, SessionDep
-from app.models import BacklogItem, Sprint, IssueActivity
+from app.models import BacklogItem, IssueActivity, Project
 from app.schemas import (
     BacklogItemCreate,
     BacklogItemUpdate,
@@ -15,9 +15,9 @@ router = APIRouter(prefix="/backlog-items", tags=["backlog-items"])
 
 @router.get("/", response_model=BacklogItemsPublic)
 def get_backlog_items(
-    session: SessionDep, 
+    session: SessionDep,
     current_user: CurrentUser,
-    sprint_id: Optional[uuid.UUID] = Query(None),
+    project_id: Optional[uuid.UUID] = Query(None),
     status: Optional[str] = Query(None),
     assignee_id: Optional[uuid.UUID] = Query(None),
     type: Optional[str] = Query(None),
@@ -26,7 +26,7 @@ def get_backlog_items(
 ) -> Any:
     """
     Lấy danh sách backlog items với filter
-    - sprint_id: Filter theo sprint
+    - project_id: Filter theo project
     - status: Filter theo trạng thái (Backlog, Todo, Doing, Done)
     - assignee_id: Filter theo người được assign
     - type: Filter theo loại (Epic, User Story, Task, Sub-task)
@@ -34,8 +34,8 @@ def get_backlog_items(
 
     statement = select(BacklogItem)
 
-    if sprint_id:
-        statement = statement.where(BacklogItem.sprint_id == sprint_id)
+    if project_id:
+        statement = statement.where(BacklogItem.project_id == project_id)
     if status:
         statement = statement.where(BacklogItem.status == status)
     if assignee_id:
@@ -48,11 +48,11 @@ def get_backlog_items(
 
     # Count
     count_statement = select(func.count()).select_from(BacklogItem)
-    if sprint_id:
-        count_statement = count_statement.where(BacklogItem.sprint_id == sprint_id)
+    if project_id:
+        count_statement = count_statement.where(BacklogItem.project_id == project_id)
 
     count = session.exec(count_statement).one()
-    
+
     # Get items
     items = session.exec(statement.offset(skip).limit(limit)).all()
 
@@ -86,16 +86,16 @@ def create_backlog_item(
     """
     Tạo backlog item mới
     """
-    # Validate sprint exists
-    sprint = session.get(Sprint, item_in.sprint_id)
-    if not sprint:
-        raise HTTPException(status_code=404, detail="Sprint not found")
+    # Validate project exists
+    project = session.get(Project, item_in.project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
 
     # Auto assign rank nếu không có
     item_data = item_in.model_dump()
     if item_data["rank"] is None:
         max_rank_statement = select(func.max(BacklogItem.rank)).where(
-            BacklogItem.sprint_id == item_in.sprint_id,
+            BacklogItem.project_id == item_in.project_id,
             BacklogItem.status == item_in.status
         )
         max_rank = session.exec(max_rank_statement).one()
@@ -110,7 +110,7 @@ def create_backlog_item(
     activity = IssueActivity(
         issue_id=item.id,
         actor_id=str(current_user.id),
-        actor_name=current_user.username,
+        actor_name=current_user.full_name or current_user.email,
         note="Created backlog item"
     )
     session.add(activity)
@@ -149,7 +149,7 @@ def update_backlog_item(
     activity = IssueActivity(
         issue_id=item.id,
         actor_id=str(current_user.id),
-        actor_name=current_user.username,
+        actor_name=current_user.full_name or current_user.email,
         title_from=old_title if item_in.title else None,
         title_to=item.title if item_in.title else None,
         status_from=old_status if item_in.status else None,
@@ -170,8 +170,7 @@ def move_backlog_item(
     current_user: CurrentUser,
     item_id: uuid.UUID,
     new_status: str = Query(..., description="Cột đích (Backlog, Todo, Doing, Done)"),
-    new_rank: int = Query(..., description="Vị trí mới trong cột"),
-    new_sprint_id: Optional[uuid.UUID] = Query(None, description="Sprint đích (nếu di chuyển sang sprint khác)")
+    new_rank: int = Query(..., description="Vị trí mới trong cột")
 ) -> Any:
     """
     Di chuyển item giữa các cột hoặc trong cùng cột
@@ -182,22 +181,16 @@ def move_backlog_item(
 
     old_status = item.status
     old_rank = item.rank
-    old_sprint_id = item.sprint_id
+    project_id = item.project_id
 
-    # Update status và sprint nếu có
+    # Update status
     item.status = new_status
-    if new_sprint_id:
-        # Validate sprint
-        sprint = session.get(Sprint, new_sprint_id)
-        if not sprint:
-            raise HTTPException(status_code=404, detail="Sprint not found")
-        item.sprint_id = new_sprint_id
 
-    # Reorder items trong cột cũ (nếu di chuyển sang cột/sprint khác)
-    if old_status != new_status or old_sprint_id != item.sprint_id:
+    # Reorder items trong cột cũ (nếu di chuyển sang cột khác)
+    if old_status != new_status:
         # Giảm rank của các items sau vị trí cũ
         statement = select(BacklogItem).where(
-            BacklogItem.sprint_id == old_sprint_id,
+            BacklogItem.project_id == project_id,
             BacklogItem.status == old_status,
             BacklogItem.rank > old_rank
         )
@@ -208,7 +201,7 @@ def move_backlog_item(
 
     # Reorder items trong cột mới
     statement = select(BacklogItem).where(
-        BacklogItem.sprint_id == item.sprint_id,
+        BacklogItem.project_id == project_id,
         BacklogItem.status == new_status,
         BacklogItem.rank >= new_rank,
         BacklogItem.id != item_id
@@ -228,7 +221,7 @@ def move_backlog_item(
     activity = IssueActivity(
         issue_id=item.id,
         actor_id=str(current_user.id),
-        actor_name=current_user.username,
+        actor_name=current_user.full_name or current_user.email,
         status_from=old_status,
         status_to=new_status,
         rank_from=old_rank,
@@ -258,24 +251,24 @@ def delete_backlog_item(
 
     return {"message": "Backlog item deleted successfully"}
 
-@router.get("/sprint/{sprint_id}/kanban")
+@router.get("/project/{project_id}/kanban")
 def get_kanban_board(
     session: SessionDep,
     current_user: CurrentUser,
-    sprint_id: uuid.UUID
+    project_id: uuid.UUID
 ) -> Any:
     """
     Lấy dữ liệu Kanban board, nhóm theo status
     """
-    # Validate sprint
-    sprint = session.get(Sprint, sprint_id)
-    if not sprint:
-        raise HTTPException(status_code=404, detail="Sprint not found")
+    # Validate project
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
 
     # TraDS ============= Kanban Hierarchy Support: Load parent/children relationships
     from sqlalchemy.orm import selectinload
     statement = select(BacklogItem).where(
-        BacklogItem.sprint_id == sprint_id
+        BacklogItem.project_id == project_id
     ).options(
         selectinload(BacklogItem.parent),
         selectinload(BacklogItem.children)
@@ -296,7 +289,7 @@ def get_kanban_board(
             board[item.status].append(BacklogItemPublic.model_validate(item))
 
     return {
-        "sprint": sprint,
+        "project": project,
         "board": board
     }
 

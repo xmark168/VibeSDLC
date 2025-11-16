@@ -46,16 +46,16 @@ def get_blockers_by_backlog_item(
     return BlockersPublic(data=blockers, count=len(blockers))
 
 
-@router.get("/sprint/{sprint_id}", response_model=BlockersPublic)
-def get_blockers_by_sprint(
+@router.get("/project/{project_id}", response_model=BlockersPublic)
+def get_blockers_by_project(
     *,
     session: SessionDep,
     current_user: CurrentUser,
-    sprint_id: UUID,
+    project_id: UUID,
 ) -> BlockersPublic:
-    """Get all blockers for a sprint."""
-    blockers = crud_blocker.get_blockers_by_sprint(
+    """Get all blockers for a project."""
+    blockers = crud_blocker.get_blockers_by_project(
         session=session,
-        sprint_id=sprint_id,
+        project_id=project_id,
     )
     return BlockersPublic(data=blockers, count=len(blockers))

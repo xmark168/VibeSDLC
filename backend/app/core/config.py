@@ -149,11 +149,6 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER: EmailStr
     FIRST_SUPERUSER_PASSWORD: str
 
-    # LANGFUSE SETTINGS
-    LANGFUSE_PUBLIC_KEY: str = ""
-    LANGFUSE_SECRET_KEY: str = ""
-    LANGFUSE_HOST: str = "https://langfuse.vibesdlc.com"
-
     # LLM/LANGGRAPH SETTINGS
     LLM_API_KEY: str = ""
     LLM_MODEL: str = "gpt-4.1"

@@ -100,11 +100,11 @@ class Project(BaseModel, table=True):
     is_private: bool = Field(default=True)
     tech_stack: str = Field(default="nodejs-react")
     owner: User = Relationship(back_populates="owned_projects")
-    sprints: list["Sprint"] = Relationship(
+    backlog_items: list["BacklogItem"] = Relationship(
         back_populates="project",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
-    # TraDS ============= Sprint Retrospective Rules
+    # TraDS ============= Project Rules
 
     rules: Optional["ProjectRules"] = Relationship(
         back_populates="project",
@@ -112,33 +112,11 @@ class Project(BaseModel, table=True):
     )
 
 
-class Sprint(BaseModel, table=True):
-    __tablename__ = "sprints"
-
-    project_id: UUID = Field(
-        foreign_key="projects.id", nullable=False, ondelete="CASCADE"
-    )
-    name: str
-    number: int
-    goal: str
-    status: str
-    start_date: datetime
-    end_date: datetime
-    velocity_plan: str
-    velocity_actual: str
-
-    project: Project = Relationship(back_populates="sprints")
-    backlog_items: list["BacklogItem"] = Relationship(
-        back_populates="sprint",  # ✅ SỬA từ backlog_items="sprint"
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
-    )
-
-
 class BacklogItem(BaseModel, table=True):
     __tablename__ = "backlog_items"
 
-    sprint_id: UUID = Field(
-        foreign_key="sprints.id", nullable=False, ondelete="CASCADE"
+    project_id: UUID = Field(
+        foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True
     )
     parent_id: UUID | None = Field(
         default=None, foreign_key="backlog_items.id", ondelete="SET NULL"
@@ -159,7 +137,7 @@ class BacklogItem(BaseModel, table=True):
     pause: bool = Field(default=False)
     deadline: datetime | None = Field(default=None)
 
-    sprint: Sprint = Relationship(back_populates="backlog_items")
+    project: Project = Relationship(back_populates="backlog_items")
     parent: Optional["BacklogItem"] = Relationship(
         back_populates="children",
         sa_relationship_kwargs={"remote_side": "BacklogItem.id"},
@@ -172,7 +150,7 @@ class BacklogItem(BaseModel, table=True):
     activities: list["IssueActivity"] = Relationship(
         back_populates="issue", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
-    # TraDS ============= Sprint Retrospective Blockers
+    # TraDS ============= Kanban Blockers
     blockers: list["Blocker"] = Relationship(
         back_populates="backlog_item",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
@@ -217,8 +195,6 @@ class IssueActivity(BaseModel, table=True):
     estimate_to: int | None = Field(default=None)
     deadline_from: datetime | None = Field(default=None)
     deadline_to: datetime | None = Field(default=None)
-    sprint_from: str | None = Field(default=None)
-    sprint_to: str | None = Field(default=None)
     type_from: str | None = Field(default=None)
     type_to: str | None = Field(default=None)
     note: str | None = Field(default=None)

@@ -10,9 +10,7 @@ dependencies = [
     "pydantic>=2.10.0",
     "pydantic-settings>=2.6.0",
     "httpx>=0.28.0",
-    "langfuse>=2.56.0",
     "uvicorn>=0.34.0",
-    "openagents>=0.6.12",
     "jwt>=1.4.0",
     "sqlmodel>=0.0.27",
     "alembic>=1.17.0",
@@ -25,9 +23,7 @@ dependencies = [
     "redis>=7.0.1",
     "pygithub>=2.8.1",
     "email-validator>=2.3.0",
-    "daytona>=0.112.2",
-    "tavily>=1.1.0",
-    "gitpython>=3.1.45",
+    "sentry-sdk>=2.0.0",
 ]
 
 
@@ -35,6 +31,9 @@ dependencies = [
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["app"]
 
 
 [project.optional-dependencies]

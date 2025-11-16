@@ -1,7 +1,7 @@
 """Description of changes
 
 Revision ID: c204442532e1
-Revises: 
+Revises: 316d9e89f0c5
 Create Date: 2025-11-09 16:59:37.527021
 
 """
@@ -12,7 +12,7 @@ import sqlmodel.sql.sqltypes
 
 # revision identifiers, used by Alembic.
 revision = 'c204442532e1'
-down_revision = None
+down_revision = '316d9e89f0c5'
 branch_labels = None
 depends_on = None
 

@@ -62,3 +62,4 @@ openapi.json
 /playwright/.cache/
 /playwright/.auth/
 github_private_key.pem
+backend/pyproject.toml

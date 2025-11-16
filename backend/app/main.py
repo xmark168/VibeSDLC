@@ -19,20 +19,14 @@ def custom_generate_unique_id(route: APIRoute) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Initialize database, create superuser, start WebSocket helper
+    # Startup: Initialize database, create superuser
     with Session(engine) as session:
         init_db(session)
-
-    # Start WebSocket helper thread for async operations
-    from app.core.websocket_helper import websocket_helper
-    websocket_helper.start()
-    print("✓ WebSocket helper started")
 
     yield
 
     # Shutdown: cleanup
-    websocket_helper.stop()
-    print("✓ WebSocket helper stopped")
+    print("✓ Application shutdown")
 
 
 if settings.SENTRY_DSN and settings.ENVIRONMENT != "local":
