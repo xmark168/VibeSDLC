@@ -1,7 +1,7 @@
 [project]
 name = "agents-service"
 version = "0.0.1"
-description = "Scrum Agents team in a service that expose through some http routes for frontend and management services"
+description = "Backend"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -10,17 +10,7 @@ dependencies = [
     "pydantic>=2.10.0",
     "pydantic-settings>=2.6.0",
     "httpx>=0.28.0",
-    # LangChain ecosystem - Latest versions
-    "langchain>=0.3.13",
-    "langchain-openai>=0.2.14",
-    "langchain-anthropic>=0.3.3",
-    "langchain-community>=0.3.13",
-    "langchain-core>=0.3.28",
-    "langgraph>=0.2.62",
-    "langsmith>=0.2.7",
-    # LangFuse for observability
     "langfuse>=2.56.0",
-    # Server
     "uvicorn>=0.34.0",
     "openagents>=0.6.12",
     "jwt>=1.4.0",
