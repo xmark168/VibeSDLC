@@ -18,11 +18,7 @@ import { Calendar } from "lucide-react"
 import { agentApi } from "@/apis/agent"
 import { useQueryClient } from "@tanstack/react-query"
 //type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings"
-// TraDS ============= Sprint Retrospective
-import { SprintRetrospective } from "./sprint-retrospective"
-import { Users } from "lucide-react"
-type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings" | "retrospective"
-// ==============================
+type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings"
 interface Tab {
   id: string
   view: WorkspaceView
@@ -100,15 +96,12 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
     }
   }, [activeSprint, selectedSprintId])
 
-  // TraDS ============= Added Retrospective Tab
   const [tabs, setTabs] = useState<Tab[]>([
     { id: "tab-1", view: "app-preview", label: "App Preview" },
     { id: "tab-2", view: "kanban", label: "Kanban" },
-    { id: "tab-3", view: "retrospective", label: "Retrospective" },
-    { id: "tab-4", view: "file", label: "File" },
-    { id: "tab-5", view: "loggings", label: "Loggings" },
+    { id: "tab-3", view: "file", label: "File" },
+    { id: "tab-4", view: "loggings", label: "Loggings" },
   ])
-  // ==============================
   const [activeTabId, setActiveTabId] = useState("tab-1")
 
   // Auto-switch tab when wsActiveTab changes from WebSocket
@@ -178,15 +171,12 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
     }
   }
 
-  // TraDS ============= Added Retrospective Icon
   const getViewIcon = (view: WorkspaceView) => {
     switch (view) {
       case "app-preview":
         return <Globe className="w-3.5 h-3.5" />
       case "kanban":
         return <LayoutGrid className="w-3.5 h-3.5" />
-      case "retrospective":
-        return <Users className="w-3.5 h-3.5" />
       case "file":
         return <Code2 className="w-3.5 h-3.5" />
       case "loggings":
@@ -195,7 +185,6 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
         return <Globe className="w-3.5 h-3.5" />
     }
   }
-  // ==============================
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId)
   const activeView = activeTab?.view || "app-preview"
@@ -265,7 +254,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
 
             {/* Kanban Board */}
             <div className="flex-1 overflow-hidden">
-              <KanbanBoard kanbanData={kanbanData} projectId={projectId} sprintId={displaySprintId} />
+              <KanbanBoard kanbanData={kanbanData} projectId={projectId} />
             </div>
           </div>
         )
@@ -292,10 +281,6 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
             <Loggings />
           </>
         )
-      // TraDS ============= Retrospective View
-      case "retrospective":
-        return <SprintRetrospective projectId={projectId} sprintId={selectedSprintId || activeSprint?.id} />
-      // ==============================
       default:
         return null
     }

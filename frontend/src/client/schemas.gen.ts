@@ -23,48 +23,6 @@ export const AgentCreateSchema = {
     title: 'AgentCreate'
 } as const;
 
-export const AgentExecutionRequestSchema = {
-    properties: {
-        project_id: {
-            type: 'string',
-            format: 'uuid',
-            title: 'Project Id'
-        },
-        user_input: {
-            type: 'string',
-            title: 'User Input'
-        },
-        agent_type: {
-            type: 'string',
-            title: 'Agent Type',
-            default: 'po_agent'
-        }
-    },
-    type: 'object',
-    required: ['project_id', 'user_input'],
-    title: 'AgentExecutionRequest'
-} as const;
-
-export const AgentExecutionResponseSchema = {
-    properties: {
-        execution_id: {
-            type: 'string',
-            title: 'Execution Id'
-        },
-        status: {
-            type: 'string',
-            title: 'Status'
-        },
-        message: {
-            type: 'string',
-            title: 'Message'
-        }
-    },
-    type: 'object',
-    required: ['execution_id', 'status', 'message'],
-    title: 'AgentExecutionResponse'
-} as const;
-
 export const AgentPublicSchema = {
     properties: {
         name: {
@@ -272,14 +230,14 @@ export const BacklogItemCreateSchema = {
             ],
             title: 'Parent Id'
         },
-        sprint_id: {
+        project_id: {
             type: 'string',
             format: 'uuid',
-            title: 'Sprint Id'
+            title: 'Project Id'
         }
     },
     type: 'object',
-    required: ['title', 'type', 'status', 'sprint_id'],
+    required: ['title', 'type', 'status', 'project_id'],
     title: 'BacklogItemCreate'
 } as const;
 
@@ -403,10 +361,170 @@ export const BacklogItemPublicSchema = {
             format: 'uuid',
             title: 'Id'
         },
-        sprint_id: {
+        project_id: {
             type: 'string',
             format: 'uuid',
-            title: 'Sprint Id'
+            title: 'Project Id'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        },
+        parent: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/BacklogItemSimple'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        children: {
+            items: {
+                '$ref': '#/components/schemas/BacklogItemSimple'
+            },
+            type: 'array',
+            title: 'Children',
+            default: []
+        }
+    },
+    type: 'object',
+    required: ['title', 'type', 'status', 'id', 'project_id', 'created_at', 'updated_at'],
+    title: 'BacklogItemPublic',
+    description: 'Public schema with parent/children for Kanban hierarchy display'
+} as const;
+
+export const BacklogItemSimpleSchema = {
+    properties: {
+        title: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Title'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        type: {
+            type: 'string',
+            title: 'Type',
+            description: 'Type: Epic, Story, Task, Sub-task'
+        },
+        status: {
+            type: 'string',
+            title: 'Status',
+            description: 'Status: Backlog, Todo, Doing, Done'
+        },
+        rank: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Rank'
+        },
+        estimate_value: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Estimate Value'
+        },
+        story_point: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Story Point'
+        },
+        pause: {
+            type: 'boolean',
+            title: 'Pause',
+            default: false
+        },
+        deadline: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Deadline'
+        },
+        assignee_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Assignee Id'
+        },
+        reviewer_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Reviewer Id'
+        },
+        parent_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Parent Id'
+        },
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        project_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Project Id'
         },
         created_at: {
             type: 'string',
@@ -420,8 +538,9 @@ export const BacklogItemPublicSchema = {
         }
     },
     type: 'object',
-    required: ['title', 'type', 'status', 'id', 'sprint_id', 'created_at', 'updated_at'],
-    title: 'BacklogItemPublic'
+    required: ['title', 'type', 'status', 'id', 'project_id', 'created_at', 'updated_at'],
+    title: 'BacklogItemSimple',
+    description: 'Simple schema without nested relationships to prevent recursion'
 } as const;
 
 export const BacklogItemUpdateSchema = {
@@ -562,7 +681,7 @@ export const BacklogItemUpdateSchema = {
             ],
             title: 'Parent Id'
         },
-        sprint_id: {
+        project_id: {
             anyOf: [
                 {
                     type: 'string',
@@ -572,7 +691,7 @@ export const BacklogItemUpdateSchema = {
                     type: 'null'
                 }
             ],
-            title: 'Sprint Id'
+            title: 'Project Id'
         }
     },
     type: 'object',
@@ -596,6 +715,139 @@ export const BacklogItemsPublicSchema = {
     type: 'object',
     required: ['data', 'count'],
     title: 'BacklogItemsPublic'
+} as const;
+
+export const BlockerCreateSchema = {
+    properties: {
+        backlog_item_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Backlog Item Id'
+        },
+        blocker_type: {
+            type: 'string',
+            title: 'Blocker Type'
+        },
+        description: {
+            type: 'string',
+            title: 'Description'
+        }
+    },
+    type: 'object',
+    required: ['backlog_item_id', 'blocker_type', 'description'],
+    title: 'BlockerCreate'
+} as const;
+
+export const BlockerPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        backlog_item_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Backlog Item Id'
+        },
+        reported_by_user_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Reported By User Id'
+        },
+        blocker_type: {
+            type: 'string',
+            title: 'Blocker Type'
+        },
+        description: {
+            type: 'string',
+            title: 'Description'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'backlog_item_id', 'reported_by_user_id', 'blocker_type', 'description', 'created_at'],
+    title: 'BlockerPublic'
+} as const;
+
+export const BlockersPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/BlockerPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'BlockersPublic'
+} as const;
+
+export const Body_authentication_login_access_tokenSchema = {
+    properties: {
+        grant_type: {
+            anyOf: [
+                {
+                    type: 'string',
+                    pattern: '^password$'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Grant Type'
+        },
+        username: {
+            type: 'string',
+            title: 'Username'
+        },
+        password: {
+            type: 'string',
+            format: 'password',
+            title: 'Password'
+        },
+        scope: {
+            type: 'string',
+            title: 'Scope',
+            default: ''
+        },
+        client_id: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Client Id'
+        },
+        client_secret: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            format: 'password',
+            title: 'Client Secret'
+        }
+    },
+    type: 'object',
+    required: ['username', 'password'],
+    title: 'Body_authentication-login_access_token'
 } as const;
 
 export const ChatMessageCreateSchema = {
@@ -672,6 +924,42 @@ export const ChatMessagePublicSchema = {
         content: {
             type: 'string',
             title: 'Content'
+        },
+        message_type: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Message Type',
+            default: 'text'
+        },
+        structured_data: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Structured Data'
+        },
+        message_metadata: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Message Metadata'
         },
         created_at: {
             type: 'string',
@@ -1358,6 +1646,153 @@ export const ProjectPublicSchema = {
     description: 'Schema for project response with all fields from model.'
 } as const;
 
+export const ProjectRulesCreateSchema = {
+    properties: {
+        project_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Project Id'
+        },
+        po_prompt: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Po Prompt'
+        },
+        dev_prompt: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Dev Prompt'
+        },
+        tester_prompt: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Tester Prompt'
+        }
+    },
+    type: 'object',
+    required: ['project_id'],
+    title: 'ProjectRulesCreate'
+} as const;
+
+export const ProjectRulesPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        project_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Project Id'
+        },
+        po_prompt: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Po Prompt'
+        },
+        dev_prompt: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Dev Prompt'
+        },
+        tester_prompt: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Tester Prompt'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'project_id', 'created_at', 'updated_at'],
+    title: 'ProjectRulesPublic'
+} as const;
+
+export const ProjectRulesUpdateSchema = {
+    properties: {
+        po_prompt: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Po Prompt'
+        },
+        dev_prompt: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Dev Prompt'
+        },
+        tester_prompt: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Tester Prompt'
+        }
+    },
+    type: 'object',
+    title: 'ProjectRulesUpdate'
+} as const;
+
 export const ProjectUpdateSchema = {
     properties: {
         name: {
@@ -1603,254 +2038,6 @@ export const RoleSchema = {
     title: 'Role'
 } as const;
 
-export const SprintCreateSchema = {
-    properties: {
-        name: {
-            type: 'string',
-            maxLength: 255,
-            minLength: 1,
-            title: 'Name'
-        },
-        number: {
-            type: 'integer',
-            minimum: 1,
-            title: 'Number',
-            description: 'Sprint number (1, 2, 3...)'
-        },
-        goal: {
-            type: 'string',
-            maxLength: 1000,
-            minLength: 1,
-            title: 'Goal'
-        },
-        status: {
-            type: 'string',
-            title: 'Status',
-            description: 'Status: Planning, Active, Completed, Cancelled'
-        },
-        start_date: {
-            type: 'string',
-            format: 'date-time',
-            title: 'Start Date'
-        },
-        end_date: {
-            type: 'string',
-            format: 'date-time',
-            title: 'End Date'
-        },
-        velocity_plan: {
-            type: 'string',
-            title: 'Velocity Plan',
-            description: 'Planned velocity',
-            default: '0'
-        },
-        velocity_actual: {
-            type: 'string',
-            title: 'Velocity Actual',
-            description: 'Actual velocity',
-            default: '0'
-        },
-        project_id: {
-            type: 'string',
-            format: 'uuid',
-            title: 'Project Id'
-        }
-    },
-    type: 'object',
-    required: ['name', 'number', 'goal', 'status', 'start_date', 'end_date', 'project_id'],
-    title: 'SprintCreate'
-} as const;
-
-export const SprintPublicSchema = {
-    properties: {
-        name: {
-            type: 'string',
-            maxLength: 255,
-            minLength: 1,
-            title: 'Name'
-        },
-        number: {
-            type: 'integer',
-            minimum: 1,
-            title: 'Number',
-            description: 'Sprint number (1, 2, 3...)'
-        },
-        goal: {
-            type: 'string',
-            maxLength: 1000,
-            minLength: 1,
-            title: 'Goal'
-        },
-        status: {
-            type: 'string',
-            title: 'Status',
-            description: 'Status: Planning, Active, Completed, Cancelled'
-        },
-        start_date: {
-            type: 'string',
-            format: 'date-time',
-            title: 'Start Date'
-        },
-        end_date: {
-            type: 'string',
-            format: 'date-time',
-            title: 'End Date'
-        },
-        velocity_plan: {
-            type: 'string',
-            title: 'Velocity Plan',
-            description: 'Planned velocity',
-            default: '0'
-        },
-        velocity_actual: {
-            type: 'string',
-            title: 'Velocity Actual',
-            description: 'Actual velocity',
-            default: '0'
-        },
-        id: {
-            type: 'string',
-            format: 'uuid',
-            title: 'Id'
-        },
-        project_id: {
-            type: 'string',
-            format: 'uuid',
-            title: 'Project Id'
-        },
-        created_at: {
-            type: 'string',
-            format: 'date-time',
-            title: 'Created At'
-        },
-        updated_at: {
-            type: 'string',
-            format: 'date-time',
-            title: 'Updated At'
-        }
-    },
-    type: 'object',
-    required: ['name', 'number', 'goal', 'status', 'start_date', 'end_date', 'id', 'project_id', 'created_at', 'updated_at'],
-    title: 'SprintPublic'
-} as const;
-
-export const SprintUpdateSchema = {
-    properties: {
-        name: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Name'
-        },
-        number: {
-            anyOf: [
-                {
-                    type: 'integer',
-                    minimum: 1
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Number'
-        },
-        goal: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Goal'
-        },
-        status: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Status'
-        },
-        start_date: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'date-time'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Start Date'
-        },
-        end_date: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'date-time'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'End Date'
-        },
-        velocity_plan: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Velocity Plan'
-        },
-        velocity_actual: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Velocity Actual'
-        }
-    },
-    type: 'object',
-    title: 'SprintUpdate'
-} as const;
-
-export const SprintsPublicSchema = {
-    properties: {
-        data: {
-            items: {
-                '$ref': '#/components/schemas/SprintPublic'
-            },
-            type: 'array',
-            title: 'Data'
-        },
-        count: {
-            type: 'integer',
-            title: 'Count'
-        }
-    },
-    type: 'object',
-    required: ['data', 'count'],
-    title: 'SprintsPublic'
-} as const;
-
 export const UpdatePasswordSchema = {
     properties: {
         current_password: {
@@ -1898,7 +2085,14 @@ export const UserPublicSchema = {
             title: 'Id'
         },
         full_name: {
-            type: 'string',
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
             title: 'Full Name'
         },
         email: {
@@ -1936,7 +2130,7 @@ export const UserPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'full_name', 'email', 'role'],
+    required: ['id', 'email', 'role'],
     title: 'UserPublic'
 } as const;
 

@@ -5,18 +5,6 @@ export type AgentCreate = {
     agent_type?: (string | null);
 };
 
-export type AgentExecutionRequest = {
-    project_id: string;
-    user_input: string;
-    agent_type?: string;
-};
-
-export type AgentExecutionResponse = {
-    execution_id: string;
-    status: string;
-    message: string;
-};
-
 export type AgentPublic = {
     name: string;
     agent_type?: (string | null);
@@ -56,9 +44,12 @@ export type BacklogItemCreate = {
     assignee_id?: (string | null);
     reviewer_id?: (string | null);
     parent_id?: (string | null);
-    sprint_id: string;
+    project_id: string;
 };
 
+/**
+ * Public schema with parent/children for Kanban hierarchy display
+ */
 export type BacklogItemPublic = {
     title: string;
     description?: (string | null);
@@ -79,7 +70,37 @@ export type BacklogItemPublic = {
     reviewer_id?: (string | null);
     parent_id?: (string | null);
     id: string;
-    sprint_id: string;
+    project_id: string;
+    created_at: string;
+    updated_at: string;
+    parent?: (BacklogItemSimple | null);
+    children?: Array<BacklogItemSimple>;
+};
+
+/**
+ * Simple schema without nested relationships to prevent recursion
+ */
+export type BacklogItemSimple = {
+    title: string;
+    description?: (string | null);
+    /**
+     * Type: Epic, Story, Task, Sub-task
+     */
+    type: string;
+    /**
+     * Status: Backlog, Todo, Doing, Done
+     */
+    status: string;
+    rank?: (number | null);
+    estimate_value?: (number | null);
+    story_point?: (number | null);
+    pause?: boolean;
+    deadline?: (string | null);
+    assignee_id?: (string | null);
+    reviewer_id?: (string | null);
+    parent_id?: (string | null);
+    id: string;
+    project_id: string;
     created_at: string;
     updated_at: string;
 };
@@ -102,7 +123,36 @@ export type BacklogItemUpdate = {
     assignee_id?: (string | null);
     reviewer_id?: (string | null);
     parent_id?: (string | null);
-    sprint_id?: (string | null);
+    project_id?: (string | null);
+};
+
+export type BlockerCreate = {
+    backlog_item_id: string;
+    blocker_type: string;
+    description: string;
+};
+
+export type BlockerPublic = {
+    id: string;
+    backlog_item_id: string;
+    reported_by_user_id: string;
+    blocker_type: string;
+    description: string;
+    created_at: string;
+};
+
+export type BlockersPublic = {
+    data: Array<BlockerPublic>;
+    count: number;
+};
+
+export type Body_authentication_login_access_token = {
+    grant_type?: (string | null);
+    username: string;
+    password: string;
+    scope?: string;
+    client_id?: (string | null);
+    client_secret?: (string | null);
 };
 
 export type ChatMessageCreate = {
@@ -119,6 +169,13 @@ export type ChatMessagePublic = {
     user_id?: (string | null);
     agent_id?: (string | null);
     content: string;
+    message_type?: (string | null);
+    structured_data?: ({
+    [key: string]: unknown;
+} | null);
+    message_metadata?: ({
+    [key: string]: unknown;
+} | null);
     created_at: string;
     updated_at: string;
 };
@@ -325,6 +382,29 @@ export type ProjectPublic = {
     updated_at: string;
 };
 
+export type ProjectRulesCreate = {
+    project_id: string;
+    po_prompt?: (string | null);
+    dev_prompt?: (string | null);
+    tester_prompt?: (string | null);
+};
+
+export type ProjectRulesPublic = {
+    id: string;
+    project_id: string;
+    po_prompt?: (string | null);
+    dev_prompt?: (string | null);
+    tester_prompt?: (string | null);
+    created_at: string;
+    updated_at: string;
+};
+
+export type ProjectRulesUpdate = {
+    po_prompt?: (string | null);
+    dev_prompt?: (string | null);
+    tester_prompt?: (string | null);
+};
+
 /**
  * Schema for list of projects response.
  */
@@ -401,73 +481,6 @@ export type ResetPasswordResponse = {
 
 export type Role = 'admin' | 'user';
 
-export type SprintCreate = {
-    name: string;
-    /**
-     * Sprint number (1, 2, 3...)
-     */
-    number: number;
-    goal: string;
-    /**
-     * Status: Planning, Active, Completed, Cancelled
-     */
-    status: string;
-    start_date: string;
-    end_date: string;
-    /**
-     * Planned velocity
-     */
-    velocity_plan?: string;
-    /**
-     * Actual velocity
-     */
-    velocity_actual?: string;
-    project_id: string;
-};
-
-export type SprintPublic = {
-    name: string;
-    /**
-     * Sprint number (1, 2, 3...)
-     */
-    number: number;
-    goal: string;
-    /**
-     * Status: Planning, Active, Completed, Cancelled
-     */
-    status: string;
-    start_date: string;
-    end_date: string;
-    /**
-     * Planned velocity
-     */
-    velocity_plan?: string;
-    /**
-     * Actual velocity
-     */
-    velocity_actual?: string;
-    id: string;
-    project_id: string;
-    created_at: string;
-    updated_at: string;
-};
-
-export type SprintsPublic = {
-    data: Array<SprintPublic>;
-    count: number;
-};
-
-export type SprintUpdate = {
-    name?: (string | null);
-    number?: (number | null);
-    goal?: (string | null);
-    status?: (string | null);
-    start_date?: (string | null);
-    end_date?: (string | null);
-    velocity_plan?: (string | null);
-    velocity_actual?: (string | null);
-};
-
 export type UpdatePassword = {
     current_password: string;
     new_password: string;
@@ -481,7 +494,7 @@ export type UserCreate = {
 
 export type UserPublic = {
     id: string;
-    full_name: string;
+    full_name?: (string | null);
     email: string;
     role: Role;
     github_installation_id?: (number | null);
@@ -516,20 +529,6 @@ export type ValidationError = {
     type: string;
 };
 
-export type AgentExecutionExecuteAgentData = {
-    requestBody: AgentExecutionRequest;
-};
-
-export type AgentExecutionExecuteAgentResponse = (AgentExecutionResponse);
-
-export type AgentExecutionExecuteAgentSyncData = {
-    requestBody: AgentExecutionRequest;
-};
-
-export type AgentExecutionExecuteAgentSyncResponse = ({
-    [key: string]: unknown;
-});
-
 export type AgentsListAgentsData = {
     agentType?: (string | null);
     limit?: number;
@@ -563,6 +562,12 @@ export type AgentsDeleteAgentData = {
 };
 
 export type AgentsDeleteAgentResponse = (void);
+
+export type AuthenticationLoginAccessTokenData = {
+    formData: Body_authentication_login_access_token;
+};
+
+export type AuthenticationLoginAccessTokenResponse = (LoginResponse);
 
 export type AuthenticationLoginData = {
     requestBody: LoginRequest;
@@ -612,8 +617,8 @@ export type AuthenticationLogoutResponse = (LogoutResponse);
 export type BacklogItemsGetBacklogItemsData = {
     assigneeId?: (string | null);
     limit?: number;
+    projectId?: (string | null);
     skip?: number;
-    sprintId?: (string | null);
     status?: (string | null);
     type?: (string | null);
 };
@@ -654,10 +659,6 @@ export type BacklogItemsMoveBacklogItemData = {
      */
     newRank: number;
     /**
-     * Sprint đích (nếu di chuyển sang sprint khác)
-     */
-    newSprintId?: (string | null);
-    /**
      * Cột đích (Backlog, Todo, Doing, Done)
      */
     newStatus: string;
@@ -666,14 +667,28 @@ export type BacklogItemsMoveBacklogItemData = {
 export type BacklogItemsMoveBacklogItemResponse = (BacklogItemPublic);
 
 export type BacklogItemsGetKanbanBoardData = {
-    sprintId: string;
+    projectId: string;
 };
 
 export type BacklogItemsGetKanbanBoardResponse = (unknown);
 
-export type ChatGetWebsocketInfoResponse = (unknown);
+export type BlockersCreateBlockerData = {
+    requestBody: BlockerCreate;
+};
 
-export type ChatGetConnectionStatsResponse = (unknown);
+export type BlockersCreateBlockerResponse = (BlockerPublic);
+
+export type BlockersGetBlockersByBacklogItemData = {
+    backlogItemId: string;
+};
+
+export type BlockersGetBlockersByBacklogItemResponse = (BlockersPublic);
+
+export type BlockersGetBlockersByProjectData = {
+    projectId: string;
+};
+
+export type BlockersGetBlockersByProjectResponse = (BlockersPublic);
 
 export type GithubGithubWebhookResponse = ({
     [key: string]: unknown;
@@ -773,6 +788,25 @@ export type PrivateCreateUserData = {
 
 export type PrivateCreateUserResponse = (UserPublic);
 
+export type ProjectRulesCreateProjectRulesData = {
+    requestBody: ProjectRulesCreate;
+};
+
+export type ProjectRulesCreateProjectRulesResponse = (ProjectRulesPublic);
+
+export type ProjectRulesGetProjectRulesData = {
+    projectId: string;
+};
+
+export type ProjectRulesGetProjectRulesResponse = (ProjectRulesPublic);
+
+export type ProjectRulesUpdateProjectRulesData = {
+    projectId: string;
+    requestBody: ProjectRulesUpdate;
+};
+
+export type ProjectRulesUpdateProjectRulesResponse = (ProjectRulesPublic);
+
 export type ProjectsListProjectsData = {
     limit?: number;
     skip?: number;
@@ -804,56 +838,6 @@ export type ProjectsDeleteProjectData = {
 };
 
 export type ProjectsDeleteProjectResponse = (void);
-
-export type SprintsListSprintsData = {
-    limit?: number;
-    /**
-     * Search by name
-     */
-    name?: (string | null);
-    /**
-     * Filter by project
-     */
-    projectId?: (string | null);
-    skip?: number;
-    /**
-     * Filter by status
-     */
-    status?: (string | null);
-};
-
-export type SprintsListSprintsResponse = (SprintsPublic);
-
-export type SprintsCreateSprintData = {
-    requestBody: SprintCreate;
-};
-
-export type SprintsCreateSprintResponse = (SprintPublic);
-
-export type SprintsGetSprintData = {
-    sprintId: string;
-};
-
-export type SprintsGetSprintResponse = (SprintPublic);
-
-export type SprintsUpdateSprintData = {
-    requestBody: SprintUpdate;
-    sprintId: string;
-};
-
-export type SprintsUpdateSprintResponse = (SprintPublic);
-
-export type SprintsDeleteSprintData = {
-    sprintId: string;
-};
-
-export type SprintsDeleteSprintResponse = (void);
-
-export type SprintsGetActiveSprintData = {
-    projectId: string;
-};
-
-export type SprintsGetActiveSprintResponse = (SprintPublic);
 
 export type UsersReadUsersData = {
     limit?: number;
@@ -912,7 +896,5 @@ export type UsersDeleteUserResponse = (Message);
 export type UtilsTestEmailData = {
     emailTo: string;
 };
-
-export type UtilsTestEmailResponse = (Message);
 
 export type UtilsHealthCheckResponse = (boolean);

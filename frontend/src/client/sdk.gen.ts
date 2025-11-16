@@ -3,51 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { AgentExecutionExecuteAgentData, AgentExecutionExecuteAgentResponse, AgentExecutionExecuteAgentSyncData, AgentExecutionExecuteAgentSyncResponse, AgentsListAgentsData, AgentsListAgentsResponse, AgentsCreateAgentData, AgentsCreateAgentResponse, AgentsGetAgentData, AgentsGetAgentResponse, AgentsUpdateAgentData, AgentsUpdateAgentResponse, AgentsDeleteAgentData, AgentsDeleteAgentResponse, AuthenticationLoginData, AuthenticationLoginResponse, AuthenticationRegisterData, AuthenticationRegisterResponse, AuthenticationConfirmCodeData, AuthenticationConfirmCodeResponse, AuthenticationResendCodeData, AuthenticationResendCodeResponse, AuthenticationRefreshTokenData, AuthenticationRefreshTokenResponse, AuthenticationForgotPasswordData, AuthenticationForgotPasswordResponse, AuthenticationResetPasswordData, AuthenticationResetPasswordResponse, AuthenticationLogoutResponse, BacklogItemsGetBacklogItemsData, BacklogItemsGetBacklogItemsResponse, BacklogItemsCreateBacklogItemData, BacklogItemsCreateBacklogItemResponse, BacklogItemsGetBacklogItemData, BacklogItemsGetBacklogItemResponse, BacklogItemsUpdateBacklogItemData, BacklogItemsUpdateBacklogItemResponse, BacklogItemsDeleteBacklogItemData, BacklogItemsDeleteBacklogItemResponse, BacklogItemsMoveBacklogItemData, BacklogItemsMoveBacklogItemResponse, BacklogItemsGetKanbanBoardData, BacklogItemsGetKanbanBoardResponse, ChatGetWebsocketInfoResponse, ChatGetConnectionStatsResponse, GithubGithubWebhookResponse, GithubGithubCallbackData, GithubGithubCallbackResponse, GithubLinkInstallationToUserData, GithubLinkInstallationToUserResponse, GithubListGithubRepositoriesData, GithubListGithubRepositoriesResponse, GithubLinkGithubRepositoryData, GithubLinkGithubRepositoryResponse, GithubUnlinkGithubRepositoryData, GithubUnlinkGithubRepositoryResponse, GithubCheckGithubInstallationStatusResponse, GithubListGithubInstallationsData, GithubListGithubInstallationsResponse, GithubCreateRepoFromTemplateEndpointData, GithubCreateRepoFromTemplateEndpointResponse, MessagesListMessagesData, MessagesListMessagesResponse, MessagesCreateMessageData, MessagesCreateMessageResponse, MessagesUpdateMessageData, MessagesUpdateMessageResponse, MessagesDeleteMessageData, MessagesDeleteMessageResponse, MessagesDeleteAllMessagesByProjectData, MessagesDeleteAllMessagesByProjectResponse, PrivateCreateUserData, PrivateCreateUserResponse, ProjectsListProjectsData, ProjectsListProjectsResponse, ProjectsCreateProjectData, ProjectsCreateProjectResponse, ProjectsGetProjectData, ProjectsGetProjectResponse, ProjectsUpdateProjectData, ProjectsUpdateProjectResponse, ProjectsDeleteProjectData, ProjectsDeleteProjectResponse, SprintsListSprintsData, SprintsListSprintsResponse, SprintsCreateSprintData, SprintsCreateSprintResponse, SprintsGetSprintData, SprintsGetSprintResponse, SprintsUpdateSprintData, SprintsUpdateSprintResponse, SprintsDeleteSprintData, SprintsDeleteSprintResponse, SprintsGetActiveSprintData, SprintsGetActiveSprintResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
-
-export class AgentExecutionService {
-    /**
-     * Execute Agent
-     * Execute an agent with user input.
-     * Agent will run in background and send responses via WebSocket.
-     * @param data The data for the request.
-     * @param data.requestBody
-     * @returns AgentExecutionResponse Successful Response
-     * @throws ApiError
-     */
-    public static executeAgent(data: AgentExecutionExecuteAgentData): CancelablePromise<AgentExecutionExecuteAgentResponse> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/v1/agent/execute',
-            body: data.requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-    
-    /**
-     * Execute Agent Sync
-     * Execute an agent synchronously (blocking).
-     * Use this for testing or when you need immediate response.
-     * @param data The data for the request.
-     * @param data.requestBody
-     * @returns unknown Successful Response
-     * @throws ApiError
-     */
-    public static executeAgentSync(data: AgentExecutionExecuteAgentSyncData): CancelablePromise<AgentExecutionExecuteAgentSyncResponse> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/v1/agent/execute-sync',
-            body: data.requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-}
+import type { AgentsListAgentsData, AgentsListAgentsResponse, AgentsCreateAgentData, AgentsCreateAgentResponse, AgentsGetAgentData, AgentsGetAgentResponse, AgentsUpdateAgentData, AgentsUpdateAgentResponse, AgentsDeleteAgentData, AgentsDeleteAgentResponse, AuthenticationLoginAccessTokenData, AuthenticationLoginAccessTokenResponse, AuthenticationLoginData, AuthenticationLoginResponse, AuthenticationRegisterData, AuthenticationRegisterResponse, AuthenticationConfirmCodeData, AuthenticationConfirmCodeResponse, AuthenticationResendCodeData, AuthenticationResendCodeResponse, AuthenticationRefreshTokenData, AuthenticationRefreshTokenResponse, AuthenticationForgotPasswordData, AuthenticationForgotPasswordResponse, AuthenticationResetPasswordData, AuthenticationResetPasswordResponse, AuthenticationLogoutResponse, BacklogItemsGetBacklogItemsData, BacklogItemsGetBacklogItemsResponse, BacklogItemsCreateBacklogItemData, BacklogItemsCreateBacklogItemResponse, BacklogItemsGetBacklogItemData, BacklogItemsGetBacklogItemResponse, BacklogItemsUpdateBacklogItemData, BacklogItemsUpdateBacklogItemResponse, BacklogItemsDeleteBacklogItemData, BacklogItemsDeleteBacklogItemResponse, BacklogItemsMoveBacklogItemData, BacklogItemsMoveBacklogItemResponse, BacklogItemsGetKanbanBoardData, BacklogItemsGetKanbanBoardResponse, BlockersCreateBlockerData, BlockersCreateBlockerResponse, BlockersGetBlockersByBacklogItemData, BlockersGetBlockersByBacklogItemResponse, BlockersGetBlockersByProjectData, BlockersGetBlockersByProjectResponse, GithubGithubWebhookResponse, GithubGithubCallbackData, GithubGithubCallbackResponse, GithubLinkInstallationToUserData, GithubLinkInstallationToUserResponse, GithubListGithubRepositoriesData, GithubListGithubRepositoriesResponse, GithubLinkGithubRepositoryData, GithubLinkGithubRepositoryResponse, GithubUnlinkGithubRepositoryData, GithubUnlinkGithubRepositoryResponse, GithubCheckGithubInstallationStatusResponse, GithubListGithubInstallationsData, GithubListGithubInstallationsResponse, GithubCreateRepoFromTemplateEndpointData, GithubCreateRepoFromTemplateEndpointResponse, MessagesListMessagesData, MessagesListMessagesResponse, MessagesCreateMessageData, MessagesCreateMessageResponse, MessagesUpdateMessageData, MessagesUpdateMessageResponse, MessagesDeleteMessageData, MessagesDeleteMessageResponse, MessagesDeleteAllMessagesByProjectData, MessagesDeleteAllMessagesByProjectResponse, PrivateCreateUserData, PrivateCreateUserResponse, ProjectRulesCreateProjectRulesData, ProjectRulesCreateProjectRulesResponse, ProjectRulesGetProjectRulesData, ProjectRulesGetProjectRulesResponse, ProjectRulesUpdateProjectRulesData, ProjectRulesUpdateProjectRulesResponse, ProjectsListProjectsData, ProjectsListProjectsResponse, ProjectsCreateProjectData, ProjectsCreateProjectResponse, ProjectsGetProjectData, ProjectsGetProjectResponse, ProjectsUpdateProjectData, ProjectsUpdateProjectResponse, ProjectsDeleteProjectData, ProjectsDeleteProjectResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsHealthCheckResponse } from './types.gen';
 
 export class AgentsService {
     /**
@@ -160,6 +116,26 @@ export class AgentsService {
 }
 
 export class AuthenticationService {
+    /**
+     * Login Access Token
+     * OAuth2 compatible token login, get an access token for future requests
+     * @param data The data for the request.
+     * @param data.formData
+     * @returns LoginResponse Successful Response
+     * @throws ApiError
+     */
+    public static loginAccessToken(data: AuthenticationLoginAccessTokenData): CancelablePromise<AuthenticationLoginAccessTokenResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/login/access-token',
+            formData: data.formData,
+            mediaType: 'application/x-www-form-urlencoded',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
     /**
      * Login
      * Login API - supports both credential and OAuth provider login
@@ -334,12 +310,12 @@ export class BacklogItemsService {
     /**
      * Get Backlog Items
      * Lấy danh sách backlog items với filter
-     * - sprint_id: Filter theo sprint
+     * - project_id: Filter theo project
      * - status: Filter theo trạng thái (Backlog, Todo, Doing, Done)
      * - assignee_id: Filter theo người được assign
      * - type: Filter theo loại (Epic, User Story, Task, Sub-task)
      * @param data The data for the request.
-     * @param data.sprintId
+     * @param data.projectId
      * @param data.status
      * @param data.assigneeId
      * @param data.type
@@ -353,7 +329,7 @@ export class BacklogItemsService {
             method: 'GET',
             url: '/api/v1/backlog-items/',
             query: {
-                sprint_id: data.sprintId,
+                project_id: data.projectId,
                 status: data.status,
                 assignee_id: data.assigneeId,
                 type: data.type,
@@ -459,7 +435,6 @@ export class BacklogItemsService {
      * @param data.itemId
      * @param data.newStatus Cột đích (Backlog, Todo, Doing, Done)
      * @param data.newRank Vị trí mới trong cột
-     * @param data.newSprintId Sprint đích (nếu di chuyển sang sprint khác)
      * @returns BacklogItemPublic Successful Response
      * @throws ApiError
      */
@@ -472,8 +447,7 @@ export class BacklogItemsService {
             },
             query: {
                 new_status: data.newStatus,
-                new_rank: data.newRank,
-                new_sprint_id: data.newSprintId
+                new_rank: data.newRank
             },
             errors: {
                 422: 'Validation Error'
@@ -485,16 +459,16 @@ export class BacklogItemsService {
      * Get Kanban Board
      * Lấy dữ liệu Kanban board, nhóm theo status
      * @param data The data for the request.
-     * @param data.sprintId
+     * @param data.projectId
      * @returns unknown Successful Response
      * @throws ApiError
      */
     public static getKanbanBoard(data: BacklogItemsGetKanbanBoardData): CancelablePromise<BacklogItemsGetKanbanBoardResponse> {
         return __request(OpenAPI, {
             method: 'GET',
-            url: '/api/v1/backlog-items/sprint/{sprint_id}/kanban',
+            url: '/api/v1/backlog-items/project/{project_id}/kanban',
             path: {
-                sprint_id: data.sprintId
+                project_id: data.projectId
             },
             errors: {
                 422: 'Validation Error'
@@ -503,43 +477,66 @@ export class BacklogItemsService {
     }
 }
 
-export class ChatService {
+export class BlockersService {
     /**
-     * Get Websocket Info
-     * Get WebSocket connection information.
-     *
-     * WebSocket endpoint is available at: ws://localhost:8000/api/v1/chat/ws
-     *
-     * Note: WebSocket endpoints don't appear in /docs because OpenAPI/Swagger
-     * doesn't support WebSocket protocol well. This is normal behavior.
-     *
-     * To test WebSocket:
-     * 1. Use browser console: new WebSocket('ws://localhost:8000/api/v1/chat/ws?project_id=UUID&token=JWT')
-     * 2. Use wscat: wscat -c "ws://localhost:8000/api/v1/chat/ws?project_id=UUID&token=JWT"
-     * 3. Use the frontend ChatPanelWS component
-     *
-     * See docs/WEBSOCKET_TESTING.md for detailed testing guide.
-     * @returns unknown Successful Response
+     * Create Blocker
+     * Create a new blocker for a backlog item.
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns BlockerPublic Successful Response
      * @throws ApiError
      */
-    public static getWebsocketInfo(): CancelablePromise<ChatGetWebsocketInfoResponse> {
+    public static createBlocker(data: BlockersCreateBlockerData): CancelablePromise<BlockersCreateBlockerResponse> {
         return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/v1/chat/info'
+            method: 'POST',
+            url: '/api/v1/blockers/',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
         });
     }
     
     /**
-     * Get Connection Stats
-     * Get current WebSocket connection statistics.
-     * Requires authentication.
-     * @returns unknown Successful Response
+     * Get Blockers By Backlog Item
+     * Get all blockers for a backlog item.
+     * @param data The data for the request.
+     * @param data.backlogItemId
+     * @returns BlockersPublic Successful Response
      * @throws ApiError
      */
-    public static getConnectionStats(): CancelablePromise<ChatGetConnectionStatsResponse> {
+    public static getBlockersByBacklogItem(data: BlockersGetBlockersByBacklogItemData): CancelablePromise<BlockersGetBlockersByBacklogItemResponse> {
         return __request(OpenAPI, {
             method: 'GET',
-            url: '/api/v1/chat/stats'
+            url: '/api/v1/blockers/backlog-item/{backlog_item_id}',
+            path: {
+                backlog_item_id: data.backlogItemId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Get Blockers By Project
+     * Get all blockers for a project.
+     * @param data The data for the request.
+     * @param data.projectId
+     * @returns BlockersPublic Successful Response
+     * @throws ApiError
+     */
+    public static getBlockersByProject(data: BlockersGetBlockersByProjectData): CancelablePromise<BlockersGetBlockersByProjectResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/blockers/project/{project_id}',
+            path: {
+                project_id: data.projectId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
         });
     }
 }
@@ -926,10 +923,77 @@ export class PrivateService {
     }
 }
 
+export class ProjectRulesService {
+    /**
+     * Create Project Rules
+     * Create project rules.
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns ProjectRulesPublic Successful Response
+     * @throws ApiError
+     */
+    public static createProjectRules(data: ProjectRulesCreateProjectRulesData): CancelablePromise<ProjectRulesCreateProjectRulesResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/project-rules/',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Get Project Rules
+     * Get project rules by project_id.
+     * @param data The data for the request.
+     * @param data.projectId
+     * @returns ProjectRulesPublic Successful Response
+     * @throws ApiError
+     */
+    public static getProjectRules(data: ProjectRulesGetProjectRulesData): CancelablePromise<ProjectRulesGetProjectRulesResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/project-rules/{project_id}',
+            path: {
+                project_id: data.projectId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Update Project Rules
+     * Update project rules.
+     * @param data The data for the request.
+     * @param data.projectId
+     * @param data.requestBody
+     * @returns ProjectRulesPublic Successful Response
+     * @throws ApiError
+     */
+    public static updateProjectRules(data: ProjectRulesUpdateProjectRulesData): CancelablePromise<ProjectRulesUpdateProjectRulesResponse> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/v1/project-rules/{project_id}',
+            path: {
+                project_id: data.projectId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+}
+
 export class ProjectsService {
     /**
      * List Projects
-     * Get all projects owned by the current user.
+     * Get all projects owned by the current user, or all projects if admin.
      *
      * Args:
      * session: Database session
@@ -1077,144 +1141,6 @@ export class ProjectsService {
         return __request(OpenAPI, {
             method: 'DELETE',
             url: '/api/v1/projects/{project_id}',
-            path: {
-                project_id: data.projectId
-            },
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-}
-
-export class SprintsService {
-    /**
-     * List Sprints
-     * Lấy danh sách sprints với filter
-     * @param data The data for the request.
-     * @param data.projectId Filter by project
-     * @param data.status Filter by status
-     * @param data.name Search by name
-     * @param data.skip
-     * @param data.limit
-     * @returns SprintsPublic Successful Response
-     * @throws ApiError
-     */
-    public static listSprints(data: SprintsListSprintsData = {}): CancelablePromise<SprintsListSprintsResponse> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/v1/sprints/',
-            query: {
-                project_id: data.projectId,
-                status: data.status,
-                name: data.name,
-                skip: data.skip,
-                limit: data.limit
-            },
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-    
-    /**
-     * Create Sprint
-     * Tạo mới một sprint
-     * @param data The data for the request.
-     * @param data.requestBody
-     * @returns SprintPublic Successful Response
-     * @throws ApiError
-     */
-    public static createSprint(data: SprintsCreateSprintData): CancelablePromise<SprintsCreateSprintResponse> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/v1/sprints/',
-            body: data.requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-    
-    /**
-     * Get Sprint
-     * Lấy chi tiết một sprint
-     * @param data The data for the request.
-     * @param data.sprintId
-     * @returns SprintPublic Successful Response
-     * @throws ApiError
-     */
-    public static getSprint(data: SprintsGetSprintData): CancelablePromise<SprintsGetSprintResponse> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/v1/sprints/{sprint_id}',
-            path: {
-                sprint_id: data.sprintId
-            },
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-    
-    /**
-     * Update Sprint
-     * Cập nhật một sprint
-     * @param data The data for the request.
-     * @param data.sprintId
-     * @param data.requestBody
-     * @returns SprintPublic Successful Response
-     * @throws ApiError
-     */
-    public static updateSprint(data: SprintsUpdateSprintData): CancelablePromise<SprintsUpdateSprintResponse> {
-        return __request(OpenAPI, {
-            method: 'PATCH',
-            url: '/api/v1/sprints/{sprint_id}',
-            path: {
-                sprint_id: data.sprintId
-            },
-            body: data.requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-    
-    /**
-     * Delete Sprint
-     * Xóa sprint
-     * @param data The data for the request.
-     * @param data.sprintId
-     * @returns void Successful Response
-     * @throws ApiError
-     */
-    public static deleteSprint(data: SprintsDeleteSprintData): CancelablePromise<SprintsDeleteSprintResponse> {
-        return __request(OpenAPI, {
-            method: 'DELETE',
-            url: '/api/v1/sprints/{sprint_id}',
-            path: {
-                sprint_id: data.sprintId
-            },
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-    
-    /**
-     * Get Active Sprint
-     * Lấy sprint đang active của project
-     * @param data The data for the request.
-     * @param data.projectId
-     * @returns SprintPublic Successful Response
-     * @throws ApiError
-     */
-    public static getActiveSprint(data: SprintsGetActiveSprintData): CancelablePromise<SprintsGetActiveSprintResponse> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/v1/sprints/project/{project_id}/active',
             path: {
                 project_id: data.projectId
             },
@@ -1425,13 +1351,12 @@ export class UsersService {
 export class UtilsService {
     /**
      * Test Email
-     * Test emails.
+     * Test emails - DISABLED (requires email configuration)
      * @param data The data for the request.
      * @param data.emailTo
-     * @returns Message Successful Response
      * @throws ApiError
      */
-    public static testEmail(data: UtilsTestEmailData): CancelablePromise<UtilsTestEmailResponse> {
+    public static testEmail(data: UtilsTestEmailData): CancelablePromise<void> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/v1/utils/test-email/',
@@ -1439,7 +1364,8 @@ export class UtilsService {
                 email_to: data.emailTo
             },
             errors: {
-                422: 'Validation Error'
+                422: 'Validation Error',
+                501: 'Successful Response'
             }
         });
     }

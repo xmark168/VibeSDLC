@@ -3,7 +3,7 @@ import { request as __request } from '@client/core/request'
 
 export interface BacklogItem {
   id: string
-  sprint_id: string
+  project_id: string
   parent_id?: string | null
   type: string
   title: string
@@ -24,11 +24,9 @@ export interface BacklogItem {
 }
 
 export interface KanbanBoard {
-  sprint: {
+  project: {
     id: string
     name: string
-    number: number
-    status: string
   }
   board: {
     Backlog: BacklogItem[]
@@ -39,7 +37,7 @@ export interface KanbanBoard {
 }
 
 export interface FetchBacklogItemsParams {
-  sprint_id?: string
+  project_id?: string
   status?: string
   assignee_id?: string
   type?: string
@@ -49,12 +47,12 @@ export interface FetchBacklogItemsParams {
 
 export const backlogItemsApi = {
   /**
-   * Get Kanban board for a sprint
+   * Get Kanban board for a project
    */
-  getKanbanBoard: async (sprintId: string): Promise<KanbanBoard> => {
+  getKanbanBoard: async (projectId: string): Promise<KanbanBoard> => {
     return __request<KanbanBoard>(OpenAPI, {
       method: 'GET',
-      url: `/api/v1/backlog-items/sprint/${sprintId}/kanban`,
+      url: `/api/v1/backlog-items/project/${projectId}/kanban`,
     })
   },
 
@@ -66,7 +64,7 @@ export const backlogItemsApi = {
       method: 'GET',
       url: '/api/v1/backlog-items/',
       query: {
-        sprint_id: params.sprint_id,
+        project_id: params.project_id,
         status: params.status,
         assignee_id: params.assignee_id,
         type: params.type,
