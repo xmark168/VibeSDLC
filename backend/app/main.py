@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.api.main import api_router
 from app.core.config import settings
@@ -26,7 +27,7 @@ async def lifespan(app: FastAPI):
     # Start Kafka producer
     import logging
     logger = logging.getLogger(__name__)
-    from app.crews.events.kafka_producer import get_kafka_producer, shutdown_kafka_producer
+    from app.kafka import get_kafka_producer, shutdown_kafka_producer
     try:
         producer = await get_kafka_producer()
         logger.info("Kafka producer started")
@@ -34,7 +35,7 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Failed to start Kafka producer: {e}")
         logger.warning("Continuing without Kafka support...")
 
-    # Start all Kafka consumers
+    # Start all Kafka consumers (legacy consumer registry)
     from app.kafka.consumer_registry import start_all_consumers, shutdown_all_consumers
     try:
         await start_all_consumers()
@@ -43,10 +44,25 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Failed to start Kafka consumers: {e}")
         logger.warning("Continuing without consumer support...")
 
+    # Start Agent Orchestrator (manages all crew consumers)
+    from app.agents.orchestrator import start_orchestrator, stop_orchestrator
+    try:
+        await start_orchestrator()
+        logger.info("Agent Orchestrator started - all crews ready")
+    except Exception as e:
+        logger.warning(f"Failed to start Agent Orchestrator: {e}")
+        logger.warning("Continuing without agent support...")
+
     yield
 
     # Shutdown: cleanup consumers and producer
     logger.info("Shutting down...")
+
+    try:
+        await stop_orchestrator()
+        logger.info("Agent Orchestrator shut down")
+    except Exception as e:
+        logger.error(f"Error shutting down orchestrator: {e}")
 
     try:
         await shutdown_all_consumers()
@@ -66,8 +82,7 @@ async def lifespan(app: FastAPI):
 if settings.SENTRY_DSN and settings.ENVIRONMENT != "local":
     sentry_sdk.init(dsn=str(settings.SENTRY_DSN), enable_tracing=True)
 
-# Initialize rate limiter
-limiter = Limiter(key_func=get_remote_address)
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -77,17 +92,18 @@ app = FastAPI(
 )
 
 # Add rate limiter to app state
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Set all CORS enabled origins
-if settings.all_cors_origins:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.all_cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+# CORS temporarily disabled for WebSocket debugging
+# if settings.all_cors_origins:
+#     app.add_middleware(
+#         CORSMiddleware,
+#         allow_origins=settings.all_cors_origins,
+#         allow_credentials=True,
+#         allow_methods=["*"],
+#         allow_headers=["*"],
+#     )
+
+# SlowAPI middleware temporarily disabled for debugging
+# app.add_middleware(SlowAPIMiddleware)
 
 app.include_router(api_router, prefix=settings.API_V1_STR)

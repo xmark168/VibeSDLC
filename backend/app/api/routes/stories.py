@@ -59,28 +59,25 @@ async def create_story(
 
     # Publish story created event to Kafka
     try:
-        from app.crews.events.kafka_producer import get_kafka_producer
-        from app.crews.events.event_schemas import KafkaTopics, StoryCreatedEvent
-        from datetime import datetime
+        from app.kafka import get_kafka_producer, KafkaTopics, StoryCreatedEvent
 
         producer = await get_kafka_producer()
 
-        story_created_event = StoryCreatedEvent(
-            story_id=story.id,
-            project_id=story.project_id,
-            title=story.title,
-            description=story.description,
-            status=story.status.value,
-            type=story.type.value if story.type else None,
-            assignee_id=story.assignee_id,
-            created_by=current_user.id,
-            timestamp=datetime.utcnow()
-        )
-
-        await producer.publish_event(
+        await producer.publish(
             topic=KafkaTopics.STORY_EVENTS,
-            event=story_created_event.model_dump(),
-            key=str(story.project_id)
+            event=StoryCreatedEvent(
+                project_id=story.project_id,
+                user_id=current_user.id,
+                story_id=story.id,
+                title=story.title,
+                description=story.description,
+                story_type=story.type.value if story.type else "UserStory",
+                status=story.status.value,
+                epic_id=story.epic_id,
+                assignee_id=story.assignee_id,
+                reviewer_id=story.reviewer_id,
+                created_by_agent=None,
+            ),
         )
     except Exception as e:
         # Log error but don't fail the API call
@@ -222,25 +219,21 @@ async def update_story_status(
 
     # Publish story status changed event to Kafka
     try:
-        from app.crews.events.kafka_producer import get_kafka_producer
-        from app.crews.events.event_schemas import KafkaTopics, StoryStatusChangedEvent
-        from datetime import datetime
+        from app.kafka import get_kafka_producer, KafkaTopics, StoryStatusChangedEvent
 
         producer = await get_kafka_producer()
 
-        status_changed_event = StoryStatusChangedEvent(
-            story_id=story.id,
-            project_id=story.project_id,
-            old_status=old_status.value,
-            new_status=new_status.value,
-            changed_by=current_user.id,
-            timestamp=datetime.utcnow()
-        )
-
-        await producer.publish_event(
+        await producer.publish(
             topic=KafkaTopics.STORY_EVENTS,
-            event=status_changed_event.model_dump(),
-            key=str(story.project_id)
+            event=StoryStatusChangedEvent(
+                project_id=story.project_id,
+                user_id=current_user.id,
+                story_id=story.id,
+                old_status=old_status.value,
+                new_status=new_status.value,
+                changed_by=str(current_user.id),
+                transition_reason=f"Updated by {current_user.email}",
+            ),
         )
     except Exception as e:
         # Log error but don't fail the API call
@@ -331,24 +324,19 @@ async def update_story(
 
     # Publish story updated event to Kafka
     try:
-        from app.crews.events.kafka_producer import get_kafka_producer
-        from app.crews.events.event_schemas import KafkaTopics, StoryUpdatedEvent
-        from datetime import datetime
+        from app.kafka import get_kafka_producer, KafkaTopics, StoryUpdatedEvent
 
         producer = await get_kafka_producer()
 
-        story_updated_event = StoryUpdatedEvent(
-            story_id=story.id,
-            project_id=story.project_id,
-            updated_fields=list(update_data.keys()),
-            updated_by=current_user.id,
-            timestamp=datetime.utcnow()
-        )
-
-        await producer.publish_event(
+        await producer.publish(
             topic=KafkaTopics.STORY_EVENTS,
-            event=story_updated_event.model_dump(),
-            key=str(story.project_id)
+            event=StoryUpdatedEvent(
+                project_id=story.project_id,
+                user_id=current_user.id,
+                story_id=story.id,
+                updated_fields=update_data,
+                updated_by=str(current_user.id),
+            ),
         )
     except Exception as e:
         # Log error but don't fail the API call

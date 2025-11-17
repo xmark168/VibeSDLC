@@ -34,7 +34,10 @@ async def websocket_endpoint(
     - token: JWT access token for authentication
     """
     try:
-        # Authenticate user
+        # IMPORTANT: Accept WebSocket connection FIRST
+        await websocket.accept()
+
+        # Then authenticate user
         from app.core.db import engine
         from sqlmodel import Session
 

@@ -1,142 +1,142 @@
-"""
-Consumer Registry
+"""Kafka consumer registry for managing multiple consumers.
 
-Manages lifecycle of all Kafka consumers and WebSocket bridge
+This module provides a centralized registry for all Kafka consumers
+in the application, handling their lifecycle and coordination.
 """
 
 import asyncio
 import logging
-from typing import List, Dict, Any
+from typing import Dict, List, Optional
 
-from app.websocket.kafka_bridge import websocket_kafka_bridge
-from app.agents.router_agent import router_agent
-from app.agents.story_assistant_consumer import story_assistant_consumer
-from app.agents.insights_consumer import insights_agent_consumer
+from app.kafka.consumer import BaseKafkaConsumer, EventHandlerConsumer
+from app.kafka.event_schemas import KafkaTopics
 
 logger = logging.getLogger(__name__)
 
 
 class ConsumerRegistry:
-    """
-    Centralized registry for all Kafka consumers
-
-    Manages startup and shutdown of:
-    - WebSocket-Kafka bridge
-    - Router agent
-    - Story assistant agent (BA)
-    - Insights agent (Team Leader)
-    - Developer agent (future)
-    - Tester agent (future)
-    """
+    """Registry for managing multiple Kafka consumers."""
 
     def __init__(self):
-        self.consumers: List[Any] = []
-        self.consumer_tasks: List[asyncio.Task] = []
-        self.running = False
+        """Initialize consumer registry."""
+        self.consumers: Dict[str, BaseKafkaConsumer] = {}
+        self._started = False
 
-    async def start_all_consumers(self):
-        """Start all consumers in background tasks"""
-        try:
-            logger.info("Starting all Kafka consumers...")
+    def register(self, name: str, consumer: BaseKafkaConsumer):
+        """Register a consumer.
 
-            # List of all consumers to start
-            consumers_to_start = [
-                ("WebSocket Bridge", websocket_kafka_bridge),
-                ("Router Agent", router_agent),
-                ("Story Assistant (BA)", story_assistant_consumer),
-                ("Insights Agent (Leader)", insights_agent_consumer),
-            ]
+        Args:
+            name: Unique name for the consumer
+            consumer: Consumer instance
+        """
+        if name in self.consumers:
+            logger.warning(f"Consumer {name} already registered, replacing...")
+        self.consumers[name] = consumer
+        logger.info(f"Registered consumer: {name}")
 
-            # Start each consumer in a background task
-            for name, consumer in consumers_to_start:
-                try:
-                    logger.info(f"Starting {name}...")
-                    task = asyncio.create_task(
-                        consumer.start(),
-                        name=f"consumer_{name.lower().replace(' ', '_')}"
-                    )
-                    self.consumer_tasks.append(task)
-                    self.consumers.append(consumer)
-                    logger.info(f"✓ {name} started")
-                except Exception as e:
-                    logger.error(f"Failed to start {name}: {e}")
-                    # Continue starting other consumers even if one fails
+    async def start_all(self):
+        """Start all registered consumers."""
+        if self._started:
+            logger.warning("Consumers already started")
+            return
 
-            self.running = True
-            logger.info(f"✓ All consumers started ({len(self.consumers)} total)")
+        logger.info(f"Starting {len(self.consumers)} Kafka consumers...")
 
-        except Exception as e:
-            logger.error(f"Error starting consumers: {e}")
-            # Try to clean up any started consumers
-            await self.shutdown_all_consumers()
-            raise
+        tasks = []
+        for name, consumer in self.consumers.items():
+            try:
+                task = asyncio.create_task(consumer.start())
+                tasks.append(task)
+                logger.info(f"Starting consumer: {name}")
+            except Exception as e:
+                logger.error(f"Failed to start consumer {name}: {e}")
 
-    async def shutdown_all_consumers(self):
-        """Gracefully shutdown all consumers"""
-        try:
-            logger.info("Shutting down all consumers...")
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
-            self.running = False
+        self._started = True
+        logger.info("All Kafka consumers started")
 
-            # Stop all consumers
-            for consumer in self.consumers:
-                try:
-                    if hasattr(consumer, 'stop'):
-                        await consumer.stop()
-                except Exception as e:
-                    logger.error(f"Error stopping consumer: {e}")
+    async def stop_all(self):
+        """Stop all registered consumers."""
+        if not self._started:
+            return
 
-            # Cancel all background tasks
-            for task in self.consumer_tasks:
-                if not task.done():
-                    task.cancel()
-                    try:
-                        await task
-                    except asyncio.CancelledError:
-                        pass
-                    except Exception as e:
-                        logger.error(f"Error cancelling task: {e}")
+        logger.info(f"Stopping {len(self.consumers)} Kafka consumers...")
 
-            self.consumers.clear()
-            self.consumer_tasks.clear()
+        tasks = []
+        for name, consumer in self.consumers.items():
+            try:
+                task = asyncio.create_task(consumer.stop())
+                tasks.append(task)
+                logger.info(f"Stopping consumer: {name}")
+            except Exception as e:
+                logger.error(f"Failed to stop consumer {name}: {e}")
 
-            logger.info("✓ All consumers shut down")
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
-        except Exception as e:
-            logger.error(f"Error during consumer shutdown: {e}")
+        self._started = False
+        logger.info("All Kafka consumers stopped")
 
-    def get_consumer_status(self) -> Dict[str, Any]:
-        """Get status of all consumers"""
-        return {
-            "running": self.running,
-            "consumer_count": len(self.consumers),
-            "task_count": len(self.consumer_tasks),
-            "tasks_status": [
-                {
-                    "name": task.get_name(),
-                    "done": task.done(),
-                    "cancelled": task.cancelled(),
-                }
-                for task in self.consumer_tasks
-            ],
-        }
+    def get_consumer(self, name: str) -> Optional[BaseKafkaConsumer]:
+        """Get a consumer by name.
+
+        Args:
+            name: Consumer name
+
+        Returns:
+            Consumer instance or None if not found
+        """
+        return self.consumers.get(name)
 
 
-# Global consumer registry instance
-consumer_registry = ConsumerRegistry()
+# GLOBAL REGISTRY INSTANCE
+_registry: Optional[ConsumerRegistry] = None
 
 
-# Convenience functions for use in main.py
+def get_consumer_registry() -> ConsumerRegistry:
+    """Get the global consumer registry instance.
+
+    Returns:
+        ConsumerRegistry singleton
+    """
+    global _registry
+    if _registry is None:
+        _registry = ConsumerRegistry()
+    return _registry
+
+
+def setup_consumers(registry: ConsumerRegistry):
+    """Setup all application consumers.
+
+    This function is called during application startup to register
+    all consumers needed by the application.
+
+    Args:
+        registry: ConsumerRegistry instance
+    """
+    # WebSocket Bridge Consumer (for real-time UI updates)
+    # This will be imported from websocket.kafka_bridge
+    # We'll register it when we update that file
+
+    logger.info("Consumer setup completed")
+
+
 async def start_all_consumers():
-    """Start all consumers (convenience function)"""
-    await consumer_registry.start_all_consumers()
+    """Start all registered consumers.
+
+    This is called during application startup.
+    """
+    registry = get_consumer_registry()
+    setup_consumers(registry)
+    await registry.start_all()
 
 
 async def shutdown_all_consumers():
-    """Shutdown all consumers (convenience function)"""
-    await consumer_registry.shutdown_all_consumers()
+    """Shutdown all registered consumers.
 
-
-def get_consumer_status():
-    """Get consumer status (convenience function)"""
-    return consumer_registry.get_consumer_status()
+    This is called during application shutdown.
+    """
+    registry = get_consumer_registry()
+    await registry.stop_all()

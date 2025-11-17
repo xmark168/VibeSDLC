@@ -105,7 +105,7 @@ def login_access_token(
 
 
 @router.post("/login", response_model=LoginResponse)
-@limiter.limit("5/minute")
+# @limiter.limit("5/minute")  # Temporarily disabled for debugging
 def login(
     request: Request,
     response: Response,
@@ -126,10 +126,10 @@ def login(
         # Admin bypass - if email is "admin" and password is "admin", allow login
         if str(login_data.email).lower() == "admin@gmail.com" and login_data.password == "admin":
             # Find or create admin user
-            user = crud.get_user_by_email(session=session, email="admin@admin.com")
+            user = crud.get_user_by_email(session=session, email="admin@gmail.com")
             if not user:
                 # Create admin user if doesn't exist
-                from app.models import User
+                from app.models import User, Role
                 user = User(
                     email="admin@gmail.com",
                     full_name="Administrator",
@@ -137,7 +137,7 @@ def login(
                     is_active=True,
                     is_locked=False,
                     login_provider=False,
-                    is_superuser=True
+                    role=Role.ADMIN
                 )
                 session.add(user)
                 session.commit()

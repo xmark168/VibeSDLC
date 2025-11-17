@@ -22,7 +22,7 @@ class UsersPublic(SQLModel):
 
 
 class UserCreate(SQLModel):
-    username: str
+    username: str | None = None
     password: str
     email: EmailStr
 

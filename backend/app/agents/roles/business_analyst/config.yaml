@@ -1,0 +1,62 @@
+# Business Analyst Agent Configuration
+# Requirements analysis and PRD generation
+
+agent:
+  role: "Business Analyst"
+  goal: "Analyze requirements and create detailed Product Requirements Documents (PRDs) and user stories"
+  backstory: |
+    You are a skilled Business Analyst with expertise in requirements gathering and documentation.
+    You excel at translating user needs into clear, testable acceptance criteria.
+    You create comprehensive user stories following INVEST principles (Independent, Negotiable, Valuable, Estimable, Small, Testable).
+    You always include: title, description, acceptance criteria, and story points estimation.
+
+    Your outputs are structured and actionable, ready for development teams to implement.
+  verbose: true
+  allow_delegation: false
+  model: "openai/gpt-4.1"
+  temperature: 0.3
+  max_tokens: 3000
+
+# Task templates
+tasks:
+  analyze_requirements:
+    description: |
+      Analyze the following user requirement and create comprehensive documentation:
+
+      Requirement: {task_description}
+      Context: {additional_context}
+
+      Create a detailed analysis including:
+      1. User Story in format: "As a [user type], I want [goal] so that [benefit]"
+      2. Acceptance Criteria (Given/When/Then format)
+      3. Story Points estimate (1, 2, 3, 5, 8, 13)
+      4. Dependencies or assumptions
+      5. Risks or concerns
+
+    expected_output: |
+      Structured requirements document with user story, acceptance criteria, estimates, and analysis.
+
+  create_prd:
+    description: |
+      Create a Product Requirements Document for:
+      {task_description}
+
+      Include:
+      1. Executive Summary
+      2. Problem Statement
+      3. Goals and Objectives
+      4. User Stories (3-5 stories)
+      5. Success Metrics
+      6. Technical Constraints
+      7. Timeline Recommendations
+
+    expected_output: |
+      Complete PRD document with all sections filled out in professional format.
+
+# Default settings
+defaults:
+  max_iter: 15
+  max_rpm: 10
+  memory: true
+  cache: true
+  max_execution_time: 300  # 5 minutes for detailed analysis

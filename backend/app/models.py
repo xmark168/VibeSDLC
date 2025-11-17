@@ -304,3 +304,109 @@ class Blocker(BaseModel, table=True):
     story: Story = Relationship(back_populates="blockers")
     reported_by: User = Relationship()
 
+
+# ==================== AGENT PERSISTENCE MODELS ====================
+
+
+class AgentExecutionStatus(str, Enum):
+    """Status of an agent execution"""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class AgentExecution(BaseModel, table=True):
+    """Track agent execution runs for observability and debugging"""
+    __tablename__ = "agent_executions"
+
+    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
+
+    # Agent info
+    agent_name: str = Field(nullable=False)
+    agent_type: str = Field(nullable=False)  # TeamLeader, BusinessAnalyst, Developer, Tester
+
+    # Execution tracking
+    status: AgentExecutionStatus = Field(default=AgentExecutionStatus.PENDING)
+    started_at: datetime | None = Field(default=None)
+    completed_at: datetime | None = Field(default=None)
+    duration_ms: int | None = Field(default=None)
+
+    # Context
+    trigger_message_id: UUID | None = Field(default=None, foreign_key="messages.id", ondelete="SET NULL")
+    user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
+
+    # Resource usage
+    token_used: int = Field(default=0)
+    llm_calls: int = Field(default=0)
+
+    # Error tracking
+    error_message: str | None = Field(default=None, sa_column=Column(Text))
+    error_traceback: str | None = Field(default=None, sa_column=Column(Text))
+
+    # Result
+    result: dict | None = Field(default=None, sa_column=Column(JSON))
+    extra_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
+
+
+class AgentConversation(BaseModel, table=True):
+    """Store agent-to-agent and agent-to-user conversation history"""
+    __tablename__ = "agent_conversations"
+
+    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
+    execution_id: UUID | None = Field(default=None, foreign_key="agent_executions.id", ondelete="CASCADE")
+
+    # Message info
+    sender_type: str = Field(nullable=False)  # "agent" or "user"
+    sender_name: str = Field(nullable=False)  # Agent name or user email
+    recipient_type: str | None = Field(default=None)  # "agent", "user", "broadcast"
+    recipient_name: str | None = Field(default=None)
+
+    # Message content
+    message_type: str = Field(nullable=False)  # "UserRequest", "DelegateToBA", etc.
+    content: str = Field(sa_column=Column(Text))
+    structured_data: dict | None = Field(default=None, sa_column=Column(JSON))
+
+    # Metadata
+    extra_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
+
+
+class ApprovalStatus(str, Enum):
+    """Status of an approval request"""
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+
+
+class ApprovalRequest(BaseModel, table=True):
+    """Human-in-the-loop approval requests from agents"""
+    __tablename__ = "approval_requests"
+
+    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
+    execution_id: UUID | None = Field(default=None, foreign_key="agent_executions.id", ondelete="CASCADE")
+
+    # Request info
+    request_type: str = Field(nullable=False)  # "story_creation", "story_update", "epic_creation"
+    agent_name: str = Field(nullable=False)
+
+    # Proposed changes
+    proposed_data: dict = Field(sa_column=Column(JSON))  # What the agent wants to do
+    preview_data: dict | None = Field(default=None, sa_column=Column(JSON))  # Preview for UI
+    explanation: str | None = Field(default=None, sa_column=Column(Text))  # Why the agent proposes this
+
+    # Approval tracking
+    status: ApprovalStatus = Field(default=ApprovalStatus.PENDING)
+    approved_by_user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
+    approved_at: datetime | None = Field(default=None)
+
+    # User feedback
+    user_feedback: str | None = Field(default=None, sa_column=Column(Text))
+    modified_data: dict | None = Field(default=None, sa_column=Column(JSON))  # User modifications to proposal
+
+    # Result tracking
+    applied: bool = Field(default=False)  # Whether the approval was actually applied
+    applied_at: datetime | None = Field(default=None)
+    created_entity_id: UUID | None = Field(default=None)  # ID of created Story/Epic if applicable
+
