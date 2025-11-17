@@ -7,7 +7,6 @@ from sqlmodel import func, select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.models import Item, ItemCreate, ItemPublic, ItemsPublic, ItemUpdate, Message
-from app.events.publisher import event_publisher
 
 router = APIRouter(prefix="/items", tags=["items"])
 
@@ -58,7 +57,7 @@ def read_item(session: SessionDep, current_user: CurrentUser, id: uuid.UUID) -> 
 
 
 @router.post("/", response_model=ItemPublic)
-async def create_item(
+def create_item(
     *, session: SessionDep, current_user: CurrentUser, item_in: ItemCreate
 ) -> Any:
     """
@@ -69,17 +68,8 @@ async def create_item(
     session.commit()
     session.refresh(item)
 
-    # Publish event to Kafka
-    await event_publisher.publish_item_event(
-        "item.created",
-        {
-            "id": str(item.id),
-            "title": item.title,
-            "description": item.description,
-            "owner_id": str(item.owner_id),
-            "created_at": datetime.utcnow().isoformat(),
-        },
-    )
+    # TODO: Add Kafka event publishing for item created
+    # Will be implemented with the new event system
 
     return item
 

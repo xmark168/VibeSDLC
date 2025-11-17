@@ -195,7 +195,7 @@ class IssueActivity(BaseModel, table=True):
     __tablename__ = "issue_activities"
 
     issue_id: UUID = Field(
-        foreign_key="backlog_items.id", nullable=False, ondelete="CASCADE"
+        foreign_key="stories.id", nullable=False, ondelete="CASCADE"
     )
     actor_id: str | None = Field(default=None)
     actor_name: str | None = Field(default=None)
@@ -296,7 +296,7 @@ class ProjectRules(BaseModel, table=True):
 class Blocker(BaseModel, table=True):
     __tablename__ = "blockers"
 
-    backlog_item_id: UUID = Field(foreign_key="backlog_items.id", nullable=False, ondelete="CASCADE")
+    backlog_item_id: UUID = Field(foreign_key="stories.id", nullable=False, ondelete="CASCADE")
     reported_by_user_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")
     blocker_type: BlockerType = Field(nullable=False)
     description: str = Field(sa_column=Column(Text))

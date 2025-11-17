@@ -124,14 +124,14 @@ def login(
             )
 
         # Admin bypass - if email is "admin" and password is "admin", allow login
-        if str(login_data.email).lower() == "admin" and login_data.password == "admin":
+        if str(login_data.email).lower() == "admin@gmail.com" and login_data.password == "admin":
             # Find or create admin user
             user = crud.get_user_by_email(session=session, email="admin@admin.com")
             if not user:
                 # Create admin user if doesn't exist
                 from app.models import User
                 user = User(
-                    email="admin@admin.com",
+                    email="admin@gmail.com",
                     full_name="Administrator",
                     hashed_password=get_password_hash("admin"),
                     is_active=True,

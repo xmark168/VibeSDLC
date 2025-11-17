@@ -12,6 +12,7 @@ from app.api.routes import (
     blockers,  # TraDS: Sprint Retrospective Blockers
     project_rules,  # TraDS: Sprint Retrospective Project Rules
     crews,  # CrewAI multi-agent system
+    chat,  # WebSocket chat endpoint
 )
 from app.core.config import settings
 
@@ -26,6 +27,7 @@ api_router.include_router(agents.router)
 api_router.include_router(blockers.router)  # TraDS: Sprint Retrospective Blockers
 api_router.include_router(project_rules.router)  # TraDS: Sprint Retrospective Project Rules
 api_router.include_router(crews.router)  # CrewAI multi-agent system
+api_router.include_router(chat.router)  # WebSocket chat endpoint
 
 if settings.ENVIRONMENT == "local":
     api_router.include_router(private.router)

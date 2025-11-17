@@ -3,7 +3,6 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import func, select
-from sqlalchemy.orm import selectinload
 
 from app import crud
 from app.api.deps import (
@@ -13,7 +12,7 @@ from app.api.deps import (
 )
 from app.core.config import settings
 from app.core.security import get_password_hash, verify_password
-from app.models import User, Role, GitHubInstallation
+from app.models import User, Role
 from app.schemas import (
     Message,
     UpdatePassword,
@@ -23,7 +22,6 @@ from app.schemas import (
     UsersPublic,
     UserUpdate,
     UserUpdateMe,
-    GitHubInstallationPublic,
 )
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -31,44 +29,19 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 def user_to_public(user: User) -> UserPublic:
     """
-    Convert User model to UserPublic schema with GitHub installation data.
+    Convert User model to UserPublic schema.
 
     Args:
-        user: User model instance (should have github_installations loaded)
+        user: User model instance
 
     Returns:
-        UserPublic schema with github_installation_id and full github_installations data
+        UserPublic schema
     """
-    github_installation_id = None
-    github_installations_public = None
-
-    if user.github_installations and len(user.github_installations) > 0:
-        # Get the first (primary) installation's installation_id for backward compatibility
-        github_installation_id = user.github_installations[0].installation_id
-
-        # Map all installations to GitHubInstallationPublic schema
-        github_installations_public = [
-            GitHubInstallationPublic(
-                id=installation.id,
-                installation_id=installation.installation_id,
-                account_login=installation.account_login,
-                account_type=installation.account_type,
-                account_status=installation.account_status,
-                repositories=installation.repositories,
-                user_id=installation.user_id,
-                created_at=installation.created_at,
-                updated_at=installation.updated_at,
-            )
-            for installation in user.github_installations
-        ]
-
     return UserPublic(
         id=user.id,
         full_name=user.full_name,
         email=user.email,
         role=user.role,
-        github_installation_id=github_installation_id,
-        github_installations=github_installations_public,
     )
 
 
@@ -79,17 +52,16 @@ def user_to_public(user: User) -> UserPublic:
 )
 def read_users(session: SessionDep, skip: int = 0, limit: int = 100) -> Any:
     """
-    Retrieve users with GitHub installation data.
+    Retrieve users.
     """
 
     count_statement = select(func.count()).select_from(User)
     count = session.exec(count_statement).one()
 
-    # Eager load github_installations relationship
-    statement = select(User).options(selectinload(User.github_installations)).offset(skip).limit(limit)
+    statement = select(User).offset(skip).limit(limit)
     users = session.exec(statement).all()
 
-    # Convert to UserPublic with github_installation_id
+    # Convert to UserPublic
     users_public = [user_to_public(user) for user in users]
 
     return UsersPublic(data=users_public, count=count)
@@ -120,8 +92,7 @@ def create_user(*, session: SessionDep, user_in: UserCreate) -> Any:
             html_content=email_data.html_content,
         )
 
-    # Refresh to load relationships
-    session.refresh(user, attribute_names=["github_installations"])
+    session.refresh(user)
     return user_to_public(user)
 
 
@@ -143,7 +114,7 @@ def update_user_me(
     current_user.sqlmodel_update(user_data)
     session.add(current_user)
     session.commit()
-    session.refresh(current_user, attribute_names=["github_installations"])
+    session.refresh(current_user)
     return user_to_public(current_user)
 
 
@@ -170,10 +141,9 @@ def update_password_me(
 @router.get("/me", response_model=UserPublic)
 def read_user_me(session: SessionDep, current_user: CurrentUser) -> Any:
     """
-    Get current user with GitHub installation data.
+    Get current user.
     """
-    # Refresh to load github_installations relationship
-    session.refresh(current_user, attribute_names=["github_installations"])
+    session.refresh(current_user)
     return user_to_public(current_user)
 
 
@@ -205,8 +175,7 @@ def register_user(session: SessionDep, user_in: UserRegister) -> Any:
     user_create = UserCreate.model_validate(user_in)
     user = crud.create_user(session=session, user_create=user_create)
 
-    # Refresh to load relationships
-    session.refresh(user, attribute_names=["github_installations"])
+    session.refresh(user)
     return user_to_public(user)
 
 
@@ -227,8 +196,7 @@ def read_user_by_id(
             detail="The user doesn't have enough privileges",
         )
 
-    # Refresh to load github_installations relationship
-    session.refresh(user, attribute_names=["github_installations"])
+    session.refresh(user)
     return user_to_public(user)
 
 
@@ -262,8 +230,7 @@ def update_user(
 
     db_user = crud.update_user(session=session, db_user=db_user, user_in=user_in)
 
-    # Refresh to load github_installations relationship
-    session.refresh(db_user, attribute_names=["github_installations"])
+    session.refresh(db_user)
     return user_to_public(db_user)
 
 

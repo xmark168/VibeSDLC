@@ -18,6 +18,16 @@ class KafkaTopics:
     FLOW_STATUS = "crew.flow.status" # Flow execution status updates
     AGENT_STATUS = "crew.agent.status"  # Agent health/status updates
 
+    # New topics for agent routing
+    USER_MESSAGES = "user.messages"  # User input messages
+    AGENT_TASKS_BA = "agent.tasks.ba"  # Tasks for Business Analyst
+    AGENT_TASKS_DEV = "agent.tasks.dev"  # Tasks for Developer
+    AGENT_TASKS_TESTER = "agent.tasks.tester"  # Tasks for Tester
+    AGENT_TASKS_LEADER = "agent.tasks.leader"  # Tasks for Team Leader
+    AGENT_RESPONSES = "agent.responses"  # Agent responses
+    AGENT_ROUTING = "agent.routing"  # Routing decisions
+    STORY_EVENTS = "story.events"  # Story lifecycle events
+
 # Redis Keys
 class RedisKeys:
     """Redis key patterns"""
@@ -130,4 +140,77 @@ class AgentStatusEvent(BaseModel):
     agent_type: str  # "team_leader", "business_analyst", "developer", "tester"
     status: Literal["online", "offline", "busy", "idle"]
     current_task_id: Optional[str] = None
+    timestamp: datetime = datetime.utcnow()
+
+# New event schemas for agent routing
+class UserMessageEvent(BaseModel):
+    """Event emitted when user sends a message"""
+    event_type: Literal["user.message"] = "user.message"
+    message_id: UUID
+    project_id: UUID
+    user_id: UUID
+    content: str
+    metadata: Optional[dict[str, Any]] = None
+    timestamp: datetime = datetime.utcnow()
+
+class AgentTaskEvent(BaseModel):
+    """Event emitted when a task is assigned to an agent"""
+    event_type: Literal["agent.task"] = "agent.task"
+    task_id: UUID
+    agent_type: Literal["ba", "dev", "tester", "leader"]  # Target agent
+    project_id: UUID
+    user_message_id: UUID
+    task_description: str
+    context: dict[str, Any]
+    timestamp: datetime = datetime.utcnow()
+
+class AgentResponseEvent(BaseModel):
+    """Event emitted when agent sends a response"""
+    event_type: Literal["agent.response"] = "agent.response"
+    response_id: UUID
+    task_id: UUID
+    agent_type: str
+    project_id: UUID
+    content: str
+    structured_data: Optional[dict[str, Any]] = None  # For story previews, etc.
+    metadata: Optional[dict[str, Any]] = None
+    timestamp: datetime = datetime.utcnow()
+
+class AgentRoutingEvent(BaseModel):
+    """Event emitted when router decides where to route a message"""
+    event_type: Literal["agent.routing"] = "agent.routing"
+    message_id: UUID
+    project_id: UUID
+    routed_to: str  # Agent type: "ba", "dev", "tester", "leader"
+    routing_reason: str  # Why this agent was chosen
+    confidence: float  # 0.0-1.0
+    timestamp: datetime = datetime.utcnow()
+
+class StoryCreatedEvent(BaseModel):
+    """Event emitted when a story is created"""
+    event_type: Literal["story.created"] = "story.created"
+    story_id: UUID
+    project_id: UUID
+    title: str
+    status: str
+    created_by: UUID
+    timestamp: datetime = datetime.utcnow()
+
+class StoryUpdatedEvent(BaseModel):
+    """Event emitted when a story is updated"""
+    event_type: Literal["story.updated"] = "story.updated"
+    story_id: UUID
+    project_id: UUID
+    changes: dict[str, Any]  # What fields changed
+    updated_by: UUID
+    timestamp: datetime = datetime.utcnow()
+
+class StoryStatusChangedEvent(BaseModel):
+    """Event emitted when a story status changes"""
+    event_type: Literal["story.status.changed"] = "story.status.changed"
+    story_id: UUID
+    project_id: UUID
+    old_status: str
+    new_status: str
+    changed_by: UUID
     timestamp: datetime = datetime.utcnow()
