@@ -229,26 +229,30 @@ class ChatSimulator:
             self.print_system(f"Event: {event_type}")
 
     async def send_message(self, message: str):
-        """Send message to AI agents"""
+        """Send message to AI agents via new architecture"""
         headers = {"Authorization": f"Bearer {self.token}"}
 
         self.print_user(message)
 
         try:
+            # Use /messages/ endpoint which publishes to Kafka
+            # Team Leader will pick it up automatically
             response = requests.post(
-                f"{BASE_URL}/workflows/process-message",
+                f"{BASE_URL}/messages/",
                 headers=headers,
                 json={
                     "project_id": self.project_id,
                     "content": message,
                     "message_type": "text",
+                    "author_type": "USER",
                 },
                 timeout=120,
             )
             response.raise_for_status()
             result = response.json()
 
-            self.print_system(f"Message sent! Execution ID: {result['execution_id']}")
+            self.print_system(f"Message sent! Message ID: {result['id']}")
+            self.print_system("Team Leader will analyze and route to specialist...")
             return result
         except requests.exceptions.Timeout:
             self.print_error("Request timed out - check OPENAI_API_KEY")
@@ -258,37 +262,29 @@ class ChatSimulator:
             return None
 
     def approve_story(self, approval_id: str, approved: bool = True, feedback: str = ""):
-        """Approve or reject story"""
+        """Approve or reject story
+
+        NOTE: Approval endpoint has been simplified in new architecture.
+        It only updates status and publishes Kafka event.
+        Story creation is handled by agents based on approval events.
+        """
         headers = {"Authorization": f"Bearer {self.token}"}
 
         try:
             decision = "APPROVE" if approved else "REJECT"
             self.print_user(f"{decision} - {feedback if feedback else 'OK'}")
 
-            response = requests.post(
-                f"{BASE_URL}/workflows/approve/{approval_id}",
-                headers=headers,
-                json={
-                    "approved": approved,
-                    "feedback": feedback or ("Approved!" if approved else "Rejected"),
-                },
-            )
-            response.raise_for_status()
-            result = response.json()
-
-            if approved and result.get("created_entity_id"):
-                self.print_success(f"Story created! ID: {result['created_entity_id']}")
-            elif approved:
-                self.print_success("Approved successfully")
-            else:
-                self.print_warning("Rejected successfully")
+            # Note: /workflows/ endpoints have been removed
+            # You may need to implement a new approval endpoint or handle via agents
+            self.print_warning("Approval endpoints need to be reimplemented for new architecture")
+            self.print_system("For now, approvals are handled directly by specialist agents")
 
             # Remove from pending
             self.pending_approvals = [
                 a for a in self.pending_approvals if a["id"] != approval_id
             ]
 
-            return result
+            return {"status": "pending", "message": "Approval flow under development"}
         except Exception as e:
             self.print_error(f"Failed to approve: {e}")
             return None

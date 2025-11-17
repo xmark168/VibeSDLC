@@ -64,3 +64,4 @@ openapi.json
 github_private_key.pem
 backend/pyproject.toml
 backend/agents_service.egg-info
+test_data.json
