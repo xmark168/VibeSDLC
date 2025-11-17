@@ -1,7 +1,7 @@
 """
 Team Leader Agent
 
-Technical Team Leader and Flow Manager for orchestrating development workflow
+Combines Router Agent, Insights Agent, and Team Leader Agent into one intelligent orchestrator
 """
 
 import yaml
@@ -12,7 +12,6 @@ from crewai import Agent
 from crewai_tools import (
     FileReadTool,
     DirectoryReadTool,
-    SerperDevTool,
 )
 
 from app.core.config import settings
@@ -30,6 +29,11 @@ def create_team_leader_agent() -> Agent:
     """
     Create and configure the Team Leader agent
 
+    This agent combines the capabilities of:
+    - Router Agent: Intelligent routing and intent analysis
+    - Insights Agent: Project metrics and analytics
+    - Team Leader Agent: Task delegation and orchestration
+
     Returns:
         Configured CrewAI Agent instance
     """
@@ -38,7 +42,6 @@ def create_team_leader_agent() -> Agent:
     shared_config = config["shared"]
 
     # Initialize tools for team leader
-    # Note: Simplified tools that don't require API keys for testing
     tools = [
         FileReadTool(),          # Read project files
         DirectoryReadTool(),     # Analyze project structure

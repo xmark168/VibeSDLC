@@ -9,9 +9,11 @@ import logging
 from typing import List, Dict, Any
 
 from app.websocket.kafka_bridge import websocket_kafka_bridge
-from app.agents.router_agent import router_agent
 from app.agents.story_assistant_consumer import story_assistant_consumer
-from app.agents.insights_consumer import insights_agent_consumer
+from app.agents.team_leader import team_leader_consumer
+from app.agents.business_analyst.ba_consumer import ba_consumer
+from app.agents.developer.developer_consumer import developer_consumer
+from app.agents.tester.tester_consumer import tester_consumer
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +24,11 @@ class ConsumerRegistry:
 
     Manages startup and shutdown of:
     - WebSocket-Kafka bridge
-    - Router agent
     - Story assistant agent (BA)
-    - Insights agent (Team Leader)
-    - Developer agent (future)
-    - Tester agent (future)
+    - Team Leader agent (routing, insights, delegation)
+    - Business Analyst agent (specialist)
+    - Developer agent (specialist)
+    - Tester agent (specialist)
     """
 
     def __init__(self):
@@ -42,9 +44,11 @@ class ConsumerRegistry:
             # List of all consumers to start
             consumers_to_start = [
                 ("WebSocket Bridge", websocket_kafka_bridge),
-                ("Router Agent", router_agent),
                 ("Story Assistant (BA)", story_assistant_consumer),
-                ("Insights Agent (Leader)", insights_agent_consumer),
+                ("Team Leader Agent", team_leader_consumer),
+                ("Business Analyst Agent", ba_consumer),
+                ("Developer Agent", developer_consumer),
+                ("Tester Agent", tester_consumer),
             ]
 
             # Start each consumer in a background task

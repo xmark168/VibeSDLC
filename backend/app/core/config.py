@@ -150,6 +150,9 @@ class Settings(BaseSettings):
     MAX_TOKENS: int = 2000
     MAX_LLM_CALL_RETRIES: int = 3
 
+    # OPENAI API KEY (for CrewAI - synced with LLM_API_KEY)
+    OPENAI_API_KEY: str = ""
+
     # MONITORING
     SENTRY_DSN: HttpUrl | None = None
 
@@ -186,6 +189,13 @@ class Settings(BaseSettings):
         """Set default email from name if not provided."""
         if not self.EMAILS_FROM_NAME:
             self.EMAILS_FROM_NAME = self.PROJECT_NAME
+        return self
+
+    @model_validator(mode="after")
+    def _sync_openai_api_key(self) -> Self:
+        """Sync OPENAI_API_KEY with LLM_API_KEY for CrewAI compatibility."""
+        if not self.OPENAI_API_KEY and self.LLM_API_KEY:
+            self.OPENAI_API_KEY = self.LLM_API_KEY
         return self
 
     def _check_default_secret(self, var_name: str, value: str | None) -> None:

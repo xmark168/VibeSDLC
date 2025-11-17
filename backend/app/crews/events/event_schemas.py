@@ -24,6 +24,7 @@ class KafkaTopics:
     AGENT_TASKS_DEV = "agent-tasks-dev"  # Tasks for Developer
     AGENT_TASKS_TESTER = "agent-tasks-tester"  # Tasks for Tester
     AGENT_TASKS_LEADER = "agent-tasks-leader"  # Tasks for Team Leader
+    AGENT_TASKS_TEST = "agent-tasks-test"  # Tasks for Test Agent
     AGENT_RESPONSES = "agent-responses"  # Agent responses
     AGENT_ROUTING = "agent-routing"  # Routing decisions
     STORY_EVENTS = "story-events"  # Story lifecycle events
@@ -157,7 +158,7 @@ class AgentTaskEvent(BaseModel):
     """Event emitted when a task is assigned to an agent"""
     event_type: Literal["agent.task"] = "agent.task"
     task_id: UUID
-    agent_type: Literal["ba", "dev", "tester", "leader"]  # Target agent
+    agent_type: Literal["ba", "dev", "tester", "leader", "test"]  # Target agent
     project_id: UUID
     user_message_id: UUID
     task_description: str
