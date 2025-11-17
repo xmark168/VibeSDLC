@@ -16,7 +16,7 @@ router = APIRouter(prefix="/stories", tags=["stories"])
 
 # ===== BA/TeamLeader: Story Creation & Planning =====
 @router.post("/", response_model=StoryPublic)
-def create_story(
+async def create_story(
     *,
     session: SessionDep,
     current_user: CurrentUser,
@@ -56,6 +56,37 @@ def create_story(
     )
     session.add(activity)
     session.commit()
+
+    # Publish story created event to Kafka
+    try:
+        from app.crews.events.kafka_producer import get_kafka_producer
+        from app.crews.events.event_schemas import KafkaTopics, StoryCreatedEvent
+        from datetime import datetime
+
+        producer = await get_kafka_producer()
+
+        story_created_event = StoryCreatedEvent(
+            story_id=story.id,
+            project_id=story.project_id,
+            title=story.title,
+            description=story.description,
+            status=story.status.value,
+            type=story.type.value if story.type else None,
+            assignee_id=story.assignee_id,
+            created_by=current_user.id,
+            timestamp=datetime.utcnow()
+        )
+
+        await producer.publish_event(
+            topic=KafkaTopics.STORY_EVENTS,
+            event=story_created_event.model_dump(),
+            key=str(story.project_id)
+        )
+    except Exception as e:
+        # Log error but don't fail the API call
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to publish story created event to Kafka: {e}")
 
     return story
 
@@ -149,7 +180,7 @@ def assign_story(
 
 # ===== Dev/Tester: Status Updates =====
 @router.put("/{story_id}/status", response_model=StoryPublic)
-def update_story_status(
+async def update_story_status(
     *,
     session: SessionDep,
     current_user: CurrentUser,
@@ -188,6 +219,34 @@ def update_story_status(
     )
     session.add(activity)
     session.commit()
+
+    # Publish story status changed event to Kafka
+    try:
+        from app.crews.events.kafka_producer import get_kafka_producer
+        from app.crews.events.event_schemas import KafkaTopics, StoryStatusChangedEvent
+        from datetime import datetime
+
+        producer = await get_kafka_producer()
+
+        status_changed_event = StoryStatusChangedEvent(
+            story_id=story.id,
+            project_id=story.project_id,
+            old_status=old_status.value,
+            new_status=new_status.value,
+            changed_by=current_user.id,
+            timestamp=datetime.utcnow()
+        )
+
+        await producer.publish_event(
+            topic=KafkaTopics.STORY_EVENTS,
+            event=status_changed_event.model_dump(),
+            key=str(story.project_id)
+        )
+    except Exception as e:
+        # Log error but don't fail the API call
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to publish story status changed event to Kafka: {e}")
 
     return story
 
@@ -242,7 +301,7 @@ def get_story(
 
 
 @router.patch("/{story_id}", response_model=StoryPublic)
-def update_story(
+async def update_story(
     *,
     session: SessionDep,
     current_user: CurrentUser,
@@ -269,6 +328,33 @@ def update_story(
     )
     session.add(activity)
     session.commit()
+
+    # Publish story updated event to Kafka
+    try:
+        from app.crews.events.kafka_producer import get_kafka_producer
+        from app.crews.events.event_schemas import KafkaTopics, StoryUpdatedEvent
+        from datetime import datetime
+
+        producer = await get_kafka_producer()
+
+        story_updated_event = StoryUpdatedEvent(
+            story_id=story.id,
+            project_id=story.project_id,
+            updated_fields=list(update_data.keys()),
+            updated_by=current_user.id,
+            timestamp=datetime.utcnow()
+        )
+
+        await producer.publish_event(
+            topic=KafkaTopics.STORY_EVENTS,
+            event=story_updated_event.model_dump(),
+            key=str(story.project_id)
+        )
+    except Exception as e:
+        # Log error but don't fail the API call
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to publish story updated event to Kafka: {e}")
 
     return story
 

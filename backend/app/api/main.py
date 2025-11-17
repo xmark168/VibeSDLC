@@ -9,8 +9,8 @@ from app.api.routes import (
     projects,
     messages,
     agents,
-    blockers,  # TraDS: Sprint Retrospective Blockers
-    project_rules,  # TraDS: Sprint Retrospective Project Rules
+    blockers,  # Story blockers tracking
+    project_rules,  # Project-specific rules and configurations
     crews,  # CrewAI multi-agent system
     chat,  # WebSocket chat endpoint
 )
@@ -24,8 +24,8 @@ api_router.include_router(stories.router)  # Story API (Kanban: Todo/InProgress/
 api_router.include_router(projects.router)
 api_router.include_router(messages.router)
 api_router.include_router(agents.router)
-api_router.include_router(blockers.router)  # TraDS: Sprint Retrospective Blockers
-api_router.include_router(project_rules.router)  # TraDS: Sprint Retrospective Project Rules
+api_router.include_router(blockers.router)  # Story blockers tracking
+api_router.include_router(project_rules.router)  # Project-specific rules and configurations
 api_router.include_router(crews.router)  # CrewAI multi-agent system
 api_router.include_router(chat.router)  # WebSocket chat endpoint
 

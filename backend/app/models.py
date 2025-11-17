@@ -250,8 +250,8 @@ class Message(BaseModel, table=True):
     content: str
 
     # Structured data fields for agent previews
-    message_type: str = Field(default="text", nullable=True)  # "text" | "product_brief" | "product_vision" | "product_backlog" | "sprint_plan"
-    structured_data: dict | None = Field(default=None, sa_column=Column(JSON))  # JSON data (brief/vision/backlog/sprint)
+    message_type: str = Field(default="text", nullable=True)  # "text" | "product_brief" | "product_vision" | "product_backlog"
+    structured_data: dict | None = Field(default=None, sa_column=Column(JSON))  # JSON data (brief/vision/backlog)
     message_metadata: dict | None = Field(default=None, sa_column=Column(JSON))  # Message metadata (preview_id, quality_score, approved_by, etc.)
 
     # Relationship back to agent
@@ -279,7 +279,6 @@ class RefreshToken(BaseModel, table=True):
     children: list["RefreshToken"] = Relationship(back_populates="parent")
 
 
-# TraDS ============= Sprint Retrospective Models
 class ProjectRules(BaseModel, table=True):
     __tablename__ = "projectrules"
 

@@ -85,7 +85,7 @@ class ChatMessagePublic(SQLModel):
     user_id: Optional[UUID] = None
     agent_id: Optional[UUID] = None
     content: str
-    message_type: Optional[str] = "text"  # NEW: "text" | "product_brief" | "product_vision" | "product_backlog" | "sprint_plan"
+    message_type: Optional[str] = "text"  # NEW: "text" | "product_brief" | "product_vision" | "product_backlog"
     structured_data: Optional[dict] = None  # NEW: JSON data for previews
     message_metadata: Optional[dict] = None  # NEW: Message metadata (preview_id, quality_score, etc.)
     created_at: datetime
@@ -428,7 +428,6 @@ class AgentsPublic(SQLModel):
     count: int
 
 
-# TraDS ============= Sprint Retrospective Schemas
 class BlockerCreate(SQLModel):
     backlog_item_id: UUID
     blocker_type: str  # "DEV_BLOCKER" or "TEST_BLOCKER"
