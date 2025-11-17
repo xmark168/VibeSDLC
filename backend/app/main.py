@@ -23,10 +23,42 @@ async def lifespan(app: FastAPI):
     with Session(engine) as session:
         init_db(session)
 
+    # Start Kafka producer
+    from app.crews.events.kafka_producer import get_kafka_producer, shutdown_kafka_producer
+    try:
+        producer = await get_kafka_producer()
+        print("✓ Kafka producer started")
+    except Exception as e:
+        print(f"⚠️  Failed to start Kafka producer: {e}")
+        print("   Continuing without Kafka support...")
+
+    # Start all Kafka consumers
+    from app.kafka.consumer_registry import start_all_consumers, shutdown_all_consumers
+    try:
+        await start_all_consumers()
+        print("✓ All Kafka consumers started")
+    except Exception as e:
+        print(f"⚠️  Failed to start Kafka consumers: {e}")
+        print("   Continuing without consumer support...")
+
     yield
 
-    # Shutdown: cleanup
-    print("✓ Application shutdown")
+    # Shutdown: cleanup consumers and producer
+    print("Shutting down...")
+
+    try:
+        await shutdown_all_consumers()
+        print("✓ Kafka consumers shut down")
+    except Exception as e:
+        print(f"Error shutting down consumers: {e}")
+
+    try:
+        await shutdown_kafka_producer()
+        print("✓ Kafka producer shut down")
+    except Exception as e:
+        print(f"Error shutting down producer: {e}")
+
+    print("✓ Application shutdown complete")
 
 
 if settings.SENTRY_DSN and settings.ENVIRONMENT != "local":

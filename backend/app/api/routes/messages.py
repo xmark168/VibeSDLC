@@ -43,7 +43,7 @@ def list_messages(
 
 
 @router.post("/", response_model=ChatMessagePublic, status_code=status.HTTP_201_CREATED)
-def create_message(
+async def create_message(
     message_in: ChatMessageCreate,
     session: SessionDep,
     current_user: CurrentUser,
@@ -76,6 +76,36 @@ def create_message(
     session.add(obj)
     session.commit()
     session.refresh(obj)
+
+    # Publish user messages to Kafka for agent routing
+    if message_in.author_type == AuthorType.USER:
+        try:
+            from app.crews.events.kafka_producer import get_kafka_producer
+            from app.crews.events.event_schemas import KafkaTopics, UserMessageEvent
+            from datetime import datetime
+
+            producer = await get_kafka_producer()
+
+            user_message_event = UserMessageEvent(
+                message_id=obj.id,
+                project_id=obj.project_id,
+                user_id=current_user.id,
+                content=obj.content,
+                metadata=obj.message_metadata,
+                timestamp=datetime.utcnow()
+            )
+
+            await producer.publish_event(
+                topic=KafkaTopics.USER_MESSAGES,
+                event=user_message_event.model_dump(),
+                key=str(obj.project_id)
+            )
+        except Exception as e:
+            # Log error but don't fail the API call
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to publish message to Kafka: {e}")
+
     return obj
 
 
