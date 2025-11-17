@@ -3,7 +3,7 @@ from token import OP
 from uuid import UUID, uuid4
 from pydantic import EmailStr
 from sqlmodel import Field, SQLModel
-from .models import Role, GitHubAccountType, GitHubInstallationStatus
+from .models import Role, StoryStatus, StoryType
 from typing import Optional
 from enum import Enum
 from app.models import AuthorType
@@ -14,8 +14,6 @@ class UserPublic(SQLModel):
     full_name: Optional[str] = None
     email: EmailStr
     role: Role
-    github_installation_id: Optional[int] = None  # GitHub installation_id from linked installation (deprecated, use github_installations)
-    github_installations: Optional[list["GitHubInstallationPublic"]] = None  # Full GitHub installation data
 
 
 class UsersPublic(SQLModel):
@@ -163,7 +161,7 @@ class ResetPasswordRequest(SQLModel):
 class ResetPasswordResponse(SQLModel):
     message: str
 
-# backlog
+# backlog (will be deprecated - use Story schemas below)
 
 class BacklogItemBase(SQLModel):
     title: str = Field(min_length=1, max_length=255)
@@ -234,6 +232,81 @@ class BacklogItemsStatus(str, Enum):
     TODO = "Todo"
     DOING = "Doing"
     DONE = "Done"
+
+
+# ============= NEW: Story Schemas (replaces BacklogItem) =============
+
+class StoryBase(SQLModel):
+    """Base schema for Story with only UserStory and EnablerStory types"""
+    title: str = Field(min_length=1, max_length=255)
+    description: Optional[str] = None
+    type: StoryType = Field(default=StoryType.USER_STORY)
+    status: StoryStatus = Field(default=StoryStatus.TODO)
+    epic_id: Optional[UUID] = None
+    acceptance_criteria: Optional[str] = None
+    rank: Optional[int] = None
+    estimate_value: Optional[int] = None
+    story_point: Optional[int] = None
+    priority: Optional[int] = None
+    pause: bool = False
+    deadline: Optional[datetime] = None
+    assignee_id: Optional[UUID] = None
+    reviewer_id: Optional[UUID] = None
+    parent_id: Optional[UUID] = None
+    token_used: Optional[int] = None
+
+
+class StoryCreate(StoryBase):
+    """Schema for creating a new story (BA agent)"""
+    project_id: UUID
+
+
+class StoryUpdate(SQLModel):
+    """Schema for updating story fields (BA/TL/Dev/Tester)"""
+    title: Optional[str] = None
+    description: Optional[str] = None
+    type: Optional[StoryType] = None
+    status: Optional[StoryStatus] = None
+    epic_id: Optional[UUID] = None
+    acceptance_criteria: Optional[str] = None
+    rank: Optional[int] = None
+    estimate_value: Optional[int] = None
+    story_point: Optional[int] = None
+    priority: Optional[int] = None
+    pause: Optional[bool] = None
+    deadline: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    assignee_id: Optional[UUID] = None
+    reviewer_id: Optional[UUID] = None
+    parent_id: Optional[UUID] = None
+    token_used: Optional[int] = None
+
+
+class StorySimple(StoryBase):
+    """Simple story schema without nested relationships"""
+    id: UUID
+    project_id: UUID
+    completed_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class StoryPublic(StoryBase):
+    """Full story schema with relationships for Kanban display"""
+    id: UUID
+    project_id: UUID
+    completed_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+    parent: Optional[StorySimple] = None
+    children: list[StorySimple] = []
+
+
+class StoriesPublic(SQLModel):
+    """List of stories response"""
+    data: list[StoryPublic]
+    count: int
+
 
 class IssueActivityBase(SQLModel):
     action: Optional[str] = None
@@ -324,10 +397,6 @@ class ProjectPublic(SQLModel):
     is_init: bool
     is_private: bool
     tech_stack: str
-    github_repository_url: Optional[str] = None
-    github_repository_id: Optional[int] = None
-    github_repository_name: Optional[str] = None
-    github_installation_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
 
@@ -357,87 +426,6 @@ class AgentPublic(AgentBase):
 class AgentsPublic(SQLModel):
     data: list[AgentPublic]
     count: int
-
-
-# GitHub Integration schemas
-class GitHubInstallationBase(SQLModel):
-    installation_id: int | None
-    account_login: str
-    account_type: GitHubAccountType
-    account_status: GitHubInstallationStatus
-    repositories: Optional[dict] = None
-
-
-class GitHubInstallationCreate(GitHubInstallationBase):
-    user_id: UUID | None = None
-
-
-class GitHubInstallationUpdate(SQLModel):
-    repositories: Optional[dict] = None
-    account_status: Optional[GitHubInstallationStatus] = None
-    installation_id: Optional[int] = None
-
-
-class GitHubInstallationPublic(GitHubInstallationBase):
-    id: UUID
-    user_id: UUID | None
-    created_at: datetime
-    updated_at: datetime
-
-
-class GitHubInstallationsPublic(SQLModel):
-    data: list[GitHubInstallationPublic]
-    count: int
-
-
-# GitHub Repository schemas
-class GitHubRepository(SQLModel):
-    id: int
-    name: str
-    full_name: str
-    url: str
-    description: Optional[str] = None
-    private: bool
-    owner: str
-
-
-class GitHubRepositoriesPublic(SQLModel):
-    data: list[GitHubRepository]
-    count: int
-
-
-# Project GitHub linking schemas
-class ProjectGitHubLink(SQLModel):
-    github_repository_id: int
-    github_repository_name: str
-    github_installation_id: UUID
-
-
-class ProjectGitHubUnlink(SQLModel):
-    pass
-
-
-# Create repository from template schemas
-class CreateRepoFromTemplateRequest(SQLModel):
-    """Request schema for creating a repository from a template."""
-    template_owner: str = Field(description="Owner of the template repository (e.g., 'organization' or 'username')")
-    template_repo: str = Field(description="Name of the template repository")
-    new_repo_name: str = Field(min_length=1, max_length=255, description="Name for the new repository")
-    new_repo_description: Optional[str] = Field(None, max_length=1000, description="Description for the new repository")
-    is_private: bool = Field(default=False, description="Whether the new repository should be private")
-    github_installation_id: int = Field(description="GitHub installation ID to use for creating the repository")
-
-
-class CreateRepoFromTemplateResponse(SQLModel):
-    """Response schema for repository creation."""
-    success: bool = Field(description="Whether the repository was created successfully")
-    repository_id: Optional[int] = Field(None, description="GitHub repository ID")
-    repository_name: Optional[str] = Field(None, description="Name of the created repository")
-    repository_full_name: Optional[str] = Field(None, description="Full name of the created repository (owner/name)")
-    repository_url: Optional[str] = Field(None, description="URL of the created repository")
-    repository_description: Optional[str] = Field(None, description="Description of the created repository")
-    repository_private: Optional[bool] = Field(None, description="Whether the repository is private")
-    message: Optional[str] = Field(None, description="Success or error message")
 
 
 # TraDS ============= Sprint Retrospective Schemas

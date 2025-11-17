@@ -3,7 +3,7 @@
 from uuid import UUID
 from fastapi import APIRouter, HTTPException
 from app.api.deps import CurrentUser, SessionDep
-from app.models import BacklogItem
+from app.models import Story
 from app.schemas import BlockerCreate, BlockerPublic, BlockersPublic
 from app.crud import blocker as crud_blocker
 
@@ -17,11 +17,11 @@ def create_blocker(
     current_user: CurrentUser,
     blocker_in: BlockerCreate,
 ) -> BlockerPublic:
-    """Create a new blocker for a backlog item."""
-    # Validate backlog item exists
-    backlog_item = session.get(BacklogItem, blocker_in.backlog_item_id)
-    if not backlog_item:
-        raise HTTPException(status_code=404, detail="Backlog item not found")
+    """Create a new blocker for a story."""
+    # Validate story exists
+    story = session.get(Story, blocker_in.backlog_item_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
 
     blocker = crud_blocker.create_blocker(
         session=session,
@@ -31,17 +31,17 @@ def create_blocker(
     return BlockerPublic.model_validate(blocker)
 
 
-@router.get("/backlog-item/{backlog_item_id}", response_model=BlockersPublic)
-def get_blockers_by_backlog_item(
+@router.get("/story/{story_id}", response_model=BlockersPublic)
+def get_blockers_by_story(
     *,
     session: SessionDep,
     current_user: CurrentUser,
-    backlog_item_id: UUID,
+    story_id: UUID,
 ) -> BlockersPublic:
-    """Get all blockers for a backlog item."""
+    """Get all blockers for a story."""
     blockers = crud_blocker.get_blockers_by_backlog_item(
         session=session,
-        backlog_item_id=backlog_item_id,
+        backlog_item_id=story_id,
     )
     return BlockersPublic(data=blockers, count=len(blockers))
 

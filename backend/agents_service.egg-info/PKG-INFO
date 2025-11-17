@@ -20,9 +20,13 @@ Requires-Dist: emails>=0.6.0
 Requires-Dist: jinja2>=3.1.0
 Requires-Dist: bcrypt==4.0.1
 Requires-Dist: redis>=7.0.1
-Requires-Dist: pygithub>=2.8.1
 Requires-Dist: email-validator>=2.3.0
 Requires-Dist: sentry-sdk>=2.0.0
+Requires-Dist: crewai>=0.86.0
+Requires-Dist: crewai-tools>=0.12.0
+Requires-Dist: aiokafka>=0.11.0
+Requires-Dist: pyyaml>=6.0.0
+Requires-Dist: qdrant-client>=1.15.1
 Provides-Extra: dev
 Requires-Dist: ruff; extra == "dev"
 Requires-Dist: pylint; extra == "dev"

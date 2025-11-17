@@ -114,28 +114,10 @@ function ProjectsPage() {
 
   return (
     <>
-      <div className="container mx-auto">
-        <GitHubInstallationHandler />
-      </div>
-      {
-        showGitHubInstallModal && (
-          <AnimatePresence>
-            {showGitHubInstallModal && (
-              <GitHubInstallModal
-                onClose={() => setShowGitHubInstallModal(false)}
-                onOpen={() => setShowGitHubInstallModal(true)}
-                onInstall={handleGitHubInstallComplete}
-              />
-            )}
-          </AnimatePresence>
+     
+      
 
-        )
-      }
-
-      {
-        (user?.github_installations !== null)
-          || (installationId === undefined && listProjectPublic && listProjectPublic?.count === 0)
-          ? (
+       (
             <div className="min-h-screen">
               <HeaderProject />
               <div className="container mx-auto px-6 py-8">
@@ -216,17 +198,8 @@ function ProjectsPage() {
                 )}
               </AnimatePresence>
             </div>
-          ) : (
-            <>
-              <HeaderProject />
-              <CreateProjectContent
-                onInstallGitHub={_handleInstallGitHub}
-                githubLinked={_githubLinked}
-              />
-
-            </>
-          )
-      }
+          ) 
+      
 
     </>
   )

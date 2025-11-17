@@ -16,15 +16,16 @@ class BlockerType(str, Enum):
     TEST_BLOCKER = "TEST_BLOCKER"
 
 
-class GitHubAccountType(str, Enum):
-    USER = "User"
-    ORGANIZATION = "Organization"
+class StoryStatus(str, Enum):
+    TODO = "Todo"
+    IN_PROGRESS = "InProgress"
+    REVIEW = "Review"
+    DONE = "Done"
 
 
-class GitHubInstallationStatus(str, Enum):
-    PENDING = "pending"
-    INSTALLED = "installed"
-    DELETED = "deleted"
+class StoryType(str, Enum):
+    USER_STORY = "UserStory"
+    ENABLER_STORY = "EnablerStory"
 
 
 class BaseModel(SQLModel):
@@ -63,27 +64,19 @@ class User(BaseModel, table=True):
         back_populates="commenter",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
-    github_installations: list["GitHubInstallation"] = Relationship(
-        back_populates="user", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
-    )
 
 
-# GitHub App Integration
-class GitHubInstallation(BaseModel, table=True):
-    __tablename__ = "github_installations"
+class Epic(BaseModel, table=True):
+    """Epic model for grouping stories"""
+    __tablename__ = "epics"
 
-    installation_id: int | None = Field(default=None, unique=True, index=True, nullable=True)
-    account_login: str = Field(nullable=False)
-    account_type: GitHubAccountType = Field(nullable=False, default=GitHubAccountType.USER)
-    account_status: GitHubInstallationStatus = Field(
-        nullable=False,
-        default=GitHubInstallationStatus.PENDING,
-        index=True
-    )
-    repositories: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
-    user_id: UUID | None = Field(default=None, foreign_key="users.id", nullable=True, ondelete="CASCADE")
+    title: str
+    description: str | None = Field(default=None, sa_column=Column(Text))
+    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE")
 
-    user: User = Relationship(back_populates="github_installations")
+    # Relationships
+    project: "Project" = Relationship(back_populates="epics")
+    stories: list["Story"] = Relationship(back_populates="epic")
 
 
 class Project(BaseModel, table=True):
@@ -94,13 +87,14 @@ class Project(BaseModel, table=True):
     owner_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")
     is_init: bool = Field(default=False)
 
-    # GitHub integration fields
-    github_repository_url: str | None = Field(default=None, unique=True, nullable=True)
-    github_repository_name: str | None = Field(default=None, nullable=True)
     is_private: bool = Field(default=True)
     tech_stack: str = Field(default="nodejs-react")
     owner: User = Relationship(back_populates="owned_projects")
-    backlog_items: list["BacklogItem"] = Relationship(
+    stories: list["Story"] = Relationship(
+        back_populates="project",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    epics: list["Epic"] = Relationship(
         back_populates="project",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
@@ -112,47 +106,72 @@ class Project(BaseModel, table=True):
     )
 
 
-class BacklogItem(BaseModel, table=True):
-    __tablename__ = "backlog_items"
+class Story(BaseModel, table=True):
+    """
+    Story model for Kanban board.
+    Replaces BacklogItem with proper status columns: Todo, InProgress, Review, Done.
+    Supports only UserStory and EnablerStory types.
+    """
+    __tablename__ = "stories"
 
     project_id: UUID = Field(
         foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True
     )
     parent_id: UUID | None = Field(
-        default=None, foreign_key="backlog_items.id", ondelete="SET NULL"
+        default=None, foreign_key="stories.id", ondelete="SET NULL"
     )
-    type: str
+
+    # Story fields
+    type: StoryType = Field(default=StoryType.USER_STORY)
     title: str
-    description: str | None = Field(default=None)
-    status: str
-    reviewer_id: UUID | None = Field(
-        default=None, foreign_key="users.id", ondelete="SET NULL"
-    )
+    description: str | None = Field(default=None, sa_column=Column(Text))
+    status: StoryStatus = Field(default=StoryStatus.TODO)
+
+    # Epic relationship (for linking stories to epics table)
+    epic_id: UUID | None = Field(default=None, foreign_key="epics.id", ondelete="SET NULL")
+
+    # Acceptance criteria (BA fills this)
+    acceptance_criteria: str | None = Field(default=None, sa_column=Column(Text))
+
+    # Assignment fields (TeamLeader assigns)
     assignee_id: UUID | None = Field(
         default=None, foreign_key="users.id", ondelete="SET NULL"
     )
+    reviewer_id: UUID | None = Field(
+        default=None, foreign_key="users.id", ondelete="SET NULL"
+    )
+
+    # Planning fields
     rank: int | None = Field(default=None)
     estimate_value: int | None = Field(default=None)
     story_point: int | None = Field(default=None)
+    priority: int | None = Field(default=None)
+
+    # Lifecycle fields
     pause: bool = Field(default=False)
     deadline: datetime | None = Field(default=None)
+    completed_at: datetime | None = Field(default=None)
 
-    project: Project = Relationship(back_populates="backlog_items")
-    parent: Optional["BacklogItem"] = Relationship(
+    # Token usage tracking (for AI agents)
+    token_used: int | None = Field(default=None)
+
+    # Relationships
+    project: Project = Relationship(back_populates="stories")
+    epic: Optional["Epic"] = Relationship(back_populates="stories")
+    parent: Optional["Story"] = Relationship(
         back_populates="children",
-        sa_relationship_kwargs={"remote_side": "BacklogItem.id"},
+        sa_relationship_kwargs={"remote_side": "Story.id"},
     )
-    children: list["BacklogItem"] = Relationship(back_populates="parent")
+    children: list["Story"] = Relationship(back_populates="parent")
     comments: list["Comment"] = Relationship(
-        back_populates="backlog_item",
+        back_populates="story",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
     activities: list["IssueActivity"] = Relationship(
-        back_populates="issue", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+        back_populates="story", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
-    # TraDS ============= Kanban Blockers
     blockers: list["Blocker"] = Relationship(
-        back_populates="backlog_item",
+        back_populates="story",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
@@ -161,14 +180,14 @@ class Comment(BaseModel, table=True):
     __tablename__ = "comments"
 
     backlog_item_id: UUID = Field(
-        foreign_key="backlog_items.id", nullable=False, ondelete="CASCADE"
+        foreign_key="stories.id", nullable=False, ondelete="CASCADE"
     )
     commenter_id: UUID = Field(
         foreign_key="users.id", nullable=False, ondelete="CASCADE"
     )
     content: str
 
-    backlog_item: BacklogItem = Relationship(back_populates="comments")
+    story: Story = Relationship(back_populates="comments")
     commenter: User = Relationship(back_populates="comments")
 
 
@@ -199,7 +218,7 @@ class IssueActivity(BaseModel, table=True):
     type_to: str | None = Field(default=None)
     note: str | None = Field(default=None)
 
-    issue: BacklogItem = Relationship(back_populates="activities") 
+    story: Story = Relationship(back_populates="activities") 
 
 class AuthorType(str, Enum):
     USER = "user"
@@ -283,6 +302,6 @@ class Blocker(BaseModel, table=True):
     description: str = Field(sa_column=Column(Text))
 
     # Relationships
-    backlog_item: BacklogItem = Relationship(back_populates="blockers")
+    story: Story = Relationship(back_populates="blockers")
     reported_by: User = Relationship()
 

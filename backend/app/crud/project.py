@@ -56,9 +56,6 @@ def create_project(
     """
     Create a new project with auto-generated code.
 
-    The project name is also used as the github_repository_name.
-    If repository_url is provided, it will be saved to github_repository_url field.
-
     Args:
         session: Database session
         project_in: Project creation schema
@@ -74,13 +71,8 @@ def create_project(
     update_dict = {
         "code": project_code,
         "owner_id": owner_id,
-        "github_repository_name": project_in.name,  # Use project name as repository name
         "is_init": False,  # Default value for new projects
     }
-
-    # Add repository_url if provided
-    if project_in.repository_url:
-        update_dict["github_repository_url"] = project_in.repository_url
 
     # Create project with auto-generated code
     db_project = Project.model_validate(

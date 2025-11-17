@@ -16,7 +16,6 @@ import { Route as UserProjectsRouteImport } from './routes/_user/projects'
 import { Route as AuthVerifyOtpRouteImport } from './routes/_auth/verify-otp'
 import { Route as AuthSignupRouteImport } from './routes/_auth/signup'
 import { Route as AuthResetPasswordRouteImport } from './routes/_auth/reset-password'
-import { Route as AuthOauthCallbackRouteImport } from './routes/_auth/oauth-callback'
 import { Route as AuthLoginRouteImport } from './routes/_auth/login'
 import { Route as AuthForgotPasswordRouteImport } from './routes/_auth/forgot-password'
 import { Route as AdminAdminRouteImport } from './routes/_admin/admin'
@@ -56,11 +55,6 @@ const AuthResetPasswordRoute = AuthResetPasswordRouteImport.update({
   path: '/reset-password',
   getParentRoute: () => AuthRouteRoute,
 } as any)
-const AuthOauthCallbackRoute = AuthOauthCallbackRouteImport.update({
-  id: '/oauth-callback',
-  path: '/oauth-callback',
-  getParentRoute: () => AuthRouteRoute,
-} as any)
 const AuthLoginRoute = AuthLoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -93,7 +87,6 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminAdminRoute
   '/forgot-password': typeof AuthForgotPasswordRoute
   '/login': typeof AuthLoginRoute
-  '/oauth-callback': typeof AuthOauthCallbackRoute
   '/reset-password': typeof AuthResetPasswordRoute
   '/signup': typeof AuthSignupRoute
   '/verify-otp': typeof AuthVerifyOtpRoute
@@ -106,7 +99,6 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminAdminRoute
   '/forgot-password': typeof AuthForgotPasswordRoute
   '/login': typeof AuthLoginRoute
-  '/oauth-callback': typeof AuthOauthCallbackRoute
   '/reset-password': typeof AuthResetPasswordRoute
   '/signup': typeof AuthSignupRoute
   '/verify-otp': typeof AuthVerifyOtpRoute
@@ -122,7 +114,6 @@ export interface FileRoutesById {
   '/_admin/admin': typeof AdminAdminRoute
   '/_auth/forgot-password': typeof AuthForgotPasswordRoute
   '/_auth/login': typeof AuthLoginRoute
-  '/_auth/oauth-callback': typeof AuthOauthCallbackRoute
   '/_auth/reset-password': typeof AuthResetPasswordRoute
   '/_auth/signup': typeof AuthSignupRoute
   '/_auth/verify-otp': typeof AuthVerifyOtpRoute
@@ -137,7 +128,6 @@ export interface FileRouteTypes {
     | '/admin'
     | '/forgot-password'
     | '/login'
-    | '/oauth-callback'
     | '/reset-password'
     | '/signup'
     | '/verify-otp'
@@ -150,7 +140,6 @@ export interface FileRouteTypes {
     | '/admin'
     | '/forgot-password'
     | '/login'
-    | '/oauth-callback'
     | '/reset-password'
     | '/signup'
     | '/verify-otp'
@@ -165,7 +154,6 @@ export interface FileRouteTypes {
     | '/_admin/admin'
     | '/_auth/forgot-password'
     | '/_auth/login'
-    | '/_auth/oauth-callback'
     | '/_auth/reset-password'
     | '/_auth/signup'
     | '/_auth/verify-otp'
@@ -235,13 +223,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthResetPasswordRouteImport
       parentRoute: typeof AuthRouteRoute
     }
-    '/_auth/oauth-callback': {
-      id: '/_auth/oauth-callback'
-      path: '/oauth-callback'
-      fullPath: '/oauth-callback'
-      preLoaderRoute: typeof AuthOauthCallbackRouteImport
-      parentRoute: typeof AuthRouteRoute
-    }
     '/_auth/login': {
       id: '/_auth/login'
       path: '/login'
@@ -283,7 +264,6 @@ declare module '@tanstack/react-router' {
 interface AuthRouteRouteChildren {
   AuthForgotPasswordRoute: typeof AuthForgotPasswordRoute
   AuthLoginRoute: typeof AuthLoginRoute
-  AuthOauthCallbackRoute: typeof AuthOauthCallbackRoute
   AuthResetPasswordRoute: typeof AuthResetPasswordRoute
   AuthSignupRoute: typeof AuthSignupRoute
   AuthVerifyOtpRoute: typeof AuthVerifyOtpRoute
@@ -292,7 +272,6 @@ interface AuthRouteRouteChildren {
 const AuthRouteRouteChildren: AuthRouteRouteChildren = {
   AuthForgotPasswordRoute: AuthForgotPasswordRoute,
   AuthLoginRoute: AuthLoginRoute,
-  AuthOauthCallbackRoute: AuthOauthCallbackRoute,
   AuthResetPasswordRoute: AuthResetPasswordRoute,
   AuthSignupRoute: AuthSignupRoute,
   AuthVerifyOtpRoute: AuthVerifyOtpRoute,

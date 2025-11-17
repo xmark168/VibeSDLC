@@ -88,12 +88,6 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7  # 7 days
 
-    # GITHUB APP SETTINGS
-    GITHUB_APP_ID: str = ""
-    GITHUB_APP_PRIVATE_KEY: str = ""
-    GITHUB_APP_PRIVATE_KEY_PATH: str = ""
-    GITHUB_WEBHOOK_SECRET: str = ""
-
     # CORS SETTINGS
     FRONTEND_HOST: str = "http://localhost:5173"
     BACKEND_CORS_ORGINS: Annotated[list[AnyUrl] | str, BeforeValidator(parse_cors)] = []
@@ -175,6 +169,16 @@ class Settings(BaseSettings):
 
         auth = f":{self.REDIS_PASSWORD}@" if self.REDIS_PASSWORD else ""
         return f"redis://{auth}{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+
+    # KAFKA SETTINGS (for CrewAI event-driven architecture)
+    KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
+    KAFKA_ENABLE_AUTO_COMMIT: bool = True
+    KAFKA_AUTO_OFFSET_RESET: Literal["earliest", "latest"] = "latest"
+    KAFKA_GROUP_ID: str = "crewai_agents"
+    KAFKA_SASL_MECHANISM: str | None = None
+    KAFKA_SASL_USERNAME: str | None = None
+    KAFKA_SASL_PASSWORD: str | None = None
+    KAFKA_SECURITY_PROTOCOL: Literal["PLAINTEXT", "SSL", "SASL_PLAINTEXT", "SASL_SSL"] = "PLAINTEXT"
 
     # VALIDATORS
     @model_validator(mode="after")

