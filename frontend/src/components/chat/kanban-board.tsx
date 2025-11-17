@@ -10,7 +10,6 @@ import { useKanbanBoard } from "@/queries/backlog-items"
 interface KanbanBoardProps {
   kanbanData?: any
   projectId?: string
-  sprintId?: string
 }
 
 const initialColumns: KanbanColumnData[] = [
@@ -21,7 +20,7 @@ const initialColumns: KanbanColumnData[] = [
   { id: "done", title: "Done", color: "border-cyan-500", cards: [] },
 ]
 
-export function KanbanBoard({ kanbanData, projectId, sprintId }: KanbanBoardProps) {
+export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
   const [columns, setColumns] = useState<KanbanColumnData[]>(initialColumns)
   const [draggedCard, setDraggedCard] = useState<KanbanCardData | null>(null)
   const [draggedOverColumn, setDraggedOverColumn] = useState<string | null>(null)
@@ -29,14 +28,14 @@ export function KanbanBoard({ kanbanData, projectId, sprintId }: KanbanBoardProp
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   // Load initial data from database
-  const { data: dbKanbanData, isLoading } = useKanbanBoard(sprintId)
+  const { data: dbKanbanData, isLoading } = useKanbanBoard(projectId)
 
-  // Reset columns when sprintId changes
+  // Reset columns when projectId changes
   useEffect(() => {
-    if (!sprintId) {
+    if (!projectId) {
       setColumns(initialColumns)
     }
-  }, [sprintId])
+  }, [projectId])
 
   // Load initial data from database when component mounts
   useEffect(() => {

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ChevronDown, ChevronRight, Edit } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { ProductBriefPreview, ProductVisionPreview, BacklogPreview, SprintPlanPreview } from './previews'
+import { ProductBriefPreview, ProductVisionPreview, BacklogPreview } from './previews'
 
 interface MessagePreviewCardProps {
   message: {
@@ -50,11 +50,7 @@ export function MessagePreviewCard({ message, onEdit }: MessagePreviewCardProps)
           />
         )
       case 'sprint_plan':
-        return (
-          <SprintPlanPreview
-            sprintPlan={message.structured_data}
-          />
-        )
+        return <div className="text-sm text-muted-foreground">Sprint planning is no longer supported in Kanban mode</div>
       default:
         return <div className="text-sm text-muted-foreground">Unknown preview type</div>
     }

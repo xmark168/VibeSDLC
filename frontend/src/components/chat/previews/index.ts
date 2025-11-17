@@ -11,4 +11,3 @@
 export { ProductBriefPreview } from './ProductBriefPreview'
 export { ProductVisionPreview } from './ProductVisionPreview'
 export { BacklogPreview } from './BacklogPreview'
-export { SprintPlanPreview } from './SprintPlanPreview'

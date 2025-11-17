@@ -1,0 +1,306 @@
+from datetime import datetime, timezone
+from uuid import UUID, uuid4
+from enum import Enum
+from pydantic import EmailStr
+from sqlmodel import Field, SQLModel, Relationship, Column
+from sqlalchemy import JSON, Text
+from typing import Optional
+
+class Role(str, Enum):
+    ADMIN = "admin"
+    USER = "user"
+
+
+class BlockerType(str, Enum):
+    DEV_BLOCKER = "DEV_BLOCKER"
+    TEST_BLOCKER = "TEST_BLOCKER"
+
+
+class StoryStatus(str, Enum):
+    TODO = "Todo"
+    IN_PROGRESS = "InProgress"
+    REVIEW = "Review"
+    DONE = "Done"
+
+
+class StoryType(str, Enum):
+    USER_STORY = "UserStory"
+    ENABLER_STORY = "EnablerStory"
+
+
+class BaseModel(SQLModel):
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc)},
+        nullable=False,
+    )
+
+
+# Shared properties
+class User(BaseModel, table=True):
+    __tablename__ = "users"
+
+    full_name: str | None = Field(default=None, max_length=50, nullable=True)
+    hashed_password: str = Field(nullable=True)
+    email: EmailStr = Field(unique=True, index=True, max_length=255)
+    role: Role = Field(default=Role.USER, nullable=True)
+
+    # Account status fields for security
+    is_active: bool = Field(default=True, nullable=True)
+    is_locked: bool = Field(default=False, nullable=False)
+    locked_until: datetime | None = Field(default=None)
+    failed_login_attempts: int = Field(default=0, nullable=False)
+
+    login_provider: bool = Field(default=False, nullable=False)
+
+    owned_projects: list["Project"] = Relationship(
+        back_populates="owner", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    comments: list["Comment"] = Relationship(
+        back_populates="commenter",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+
+
+class Epic(BaseModel, table=True):
+    """Epic model for grouping stories"""
+    __tablename__ = "epics"
+
+    title: str
+    description: str | None = Field(default=None, sa_column=Column(Text))
+    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE")
+
+    # Relationships
+    project: "Project" = Relationship(back_populates="epics")
+    stories: list["Story"] = Relationship(back_populates="epic")
+
+
+class Project(BaseModel, table=True):
+    __tablename__ = "projects"
+
+    code: str
+    name: str
+    owner_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")
+    is_init: bool = Field(default=False)
+
+    is_private: bool = Field(default=True)
+    tech_stack: str = Field(default="nodejs-react")
+    owner: User = Relationship(back_populates="owned_projects")
+    stories: list["Story"] = Relationship(
+        back_populates="project",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    epics: list["Epic"] = Relationship(
+        back_populates="project",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    # TraDS ============= Project Rules
+
+    rules: Optional["ProjectRules"] = Relationship(
+        back_populates="project",
+        sa_relationship_kwargs={"uselist": False, "cascade": "all, delete-orphan"}
+    )
+
+
+class Story(BaseModel, table=True):
+    """
+    Story model for Kanban board.
+    Replaces BacklogItem with proper status columns: Todo, InProgress, Review, Done.
+    Supports only UserStory and EnablerStory types.
+    """
+    __tablename__ = "stories"
+
+    project_id: UUID = Field(
+        foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    parent_id: UUID | None = Field(
+        default=None, foreign_key="stories.id", ondelete="SET NULL"
+    )
+
+    # Story fields
+    type: StoryType = Field(default=StoryType.USER_STORY)
+    title: str
+    description: str | None = Field(default=None, sa_column=Column(Text))
+    status: StoryStatus = Field(default=StoryStatus.TODO)
+
+    # Epic relationship (for linking stories to epics table)
+    epic_id: UUID | None = Field(default=None, foreign_key="epics.id", ondelete="SET NULL")
+
+    # Acceptance criteria (BA fills this)
+    acceptance_criteria: str | None = Field(default=None, sa_column=Column(Text))
+
+    # Assignment fields (TeamLeader assigns)
+    assignee_id: UUID | None = Field(
+        default=None, foreign_key="users.id", ondelete="SET NULL"
+    )
+    reviewer_id: UUID | None = Field(
+        default=None, foreign_key="users.id", ondelete="SET NULL"
+    )
+
+    # Planning fields
+    rank: int | None = Field(default=None)
+    estimate_value: int | None = Field(default=None)
+    story_point: int | None = Field(default=None)
+    priority: int | None = Field(default=None)
+
+    # Lifecycle fields
+    pause: bool = Field(default=False)
+    deadline: datetime | None = Field(default=None)
+    completed_at: datetime | None = Field(default=None)
+
+    # Token usage tracking (for AI agents)
+    token_used: int | None = Field(default=None)
+
+    # Relationships
+    project: Project = Relationship(back_populates="stories")
+    epic: Optional["Epic"] = Relationship(back_populates="stories")
+    parent: Optional["Story"] = Relationship(
+        back_populates="children",
+        sa_relationship_kwargs={"remote_side": "Story.id"},
+    )
+    children: list["Story"] = Relationship(back_populates="parent")
+    comments: list["Comment"] = Relationship(
+        back_populates="story",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    activities: list["IssueActivity"] = Relationship(
+        back_populates="story", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    blockers: list["Blocker"] = Relationship(
+        back_populates="story",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+
+
+class Comment(BaseModel, table=True):
+    __tablename__ = "comments"
+
+    backlog_item_id: UUID = Field(
+        foreign_key="stories.id", nullable=False, ondelete="CASCADE"
+    )
+    commenter_id: UUID = Field(
+        foreign_key="users.id", nullable=False, ondelete="CASCADE"
+    )
+    content: str
+
+    story: Story = Relationship(back_populates="comments")
+    commenter: User = Relationship(back_populates="comments")
+
+
+class IssueActivity(BaseModel, table=True):
+    __tablename__ = "issue_activities"
+
+    issue_id: UUID = Field(
+        foreign_key="stories.id", nullable=False, ondelete="CASCADE"
+    )
+    actor_id: str | None = Field(default=None)
+    actor_name: str | None = Field(default=None)
+
+    title_from: str | None = Field(default=None)
+    title_to: str | None = Field(default=None)
+    status_from: str | None = Field(default=None)
+    status_to: str | None = Field(default=None)
+    assignee_from: str | None = Field(default=None)
+    assignee_to: str | None = Field(default=None)
+    reviewer_from: str | None = Field(default=None)
+    reviewer_to: str | None = Field(default=None)
+    rank_from: int | None = Field(default=None)
+    rank_to: int | None = Field(default=None)
+    estimate_from: int | None = Field(default=None)
+    estimate_to: int | None = Field(default=None)
+    deadline_from: datetime | None = Field(default=None)
+    deadline_to: datetime | None = Field(default=None)
+    type_from: str | None = Field(default=None)
+    type_to: str | None = Field(default=None)
+    note: str | None = Field(default=None)
+
+    story: Story = Relationship(back_populates="activities") 
+
+class AuthorType(str, Enum):
+    USER = "user"
+    AGENT = "agent"
+
+
+class Agent(BaseModel, table=True):
+    __tablename__ = "agents"
+
+    name: str
+    agent_type: str | None = Field(default=None)
+
+    # Relationship to messages authored by this agent
+    messages: list["Message"] = Relationship(back_populates="agent")
+
+
+class Message(BaseModel, table=True):
+    __tablename__ = "messages"
+
+    # Single-session-per-project: attach all messages to a project
+    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
+
+    # Author info: either user or agent (or system/tool)
+    author_type: AuthorType = Field(default=AuthorType.USER, nullable=False)
+    user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
+    agent_id: UUID | None = Field(default=None, foreign_key="agents.id", ondelete="SET NULL")
+
+    # Message payload
+    content: str
+
+    # Structured data fields for agent previews
+    message_type: str = Field(default="text", nullable=True)  # "text" | "product_brief" | "product_vision" | "product_backlog"
+    structured_data: dict | None = Field(default=None, sa_column=Column(JSON))  # JSON data (brief/vision/backlog)
+    message_metadata: dict | None = Field(default=None, sa_column=Column(JSON))  # Message metadata (preview_id, quality_score, approved_by, etc.)
+
+    # Relationship back to agent
+    agent: Agent | None = Relationship(back_populates="messages")
+
+
+class RefreshToken(BaseModel, table=True):
+    __tablename__ = "refresh_tokens"
+
+    token: str = Field(unique=True, index=True, max_length=255)
+    user_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")
+    expires_at: datetime = Field(nullable=False)
+    is_revoked: bool = Field(default=False, nullable=False)
+
+    # Token family tracking for rotation detection
+    family_id: UUID = Field(nullable=False, index=True)
+    parent_token_id: UUID | None = Field(default=None, foreign_key="refresh_tokens.id", ondelete="SET NULL")
+
+    # Relationships
+    user: User = Relationship()
+    parent: Optional["RefreshToken"] = Relationship(
+        back_populates="children",
+        sa_relationship_kwargs={"remote_side": "RefreshToken.id"},
+    )
+    children: list["RefreshToken"] = Relationship(back_populates="parent")
+
+
+class ProjectRules(BaseModel, table=True):
+    __tablename__ = "projectrules"
+
+    project_id: UUID = Field(foreign_key="projects.id", unique=True, nullable=False, ondelete="CASCADE")
+
+    po_prompt: str | None = Field(default=None, sa_column=Column(Text))
+    dev_prompt: str | None = Field(default=None, sa_column=Column(Text))
+    tester_prompt: str | None = Field(default=None, sa_column=Column(Text))
+
+    # Relationship
+    project: Project = Relationship(back_populates="rules")
+
+
+class Blocker(BaseModel, table=True):
+    __tablename__ = "blockers"
+
+    backlog_item_id: UUID = Field(foreign_key="stories.id", nullable=False, ondelete="CASCADE")
+    reported_by_user_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")
+    blocker_type: BlockerType = Field(nullable=False)
+    description: str = Field(sa_column=Column(Text))
+
+    # Relationships
+    story: Story = Relationship(back_populates="blockers")
+    reported_by: User = Relationship()
+

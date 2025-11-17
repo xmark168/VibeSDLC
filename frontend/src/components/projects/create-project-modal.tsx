@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { CreateRepoFromTemplateRequest, GithubService, ProjectCreate, ProjectsService } from "@/client"
+import { ProjectCreate, ProjectsService } from "@/client"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useAppStore } from "@/stores/auth-store"
 import toast from "react-hot-toast"
@@ -42,15 +42,7 @@ export function CreateProjectModal({
   const [isLoading, setIsLoading] = useState(false)
   const user = useAppStore((state) => state.user)
   const queryClient = useQueryClient()
-  const templateOwner = TECH_STACK_OPTIONS.find((item) => item.value === techStack)?.template_owner || ""
-  const templateRepo = TECH_STACK_OPTIONS.find((item) => item.value === techStack)?.template_repo || ""
-  const createRepositoryTemplateMutation = useMutation({
-    mutationFn: (data: CreateRepoFromTemplateRequest) =>
-      GithubService.createRepoFromTemplateEndpoint({
-        requestBody: data,
-      }),
 
-  })
   const createProjectMutation = useMutation({
     mutationFn: (data: ProjectCreate) =>
       ProjectsService.createProject({
@@ -99,31 +91,10 @@ export function CreateProjectModal({
 
     setIsLoading(true)
     try {
-      const dataRepoCreate: CreateRepoFromTemplateRequest = {
-        template_owner: templateOwner,
-        template_repo: templateRepo,
-        new_repo_name: projectName,
-        new_repo_description: description,
-        is_private: isPrivate,
-        github_installation_id: user?.github_installation_id || 0,
-      }
-
-      // Step 1: Create repository first
-      await withToast(
-        createRepositoryTemplateMutation.mutateAsync(dataRepoCreate),
-        {
-          loading: "Creating repository...",
-          success: <b>Repository created successfully!</b>,
-          error: <b>Repository creation failed. Please try again.</b>,
-        },
-      )
-
-      // Step 2: Only if repository creation succeeds, create project
       const dataProjectCreate: ProjectCreate = {
         name: projectName,
         is_private: isPrivate,
         tech_stack: techStack,
-        repository_url: `https://github.com/${user?.github_installations?.[0]?.account_login}/${projectName}`,
       }
 
       await withToast(

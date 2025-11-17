@@ -2,9 +2,10 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import type { Message } from '@/types/message'
 
 export type WebSocketMessage = {
-  type: 'connected' | 'message' | 'agent_message' | 'typing' | 'pong' | 'error' | 'routing' | 'agent_step' | 'agent_thinking' | 'tool_call' | 'agent_question' | 'agent_preview' | 'kanban_update' | 'scrum_master_step' | 'switch_tab'
+  type: 'connected' | 'message' | 'agent_message' | 'agent_response' | 'typing' | 'pong' | 'error' | 'routing' | 'agent_routing' | 'agent_step' | 'agent_thinking' | 'tool_call' | 'agent_question' | 'agent_preview' | 'kanban_update' | 'story_created' | 'story_updated' | 'story_status_changed' | 'scrum_master_step' | 'switch_tab'
   data?: Message | any
   agent_name?: string
+  agent_type?: string
   is_typing?: boolean
   message?: string
   project_id?: string
@@ -20,6 +21,7 @@ export type WebSocketMessage = {
   step_number?: number
   // For agent_thinking messages
   content?: string
+  structured_data?: any
   // For tool_call messages
   tool?: string
   display_name?: string
@@ -39,6 +41,12 @@ export type WebSocketMessage = {
   brief?: any
   incomplete_flag?: boolean
   prompt?: string
+  // For story events
+  story_id?: string
+  story_title?: string
+  old_status?: string
+  new_status?: string
+  updated_fields?: string[]
   // For switch_tab messages
   tab?: string
 }
@@ -149,6 +157,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
 
           case 'message':
           case 'agent_message':
+          case 'agent_response':
             console.log('[WebSocket] Received message:', data.type, data.data?.content?.substring(0, 100))
             if (data.data) {
               setMessages((prev) => {
@@ -181,7 +190,8 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
             break
 
           case 'routing':
-            console.log('Agent routing:', data.agent_selected, 'confidence:', data.confidence)
+          case 'agent_routing':
+            console.log('Agent routing:', data.agent_selected || data.agent_type, 'confidence:', data.confidence)
             break
 
           case 'agent_step':
@@ -262,6 +272,21 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
             if (data.tab) {
               setActiveTab(data.tab)
             }
+            break
+
+          case 'story_created':
+            console.log('Story created:', data.story_id, data.story_title)
+            // Could trigger Kanban board refresh or optimistic update
+            break
+
+          case 'story_updated':
+            console.log('Story updated:', data.story_id, 'fields:', data.updated_fields)
+            // Could trigger Kanban board refresh or optimistic update
+            break
+
+          case 'story_status_changed':
+            console.log('Story status changed:', data.story_id, data.old_status, '->', data.new_status)
+            // Could trigger Kanban board refresh or optimistic update
             break
 
           case 'agent_question':

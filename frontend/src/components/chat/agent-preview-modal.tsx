@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { CheckCircle, Edit, RefreshCw } from 'lucide-react'
 import type { AgentPreview } from '@/hooks/useChatWebSocket'
-import { ProductBriefPreview, ProductVisionPreview, BacklogPreview, SprintPlanPreview } from './previews'
+import { ProductBriefPreview, ProductVisionPreview, BacklogPreview } from './previews'
 
 interface AgentPreviewModalProps {
   preview: AgentPreview | null
@@ -79,9 +79,9 @@ export function AgentPreviewModal({ preview, onSubmit, onClose }: AgentPreviewMo
         )
       case 'sprint_plan':
         return (
-          <SprintPlanPreview
-            sprintPlan={preview.sprint_plan}
-          />
+          <div className="text-sm text-muted-foreground">
+            Sprint planning is no longer supported in Kanban mode
+          </div>
         )
       default:
         // Fallback: try to render whatever is available
@@ -105,12 +105,6 @@ export function AgentPreviewModal({ preview, onSubmit, onClose }: AgentPreviewMo
           return (
             <BacklogPreview
               backlog={preview.backlog}
-            />
-          )
-        } else if (preview.sprint_plan) {
-          return (
-            <SprintPlanPreview
-              sprintPlan={preview.sprint_plan}
             />
           )
         }

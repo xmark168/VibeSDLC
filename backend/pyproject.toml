@@ -1,0 +1,79 @@
+[project]
+name = "agents-service"
+version = "0.0.1"
+description = "Backend"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi[standard]>=0.115.0",
+    "python-multipart>=0.0.17",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.6.0",
+    "httpx>=0.28.0",
+    "uvicorn>=0.34.0",
+    "jwt>=1.4.0",
+    "sqlmodel>=0.0.27",
+    "alembic>=1.17.0",
+    "psycopg[binary]>=3.2.10",
+    "slowapi>=0.1.9",
+    "passlib>=1.7.4",
+    "emails>=0.6.0",
+    "jinja2>=3.1.0",
+    "bcrypt==4.0.1",
+    "redis>=7.0.1",
+    "email-validator>=2.3.0",
+    "sentry-sdk>=2.0.0",
+    # CrewAI Framework
+    "crewai>=0.86.0",
+    "crewai-tools>=0.12.0",
+    # Kafka for event-driven architecture
+    "aiokafka>=0.11.0",
+    # Additional tools
+    "pyyaml>=6.0.0",
+    "qdrant-client>=1.15.1",
+]
+
+
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["app"]
+
+
+[project.optional-dependencies]
+dev = ["ruff", "pylint", "pytest"]
+
+[tool.ruff]
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "ARG001", # unused arguments in functions
+    "T201",   # print statements are not allowed
+]
+ignore = [
+    "E501",  # line too long
+    "B008",  # do not perform function calls in argument defaults
+    "W191",  # indentation contains tabs
+]
+
+[tool.ruff.lint.pyupgrade]
+keep-runtime-typing = true
+
+[tool.coverage.run]
+source = ["app"]
+dynamic_context = "test_function"
+
+[tool.coverage.report]
+show_missing = true
+sort = "-Cover"

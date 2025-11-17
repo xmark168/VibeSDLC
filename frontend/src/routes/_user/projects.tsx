@@ -4,8 +4,6 @@ import { Loader2, Plus } from "lucide-react"
 import { useState } from "react"
 import { projectsApi } from "@/apis/projects"
 import { CreateProjectModal } from "@/components/projects/create-project-modal"
-import { GitHubInstallModal } from "@/components/projects/github-install-modal"
-import { GitHubLinkModal } from "@/components/projects/github-link-modal"
 import { ProjectList } from "@/components/projects/project-list"
 import { Button } from "@/components/ui/button"
 import useAuth from "@/hooks/useAuth"
@@ -14,8 +12,7 @@ import type { Project } from "@/types/project"
 import { CreateProjectContent } from "@/components/projects/create-project-content"
 import { HeaderProject } from "@/components/projects/header"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ApiError, GithubCheckGithubInstallationStatusResponse, GithubService, ProjectsListProjectsResponse, ProjectsService } from "@/client"
-import { GitHubInstallationHandler } from "@/components/github/GitHubInstallationHandler"
+import { ApiError, ProjectsListProjectsResponse, ProjectsService } from "@/client"
 import toast from "react-hot-toast"
 import { handleError } from "@/utils"
 import { requireRole } from "@/utils/auth"
@@ -30,64 +27,15 @@ export const Route = createFileRoute("/_user/projects")({
 
 function ProjectsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [showGitHubInstallModal, setShowGitHubInstallModal] = useState(false)
-  const [showGitHubLinkModal, setShowGitHubLinkModal] = useState(false)
-  const [_githubLinked, setGithubLinked] = useState(false)
-  const [linkSuccess, setLinkSuccess] = useState(false)
-  const installationId = (localStorage.getItem("installationId"))
   const queryClient = useQueryClient()
   const user = useAppStore((state) => state.user)
-  const { data: _githubStatus } = useQuery<GithubCheckGithubInstallationStatusResponse>({
-    queryKey: ["github-installation-status"],
-    queryFn: GithubService.checkGithubInstallationStatus,
-  })
   const { data: listProjectPublic, isLoading } = useQuery<ProjectsListProjectsResponse>({
     queryKey: ["list-project"],
     queryFn: () => ProjectsService.listProjects(),
   })
-  const linkInstallationMutation = useMutation({
-    mutationFn: GithubService.linkInstallationToUser,
-    onSuccess: () => {
-      toast.success("GitHub installation linked successfully")
-      setLinkSuccess(true)
-      localStorage.removeItem("installationId")
-      queryClient.invalidateQueries({
-        queryKey: ["currentUser"],
-      })
-    },
-    onError: (err) => {
-      handleError(err as ApiError)
-    },
-  })
-  console.log('_githubStatus', _githubStatus)
-
-
-  const _handleInstallGitHub = () => {
-    setShowGitHubInstallModal(true)
-  }
-
-  const handleGitHubInstallComplete = () => {
-    setShowGitHubInstallModal(false)
-    setShowGitHubLinkModal(true)
-  }
-
-  const handleGitHubLinked = async () => {
-    try {
-      await linkInstallationMutation.mutateAsync({
-        installationId: parseInt(installationId || "0", 10),
-      })
-    } catch (err) {
-      console.error("Failed to link installation:", err)
-    }
-  }
 
   const handleNewProjectClick = () => {
-    if (user?.github_installations === null) {
-      setShowGitHubLinkModal(true)
-    }
-    else {
-      setShowCreateModal(true)
-    }
+    setShowCreateModal(true)
   }
 
 
@@ -114,28 +62,10 @@ function ProjectsPage() {
 
   return (
     <>
-      <div className="container mx-auto">
-        <GitHubInstallationHandler />
-      </div>
-      {
-        showGitHubInstallModal && (
-          <AnimatePresence>
-            {showGitHubInstallModal && (
-              <GitHubInstallModal
-                onClose={() => setShowGitHubInstallModal(false)}
-                onOpen={() => setShowGitHubInstallModal(true)}
-                onInstall={handleGitHubInstallComplete}
-              />
-            )}
-          </AnimatePresence>
+     
+      
 
-        )
-      }
-
-      {
-        (user?.github_installations !== null)
-          || (installationId === undefined && listProjectPublic && listProjectPublic?.count === 0)
-          ? (
+       (
             <div className="min-h-screen">
               <HeaderProject />
               <div className="container mx-auto px-6 py-8">
@@ -181,8 +111,6 @@ function ProjectsPage() {
                     ) : (
                       <ProjectList
                         projects={listProjectPublic?.data || []}
-                        openLinkGithubModal={setShowGitHubLinkModal}
-                        openInstallGithubModal={setShowGitHubInstallModal}
                       />
                     )}
                   </motion.div>
@@ -199,34 +127,9 @@ function ProjectsPage() {
                   />
                 )}
               </AnimatePresence>
-
-
-
-              <AnimatePresence>
-                {showGitHubLinkModal && (
-                  <GitHubLinkModal
-                    onClose={() => {
-                      setShowGitHubLinkModal(false)
-                      setLinkSuccess(false)
-                    }}
-                    onLinked={handleGitHubLinked}
-                    installationId={installationId ? parseInt(installationId, 10) : null}
-                    isSuccess={linkSuccess}
-                  />
-                )}
-              </AnimatePresence>
             </div>
-          ) : (
-            <>
-              <HeaderProject />
-              <CreateProjectContent
-                onInstallGitHub={_handleInstallGitHub}
-                githubLinked={_githubLinked}
-              />
-
-            </>
           )
-      }
+
 
     </>
   )
