@@ -81,7 +81,6 @@ async def create_message(
     if message_in.author_type == AuthorType.USER:
         try:
             from app.kafka import get_kafka_producer, KafkaTopics, UserMessageEvent
-            from datetime import datetime
 
             producer = await get_kafka_producer()
 
@@ -90,14 +89,12 @@ async def create_message(
                 project_id=obj.project_id,
                 user_id=current_user.id,
                 content=obj.content,
-                metadata=obj.message_metadata,
-                timestamp=datetime.utcnow()
+                message_type=message_in.message_type or "text",
             )
 
-            await producer.publish_event(
+            await producer.publish(
                 topic=KafkaTopics.USER_MESSAGES,
-                event=user_message_event.model_dump(),
-                key=str(obj.project_id)
+                event=user_message_event,
             )
         except Exception as e:
             # Log error but don't fail the API call

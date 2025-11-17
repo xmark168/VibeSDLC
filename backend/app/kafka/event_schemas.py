@@ -16,14 +16,14 @@ from pydantic import BaseModel, Field
 class KafkaTopics(str, Enum):
     """Kafka topic names for different event types."""
 
-    USER_MESSAGES = "user.messages"
-    AGENT_RESPONSES = "agent.responses"
-    AGENT_ROUTING = "agent.routing"
-    STORY_EVENTS = "story.events"
-    FLOW_STATUS = "flow.status"
-    AGENT_STATUS = "agent.status"
-    APPROVAL_REQUESTS = "approval.requests"
-    APPROVAL_RESPONSES = "approval.responses"
+    USER_MESSAGES = "user_messages"
+    AGENT_RESPONSES = "agent_responses"
+    AGENT_ROUTING = "agent_routing"
+    STORY_EVENTS = "story_events"
+    FLOW_STATUS = "flow_status"
+    AGENT_STATUS = "agent_status"
+    APPROVAL_REQUESTS = "approval_requests"
+    APPROVAL_RESPONSES = "approval_responses"
 
 
 # BASE EVENT SCHEMA

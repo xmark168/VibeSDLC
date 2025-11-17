@@ -74,6 +74,8 @@ class ChatMessageBase(SQLModel):
 class ChatMessageCreate(ChatMessageBase):
     project_id: UUID
     agent_id: Optional[UUID] = None
+    message_type: Optional[str] = "text"  # "text" | "product_brief" | "product_vision" | "product_backlog"
+    structured_data: Optional[dict] = None
 
 class ChatMessageUpdate(SQLModel):
     content: Optional[str] = None
