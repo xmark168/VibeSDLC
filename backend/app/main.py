@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.api.main import api_router
 from app.core.config import settings
@@ -26,7 +27,7 @@ async def lifespan(app: FastAPI):
     # Start Kafka producer
     import logging
     logger = logging.getLogger(__name__)
-    from app.crews.events.kafka_producer import get_kafka_producer, shutdown_kafka_producer
+    from app.kafka import get_kafka_producer, shutdown_kafka_producer
     try:
         producer = await get_kafka_producer()
         logger.info("Kafka producer started")
@@ -66,8 +67,7 @@ async def lifespan(app: FastAPI):
 if settings.SENTRY_DSN and settings.ENVIRONMENT != "local":
     sentry_sdk.init(dsn=str(settings.SENTRY_DSN), enable_tracing=True)
 
-# Initialize rate limiter
-limiter = Limiter(key_func=get_remote_address)
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -77,17 +77,18 @@ app = FastAPI(
 )
 
 # Add rate limiter to app state
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Set all CORS enabled origins
-if settings.all_cors_origins:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.all_cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+# CORS temporarily disabled for WebSocket debugging
+# if settings.all_cors_origins:
+#     app.add_middleware(
+#         CORSMiddleware,
+#         allow_origins=settings.all_cors_origins,
+#         allow_credentials=True,
+#         allow_methods=["*"],
+#         allow_headers=["*"],
+#     )
+
+# SlowAPI middleware temporarily disabled for debugging
+# app.add_middleware(SlowAPIMiddleware)
 
 app.include_router(api_router, prefix=settings.API_V1_STR)

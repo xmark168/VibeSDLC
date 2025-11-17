@@ -80,8 +80,7 @@ async def create_message(
     # Publish user messages to Kafka for agent routing
     if message_in.author_type == AuthorType.USER:
         try:
-            from app.crews.events.kafka_producer import get_kafka_producer
-            from app.crews.events.event_schemas import KafkaTopics, UserMessageEvent
+            from app.kafka import get_kafka_producer, KafkaTopics, UserMessageEvent
             from datetime import datetime
 
             producer = await get_kafka_producer()

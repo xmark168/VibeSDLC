@@ -1,18 +1,18 @@
 from fastapi import APIRouter
 
 from app.api.routes import (
+    agents,
     auth,
+    blockers,  # Story blockers tracking
+    chat,  # WebSocket chat endpoint
+    messages,
     private,
+    project_rules,  # Project-specific rules and configurations
+    projects,
+    stories,  # Story management (Kanban with Todo/InProgress/Review/Done)
     users,
     utils,
-    stories,  # Story management (Kanban with Todo/InProgress/Review/Done)
-    projects,
-    messages,
-    agents,
-    blockers,  # Story blockers tracking
-    project_rules,  # Project-specific rules and configurations
-    crews,  # CrewAI multi-agent system
-    chat,  # WebSocket chat endpoint
+    workflows,  # AI workflow management
 )
 from app.core.config import settings
 
@@ -26,7 +26,7 @@ api_router.include_router(messages.router)
 api_router.include_router(agents.router)
 api_router.include_router(blockers.router)  # Story blockers tracking
 api_router.include_router(project_rules.router)  # Project-specific rules and configurations
-api_router.include_router(crews.router)  # CrewAI multi-agent system
+api_router.include_router(workflows.router)  # AI workflow management
 api_router.include_router(chat.router)  # WebSocket chat endpoint
 
 if settings.ENVIRONMENT == "local":

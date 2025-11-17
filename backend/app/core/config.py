@@ -145,7 +145,7 @@ class Settings(BaseSettings):
 
     # LLM/LANGGRAPH SETTINGS
     LLM_API_KEY: str = ""
-    LLM_MODEL: str = "gpt-4o"
+    LLM_MODEL: str = "gpt-4.1"
     DEFAULT_LLM_TEMPERATURE: float = 0.2
     MAX_TOKENS: int = 2000
     MAX_LLM_CALL_RETRIES: int = 3

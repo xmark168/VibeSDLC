@@ -39,6 +39,44 @@ class Message:
     def __hash__(self):
         return hash(self.id)
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize message to dictionary.
+
+        Returns:
+            Dictionary representation of the message
+        """
+        return {
+            "id": str(self.id),
+            "content": self.content,
+            "role": self.role,
+            "sent_from": self.sent_from,
+            "send_to": list(self.send_to),
+            "timestamp": self.timestamp.isoformat(),
+            "metadata": self.metadata,
+            "cause_by": self.cause_by.__name__ if self.cause_by else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Message":
+        """Deserialize message from dictionary.
+
+        Args:
+            data: Dictionary with message data
+
+        Returns:
+            Message instance
+        """
+        return cls(
+            content=data["content"],
+            role=data.get("role", "assistant"),
+            sent_from=data.get("sent_from", ""),
+            send_to=set(data.get("send_to", [])),
+            id=UUID(data["id"]) if "id" in data else uuid4(),
+            timestamp=datetime.fromisoformat(data["timestamp"]) if "timestamp" in data else datetime.utcnow(),
+            metadata=data.get("metadata", {}),
+            # Note: cause_by cannot be fully serialized (it's a class reference)
+        )
+
 
 class MessageQueue:
     """

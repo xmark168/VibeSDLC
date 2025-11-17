@@ -27,7 +27,6 @@ def init_db(session: Session) -> None:
     ).first()
     if not user:
         user_in = UserCreate(
-            username="admin",  # Default admin username
             email=settings.FIRST_SUPERUSER,
             password=settings.FIRST_SUPERUSER_PASSWORD,
         )
