@@ -1,86 +1,226 @@
 """
-Test script for Team Leader Agent
+Team Leader Agent Test Suite
 
-Publishes test messages to USER_MESSAGES topic to verify:
-1. Team Leader consumes messages
-2. Team Leader analyzes intent using CrewAI (delegation, insights, or hybrid)
-3. Team Leader provides project insights when requested
-4. Team Leader delegates to appropriate specialist agents (BA, Dev, Tester)
-5. Specialist agents receive and print task details (debug mode)
-6. Parallel delegation to multiple agents works correctly
-7. Hybrid requests (insights + delegation) are handled correctly
+Comprehensive test script for Team Leader Agent that:
+- Tests intent analysis (delegation, insights, hybrid)
+- Tests routing to specialist agents (BA, Dev, Tester)
+- Tests parallel delegation capabilities
+- Tests insights/analytics requests
+- Validates end-to-end message flow
 """
 
 import asyncio
 import uuid
 from datetime import datetime
+from typing import Dict, Any
+from enum import Enum
 
-from app.crews.events.kafka_producer import get_kafka_producer
-from app.crews.events.event_schemas import (
-    KafkaTopics,
-    UserMessageEvent,
-)
+from app.crews.events.kafka_producer import get_kafka_producer, shutdown_kafka_producer
+from app.crews.events.event_schemas import KafkaTopics, UserMessageEvent
 
 
-async def send_test_message():
-    """Send a test message to USER_MESSAGES topic"""
+class TestCategory(Enum):
+    """Test message categories"""
+    DELEGATION_BA = "delegation_ba"
+    DELEGATION_DEV = "delegation_dev"
+    DELEGATION_TESTER = "delegation_tester"
+    INSIGHTS = "insights"
+    PARALLEL = "parallel"
+    HYBRID = "hybrid"
+
+
+class TestMessage:
+    """Test message with expected behavior"""
+    def __init__(
+        self,
+        content: str,
+        category: TestCategory,
+        expected_agents: list[str],
+        description: str = ""
+    ):
+        self.content = content
+        self.category = category
+        self.expected_agents = expected_agents
+        self.description = description
+
+
+# Test message catalog
+TEST_MESSAGES = {
+    # BA Agent Tests
+    "ba_user_story": TestMessage(
+        content="Create a user story for user login with social media authentication",
+        category=TestCategory.DELEGATION_BA,
+        expected_agents=["ba"],
+        description="User story creation"
+    ),
+    "ba_requirements": TestMessage(
+        content="Define acceptance criteria for the shopping cart checkout flow",
+        category=TestCategory.DELEGATION_BA,
+        expected_agents=["ba"],
+        description="Requirements analysis"
+    ),
+    "ba_specification": TestMessage(
+        content="Write technical specifications for the payment gateway integration",
+        category=TestCategory.DELEGATION_BA,
+        expected_agents=["ba"],
+        description="Technical specs"
+    ),
+
+    # Developer Agent Tests
+    "dev_implementation": TestMessage(
+        content="Implement the user registration API with email verification",
+        category=TestCategory.DELEGATION_DEV,
+        expected_agents=["dev"],
+        description="Feature implementation"
+    ),
+    "dev_bugfix": TestMessage(
+        content="Fix the authentication token expiration bug in the login module",
+        category=TestCategory.DELEGATION_DEV,
+        expected_agents=["dev"],
+        description="Bug fix"
+    ),
+    "dev_refactor": TestMessage(
+        content="Refactor the database connection pooling code for better performance",
+        category=TestCategory.DELEGATION_DEV,
+        expected_agents=["dev"],
+        description="Code refactoring"
+    ),
+
+    # Tester Agent Tests
+    "tester_test_cases": TestMessage(
+        content="Design test cases for the checkout flow including edge cases",
+        category=TestCategory.DELEGATION_TESTER,
+        expected_agents=["tester"],
+        description="Test case design"
+    ),
+    "tester_qa": TestMessage(
+        content="Run comprehensive QA tests on the payment gateway integration",
+        category=TestCategory.DELEGATION_TESTER,
+        expected_agents=["tester"],
+        description="QA testing"
+    ),
+    "tester_automation": TestMessage(
+        content="Create automated test suite for the user authentication flow",
+        category=TestCategory.DELEGATION_TESTER,
+        expected_agents=["tester"],
+        description="Test automation"
+    ),
+
+    # Insights Tests
+    "insights_metrics": TestMessage(
+        content="Show me the current project metrics and team performance analytics",
+        category=TestCategory.INSIGHTS,
+        expected_agents=[],
+        description="Project metrics request"
+    ),
+    "insights_status": TestMessage(
+        content="What's the status of all user stories? Any blockers?",
+        category=TestCategory.INSIGHTS,
+        expected_agents=[],
+        description="Status and blockers"
+    ),
+    "insights_velocity": TestMessage(
+        content="Analyze our team velocity and cycle time trends",
+        category=TestCategory.INSIGHTS,
+        expected_agents=[],
+        description="Velocity analysis"
+    ),
+
+    # Parallel Delegation Tests
+    "parallel_full_feature": TestMessage(
+        content="Implement a new notification system - create user stories, write the code, and test it thoroughly",
+        category=TestCategory.PARALLEL,
+        expected_agents=["ba", "dev", "tester"],
+        description="Full feature development"
+    ),
+    "parallel_bug_workflow": TestMessage(
+        content="There's a critical payment bug - analyze requirements, fix the code, and run comprehensive tests",
+        category=TestCategory.PARALLEL,
+        expected_agents=["ba", "dev", "tester"],
+        description="Critical bug workflow"
+    ),
+    "parallel_refactor": TestMessage(
+        content="Refactor the user profile module - update specs, implement changes, and verify with tests",
+        category=TestCategory.PARALLEL,
+        expected_agents=["ba", "dev", "tester"],
+        description="Refactoring workflow"
+    ),
+
+    # Hybrid Tests (Insights + Delegation)
+    "hybrid_status_fix": TestMessage(
+        content="Show me blocked stories and help fix the authentication blocker",
+        category=TestCategory.HYBRID,
+        expected_agents=["dev"],
+        description="Insights + bug fix"
+    ),
+    "hybrid_metrics_plan": TestMessage(
+        content="Analyze sprint progress and create user stories for remaining features",
+        category=TestCategory.HYBRID,
+        expected_agents=["ba"],
+        description="Insights + planning"
+    ),
+}
+
+
+async def send_single_message(
+    content: str,
+    project_id: uuid.UUID,
+    user_id: uuid.UUID,
+    metadata: Dict[str, Any] = None
+) -> bool:
+    """Send a single test message to USER_MESSAGES topic"""
+    producer = await get_kafka_producer()
+
+    message_id = uuid.uuid4()
+    user_message = UserMessageEvent(
+        message_id=message_id,
+        project_id=project_id,
+        user_id=user_id,
+        content=content,
+        metadata=metadata or {"source": "test_script", "test_run": True},
+        timestamp=datetime.utcnow()
+    )
+
+    success = await producer.publish_event(
+        topic=KafkaTopics.USER_MESSAGES,
+        event=user_message.model_dump(),
+        key=str(project_id)
+    )
+
+    return success
+
+
+async def test_single_message():
+    """Test 1: Send a single custom message"""
+    print("\n" + "=" * 80)
+    print("🧪 TEST 1: Single Custom Message")
+    print("=" * 80)
+
     try:
-        print("\n" + "=" * 80)
-        print("🚀 Team Leader Agent Test Script")
-        print("=" * 80)
-
-        # Get Kafka producer
-        producer = await get_kafka_producer()
-        print("✓ Kafka producer initialized")
-
-        # Create test message
-        message_id = uuid.uuid4()
         project_id = uuid.uuid4()
         user_id = uuid.uuid4()
 
-        # Test message content
-        test_content = "Hello Team Leader! Please delegate this task to the test agent for verification."
+        print("\nEnter your test message (or press Enter for default):")
+        custom_content = input("> ").strip()
 
-        user_message = UserMessageEvent(
-            message_id=message_id,
-            project_id=project_id,
-            user_id=user_id,
-            content=test_content,
-            metadata={
-                "source": "test_script",
-                "test_run": True
-            },
-            timestamp=datetime.utcnow()
-        )
+        if not custom_content:
+            custom_content = "Create a user story for implementing dark mode feature"
 
-        print(f"\n📝 Sending test message:")
-        print(f"   Message ID:  {message_id}")
-        print(f"   Project ID:  {project_id}")
-        print(f"   User ID:     {user_id}")
-        print(f"   Content:     {test_content}")
+        print(f"\n📝 Sending message:")
+        print(f"   Project ID: {project_id}")
+        print(f"   User ID:    {user_id}")
+        print(f"   Content:    {custom_content}")
         print("-" * 80)
 
-        # Publish to USER_MESSAGES topic
-        success = await producer.publish_event(
-            topic=KafkaTopics.USER_MESSAGES,
-            event=user_message.model_dump(),
-            key=str(project_id)
-        )
+        success = await send_single_message(custom_content, project_id, user_id)
 
         if success:
             print("✅ Message published successfully!")
             print("\n📊 Expected flow:")
-            print("   1. Team Leader Agent consumes from USER_MESSAGES")
+            print("   1. Team Leader consumes message from USER_MESSAGES")
             print("   2. Team Leader analyzes intent using CrewAI")
-            print("   3. Based on analysis, Team Leader:")
-            print("      - Provides insights (project metrics, analytics, status)")
-            print("      - Delegates to BA Agent (user stories, requirements, criteria)")
-            print("      - Delegates to Dev Agent (implementation, bug fixes, code)")
-            print("      - Delegates to Tester Agent (test cases, QA, testing)")
-            print("      - Or combination (hybrid: insights + delegation)")
-            print("   4. Selected agent(s) receive tasks and print details")
-            print("\n⏳ Check the application logs/console to see the agent output...")
-            print("=" * 80 + "\n")
+            print("   3. Team Leader routes to appropriate agent(s) or provides insights")
+            print("   4. Check application logs for detailed output")
         else:
             print("❌ Failed to publish message")
 
@@ -88,175 +228,233 @@ async def send_test_message():
         print(f"\n❌ Error: {e}")
         import traceback
         traceback.print_exc()
+    finally:
+        await shutdown_kafka_producer()
+        print("\n" + "=" * 80 + "\n")
 
 
-async def send_multiple_test_messages():
-    """Send multiple test messages with different intents"""
+async def test_category(category: TestCategory, delay: float = 1.0):
+    """Test specific category of messages"""
+    category_name = category.value.replace("_", " ").title()
+    print("\n" + "=" * 80)
+    print(f"🧪 TEST: {category_name}")
+    print("=" * 80)
+
     try:
-        print("\n" + "=" * 80)
-        print("🚀 Team Leader Agent - Multiple Test Messages")
-        print("=" * 80)
-
-        producer = await get_kafka_producer()
-        print("✓ Kafka producer initialized\n")
-
-        # Different test messages to test agent routing
-        test_messages = [
-            "Create a user story for the login feature",  # Should go to BA
-            "Fix the bug in the authentication module",   # Should go to Dev
-            "Run tests for the payment gateway",          # Should go to Tester
-            "Test agent, please verify the delegation system",  # Should go to Test Agent
-            "Show me the project metrics and analytics",  # Might go to Test/BA
-            "Write code to implement the user registration API",  # Should go to Dev
-            "Design test cases for the checkout flow",    # Should go to Tester
-            "Define acceptance criteria for the shopping cart feature",  # Should go to BA
+        # Filter messages by category
+        messages = [
+            (key, msg) for key, msg in TEST_MESSAGES.items()
+            if msg.category == category
         ]
+
+        if not messages:
+            print(f"⚠️  No test messages found for category: {category_name}")
+            return
 
         project_id = uuid.uuid4()
         user_id = uuid.uuid4()
 
-        for idx, content in enumerate(test_messages, 1):
-            message_id = uuid.uuid4()
+        print(f"\n📋 Running {len(messages)} test(s) for: {category_name}")
+        print(f"   Project ID: {project_id}")
+        print("-" * 80)
 
-            user_message = UserMessageEvent(
-                message_id=message_id,
-                project_id=project_id,
-                user_id=user_id,
-                content=content,
-                metadata={
-                    "source": "test_script",
-                    "test_run": True,
-                    "test_number": idx
-                },
-                timestamp=datetime.utcnow()
-            )
+        for idx, (key, msg) in enumerate(messages, 1):
+            print(f"\n📨 Test {idx}/{len(messages)}: {msg.description}")
+            print(f"   Message:  {msg.content}")
+            print(f"   Expected: {', '.join(msg.expected_agents) if msg.expected_agents else 'Insights response'}")
 
-            print(f"📨 Message {idx}: {content}")
+            metadata = {
+                "source": "test_script",
+                "test_run": True,
+                "test_key": key,
+                "category": category.value,
+                "expected_agents": msg.expected_agents,
+            }
 
-            success = await producer.publish_event(
-                topic=KafkaTopics.USER_MESSAGES,
-                event=user_message.model_dump(),
-                key=str(project_id)
-            )
+            success = await send_single_message(msg.content, project_id, user_id, metadata)
 
             if success:
                 print(f"   ✅ Published successfully")
             else:
                 print(f"   ❌ Failed to publish")
 
-            # Small delay between messages
-            await asyncio.sleep(1)
+            # Delay between messages
+            if idx < len(messages):
+                await asyncio.sleep(delay)
 
-        print("\n" + "=" * 80)
-        print("✅ All test messages sent!")
-        print("⏳ Check the application logs to see Team Leader analysis and agent output")
-        print("=" * 80 + "\n")
+        print("\n" + "-" * 80)
+        print(f"✅ All {len(messages)} test(s) sent for {category_name}")
+        print("⏳ Check application logs for Team Leader analysis and routing")
 
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
         traceback.print_exc()
+    finally:
+        await shutdown_kafka_producer()
+        print("\n" + "=" * 80 + "\n")
 
 
-async def send_parallel_delegation_tests():
-    """Send messages specifically designed to test parallel delegation"""
-    try:
-        print("\n" + "=" * 80)
-        print("🚀 Team Leader Agent - Parallel Delegation Tests")
-        print("=" * 80)
+async def test_all_categories():
+    """Test all message categories sequentially"""
+    print("\n" + "=" * 80)
+    print("🧪 COMPREHENSIVE TEST SUITE")
+    print("=" * 80)
+    print("\nThis will test all categories:")
+    print("  1. BA Agent delegation")
+    print("  2. Developer Agent delegation")
+    print("  3. Tester Agent delegation")
+    print("  4. Insights requests")
+    print("  5. Parallel delegation")
+    print("  6. Hybrid requests")
+    print("\n" + "=" * 80)
 
-        producer = await get_kafka_producer()
-        print("✓ Kafka producer initialized\n")
+    categories = [
+        TestCategory.DELEGATION_BA,
+        TestCategory.DELEGATION_DEV,
+        TestCategory.DELEGATION_TESTER,
+        TestCategory.INSIGHTS,
+        TestCategory.PARALLEL,
+        TestCategory.HYBRID,
+    ]
 
-        # Messages that should trigger parallel delegation (multiple agents needed)
-        parallel_test_messages = [
-            "Implement a new user authentication feature - create user stories, write the code, and test it thoroughly",
-            "We have a critical bug in the payment system - need requirements analysis, code fix, and comprehensive testing",
-            "Build a notification system from scratch with full BA analysis, development, and QA coverage",
-            "Refactor the entire user profile module - needs stories, implementation, and test coverage",
-        ]
+    for idx, category in enumerate(categories, 1):
+        print(f"\n🔄 Running category {idx}/{len(categories)}...")
+        await test_category(category, delay=1.5)
 
-        project_id = uuid.uuid4()
-        user_id = uuid.uuid4()
-
-        print("📋 These messages are designed to trigger PARALLEL DELEGATION")
-        print("   (Team Leader should delegate to BA + Dev + Tester simultaneously)\n")
-
-        for idx, content in enumerate(parallel_test_messages, 1):
-            message_id = uuid.uuid4()
-
-            user_message = UserMessageEvent(
-                message_id=message_id,
-                project_id=project_id,
-                user_id=user_id,
-                content=content,
-                metadata={
-                    "source": "parallel_delegation_test",
-                    "test_run": True,
-                    "test_number": idx,
-                    "expect_parallel": True
-                },
-                timestamp=datetime.utcnow()
-            )
-
-            print(f"📨 Parallel Test {idx}:")
-            print(f"   {content}")
-
-            success = await producer.publish_event(
-                topic=KafkaTopics.USER_MESSAGES,
-                event=user_message.model_dump(),
-                key=str(project_id)
-            )
-
-            if success:
-                print(f"   ✅ Published successfully")
-                print(f"   ⏳ Watch for PARALLEL DELEGATION log in Team Leader")
-            else:
-                print(f"   ❌ Failed to publish")
-
-            print()
-
-            # Longer delay to see parallel delegation in action
+        # Delay between categories
+        if idx < len(categories):
+            print(f"\n⏸️  Waiting 3 seconds before next category...")
             await asyncio.sleep(3)
 
-        print("=" * 80)
-        print("✅ All parallel delegation tests sent!")
-        print("📊 Check logs to verify:")
-        print("   - Team Leader logs show 'PARALLEL DELEGATION' message")
-        print("   - Multiple agents (BA, Dev, Tester) receive tasks simultaneously")
-        print("=" * 80 + "\n")
+    print("\n" + "=" * 80)
+    print("✅ COMPREHENSIVE TEST SUITE COMPLETED")
+    print("=" * 80)
+    print("\n📊 Summary:")
+    print(f"   Total categories tested: {len(categories)}")
+    print(f"   Total messages sent:     {len(TEST_MESSAGES)}")
+    print("\n📋 Check application logs to verify:")
+    print("   - CrewAI intent analysis for each message")
+    print("   - Correct routing to expected agents")
+    print("   - Parallel delegation when multiple agents needed")
+    print("   - Insights responses for analytics requests")
+    print("=" * 80 + "\n")
+
+
+async def test_parallel_stress():
+    """Stress test parallel delegation with rapid messages"""
+    print("\n" + "=" * 80)
+    print("🧪 PARALLEL DELEGATION STRESS TEST")
+    print("=" * 80)
+
+    try:
+        project_id = uuid.uuid4()
+        user_id = uuid.uuid4()
+
+        # Get parallel messages
+        parallel_messages = [
+            msg for msg in TEST_MESSAGES.values()
+            if msg.category == TestCategory.PARALLEL
+        ]
+
+        print(f"\n📋 Sending {len(parallel_messages)} parallel delegation messages")
+        print(f"   Project ID: {project_id}")
+        print(f"   Delay:      0.5s (rapid fire)")
+        print("-" * 80)
+
+        for idx, msg in enumerate(parallel_messages, 1):
+            print(f"\n⚡ Rapid Test {idx}/{len(parallel_messages)}")
+            print(f"   {msg.content[:60]}...")
+
+            metadata = {
+                "source": "stress_test",
+                "test_run": True,
+                "expect_parallel": True,
+                "expected_agents": msg.expected_agents,
+            }
+
+            success = await send_single_message(msg.content, project_id, user_id, metadata)
+
+            if success:
+                print(f"   ✅ Sent")
+            else:
+                print(f"   ❌ Failed")
+
+            await asyncio.sleep(0.5)  # Rapid fire
+
+        print("\n" + "-" * 80)
+        print("✅ Stress test completed!")
+        print("📊 Watch logs for parallel delegation handling")
 
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
         traceback.print_exc()
+    finally:
+        await shutdown_kafka_producer()
+        print("\n" + "=" * 80 + "\n")
 
 
 async def main():
-    """Main test function"""
-    print("\n🔧 Team Leader Agent Test Options:")
-    print("1. Send single test message")
-    print("2. Send multiple test messages with different intents")
-    print("3. Send parallel delegation test messages")
-    print("4. All tests (1 + 2 + 3)\n")
+    """Main test menu"""
+    while True:
+        print("\n" + "=" * 80)
+        print("🧪 TEAM LEADER AGENT TEST SUITE")
+        print("=" * 80)
+        print("\nTest Options:")
+        print("  1. Single custom message")
+        print("  2. BA Agent delegation tests")
+        print("  3. Developer Agent delegation tests")
+        print("  4. Tester Agent delegation tests")
+        print("  5. Insights/Analytics tests")
+        print("  6. Parallel delegation tests")
+        print("  7. Hybrid (insights + delegation) tests")
+        print("  8. All categories (comprehensive)")
+        print("  9. Parallel delegation stress test")
+        print("  0. Exit")
+        print("\n" + "=" * 80)
 
-    choice = input("Select option (1/2/3/4): ").strip()
+        choice = input("\nSelect option (0-9): ").strip()
 
-    if choice == "1":
-        await send_test_message()
-    elif choice == "2":
-        await send_multiple_test_messages()
-    elif choice == "3":
-        await send_parallel_delegation_tests()
-    elif choice == "4":
-        await send_test_message()
-        await asyncio.sleep(3)
-        await send_multiple_test_messages()
-        await asyncio.sleep(3)
-        await send_parallel_delegation_tests()
-    else:
-        print("Invalid choice!")
+        if choice == "0":
+            print("\n👋 Goodbye!\n")
+            break
+        elif choice == "1":
+            await test_single_message()
+        elif choice == "2":
+            await test_category(TestCategory.DELEGATION_BA)
+        elif choice == "3":
+            await test_category(TestCategory.DELEGATION_DEV)
+        elif choice == "4":
+            await test_category(TestCategory.DELEGATION_TESTER)
+        elif choice == "5":
+            await test_category(TestCategory.INSIGHTS)
+        elif choice == "6":
+            await test_category(TestCategory.PARALLEL)
+        elif choice == "7":
+            await test_category(TestCategory.HYBRID)
+        elif choice == "8":
+            await test_all_categories()
+        elif choice == "9":
+            await test_parallel_stress()
+        else:
+            print("\n❌ Invalid choice! Please select 0-9\n")
+            continue
+
+        # Ask if user wants to continue
+        print("\n" + "-" * 80)
+        continue_choice = input("Run another test? (y/n): ").strip().lower()
+        if continue_choice != "y":
+            print("\n👋 Goodbye!\n")
+            break
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n\n⚠️  Test interrupted by user\n")
+    except Exception as e:
+        print(f"\n❌ Fatal error: {e}")
+        import traceback
+        traceback.print_exc()
