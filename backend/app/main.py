@@ -24,41 +24,43 @@ async def lifespan(app: FastAPI):
         init_db(session)
 
     # Start Kafka producer
+    import logging
+    logger = logging.getLogger(__name__)
     from app.crews.events.kafka_producer import get_kafka_producer, shutdown_kafka_producer
     try:
         producer = await get_kafka_producer()
-        print("✓ Kafka producer started")
+        logger.info("Kafka producer started")
     except Exception as e:
-        print(f"⚠️  Failed to start Kafka producer: {e}")
-        print("   Continuing without Kafka support...")
+        logger.warning(f"Failed to start Kafka producer: {e}")
+        logger.warning("Continuing without Kafka support...")
 
     # Start all Kafka consumers
     from app.kafka.consumer_registry import start_all_consumers, shutdown_all_consumers
     try:
         await start_all_consumers()
-        print("✓ All Kafka consumers started")
+        logger.info("All Kafka consumers started")
     except Exception as e:
-        print(f"⚠️  Failed to start Kafka consumers: {e}")
-        print("   Continuing without consumer support...")
+        logger.warning(f"Failed to start Kafka consumers: {e}")
+        logger.warning("Continuing without consumer support...")
 
     yield
 
     # Shutdown: cleanup consumers and producer
-    print("Shutting down...")
+    logger.info("Shutting down...")
 
     try:
         await shutdown_all_consumers()
-        print("✓ Kafka consumers shut down")
+        logger.info("Kafka consumers shut down")
     except Exception as e:
-        print(f"Error shutting down consumers: {e}")
+        logger.error(f"Error shutting down consumers: {e}")
 
     try:
         await shutdown_kafka_producer()
-        print("✓ Kafka producer shut down")
+        logger.info("Kafka producer shut down")
     except Exception as e:
-        print(f"Error shutting down producer: {e}")
+        logger.error(f"Error shutting down producer: {e}")
 
-    print("✓ Application shutdown complete")
+    logger.info("Application shutdown complete")
 
 
 if settings.SENTRY_DSN and settings.ENVIRONMENT != "local":

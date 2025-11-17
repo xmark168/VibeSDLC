@@ -12,21 +12,21 @@ from uuid import UUID
 # Kafka Topics
 class KafkaTopics:
     """Kafka topic names"""
-    CREW_EVENTS = "crew.events"      # General crew lifecycle events
-    TASK_QUEUE = "crew.tasks"        # Task assignment queue
-    TASK_RESULTS = "crew.results"    # Task completion results
-    FLOW_STATUS = "crew.flow.status" # Flow execution status updates
-    AGENT_STATUS = "crew.agent.status"  # Agent health/status updates
+    CREW_EVENTS = "crew-events"      # General crew lifecycle events
+    TASK_QUEUE = "crew-tasks"        # Task assignment queue
+    TASK_RESULTS = "crew-results"    # Task completion results
+    FLOW_STATUS = "crew-flow-status" # Flow execution status updates
+    AGENT_STATUS = "crew-agent-status"  # Agent health/status updates
 
     # New topics for agent routing
-    USER_MESSAGES = "user.messages"  # User input messages
-    AGENT_TASKS_BA = "agent.tasks.ba"  # Tasks for Business Analyst
-    AGENT_TASKS_DEV = "agent.tasks.dev"  # Tasks for Developer
-    AGENT_TASKS_TESTER = "agent.tasks.tester"  # Tasks for Tester
-    AGENT_TASKS_LEADER = "agent.tasks.leader"  # Tasks for Team Leader
-    AGENT_RESPONSES = "agent.responses"  # Agent responses
-    AGENT_ROUTING = "agent.routing"  # Routing decisions
-    STORY_EVENTS = "story.events"  # Story lifecycle events
+    USER_MESSAGES = "user-messages"  # User input messages
+    AGENT_TASKS_BA = "agent-tasks-ba"  # Tasks for Business Analyst
+    AGENT_TASKS_DEV = "agent-tasks-dev"  # Tasks for Developer
+    AGENT_TASKS_TESTER = "agent-tasks-tester"  # Tasks for Tester
+    AGENT_TASKS_LEADER = "agent-tasks-leader"  # Tasks for Team Leader
+    AGENT_RESPONSES = "agent-responses"  # Agent responses
+    AGENT_ROUTING = "agent-routing"  # Routing decisions
+    STORY_EVENTS = "story-events"  # Story lifecycle events
 
 # Redis Keys
 class RedisKeys:

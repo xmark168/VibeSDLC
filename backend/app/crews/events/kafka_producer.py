@@ -48,10 +48,6 @@ class KafkaEventProducer:
                 bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
                 value_serializer=lambda v: json.dumps(v, default=str).encode('utf-8'),
                 key_serializer=lambda k: k.encode('utf-8') if k else None,
-                enable_idempotence=True,  # Ensure exactly-once delivery
-                acks='all',  # Wait for all replicas to acknowledge
-                retries=3,
-                max_in_flight_requests_per_connection=1,
                 security_protocol=settings.KAFKA_SECURITY_PROTOCOL,
                 sasl_mechanism=settings.KAFKA_SASL_MECHANISM,
                 sasl_plain_username=settings.KAFKA_SASL_USERNAME,

@@ -11,11 +11,6 @@ import { CodeViewer } from "../shared/code-viewer"
 import { AnimatedTooltip } from "../ui/animated-tooltip"
 import { AppViewer } from "./app-viewer"
 import Loggings from "./loggings"
-import { useActiveSprint, useSprints } from "@/queries/projects"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Calendar } from "lucide-react"
-// TraDS: Import API client for Sprint Planner test
-import { agentApi } from "@/apis/agent"
 import { useQueryClient } from "@tanstack/react-query"
 //type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings"
 type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings"
@@ -73,28 +68,7 @@ const agent = [
 
 
 export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projectId, activeTab: wsActiveTab }: WorkspacePanelProps) {
-  // TraDS: Query client for invalidating queries after test
   const queryClient = useQueryClient()
-
-  // Get active sprint for this project
-  const { data: activeSprint, isLoading: isLoadingSprint, error: sprintError } = useActiveSprint(projectId)
-
-  // Get all sprints for this project
-  const { data: sprintsData } = useSprints(projectId)
-  const sprints = sprintsData?.data || []
-
-  // Selected sprint state (default to active sprint)
-  const [selectedSprintId, setSelectedSprintId] = useState<string | null>(null)
-
-  // TraDS: Test Sprint Planner state
-  const [isTestingSprintPlanner, setIsTestingSprintPlanner] = useState(false)
-
-  // Update selectedSprintId when activeSprint changes
-  useEffect(() => {
-    if (activeSprint && !selectedSprintId) {
-      setSelectedSprintId(activeSprint.id)
-    }
-  }, [activeSprint, selectedSprintId])
 
   const [tabs, setTabs] = useState<Tab[]>([
     { id: "tab-1", view: "app-preview", label: "App Preview" },
@@ -196,66 +170,9 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
           <AppViewer />
         )
       case "kanban":
-        if (isLoadingSprint) {
-          return (
-            <div className="flex items-center justify-center h-full text-muted-foreground">
-              Đang tải sprint...
-            </div>
-          )
-        }
-        if (sprintError || sprints.length === 0) {
-          return (
-            <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-2">
-              <p>Chưa có sprint nào trong project này.</p>
-              <p className="text-sm">Hãy chat với PO Agent để tạo backlog và sprint plan.</p>
-            </div>
-          )
-        }
-
-        // Use selectedSprintId or fallback to activeSprint
-        const displaySprintId = selectedSprintId || activeSprint?.id
-
-        if (!displaySprintId) {
-          return (
-            <div className="flex items-center justify-center h-full text-muted-foreground">
-              Không tìm thấy sprint
-            </div>
-          )
-        }
-
         return (
-          <div className="flex flex-col h-full">
-            {/* Sprint Selector */}
-            <div className="flex items-center gap-3 px-4 py-3 border-b bg-background/50">
-              <Calendar className="w-4 h-4 text-muted-foreground" />
-              <Select value={displaySprintId} onValueChange={setSelectedSprintId}>
-                <SelectTrigger className="w-[280px] h-9">
-                  <SelectValue placeholder="Chọn sprint" />
-                </SelectTrigger>
-                <SelectContent>
-                  {sprints.map((sprint) => (
-                    <SelectItem key={sprint.id} value={sprint.id}>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{sprint.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          ({new Date(sprint.start_date).toLocaleDateString('vi-VN')} - {new Date(sprint.end_date).toLocaleDateString('vi-VN')})
-                        </span>
-                        {sprint.status === 'Active' && (
-                          <span className="text-xs bg-green-500/10 text-green-600 dark:text-green-400 px-2 py-0.5 rounded">
-                            Active
-                          </span>
-                        )}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Kanban Board */}
-            <div className="flex-1 overflow-hidden">
-              <KanbanBoard kanbanData={kanbanData} projectId={projectId} />
-            </div>
+          <div className="flex-1 overflow-hidden">
+            <KanbanBoard kanbanData={kanbanData} projectId={projectId} />
           </div>
         )
       case "file":
@@ -283,36 +200,6 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
         )
       default:
         return null
-    }
-  }
-  // TraDS: Test Sprint Planner handler
-  const handleTestSprintPlanner = async () => {
-    if (!projectId) {
-      alert("No project selected")
-      return
-    }
-
-    setIsTestingSprintPlanner(true)
-    try {
-      const response = await agentApi.testSprintPlanner({
-        project_id: projectId
-      })
-
-      console.log("Test Sprint Planner started:", response)
-
-      // Switch to Kanban tab to see results
-      setActiveTabId("tab-2")
-
-      // Invalidate queries to refresh data after a delay
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ["sprints", projectId] })
-        queryClient.invalidateQueries({ queryKey: ["backlog-items", projectId] })
-      }, 5000)
-    } catch (error) {
-      console.error("Test Sprint Planner failed:", error)
-      alert("Test failed. Check console for details.")
-    } finally {
-      setIsTestingSprintPlanner(false)
     }
   }
 
@@ -429,15 +316,6 @@ export default function Home() {
 
           <div className="flex items-center gap-10">
             <AnimatedTooltip items={agent} />
-            {/* TraDS: Test Sprint Planner Button */}
-            <Button
-              size="sm"
-              className="h-8 text-xs bg-orange-500 hover:bg-orange-600"
-              onClick={handleTestSprintPlanner}
-              disabled={isTestingSprintPlanner || !projectId}
-            >
-              {isTestingSprintPlanner ? "Testing..." : "🧪 Test Assigner"}
-            </Button>
             <Button size="sm" className="h-8 text-xs bg-[#6366f1] hover:bg-[#5558e3]">
               Share
             </Button>

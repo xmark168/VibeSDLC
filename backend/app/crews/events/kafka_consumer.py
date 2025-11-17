@@ -210,7 +210,8 @@ _consumers: dict[str, KafkaEventConsumer] = {}
 async def create_consumer(
     consumer_id: str,
     topics: list[str],
-    group_id: str | None = None
+    group_id: str | None = None,
+    auto_offset_reset: str = "latest"
 ) -> KafkaEventConsumer:
     """
     Create and start a Kafka consumer
@@ -219,6 +220,7 @@ async def create_consumer(
         consumer_id: Unique identifier for this consumer
         topics: List of topics to subscribe to
         group_id: Optional consumer group ID
+        auto_offset_reset: Where to start consuming from (earliest or latest)
 
     Returns:
         KafkaEventConsumer instance
@@ -226,7 +228,7 @@ async def create_consumer(
     if consumer_id in _consumers:
         return _consumers[consumer_id]
 
-    consumer = KafkaEventConsumer(topics, group_id)
+    consumer = KafkaEventConsumer(topics, group_id, auto_offset_reset)
     await consumer.start()
 
     _consumers[consumer_id] = consumer

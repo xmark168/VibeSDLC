@@ -11,35 +11,13 @@ import json
 from datetime import datetime
 
 from app.websocket.connection_manager import connection_manager
-from app.core.security import decode_token
-from app.core.db import get_session
+from app.core.security import decode_access_token
 from app.models import User
 from sqlmodel import select
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
-
-
-async def get_current_user_ws(
-    token: str = Query(...),
-    session = Depends(get_session)
-) -> User:
-    """Get current user from WebSocket token"""
-    try:
-        payload = decode_token(token)
-        user_id = payload.get("sub")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token")
-
-        user = session.get(User, UUID(user_id))
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-
-        return user
-    except Exception as e:
-        logger.error(f"WebSocket authentication error: {e}")
-        raise HTTPException(status_code=401, detail="Authentication failed")
 
 
 @router.websocket("/ws")
@@ -62,7 +40,7 @@ async def websocket_endpoint(
 
         with Session(engine) as session:
             try:
-                payload = decode_token(token)
+                payload = decode_access_token(token)
                 user_id = payload.get("sub")
                 if not user_id:
                     await websocket.close(code=1008, reason="Invalid token")
