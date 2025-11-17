@@ -11,8 +11,7 @@ from app.api.routes import (
     projects,
     stories,  # Story management (Kanban with Todo/InProgress/Review/Done)
     users,
-    utils,
-    workflows,  # AI workflow management
+    utils
 )
 from app.core.config import settings
 
@@ -26,7 +25,6 @@ api_router.include_router(messages.router)
 api_router.include_router(agents.router)
 api_router.include_router(blockers.router)  # Story blockers tracking
 api_router.include_router(project_rules.router)  # Project-specific rules and configurations
-api_router.include_router(workflows.router)  # AI workflow management
 api_router.include_router(chat.router)  # WebSocket chat endpoint
 
 if settings.ENVIRONMENT == "local":

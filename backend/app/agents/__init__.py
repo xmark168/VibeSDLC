@@ -1,35 +1,55 @@
 """
 VibeSDLC Agent System
 
-MetaGPT-inspired multi-agent system with single process,
-in-memory message passing, and Observe-Think-Act cycle.
+Unified event-driven agent architecture with Team Leader orchestrator
+and modular specialist crews (Business Analyst, Developer, Tester).
+
+Architecture:
+    User Message → Team Leader → Specialist Crews → Response
+                        ↓
+                   (via Kafka)
 
 Usage:
-    # Start all agents
-    python -m app.agents
+    # Start all crews (automatic with FastAPI app)
+    from app.agents.orchestrator import start_orchestrator
+    await start_orchestrator()
 
-    # Use in code
-    from app.agents import AgentTeam
-    from app.agents.implementations import TeamLeaderAgent
+    # Get orchestrator status
+    from app.agents.orchestrator import get_orchestrator
+    orchestrator = await get_orchestrator()
+    status = orchestrator.get_crew_status()
 
-    team = AgentTeam()
-    team.hire([TeamLeaderAgent()])
-    await team.start("Build a feature")
+    # Access individual crews
+    from app.agents.roles import (
+        TeamLeaderCrew,
+        BusinessAnalystCrew,
+        DeveloperCrew,
+        TesterCrew,
+    )
 """
 
-from app.agents.team import AgentTeam
-from app.agents.implementations import (
-    TeamLeaderAgent,
-    BusinessAnalystAgent,
-    DeveloperAgent,
-    TesterAgent,
+from app.agents.orchestrator import (
+    AgentOrchestrator,
+    get_orchestrator,
+    start_orchestrator,
+    stop_orchestrator,
+)
+from app.agents.roles import (
+    TeamLeaderCrew,
+    BusinessAnalystCrew,
+    DeveloperCrew,
+    TesterCrew,
 )
 
 __all__ = [
-    "AgentTeam",
-    "TeamLeaderAgent",
-    "BusinessAnalystAgent",
-    "DeveloperAgent",
-    "TesterAgent",
+    # Orchestrator
+    "AgentOrchestrator",
+    "get_orchestrator",
+    "start_orchestrator",
+    "stop_orchestrator",
+    # Crews
+    "TeamLeaderCrew",
+    "BusinessAnalystCrew",
+    "DeveloperCrew",
+    "TesterCrew",
 ]
-
