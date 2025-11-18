@@ -15,6 +15,15 @@ from app.websocket.connection_manager import connection_manager
 logger = logging.getLogger(__name__)
 
 
+def _to_uuid(value) -> UUID | None:
+    """Convert value to UUID, handling both string and UUID object."""
+    if value is None:
+        return None
+    if isinstance(value, UUID):
+        return value
+    return UUID(value)
+
+
 class WebSocketKafkaBridge:
     """
     Bridges Kafka events to WebSocket connections
@@ -88,7 +97,7 @@ class WebSocketKafkaBridge:
             else:
                 event_data = event
 
-            project_id = UUID(event_data["project_id"]) if event_data.get("project_id") else None
+            project_id = _to_uuid(event_data.get("project_id"))
             if not project_id:
                 logger.warning("Agent response event missing project_id")
                 return
@@ -127,7 +136,7 @@ class WebSocketKafkaBridge:
             else:
                 event_data = event
 
-            project_id = UUID(event_data["project_id"]) if event_data.get("project_id") else None
+            project_id = _to_uuid(event_data.get("project_id"))
             if not project_id:
                 return
 
@@ -154,7 +163,7 @@ class WebSocketKafkaBridge:
             else:
                 event_data = event
 
-            project_id = UUID(event_data["project_id"]) if event_data.get("project_id") else None
+            project_id = _to_uuid(event_data.get("project_id"))
             if not project_id:
                 return
 
@@ -183,7 +192,7 @@ class WebSocketKafkaBridge:
             else:
                 event_data = event
 
-            project_id = UUID(event_data["project_id"]) if event_data.get("project_id") else None
+            project_id = _to_uuid(event_data.get("project_id"))
             if not project_id:
                 return
 
@@ -210,7 +219,7 @@ class WebSocketKafkaBridge:
             else:
                 event_data = event
 
-            project_id = UUID(event_data["project_id"]) if event_data.get("project_id") else None
+            project_id = _to_uuid(event_data.get("project_id"))
             if not project_id:
                 return
 
@@ -238,7 +247,7 @@ class WebSocketKafkaBridge:
             else:
                 event_data = event
 
-            project_id = UUID(event_data["project_id"]) if event_data.get("project_id") else None
+            project_id = _to_uuid(event_data.get("project_id"))
             if not project_id:
                 return
 
@@ -279,7 +288,7 @@ class WebSocketKafkaBridge:
             else:
                 event_data = event
 
-            project_id = UUID(event_data["project_id"]) if event_data.get("project_id") else None
+            project_id = _to_uuid(event_data.get("project_id"))
             if not project_id:
                 return
 

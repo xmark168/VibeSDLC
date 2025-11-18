@@ -36,7 +36,6 @@ import { useMessages } from "@/queries/messages";
 import { AuthorType, type Message } from "@/types/message";
 import { AgentQuestionModal } from "./agent-question-modal";
 import { AgentPreviewModal } from "./agent-preview-modal";
-import { AgentTestSelector, MOCK_DATA, type AgentTestMode } from "./agent-test-selector";
 import { MessagePreviewCard } from "./MessagePreviewCard";
 
 interface ChatPanelProps {
@@ -90,7 +89,6 @@ export function ChatPanelWS({
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(
     new Set()
   );
-  const [testMode, setTestMode] = useState<AgentTestMode>('full');
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -211,21 +209,6 @@ export function ChatPanelWS({
     }
   };
 
-  const getPlaceholder = () => {
-    switch (testMode) {
-      case 'gatherer':
-        return 'Test Gatherer Agent - describe your product idea...';
-      case 'vision':
-        return 'Test Vision Agent - paste your product_brief JSON or type anything for mock data';
-      case 'backlog':
-        return 'Test Backlog Agent - type anything to generate backlog (uses mock data)';
-      case 'priority':
-        return 'Test Priority Agent - type anything to prioritize items (uses mock data)';
-      default:
-        return "Press Enter to send requests anytime - we'll notice.";
-    }
-  };
-
   const handleSend = () => {
     if (!message.trim() && attachedFiles.length === 0) return;
     if (!isReady) {
@@ -234,74 +217,6 @@ export function ChatPanelWS({
     }
 
     let finalMessage = message.trim();
-
-    // Auto-apply test mode if not in full workflow
-    if (testMode !== 'full' && finalMessage) {
-      switch (testMode) {
-        case 'gatherer':
-          // Just send as-is for gatherer (no mock data needed)
-          break;
-        case 'vision':
-          // Check if user provided JSON (check for { and required fields)
-          if (finalMessage.includes('{') && finalMessage.includes('product_name')) {
-            try {
-              // Parse multi-line JSON
-              const briefData = JSON.parse(finalMessage);
-
-              // Validate required fields
-              const requiredFields = ['product_name', 'description', 'target_audience', 'key_features'];
-              const missingFields = requiredFields.filter(field => !briefData[field]);
-
-              if (missingFields.length > 0) {
-                console.warn('Missing required fields:', missingFields, '- using mock data instead');
-                finalMessage = `[TEST_VISION] ${JSON.stringify(MOCK_DATA.product_brief)}`;
-              } else {
-                // Valid custom data - use it!
-                finalMessage = `[TEST_VISION] ${JSON.stringify(briefData)}`;
-              }
-            } catch (e) {
-              console.error('Failed to parse JSON, using mock data:', e);
-              // Fallback to mock data
-              finalMessage = `[TEST_VISION] ${JSON.stringify(MOCK_DATA.product_brief)}`;
-            }
-          } else {
-            // No custom data, use mock data
-            finalMessage = `[TEST_VISION] ${JSON.stringify(MOCK_DATA.product_brief)}`;
-          }
-          break;
-        case 'backlog':
-          finalMessage = `[TEST_BACKLOG] ${JSON.stringify(MOCK_DATA.product_vision)}`;
-          break;
-        case 'priority':
-          // Check if user provided JSON (check for { and required fields)
-          if (finalMessage.includes('{') && finalMessage.includes('metadata') && finalMessage.includes('items')) {
-            try {
-              // Parse multi-line JSON
-              const backlogData = JSON.parse(finalMessage);
-
-              // Validate required fields
-              const hasMetadata = backlogData.metadata && backlogData.metadata.product_name;
-              const hasItems = Array.isArray(backlogData.items) && backlogData.items.length > 0;
-
-              if (!hasMetadata || !hasItems) {
-                console.warn('Invalid backlog structure - using mock data instead');
-                finalMessage = `[TEST_PRIORITY] ${JSON.stringify(MOCK_DATA.product_backlog)}`;
-              } else {
-                // Valid custom data - use it!
-                finalMessage = `[TEST_PRIORITY] ${JSON.stringify(backlogData)}`;
-              }
-            } catch (e) {
-              console.error('Failed to parse JSON, using mock data:', e);
-              // Fallback to mock data
-              finalMessage = `[TEST_PRIORITY] ${JSON.stringify(MOCK_DATA.product_backlog)}`;
-            }
-          } else {
-            // No custom data, use mock data
-            finalMessage = `[TEST_PRIORITY] ${JSON.stringify(MOCK_DATA.product_backlog)}`;
-          }
-          break;
-      }
-    }
 
     // Send via WebSocket
     const success = wsSendMessage({
@@ -833,14 +748,6 @@ export function ChatPanelWS({
         )}
 
         <div className="bg-transparent rounded-4xl p-1 border-0">
-          {/* Agent Test Selector */}
-          <div className="mb-3">
-            <AgentTestSelector
-              value={testMode}
-              onChange={setTestMode}
-            />
-          </div>
-
           {attachedFiles.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-2">
               {attachedFiles.map((file) => (
@@ -873,7 +780,6 @@ export function ChatPanelWS({
             value={message}
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
-            placeholder={getPlaceholder()}
             className="min-h-[40px] resize-none bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground p-1 focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
             disabled={!isReady}
           />

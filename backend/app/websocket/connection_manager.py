@@ -22,9 +22,10 @@ class ConnectionManager:
         self.websocket_to_project: Dict[WebSocket, UUID] = {}
 
     async def connect(self, websocket: WebSocket, project_id: UUID):
-        """Connect a WebSocket to a project room"""
-        await websocket.accept()
+        """Connect a WebSocket to a project room.
 
+        Note: WebSocket must already be accepted before calling this method.
+        """
         if project_id not in self.active_connections:
             self.active_connections[project_id] = set()
 
