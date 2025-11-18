@@ -37,13 +37,17 @@ class TeamLeaderConsumer:
         self.consumer: Optional[EventHandlerConsumer] = None
         self._running = False
 
-    async def handle_user_message(self, event_data: Dict[str, Any]) -> None:
+    async def handle_user_message(self, event_data: Any) -> None:
         """Handle incoming user message event.
 
         Args:
-            event_data: Deserialized UserMessageEvent data
+            event_data: Deserialized UserMessageEvent data (dict or Pydantic model)
         """
         try:
+            # Convert Pydantic model to dict if needed
+            if hasattr(event_data, 'model_dump'):
+                event_data = event_data.model_dump(mode='json')
+
             logger.info(f"Team Leader received user message: {event_data.get('message_id')}")
 
             # Extract relevant data
@@ -59,7 +63,7 @@ class TeamLeaderConsumer:
             # Prepare context for crew execution
             context = {
                 "user_message": content,
-                "message_id": message_id,
+                "message_id": str(message_id),
                 "message_type": event_data.get("message_type", "text"),
             }
 
