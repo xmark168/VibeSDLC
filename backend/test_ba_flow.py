@@ -253,34 +253,42 @@ async def run_brief_phase(crew, project_id, user_id):
     print("PHASE 2: PRODUCT BRIEF Creation")
     print("=" * 60)
 
+    # Create initial brief
+    print("\nCreating Product Brief from requirements...")
+    result = await crew.execute_brief_phase(
+        project_id=project_id,
+        user_id=user_id
+    )
+
+    if not result.get("success"):
+        print(f"\nError creating brief: {result.get('error', 'Unknown error')}")
+        return False
+
+    # Review and refinement loop
     while True:
-        print("\nCreating Product Brief from requirements...")
-        result = await crew.execute_brief_phase(
-            project_id=project_id,
-            user_id=user_id
-        )
+        display_brief(crew.db_session, crew.ba_session.id)
 
-        if result.get("success"):
-            display_brief(crew.db_session, crew.ba_session.id)
+        # Ask for approval
+        response = input("\nApprove this brief? (y/refine/quit): ").strip().lower()
 
-            # Ask for approval
-            response = input("\nApprove this brief? (y/refine/quit): ").strip().lower()
-
-            if response in ['y', 'yes']:
-                return True
-            elif response == 'quit':
-                return False
-            elif response == 'refine':
-                feedback = input("What would you like to change? ").strip()
-                if feedback:
-                    result = await crew.execute_brief_phase(
-                        revision_feedback=feedback,
-                        project_id=project_id,
-                        user_id=user_id
-                    )
-        else:
-            print(f"\nError creating brief: {result.get('error', 'Unknown error')}")
+        if response in ['y', 'yes']:
+            return True
+        elif response == 'quit':
             return False
+        elif response == 'refine':
+            feedback = input("What would you like to change? ").strip()
+            if feedback:
+                print("\nRefining Product Brief...")
+                result = await crew.execute_brief_phase(
+                    revision_feedback=feedback,
+                    project_id=project_id,
+                    user_id=user_id
+                )
+                if not result.get("success"):
+                    print(f"\nError refining brief: {result.get('error', 'Unknown error')}")
+                    # Continue loop to show current brief
+        else:
+            print("Invalid input. Please enter 'y', 'refine', or 'quit'.")
 
 
 async def run_solution_phase(crew, project_id, user_id):
@@ -289,34 +297,42 @@ async def run_solution_phase(crew, project_id, user_id):
     print("PHASE 3: SOLUTION DESIGN - Business Flows")
     print("=" * 60)
 
+    # Create initial solution
+    print("\nDesigning business flows...")
+    result = await crew.execute_solution_phase(
+        project_id=project_id,
+        user_id=user_id
+    )
+
+    if not result.get("success"):
+        print(f"\nError designing solution: {result.get('error', 'Unknown error')}")
+        return False
+
+    # Review and refinement loop
     while True:
-        print("\nDesigning business flows...")
-        result = await crew.execute_solution_phase(
-            project_id=project_id,
-            user_id=user_id
-        )
+        display_flows(crew.db_session, crew.ba_session.id)
 
-        if result.get("success"):
-            display_flows(crew.db_session, crew.ba_session.id)
+        # Ask for approval
+        response = input("\nApprove these flows? (y/refine/quit): ").strip().lower()
 
-            # Ask for approval
-            response = input("\nApprove these flows? (y/refine/quit): ").strip().lower()
-
-            if response in ['y', 'yes']:
-                return True
-            elif response == 'quit':
-                return False
-            elif response == 'refine':
-                feedback = input("What would you like to change? ").strip()
-                if feedback:
-                    result = await crew.execute_solution_phase(
-                        revision_feedback=feedback,
-                        project_id=project_id,
-                        user_id=user_id
-                    )
-        else:
-            print(f"\nError designing solution: {result.get('error', 'Unknown error')}")
+        if response in ['y', 'yes']:
+            return True
+        elif response == 'quit':
             return False
+        elif response == 'refine':
+            feedback = input("What would you like to change? ").strip()
+            if feedback:
+                print("\nRefining business flows...")
+                result = await crew.execute_solution_phase(
+                    revision_feedback=feedback,
+                    project_id=project_id,
+                    user_id=user_id
+                )
+                if not result.get("success"):
+                    print(f"\nError refining solution: {result.get('error', 'Unknown error')}")
+                    # Continue loop to show current flows
+        else:
+            print("Invalid input. Please enter 'y', 'refine', or 'quit'.")
 
 
 async def run_backlog_phase(crew, project_id, user_id):
@@ -325,34 +341,42 @@ async def run_backlog_phase(crew, project_id, user_id):
     print("PHASE 4: BACKLOG Creation - Epics & Stories")
     print("=" * 60)
 
+    # Create initial backlog
+    print("\nCreating Epics and User Stories...")
+    result = await crew.execute_backlog_phase(
+        project_id=project_id,
+        user_id=user_id
+    )
+
+    if not result.get("success"):
+        print(f"\nError creating backlog: {result.get('error', 'Unknown error')}")
+        return False
+
+    # Review and refinement loop
     while True:
-        print("\nCreating Epics and User Stories...")
-        result = await crew.execute_backlog_phase(
-            project_id=project_id,
-            user_id=user_id
-        )
+        display_backlog(crew.db_session, project_id)
 
-        if result.get("success"):
-            display_backlog(crew.db_session, project_id)
+        # Ask for approval
+        response = input("\nApprove this backlog? (y/refine/quit): ").strip().lower()
 
-            # Ask for approval
-            response = input("\nApprove this backlog? (y/refine/quit): ").strip().lower()
-
-            if response in ['y', 'yes']:
-                return True
-            elif response == 'quit':
-                return False
-            elif response == 'refine':
-                feedback = input("What would you like to change? ").strip()
-                if feedback:
-                    result = await crew.execute_backlog_phase(
-                        revision_feedback=feedback,
-                        project_id=project_id,
-                        user_id=user_id
-                    )
-        else:
-            print(f"\nError creating backlog: {result.get('error', 'Unknown error')}")
+        if response in ['y', 'yes']:
+            return True
+        elif response == 'quit':
             return False
+        elif response == 'refine':
+            feedback = input("What would you like to change? ").strip()
+            if feedback:
+                print("\nRefining backlog...")
+                result = await crew.execute_backlog_phase(
+                    revision_feedback=feedback,
+                    project_id=project_id,
+                    user_id=user_id
+                )
+                if not result.get("success"):
+                    print(f"\nError refining backlog: {result.get('error', 'Unknown error')}")
+                    # Continue loop to show current backlog
+        else:
+            print("Invalid input. Please enter 'y', 'refine', or 'quit'.")
 
 
 async def main():

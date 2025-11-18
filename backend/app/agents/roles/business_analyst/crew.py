@@ -22,7 +22,8 @@ from app.agents.roles.base_crew import BaseAgentCrew
 from app.agents.roles.business_analyst.tools import get_ba_tools
 from app.models import (
     BASession, BASessionStatus, Requirement, RequirementCategory,
-    ProductBrief, BusinessFlow, Epic, Story
+    ProductBrief, BusinessFlow, Epic, Story,
+    EpicStatus, StoryType, StoryPriority
 )
 from app.core.config import settings
 
@@ -546,6 +547,10 @@ class BusinessAnalystCrew(BaseAgentCrew):
             "user_message": user_message,
         }
 
+        # CRITICAL: Reset crew to force task recreation with updated context
+        # Without this, the crew caches old tasks with stale conversation data
+        self.reset()
+
         result = await self.execute(context, project_id, user_id)
 
         # Parse and store requirements from result
@@ -650,10 +655,39 @@ class BusinessAnalystCrew(BaseAgentCrew):
         if self.ba_session.current_phase == "analysis":
             self._transition_phase("brief", "Analysis complete, creating Product Brief")
 
+        # Get current brief if it exists (for refinement mode)
+        current_brief_text = "None"
+        if revision_feedback:
+            existing_brief = self.db_session.query(ProductBrief).filter(
+                ProductBrief.session_id == self.ba_session.id
+            ).first()
+
+            if existing_brief and existing_brief.product_summary:
+                # Format current brief for agent to refine
+                current_brief_text = f"""Product Summary: {existing_brief.product_summary}
+
+Problem Statement:
+{existing_brief.problem_statement}
+
+Target Users:
+{existing_brief.target_users}
+
+Product Goals:
+{existing_brief.product_goals}
+
+Scope:
+{existing_brief.scope}
+
+Revision Count: {existing_brief.revision_count}"""
+
         context = {
             "phase": "brief",
+            "current_brief": current_brief_text,
             "revision_feedback": revision_feedback or "None",
         }
+
+        # Reset crew to force task recreation
+        self.reset()
 
         result = await self.execute(context, project_id, user_id)
 
@@ -709,10 +743,34 @@ class BusinessAnalystCrew(BaseAgentCrew):
         if self.ba_session.current_phase == "brief":
             self._transition_phase("solution", "Brief approved, designing solution")
 
+        # Get current solution if it exists (for refinement mode)
+        current_solution_text = "None"
+        if revision_feedback:
+            existing_flows = self.db_session.query(BusinessFlow).filter(
+                BusinessFlow.session_id == self.ba_session.id
+            ).order_by(BusinessFlow.flow_order).all()
+
+            if existing_flows:
+                # Format current solution for agent to refine
+                flow_texts = []
+                for i, flow in enumerate(existing_flows, 1):
+                    flow_text = f"""Flow {i}: {flow.name}
+Description: {flow.description}
+Steps:
+{chr(10).join(f"  {j}. {step}" for j, step in enumerate(flow.steps, 1))}
+Actors: {', '.join(flow.actors)}"""
+                    flow_texts.append(flow_text)
+
+                current_solution_text = "\n\n".join(flow_texts)
+
         context = {
             "phase": "solution",
+            "current_solution": current_solution_text,
             "revision_feedback": revision_feedback or "None",
         }
+
+        # Reset crew to force task recreation
+        self.reset()
 
         result = await self.execute(context, project_id, user_id)
 
@@ -761,10 +819,54 @@ class BusinessAnalystCrew(BaseAgentCrew):
         if self.ba_session.current_phase == "solution":
             self._transition_phase("backlog", "Solution approved, creating backlog")
 
+        # Get current backlog if it exists (for refinement mode)
+        current_backlog_text = "None"
+        if revision_feedback:
+            existing_epics = self.db_session.query(Epic).filter(
+                Epic.project_id == self.project_id
+            ).all()
+
+            existing_stories = self.db_session.query(Story).filter(
+                Story.project_id == self.project_id
+            ).all()
+
+            if existing_epics or existing_stories:
+                # Format current backlog for agent to refine
+                backlog_parts = []
+
+                if existing_epics:
+                    backlog_parts.append("EPICS:")
+                    for epic in existing_epics:
+                        epic_text = f"""- {epic.title}
+  Domain: {epic.domain or 'N/A'}
+  Description: {epic.description or 'N/A'}"""
+                        backlog_parts.append(epic_text)
+
+                if existing_stories:
+                    backlog_parts.append("\nSTORIES:")
+                    for story in existing_stories:
+                        epic_name = "Independent"
+                        if story.epic_id:
+                            epic = next((e for e in existing_epics if e.id == story.epic_id), None)
+                            if epic:
+                                epic_name = epic.title
+
+                        story_text = f"""- {story.title}
+  Epic: {epic_name}
+  Points: {story.story_point}, Priority: {story.story_priority.value if story.story_priority else 'Medium'}
+  Acceptance Criteria: {story.acceptance_criteria or 'N/A'}"""
+                        backlog_parts.append(story_text)
+
+                current_backlog_text = "\n".join(backlog_parts)
+
         context = {
             "phase": "backlog",
+            "current_backlog": current_backlog_text,
             "revision_feedback": revision_feedback or "None",
         }
+
+        # Reset crew to force task recreation
+        self.reset()
 
         result = await self.execute(context, project_id, user_id)
 
@@ -775,7 +877,6 @@ class BusinessAnalystCrew(BaseAgentCrew):
             # Create epics
             epic_id_map = {}  # Map temp IDs to real IDs
             for epic_data in backlog.epics:
-                from app.models import Epic, EpicStatus
                 epic = Epic(
                     project_id=self.project_id,
                     title=epic_data.name,
@@ -789,8 +890,6 @@ class BusinessAnalystCrew(BaseAgentCrew):
 
             # Create stories
             for story_data in backlog.stories:
-                from app.models import Story, StoryType, StoryPriority
-
                 # Map epic ID
                 epic_uuid = epic_id_map.get(story_data.epic_id)
 
