@@ -36,7 +36,6 @@ import { useMessages } from "@/queries/messages";
 import { AuthorType, type Message } from "@/types/message";
 import { AgentQuestionModal } from "./agent-question-modal";
 import { AgentPreviewModal } from "./agent-preview-modal";
-import { AgentTestSelector, type AgentTestMode } from "./agent-test-selector";
 import { MessagePreviewCard } from "./MessagePreviewCard";
 
 interface ChatPanelProps {
@@ -90,7 +89,6 @@ export function ChatPanelWS({
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(
     new Set()
   );
-  const [testMode, setTestMode] = useState<AgentTestMode>('full');
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -750,14 +748,6 @@ export function ChatPanelWS({
         )}
 
         <div className="bg-transparent rounded-4xl p-1 border-0">
-          {/* Agent Test Selector */}
-          <div className="mb-3">
-            <AgentTestSelector
-              value={testMode}
-              onChange={setTestMode}
-            />
-          </div>
-
           {attachedFiles.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-2">
               {attachedFiles.map((file) => (
