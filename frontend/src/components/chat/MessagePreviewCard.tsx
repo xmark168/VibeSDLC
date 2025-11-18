@@ -49,8 +49,6 @@ export function MessagePreviewCard({ message, onEdit }: MessagePreviewCardProps)
             backlog={message.structured_data}
           />
         )
-      case 'sprint_plan':
-        return <div className="text-sm text-muted-foreground">Sprint planning is no longer supported in Kanban mode</div>
       default:
         return <div className="text-sm text-muted-foreground">Unknown preview type</div>
     }
@@ -64,8 +62,6 @@ export function MessagePreviewCard({ message, onEdit }: MessagePreviewCardProps)
         return '🎯 Product Vision'
       case 'product_backlog':
         return '📊 Product Backlog'
-      case 'sprint_plan':
-        return '🏃 Sprint Plan'
       default:
         return 'Preview'
     }

@@ -66,6 +66,13 @@ class WebSocketKafkaBridge:
             self.consumer.register_handler("flow.failed", self.handle_flow_event)
             self.consumer.register_handler("approval.request.created", self.handle_approval_request)
 
+            # Register agent status handlers
+            self.consumer.register_handler("agent.idle", self.handle_agent_status)
+            self.consumer.register_handler("agent.thinking", self.handle_agent_status)
+            self.consumer.register_handler("agent.acting", self.handle_agent_status)
+            self.consumer.register_handler("agent.waiting", self.handle_agent_status)
+            self.consumer.register_handler("agent.error", self.handle_agent_status)
+
             # Start consumer
             await self.consumer.start()
 
@@ -309,6 +316,37 @@ class WebSocketKafkaBridge:
 
         except Exception as e:
             logger.error(f"Error handling approval request event: {e}", exc_info=True)
+
+    async def handle_agent_status(self, event):
+        """Handle agent status events (thinking, acting, idle, etc.)"""
+        try:
+            if hasattr(event, 'model_dump'):
+                event_data = event.model_dump()
+            else:
+                event_data = event
+
+            project_id = _to_uuid(event_data.get("project_id"))
+            if not project_id:
+                return
+
+            ws_message = {
+                "type": "agent_status",
+                "agent_name": event_data.get("agent_name", ""),
+                "status": event_data.get("status", ""),
+                "current_action": event_data.get("current_action"),
+                "execution_id": str(event_data.get("execution_id", "")) if event_data.get("execution_id") else None,
+                "timestamp": str(event_data.get("timestamp", "")),
+            }
+
+            if event_data.get("error_message"):
+                ws_message["error_message"] = event_data["error_message"]
+
+            await connection_manager.broadcast_to_project(ws_message, project_id)
+
+            logger.debug(f"Forwarded agent status to project {project_id}: {ws_message['status']}")
+
+        except Exception as e:
+            logger.error(f"Error handling agent status event: {e}", exc_info=True)
 
 
 # Global bridge instance

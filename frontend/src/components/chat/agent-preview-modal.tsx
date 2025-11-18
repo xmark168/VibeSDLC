@@ -77,12 +77,6 @@ export function AgentPreviewModal({ preview, onSubmit, onClose }: AgentPreviewMo
             backlog={preview.backlog}
           />
         )
-      case 'sprint_plan':
-        return (
-          <div className="text-sm text-muted-foreground">
-            Sprint planning is no longer supported in Kanban mode
-          </div>
-        )
       default:
         // Fallback: try to render whatever is available
         if (preview.vision) {

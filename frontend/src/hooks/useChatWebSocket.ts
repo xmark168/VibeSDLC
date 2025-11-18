@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import type { Message } from '@/types/message'
+import { AuthorType, type Message } from '@/types/message'
 
 export type WebSocketMessage = {
-  type: 'connected' | 'message' | 'agent_message' | 'agent_response' | 'typing' | 'pong' | 'error' | 'routing' | 'agent_routing' | 'agent_step' | 'agent_thinking' | 'tool_call' | 'agent_question' | 'agent_preview' | 'kanban_update' | 'story_created' | 'story_updated' | 'story_status_changed' | 'scrum_master_step' | 'switch_tab'
+  type: 'connected' | 'message' | 'agent_message' | 'agent_response' | 'typing' | 'pong' | 'error' | 'routing' | 'agent_routing' | 'agent_thinking' | 'agent_question' | 'agent_preview' | 'kanban_update' | 'story_created' | 'story_updated' | 'story_status_changed' | 'switch_tab'
   data?: Message | any
   agent_name?: string
   agent_type?: string
@@ -14,17 +14,9 @@ export type WebSocketMessage = {
   confidence?: number
   user_intent?: string
   reasoning?: string
-  // For agent_step messages
-  step?: string
-  agent?: string
-  node?: string
-  step_number?: number
   // For agent_thinking messages
   content?: string
   structured_data?: any
-  // For tool_call messages
-  tool?: string
-  display_name?: string
   // For agent_question messages
   question_id?: string
   question_type?: 'text' | 'choice' | 'multiple_choice'
@@ -72,7 +64,6 @@ export type AgentPreview = {
   brief?: any  // For Gatherer Agent (product_brief)
   vision?: any  // For Vision Agent (product_vision)
   backlog?: any  // For Backlog Agent (product_backlog)
-  sprint_plan?: any  // For Priority Agent (sprint_plan)
   quality_score?: number  // For Vision Agent
   validation_result?: string  // For Vision Agent
   incomplete_flag: boolean
@@ -93,14 +84,14 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
   const [typingAgents, setTypingAgents] = useState<Set<string>>(new Set())
   const [pendingQuestions, setPendingQuestions] = useState<AgentQuestion[]>([])
   const [pendingPreviews, setPendingPreviews] = useState<AgentPreview[]>([])
-  const [agentProgress, setAgentProgress] = useState<{
-    isExecuting: boolean
-    currentStep?: string
-    currentAgent?: string
-    currentTool?: string
-    stepNumber?: number
+  const [agentStatus, setAgentStatus] = useState<{
+    agentName: string | null
+    status: 'idle' | 'thinking' | 'acting' | 'waiting' | 'error'
+    currentAction?: string
+    executionId?: string
   }>({
-    isExecuting: false
+    agentName: null,
+    status: 'idle'
   })
   const [kanbanData, setKanbanData] = useState<{
     sprints: any[]
@@ -158,15 +149,33 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
           case 'message':
           case 'agent_message':
           case 'agent_response':
+          case 'user_message':
             console.log('[WebSocket] Received message:', data.type, data.data?.content?.substring(0, 100))
             if (data.data) {
               setMessages((prev) => {
-                // Check if message already exists
-                const exists = prev.some(m => m.id === data.data!.id)
-                if (exists) {
+                // Check if message already exists by ID
+                const existsById = prev.some(m => m.id === data.data!.id)
+                if (existsById) {
                   console.log('[WebSocket] Message already exists, skipping:', data.data!.id)
                   return prev
                 }
+
+                // Check if this is confirming an optimistic message (match by content for user messages)
+                if (data.data!.author_type === AuthorType.USER || data.type === 'user_message') {
+                  const tempIndex = prev.findIndex(m =>
+                    m.id.startsWith('temp_') &&
+                    m.content === data.data!.content
+                  )
+
+                  if (tempIndex !== -1) {
+                    // Replace optimistic message with server-confirmed message
+                    console.log('[WebSocket] Replacing optimistic message:', prev[tempIndex].id, '->', data.data!.id)
+                    const newMessages = [...prev]
+                    newMessages[tempIndex] = data.data!
+                    return newMessages
+                  }
+                }
+
                 console.log('[WebSocket] Adding new message:', data.data!.id)
                 return [...prev, data.data!]
               })
@@ -194,68 +203,21 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
             console.log('Agent routing:', data.agent_selected || data.agent_type, 'confidence:', data.confidence)
             break
 
-          case 'agent_step':
-            // Update agent progress
-            if (data.step === 'started') {
-              setAgentProgress({
-                isExecuting: true,
-                currentAgent: data.agent,
-                currentStep: data.message
-              })
-            } else if (data.step === 'executing') {
-              setAgentProgress(prev => ({
-                ...prev,
-                isExecuting: true,
-                currentStep: data.node,
-                stepNumber: data.step_number
-              }))
-            } else if (data.step === 'completed') {
-              setAgentProgress({
-                isExecuting: false,
-                currentStep: data.message
-              })
-              // Clear after a short delay
-              setTimeout(() => {
-                setAgentProgress({ isExecuting: false })
-              }, 2000)
-            } else if (data.step === 'error') {
-              setAgentProgress({
-                isExecuting: false,
-                currentStep: data.message
-              })
-            }
-            break
-
           case 'agent_thinking':
             console.log('Agent thinking:', data.content?.substring(0, 100))
             // Could display this in UI as streaming text
             break
 
-          case 'tool_call':
-            console.log('Tool called:', data.display_name || data.tool)
-            setAgentProgress(prev => ({
-              ...prev,
-              currentTool: data.display_name || data.tool
-            }))
-            break
-
-          case 'scrum_master_step':
-            // Scrum Master progress updates
-            if (data.step === 'sprint_planner_started' || data.step === 'starting' || data.step === 'saving') {
-              setAgentProgress({
-                isExecuting: true,
-                currentAgent: 'Scrum Master',
-                currentStep: data.message
-              })
-            } else if (data.step === 'sprint_planner_completed' || data.step === 'completed') {
-              setAgentProgress({
-                isExecuting: false,
-                currentStep: data.message
-              })
-              setTimeout(() => {
-                setAgentProgress({ isExecuting: false })
-              }, 2000)
-            }
+          case 'agent_status':
+            console.log('[WebSocket] Agent status:', data.status, data.agent_name)
+            // Normalize status: "agent.thinking" -> "thinking"
+            const normalizedStatus = (data.status || 'idle').replace('agent.', '') as 'idle' | 'thinking' | 'acting' | 'waiting' | 'error'
+            setAgentStatus({
+              agentName: data.agent_name || null,
+              status: normalizedStatus,
+              currentAction: data.current_action,
+              executionId: data.execution_id,
+            })
             break
 
           case 'kanban_update':
@@ -321,7 +283,6 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
                 brief: data.brief,  // For Gatherer Agent
                 vision: data.vision,  // For Vision Agent
                 backlog: data.backlog,  // For Backlog Agent
-                sprint_plan: data.sprint_plan,  // For Priority Agent
                 quality_score: data.quality_score,  // For Vision Agent
                 validation_result: data.validation_result,  // For Vision Agent
                 incomplete_flag: data.incomplete_flag || false,
@@ -390,17 +351,36 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     }
 
     try {
+      // Generate temporary ID for optimistic update
+      const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+
+      // Create optimistic message
+      const optimisticMessage: Message = {
+        id: tempId,
+        project_id: projectId || '',
+        author_type: AuthorType.USER,
+        content: params.content,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+
+      // Add to local state immediately (optimistic update)
+      setMessages(prev => [...prev, optimisticMessage])
+
+      // Send via WebSocket
       wsRef.current.send(JSON.stringify({
         type: 'message',
         content: params.content,
         author_type: params.author_type || 'user',
+        temp_id: tempId, // Send temp_id for potential deduplication
       }))
+
       return true
     } catch (error) {
       console.error('Failed to send message:', error)
       return false
     }
-  }, [])
+  }, [projectId])
 
   const submitAnswer = useCallback((question_id: string, answer: string) => {
     console.log('[submitAnswer] Called with:', { question_id, answer })
@@ -523,7 +503,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     isReady,
     messages,
     typingAgents: Array.from(typingAgents),
-    agentProgress,
+    agentStatus,
     pendingQuestions,
     pendingPreviews,
     kanbanData,
@@ -532,7 +512,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     submitAnswer,
     submitPreviewChoice,
     reopenPreview,
-    closePreview, 
+    closePreview,
     connect,
     disconnect,
   }
