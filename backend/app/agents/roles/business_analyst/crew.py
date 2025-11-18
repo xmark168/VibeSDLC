@@ -341,7 +341,7 @@ class BusinessAnalystCrew(BaseAgentCrew):
             expected_output=task_config.get("expected_output", ""),
             agent=self._create_agent_from_config(
                 "product_brief_writer",
-                get_ba_tools(self.ba_session, self.db_session, self.project_id) if self.ba_session else []
+                []  # No tools - outputs Pydantic model directly
             ),
             output_pydantic=ProductBriefData
         )
@@ -367,7 +367,7 @@ class BusinessAnalystCrew(BaseAgentCrew):
             expected_output=task_config.get("expected_output", ""),
             agent=self._create_agent_from_config(
                 "solution_designer",
-                get_ba_tools(self.ba_session, self.db_session, self.project_id) if self.ba_session else []
+                []  # No tools - outputs Pydantic model directly (all flows at once)
             ),
             output_pydantic=FlowsOutput
         )
@@ -393,7 +393,7 @@ class BusinessAnalystCrew(BaseAgentCrew):
             expected_output=task_config.get("expected_output", ""),
             agent=self._create_agent_from_config(
                 "epic_story_writer",
-                get_ba_tools(self.ba_session, self.db_session, self.project_id) if self.ba_session else []
+                []  # No tools - outputs Pydantic model directly (all epics/stories at once)
             ),
             output_pydantic=BacklogOutput
         )
@@ -873,6 +873,16 @@ Actors: {', '.join(flow.actors)}"""
         # Save epics and stories to database
         if result.get("success") and result.get("pydantic"):
             backlog = result["pydantic"]
+
+            # Clear existing stories first (they reference epics)
+            self.db_session.query(Story).filter(
+                Story.project_id == self.project_id
+            ).delete()
+
+            # Clear existing epics
+            self.db_session.query(Epic).filter(
+                Epic.project_id == self.project_id
+            ).delete()
 
             # Create epics
             epic_id_map = {}  # Map temp IDs to real IDs
