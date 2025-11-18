@@ -1,3 +1,4 @@
+import logging
 import sentry_sdk
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
@@ -11,7 +12,12 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.api.main import api_router
 from app.core.config import settings
 from app.core.db import init_db, engine
+from app.core.logging_config import setup_logging
 from sqlmodel import Session
+
+# Initialize logging before anything else
+setup_logging()
+logger = logging.getLogger(__name__)
 
 
 def custom_generate_unique_id(route: APIRoute) -> str:
@@ -25,8 +31,6 @@ async def lifespan(app: FastAPI):
         init_db(session)
 
     # Start Kafka producer
-    import logging
-    logger = logging.getLogger(__name__)
     from app.kafka import get_kafka_producer, shutdown_kafka_producer
     try:
         producer = await get_kafka_producer()
@@ -53,10 +57,25 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Failed to start Agent Orchestrator: {e}")
         logger.warning("Continuing without agent support...")
 
+    # Start WebSocket-Kafka bridge
+    from app.websocket.kafka_bridge import websocket_kafka_bridge
+    try:
+        await websocket_kafka_bridge.start()
+        logger.info("WebSocket-Kafka bridge started")
+    except Exception as e:
+        logger.warning(f"Failed to start WebSocket-Kafka bridge: {e}")
+        logger.warning("Continuing without WebSocket bridge...")
+
     yield
 
     # Shutdown: cleanup consumers and producer
     logger.info("Shutting down...")
+
+    try:
+        await websocket_kafka_bridge.stop()
+        logger.info("WebSocket-Kafka bridge shut down")
+    except Exception as e:
+        logger.error(f"Error shutting down WebSocket-Kafka bridge: {e}")
 
     try:
         await stop_orchestrator()

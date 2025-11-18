@@ -111,9 +111,8 @@ class TeamLeaderConsumer:
 
         logger.info(f"Starting Team Leader consumer (group: {self.group_id})")
 
-        # Run consumer in background
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self.consumer.consume)
+        # Start consumer (runs consume loop in background)
+        await self.consumer.start()
 
     async def stop(self) -> None:
         """Stop consuming messages."""

@@ -41,11 +41,11 @@ def get_blockers_by_project(
     project_id: UUID,
 ) -> list[Blocker]:
     """Get all blockers for a project."""
-    from app.models import BacklogItem
+    from app.models import Story
 
     statement = (
         select(Blocker)
-        .join(BacklogItem)
-        .where(BacklogItem.project_id == project_id)
+        .join(Story)
+        .where(Story.project_id == project_id)
     )
     return list(session.exec(statement).all())

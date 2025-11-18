@@ -27,6 +27,9 @@ class BaseKafkaConsumer(ABC):
         topics: List[str],
         group_id: Optional[str] = None,
         auto_commit: bool = True,
+        max_reconnect_attempts: int = 10,
+        base_backoff_seconds: float = 1.0,
+        max_backoff_seconds: float = 60.0,
     ):
         """Initialize Kafka consumer.
 
@@ -34,6 +37,9 @@ class BaseKafkaConsumer(ABC):
             topics: List of topics to subscribe to
             group_id: Consumer group ID (defaults to settings.KAFKA_GROUP_ID)
             auto_commit: Whether to auto-commit offsets
+            max_reconnect_attempts: Maximum number of reconnection attempts
+            base_backoff_seconds: Base backoff time for exponential backoff
+            max_backoff_seconds: Maximum backoff time cap
         """
         self.topics = topics
         self.group_id = group_id or settings.KAFKA_GROUP_ID
@@ -41,6 +47,13 @@ class BaseKafkaConsumer(ABC):
         self.consumer: Optional[Consumer] = None
         self.running = False
         self._consume_task: Optional[asyncio.Task] = None
+
+        # Reconnection settings
+        self.max_reconnect_attempts = max_reconnect_attempts
+        self.base_backoff_seconds = base_backoff_seconds
+        self.max_backoff_seconds = max_backoff_seconds
+        self._reconnect_attempts = 0
+        self._consecutive_errors = 0
 
     def _build_config(self) -> Dict[str, Any]:
         """Build Kafka consumer configuration."""
@@ -84,6 +97,59 @@ class BaseKafkaConsumer(ABC):
             logger.error(f"Failed to start Kafka consumer: {e}")
             raise
 
+    def _calculate_backoff(self) -> float:
+        """Calculate exponential backoff time with jitter."""
+        import random
+        backoff = min(
+            self.base_backoff_seconds * (2 ** self._consecutive_errors),
+            self.max_backoff_seconds
+        )
+        # Add jitter (0-25% of backoff)
+        jitter = backoff * random.uniform(0, 0.25)
+        return backoff + jitter
+
+    async def _reconnect(self):
+        """Attempt to reconnect to Kafka."""
+        if self._reconnect_attempts >= self.max_reconnect_attempts:
+            logger.error(
+                f"Max reconnection attempts ({self.max_reconnect_attempts}) reached. "
+                f"Stopping consumer for topics {self.topics}"
+            )
+            self.running = False
+            return False
+
+        self._reconnect_attempts += 1
+        backoff = self._calculate_backoff()
+
+        logger.warning(
+            f"Attempting to reconnect (attempt {self._reconnect_attempts}/{self.max_reconnect_attempts}) "
+            f"after {backoff:.2f}s backoff for topics {self.topics}"
+        )
+
+        await asyncio.sleep(backoff)
+
+        try:
+            # Close existing consumer if any
+            if self.consumer:
+                try:
+                    self.consumer.close()
+                except Exception:
+                    pass
+
+            # Create new consumer
+            config = self._build_config()
+            self.consumer = Consumer(config)
+            self.consumer.subscribe(self.topics)
+
+            logger.info(f"Successfully reconnected to Kafka for topics {self.topics}")
+            self._reconnect_attempts = 0
+            self._consecutive_errors = 0
+            return True
+
+        except Exception as e:
+            logger.error(f"Reconnection failed: {e}")
+            return False
+
     async def _consume_loop(self):
         """Main consume loop running in background."""
         while self.running:
@@ -92,6 +158,8 @@ class BaseKafkaConsumer(ABC):
                 msg = await asyncio.to_thread(self.consumer.poll, timeout=1.0)
 
                 if msg is None:
+                    # Reset error counter on successful poll
+                    self._consecutive_errors = 0
                     continue
 
                 if msg.error():
@@ -100,14 +168,39 @@ class BaseKafkaConsumer(ABC):
                         continue
                     else:
                         logger.error(f"Kafka consumer error: {msg.error()}")
+                        self._consecutive_errors += 1
+
+                        # Check if we need to reconnect
+                        if self._consecutive_errors >= 5:
+                            logger.warning("Multiple consecutive errors, attempting reconnect...")
+                            await self._reconnect()
                         continue
 
-                # Process message
+                # Process message - reset error counter on success
                 await self._process_message(msg)
+                self._consecutive_errors = 0
+
+            except KafkaException as e:
+                logger.error(f"Kafka exception in consume loop: {e}", exc_info=True)
+                self._consecutive_errors += 1
+
+                # Attempt reconnection for Kafka-specific errors
+                if not await self._reconnect():
+                    break
 
             except Exception as e:
                 logger.error(f"Error in consume loop: {e}", exc_info=True)
-                await asyncio.sleep(1)  # Backoff on error
+                self._consecutive_errors += 1
+
+                # Use exponential backoff for general errors
+                backoff = self._calculate_backoff()
+                logger.info(f"Backing off for {backoff:.2f}s before retry")
+                await asyncio.sleep(backoff)
+
+                # Reconnect after too many errors
+                if self._consecutive_errors >= 10:
+                    if not await self._reconnect():
+                        break
 
     async def _process_message(self, msg):
         """Process a single Kafka message.
