@@ -163,80 +163,8 @@ class ResetPasswordRequest(SQLModel):
 class ResetPasswordResponse(SQLModel):
     message: str
 
-# backlog (will be deprecated - use Story schemas below)
 
-class BacklogItemBase(SQLModel):
-    title: str = Field(min_length=1, max_length=255)
-    description: Optional[str] = None
-    type: str = Field(description="Type: Epic, Story, Task, Sub-task")
-    status: str = Field(description="Status: Backlog, Todo, Doing, Done")
-    rank: Optional[int] = None
-    estimate_value: Optional[int] = None
-    story_point: Optional[int] = None
-    pause: bool = False
-    deadline: Optional[datetime] = None
-    assignee_id: Optional[UUID] = None
-    reviewer_id: Optional[UUID] = None
-    parent_id: Optional[UUID] = None
-
-
-class BacklogItemCreate(BacklogItemBase):
-    project_id: UUID
-
-
-class BacklogItemUpdate(SQLModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    type: Optional[str] = None
-    status: Optional[str] = None
-    rank: Optional[int] = None
-    estimate_value: Optional[int] = None
-    story_point: Optional[int] = None
-    pause: Optional[bool] = None
-    deadline: Optional[datetime] = None
-    assignee_id: Optional[UUID] = None
-    reviewer_id: Optional[UUID] = None
-    parent_id: Optional[UUID] = None
-    project_id: Optional[UUID] = None
-
-
-# TraDS ============= Kanban Hierarchy Support
-class BacklogItemSimple(BacklogItemBase):
-    """Simple schema without nested relationships to prevent recursion"""
-    id: UUID
-    project_id: UUID
-    created_at: datetime
-    updated_at: datetime
-
-
-class BacklogItemPublic(BacklogItemBase):
-    """Public schema with parent/children for Kanban hierarchy display"""
-    id: UUID
-    project_id: UUID
-    created_at: datetime
-    updated_at: datetime
-    parent: Optional[BacklogItemSimple] = None
-    children: list[BacklogItemSimple] = []
-
-
-class BacklogItemsPublic(SQLModel):
-    data: list[BacklogItemPublic]
-    count: int
-
-class BacklogItemType(str, Enum):
-    EPIC = "Epic"
-    USER_STORY = "User story"
-    TASK = "Task"
-    SUB_TASK = "Sub-task"
-
-class BacklogItemsStatus(str, Enum):
-    BACKLOG = "Backlog"
-    TODO = "Todo"
-    DOING = "Doing"
-    DONE = "Done"
-
-
-# ============= NEW: Story Schemas (replaces BacklogItem) =============
+# ============= Story Schemas =============
 
 class StoryBase(SQLModel):
     """Base schema for Story with only UserStory and EnablerStory types"""

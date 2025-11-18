@@ -37,13 +37,17 @@ class TesterConsumer:
         self.consumer: Optional[EventHandlerConsumer] = None
         self._running = False
 
-    async def handle_routing_event(self, event_data: Dict[str, Any]) -> None:
+    async def handle_routing_event(self, event_data: Any) -> None:
         """Handle incoming agent routing event.
 
         Args:
-            event_data: Deserialized AgentRoutingEvent data
+            event_data: Deserialized AgentRoutingEvent data (dict or Pydantic model)
         """
         try:
+            # Convert Pydantic model to dict if needed
+            if hasattr(event_data, 'model_dump'):
+                event_data = event_data.model_dump(mode='json')
+
             # Check if this event is for us
             to_agent = event_data.get("to_agent", "")
             if to_agent != "tester":
@@ -76,7 +80,7 @@ class TesterConsumer:
                 "task_description": routing_context.get("task_description", ""),
                 "additional_context": routing_context.get("additional_context", ""),
                 "priority": routing_context.get("priority", "medium"),
-                "message_id": message_id,
+                "message_id": str(message_id),
             }
 
             # Execute Tester crew
@@ -127,9 +131,8 @@ class TesterConsumer:
 
         logger.info(f"Starting Tester consumer (group: {self.group_id})")
 
-        # Run consumer in background
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self.consumer.consume)
+        # Start consumer (runs consume loop in background)
+        await self.consumer.start()
 
     async def stop(self) -> None:
         """Stop consuming messages."""

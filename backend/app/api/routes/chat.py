@@ -12,7 +12,8 @@ from datetime import datetime
 
 from app.websocket.connection_manager import connection_manager
 from app.core.security import decode_access_token
-from app.models import User
+from app.models import User, Message as MessageModel, Project, AuthorType
+from app.kafka import get_kafka_producer, KafkaTopics, UserMessageEvent
 from sqlmodel import select
 
 logger = logging.getLogger(__name__)
@@ -89,11 +90,124 @@ async def websocket_endpoint(
                         })
                         continue
 
-                    # Handle other message types
-                    # Note: Actual message handling will be done via Kafka
-                    # This WebSocket primarily receives events from Kafka bridge
+                    # Handle user message
+                    elif message_type == "message":
+                        content = message.get("content", "").strip()
+                        if not content:
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": "Message content cannot be empty"
+                            })
+                            continue
 
-                    logger.debug(f"Received WebSocket message: {message_type}")
+                        # Save message to database
+                        from app.core.db import engine
+                        from sqlmodel import Session as DBSession
+
+                        with DBSession(engine) as db_session:
+                            # Verify project exists
+                            project = db_session.get(Project, project_id)
+                            if not project:
+                                await websocket.send_json({
+                                    "type": "error",
+                                    "message": "Project not found"
+                                })
+                                continue
+
+                            # Create message
+                            db_message = MessageModel(
+                                project_id=project_id,
+                                user_id=user.id,
+                                agent_id=None,
+                                content=content,
+                                author_type=AuthorType.USER,
+                                message_type=message.get("message_type", "text"),
+                            )
+                            db_session.add(db_message)
+                            db_session.commit()
+                            db_session.refresh(db_message)
+
+                            message_id = db_message.id
+
+                        logger.info(f"Message saved: {message_id} from user {user.id}")
+
+                        # Publish to Kafka for agent processing
+                        try:
+                            producer = await get_kafka_producer()
+                            user_message_event = UserMessageEvent(
+                                message_id=message_id,
+                                project_id=project_id,
+                                user_id=user.id,
+                                content=content,
+                                message_type=message.get("message_type", "text"),
+                            )
+                            await producer.publish(
+                                topic=KafkaTopics.USER_MESSAGES,
+                                event=user_message_event,
+                            )
+                            logger.info(f"Message {message_id} published to Kafka")
+                        except Exception as e:
+                            logger.error(f"Failed to publish message to Kafka: {e}")
+
+                        # Send acknowledgment to client
+                        await websocket.send_json({
+                            "type": "message_ack",
+                            "message_id": str(message_id),
+                            "status": "received",
+                            "timestamp": datetime.utcnow().isoformat()
+                        })
+
+                        # Broadcast user message to all clients in project
+                        await connection_manager.broadcast_to_project({
+                            "type": "user_message",
+                            "message_id": str(message_id),
+                            "user_id": str(user.id),
+                            "content": content,
+                            "timestamp": datetime.utcnow().isoformat()
+                        }, project_id)
+
+                    # Handle user answer (for agent questions/approvals)
+                    elif message_type == "user_answer":
+                        approval_request_id = message.get("approval_request_id")
+                        answer = message.get("answer")
+
+                        if not approval_request_id or answer is None:
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": "approval_request_id and answer are required"
+                            })
+                            continue
+
+                        # Publish approval response to Kafka
+                        try:
+                            from app.kafka.event_schemas import ApprovalResponseEvent
+
+                            producer = await get_kafka_producer()
+                            approval_event = ApprovalResponseEvent(
+                                approval_request_id=UUID(approval_request_id),
+                                project_id=project_id,
+                                user_id=user.id,
+                                approved=answer.get("approved", False) if isinstance(answer, dict) else bool(answer),
+                                feedback=answer.get("feedback", "") if isinstance(answer, dict) else "",
+                                modified_data=answer.get("modified_data") if isinstance(answer, dict) else None,
+                            )
+                            await producer.publish(
+                                topic=KafkaTopics.APPROVAL_RESPONSES,
+                                event=approval_event,
+                            )
+                            logger.info(f"Approval response published for {approval_request_id}")
+                        except Exception as e:
+                            logger.error(f"Failed to publish approval response: {e}")
+
+                        await websocket.send_json({
+                            "type": "answer_ack",
+                            "approval_request_id": approval_request_id,
+                            "status": "received",
+                            "timestamp": datetime.utcnow().isoformat()
+                        })
+
+                    else:
+                        logger.debug(f"Received unhandled WebSocket message type: {message_type}")
 
                 except json.JSONDecodeError:
                     logger.error(f"Invalid JSON received: {data}")

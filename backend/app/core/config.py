@@ -1,14 +1,7 @@
-"""Application configuration management.
-
-This module handles environment-specific configuration loading, parsing, and management
-for the application. It includes environment detection, .env file loading, and
-configuration value parsing.
-"""
+"""Application configuration management"""
 
 import os
-import secrets
 import warnings
-from enum import Enum
 from typing import Annotated, Any, Literal
 from pathlib import Path
 
@@ -57,8 +50,6 @@ def load_env_file():
 
     return None
 
-
-# Load env file before settings initialization
 ENV_FILE = load_env_file()
 
 
@@ -100,7 +91,7 @@ class Settings(BaseSettings):
             self.FRONTEND_HOST
         ]
 
-    # DATABASE SETTINGS (from management-service)
+    # DATABASE SETTINGS 
     POSTGRES_SERVER: str
     POSTGRES_PORT: int = 5432
     POSTGRES_USER: str
@@ -120,7 +111,6 @@ class Settings(BaseSettings):
             path=self.POSTGRES_DB,
         )
 
-    # EMAIL SETTINGS (from management-service)
     SMTP_TLS: bool = True
     SMTP_SSL: bool = False
     SMTP_PORT: int = 587
