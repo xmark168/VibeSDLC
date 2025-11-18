@@ -94,14 +94,13 @@ app = FastAPI(
 # Add rate limiter to app state
 
 # CORS temporarily disabled for WebSocket debugging
-# if settings.all_cors_origins:
-#     app.add_middleware(
-#         CORSMiddleware,
-#         allow_origins=settings.all_cors_origins,
-#         allow_credentials=True,
-#         allow_methods=["*"],
-#         allow_headers=["*"],
-#     )
+app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.all_cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # SlowAPI middleware temporarily disabled for debugging
 # app.add_middleware(SlowAPIMiddleware)

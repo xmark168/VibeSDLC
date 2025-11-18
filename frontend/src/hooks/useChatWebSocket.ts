@@ -532,7 +532,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     submitAnswer,
     submitPreviewChoice,
     reopenPreview,
-    closePreview,  // NEW: Export closePreview
+    closePreview, 
     connect,
     disconnect,
   }
