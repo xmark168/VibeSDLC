@@ -5,6 +5,7 @@ This crew analyzes user messages and delegates to appropriate specialist crews.
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any, Dict, Optional
 from uuid import UUID
@@ -111,7 +112,17 @@ class TeamLeaderCrew(BaseAgentCrew):
             elif "```" in output:
                 output = output.split("```")[1].split("```")[0].strip()
 
-            delegation_data = json.loads(output)
+            # Fix common JSON issues from LLM output
+            # First, try to parse as-is
+            try:
+                delegation_data = json.loads(output)
+            except json.JSONDecodeError:
+                # Clean up newlines and extra whitespace in string values
+                # Replace actual newlines with spaces
+                cleaned = output.replace('\n', ' ').replace('\r', ' ')
+                # Collapse multiple spaces into one
+                cleaned = re.sub(r'\s+', ' ', cleaned)
+                delegation_data = json.loads(cleaned)
 
             specialist = delegation_data.get("specialist", "")
             task_description = delegation_data.get("task_description", "")

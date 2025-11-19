@@ -8,9 +8,14 @@ import logging
 from typing import Any, Dict, Optional
 from uuid import UUID, uuid4
 
+from sqlmodel import Session, create_engine, select
+
+from app.core.config import settings
 from app.kafka.consumer import EventHandlerConsumer
 from app.kafka.event_schemas import KafkaTopics, UserMessageEvent
+from app.kafka.producer import get_kafka_producer
 from app.agents.roles.team_leader.crew import TeamLeaderCrew
+from app.models import BASession, BASessionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +39,7 @@ class TeamLeaderConsumer:
         """
         self.group_id = group_id
         self.crew = TeamLeaderCrew()
+        self.engine = create_engine(str(settings.SQLALCHEMY_DATABASE_URI))
         self.consumer: Optional[EventHandlerConsumer] = None
         self._running = False
 
@@ -60,7 +66,28 @@ class TeamLeaderConsumer:
                 user_id = UUID(user_id) if isinstance(user_id, str) else user_id
             content = event_data.get("content", "")
 
-            # Prepare context for crew execution
+            # Check for active BA session in analysis phase
+            with Session(self.engine) as db_session:
+                active_ba_session = db_session.exec(
+                    select(BASession)
+                    .where(BASession.project_id == project_id)
+                    .where(BASession.status == BASessionStatus.ANALYSIS)
+                    .where(BASession.current_phase == "analysis")
+                    .order_by(BASession.created_at.desc())
+                ).first()
+
+                if active_ba_session:
+                    # Route directly to BA without analysis
+                    logger.info(f"Active BA session found ({active_ba_session.id}), routing directly to BA")
+                    await self._route_to_ba_directly(
+                        message_id=message_id,
+                        project_id=project_id,
+                        user_id=user_id,
+                        content=content
+                    )
+                    return
+
+            # No active BA session, execute Team Leader crew to analyze and route
             context = {
                 "user_message": content,
                 "message_id": str(message_id),
@@ -84,6 +111,46 @@ class TeamLeaderConsumer:
 
         except Exception as e:
             logger.error(f"Error handling user message: {e}", exc_info=True)
+
+    async def _route_to_ba_directly(
+        self,
+        message_id: UUID,
+        project_id: UUID,
+        user_id: UUID,
+        content: str
+    ) -> None:
+        """Route message directly to BA agent without LLM analysis.
+
+        Args:
+            message_id: The message ID
+            project_id: The project ID
+            user_id: The user ID
+            content: The message content
+        """
+        from app.kafka.event_schemas import AgentRoutingEvent
+
+        routing_event = AgentRoutingEvent(
+            from_agent="Team Leader",
+            to_agent="business_analyst",
+            delegation_reason="Continuing active BA session in analysis phase",
+            context={
+                "user_message": content,
+                "task_description": "Continue requirements gathering",
+                "priority": "medium",
+                "additional_context": "User is continuing conversation with BA agent",
+                "message_id": str(message_id),
+            },
+            project_id=project_id,
+            user_id=user_id
+        )
+
+        producer = await get_kafka_producer()
+        await producer.publish(
+            topic=KafkaTopics.AGENT_ROUTING,
+            event=routing_event
+        )
+
+        logger.info(f"Routed message directly to BA agent for project {project_id}")
 
     def _create_consumer(self) -> EventHandlerConsumer:
         """Create and configure the Kafka consumer.

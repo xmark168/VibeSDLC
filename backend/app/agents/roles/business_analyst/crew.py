@@ -12,7 +12,7 @@ import yaml
 import re
 from pathlib import Path
 from typing import Any, Dict, Optional, List
-from uuid import UUID
+from uuid import UUID, uuid4
 from datetime import datetime, timezone
 
 from crewai import Agent, Task, Crew
@@ -154,7 +154,7 @@ class BusinessAnalystCrew(BaseAgentCrew):
         config = self.agents_config.get(agent_name, {})
 
         # Get model from settings (with fallback)
-        model = settings.STRONG_MODEL or settings.MODEL or "openai/gpt-4.1"
+        model = settings.STRONG_MODEL or "openai/gpt-4.1"
         logger.info(f"Using model: {model}")
 
         return Agent(
@@ -557,19 +557,32 @@ class BusinessAnalystCrew(BaseAgentCrew):
         if result.get("success"):
             output = result.get("output", "")
             extracted = self._parse_analysis_output(output)
+            assistant_response = extracted.get("response", "")
 
             # Add assistant response to history
             history = self.ba_session.conversation_history or []
             history.append({
                 "role": "assistant",
-                "content": extracted.get("response", ""),
+                "content": assistant_response,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             })
             self.ba_session.conversation_history = history
             self.db_session.commit()
 
             result["extracted_requirements"] = extracted.get("requirements", {})
-            result["assistant_response"] = extracted.get("response", "")
+            result["assistant_response"] = assistant_response
+
+            # Publish clean response via Kafka (not the raw output with markup)
+            await self.publish_response(
+                content=assistant_response,
+                message_id=uuid4(),  # Generate new message ID
+                project_id=project_id,
+                user_id=user_id,
+                structured_data={
+                    "phase": "analysis",
+                    "session_id": str(self.ba_session.id) if self.ba_session else None,
+                },
+            )
 
         return result
 
@@ -722,6 +735,26 @@ Revision Count: {existing_brief.revision_count}"""
 
             self.db_session.commit()
 
+            # Publish response for brief phase
+            await self.publish_response(
+                content="I've created a Product Brief based on your requirements. Please review it.",
+                message_id=uuid4(),
+                project_id=project_id,
+                user_id=user_id,
+                structured_data={
+                    "phase": "brief",
+                    "session_id": str(self.ba_session.id) if self.ba_session else None,
+                    "message_type": "product_brief",
+                    "data": {
+                        "product_summary": brief_data.product_summary,
+                        "problem_statement": brief_data.problem_statement,
+                        "target_users": brief_data.target_users,
+                        "product_goals": brief_data.product_goals,
+                        "scope": brief_data.scope,
+                    }
+                },
+            )
+
         return result
 
     async def execute_solution_phase(
@@ -797,6 +830,29 @@ Actors: {', '.join(flow.actors)}"""
                 self.db_session.add(flow)
 
             self.db_session.commit()
+
+            # Publish response for solution phase
+            flows_data = [
+                {
+                    "name": flow_data.name,
+                    "description": flow_data.description,
+                    "steps": flow_data.steps,
+                    "actors": flow_data.actors
+                }
+                for flow_data in flows_output.business_flows
+            ]
+            await self.publish_response(
+                content="I've designed the business flows. Please review them.",
+                message_id=uuid4(),
+                project_id=project_id,
+                user_id=user_id,
+                structured_data={
+                    "phase": "solution",
+                    "session_id": str(self.ba_session.id) if self.ba_session else None,
+                    "message_type": "business_flows",
+                    "data": flows_data
+                },
+            )
 
         return result
 
@@ -930,6 +986,43 @@ Actors: {', '.join(flow.actors)}"""
             self.ba_session.completed_at = datetime.now(timezone.utc)
             self.db_session.commit()
 
+            # Publish response for backlog phase
+            epics_data = [
+                {
+                    "id": epic_data.id,
+                    "name": epic_data.name,
+                    "description": epic_data.description,
+                    "domain": epic_data.domain
+                }
+                for epic_data in backlog.epics
+            ]
+            stories_data = [
+                {
+                    "epic_id": story_data.epic_id,
+                    "title": story_data.title,
+                    "description": story_data.description,
+                    "acceptance_criteria": story_data.acceptance_criteria,
+                    "story_points": story_data.story_points,
+                    "priority": story_data.priority
+                }
+                for story_data in backlog.stories
+            ]
+            await self.publish_response(
+                content="I've created the product backlog with Epics and User Stories. Please review them.",
+                message_id=uuid4(),
+                project_id=project_id,
+                user_id=user_id,
+                structured_data={
+                    "phase": "backlog",
+                    "session_id": str(self.ba_session.id) if self.ba_session else None,
+                    "message_type": "product_backlog",
+                    "data": {
+                        "epics": epics_data,
+                        "stories": stories_data
+                    }
+                },
+            )
+
         return result
 
     async def execute(
@@ -957,19 +1050,9 @@ Actors: {', '.join(flow.actors)}"""
 
         if result.get("success"):
             phase = context.get("phase", "analysis")
-
-            # Publish response via Kafka
-            await self.publish_response(
-                content=result.get("output", ""),
-                message_id=context.get("message_id", UUID(int=0)),
-                project_id=project_id,
-                user_id=user_id,
-                structured_data={
-                    "phase": phase,
-                    "session_id": str(self.ba_session.id) if self.ba_session else None,
-                },
-            )
-
             logger.info(f"BA Crew completed {phase} phase")
+
+            # Note: For analysis phase, response is published in execute_analysis()
+            # after parsing to extract the clean user response
 
         return result

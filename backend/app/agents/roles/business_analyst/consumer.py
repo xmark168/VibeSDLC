@@ -8,9 +8,13 @@ import logging
 from typing import Any, Dict, Optional
 from uuid import UUID, uuid4
 
+from sqlmodel import Session, create_engine, select
+
+from app.core.config import settings
 from app.kafka.consumer import EventHandlerConsumer
 from app.kafka.event_schemas import KafkaTopics
 from app.agents.roles.business_analyst.crew import BusinessAnalystCrew
+from app.models import BASession, BASessionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +37,7 @@ class BusinessAnalystConsumer:
             group_id: Kafka consumer group ID
         """
         self.group_id = group_id
-        self.crew = BusinessAnalystCrew()
+        self.engine = create_engine(str(settings.SQLALCHEMY_DATABASE_URI))
         self.consumer: Optional[EventHandlerConsumer] = None
         self._running = False
 
@@ -43,6 +47,7 @@ class BusinessAnalystConsumer:
         Args:
             event_data: Deserialized AgentRoutingEvent data (dict or Pydantic model)
         """
+        db_session = None
         try:
             # Convert Pydantic model to dict if needed
             if hasattr(event_data, 'model_dump'):
@@ -74,20 +79,37 @@ class BusinessAnalystConsumer:
             else:
                 message_id = uuid4()
 
-            # Prepare execution context
-            context = {
-                "user_message": routing_context.get("user_message", ""),
-                "task_description": routing_context.get("task_description", ""),
-                "additional_context": routing_context.get("additional_context", ""),
-                "priority": routing_context.get("priority", "medium"),
-                "message_id": str(message_id),
-            }
+            # Create database session
+            db_session = Session(self.engine)
 
-            # Execute Business Analyst crew
-            result = await self.crew.execute(
-                context=context,
+            # Create crew with database session
+            crew = BusinessAnalystCrew(db_session=db_session)
+
+            # Check for existing active BA session for this project (in analysis phase)
+            existing_session = db_session.exec(
+                select(BASession)
+                .where(BASession.project_id == project_id)
+                .where(BASession.status == BASessionStatus.ANALYSIS)
+                .order_by(BASession.created_at.desc())
+            ).first()
+
+            if existing_session:
+                # Load existing session
+                crew.load_session(existing_session.id)
+                logger.info(f"Loaded existing BA session: {existing_session.id}")
+            else:
+                # Create new session
+                crew.create_session(project_id, user_id)
+                logger.info(f"Created new BA session: {crew.ba_session.id}")
+
+            # Get user message
+            user_message = routing_context.get("user_message", "")
+
+            # Execute analysis phase
+            result = await crew.execute_analysis(
+                user_message=user_message,
                 project_id=project_id,
-                user_id=user_id,
+                user_id=user_id
             )
 
             if result.get("success"):
@@ -95,11 +117,11 @@ class BusinessAnalystConsumer:
             else:
                 logger.error(f"Business Analyst execution failed: {result.get('error')}")
 
-            # Reset crew for next execution
-            self.crew.reset()
-
         except Exception as e:
             logger.error(f"Error handling routing event: {e}", exc_info=True)
+        finally:
+            if db_session:
+                db_session.close()
 
     def _create_consumer(self) -> EventHandlerConsumer:
         """Create and configure the Kafka consumer.

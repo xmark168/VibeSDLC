@@ -40,3 +40,6 @@ uv run app/tests/test_agent.py
 front end netstat -ano | findstr :5173 taskkill /PID 24844 /F
 
 git reset --soft HEAD~1 git rm --cached services/ai-agent-service/.env
+
+deactivate
+

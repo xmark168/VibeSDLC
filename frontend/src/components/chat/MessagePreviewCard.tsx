@@ -7,9 +7,9 @@ import { ProductBriefPreview, ProductVisionPreview, BacklogPreview } from './pre
 interface MessagePreviewCardProps {
   message: {
     id: string
-    message_type: string
+    message_type?: string
     content: string
-    structured_data: any
+    structured_data?: any
     metadata?: any
     created_at: string
   }

@@ -141,7 +141,6 @@ class Settings(BaseSettings):
     MAX_LLM_CALL_RETRIES: int = 3
 
     # CrewAI Model Settings (from .env)
-    MODEL: str = "openai/gpt-4.1"
     STRONG_MODEL: str = "openai/gpt-4.1"  # For creative agents (BA, Designer)
     LIGHT_MODEL: str = "openai/gpt-4.1"   # For validators/coordinators
 

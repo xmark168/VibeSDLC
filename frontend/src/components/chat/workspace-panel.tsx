@@ -10,7 +10,6 @@ import { FileExplorer } from "../shared/file-explorer"
 import { CodeViewer } from "../shared/code-viewer"
 import { AnimatedTooltip } from "../ui/animated-tooltip"
 import { AppViewer } from "./app-viewer"
-import Loggings from "./loggings"
 import { useQueryClient } from "@tanstack/react-query"
 //type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings"
 type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings"
@@ -195,7 +194,6 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
       case "loggings":
         return (
           <>
-            <Loggings />
           </>
         )
       default:

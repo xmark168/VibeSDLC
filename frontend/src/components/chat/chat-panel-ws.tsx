@@ -18,8 +18,6 @@ import {
   X,
   FileText,
   ImageIcon,
-  Download,
-  File,
   Moon,
   Sun,
   AtSign,
@@ -34,7 +32,6 @@ import { useChatWebSocket } from "@/hooks/useChatWebSocket";
 import { useAuth } from "@/hooks/useAuth";
 import { useMessages } from "@/queries/messages";
 import { AuthorType, type Message } from "@/types/message";
-import { AgentQuestionModal } from "./agent-question-modal";
 import { AgentPreviewModal } from "./agent-preview-modal";
 import { MessagePreviewCard } from "./MessagePreviewCard";
 
@@ -45,7 +42,7 @@ interface ChatPanelProps {
   onSidebarHover: (hovered: boolean) => void;
   projectId?: string;
   onSendMessageReady?: (
-    sendFn: (params: { content: string; author_type: string }) => boolean
+    sendFn: (params: { content: string; author_type?: 'user' | 'agent' }) => boolean
   ) => void;
   onConnectionChange?: (connected: boolean) => void;
   onKanbanDataChange?: (data: any) => void;
@@ -114,19 +111,30 @@ export function ChatPanelWS({
     messages: wsMessages,
     typingAgents,
     agentProgress,
-    pendingQuestions,
     pendingPreviews,
     kanbanData,
     activeTab,
     sendMessage: wsSendMessage,
-    submitAnswer,
     submitPreviewChoice,
     reopenPreview,
-    closePreview,  // NEW: Get closePreview from hook
+    closePreview,
   } = useChatWebSocket(projectId, token || undefined);
 
   // Combine existing messages with WebSocket messages
-  const allMessages = [...(messagesData?.data || []), ...wsMessages].sort(
+  // Filter out temp messages that have corresponding real messages in API data
+  const apiMessages = messagesData?.data || [];
+  const filteredWsMessages = wsMessages.filter(wsMsg => {
+    // Keep non-temp messages
+    if (!wsMsg.id.startsWith('temp-')) return true;
+    // For temp messages, check if API has a real message with same content
+    const hasRealMessage = apiMessages.some(
+      apiMsg => apiMsg.content === wsMsg.content &&
+                apiMsg.author_type === wsMsg.author_type
+    );
+    return !hasRealMessage;
+  });
+
+  const allMessages = [...apiMessages, ...filteredWsMessages].sort(
     (a, b) =>
       new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   );
@@ -287,10 +295,8 @@ export function ChatPanelWS({
         preview.brief = message.structured_data
         preview.incomplete_flag = message.metadata?.incomplete_flag
         break
-      case 'product_vision':
-        preview.vision = message.structured_data
-        preview.quality_score = message.metadata?.quality_score
-        preview.validation_result = message.metadata?.validation_result
+      case 'business_flows':
+        preview.flows = message.structured_data
         break
       case 'product_backlog':
         preview.backlog = message.structured_data
@@ -356,16 +362,14 @@ export function ChatPanelWS({
 
   const getAgentAvatar = (authorType: AuthorType) => {
     if (authorType === AuthorType.USER) return "👤";
-    if (authorType === AuthorType.AGENT) return "🔧";
-    if (authorType === AuthorType.SYSTEM) return "⚙️";
+    if (authorType === AuthorType.AGENT) return "🤖";
     return "🤖";
   };
 
   const getAgentName = (msg: Message) => {
     if (msg.author_type === AuthorType.USER) return "You";
-    if (msg.author_type === AuthorType.AGENT) return "Developer";
-    if (msg.author_type === AuthorType.SYSTEM) return "System";
-    return "Bot";
+    if (msg.author_type === AuthorType.AGENT) return "Agent";
+    return "Agent";
   };
 
   const toggleTheme = () => {
@@ -391,19 +395,6 @@ export function ChatPanelWS({
       const newCursorPos = cursorPos + 1;
       textarea.setSelectionRange(newCursorPos, newCursorPos);
     }, 0);
-  };
-
-  // Agent question handlers
-  const handleSubmitAnswer = (question_id: string, answer: string) => {
-    submitAnswer(question_id, answer);
-  };
-
-  const handleSkipQuestion = (question_id: string) => {
-    submitAnswer(question_id, "skip");
-  };
-
-  const handleSkipAllQuestions = (question_id: string) => {
-    submitAnswer(question_id, "skip_all");
   };
 
   // Agent preview handlers
@@ -846,14 +837,6 @@ export function ChatPanelWS({
           </div>
         </div>
       </div>
-
-      {/* Agent Question Modal */}
-      <AgentQuestionModal
-        question={pendingQuestions[0] || null}
-        onSubmit={handleSubmitAnswer}
-        onSkip={handleSkipQuestion}
-        onSkipAll={handleSkipAllQuestions}
-      />
 
       {/* Agent Preview Modal */}
       <AgentPreviewModal
