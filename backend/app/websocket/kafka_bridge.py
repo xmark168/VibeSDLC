@@ -112,6 +112,12 @@ class WebSocketKafkaBridge:
             message_id = None
             content = event_data.get("content", "")
             structured_data = event_data.get("structured_data")
+            agent_name = event_data.get("agent_name", "")
+
+            # Build metadata with agent_name so it persists in database
+            metadata = {"agent_name": agent_name} if agent_name else {}
+            if structured_data:
+                metadata.update(structured_data)
 
             with Session(self.engine) as db_session:
                 db_message = MessageModel(
@@ -122,7 +128,7 @@ class WebSocketKafkaBridge:
                     author_type=AuthorType.AGENT,
                     message_type=structured_data.get("message_type", "text") if structured_data else "text",
                     structured_data=structured_data.get("data") if structured_data and "data" in structured_data else None,
-                    metadata=structured_data if structured_data else None,
+                    metadata=metadata if metadata else None,
                 )
                 db_session.add(db_message)
                 db_session.commit()

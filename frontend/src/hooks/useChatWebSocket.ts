@@ -148,6 +148,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
                   id: data.message_id,
                   project_id: data.project_id || projectId || '',
                   author_type: AuthorType.AGENT,
+                  agent_name: data.agent_name || undefined,
                   content: data.content,
                   message_type: data.structured_data ? 'structured' : 'text',
                   structured_data: data.structured_data,

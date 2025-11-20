@@ -9,6 +9,7 @@ export type Message = {
   author_type: AuthorType
   user_id?: string
   agent_id?: string
+  agent_name?: string    // "Team Leader" | "Business Analyst" | "Developer" | "Tester"
   content: string
   message_type?: string  // "text" | "product_brief" | "business_flows" | "product_backlog" | "sprint_plan"
   structured_data?: any  // JSON data for previews (brief/flows/backlog/sprint)

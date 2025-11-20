@@ -376,7 +376,13 @@ export function ChatPanelWS({
 
   const getAgentName = (msg: Message) => {
     if (msg.author_type === AuthorType.USER) return "You";
-    if (msg.author_type === AuthorType.AGENT) return "Agent";
+    if (msg.author_type === AuthorType.AGENT) {
+      // Use specific agent name if available
+      if (msg.agent_name) return msg.agent_name;
+      // Check metadata for agent_name (from database)
+      if (msg.metadata?.agent_name) return msg.metadata.agent_name;
+      return "Agent";
+    }
     return "Agent";
   };
 
