@@ -108,24 +108,27 @@ class TeamLeaderConsumer:
             # Check if this is a simple message (greeting, acknowledgment)
             # If so, let Team Leader analyze and potentially respond directly
             if not is_simple_message(content):
-                # Check for active BA session in analysis phase
+                # Check for active BA session in any active phase
+                # (analysis, brief, solution, backlog - but not completed)
                 with Session(self.engine) as db_session:
                     active_ba_session = db_session.exec(
                         select(BASession)
                         .where(BASession.project_id == project_id)
-                        .where(BASession.status == BASessionStatus.ANALYSIS)
-                        .where(BASession.current_phase == "analysis")
+                        .where(BASession.status != BASessionStatus.COMPLETED)
+                        .where(BASession.current_phase.in_(["analysis", "brief", "solution", "backlog"]))
                         .order_by(BASession.created_at.desc())
                     ).first()
 
                     if active_ba_session:
                         # Route directly to BA without analysis
-                        logger.info(f"Active BA session found ({active_ba_session.id}), routing directly to BA")
+                        phase = active_ba_session.current_phase
+                        logger.info(f"Active BA session found ({active_ba_session.id}) in phase '{phase}', routing directly to BA")
                         await self._route_to_ba_directly(
                             message_id=message_id,
                             project_id=project_id,
                             user_id=user_id,
-                            content=content
+                            content=content,
+                            current_phase=phase
                         )
                         return
             else:
@@ -161,7 +164,8 @@ class TeamLeaderConsumer:
         message_id: UUID,
         project_id: UUID,
         user_id: UUID,
-        content: str
+        content: str,
+        current_phase: str = "analysis"
     ) -> None:
         """Route message directly to BA agent without LLM analysis.
 
@@ -170,19 +174,30 @@ class TeamLeaderConsumer:
             project_id: The project ID
             user_id: The user ID
             content: The message content
+            current_phase: The current BA session phase
         """
         from app.kafka.event_schemas import AgentRoutingEvent
+
+        # Determine task description based on phase
+        phase_tasks = {
+            "analysis": "Continue requirements gathering",
+            "brief": "Handle PRD feedback or approval",
+            "solution": "Handle business flows feedback or approval",
+            "backlog": "Handle backlog feedback or approval"
+        }
+        task_description = phase_tasks.get(current_phase, "Continue BA workflow")
 
         routing_event = AgentRoutingEvent(
             from_agent="Team Leader",
             to_agent="business_analyst",
-            delegation_reason="Continuing active BA session in analysis phase",
+            delegation_reason=f"Continuing active BA session in {current_phase} phase",
             context={
                 "user_message": content,
-                "task_description": "Continue requirements gathering",
+                "task_description": task_description,
                 "priority": "medium",
-                "additional_context": "User is continuing conversation with BA agent",
+                "additional_context": f"User is continuing conversation with BA agent in {current_phase} phase",
                 "message_id": str(message_id),
+                "current_phase": current_phase,
             },
             project_id=project_id,
             user_id=user_id

@@ -755,7 +755,7 @@ Revision Count: {existing_brief.revision_count}"""
 
             # Publish response for brief phase
             await self.publish_response(
-                content="I've created a PRD based on your requirements. Please review it.",
+                content="Tôi đã tạo PRD dựa trên yêu cầu của bạn. Vui lòng xem xét và:\n• Gõ 'next' hoặc 'ok' để chấp nhận và tiếp tục tạo Business Flows\n• Hoặc gửi feedback để tôi chỉnh sửa PRD",
                 message_id=uuid4(),
                 project_id=project_id,
                 user_id=user_id,
@@ -860,7 +860,7 @@ Actors: {', '.join(flow.actors)}"""
                 for flow_data in flows_output.business_flows
             ]
             await self.publish_response(
-                content="I've designed the business flows. Please review them.",
+                content="Tôi đã thiết kế Business Flows. Vui lòng xem xét và:\n• Gõ 'next' hoặc 'ok' để chấp nhận và tiếp tục tạo Product Backlog\n• Hoặc gửi feedback để tôi chỉnh sửa flows",
                 message_id=uuid4(),
                 project_id=project_id,
                 user_id=user_id,
@@ -1026,7 +1026,7 @@ Actors: {', '.join(flow.actors)}"""
                 for story_data in backlog.stories
             ]
             await self.publish_response(
-                content="I've created the product backlog with Epics and User Stories. Please review them.",
+                content="Tôi đã tạo Product Backlog với Epics và User Stories. Vui lòng xem xét và:\n• Gõ 'next' hoặc 'ok' để hoàn tất quy trình BA\n• Hoặc gửi feedback để tôi chỉnh sửa backlog",
                 message_id=uuid4(),
                 project_id=project_id,
                 user_id=user_id,

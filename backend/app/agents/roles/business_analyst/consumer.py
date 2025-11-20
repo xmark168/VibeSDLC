@@ -85,35 +85,92 @@ class BusinessAnalystConsumer:
             # Create crew with database session
             crew = BusinessAnalystCrew(db_session=db_session)
 
-            # Check for existing active BA session for this project (in analysis phase)
+            # Check for existing active BA session for this project (any active status)
             existing_session = db_session.exec(
                 select(BASession)
                 .where(BASession.project_id == project_id)
-                .where(BASession.status == BASessionStatus.ANALYSIS)
+                .where(BASession.status != BASessionStatus.COMPLETED)
                 .order_by(BASession.created_at.desc())
             ).first()
 
             if existing_session:
                 # Load existing session
                 crew.load_session(existing_session.id)
-                logger.info(f"Loaded existing BA session: {existing_session.id}")
+                logger.info(f"Loaded existing BA session: {existing_session.id}, phase: {existing_session.current_phase}")
             else:
                 # Create new session
                 crew.create_session(project_id, user_id)
                 logger.info(f"Created new BA session: {crew.ba_session.id}")
 
-            # Get user message
+            # Get user message and current phase
             user_message = routing_context.get("user_message", "")
+            current_phase = crew.ba_session.current_phase if crew.ba_session else "analysis"
+            user_msg_lower = user_message.lower().strip()
 
-            # Check if user wants to proceed to next phase
-            if user_message.lower().strip() == "next":
-                logger.info("User requested to proceed to PRD phase")
-                result = await crew.execute_brief_phase(
-                    project_id=project_id,
-                    user_id=user_id
-                )
+            # Handle message based on current phase
+            if current_phase == "analysis":
+                # In analysis phase
+                if user_msg_lower == "next":
+                    logger.info("User requested to proceed to PRD phase")
+                    result = await crew.execute_brief_phase(
+                        project_id=project_id,
+                        user_id=user_id
+                    )
+                else:
+                    # Continue requirements gathering
+                    result = await crew.execute_analysis(
+                        user_message=user_message,
+                        project_id=project_id,
+                        user_id=user_id
+                    )
+            elif current_phase == "brief":
+                # In brief phase - waiting for PRD approval/feedback
+                if user_msg_lower == "next" or user_msg_lower in ["ok", "approve", "approved", "đồng ý", "chấp nhận"]:
+                    logger.info("User approved PRD, proceeding to solution phase")
+                    result = await crew.execute_solution_phase(
+                        project_id=project_id,
+                        user_id=user_id
+                    )
+                else:
+                    # User provided feedback, regenerate PRD
+                    logger.info(f"User provided feedback on PRD: {user_message}")
+                    result = await crew.execute_brief_phase(
+                        revision_feedback=user_message,
+                        project_id=project_id,
+                        user_id=user_id
+                    )
+            elif current_phase == "solution":
+                # In solution phase - waiting for flows approval/feedback
+                if user_msg_lower == "next" or user_msg_lower in ["ok", "approve", "approved", "đồng ý", "chấp nhận"]:
+                    logger.info("User approved flows, proceeding to backlog phase")
+                    result = await crew.execute_backlog_phase(
+                        project_id=project_id,
+                        user_id=user_id
+                    )
+                else:
+                    # User provided feedback, regenerate flows
+                    logger.info(f"User provided feedback on flows: {user_message}")
+                    result = await crew.execute_solution_phase(
+                        revision_feedback=user_message,
+                        project_id=project_id,
+                        user_id=user_id
+                    )
+            elif current_phase == "backlog":
+                # In backlog phase - waiting for backlog approval/feedback
+                if user_msg_lower == "next" or user_msg_lower in ["ok", "approve", "approved", "đồng ý", "chấp nhận"]:
+                    logger.info("User approved backlog, BA workflow complete")
+                    # TODO: Mark session as completed and notify
+                    result = {"success": True, "message": "BA workflow completed"}
+                else:
+                    # User provided feedback, regenerate backlog
+                    logger.info(f"User provided feedback on backlog: {user_message}")
+                    result = await crew.execute_backlog_phase(
+                        revision_feedback=user_message,
+                        project_id=project_id,
+                        user_id=user_id
+                    )
             else:
-                # Execute analysis phase
+                # Default to analysis
                 result = await crew.execute_analysis(
                     user_message=user_message,
                     project_id=project_id,
