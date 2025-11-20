@@ -28,6 +28,13 @@ class StoryType(str, Enum):
     ENABLER_STORY = "EnablerStory"
 
 
+class StoryPriority(str, Enum):
+    """Story priority for INVEST principle (Negotiable)"""
+    HIGH = "High"  # Must have for MVP
+    MEDIUM = "Medium"  # Should have
+    LOW = "Low"  # Nice to have
+
+
 class BaseModel(SQLModel):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     created_at: datetime = Field(
@@ -66,6 +73,13 @@ class User(BaseModel, table=True):
     )
 
 
+class EpicStatus(str, Enum):
+    """Status of an Epic"""
+    PLANNED = "Planned"
+    IN_PROGRESS = "InProgress"
+    COMPLETED = "Completed"
+
+
 class Epic(BaseModel, table=True):
     """Epic model for grouping stories"""
     __tablename__ = "epics"
@@ -73,6 +87,10 @@ class Epic(BaseModel, table=True):
     title: str
     description: str | None = Field(default=None, sa_column=Column(Text))
     project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE")
+
+    # BA workflow fields
+    domain: str | None = Field(default=None)  # Feature domain (e.g., Product, Cart, Order, Payment)
+    epic_status: EpicStatus = Field(default=EpicStatus.PLANNED)
 
     # Relationships
     project: "Project" = Relationship(back_populates="epics")
@@ -144,8 +162,12 @@ class Story(BaseModel, table=True):
     # Planning fields
     rank: int | None = Field(default=None)
     estimate_value: int | None = Field(default=None)
-    story_point: int | None = Field(default=None)
-    priority: int | None = Field(default=None)
+    story_point: int | None = Field(default=None)  # INVEST: Estimable (Fibonacci: 1,2,3,5,8,13)
+    priority: int | None = Field(default=None)  # Legacy numeric priority
+
+    # INVEST principle fields (for BA workflow)
+    story_priority: StoryPriority | None = Field(default=None)  # High/Medium/Low
+    dependencies: list = Field(default_factory=list, sa_column=Column(JSON))  # INVEST: Independent (story IDs)
 
     # Lifecycle fields
     pause: bool = Field(default=False)
@@ -409,4 +431,129 @@ class ApprovalRequest(BaseModel, table=True):
     applied: bool = Field(default=False)  # Whether the approval was actually applied
     applied_at: datetime | None = Field(default=None)
     created_entity_id: UUID | None = Field(default=None)  # ID of created Story/Epic if applicable
+
+
+# ==================== BUSINESS ANALYST WORKFLOW MODELS ====================
+
+
+class BASessionStatus(str, Enum):
+    """Status of a BA analysis session"""
+    ANALYSIS = "analysis"  # Gathering requirements
+    BRIEF = "brief"  # Creating Product Brief
+    SOLUTION = "solution"  # Designing business flows
+    BACKLOG = "backlog"  # Creating Epics & Stories
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
+class BASession(BaseModel, table=True):
+    """Track Business Analyst analysis sessions"""
+    __tablename__ = "ba_sessions"
+
+    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
+    user_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")
+
+    # Session info
+    status: BASessionStatus = Field(default=BASessionStatus.ANALYSIS)
+    current_phase: str = Field(default="analysis")  # analysis, brief, solution, backlog
+
+    # Conversation tracking
+    conversation_history: list = Field(default_factory=list, sa_column=Column(JSON))
+    turn_count: int = Field(default=0)
+
+    # Phase transitions
+    phase_transitions: list = Field(default_factory=list, sa_column=Column(JSON))
+
+    # Completion tracking
+    completed_at: datetime | None = Field(default=None)
+
+    # Metadata
+    session_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
+
+    # Relationships
+    project: Project = Relationship()
+    requirements: list["Requirement"] = Relationship(
+        back_populates="session",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    product_brief: Optional["ProductBrief"] = Relationship(
+        back_populates="session",
+        sa_relationship_kwargs={"uselist": False, "cascade": "all, delete-orphan"}
+    )
+    business_flows: list["BusinessFlow"] = Relationship(
+        back_populates="session",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+
+
+class RequirementCategory(str, Enum):
+    """Category of a requirement"""
+    PROBLEM_GOALS = "problem_goals"
+    USERS_STAKEHOLDERS = "users_stakeholders"
+    FEATURES_SCOPE = "features_scope"
+
+
+class Requirement(BaseModel, table=True):
+    """Individual requirement collected during analysis"""
+    __tablename__ = "requirements"
+
+    session_id: UUID = Field(foreign_key="ba_sessions.id", nullable=False, ondelete="CASCADE", index=True)
+    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
+
+    # Requirement details
+    category: RequirementCategory = Field(nullable=False)
+    content: str = Field(sa_column=Column(Text))
+
+    # Source tracking
+    extracted_from_message: str | None = Field(default=None, sa_column=Column(Text))
+    turn_number: int | None = Field(default=None)
+
+    # Relationship
+    session: BASession = Relationship(back_populates="requirements")
+
+
+class ProductBrief(BaseModel, table=True):
+    """Product Brief document created during brief phase"""
+    __tablename__ = "product_briefs"
+
+    session_id: UUID = Field(foreign_key="ba_sessions.id", nullable=False, ondelete="CASCADE", unique=True)
+    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
+
+    # Brief sections
+    product_summary: str = Field(sa_column=Column(Text))
+    problem_statement: str = Field(sa_column=Column(Text))
+    target_users: str = Field(sa_column=Column(Text))
+    product_goals: str = Field(sa_column=Column(Text))
+    scope: str = Field(sa_column=Column(Text))
+
+    # Versioning
+    revision_count: int = Field(default=0)
+
+    # Approval tracking
+    approved: bool = Field(default=False)
+    approved_at: datetime | None = Field(default=None)
+    approval_feedback: str | None = Field(default=None, sa_column=Column(Text))
+
+    # Relationship
+    session: BASession = Relationship(back_populates="product_brief")
+
+
+class BusinessFlow(BaseModel, table=True):
+    """Business flow/user journey designed during solution phase"""
+    __tablename__ = "business_flows"
+
+    session_id: UUID = Field(foreign_key="ba_sessions.id", nullable=False, ondelete="CASCADE", index=True)
+    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
+
+    # Flow details
+    name: str
+    description: str = Field(sa_column=Column(Text))
+    steps: list = Field(sa_column=Column(JSON))  # List of step descriptions
+    actors: list = Field(sa_column=Column(JSON))  # List of actors involved
+
+    # Ordering
+    flow_order: int | None = Field(default=None)
+
+    # Relationship
+    session: BASession = Relationship(back_populates="business_flows")
 

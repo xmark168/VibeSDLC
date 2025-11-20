@@ -23,7 +23,7 @@ function WorkspacePage() {
   const [sidebarHovered, setSidebarHovered] = useState(false)
   const [welcomeDismissed, setWelcomeDismissed] = useState(false)
   const [isWebSocketConnected, setIsWebSocketConnected] = useState(false)
-  const sendMessageRef = useRef<((params: { content: string; author_type: string }) => boolean) | null>(null)
+  const sendMessageRef = useRef<((params: { content: string; author_type?: 'user' | 'agent' }) => boolean) | null>(null)
   const [kanbanData, setKanbanData] = useState<any>(null)
   const [activeTab, setActiveTab] = useState<string | null>(null)
 
@@ -38,18 +38,6 @@ function WorkspacePage() {
   const hasMessages = messagesData && messagesData.count > 0
   const showWelcome = !isLoading && !hasMessages && !welcomeDismissed
 
-  // Handle welcome dialog close and send start message
-  const _handleWelcomeStart = () => {
-    setWelcomeDismissed(true)
-
-    // Send "Bắt đầu" message via ChatPanelWS
-    if (sendMessageRef.current) {
-      sendMessageRef.current({
-        content: "Bắt đầu",
-        author_type: "user",
-      })
-    }
-  }
   return (
     <>
       <WelcomeDialog

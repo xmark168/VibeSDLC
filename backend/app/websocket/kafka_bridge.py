@@ -8,9 +8,14 @@ import asyncio
 import logging
 from typing import Dict, Any, Optional
 from uuid import UUID
+from datetime import datetime, timezone
+
+from sqlmodel import Session, create_engine
 
 from app.kafka import EventHandlerConsumer, KafkaTopics
 from app.websocket.connection_manager import connection_manager
+from app.core.config import settings
+from app.models import Message as MessageModel, AuthorType
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +40,7 @@ class WebSocketKafkaBridge:
     def __init__(self):
         self.consumer: Optional[EventHandlerConsumer] = None
         self.running = False
+        self.engine = create_engine(str(settings.SQLALCHEMY_DATABASE_URI))
 
     async def start(self):
         """Start the WebSocket-Kafka bridge consumer"""
@@ -102,20 +108,52 @@ class WebSocketKafkaBridge:
                 logger.warning("Agent response event missing project_id")
                 return
 
+            # Save message to database
+            message_id = None
+            content = event_data.get("content", "")
+            structured_data = event_data.get("structured_data")
+            agent_name = event_data.get("agent_name", "")
+
+            # Build metadata with agent_name so it persists in database
+            metadata = {"agent_name": agent_name} if agent_name else {}
+            if structured_data:
+                metadata.update(structured_data)
+
+            with Session(self.engine) as db_session:
+                db_message = MessageModel(
+                    project_id=project_id,
+                    user_id=None,
+                    agent_id=None,
+                    content=content,
+                    author_type=AuthorType.AGENT,
+                    message_type=structured_data.get("message_type", "text") if structured_data else "text",
+                    structured_data=structured_data.get("data") if structured_data and "data" in structured_data else None,
+                    message_metadata=metadata if metadata else None,
+                )
+                db_session.add(db_message)
+                db_session.commit()
+                db_session.refresh(db_message)
+                message_id = db_message.id
+
+            logger.info(f"Saved agent response to database: {message_id}")
+
             # Format message for WebSocket
+            # Use timezone-aware datetime so JavaScript parses it correctly
             ws_message = {
                 "type": "agent_message",
                 "agent_name": event_data.get("agent_name", ""),
                 "agent_type": event_data.get("agent_type", ""),
-                "content": event_data.get("content", ""),
-                "message_id": str(event_data.get("message_id", "")),
-                "timestamp": str(event_data.get("timestamp", "")),
+                "content": content,
+                "message_id": str(message_id),
+                "project_id": str(project_id),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "requires_approval": event_data.get("requires_approval", False),
             }
 
-            # Include structured data if present (for previews, etc.)
-            if event_data.get("structured_data"):
-                ws_message["structured_data"] = event_data["structured_data"]
+            # Only include structured_data if it's actual preview data (has message_type)
+            # This prevents plain text messages from being displayed as preview cards
+            if structured_data and structured_data.get("message_type"):
+                ws_message["structured_data"] = structured_data
 
             if event_data.get("approval_request_id"):
                 ws_message["approval_request_id"] = str(event_data["approval_request_id"])
@@ -123,7 +161,7 @@ class WebSocketKafkaBridge:
             # Broadcast to all clients in the project
             await connection_manager.broadcast_to_project(ws_message, project_id)
 
-            logger.debug(f"Forwarded agent response to project {project_id}")
+            logger.info(f"Forwarded agent response to project {project_id}")
 
         except Exception as e:
             logger.error(f"Error handling agent response event: {e}", exc_info=True)

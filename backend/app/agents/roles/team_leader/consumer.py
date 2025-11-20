@@ -8,11 +8,55 @@ import logging
 from typing import Any, Dict, Optional
 from uuid import UUID, uuid4
 
+from sqlmodel import Session, create_engine, select
+
+from app.core.config import settings
 from app.kafka.consumer import EventHandlerConsumer
 from app.kafka.event_schemas import KafkaTopics, UserMessageEvent
+from app.kafka.producer import get_kafka_producer
 from app.agents.roles.team_leader.crew import TeamLeaderCrew
+from app.models import BASession, BASessionStatus
 
 logger = logging.getLogger(__name__)
+
+
+def is_simple_message(content: str) -> bool:
+    """Check if the message is a simple greeting or acknowledgment.
+
+    These should be handled by Team Leader directly, not routed to specialists.
+
+    Args:
+        content: The message content
+
+    Returns:
+        True if it's a simple message
+    """
+    content_lower = content.lower().strip()
+
+    # Simple greetings and start commands
+    greetings = [
+        "hi", "hello", "hey", "xin chào", "chào", "chào bạn",
+        "good morning", "good afternoon", "good evening",
+        "buổi sáng tốt lành", "chào buổi sáng",
+        "bắt đầu", "start", "begin"
+    ]
+
+    # Simple acknowledgments
+    acknowledgments = [
+        "ok", "okay", "thanks", "thank you", "cảm ơn",
+        "understood", "got it", "hiểu rồi", "được", "vâng"
+    ]
+
+    # Check exact match or starts with greeting
+    for greeting in greetings:
+        if content_lower == greeting or content_lower.startswith(greeting + " "):
+            return True
+
+    for ack in acknowledgments:
+        if content_lower == ack or content_lower.startswith(ack + " "):
+            return True
+
+    return False
 
 
 class TeamLeaderConsumer:
@@ -34,6 +78,7 @@ class TeamLeaderConsumer:
         """
         self.group_id = group_id
         self.crew = TeamLeaderCrew()
+        self.engine = create_engine(str(settings.SQLALCHEMY_DATABASE_URI))
         self.consumer: Optional[EventHandlerConsumer] = None
         self._running = False
 
@@ -60,7 +105,36 @@ class TeamLeaderConsumer:
                 user_id = UUID(user_id) if isinstance(user_id, str) else user_id
             content = event_data.get("content", "")
 
-            # Prepare context for crew execution
+            # Check if this is a simple message (greeting, acknowledgment)
+            # If so, let Team Leader analyze and potentially respond directly
+            if not is_simple_message(content):
+                # Check for active BA session in any active phase
+                # (analysis, brief, solution, backlog - but not completed)
+                with Session(self.engine) as db_session:
+                    active_ba_session = db_session.exec(
+                        select(BASession)
+                        .where(BASession.project_id == project_id)
+                        .where(BASession.status != BASessionStatus.COMPLETED)
+                        .where(BASession.current_phase.in_(["analysis", "brief", "solution", "backlog"]))
+                        .order_by(BASession.created_at.desc())
+                    ).first()
+
+                    if active_ba_session:
+                        # Route directly to BA without analysis
+                        phase = active_ba_session.current_phase
+                        logger.info(f"Active BA session found ({active_ba_session.id}) in phase '{phase}', routing directly to BA")
+                        await self._route_to_ba_directly(
+                            message_id=message_id,
+                            project_id=project_id,
+                            user_id=user_id,
+                            content=content,
+                            current_phase=phase
+                        )
+                        return
+            else:
+                logger.info(f"Simple message detected: '{content}', letting Team Leader analyze")
+
+            # No active BA session, execute Team Leader crew to analyze and route
             context = {
                 "user_message": content,
                 "message_id": str(message_id),
@@ -84,6 +158,58 @@ class TeamLeaderConsumer:
 
         except Exception as e:
             logger.error(f"Error handling user message: {e}", exc_info=True)
+
+    async def _route_to_ba_directly(
+        self,
+        message_id: UUID,
+        project_id: UUID,
+        user_id: UUID,
+        content: str,
+        current_phase: str = "analysis"
+    ) -> None:
+        """Route message directly to BA agent without LLM analysis.
+
+        Args:
+            message_id: The message ID
+            project_id: The project ID
+            user_id: The user ID
+            content: The message content
+            current_phase: The current BA session phase
+        """
+        from app.kafka.event_schemas import AgentRoutingEvent
+
+        # Determine task description based on phase
+        phase_tasks = {
+            "analysis": "Continue requirements gathering",
+            "brief": "Handle PRD feedback or approval",
+            "solution": "Handle business flows feedback or approval",
+            "backlog": "Handle backlog feedback or approval"
+        }
+        task_description = phase_tasks.get(current_phase, "Continue BA workflow")
+
+        routing_event = AgentRoutingEvent(
+            from_agent="Team Leader",
+            to_agent="business_analyst",
+            delegation_reason=f"Continuing active BA session in {current_phase} phase",
+            context={
+                "user_message": content,
+                "task_description": task_description,
+                "priority": "medium",
+                "additional_context": f"User is continuing conversation with BA agent in {current_phase} phase",
+                "message_id": str(message_id),
+                "current_phase": current_phase,
+            },
+            project_id=project_id,
+            user_id=user_id
+        )
+
+        producer = await get_kafka_producer()
+        await producer.publish(
+            topic=KafkaTopics.AGENT_ROUTING,
+            event=routing_event
+        )
+
+        logger.info(f"Routed message directly to BA agent for project {project_id}")
 
     def _create_consumer(self) -> EventHandlerConsumer:
         """Create and configure the Kafka consumer.

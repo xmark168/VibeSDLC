@@ -1,22 +1,20 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, Edit } from 'lucide-react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { ProductBriefPreview, ProductVisionPreview, BacklogPreview } from './previews'
+import { ProductBriefPreview, BacklogPreview } from './previews'
 
 interface MessagePreviewCardProps {
   message: {
     id: string
-    message_type: string
+    message_type?: string
     content: string
-    structured_data: any
-    metadata?: any
+    structured_data?: any
+    message_metadata?: any
     created_at: string
   }
-  onEdit?: (message: any) => void
 }
 
-export function MessagePreviewCard({ message, onEdit }: MessagePreviewCardProps) {
+export function MessagePreviewCard({ message }: MessagePreviewCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
 
   // Don't render if not a structured message type
@@ -27,30 +25,49 @@ export function MessagePreviewCard({ message, onEdit }: MessagePreviewCardProps)
   const renderPreview = () => {
     if (!isExpanded || !message.structured_data) return null
 
+    // Get actual data - backend sends { phase, message_type, data: {...} }
+    const data = message.structured_data.data || message.structured_data
+
     switch (message.message_type) {
-      case 'product_brief':
+      case 'prd':
         return (
           <ProductBriefPreview
-            brief={message.structured_data}
-            incompleteFlag={message.metadata?.incomplete_flag}
+            brief={data}
+            incompleteFlag={message.message_metadata?.incomplete_flag}
           />
         )
-      case 'product_vision':
+      case 'business_flows':
+        // business_flows data is an array
+        const flowsData = Array.isArray(data) ? data : []
         return (
-          <ProductVisionPreview
-            vision={message.structured_data}
-            qualityScore={message.metadata?.quality_score}
-            validationResult={message.metadata?.validation_result}
-          />
+          <div className="space-y-4 max-h-[400px] overflow-y-auto">
+            {flowsData.map((flow: any, index: number) => (
+              <div key={index} className="border rounded-lg p-4">
+                <h4 className="font-semibold text-sm">{flow.name}</h4>
+                <p className="text-xs text-muted-foreground mt-1">{flow.description}</p>
+                {flow.steps && (
+                  <div className="mt-2">
+                    <p className="text-xs font-medium">Các bước:</p>
+                    <ol className="list-decimal list-inside text-xs mt-1 space-y-1">
+                      {flow.steps.map((step: string, i: number) => (
+                        <li key={i}>{step}</li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
+                {flow.actors && (
+                  <p className="text-xs mt-2"><strong>Actors:</strong> {flow.actors.join(', ')}</p>
+                )}
+              </div>
+            ))}
+          </div>
         )
       case 'product_backlog':
         return (
           <BacklogPreview
-            backlog={message.structured_data}
+            backlog={data}
           />
         )
-      case 'sprint_plan':
-        return <div className="text-sm text-muted-foreground">Sprint planning is no longer supported in Kanban mode</div>
       default:
         return <div className="text-sm text-muted-foreground">Unknown preview type</div>
     }
@@ -58,14 +75,12 @@ export function MessagePreviewCard({ message, onEdit }: MessagePreviewCardProps)
 
   const getTypeLabel = () => {
     switch (message.message_type) {
-      case 'product_brief':
-        return '📋 Product Brief'
-      case 'product_vision':
-        return '🎯 Product Vision'
+      case 'prd':
+        return '📋 PRD'
+      case 'business_flows':
+        return '🔄 Business Flows'
       case 'product_backlog':
         return '📊 Product Backlog'
-      case 'sprint_plan':
-        return '🏃 Sprint Plan'
       default:
         return 'Preview'
     }
@@ -77,32 +92,16 @@ export function MessagePreviewCard({ message, onEdit }: MessagePreviewCardProps)
         className="cursor-pointer hover:bg-accent/50 transition-colors py-3"
         onClick={() => setIsExpanded(!isExpanded)}
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 flex-1">
-            {isExpanded ? (
-              <ChevronDown className="w-4 h-4 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="w-4 h-4 text-muted-foreground" />
-            )}
-            <div>
-              <div className="text-sm font-semibold">{getTypeLabel()}</div>
-              {/* <div className="text-xs text-muted-foreground">{message.content}</div> */}
-            </div>
-          </div>
-          {onEdit && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation()
-                onEdit(message)
-              }}
-              className="flex items-center gap-1"
-            >
-              <Edit className="w-3 h-3" />
-              Edit
-            </Button>
+        <div className="flex items-center gap-2">
+          {isExpanded ? (
+            <ChevronDown className="w-4 h-4 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="w-4 h-4 text-muted-foreground" />
           )}
+          <div className="text-sm font-semibold">{getTypeLabel()}</div>
+          <span className="text-xs text-muted-foreground">
+            {isExpanded ? '(click để thu gọn)' : '(click để xem)'}
+          </span>
         </div>
       </CardHeader>
 

@@ -12,13 +12,11 @@ export function ProductBriefPreview({
   if (!brief) return null
 
   const {
-    product_name,
-    description,
-    target_audience,
-    key_features,
-    benefits,
-    competitors,
-    completeness_note,
+    product_summary,
+    problem_statement,
+    target_users,
+    product_goals,
+    scope,
   } = brief
 
   return (
@@ -27,97 +25,63 @@ export function ProductBriefPreview({
         <div className="flex items-start gap-2 p-3 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded-lg">
           <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
           <div className="text-sm text-yellow-700 dark:text-yellow-300">
-            <strong>Lưu ý:</strong> Brief chưa hoàn chỉnh. Một số thông tin có
+            <strong>Lưu ý:</strong> PRD chưa hoàn chỉnh. Một số thông tin có
             thể được suy luận hoặc còn thiếu.
           </div>
         </div>
       )}
 
-      {product_name && (
+      {product_summary && (
         <div>
           <h4 className="text-sm font-semibold text-foreground mb-1">
-            Tên sản phẩm:
+            Tóm tắt sản phẩm:
           </h4>
-          <p className="text-sm text-muted-foreground">{product_name}</p>
-        </div>
-      )}
-
-      {description && (
-        <div>
-          <h4 className="text-sm font-semibold text-foreground mb-1">Mô tả:</h4>
           <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-            {description}
+            {product_summary}
           </p>
         </div>
       )}
 
-      {target_audience && target_audience.length > 0 && (
+      {problem_statement && (
         <div>
           <h4 className="text-sm font-semibold text-foreground mb-1">
-            Đối tượng mục tiêu:
+            Vấn đề cần giải quyết:
           </h4>
-          <ul className="list-disc list-inside space-y-1">
-            {target_audience.map((audience: string, idx: number) => (
-              <li key={idx} className="text-sm text-muted-foreground">
-                {audience}
-              </li>
-            ))}
-          </ul>
+          <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+            {problem_statement}
+          </p>
         </div>
       )}
 
-      {key_features && key_features.length > 0 && (
+      {target_users && (
         <div>
           <h4 className="text-sm font-semibold text-foreground mb-1">
-            Tính năng chính:
+            Đối tượng người dùng:
           </h4>
-          <ul className="list-disc list-inside space-y-1">
-            {key_features.map((feature: string, idx: number) => (
-              <li key={idx} className="text-sm text-muted-foreground">
-                {feature}
-              </li>
-            ))}
-          </ul>
+          <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+            {target_users}
+          </p>
         </div>
       )}
 
-      {benefits && benefits.length > 0 && (
+      {product_goals && (
         <div>
           <h4 className="text-sm font-semibold text-foreground mb-1">
-            Lợi ích:
+            Mục tiêu sản phẩm:
           </h4>
-          <ul className="list-disc list-inside space-y-1">
-            {benefits.map((benefit: string, idx: number) => (
-              <li key={idx} className="text-sm text-muted-foreground">
-                {benefit}
-              </li>
-            ))}
-          </ul>
+          <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+            {product_goals}
+          </p>
         </div>
       )}
 
-      {competitors && competitors.length > 0 && (
+      {scope && (
         <div>
           <h4 className="text-sm font-semibold text-foreground mb-1">
-            Đối thủ cạnh tranh:
+            Phạm vi:
           </h4>
-          <ul className="list-disc list-inside space-y-1">
-            {competitors.map((competitor: string, idx: number) => (
-              <li key={idx} className="text-sm text-muted-foreground">
-                {competitor}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {completeness_note && (
-        <div>
-          <h4 className="text-sm font-semibold text-foreground mb-1">
-            Ghi chú:
-          </h4>
-          <p className="text-sm text-muted-foreground italic">
-            {completeness_note}
+          <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+            {scope}
           </p>
         </div>
       )}

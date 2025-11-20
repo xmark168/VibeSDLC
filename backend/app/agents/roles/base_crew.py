@@ -321,6 +321,15 @@ class BaseAgentCrew(ABC):
             else:
                 result["output"] = str(crew_result)
 
+            # Extract pydantic output if available (for structured tasks)
+            if hasattr(crew_result, "pydantic") and crew_result.pydantic:
+                result["pydantic"] = crew_result.pydantic
+            elif hasattr(crew_result, "tasks_output") and crew_result.tasks_output:
+                # Check first task for pydantic output
+                first_task = crew_result.tasks_output[0]
+                if hasattr(first_task, "pydantic") and first_task.pydantic:
+                    result["pydantic"] = first_task.pydantic
+
             result["success"] = True
 
             # Publish idle status

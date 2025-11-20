@@ -37,6 +37,7 @@ async def websocket_endpoint(
     try:
         # IMPORTANT: Accept WebSocket connection FIRST
         await websocket.accept()
+        logger.info(f"WebSocket connection accepted for project {project_id}")
 
         # Then authenticate user
         from app.core.db import engine
@@ -47,11 +48,13 @@ async def websocket_endpoint(
                 payload = decode_access_token(token)
                 user_id = payload.get("sub")
                 if not user_id:
+                    logger.warning(f"Invalid token - no user_id in payload")
                     await websocket.close(code=1008, reason="Invalid token")
                     return
 
                 user = session.get(User, UUID(user_id))
                 if not user:
+                    logger.warning(f"User not found: {user_id}")
                     await websocket.close(code=1008, reason="User not found")
                     return
             except Exception as e:
@@ -149,22 +152,8 @@ async def websocket_endpoint(
                         except Exception as e:
                             logger.error(f"Failed to publish message to Kafka: {e}")
 
-                        # Send acknowledgment to client
-                        await websocket.send_json({
-                            "type": "message_ack",
-                            "message_id": str(message_id),
-                            "status": "received",
-                            "timestamp": datetime.utcnow().isoformat()
-                        })
-
-                        # Broadcast user message to all clients in project
-                        await connection_manager.broadcast_to_project({
-                            "type": "user_message",
-                            "message_id": str(message_id),
-                            "user_id": str(user.id),
-                            "content": content,
-                            "timestamp": datetime.utcnow().isoformat()
-                        }, project_id)
+                        # User message appears immediately via optimistic update on frontend
+                        # No need to send it back from server
 
                     # Handle user answer (for agent questions/approvals)
                     elif message_type == "user_answer":
