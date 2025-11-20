@@ -8,7 +8,7 @@ import asyncio
 import logging
 from typing import Dict, Any, Optional
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlmodel import Session, create_engine
 
@@ -132,6 +132,7 @@ class WebSocketKafkaBridge:
             logger.info(f"Saved agent response to database: {message_id}")
 
             # Format message for WebSocket
+            # Use timezone-aware datetime so JavaScript parses it correctly
             ws_message = {
                 "type": "agent_message",
                 "agent_name": event_data.get("agent_name", ""),
@@ -139,7 +140,7 @@ class WebSocketKafkaBridge:
                 "content": content,
                 "message_id": str(message_id),
                 "project_id": str(project_id),
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "requires_approval": event_data.get("requires_approval", False),
             }
 
