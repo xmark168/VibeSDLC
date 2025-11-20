@@ -8,7 +8,7 @@ import logging
 import re
 from pathlib import Path
 from typing import Any, Dict, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from crewai import Agent, Task
 
@@ -125,12 +125,33 @@ class TeamLeaderCrew(BaseAgentCrew):
                 delegation_data = json.loads(cleaned)
 
             specialist = delegation_data.get("specialist", "")
+            reasoning = delegation_data.get("reasoning", "")
+
+            # Check if Team Leader should respond directly
+            if specialist == "none":
+                direct_response = delegation_data.get("direct_response", "")
+
+                # Publish direct response
+                await self.publish_response(
+                    content=direct_response,
+                    message_id=uuid4(),
+                    project_id=project_id,
+                    user_id=user_id,
+                )
+
+                result["direct_response"] = {
+                    "response": direct_response,
+                    "reasoning": reasoning,
+                }
+
+                logger.info(f"Team Leader responded directly: {direct_response[:50]}...")
+                return result
+
+            # Validate specialist for delegation
             task_description = delegation_data.get("task_description", "")
             priority = delegation_data.get("priority", "medium")
             delegation_context = delegation_data.get("context", "")
-            reasoning = delegation_data.get("reasoning", "")
 
-            # Validate specialist
             valid_specialists = ["business_analyst", "developer", "tester"]
             if specialist not in valid_specialists:
                 raise ValueError(f"Invalid specialist: {specialist}")
@@ -158,15 +179,6 @@ class TeamLeaderCrew(BaseAgentCrew):
                 "context": delegation_context,
                 "reasoning": reasoning,
             }
-
-            # Publish response about delegation
-            await self.publish_response(
-                content=f"Delegating task to {specialist}: {task_description}",
-                message_id=context.get("message_id", UUID(int=0)),
-                project_id=project_id,
-                user_id=user_id,
-                structured_data=result["delegation"],
-            )
 
             logger.info(f"Delegated to {specialist}: {task_description}")
 
