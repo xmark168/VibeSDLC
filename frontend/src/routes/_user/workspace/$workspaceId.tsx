@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { useRef, useState } from "react"
+import { useCallback, useRef, useState } from "react"
 import { ChatPanelWS } from "@/components/chat/chat-panel-ws"
 import { ResizableHandle } from "@/components/chat/resizable-handle"
 import { Sidebar } from "@/components/chat/sidebar"
@@ -26,6 +26,12 @@ function WorkspacePage() {
   const sendMessageRef = useRef<((params: { content: string; author_type?: 'user' | 'agent' }) => boolean) | null>(null)
   const [kanbanData, setKanbanData] = useState<any>(null)
   const [activeTab, setActiveTab] = useState<string | null>(null)
+
+  // Handle connection change with logging
+  const handleConnectionChange = useCallback((connected: boolean) => {
+    console.log("WebSocket connection changed:", connected)
+    setIsWebSocketConnected(connected)
+  }, [])
 
   // Fetch messages to check if project is new
   const { data: messagesData, isLoading } = useMessages({
@@ -83,7 +89,7 @@ function WorkspacePage() {
                   onSendMessageReady={(sendFn) => {
                     sendMessageRef.current = sendFn
                   }}
-                  onConnectionChange={setIsWebSocketConnected}
+                  onConnectionChange={handleConnectionChange}
                   onKanbanDataChange={setKanbanData}
                   onActiveTabChange={setActiveTab}
                 />
