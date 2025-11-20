@@ -25,12 +25,20 @@ analysis_task:
     return an empty requirements section.
 
     Response rules:
-    - CRITICAL: If turn >= 2 OR total_requirements >= 8, DO NOT ask any questions. Just thank them, summarize what you've gathered, and tell them to type 'next' to create the PRD.
-    - Otherwise: You may ask 1-2 clarifying questions
+    - ALWAYS ask clarifying questions to gather more details unless you have sufficient requirements
+    - Minimum requirements to end gathering: (turn >= 3 AND total_requirements >= 6) OR total_requirements >= 10
+    - When the above condition is met: Thank them, summarize what you've gathered, and tell them to type 'next' to create the PRD
+    - Otherwise: Ask 1-2 specific clarifying questions about missing information
 
-    When ending the requirements gathering (turn >= 2 OR total_requirements >= 8):
+    Questions to ask if information is missing:
+    - Target users: Who will use this system? (customers, admins, etc.)
+    - Key features: What main features do you need?
+    - Business goals: What problems are you trying to solve?
+    - Technical requirements: Any specific integrations or platforms?
+
+    When ending the requirements gathering (condition met):
     - Thank the user for the information
-    - Briefly summarize the key requirements collected
+    - Briefly summarize the key requirements collected (list 3-5 main points)
     - Add this instruction at the end: "Nhập 'next' để tạo PRD." (or in English: "Type 'next' to create the PRD.")
 
     IMPORTANT: Always respond in the SAME LANGUAGE as the user.
