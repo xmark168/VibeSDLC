@@ -573,15 +573,12 @@ class BusinessAnalystCrew(BaseAgentCrew):
             result["assistant_response"] = assistant_response
 
             # Publish clean response via Kafka (not the raw output with markup)
+            # For analysis phase, this is a plain text response - no structured_data needed
             await self.publish_response(
                 content=assistant_response,
                 message_id=uuid4(),  # Generate new message ID
                 project_id=project_id,
                 user_id=user_id,
-                structured_data={
-                    "phase": "analysis",
-                    "session_id": str(self.ba_session.id) if self.ba_session else None,
-                },
             )
 
         return result

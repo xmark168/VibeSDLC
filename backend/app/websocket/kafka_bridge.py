@@ -143,8 +143,9 @@ class WebSocketKafkaBridge:
                 "requires_approval": event_data.get("requires_approval", False),
             }
 
-            # Include structured data if present (for previews, etc.)
-            if structured_data:
+            # Only include structured_data if it's actual preview data (has message_type)
+            # This prevents plain text messages from being displayed as preview cards
+            if structured_data and structured_data.get("message_type"):
                 ws_message["structured_data"] = structured_data
 
             if event_data.get("approval_request_id"):
