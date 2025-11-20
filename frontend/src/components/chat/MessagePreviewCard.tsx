@@ -10,7 +10,7 @@ interface MessagePreviewCardProps {
     message_type?: string
     content: string
     structured_data?: any
-    metadata?: any
+    message_metadata?: any
     created_at: string
   }
   onEdit?: (message: any) => void
@@ -27,18 +27,23 @@ export function MessagePreviewCard({ message, onEdit }: MessagePreviewCardProps)
   const renderPreview = () => {
     if (!isExpanded || !message.structured_data) return null
 
+    // Get actual data - backend sends { phase, message_type, data: {...} }
+    const data = message.structured_data.data || message.structured_data
+
     switch (message.message_type) {
       case 'prd':
         return (
           <ProductBriefPreview
-            brief={message.structured_data}
-            incompleteFlag={message.metadata?.incomplete_flag}
+            brief={data}
+            incompleteFlag={message.message_metadata?.incomplete_flag}
           />
         )
       case 'business_flows':
+        // business_flows data is an array
+        const flowsData = Array.isArray(data) ? data : []
         return (
           <div className="space-y-4">
-            {Array.isArray(message.structured_data) && message.structured_data.map((flow: any, index: number) => (
+            {flowsData.map((flow: any, index: number) => (
               <div key={index} className="border rounded-lg p-4">
                 <h4 className="font-semibold text-sm">{flow.name}</h4>
                 <p className="text-xs text-muted-foreground mt-1">{flow.description}</p>
@@ -62,7 +67,7 @@ export function MessagePreviewCard({ message, onEdit }: MessagePreviewCardProps)
       case 'product_backlog':
         return (
           <BacklogPreview
-            backlog={message.structured_data}
+            backlog={data}
           />
         )
       default:

@@ -611,6 +611,12 @@ class BusinessAnalystCrew(BaseAgentCrew):
         if req_match:
             req_text = req_match.group(1)
 
+            # Get existing requirements for this session to avoid duplicates
+            existing_reqs = self.db_session.query(Requirement).filter(
+                Requirement.session_id == self.ba_session.id
+            ).all()
+            existing_contents = {req.content.strip().lower() for req in existing_reqs}
+
             # Parse each category
             for category in ["PROBLEM_GOALS", "USERS_STAKEHOLDERS", "FEATURES_SCOPE"]:
                 pattern = rf'{category}:\s*((?:- .*\n?)*)'
@@ -620,17 +626,32 @@ class BusinessAnalystCrew(BaseAgentCrew):
                     key = category.lower()
                     result["requirements"][key] = items
 
-                    # Save to database
+                    # Save to database (with deduplication)
                     for item in items:
-                        if item.strip():
+                        content = item.strip()
+                        if content:
+                            # Skip if it's a placeholder or already exists
+                            content_lower = content.lower()
+                            if content_lower in existing_contents:
+                                continue
+                            if any(skip in content_lower for skip in [
+                                "[danh sách yêu cầu",
+                                "[các mục tiêu",
+                                "[đối tượng người dùng",
+                                "[các tính năng",
+                                "[đã thu thập"
+                            ]):
+                                continue
+
                             req = Requirement(
                                 session_id=self.ba_session.id,
                                 project_id=self.project_id,
                                 category=RequirementCategory(key),
-                                content=item.strip(),
+                                content=content,
                                 turn_number=self.ba_session.turn_count
                             )
                             self.db_session.add(req)
+                            existing_contents.add(content_lower)  # Add to set to avoid duplicates within same parse
 
             self.db_session.commit()
 

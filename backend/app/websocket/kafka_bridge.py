@@ -128,7 +128,7 @@ class WebSocketKafkaBridge:
                     author_type=AuthorType.AGENT,
                     message_type=structured_data.get("message_type", "text") if structured_data else "text",
                     structured_data=structured_data.get("data") if structured_data and "data" in structured_data else None,
-                    metadata=metadata if metadata else None,
+                    message_metadata=metadata if metadata else None,
                 )
                 db_session.add(db_message)
                 db_session.commit()

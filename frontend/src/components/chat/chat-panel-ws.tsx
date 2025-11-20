@@ -301,7 +301,7 @@ export function ChatPanelWS({
     switch (message.message_type) {
       case 'prd':
         preview.brief = message.structured_data
-        preview.incomplete_flag = message.metadata?.incomplete_flag
+        preview.incomplete_flag = message.message_metadata?.incomplete_flag
         break
       case 'business_flows':
         preview.flows = message.structured_data
@@ -379,8 +379,8 @@ export function ChatPanelWS({
     if (msg.author_type === AuthorType.AGENT) {
       // Use specific agent name if available
       if (msg.agent_name) return msg.agent_name;
-      // Check metadata for agent_name (from database)
-      if (msg.metadata?.agent_name) return msg.metadata.agent_name;
+      // Check message_metadata for agent_name (from database)
+      if (msg.message_metadata?.agent_name) return msg.message_metadata.agent_name;
       return "Agent";
     }
     return "Agent";

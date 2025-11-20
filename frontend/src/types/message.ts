@@ -13,7 +13,7 @@ export type Message = {
   content: string
   message_type?: string  // "text" | "prd" | "business_flows" | "product_backlog" | "sprint_plan"
   structured_data?: any  // JSON data for previews (brief/flows/backlog/sprint)
-  metadata?: any         // Preview metadata (preview_id, incomplete_flag, etc.)
+  message_metadata?: any // Message metadata (agent_name, preview_id, incomplete_flag, etc.)
   created_at: string
   updated_at: string
 }
