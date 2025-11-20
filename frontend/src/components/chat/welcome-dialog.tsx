@@ -35,11 +35,8 @@ export function WelcomeDialog({
   }, [isConnected])
 
   const handleStart = () => {
-    console.log("handleStart called, isConnected:", isConnected)
-    setSendFailed(false)
-
     if (!isConnected) {
-      console.warn("WebSocket not connected yet, button should be disabled")
+      console.warn("WebSocket not connected yet")
       return
     }
 
@@ -49,15 +46,8 @@ export function WelcomeDialog({
     const success = onSendMessage("Bắt đầu")
     console.log("Message sent:", success)
 
-    if (success) {
-      // Only close dialog if message was sent successfully
-      onOpenChange(false)
-    } else {
-      // Message failed to send, show error state
-      console.error("Failed to send message, WebSocket may have disconnected")
-      setSendFailed(true)
-    }
-
+    // Close dialog
+    onOpenChange(false)
     setIsStarting(false)
   }
 
