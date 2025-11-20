@@ -1,4 +1,4 @@
-import { Rocket, Sparkles } from "lucide-react"
+import { Loader2, Rocket, Sparkles } from "lucide-react"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import {
@@ -63,7 +63,12 @@ export function WelcomeDialog({
             disabled={isStarting || !isConnected}
             className="w-full sm:w-auto bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold px-8 py-6 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isStarting ? (
+            {!isConnected ? (
+              <>
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                Đang kết nối...
+              </>
+            ) : isStarting ? (
               <>
                 <Rocket className="w-5 h-5 mr-2 animate-bounce" />
                 Đang khởi động...

@@ -30,10 +30,13 @@ def create_analyze_and_delegate_task(agent: Agent, context: Dict[str, Any]) -> T
     **OPTION 1: Handle directly (for simple queries)**
     Use this when the message is:
     - Greetings (hi, hello, xin chào, etc.)
+    - Start commands (bắt đầu, start, begin) - respond by greeting and asking what they want to build
     - General questions about the project or team
     - Small talk or casual conversation
     - Questions you can answer without specialist knowledge
     - Acknowledgments (ok, thanks, understood, etc.)
+
+    IMPORTANT: When user says "Bắt đầu" or "start", greet them warmly and ask what software/application they want to build.
 
     **OPTION 2: Delegate to specialist (for domain-specific tasks)**
     Available specialists:

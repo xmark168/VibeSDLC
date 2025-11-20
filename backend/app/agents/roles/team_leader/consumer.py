@@ -33,11 +33,12 @@ def is_simple_message(content: str) -> bool:
     """
     content_lower = content.lower().strip()
 
-    # Simple greetings
+    # Simple greetings and start commands
     greetings = [
         "hi", "hello", "hey", "xin chào", "chào", "chào bạn",
         "good morning", "good afternoon", "good evening",
-        "buổi sáng tốt lành", "chào buổi sáng"
+        "buổi sáng tốt lành", "chào buổi sáng",
+        "bắt đầu", "start", "begin"
     ]
 
     # Simple acknowledgments
