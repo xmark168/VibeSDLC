@@ -352,13 +352,13 @@ class DocumentationToolInput(BaseModel):
 
 
 class BADocumentationTool(BaseTool):
-    """Tool to manage Product Brief, Epics, and Stories."""
+    """Tool to manage PRD, Epics, and Stories."""
 
     name: str = "Documentation Manager Tool"
     description: str = """
     Tool to manage documentation. Use this to:
-    - Save Product Brief: action='save_brief', data='{"product_summary": "...", "problem_statement": "...", "target_users": "...", "product_goals": "...", "scope": "..."}'
-    - Get Product Brief: action='get_brief'
+    - Save PRD: action='save_brief', data='{"product_summary": "...", "problem_statement": "...", "target_users": "...", "product_goals": "...", "scope": "..."}'
+    - Get PRD: action='get_brief'
     - Validate Brief: action='validate_brief'
     - Add Epic: action='add_epic', data='{"id": "epic-1", "name": "...", "description": "...", "domain": "..."}'
     - Add Story: action='add_story', data='{"epic_id": "...", "title": "...", "description": "...", "acceptance_criteria": [...], "story_points": 3, "priority": "High", "dependencies": []}'
@@ -414,7 +414,7 @@ class BADocumentationTool(BaseTool):
                     self.db_session.add(brief)
 
                 self.db_session.commit()
-                return "Successfully saved Product Brief"
+                return "Successfully saved PRD"
             except json.JSONDecodeError as e:
                 return f"Error: Invalid JSON: {e}"
 
@@ -424,7 +424,7 @@ class BADocumentationTool(BaseTool):
             ).first()
 
             if not brief or not brief.product_summary:
-                return "No Product Brief found"
+                return "No PRD found"
 
             return json.dumps({
                 "product_summary": brief.product_summary,
@@ -441,7 +441,7 @@ class BADocumentationTool(BaseTool):
             ).first()
 
             if not brief:
-                return "⚠️ No Product Brief found"
+                return "⚠️ No PRD found"
 
             missing = []
             if not brief.product_summary:
@@ -456,9 +456,9 @@ class BADocumentationTool(BaseTool):
                 missing.append("Scope")
 
             if missing:
-                return f"⚠️ Product Brief INCOMPLETE. Missing:\n" + "\n".join(f"  - {m}" for m in missing)
+                return f"⚠️ PRD INCOMPLETE. Missing:\n" + "\n".join(f"  - {m}" for m in missing)
             else:
-                return "✅ Product Brief is complete"
+                return "✅ PRD is complete"
 
         elif action == "add_epic":
             if not data:

@@ -299,7 +299,7 @@ export function ChatPanelWS({
 
     // Add structured data based on type
     switch (message.message_type) {
-      case 'product_brief':
+      case 'prd':
         preview.brief = message.structured_data
         preview.incomplete_flag = message.metadata?.incomplete_flag
         break

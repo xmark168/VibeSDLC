@@ -25,8 +25,13 @@ analysis_task:
     return an empty requirements section.
 
     Response rules:
-    - CRITICAL: If turn >= 2 OR total_requirements >= 8, DO NOT ask any questions. Just thank them and summarize.
+    - CRITICAL: If turn >= 2 OR total_requirements >= 8, DO NOT ask any questions. Just thank them, summarize what you've gathered, and tell them to type 'next' to create the PRD.
     - Otherwise: You may ask 1-2 clarifying questions
+
+    When ending the requirements gathering (turn >= 2 OR total_requirements >= 8):
+    - Thank the user for the information
+    - Briefly summarize the key requirements collected
+    - Add this instruction at the end: "Nhập 'next' để tạo PRD." (or in English: "Type 'next' to create the PRD.")
 
     IMPORTANT: Always respond in the SAME LANGUAGE as the user.
   expected_output: >
@@ -120,7 +125,7 @@ solution_design_flows_task:
 
     CRITICAL: You are a BUSINESS ANALYST, NOT a technical architect.
 
-    Product Brief (defines WHAT to build):
+    PRD (defines WHAT to build):
     {product_brief}
 
     Requirements to analyze:
@@ -132,7 +137,7 @@ solution_design_flows_task:
     Revision Feedback (if any):
     {revision_feedback}
 
-    YOUR JOB: Analyze the Product Brief and identify ALL major user journeys/workflows.
+    YOUR JOB: Analyze the PRD and identify ALL major user journeys/workflows.
 
     REFINEMENT MODE: If current_solution is provided (not "None"), you are in REFINEMENT mode.
     In this mode, you must:
@@ -143,7 +148,7 @@ solution_design_flows_task:
     5. Example: If feedback says "ở luồng đăng ký, không cần thêm xác nhận đồng ý điều khoản" → Remove that step from the registration flow, keep other flows unchanged
 
     STEP 1 - ANALYZE AND PLAN:
-    Review the Product Brief to identify ALL major flows needed:
+    Review the PRD to identify ALL major flows needed:
     - What are the main user journeys? (e.g., customer purchasing a book, admin managing inventory)
     - What are the key workflows that achieve product goals?
     - What processes span across the system?
@@ -166,10 +171,10 @@ solution_design_flows_task:
     - All unchanged flows must remain IDENTICAL to current_solution
 
     CRITICAL LANGUAGE REQUIREMENT:
-    You MUST write ALL business flows in the SAME LANGUAGE as the Product Brief.
-    - If the Product Brief is in Vietnamese (Tiếng Việt), write ALL flow names, descriptions, steps, and actors in Vietnamese.
-    - If the Product Brief is in English, write ALL flow names, descriptions, steps, and actors in English.
-    - Check the language of the Product Brief carefully and use that exact language.
+    You MUST write ALL business flows in the SAME LANGUAGE as the PRD.
+    - If the PRD is in Vietnamese (Tiếng Việt), write ALL flow names, descriptions, steps, and actors in Vietnamese.
+    - If the PRD is in English, write ALL flow names, descriptions, steps, and actors in English.
+    - Check the language of the PRD carefully and use that exact language.
     - DO NOT translate or mix languages. Maintain 100% language consistency.
 
     CRITICAL RULES:
@@ -188,7 +193,7 @@ solution_design_flows_task:
 
 solution_validation_task:
   description: >
-    Validate the designed solution for completeness and coherence against the Product Brief.
+    Validate the designed solution for completeness and coherence against the PRD.
 
     STEP 1 - GET SOLUTION:
     Use the Solution Manager Tool to get current solution:
@@ -202,7 +207,7 @@ solution_validation_task:
     Parameters:
       - action: 'check_complete'
 
-    Product Brief (what we're building):
+    PRD (what we're building):
     {product_brief}
 
     Requirements to validate against:
@@ -226,9 +231,9 @@ solution_validation_task:
     If complete: Confirm solution is ready for backlog creation.
 
     CRITICAL LANGUAGE REQUIREMENT:
-    You MUST write your validation report in the SAME LANGUAGE as the Product Brief and Solution being validated.
-    - If the Product Brief and Solution are in Vietnamese (Tiếng Việt), write your ENTIRE validation report in Vietnamese.
-    - If the Product Brief and Solution are in English, write your ENTIRE validation report in English.
+    You MUST write your validation report in the SAME LANGUAGE as the PRD and Solution being validated.
+    - If the PRD and Solution are in Vietnamese (Tiếng Việt), write your ENTIRE validation report in Vietnamese.
+    - If the PRD and Solution are in English, write your ENTIRE validation report in English.
     - DO NOT translate or mix languages. Maintain 100% language consistency.
   expected_output: >
     A validation report in this EXACT format:
@@ -278,19 +283,19 @@ solution_phase_evaluation_task:
 
 product_brief_creation_task:
   description: >
-    Create a comprehensive Product Brief based on requirements analysis.
+    Create a comprehensive PRD based on requirements analysis.
     This brief defines WHAT needs to be built, and will guide the Solution Design phase (HOW to build it).
 
     Requirements:
     {requirements_summary}
 
-    Current Product Brief (if refining):
+    Current PRD (if refining):
     {current_brief}
 
     Revision Feedback (if any):
     {revision_feedback}
 
-    YOUR JOB: Analyze requirements and create a Product Brief with all required sections.
+    YOUR JOB: Analyze requirements and create a PRD with all required sections.
 
     REFINEMENT MODE: If current_brief is provided (not "None"), you are in REFINEMENT mode.
     In this mode, you must:
@@ -302,14 +307,14 @@ product_brief_creation_task:
 
     STEP 1 - ANALYZE REQUIREMENTS:
     Review the requirements gathered during the analysis phase.
-    Extract key information needed for each Product Brief section:
+    Extract key information needed for each PRD section:
     - What problem are we solving? (from problem_goals)
     - Who are the users and what do they need? (from users_stakeholders)
     - What features should be included? (from features_scope)
     - What are the success criteria and objectives?
 
     STEP 2 - CREATE PRODUCT BRIEF:
-    Design the Product Brief with these sections:
+    Design the PRD with these sections:
     - product_summary: Brief overview (2-3 sentences). Use clear, concise language.
     - problem_statement: What problem does this solve? Why is it needed? Write in short paragraphs (max 3-4 sentences each) separated by newlines.
     - target_users: Who will use this product? Format as numbered list, one user group per line.
@@ -337,22 +342,22 @@ product_brief_creation_task:
     - All unchanged sections must remain IDENTICAL to current_brief
 
     CRITICAL LANGUAGE REQUIREMENT:
-    You MUST write the Product Brief in the SAME LANGUAGE as the requirements above.
-    - If the requirements are in Vietnamese (Tiếng Việt), write the ENTIRE Product Brief in Vietnamese.
-    - If the requirements are in English, write the ENTIRE Product Brief in English.
+    You MUST write the PRD in the SAME LANGUAGE as the requirements above.
+    - If the requirements are in Vietnamese (Tiếng Việt), write the ENTIRE PRD in Vietnamese.
+    - If the requirements are in English, write the ENTIRE PRD in English.
     - Check the language of the {requirements_summary} carefully and use that exact language.
     - DO NOT translate or mix languages. Maintain 100% language consistency.
 
     IMPORTANT: ALL fields are REQUIRED and must be filled with meaningful content based on requirements.
     Do NOT leave any field empty or with placeholder text.
   expected_output: >
-    A complete Product Brief with all required sections filled with meaningful content from the requirements.
+    A complete PRD with all required sections filled with meaningful content from the requirements.
     The output will be automatically parsed as ProductBriefData Pydantic model.
   agent: product_brief_writer
 
 product_brief_review_task:
   description: >
-    Review the Product Brief for quality, clarity, and alignment with requirements.
+    Review the PRD for quality, clarity, and alignment with requirements.
     This brief will guide the Solution Design phase, so it must be complete and clear.
 
     STEP 1 - GET BRIEF:
@@ -377,9 +382,9 @@ product_brief_review_task:
     Provide specific, actionable feedback for improvements.
 
     CRITICAL LANGUAGE REQUIREMENT:
-    You MUST write your review in the SAME LANGUAGE as the Product Brief you are reviewing.
-    - If the Product Brief is in Vietnamese (Tiếng Việt), write your ENTIRE review in Vietnamese.
-    - If the Product Brief is in English, write your ENTIRE review in English.
+    You MUST write your review in the SAME LANGUAGE as the PRD you are reviewing.
+    - If the PRD is in Vietnamese (Tiếng Việt), write your ENTIRE review in Vietnamese.
+    - If the PRD is in English, write your ENTIRE review in English.
     - DO NOT translate or mix languages. Maintain 100% language consistency with the document.
   expected_output: >
     A review report in this EXACT format:
@@ -397,9 +402,9 @@ product_brief_review_task:
 
 epic_story_creation_task:
   description: >
-    Create Epics and User Stories based on the Product Brief and Business Flows, organized by feature domain.
+    Create Epics and User Stories based on the PRD and Business Flows, organized by feature domain.
 
-    Product Brief:
+    PRD:
     {product_brief}
 
     Business Flows (from Solution Design):
@@ -422,7 +427,7 @@ epic_story_creation_task:
     5. Example: If feedback says "thêm story cho X" → Add story for X, keep others unchanged
 
     STEP 1 - UNDERSTAND PRODUCT CONTEXT:
-    Review the Product Brief to understand:
+    Review the PRD to understand:
     - Problem Statement: What problem are we solving?
     - Target Users: Who will use this system and what are their needs?
     - Product Goals: What are the success criteria?
@@ -446,7 +451,7 @@ epic_story_creation_task:
 
     STEP 5 - DESIGN USER STORIES:
     For EACH business flow step, create User Stories that enable that step.
-    IMPORTANT: Consider Target Users from Product Brief when writing stories (use correct roles like "customer", "admin", "warehouse manager").
+    IMPORTANT: Consider Target Users from PRD when writing stories (use correct roles like "customer", "admin", "warehouse manager").
 
     APPLY INVEST PRINCIPLES TO EVERY STORY:
 
@@ -487,10 +492,10 @@ epic_story_creation_task:
     - All unchanged epics and stories must remain IDENTICAL
 
     CRITICAL LANGUAGE REQUIREMENT:
-    You MUST write Epics and User Stories in the SAME LANGUAGE as the Product Brief and Requirements.
-    - If the Product Brief is in Vietnamese (Tiếng Việt), write ALL epics and stories in Vietnamese.
-    - If the Product Brief is in English, write ALL epics and stories in English.
-    - Check the language of the Product Brief carefully and use that exact language.
+    You MUST write Epics and User Stories in the SAME LANGUAGE as the PRD and Requirements.
+    - If the PRD is in Vietnamese (Tiếng Việt), write ALL epics and stories in Vietnamese.
+    - If the PRD is in English, write ALL epics and stories in English.
+    - Check the language of the PRD carefully and use that exact language.
     - User story format: "Với vai trò [role], tôi muốn [feature] để [benefit]" (Vietnamese) or "As a [role], I want [feature] so that [benefit]" (English)
     - DO NOT translate or mix languages. Maintain 100% language consistency.
 
@@ -507,7 +512,7 @@ epic_story_creation_task:
 
 backlog_validation_task:
   description: >
-    Validate that Epics and Stories comprehensively cover the Product Brief scope and business flows.
+    Validate that Epics and Stories comprehensively cover the PRD scope and business flows.
 
     STEP 1 - GET DOCUMENTATION:
     Use the Documentation Manager Tool to get current documentation:
@@ -515,7 +520,7 @@ backlog_validation_task:
     Parameters:
       - action: 'get_documentation'
 
-    Product Brief:
+    PRD:
     {product_brief}
 
     Business Flows (Solution Design):
@@ -524,9 +529,9 @@ backlog_validation_task:
     STEP 2 - ANALYZE COVERAGE:
     - Does every business flow have corresponding user stories?
     - Are epics properly organized by feature domain?
-    - Do all stories align with Target Users defined in Product Brief?
+    - Do all stories align with Target Users defined in PRD?
     - Do stories support Product Goals?
-    - Are all in-scope features from Product Brief covered?
+    - Are all in-scope features from PRD covered?
     - Are there any out-of-scope features included by mistake?
     - Do all stories have clear acceptance criteria?
     - Are there any gaps or missing stories?

@@ -83,7 +83,7 @@ class RequirementsResponse(BaseModel):
 
 
 class ProductBriefResponse(BaseModel):
-    """Response with Product Brief"""
+    """Response with PRD"""
     product_summary: str
     problem_statement: str
     target_users: str
@@ -286,7 +286,7 @@ async def create_product_brief(
     session: SessionDep,
     current_user: CurrentUser
 ):
-    """Execute brief phase to create Product Brief.
+    """Execute brief phase to create PRD.
 
     Can also be used to revise the brief with feedback.
     """
@@ -310,7 +310,7 @@ async def create_product_brief(
         success=result.get("success", False),
         phase="brief",
         output=result.get("output", ""),
-        message="Product Brief created successfully" if result.get("success") else "Failed to create brief"
+        message="PRD created successfully" if result.get("success") else "Failed to create brief"
     )
 
 
@@ -320,7 +320,7 @@ async def get_product_brief(
     session: SessionDep,
     current_user: CurrentUser
 ):
-    """Get the Product Brief for a session."""
+    """Get the PRD for a session."""
     brief = session.query(ProductBrief).filter(
         ProductBrief.session_id == session_id
     ).first()
@@ -328,7 +328,7 @@ async def get_product_brief(
     if not brief:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Product Brief not found"
+            detail="PRD not found"
         )
 
     return ProductBriefResponse(
@@ -418,7 +418,7 @@ async def approve_brief(
     session: SessionDep,
     current_user: CurrentUser
 ):
-    """Approve or request revision of Product Brief."""
+    """Approve or request revision of PRD."""
     brief = session.query(ProductBrief).filter(
         ProductBrief.session_id == session_id
     ).first()
@@ -426,7 +426,7 @@ async def approve_brief(
     if not brief:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Product Brief not found"
+            detail="PRD not found"
         )
 
     if request.approved:

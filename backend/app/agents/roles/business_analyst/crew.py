@@ -2,7 +2,7 @@
 
 This crew orchestrates the complete BA workflow:
 1. Analysis Phase: Gather requirements via conversation
-2. Brief Phase: Create Product Brief from requirements
+2. Brief Phase: Create PRD from requirements
 3. Solution Phase: Design business flows
 4. Backlog Phase: Create Epics & User Stories
 """
@@ -50,7 +50,7 @@ class FlowsOutput(BaseModel):
 
 
 class ProductBriefData(BaseModel):
-    """Product Brief document structure"""
+    """PRD document structure"""
     product_summary: str
     problem_statement: str
     target_users: str
@@ -91,7 +91,7 @@ class BusinessAnalystCrew(BaseAgentCrew):
 
     Workflow Phases:
     1. ANALYSIS: Gather requirements through conversation
-    2. BRIEF: Create Product Brief from requirements
+    2. BRIEF: Create PRD from requirements
     3. SOLUTION: Design business flows
     4. BACKLOG: Create Epics & User Stories
     """
@@ -323,7 +323,7 @@ class BusinessAnalystCrew(BaseAgentCrew):
         )
 
     def _create_brief_task(self, context: Dict[str, Any]) -> Task:
-        """Create Product Brief creation task."""
+        """Create PRD creation task."""
         task_config = self.tasks_config.get("product_brief_creation_task", {})
 
         requirements_summary = self._get_requirements_summary()
@@ -453,16 +453,16 @@ class BusinessAnalystCrew(BaseAgentCrew):
         return "\n".join(text)
 
     def _get_product_brief_text(self) -> str:
-        """Get formatted Product Brief."""
+        """Get formatted PRD."""
         if not self.ba_session:
-            return "No Product Brief created."
+            return "No PRD created."
 
         brief = self.db_session.query(ProductBrief).filter(
             ProductBrief.session_id == self.ba_session.id
         ).first()
 
         if not brief or not brief.product_summary:
-            return "No Product Brief created."
+            return "No PRD created."
 
         return f"""# PRODUCT BRIEF
 
@@ -652,7 +652,7 @@ class BusinessAnalystCrew(BaseAgentCrew):
         project_id: Optional[UUID] = None,
         user_id: Optional[UUID] = None,
     ) -> Dict[str, Any]:
-        """Execute brief phase - create Product Brief.
+        """Execute brief phase - create PRD.
 
         Args:
             revision_feedback: Optional feedback for revision
@@ -660,10 +660,10 @@ class BusinessAnalystCrew(BaseAgentCrew):
             user_id: User UUID
 
         Returns:
-            Result with Product Brief
+            Result with PRD
         """
         if self.ba_session.current_phase == "analysis":
-            self._transition_phase("brief", "Analysis complete, creating Product Brief")
+            self._transition_phase("brief", "Analysis complete, creating PRD")
 
         # Get current brief if it exists (for refinement mode)
         current_brief_text = "None"
@@ -734,14 +734,14 @@ Revision Count: {existing_brief.revision_count}"""
 
             # Publish response for brief phase
             await self.publish_response(
-                content="I've created a Product Brief based on your requirements. Please review it.",
+                content="I've created a PRD based on your requirements. Please review it.",
                 message_id=uuid4(),
                 project_id=project_id,
                 user_id=user_id,
                 structured_data={
                     "phase": "brief",
                     "session_id": str(self.ba_session.id) if self.ba_session else None,
-                    "message_type": "product_brief",
+                    "message_type": "prd",
                     "data": {
                         "product_summary": brief_data.product_summary,
                         "problem_statement": brief_data.problem_statement,

@@ -46,7 +46,7 @@ class UserMessageEvent(BaseKafkaEvent):
     message_id: UUID
     content: str
     author_type: str = "USER"
-    message_type: str = "text"  # text, product_brief, product_vision, etc.
+    message_type: str = "text"  # text, prd, product_vision, etc.
 
 
 # AGENT RESPONSE EVENTS

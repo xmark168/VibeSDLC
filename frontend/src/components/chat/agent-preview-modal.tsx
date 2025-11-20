@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { CheckCircle, Edit, RefreshCw } from 'lucide-react'
 import type { AgentPreview } from '@/hooks/useChatWebSocket'
-import { ProductBriefPreview, ProductVisionPreview, BacklogPreview } from './previews'
+import { ProductBriefPreview, BacklogPreview } from './previews'
 
 interface AgentPreviewModalProps {
   preview: AgentPreview | null
@@ -56,20 +56,36 @@ export function AgentPreviewModal({ preview, onSubmit, onClose }: AgentPreviewMo
   const renderContent = () => {
     // Route based on preview_type
     switch (preview.preview_type) {
-      case "product_brief":
+      case "prd":
         return (
           <ProductBriefPreview
             brief={preview.brief}
             incompleteFlag={preview.incomplete_flag}
           />
         )
-      case "product_vision":
+      case 'business_flows':
         return (
-          <ProductVisionPreview
-            vision={preview.vision}
-            qualityScore={preview.quality_score}
-            validationResult={preview.validation_result}
-          />
+          <div className="space-y-4">
+            {Array.isArray(preview.flows) && preview.flows.map((flow: any, index: number) => (
+              <div key={index} className="border rounded-lg p-4">
+                <h4 className="font-semibold text-sm">{flow.name}</h4>
+                <p className="text-xs text-muted-foreground mt-1">{flow.description}</p>
+                {flow.steps && (
+                  <div className="mt-2">
+                    <p className="text-xs font-medium">Steps:</p>
+                    <ol className="list-decimal list-inside text-xs mt-1 space-y-1">
+                      {flow.steps.map((step: string, i: number) => (
+                        <li key={i}>{step}</li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
+                {flow.actors && (
+                  <p className="text-xs mt-2"><strong>Actors:</strong> {flow.actors.join(', ')}</p>
+                )}
+              </div>
+            ))}
+          </div>
         )
       case 'product_backlog':
         return (
@@ -77,23 +93,8 @@ export function AgentPreviewModal({ preview, onSubmit, onClose }: AgentPreviewMo
             backlog={preview.backlog}
           />
         )
-      case 'sprint_plan':
-        return (
-          <div className="text-sm text-muted-foreground">
-            Sprint planning is no longer supported in Kanban mode
-          </div>
-        )
       default:
         // Fallback: try to render whatever is available
-        if (preview.vision) {
-          return (
-            <ProductVisionPreview
-              vision={preview.vision}
-              qualityScore={preview.quality_score}
-              validationResult={preview.validation_result}
-            />
-          )
-        }
         if (preview.brief) {
           return (
             <ProductBriefPreview

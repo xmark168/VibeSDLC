@@ -105,12 +105,20 @@ class BusinessAnalystConsumer:
             # Get user message
             user_message = routing_context.get("user_message", "")
 
-            # Execute analysis phase
-            result = await crew.execute_analysis(
-                user_message=user_message,
-                project_id=project_id,
-                user_id=user_id
-            )
+            # Check if user wants to proceed to next phase
+            if user_message.lower().strip() == "next":
+                logger.info("User requested to proceed to PRD phase")
+                result = await crew.execute_brief_phase(
+                    project_id=project_id,
+                    user_id=user_id
+                )
+            else:
+                # Execute analysis phase
+                result = await crew.execute_analysis(
+                    user_message=user_message,
+                    project_id=project_id,
+                    user_id=user_id
+                )
 
             if result.get("success"):
                 logger.info(f"Business Analyst completed task successfully")
