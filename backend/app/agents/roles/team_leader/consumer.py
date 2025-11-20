@@ -20,6 +20,44 @@ from app.models import BASession, BASessionStatus
 logger = logging.getLogger(__name__)
 
 
+def is_simple_message(content: str) -> bool:
+    """Check if the message is a simple greeting or acknowledgment.
+
+    These should be handled by Team Leader directly, not routed to specialists.
+
+    Args:
+        content: The message content
+
+    Returns:
+        True if it's a simple message
+    """
+    content_lower = content.lower().strip()
+
+    # Simple greetings
+    greetings = [
+        "hi", "hello", "hey", "xin chào", "chào", "chào bạn",
+        "good morning", "good afternoon", "good evening",
+        "buổi sáng tốt lành", "chào buổi sáng"
+    ]
+
+    # Simple acknowledgments
+    acknowledgments = [
+        "ok", "okay", "thanks", "thank you", "cảm ơn",
+        "understood", "got it", "hiểu rồi", "được", "vâng"
+    ]
+
+    # Check exact match or starts with greeting
+    for greeting in greetings:
+        if content_lower == greeting or content_lower.startswith(greeting + " "):
+            return True
+
+    for ack in acknowledgments:
+        if content_lower == ack or content_lower.startswith(ack + " "):
+            return True
+
+    return False
+
+
 class TeamLeaderConsumer:
     """Kafka consumer for Team Leader crew.
 
@@ -66,26 +104,31 @@ class TeamLeaderConsumer:
                 user_id = UUID(user_id) if isinstance(user_id, str) else user_id
             content = event_data.get("content", "")
 
-            # Check for active BA session in analysis phase
-            with Session(self.engine) as db_session:
-                active_ba_session = db_session.exec(
-                    select(BASession)
-                    .where(BASession.project_id == project_id)
-                    .where(BASession.status == BASessionStatus.ANALYSIS)
-                    .where(BASession.current_phase == "analysis")
-                    .order_by(BASession.created_at.desc())
-                ).first()
+            # Check if this is a simple message (greeting, acknowledgment)
+            # If so, let Team Leader analyze and potentially respond directly
+            if not is_simple_message(content):
+                # Check for active BA session in analysis phase
+                with Session(self.engine) as db_session:
+                    active_ba_session = db_session.exec(
+                        select(BASession)
+                        .where(BASession.project_id == project_id)
+                        .where(BASession.status == BASessionStatus.ANALYSIS)
+                        .where(BASession.current_phase == "analysis")
+                        .order_by(BASession.created_at.desc())
+                    ).first()
 
-                if active_ba_session:
-                    # Route directly to BA without analysis
-                    logger.info(f"Active BA session found ({active_ba_session.id}), routing directly to BA")
-                    await self._route_to_ba_directly(
-                        message_id=message_id,
-                        project_id=project_id,
-                        user_id=user_id,
-                        content=content
-                    )
-                    return
+                    if active_ba_session:
+                        # Route directly to BA without analysis
+                        logger.info(f"Active BA session found ({active_ba_session.id}), routing directly to BA")
+                        await self._route_to_ba_directly(
+                            message_id=message_id,
+                            project_id=project_id,
+                            user_id=user_id,
+                            content=content
+                        )
+                        return
+            else:
+                logger.info(f"Simple message detected: '{content}', letting Team Leader analyze")
 
             # No active BA session, execute Team Leader crew to analyze and route
             context = {
