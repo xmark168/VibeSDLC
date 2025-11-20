@@ -579,10 +579,21 @@ export function ChatPanelWS({
                 <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
                   {getAgentAvatar(msg.author_type)}
                 </div>
-                <div className="flex-1">
-                  <div className="text-xs font-medium text-muted-foreground mb-2">
+                <div className="flex-1 space-y-2">
+                  <div className="text-xs font-medium text-muted-foreground">
                     {getAgentName(msg)}
                   </div>
+                  {/* Show text content if available */}
+                  {msg.content && (
+                    <div className="space-y-1.5">
+                      <div className="rounded-lg px-3 py-2 bg-muted w-fit">
+                        <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
+                          {msg.content}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {/* Show preview card */}
                   <MessagePreviewCard message={msg} />
                 </div>
               </div>
