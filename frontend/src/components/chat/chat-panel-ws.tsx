@@ -418,6 +418,7 @@ export function ChatPanelWS({
 
   // Notify parent about connection status (use isReady for accurate status)
   useEffect(() => {
+    console.log("ChatPanelWS: isReady changed to", isReady, "- notifying parent");
     if (onConnectionChange) {
       onConnectionChange(isReady);
     }
