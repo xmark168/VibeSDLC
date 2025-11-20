@@ -302,40 +302,6 @@ export function ChatPanelWS({
     }
   };
 
-  // Handle edit message - reopen preview modal with existing data
-  const handleEditMessage = (message: Message) => {
-    if (!message.message_type || !message.structured_data) return
-
-    // Convert Message to AgentPreview format
-    const preview: any = {
-      preview_id: `edit_${message.id}_${Date.now()}`, // New preview ID for edit
-      preview_type: message.message_type,
-      title: `Edit ${message.message_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}`,
-      prompt: 'You can edit or regenerate this preview',
-      options: ['approve', 'edit', 'regenerate'],
-    }
-
-    // Add structured data based on type
-    switch (message.message_type) {
-      case 'prd':
-        preview.brief = message.structured_data
-        preview.incomplete_flag = message.message_metadata?.incomplete_flag
-        break
-      case 'business_flows':
-        preview.flows = message.structured_data
-        break
-      case 'product_backlog':
-        preview.backlog = message.structured_data
-        break
-      case 'sprint_plan':
-        preview.sprint_plan = message.structured_data
-        break
-    }
-
-    // Reopen modal
-    reopenPreview(preview)
-  }
-
   const formatTimestamp = (dateStr: string) => {
     const date = new Date(dateStr);
     const hours = date.getHours();
@@ -617,10 +583,7 @@ export function ChatPanelWS({
                   <div className="text-xs font-medium text-muted-foreground mb-2">
                     {getAgentName(msg)}
                   </div>
-                  <MessagePreviewCard
-                    message={msg}
-                    onEdit={handleEditMessage}
-                  />
+                  <MessagePreviewCard message={msg} />
                 </div>
               </div>
             );
