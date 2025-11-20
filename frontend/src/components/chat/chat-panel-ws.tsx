@@ -86,6 +86,7 @@ export function ChatPanelWS({
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(
     new Set()
   );
+  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -243,11 +244,28 @@ export function ChatPanelWS({
     if (success) {
       setMessage("");
       setAttachedFiles([]);
+      setIsWaitingForResponse(true);
       setTimeout(() => {
         textareaRef.current?.focus();
       }, 0);
     }
   };
+
+  // Reset waiting state when we receive agent messages or agent starts typing/processing
+  useEffect(() => {
+    if (wsMessages.length > 0) {
+      const lastMessage = wsMessages[wsMessages.length - 1];
+      if (lastMessage.author_type === AuthorType.AGENT) {
+        setIsWaitingForResponse(false);
+      }
+    }
+  }, [wsMessages]);
+
+  useEffect(() => {
+    if (typingAgents.length > 0 || agentProgress.isExecuting) {
+      setIsWaitingForResponse(false);
+    }
+  }, [typingAgents, agentProgress.isExecuting]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (showMentions && filteredAgents.length > 0) {
@@ -661,6 +679,24 @@ export function ChatPanelWS({
             </div>
           );
         })}
+
+        {/* Waiting for agent response indicator */}
+        {isWaitingForResponse && typingAgents.length === 0 && !agentProgress.isExecuting && (
+          <div className="flex gap-3">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
+              🤖
+            </div>
+            <div className="flex-1 space-y-2">
+              <div className="text-xs font-medium text-muted-foreground">
+                Agent
+              </div>
+              <div className="flex items-center gap-1 text-muted-foreground">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <span className="text-sm">Đang xử lý...</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {typingAgents.length > 0 && (
           <div className="flex gap-3">

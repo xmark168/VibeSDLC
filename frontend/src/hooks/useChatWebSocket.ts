@@ -150,8 +150,9 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
                   author_type: AuthorType.AGENT,
                   agent_name: data.agent_name || undefined,
                   content: data.content,
-                  message_type: data.structured_data ? 'structured' : 'text',
+                  message_type: data.structured_data?.message_type || 'text',
                   structured_data: data.structured_data,
+                  message_metadata: { agent_name: data.agent_name },
                   created_at: data.timestamp || new Date().toISOString(),
                   updated_at: data.timestamp || new Date().toISOString(),
                 }
