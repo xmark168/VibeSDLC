@@ -159,7 +159,19 @@ class BusinessAnalystConsumer:
                 # In backlog phase - waiting for backlog approval/feedback
                 if user_msg_lower == "next" or user_msg_lower in ["ok", "approve", "approved", "đồng ý", "chấp nhận"]:
                     logger.info("User approved backlog, BA workflow complete")
-                    # TODO: Mark session as completed and notify
+                    # Mark session as completed
+                    crew._transition_phase("completed", "User approved backlog")
+                    from datetime import datetime, timezone
+                    crew.ba_session.completed_at = datetime.now(timezone.utc)
+                    db_session.commit()
+
+                    # Publish completion message
+                    await crew.publish_response(
+                        content="✅ Hoàn tất! Product Backlog đã được chấp nhận. Quy trình Business Analyst đã hoàn thành.",
+                        message_id=message_id,
+                        project_id=project_id,
+                        user_id=user_id
+                    )
                     result = {"success": True, "message": "BA workflow completed"}
                 else:
                     # User provided feedback, regenerate backlog

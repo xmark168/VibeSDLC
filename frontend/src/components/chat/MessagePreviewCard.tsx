@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
-import { ProductBriefPreview, BacklogPreview } from './previews'
+import { ProductBriefPreview, BacklogPreview, BusinessFlowsPreview } from './previews'
 
 interface MessagePreviewCardProps {
   message: {
@@ -39,29 +39,7 @@ export function MessagePreviewCard({ message }: MessagePreviewCardProps) {
       case 'business_flows':
         // business_flows data is an array
         const flowsData = Array.isArray(data) ? data : []
-        return (
-          <div className="space-y-4 max-h-[400px] overflow-y-auto">
-            {flowsData.map((flow: any, index: number) => (
-              <div key={index} className="border rounded-lg p-4">
-                <h4 className="font-semibold text-sm">{flow.name}</h4>
-                <p className="text-xs text-muted-foreground mt-1">{flow.description}</p>
-                {flow.steps && (
-                  <div className="mt-2">
-                    <p className="text-xs font-medium">Các bước:</p>
-                    <ol className="list-decimal list-inside text-xs mt-1 space-y-1">
-                      {flow.steps.map((step: string, i: number) => (
-                        <li key={i}>{step}</li>
-                      ))}
-                    </ol>
-                  </div>
-                )}
-                {flow.actors && (
-                  <p className="text-xs mt-2"><strong>Actors:</strong> {flow.actors.join(', ')}</p>
-                )}
-              </div>
-            ))}
-          </div>
-        )
+        return <BusinessFlowsPreview flows={flowsData} />
       case 'product_backlog':
         return (
           <BacklogPreview

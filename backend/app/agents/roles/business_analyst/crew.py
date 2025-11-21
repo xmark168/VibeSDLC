@@ -755,7 +755,7 @@ Revision Count: {existing_brief.revision_count}"""
 
             # Publish response for brief phase
             await self.publish_response(
-                content="Tôi đã tạo PRD dựa trên yêu cầu của bạn. Vui lòng xem xét và:\n• Gõ 'next' hoặc 'ok' để chấp nhận và tiếp tục tạo Business Flows\n• Hoặc gửi feedback để tôi chỉnh sửa PRD",
+                content="Tôi đã tạo PRD dựa trên yêu cầu của bạn. Vui lòng xem xét và:\n• Gõ 'next' để chấp nhận và tiếp tục tạo Business Flows\n• Hoặc gửi feedback để tôi chỉnh sửa PRD",
                 message_id=uuid4(),
                 project_id=project_id,
                 user_id=user_id,
@@ -860,7 +860,7 @@ Actors: {', '.join(flow.actors)}"""
                 for flow_data in flows_output.business_flows
             ]
             await self.publish_response(
-                content="Tôi đã thiết kế Business Flows. Vui lòng xem xét và:\n• Gõ 'next' hoặc 'ok' để chấp nhận và tiếp tục tạo Product Backlog\n• Hoặc gửi feedback để tôi chỉnh sửa flows",
+                content="Tôi đã thiết kế Business Flows. Vui lòng xem xét và:\n• Gõ 'next' để chấp nhận và tiếp tục tạo Product Backlog\n• Hoặc gửi feedback để tôi chỉnh sửa flows",
                 message_id=uuid4(),
                 project_id=project_id,
                 user_id=user_id,
@@ -999,10 +999,8 @@ Actors: {', '.join(flow.actors)}"""
 
             self.db_session.commit()
 
-            # Mark session complete
-            self._transition_phase("completed", "Backlog created successfully")
-            self.ba_session.completed_at = datetime.now(timezone.utc)
-            self.db_session.commit()
+            # Note: Don't transition to "completed" here - wait for user approval
+            # The transition happens in consumer.py when user approves the backlog
 
             # Publish response for backlog phase
             epics_data = [
@@ -1026,7 +1024,7 @@ Actors: {', '.join(flow.actors)}"""
                 for story_data in backlog.stories
             ]
             await self.publish_response(
-                content="Tôi đã tạo Product Backlog với Epics và User Stories. Vui lòng xem xét và:\n• Gõ 'next' hoặc 'ok' để hoàn tất quy trình BA\n• Hoặc gửi feedback để tôi chỉnh sửa backlog",
+                content="Tôi đã tạo Product Backlog với Epics và User Stories. Vui lòng xem xét và:\n• Gõ 'next' để hoàn tất quy trình BA\n• Hoặc gửi feedback để tôi chỉnh sửa backlog",
                 message_id=uuid4(),
                 project_id=project_id,
                 user_id=user_id,
