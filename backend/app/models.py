@@ -211,7 +211,6 @@ class Story(BaseModel, table=True):
     # Flow metrics tracking (Lean Kanban)
     started_at: datetime | None = Field(default=None)  # When moved to InProgress
     review_started_at: datetime | None = Field(default=None)  # When moved to Review
-    testing_started_at: datetime | None = Field(default=None)  # When moved to Testing
 
     # Token usage tracking (for AI agents)
     token_used: int | None = Field(default=None)

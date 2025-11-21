@@ -41,8 +41,6 @@ export function BottleneckAlert({
         return "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
       case "review":
         return "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20"
-      case "testing":
-        return "bg-pink-500/10 text-pink-600 dark:text-pink-400 border-pink-500/20"
       default:
         return "bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-500/20"
     }

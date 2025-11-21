@@ -1,7 +1,7 @@
 """add_lean_kanban_features
 
 Revision ID: d1886f6a9d64
-Revises: 6aa6715c2944
+Revises: 88c7e8f763e3
 Create Date: 2025-11-18 20:21:53.342363
 
 """
@@ -12,7 +12,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision = 'd1886f6a9d64'
-down_revision = '6aa6715c2944'
+down_revision = '88c7e8f763e3'
 branch_labels = None
 depends_on = None
 

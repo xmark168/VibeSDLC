@@ -29,7 +29,7 @@ interface PolicySettingsDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-const statusOptions = ["Todo", "InProgress", "Review", "Testing", "Done"]
+const statusOptions = ["Todo", "InProgress", "Review", "Done"]
 
 const criteriaOptions = [
   { key: "assignee_required", label: "Assignee Required", icon: "👤" },
@@ -167,8 +167,6 @@ export function PolicySettingsDialog({
         return "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
       case "review":
         return "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20"
-      case "testing":
-        return "bg-pink-500/10 text-pink-600 dark:text-pink-400 border-pink-500/20"
       case "done":
         return "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20"
       default:

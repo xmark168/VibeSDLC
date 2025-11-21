@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { AuthorType, type Message } from '@/types/message'
-import { AuthorType, type Message } from '@/types/message'
 
 export type WebSocketMessage = {
   type: 'connected' | 'message' | 'agent_message' | 'agent_response' | 'typing' | 'pong' | 'error' | 'routing' | 'agent_routing' | 'agent_thinking' | 'agent_question' | 'agent_preview' | 'kanban_update' | 'story_created' | 'story_updated' | 'story_status_changed' | 'switch_tab'
@@ -73,6 +72,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
   const [isReady, setIsReady] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [typingAgents, setTypingAgents] = useState<Set<string>>(new Set())
+  const [pendingQuestions, setPendingQuestions] = useState<any[]>([])
   const [pendingPreviews, setPendingPreviews] = useState<AgentPreview[]>([])
   const [agentStatus, setAgentStatus] = useState<{
     agentName: string | null
@@ -410,7 +410,6 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     sendMessage,
     submitPreviewChoice,
     reopenPreview,
-    closePreview,
     closePreview,
     connect,
     disconnect,

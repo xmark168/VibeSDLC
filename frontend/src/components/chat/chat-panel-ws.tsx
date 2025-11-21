@@ -108,8 +108,12 @@ export function ChatPanelWS({
     submitPreviewChoice,
     reopenPreview,
     closePreview,
-    closePreview,
   } = useChatWebSocket(projectId, token || undefined);
+
+  // Derive agentProgress from agentStatus
+  const agentProgress = {
+    isExecuting: agentStatus.status === 'thinking' || agentStatus.status === 'acting'
+  };
 
   // Combine existing messages with WebSocket messages
   const apiMessages = messagesData?.data || [];

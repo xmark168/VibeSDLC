@@ -169,7 +169,7 @@ class FlowStatusEvent(BaseKafkaEvent):
 
     event_type: str
     flow_id: UUID
-    flow_type: str  # story_generation, sprint_planning, code_review
+    flow_type: str  # story_generation, code_review
     status: FlowStatusType
     current_step: Optional[str] = None
     total_steps: Optional[int] = None

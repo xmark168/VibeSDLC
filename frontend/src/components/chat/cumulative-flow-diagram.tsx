@@ -11,7 +11,6 @@ interface CFDData {
   Todo: number
   InProgress: number
   Review: number
-  Testing: number
   Done: number
 }
 
@@ -57,7 +56,6 @@ export function CumulativeFlowDiagram({
           Todo: Math.floor(Math.random() * 10) + 5,
           InProgress: Math.floor(Math.random() * 5) + 2,
           Review: Math.floor(Math.random() * 3) + 1,
-          Testing: Math.floor(Math.random() * 2) + 1,
           Done: Math.floor(Math.random() * 20) + days - i,
         })
       }
@@ -72,7 +70,6 @@ export function CumulativeFlowDiagram({
 
   const columns = [
     { key: "Done", label: "Done", color: "#10b981" },
-    { key: "Testing", label: "Testing", color: "#ec4899" },
     { key: "Review", label: "Review", color: "#f97316" },
     { key: "InProgress", label: "In Progress", color: "#3b82f6" },
     { key: "Todo", label: "To Do", color: "#8b5cf6" },
@@ -101,8 +98,7 @@ export function CumulativeFlowDiagram({
   const currentWIP = latestData
     ? (latestData.Todo || 0) +
       (latestData.InProgress || 0) +
-      (latestData.Review || 0) +
-      (latestData.Testing || 0)
+      (latestData.Review || 0)
     : 0
 
   return (
@@ -202,8 +198,8 @@ export function CumulativeFlowDiagram({
                       return `${x},${y}`
                     }),
                     // Add bottom edge
-                    colIndex > 0
-                      ? ...cumulativeData
+                    ...(colIndex > 0
+                      ? cumulativeData
                           .slice()
                           .reverse()
                           .map((d, i) => {
@@ -213,7 +209,7 @@ export function CumulativeFlowDiagram({
                             const y = 300 - (d[prevCol.key] / maxValue) * 300
                             return `${x},${y}`
                           })
-                      : [`800,300`, `0,300`],
+                      : [`800,300`, `0,300`]),
                   ].join(" ")
 
                   return (

@@ -43,7 +43,7 @@ export function BentoSection() {
     {
       title: "Multi-Agent AI Team",
       description:
-        "Complete Scrum team with PO, Scrum Master, Developer, and QA agents working in harmony.",
+        "Complete development team with Business Analyst, Team Leader, Developer, and Tester agents working in harmony.",
       Component: MultiAgentTeam,
     },
     {

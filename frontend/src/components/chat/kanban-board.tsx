@@ -26,7 +26,6 @@ const initialColumns: KanbanColumnData[] = [
   { id: "todo", title: "ToDo", color: "border-purple-500", cards: [] },
   { id: "inprogress", title: "InProgress", color: "border-red-500", cards: [] },
   { id: "review", title: "Review", color: "border-blue-500", cards: [] },
-  { id: "testing", title: "Testing", color: "border-pink-500", cards: [] },
   { id: "done", title: "Done", color: "border-cyan-500", cards: [] },
 ]
 

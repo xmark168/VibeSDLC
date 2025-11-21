@@ -6,23 +6,23 @@ const faqData = [
   {
     question: "What is VibeSDLC and who is it for?",
     answer:
-      "VibeSDLC is a Multi-Agent AI platform that automates 60-80% of the Software Development Lifecycle. It's designed for startups seeking faster time-to-market, outsourcing firms managing multiple projects, and enterprise teams wanting to maintain production-ready code quality while accelerating delivery. Unlike traditional code assistants, VibeSDLC simulates an entire Scrum team.",
+      "VibeSDLC is a Multi-Agent AI platform that automates 60-80% of the Software Development Lifecycle. It's designed for startups seeking faster time-to-market, outsourcing firms managing multiple projects, and enterprise teams wanting to maintain production-ready code quality while accelerating delivery. Unlike traditional code assistants, VibeSDLC simulates an entire development team.",
   },
   {
     question:
       "How does VibeSDLC differ from tools like GitHub Copilot or Cursor?",
     answer:
-      "While code assistants focus on generating snippets, VibeSDLC covers the entire SDLC. Our AI Product Owner clarifies requirements, Scrum Master coordinates workflow, Developer agents implement features incrementally, and Tester agents ensure quality. You get production-ready software with proper documentation, testing, and architecture—not just code snippets that accumulate technical debt.",
+      "While code assistants focus on generating snippets, VibeSDLC covers the entire SDLC. Our AI Product Owner clarifies requirements, Team Leader coordinates workflow, Developer agents implement features incrementally, and Tester agents ensure quality. You get production-ready software with proper documentation, testing, and architecture—not just code snippets that accumulate technical debt.",
   },
   {
-    question: "What is the Scrumban board and how does it work?",
+    question: "What is the Kanban board and how does it work?",
     answer:
-      "The Scrumban board provides complete visibility into your AI agents' work. You can see each agent's tasks, progress, and status in real-time. It manages sprint planning, backlog prioritization, and task assignments automatically while allowing human intervention at critical decision points. This transparency ensures you stay in control throughout the development process.",
+      "The Kanban board provides complete visibility into your AI agents' work. You can see each agent's tasks, progress, and status in real-time. It manages workflow planning, backlog prioritization, and task assignments automatically while allowing human intervention at critical decision points. This transparency ensures you stay in control throughout the development process.",
   },
   {
     question: "How does human-in-the-loop work?",
     answer:
-      "You can interact with each AI agent through a chat interface to provide context, approve/reject pull requests, adjust sprint scope, reorder the backlog, or escalate blockers. High-risk decisions, architectural changes, and scope trade-offs require your explicit confirmation. You can also skip AI-assigned tasks and delegate new ones directly to agents.",
+      "You can interact with each AI agent through a chat interface to provide context, approve/reject pull requests, adjust workflow scope, reorder the backlog, or escalate blockers. High-risk decisions, architectural changes, and scope trade-offs require your explicit confirmation. You can also skip AI-assigned tasks and delegate new ones directly to agents.",
   },
   {
     question:
@@ -33,7 +33,7 @@ const faqData = [
   {
     question: "Can VibeSDLC integrate with my existing DevOps tools?",
     answer:
-      "Yes! VibeSDLC is designed for deep integration with your DevOps ecosystem including GitHub Actions for CI/CD, common source control platforms, and monitoring tools like Prometheus. All pull requests, test runs, and deployments are automatically tracked and linked on the Scrum board with full audit trails for compliance.",
+      "Yes! VibeSDLC is designed for deep integration with your DevOps ecosystem including GitHub Actions for CI/CD, common source control platforms, and monitoring tools like Prometheus. All pull requests, test runs, and deployments are automatically tracked and linked on the Kanban board with full audit trails for compliance.",
   },
 ]
 

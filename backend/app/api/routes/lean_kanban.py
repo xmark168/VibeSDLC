@@ -170,16 +170,9 @@ def initialize_default_policies(
         },
         {
             "from_status": "Review",
-            "to_status": "Testing",
-            "criteria": {
-                "reviewer_id": True
-            },
-            "is_active": True
-        },
-        {
-            "from_status": "Testing",
             "to_status": "Done",
             "criteria": {
+                "reviewer_id": True,
                 "acceptance_criteria_defined": True,
                 "no_blockers": True
             },
