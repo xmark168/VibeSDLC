@@ -140,6 +140,81 @@ def validate_wip_before_move(
 
 # ===== Workflow Policies Endpoints =====
 
+@router.post("/projects/{project_id}/policies/initialize-defaults")
+def initialize_default_policies(
+    project_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> dict:
+    """
+    Initialize default workflow policies for a project.
+    Creates standard policies for common transitions if they don't exist.
+    """
+    default_policies = [
+        {
+            "from_status": "Todo",
+            "to_status": "InProgress",
+            "criteria": {
+                "assignee_required": True,
+                "story_points_estimated": True
+            },
+            "is_active": True
+        },
+        {
+            "from_status": "InProgress",
+            "to_status": "Review",
+            "criteria": {
+                "no_blockers": True
+            },
+            "is_active": True
+        },
+        {
+            "from_status": "Review",
+            "to_status": "Testing",
+            "criteria": {
+                "reviewer_id": True
+            },
+            "is_active": True
+        },
+        {
+            "from_status": "Testing",
+            "to_status": "Done",
+            "criteria": {
+                "acceptance_criteria_defined": True,
+                "no_blockers": True
+            },
+            "is_active": True
+        }
+    ]
+
+    created_count = 0
+    for policy_data in default_policies:
+        # Check if policy already exists
+        existing = db.exec(
+            select(WorkflowPolicy).where(
+                and_(
+                    WorkflowPolicy.project_id == project_id,
+                    WorkflowPolicy.from_status == policy_data["from_status"],
+                    WorkflowPolicy.to_status == policy_data["to_status"]
+                )
+            )
+        ).first()
+
+        if not existing:
+            new_policy = WorkflowPolicy(
+                project_id=project_id,
+                from_status=policy_data["from_status"],
+                to_status=policy_data["to_status"],
+                criteria=policy_data["criteria"],
+                is_active=policy_data["is_active"]
+            )
+            db.add(new_policy)
+            created_count += 1
+
+    db.commit()
+    return {"message": f"Initialized {created_count} default policies", "created": created_count}
+
+
 @router.get("/projects/{project_id}/policies", response_model=WorkflowPoliciesPublic)
 def get_workflow_policies(
     project_id: UUID,

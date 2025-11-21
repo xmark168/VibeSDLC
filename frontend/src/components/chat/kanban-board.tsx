@@ -2,15 +2,20 @@
 import type React from "react"
 
 import { useState, useRef, useEffect } from "react"
-import { Settings, Activity } from "lucide-react"
+import { Settings, Activity, Shield, TrendingUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { KanbanColumn, type KanbanColumnData } from "./kanban-column"
 import { TaskDetailModal } from "./task-detail-modal"
 import { WIPLimitSettingsDialog } from "./wip-limit-settings-dialog"
 import { FlowMetricsDashboard } from "./flow-metrics-dashboard"
 import { PolicyValidationDialog, type PolicyViolation } from "./policy-validation-dialog"
+import { PolicySettingsDialog } from "./policy-settings-dialog"
+import { AgingItemsAlert } from "./aging-items-alert"
+import { BottleneckAlert } from "./bottleneck-alert"
+import { CumulativeFlowDiagram } from "./cumulative-flow-diagram"
 import type { KanbanCardData } from "./kanban-card"
 import { useKanbanBoard } from "@/queries/backlog-items"
+import { backlogItemsApi } from "@/apis/backlog-items"
 
 interface KanbanBoardProps {
   kanbanData?: any
@@ -32,11 +37,34 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
   const [selectedCard, setSelectedCard] = useState<KanbanCardData | null>(null)
   const [showWIPSettings, setShowWIPSettings] = useState(false)
   const [showFlowMetrics, setShowFlowMetrics] = useState(false)
+  const [showPolicySettings, setShowPolicySettings] = useState(false)
+  const [showCFD, setShowCFD] = useState(false)
   const [policyViolation, setPolicyViolation] = useState<PolicyViolation | null>(null)
+  const [flowMetrics, setFlowMetrics] = useState<any>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   // Load initial data from database
   const { data: dbKanbanData, isLoading } = useKanbanBoard(projectId)
+
+  // Load flow metrics for alerts
+  useEffect(() => {
+    if (projectId) {
+      loadFlowMetrics()
+      // Refresh metrics every 5 minutes
+      const interval = setInterval(loadFlowMetrics, 5 * 60 * 1000)
+      return () => clearInterval(interval)
+    }
+  }, [projectId])
+
+  const loadFlowMetrics = async () => {
+    if (!projectId) return
+    try {
+      const metrics = await backlogItemsApi.getFlowMetrics(projectId, 30)
+      setFlowMetrics(metrics)
+    } catch (error) {
+      console.error('Failed to load flow metrics:', error)
+    }
+  }
 
   // Reset columns when projectId changes
   useEffect(() => {
@@ -275,7 +303,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     setDraggedOverColumn(null)
   }
 
-  const handleDrop = (e: React.DragEvent, targetColumnId: string) => {
+  const handleDrop = async (e: React.DragEvent, targetColumnId: string) => {
     e.preventDefault()
     if (!draggedCard) return
 
@@ -290,7 +318,39 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
       return
     }
 
-    // Check WIP limit enforcement
+    // ===== Policy Validation =====
+    // Validate workflow policies before moving cards if projectId and taskId exist
+    if (projectId && draggedCard.taskId) {
+      try {
+        const fromStatus = draggedCard.columnId.charAt(0).toUpperCase() + draggedCard.columnId.slice(1)
+        const toStatus = targetColumnId.charAt(0).toUpperCase() + targetColumnId.slice(1)
+
+        const policyValidation = await backlogItemsApi.validatePolicyMove(
+          projectId,
+          draggedCard.taskId,
+          fromStatus,
+          toStatus
+        )
+
+        // If policy violations exist, block the move and show dialog
+        if (!policyValidation.allowed && policyValidation.violations.length > 0) {
+          setPolicyViolation({
+            error: 'POLICY_VIOLATION',
+            message: 'Workflow policy not satisfied',
+            violations: policyValidation.violations,
+            policy: { from: fromStatus, to: toStatus }
+          })
+          setDraggedCard(null)
+          setDraggedOverColumn(null)
+          return
+        }
+      } catch (error) {
+        console.error('Policy validation error:', error)
+        // Continue with move if validation fails (fail-open for better UX)
+      }
+    }
+
+    // ===== WIP Limit Check =====
     if (targetColumn.wipLimit) {
       const currentCount = targetColumn.cards.length
       const isMovingFromThisColumn = draggedCard.columnId === targetColumnId
@@ -317,37 +377,6 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         }
       }
     }
-
-    // TODO: Policy Validation Integration
-    // To validate workflow policies before moving cards:
-    //
-    // 1. Call the validation API before proceeding with the move:
-    //    const validation = await backlogItemsApi.validateStoryMove(
-    //      projectId,
-    //      draggedCard.taskId,
-    //      targetColumnId.toUpperCase()
-    //    )
-    //
-    // 2. Check if move is allowed:
-    //    if (!validation.allowed && validation.violation?.error === 'POLICY_VIOLATION') {
-    //      setPolicyViolation(validation.violation)
-    //      setDraggedCard(null)
-    //      setDraggedOverColumn(null)
-    //      return
-    //    }
-    //
-    // 3. The PolicyValidationDialog will automatically show when policyViolation is set
-    //
-    // Example violation format from backend:
-    // {
-    //   error: "POLICY_VIOLATION",
-    //   message: "Workflow policy not satisfied",
-    //   violations: [
-    //     "Story must have an assignee",
-    //     "Story points must be estimated"
-    //   ],
-    //   policy: { from: "Todo", to: "InProgress" }
-    // }
 
     // Proceed with the move
     setColumns((prev) =>
@@ -384,11 +413,20 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         className="h-full overflow-x-auto bg-background border-t flex flex-col"
         style={{ scrollBehavior: "smooth" }}
       >
-        {/* Header with WIP Settings Button */}
+        {/* Header with Settings Buttons */}
         <div className="flex items-center justify-between px-6 pt-4 pb-2">
           <h2 className="text-lg font-semibold text-foreground">Kanban Board</h2>
           {projectId && (
             <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowCFD(true)}
+                className="gap-2"
+              >
+                <TrendingUp className="w-4 h-4" />
+                CFD
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -397,6 +435,15 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
               >
                 <Activity className="w-4 h-4" />
                 Metrics
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowPolicySettings(true)}
+                className="gap-2"
+              >
+                <Shield className="w-4 h-4" />
+                Policies
               </Button>
               <Button
                 variant="outline"
@@ -410,6 +457,26 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
             </div>
           )}
         </div>
+
+        {/* Lean Kanban Alerts */}
+        {projectId && flowMetrics && (
+          <div className="px-6">
+            <AgingItemsAlert
+              projectId={projectId}
+              agingItems={flowMetrics.aging_items || []}
+              onCardClick={(itemId) => {
+                // Find and select the card
+                const allCards = columns.flatMap(col => col.cards)
+                const card = allCards.find(c => c.taskId === itemId || c.id === itemId)
+                if (card) setSelectedCard(card)
+              }}
+            />
+            <BottleneckAlert
+              bottlenecks={flowMetrics.bottlenecks || {}}
+              threshold={48}
+            />
+          </div>
+        )}
 
         {/* Columns */}
         <div className="flex gap-4 min-w-max px-6 pb-6">
@@ -457,6 +524,18 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         cardTitle={draggedCard?.content}
         open={!!policyViolation}
         onOpenChange={(open) => !open && setPolicyViolation(null)}
+      />
+
+      <PolicySettingsDialog
+        projectId={projectId}
+        open={showPolicySettings}
+        onOpenChange={setShowPolicySettings}
+      />
+
+      <CumulativeFlowDiagram
+        projectId={projectId}
+        open={showCFD}
+        onOpenChange={setShowCFD}
       />
     </>
   )

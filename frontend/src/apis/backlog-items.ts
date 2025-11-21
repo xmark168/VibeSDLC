@@ -165,5 +165,24 @@ export const backlogItemsApi = {
       query: { target_status: targetStatus },
     })
   },
+
+  /**
+   * Validate if a story move meets workflow policy criteria
+   */
+  validatePolicyMove: async (
+    projectId: string,
+    storyId: string,
+    fromStatus: string,
+    toStatus: string
+  ): Promise<{ allowed: boolean; violations: string[] }> => {
+    return __request<{ allowed: boolean; violations: string[] }>(OpenAPI, {
+      method: 'POST',
+      url: `/api/v1/projects/${projectId}/stories/${storyId}/validate-policy`,
+      query: {
+        from_status: fromStatus,
+        to_status: toStatus
+      },
+    })
+  },
 }
 
