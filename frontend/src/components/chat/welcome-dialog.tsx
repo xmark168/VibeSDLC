@@ -1,5 +1,5 @@
-import { Rocket, Sparkles } from "lucide-react"
-import { useState } from "react"
+import { Loader2, Rocket, Sparkles } from "lucide-react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -24,6 +24,15 @@ export function WelcomeDialog({
   isConnected,
 }: WelcomeDialogProps) {
   const [isStarting, setIsStarting] = useState(false)
+  const [sendFailed, setSendFailed] = useState(false)
+
+  // Log when connection state changes
+  useEffect(() => {
+    console.log("WelcomeDialog: isConnected changed to", isConnected)
+    if (isConnected) {
+      setSendFailed(false) // Reset error state when connected
+    }
+  }, [isConnected])
 
   const handleStart = () => {
     if (!isConnected) {
@@ -41,6 +50,9 @@ export function WelcomeDialog({
     onOpenChange(false)
     setIsStarting(false)
   }
+
+  // Determine actual ready state - must be connected AND not failed
+  const isActuallyReady = isConnected && !sendFailed
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -60,10 +72,20 @@ export function WelcomeDialog({
         <DialogFooter className="flex flex-col items-center gap-2 sm:justify-center mt-4">
           <Button
             onClick={handleStart}
-            disabled={isStarting || !isConnected}
+            disabled={isStarting || !isActuallyReady}
             className="w-full sm:w-auto bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold px-8 py-6 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isStarting ? (
+            {sendFailed ? (
+              <>
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                Đang kết nối lại...
+              </>
+            ) : !isConnected ? (
+              <>
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                Đang kết nối...
+              </>
+            ) : isStarting ? (
               <>
                 <Rocket className="w-5 h-5 mr-2 animate-bounce" />
                 Đang khởi động...

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { AuthorType, type Message } from '@/types/message'
+import { AuthorType, type Message } from '@/types/message'
 
 export type WebSocketMessage = {
   type: 'connected' | 'message' | 'agent_message' | 'agent_response' | 'typing' | 'pong' | 'error' | 'routing' | 'agent_routing' | 'agent_thinking' | 'agent_question' | 'agent_preview' | 'kanban_update' | 'story_created' | 'story_updated' | 'story_status_changed' | 'switch_tab'
@@ -9,10 +10,9 @@ export type WebSocketMessage = {
   is_typing?: boolean
   message?: string
   project_id?: string
-  // For routing messages
+  // Routing
   agent_selected?: string
   confidence?: number
-  user_intent?: string
   reasoning?: string
   // For agent_thinking messages
   content?: string
@@ -31,29 +31,20 @@ export type WebSocketMessage = {
   preview_type?: string
   title?: string
   brief?: any
+  flows?: any
+  backlog?: any
+  sprint_plan?: any
   incomplete_flag?: boolean
+  options?: string[]
   prompt?: string
-  // For story events
+  // Story events
   story_id?: string
   story_title?: string
   old_status?: string
   new_status?: string
   updated_fields?: string[]
-  // For switch_tab messages
+  // Tab switching
   tab?: string
-}
-
-export type AgentQuestion = {
-  question_id: string
-  agent: string
-  question_type: 'text' | 'choice' | 'multiple_choice'
-  question_text: string
-  question_number: number
-  total_questions: number
-  timeout: number
-  context?: string
-  options?: string[]
-  receivedAt: number // timestamp
 }
 
 export type AgentPreview = {
@@ -82,7 +73,6 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
   const [isReady, setIsReady] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [typingAgents, setTypingAgents] = useState<Set<string>>(new Set())
-  const [pendingQuestions, setPendingQuestions] = useState<AgentQuestion[]>([])
   const [pendingPreviews, setPendingPreviews] = useState<AgentPreview[]>([])
   const [agentStatus, setAgentStatus] = useState<{
     agentName: string | null
@@ -105,20 +95,24 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     timestamp?: string
   } | null>(null)
   const [activeTab, setActiveTab] = useState<string | null>(null)
+
   const wsRef = useRef<WebSocket | null>(null)
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout>()
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined)
   const reconnectAttemptsRef = useRef(0)
   const maxReconnectAttempts = 5
+
+  // Helper to check if WebSocket is ready
+  const isWsReady = useCallback(() => {
+    return wsRef.current?.readyState === WebSocket.OPEN
+  }, [])
 
   const connect = useCallback(() => {
     if (!projectId || !token) return
 
-    // Close existing connection
     if (wsRef.current) {
       wsRef.current.close()
     }
 
-    // Determine WebSocket URL
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = import.meta.env.VITE_API_URL?.replace(/^https?:\/\//, '') || 'localhost:8000'
     const wsUrl = `${protocol}//${host}/api/v1/chat/ws?project_id=${projectId}&token=${token}`
@@ -127,14 +121,9 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     wsRef.current = ws
 
     ws.onopen = () => {
-      console.log('WebSocket connected')
       setIsConnected(true)
+      setIsReady(true)
       reconnectAttemptsRef.current = 0
-
-      // Double check readyState and set isReady
-      if (ws.readyState === WebSocket.OPEN) {
-        setIsReady(true)
-      }
     }
 
     ws.onmessage = (event) => {
@@ -143,7 +132,6 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
 
         switch (data.type) {
           case 'connected':
-            console.log('Connected to chat:', data.message)
             break
 
           case 'message':
@@ -188,11 +176,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
             if (data.agent_name) {
               setTypingAgents((prev) => {
                 const newSet = new Set(prev)
-                if (data.is_typing) {
-                  newSet.add(data.agent_name!)
-                } else {
-                  newSet.delete(data.agent_name!)
-                }
+                data.is_typing ? newSet.add(data.agent_name!) : newSet.delete(data.agent_name!)
                 return newSet
               })
             }
@@ -200,12 +184,11 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
 
           case 'routing':
           case 'agent_routing':
-            console.log('Agent routing:', data.agent_selected || data.agent_type, 'confidence:', data.confidence)
+            // Agent routing info - can be used for UI feedback
             break
 
           case 'agent_thinking':
-            console.log('Agent thinking:', data.content?.substring(0, 100))
-            // Could display this in UI as streaming text
+            // Could display as streaming text
             break
 
           case 'agent_status':
@@ -221,62 +204,27 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
             break
 
           case 'kanban_update':
-            // Update kanban board data
-            console.log('Kanban update received:', data.data)
             if (data.data) {
               setKanbanData(data.data)
             }
             break
 
           case 'switch_tab':
-            // Auto-switch to specified tab
-            console.log('Switch tab request:', data.tab)
             if (data.tab) {
               setActiveTab(data.tab)
             }
             break
 
           case 'story_created':
-            console.log('Story created:', data.story_id, data.story_title)
-            // Could trigger Kanban board refresh or optimistic update
-            break
-
           case 'story_updated':
-            console.log('Story updated:', data.story_id, 'fields:', data.updated_fields)
-            // Could trigger Kanban board refresh or optimistic update
-            break
-
           case 'story_status_changed':
-            console.log('Story status changed:', data.story_id, data.old_status, '->', data.new_status)
-            // Could trigger Kanban board refresh or optimistic update
-            break
-
-          case 'agent_question':
-            // Agent asking user a question
-            if (data.question_id && data.question_text) {
-              const question: AgentQuestion = {
-                question_id: data.question_id,
-                agent: data.agent || 'Agent',
-                question_type: data.question_type || 'text',
-                question_text: data.question_text,
-                question_number: data.question_number || 1,
-                total_questions: data.total_questions || 1,
-                timeout: data.timeout || 600,
-                context: data.context,
-                options: data.options,
-                receivedAt: Date.now()
-              }
-
-              setPendingQuestions(prev => [...prev, question])
-              console.log('Agent question received:', question.question_text.substring(0, 100))
-            }
+            // Story events - kanban will auto-refresh via kanban_update
             break
 
           case 'agent_preview':
-            // Agent showing preview for approval
             if (data.preview_id && data.title) {
-              const preview: AgentPreview = {
-                preview_id: data.preview_id,
+              setPendingPreviews(prev => [...prev, {
+                preview_id: data.preview_id!,
                 agent: data.agent || 'Agent',
                 preview_type: data.preview_type || 'unknown',
                 title: data.title,
@@ -289,19 +237,15 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
                 options: data.options || ['approve', 'edit', 'regenerate'],
                 prompt: data.prompt || 'What would you like to do?',
                 receivedAt: Date.now()
-              }
-
-              setPendingPreviews(prev => [...prev, preview])
-              console.log('Agent preview received:', preview.title)
+              }])
             }
             break
 
           case 'pong':
-            // Handle ping/pong for keep-alive
-            break
-
           case 'error':
-            console.error('WebSocket error:', data.message)
+            if (data.type === 'error') {
+              console.error('WebSocket error:', data.message)
+            }
             break
         }
       } catch (error) {
@@ -314,20 +258,14 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     }
 
     ws.onclose = () => {
-      console.log('WebSocket disconnected')
       setIsConnected(false)
       setIsReady(false)
       wsRef.current = null
 
-      // Attempt to reconnect
       if (reconnectAttemptsRef.current < maxReconnectAttempts) {
         reconnectAttemptsRef.current++
         const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000)
-        console.log(`Reconnecting in ${delay}ms... (attempt ${reconnectAttemptsRef.current})`)
-
-        reconnectTimeoutRef.current = setTimeout(() => {
-          connect()
-        }, delay)
+        reconnectTimeoutRef.current = setTimeout(connect, delay)
       }
     }
   }, [projectId, token])
@@ -345,7 +283,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
   }, [])
 
   const sendMessage = useCallback((params: SendMessageParams) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+    if (!isWsReady()) {
       console.error('WebSocket is not connected')
       return false
     }
@@ -413,90 +351,51 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
   }, [])
 
   const submitPreviewChoice = useCallback((preview_id: string, choice: string, edit_changes?: string) => {
-    console.log('[submitPreviewChoice] ===== SUBMITTING PREVIEW CHOICE =====')
-    console.log('[submitPreviewChoice] preview_id:', preview_id)
-    console.log('[submitPreviewChoice] choice:', choice)
-    console.log('[submitPreviewChoice] edit_changes:', edit_changes)
-    console.log('[submitPreviewChoice] WebSocket state:', wsRef.current?.readyState)
-
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      console.error('[submitPreviewChoice] WebSocket is not connected')
+    if (!isWsReady()) {
+      console.error('WebSocket is not connected')
       return false
     }
 
     try {
-      const message: any = {
+      wsRef.current!.send(JSON.stringify({
         type: 'user_answer',
         question_id: preview_id,
         answer: edit_changes ? { choice, edit_changes } : choice,
-      }
-      console.log('[submitPreviewChoice] Sending message:', message)
-
-      wsRef.current.send(JSON.stringify(message))
-
-      // Remove preview from pending queue
+      }))
       setPendingPreviews(prev => prev.filter(p => p.preview_id !== preview_id))
-
-      console.log('[submitPreviewChoice] ✓ Choice submitted successfully for preview:', preview_id)
       return true
     } catch (error) {
-      console.error('[submitPreviewChoice] ✗ Failed to submit choice:', error)
+      console.error('Failed to submit choice:', error)
       return false
     }
-  }, [])
+  }, [isWsReady])
 
   const ping = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'ping' }))
+    if (isWsReady()) {
+      wsRef.current!.send(JSON.stringify({ type: 'ping' }))
     }
-  }, [])
+  }, [isWsReady])
 
-  // Connect on mount and when dependencies change
-  useEffect(() => {
-    connect()
-    return () => {
-      disconnect()
-    }
-  }, [connect, disconnect])
-
-  // Ping every 30 seconds to keep connection alive
-  useEffect(() => {
-    if (!isConnected) return
-
-    const interval = setInterval(() => {
-      ping()
-    }, 30000)
-
-    return () => clearInterval(interval)
-  }, [isConnected, ping])
-
-  // Polling mechanism to sync isReady with actual WebSocket readyState
-  useEffect(() => {
-    const checkReadyState = () => {
-      if (wsRef.current) {
-        const actuallyReady = wsRef.current.readyState === WebSocket.OPEN
-        setIsReady(actuallyReady)
-      } else {
-        setIsReady(false)
-      }
-    }
-
-    // Check immediately and then every 100ms
-    checkReadyState()
-    const interval = setInterval(checkReadyState, 100)
-
-    return () => clearInterval(interval)
-  }, [isConnected])
-
-  // Function to programmatically open preview (for edit functionality)
   const reopenPreview = useCallback((preview: AgentPreview) => {
     setPendingPreviews(prev => [...prev, preview])
   }, [])
 
-  // Function to close current preview (remove from queue)
   const closePreview = useCallback(() => {
-    setPendingPreviews(prev => prev.slice(1)) // Remove first preview
+    setPendingPreviews(prev => prev.slice(1))
   }, [])
+
+  // Connect on mount
+  useEffect(() => {
+    connect()
+    return () => disconnect()
+  }, [connect, disconnect])
+
+  // Keep-alive ping every 30 seconds
+  useEffect(() => {
+    if (!isConnected) return
+    const interval = setInterval(ping, 30000)
+    return () => clearInterval(interval)
+  }, [isConnected, ping])
 
   return {
     isConnected,
@@ -509,9 +408,9 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     kanbanData,
     activeTab,
     sendMessage,
-    submitAnswer,
     submitPreviewChoice,
     reopenPreview,
+    closePreview,
     closePreview,
     connect,
     disconnect,

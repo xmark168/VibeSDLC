@@ -29,7 +29,6 @@ import { useChatWebSocket } from "@/hooks/useChatWebSocket";
 import { useAuth } from "@/hooks/useAuth";
 import { useMessages } from "@/queries/messages";
 import { AuthorType, type Message } from "@/types/message";
-import { AgentQuestionModal } from "./agent-question-modal";
 import { AgentPreviewModal } from "./agent-preview-modal";
 import { MessagePreviewCard } from "./MessagePreviewCard";
 import { AgentStatusIndicator } from "./agent-status-indicator";
@@ -41,7 +40,7 @@ interface ChatPanelProps {
   onSidebarHover: (hovered: boolean) => void;
   projectId?: string;
   onSendMessageReady?: (
-    sendFn: (params: { content: string; author_type: string }) => boolean
+    sendFn: (params: { content: string; author_type?: 'user' | 'agent' }) => boolean
   ) => void;
   onConnectionChange?: (connected: boolean) => void;
   onKanbanDataChange?: (data: any) => void;
@@ -76,6 +75,7 @@ export function ChatPanelWS({
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(
     new Set()
   );
+  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -105,19 +105,40 @@ export function ChatPanelWS({
     kanbanData,
     activeTab,
     sendMessage: wsSendMessage,
-    submitAnswer,
     submitPreviewChoice,
     reopenPreview,
+    closePreview,
     closePreview,
   } = useChatWebSocket(projectId, token || undefined);
 
   // Combine existing messages with WebSocket messages
-  const allMessages = [...(messagesData?.data || []), ...wsMessages].sort(
+  const apiMessages = messagesData?.data || [];
+
+  // Filter WebSocket messages:
+  // 1. Keep all non-temp messages (agent responses via WebSocket)
+  // 2. For temp messages, keep them unless API has the exact same message (by checking timestamp proximity)
+  const filteredWsMessages = wsMessages.filter(wsMsg => {
+    // Keep non-temp messages
+    if (!wsMsg.id.startsWith('temp-')) return true;
+
+    // For temp messages, check if API has a real message with same content AND close timestamp
+    // This prevents filtering out new messages when user sends same content multiple times
+    const tempTimestamp = new Date(wsMsg.created_at).getTime();
+    const hasRealMessage = apiMessages.some(
+      apiMsg => apiMsg.content === wsMsg.content &&
+                apiMsg.author_type === wsMsg.author_type &&
+                Math.abs(new Date(apiMsg.created_at).getTime() - tempTimestamp) < 5000 // Within 5 seconds
+    );
+    return !hasRealMessage;
+  });
+
+  // Combine and sort by timestamp
+  const allMessages = [...apiMessages, ...filteredWsMessages].sort(
     (a, b) =>
       new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   );
 
-  // Remove duplicates by id
+  // Remove duplicates by id (keep first occurrence)
   const uniqueMessages = allMessages.filter(
     (msg, index, self) => index === self.findIndex((m) => m.id === msg.id)
   );
@@ -218,6 +239,22 @@ export function ChatPanelWS({
     }
   };
 
+  // Reset waiting state when we receive agent messages or agent starts typing/processing
+  useEffect(() => {
+    if (wsMessages.length > 0) {
+      const lastMessage = wsMessages[wsMessages.length - 1];
+      if (lastMessage.author_type === AuthorType.AGENT) {
+        setIsWaitingForResponse(false);
+      }
+    }
+  }, [wsMessages]);
+
+  useEffect(() => {
+    if (typingAgents.length > 0 || agentProgress.isExecuting) {
+      setIsWaitingForResponse(false);
+    }
+  }, [typingAgents, agentProgress.isExecuting]);
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (showMentions && filteredAgents.length > 0) {
       if (e.key === "ArrowDown") {
@@ -299,16 +336,20 @@ export function ChatPanelWS({
 
   const getAgentAvatar = (authorType: AuthorType) => {
     if (authorType === AuthorType.USER) return "👤";
-    if (authorType === AuthorType.AGENT) return "🔧";
-    if (authorType === AuthorType.SYSTEM) return "⚙️";
+    if (authorType === AuthorType.AGENT) return "🤖";
     return "🤖";
   };
 
   const getAgentName = (msg: Message) => {
     if (msg.author_type === AuthorType.USER) return "You";
-    if (msg.author_type === AuthorType.AGENT) return "Developer";
-    if (msg.author_type === AuthorType.SYSTEM) return "System";
-    return "Bot";
+    if (msg.author_type === AuthorType.AGENT) {
+      // Use specific agent name if available
+      if (msg.agent_name) return msg.agent_name;
+      // Check message_metadata for agent_name (from database)
+      if (msg.message_metadata?.agent_name) return msg.message_metadata.agent_name;
+      return "Agent";
+    }
+    return "Agent";
   };
 
   const toggleTheme = () => {
@@ -336,19 +377,6 @@ export function ChatPanelWS({
     }, 0);
   };
 
-  // Agent question handlers
-  const handleSubmitAnswer = (question_id: string, answer: string) => {
-    submitAnswer(question_id, answer);
-  };
-
-  const handleSkipQuestion = (question_id: string) => {
-    submitAnswer(question_id, "skip");
-  };
-
-  const handleSkipAllQuestions = (question_id: string) => {
-    submitAnswer(question_id, "skip_all");
-  };
-
   // Agent preview handlers
   const handleSubmitPreview = (preview_id: string, choice: string, edit_changes?: string) => {
     submitPreviewChoice(preview_id, choice, edit_changes);
@@ -356,6 +384,7 @@ export function ChatPanelWS({
 
   // Notify parent about connection status (use isReady for accurate status)
   useEffect(() => {
+    console.log("ChatPanelWS: isReady changed to", isReady, "- notifying parent");
     if (onConnectionChange) {
       onConnectionChange(isReady);
     }
@@ -532,14 +561,22 @@ export function ChatPanelWS({
                 <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
                   {getAgentAvatar(msg.author_type)}
                 </div>
-                <div className="flex-1">
-                  <div className="text-xs font-medium text-muted-foreground mb-2">
+                <div className="flex-1 space-y-2">
+                  <div className="text-xs font-medium text-muted-foreground">
                     {getAgentName(msg)}
                   </div>
-                  <MessagePreviewCard
-                    message={msg}
-                    onEdit={handleEditMessage}
-                  />
+                  {/* Show text content if available */}
+                  {msg.content && (
+                    <div className="space-y-1.5">
+                      <div className="rounded-lg px-3 py-2 bg-muted w-fit">
+                        <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
+                          {msg.content}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {/* Show preview card */}
+                  <MessagePreviewCard message={msg} />
                 </div>
               </div>
             );
@@ -598,6 +635,24 @@ export function ChatPanelWS({
             </div>
           );
         })}
+
+        {/* Waiting for agent response indicator */}
+        {isWaitingForResponse && typingAgents.length === 0 && !agentProgress.isExecuting && (
+          <div className="flex gap-3">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
+              🤖
+            </div>
+            <div className="flex-1 space-y-2">
+              <div className="text-xs font-medium text-muted-foreground">
+                Agent
+              </div>
+              <div className="flex items-center gap-1 text-muted-foreground">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <span className="text-sm">Đang xử lý...</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {typingAgents.length > 0 && (
           <div className="flex gap-3">
@@ -728,14 +783,6 @@ export function ChatPanelWS({
           </div>
         </div>
       </div>
-
-      {/* Agent Question Modal */}
-      <AgentQuestionModal
-        question={pendingQuestions[0] || null}
-        onSubmit={handleSubmitAnswer}
-        onSkip={handleSkipQuestion}
-        onSkipAll={handleSkipAllQuestions}
-      />
 
       {/* Agent Preview Modal */}
       <AgentPreviewModal

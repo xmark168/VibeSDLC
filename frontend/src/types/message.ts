@@ -9,10 +9,11 @@ export type Message = {
   author_type: AuthorType
   user_id?: string
   agent_id?: string
+  agent_name?: string    // "Team Leader" | "Business Analyst" | "Developer" | "Tester"
   content: string
-  message_type?: string  // "text" | "product_brief" | "product_vision" | "product_backlog" | "sprint_plan"
-  structured_data?: any  // JSON data for previews (brief/vision/backlog/sprint)
-  metadata?: any         // Preview metadata (preview_id, quality_score, etc.)
+  message_type?: string  // "text" | "prd" | "business_flows" | "product_backlog" | "sprint_plan"
+  structured_data?: any  // JSON data for previews (brief/flows/backlog/sprint)
+  message_metadata?: any // Message metadata (agent_name, preview_id, incomplete_flag, etc.)
   created_at: string
   updated_at: string
 }

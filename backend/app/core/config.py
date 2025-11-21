@@ -140,6 +140,10 @@ class Settings(BaseSettings):
     MAX_TOKENS: int = 2000
     MAX_LLM_CALL_RETRIES: int = 3
 
+    # CrewAI Model Settings (from .env)
+    STRONG_MODEL: str = "openai/gpt-4.1"  # For creative agents (BA, Designer)
+    LIGHT_MODEL: str = "openai/gpt-4.1"   # For validators/coordinators
+
     # OPENAI API KEY (for CrewAI - synced with LLM_API_KEY)
     OPENAI_API_KEY: str = ""
 
