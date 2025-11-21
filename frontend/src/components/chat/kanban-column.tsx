@@ -10,6 +10,8 @@ export type KanbanColumnData = {
   title: string
   color: string
   cards: KanbanCardData[]
+  wipLimit?: number  // WIP limit for this column
+  limitType?: 'hard' | 'soft'  // Hard or soft limit
 }
 
 interface KanbanColumnProps {
@@ -51,6 +53,23 @@ export function KanbanColumn({
     setIsAddingCard(false)
   }
 
+  // Calculate WIP utilization for styling
+  const getWIPBadgeStyle = () => {
+    if (!column.wipLimit) return "bg-muted text-muted-foreground"
+
+    const currentCount = column.cards.length
+    const limit = column.wipLimit
+    const utilization = currentCount / limit
+
+    if (currentCount >= limit) {
+      return "bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 font-semibold"
+    } else if (utilization >= 0.8) {
+      return "bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300 font-medium"
+    } else {
+      return "bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-300"
+    }
+  }
+
   return (
     <div
       className="w-72 flex-shrink-0"
@@ -64,9 +83,17 @@ export function KanbanColumn({
           <h3 className="text-sm font-medium text-foreground">
             {column.title}
           </h3>
-          <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-            {column.cards.length}
+          <span className={`text-xs px-2 py-0.5 rounded-full ${getWIPBadgeStyle()}`}>
+            {column.wipLimit
+              ? `${column.cards.length}/${column.wipLimit}`
+              : column.cards.length
+            }
           </span>
+          {column.wipLimit && column.cards.length >= column.wipLimit && (
+            <span className="text-xs text-red-600 dark:text-red-400" title="WIP limit reached">
+              🚫
+            </span>
+          )}
         </div>
       </div>
 

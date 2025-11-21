@@ -396,5 +396,92 @@ class ProjectRulesPublic(SQLModel):
     updated_at: datetime
 
 
+# ===== Lean Kanban Schemas =====
+
+# WIP Limits
+class WIPLimitCreate(SQLModel):
+    column_name: str
+    wip_limit: int
+    limit_type: str = "hard"  # "hard" or "soft"
+
+class WIPLimitUpdate(SQLModel):
+    wip_limit: int
+    limit_type: Optional[str] = None
+
+class WIPLimitPublic(SQLModel):
+    id: UUID
+    project_id: UUID
+    column_name: str
+    wip_limit: int
+    limit_type: str
+    created_at: datetime
+    updated_at: datetime
+
+class WIPLimitsPublic(SQLModel):
+    data: list[WIPLimitPublic]
+    count: int
+
+# Workflow Policies
+class WorkflowPolicyCreate(SQLModel):
+    from_status: str
+    to_status: str
+    criteria: Optional[dict] = None
+    required_role: Optional[str] = None
+    is_active: bool = True
+
+class WorkflowPolicyUpdate(SQLModel):
+    criteria: Optional[dict] = None
+    required_role: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class WorkflowPolicyPublic(SQLModel):
+    id: UUID
+    project_id: UUID
+    from_status: str
+    to_status: str
+    criteria: Optional[dict] = None
+    required_role: Optional[str] = None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+class WorkflowPoliciesPublic(SQLModel):
+    data: list[WorkflowPolicyPublic]
+    count: int
+
+# Flow Metrics
+class StoryFlowMetrics(SQLModel):
+    """Flow metrics for a single story"""
+    id: UUID
+    title: str
+    status: str
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    review_started_at: Optional[datetime] = None
+    testing_started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    cycle_time_hours: Optional[float] = None
+    lead_time_hours: Optional[float] = None
+    age_in_current_status_hours: float
+
+class ProjectFlowMetrics(SQLModel):
+    """Aggregated flow metrics for a project"""
+    avg_cycle_time_hours: Optional[float] = None
+    avg_lead_time_hours: Optional[float] = None
+    throughput_per_week: float
+    total_completed: int
+    work_in_progress: int
+    aging_items: list[dict]  # Items older than threshold
+    bottlenecks: dict  # Column-wise bottleneck analysis
+
+class WIPViolation(SQLModel):
+    """WIP limit violation response"""
+    column_name: str
+    current_count: int
+    wip_limit: int
+    limit_type: str
+    message: str
+
+
 # Rebuild models to resolve forward references
 UserPublic.model_rebuild()

@@ -14,10 +14,7 @@ import {
   ArrowUp,
   Copy,
   Check,
-  Paperclip,
   X,
-  FileText,
-  ImageIcon,
   Moon,
   Sun,
   AtSign,
@@ -34,6 +31,7 @@ import { useMessages } from "@/queries/messages";
 import { AuthorType, type Message } from "@/types/message";
 import { AgentPreviewModal } from "./agent-preview-modal";
 import { MessagePreviewCard } from "./MessagePreviewCard";
+import { AgentStatusIndicator } from "./agent-status-indicator";
 
 interface ChatPanelProps {
   sidebarCollapsed: boolean;
@@ -47,14 +45,6 @@ interface ChatPanelProps {
   onConnectionChange?: (connected: boolean) => void;
   onKanbanDataChange?: (data: any) => void;
   onActiveTabChange?: (tab: string | null) => void;
-}
-
-interface AttachedFile {
-  id: string;
-  name: string;
-  size: number;
-  type: string;
-  url?: string;
 }
 
 const AGENTS = [
@@ -82,7 +72,6 @@ export function ChatPanelWS({
   const [mentionSearch, setMentionSearch] = useState("");
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(
     new Set()
   );
@@ -91,7 +80,6 @@ export function ChatPanelWS({
   const { user } = useAuth();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mentionDropdownRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const prevMessagesLengthRef = useRef(0);
 
@@ -111,7 +99,8 @@ export function ChatPanelWS({
     isReady,
     messages: wsMessages,
     typingAgents,
-    agentProgress,
+    agentStatus,
+    pendingQuestions,
     pendingPreviews,
     kanbanData,
     activeTab,
@@ -120,6 +109,11 @@ export function ChatPanelWS({
     reopenPreview,
     closePreview,
   } = useChatWebSocket(projectId, token || undefined);
+
+  // Derive agentProgress from agentStatus
+  const agentProgress = {
+    isExecuting: agentStatus.status === 'thinking' || agentStatus.status === 'acting'
+  };
 
   // Combine existing messages with WebSocket messages
   const apiMessages = messagesData?.data || [];
@@ -227,7 +221,7 @@ export function ChatPanelWS({
   };
 
   const handleSend = () => {
-    if (!message.trim() && attachedFiles.length === 0) return;
+    if (!message.trim()) return;
     if (!isReady) {
       console.error("WebSocket not ready");
       return;
@@ -243,8 +237,6 @@ export function ChatPanelWS({
 
     if (success) {
       setMessage("");
-      setAttachedFiles([]);
-      setIsWaitingForResponse(true);
       setTimeout(() => {
         textareaRef.current?.focus();
       }, 0);
@@ -302,6 +294,39 @@ export function ChatPanelWS({
     }
   };
 
+  // Handle edit message - reopen preview modal with existing data
+  const handleEditMessage = (message: Message) => {
+    if (!message.message_type || !message.structured_data) return
+
+    // Convert Message to AgentPreview format
+    const preview: any = {
+      preview_id: `edit_${message.id}_${Date.now()}`, // New preview ID for edit
+      preview_type: message.message_type,
+      title: `Edit ${message.message_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}`,
+      prompt: 'You can edit or regenerate this preview',
+      options: ['approve', 'edit', 'regenerate'],
+    }
+
+    // Add structured data based on type
+    switch (message.message_type) {
+      case 'product_brief':
+        preview.brief = message.structured_data
+        preview.incomplete_flag = message.metadata?.incomplete_flag
+        break
+      case 'product_vision':
+        preview.vision = message.structured_data
+        preview.quality_score = message.metadata?.quality_score
+        preview.validation_result = message.metadata?.validation_result
+        break
+      case 'product_backlog':
+        preview.backlog = message.structured_data
+        break
+    }
+
+    // Reopen modal
+    reopenPreview(preview)
+  }
+
   const formatTimestamp = (dateStr: string) => {
     const date = new Date(dateStr);
     const hours = date.getHours();
@@ -311,45 +336,6 @@ export function ChatPanelWS({
     const month = date.toLocaleString("en-US", { month: "short" });
     const day = date.getDate().toString().padStart(2, "0");
     return `${displayHours}:${minutes} ${ampm} on ${month} ${day}`;
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-
-    const newFiles: AttachedFile[] = Array.from(files).map((file) => ({
-      id: Math.random().toString(36).substring(2, 9),
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      url: URL.createObjectURL(file),
-    }));
-
-    setAttachedFiles((prev) => [...prev, ...newFiles]);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
-  const removeFile = (fileId: string) => {
-    setAttachedFiles((prev) => {
-      const file = prev.find((f) => f.id === fileId);
-      if (file?.url) {
-        URL.revokeObjectURL(file.url);
-      }
-      return prev.filter((f) => f.id !== fileId);
-    });
-  };
-
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return bytes + " B";
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
-  };
-
-  const getFileIcon = (type: string) => {
-    if (type.startsWith("image/")) return <ImageIcon className="w-4 h-4" />;
-    return <FileText className="w-4 h-4" />;
   };
 
   const getAgentAvatar = (authorType: AuthorType) => {
@@ -689,33 +675,18 @@ export function ChatPanelWS({
           </div>
         )}
 
-        {agentProgress.isExecuting && (
-          <div className="flex gap-3 p-4 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-blue-100 dark:bg-blue-900">
+        {/* Agent Status Indicator - shows thinking/acting/waiting status */}
+        {agentStatus.status !== 'idle' && (
+          <div className="flex gap-3 p-4 bg-muted/50 rounded-lg border">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
               🤖
             </div>
-            <div className="flex-1 space-y-2">
-              <div className="text-xs font-medium text-blue-600 dark:text-blue-400">
-                {agentProgress.currentAgent || 'Agent đang xử lý'}
-              </div>
-              <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                <div className="text-sm space-y-1">
-                  {agentProgress.currentStep && (
-                    <div>{agentProgress.currentStep}</div>
-                  )}
-                  {agentProgress.currentTool && (
-                    <div className="text-xs text-blue-600 dark:text-blue-400">
-                      → {agentProgress.currentTool}
-                    </div>
-                  )}
-                  {agentProgress.stepNumber && (
-                    <div className="text-xs text-blue-500 dark:text-blue-500">
-                      Bước {agentProgress.stepNumber}
-                    </div>
-                  )}
-                </div>
-              </div>
+            <div className="flex-1">
+              <AgentStatusIndicator
+                status={agentStatus.status}
+                agentName={agentStatus.agentName || undefined}
+                currentAction={agentStatus.currentAction}
+              />
             </div>
           </div>
         )}
@@ -764,33 +735,6 @@ export function ChatPanelWS({
         )}
 
         <div className="bg-transparent rounded-4xl p-1 border-0">
-          {attachedFiles.length > 0 && (
-            <div className="mb-3 flex flex-wrap gap-2">
-              {attachedFiles.map((file) => (
-                <div
-                  key={file.id}
-                  className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg text-sm group hover:bg-muted/80 transition-colors"
-                >
-                  {getFileIcon(file.type)}
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-foreground truncate max-w-[150px]">
-                      {file.name}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {formatFileSize(file.size)}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => removeFile(file.id)}
-                    className="ml-1 p-1 hover:bg-background rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
           <Textarea
             ref={textareaRef}
             value={message}
@@ -801,23 +745,6 @@ export function ChatPanelWS({
           />
           <div className="flex items-center justify-between pt-3">
             <div className="flex gap-2">
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept="image/*,.pdf,.doc,.docx,.txt"
-                onChange={handleFileSelect}
-                className="hidden"
-              />
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 hover:bg-accent"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={!isReady}
-              >
-                <Paperclip className="w-4 h-4" />
-              </Button>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -853,9 +780,7 @@ export function ChatPanelWS({
               size="icon"
               className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90"
               onClick={handleSend}
-              disabled={
-                !isReady || (!message.trim() && attachedFiles.length === 0)
-              }
+              disabled={!isReady || !message.trim()}
             >
               <ArrowUp className="w-4 h-4" />
             </Button>

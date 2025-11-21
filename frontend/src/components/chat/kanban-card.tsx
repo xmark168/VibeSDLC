@@ -21,6 +21,9 @@ export type KanbanCardData = {
   rank?: number
   assignee_id?: string
   reviewer_id?: string
+  // Flow metrics
+  created_at?: string
+  age_hours?: number  // Age in current status (hours)
   // TraDS ============= Kanban Hierarchy: Parent/children relationships
   parent?: KanbanCardData
   children?: KanbanCardData[]
@@ -61,6 +64,28 @@ export function KanbanCard({
     }
   }
 
+  // Format age display
+  const formatAge = (hours?: number) => {
+    if (!hours) return null
+    if (hours < 24) return `${Math.round(hours)}h`
+    const days = Math.floor(hours / 24)
+    return `${days}d`
+  }
+
+  // Get age badge color based on age
+  const getAgeBadgeColor = (hours?: number) => {
+    if (!hours) return ""
+    if (hours >= 120) { // 5+ days
+      return "bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300"
+    } else if (hours >= 72) { // 3-5 days
+      return "bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300"
+    } else if (hours >= 48) { // 2-3 days
+      return "bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-300"
+    } else {
+      return "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
+    }
+  }
+
   return (
     <div
       draggable
@@ -96,13 +121,20 @@ export function KanbanCard({
       </div>
 
       <div className="space-y-2">
-        {/* Header: Type Badge and Story Points */}
+        {/* Header: Type Badge, Age, and Story Points */}
         <div className="flex items-center justify-between gap-2">
-          {card.type && (
-            <Badge variant="outline" className={`text-xs ${getTypeBadgeColor(card.type)}`}>
-              {card.type}
-            </Badge>
-          )}
+          <div className="flex items-center gap-1.5">
+            {card.type && (
+              <Badge variant="outline" className={`text-xs ${getTypeBadgeColor(card.type)}`}>
+                {card.type}
+              </Badge>
+            )}
+            {card.age_hours !== undefined && formatAge(card.age_hours) && (
+              <Badge variant="outline" className={`text-xs ${getAgeBadgeColor(card.age_hours)}`} title="Time in current status">
+                {formatAge(card.age_hours)}
+              </Badge>
+            )}
+          </div>
           {card.story_point !== undefined && card.story_point !== null && (
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
               <Zap className="w-3 h-3" />

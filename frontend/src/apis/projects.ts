@@ -32,21 +32,6 @@ export type UpdateProjectBody = {
   is_init?: boolean
 }
 
-export interface Sprint {
-  id: string
-  project_id: string
-  name: string
-  number: number
-  goal: string
-  status: string
-  start_date: string
-  end_date: string
-  velocity_plan: string
-  velocity_actual: string
-  created_at: string
-  updated_at: string
-}
-
 export const projectsApi = {
   list: async (params: FetchProjectsParams): Promise<ProjectsPage> => {
     return __request<ProjectsPage>(OpenAPI, {
@@ -67,22 +52,6 @@ export const projectsApi = {
       method: "PATCH",
       url: `/api/v1/projects/${id}`,
       body,
-    })
-  },
-  getActiveSprint: async (projectId: string): Promise<Sprint> => {
-    return __request<Sprint>(OpenAPI, {
-      method: 'GET',
-      url: `/api/v1/sprints/project/${projectId}/active`,
-    })
-  },
-  getSprints: async (projectId: string): Promise<{ data: Sprint[]; count: number }> => {
-    return __request<{ data: Sprint[]; count: number }>(OpenAPI, {
-      method: 'GET',
-      url: '/api/v1/sprints/',
-      query: {
-        project_id: projectId,
-        limit: 100,
-      },
     })
   },
 }

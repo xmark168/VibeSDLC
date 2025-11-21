@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { AuthorType, type Message } from '@/types/message'
 
 export type WebSocketMessage = {
-  type: 'connected' | 'message' | 'agent_message' | 'agent_response' | 'typing' | 'pong' | 'error' | 'routing' | 'agent_routing' | 'agent_step' | 'agent_thinking' | 'tool_call' | 'agent_preview' | 'kanban_update' | 'story_created' | 'story_updated' | 'story_status_changed' | 'scrum_master_step' | 'switch_tab'
+  type: 'connected' | 'message' | 'agent_message' | 'agent_response' | 'typing' | 'pong' | 'error' | 'routing' | 'agent_routing' | 'agent_thinking' | 'agent_question' | 'agent_preview' | 'kanban_update' | 'story_created' | 'story_updated' | 'story_status_changed' | 'switch_tab'
   data?: Message | any
   agent_name?: string
   agent_type?: string
@@ -13,20 +13,19 @@ export type WebSocketMessage = {
   agent_selected?: string
   confidence?: number
   reasoning?: string
-  // Agent step
-  step?: string
-  agent?: string
-  node?: string
-  step_number?: number
-  // Content
+  // For agent_thinking messages
   content?: string
   structured_data?: any
-  message_id?: string
-  timestamp?: string
-  // Tool call
-  tool?: string
-  display_name?: string
-  // Preview (BA agent: brief, flows, backlog)
+  // For agent_question messages
+  question_id?: string
+  question_type?: 'text' | 'choice' | 'multiple_choice'
+  question_text?: string
+  question_number?: number
+  total_questions?: number
+  timeout?: number
+  context?: string
+  options?: string[]
+  // For agent_preview messages
   preview_id?: string
   preview_type?: string
   title?: string
@@ -52,10 +51,11 @@ export type AgentPreview = {
   agent: string
   preview_type: string
   title: string
-  brief?: any
-  flows?: any
-  backlog?: any
-  sprint_plan?: any
+  brief?: any  // For Gatherer Agent (product_brief)
+  vision?: any  // For Vision Agent (product_vision)
+  backlog?: any  // For Backlog Agent (product_backlog)
+  quality_score?: number  // For Vision Agent
+  validation_result?: string  // For Vision Agent
   incomplete_flag: boolean
   options: string[]
   prompt: string
@@ -72,14 +72,17 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
   const [isReady, setIsReady] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [typingAgents, setTypingAgents] = useState<Set<string>>(new Set())
+  const [pendingQuestions, setPendingQuestions] = useState<any[]>([])
   const [pendingPreviews, setPendingPreviews] = useState<AgentPreview[]>([])
-  const [agentProgress, setAgentProgress] = useState<{
-    isExecuting: boolean
-    currentStep?: string
-    currentAgent?: string
-    currentTool?: string
-    stepNumber?: number
-  }>({ isExecuting: false })
+  const [agentStatus, setAgentStatus] = useState<{
+    agentName: string | null
+    status: 'idle' | 'thinking' | 'acting' | 'waiting' | 'error'
+    currentAction?: string
+    executionId?: string
+  }>({
+    agentName: null,
+    status: 'idle'
+  })
   const [kanbanData, setKanbanData] = useState<{
     sprints: any[]
     kanban_board: {
@@ -134,37 +137,38 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
           case 'message':
           case 'agent_message':
           case 'agent_response':
-            {
-              // Handle both formats:
-              // 1. Message with data field: { type: 'message', data: {...} }
-              // 2. Agent message from kafka_bridge: { type: 'agent_message', content: ..., message_id: ... }
-              let messageData: Message | null = null
-
-              if (data.data) {
-                messageData = data.data as Message
-              } else if (data.content && data.message_id) {
-                // Flat structure from kafka_bridge
-                messageData = {
-                  id: data.message_id,
-                  project_id: data.project_id || projectId || '',
-                  author_type: AuthorType.AGENT,
-                  agent_name: data.agent_name || undefined,
-                  content: data.content,
-                  message_type: data.structured_data?.message_type || 'text',
-                  structured_data: data.structured_data,
-                  message_metadata: { agent_name: data.agent_name },
-                  created_at: data.timestamp || new Date().toISOString(),
-                  updated_at: data.timestamp || new Date().toISOString(),
+          case 'user_message':
+            console.log('[WebSocket] Received message:', data.type, data.data?.content?.substring(0, 100))
+            if (data.data) {
+              setMessages((prev) => {
+                // Check if message already exists by ID
+                const existsById = prev.some(m => m.id === data.data!.id)
+                if (existsById) {
+                  console.log('[WebSocket] Message already exists, skipping:', data.data!.id)
+                  return prev
                 }
-              }
 
-              if (messageData) {
-                setMessages((prev) => {
-                  const existsById = prev.some(m => m.id === messageData!.id)
-                  if (existsById) return prev
-                  return [...prev, messageData!]
-                })
-              }
+                // Check if this is confirming an optimistic message (match by content for user messages)
+                if (data.data!.author_type === AuthorType.USER || data.type === 'user_message') {
+                  const tempIndex = prev.findIndex(m =>
+                    m.id.startsWith('temp_') &&
+                    m.content === data.data!.content
+                  )
+
+                  if (tempIndex !== -1) {
+                    // Replace optimistic message with server-confirmed message
+                    console.log('[WebSocket] Replacing optimistic message:', prev[tempIndex].id, '->', data.data!.id)
+                    const newMessages = [...prev]
+                    newMessages[tempIndex] = data.data!
+                    return newMessages
+                  }
+                }
+
+                console.log('[WebSocket] Adding new message:', data.data!.id)
+                return [...prev, data.data!]
+              })
+            } else {
+              console.warn('[WebSocket] Received message without data:', data)
             }
             break
 
@@ -183,50 +187,20 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
             // Agent routing info - can be used for UI feedback
             break
 
-          case 'agent_step':
-            if (data.step === 'started') {
-              setAgentProgress({
-                isExecuting: true,
-                currentAgent: data.agent,
-                currentStep: data.message
-              })
-            } else if (data.step === 'executing') {
-              setAgentProgress(prev => ({
-                ...prev,
-                isExecuting: true,
-                currentStep: data.node,
-                stepNumber: data.step_number
-              }))
-            } else if (data.step === 'completed') {
-              setAgentProgress({ isExecuting: false, currentStep: data.message })
-              setTimeout(() => setAgentProgress({ isExecuting: false }), 2000)
-            } else if (data.step === 'error') {
-              setAgentProgress({ isExecuting: false, currentStep: data.message })
-            }
-            break
-
           case 'agent_thinking':
             // Could display as streaming text
             break
 
-          case 'tool_call':
-            setAgentProgress(prev => ({
-              ...prev,
-              currentTool: data.display_name || data.tool
-            }))
-            break
-
-          case 'scrum_master_step':
-            if (['sprint_planner_started', 'starting', 'saving'].includes(data.step || '')) {
-              setAgentProgress({
-                isExecuting: true,
-                currentAgent: 'Scrum Master',
-                currentStep: data.message
-              })
-            } else if (['sprint_planner_completed', 'completed'].includes(data.step || '')) {
-              setAgentProgress({ isExecuting: false, currentStep: data.message })
-              setTimeout(() => setAgentProgress({ isExecuting: false }), 2000)
-            }
+          case 'agent_status':
+            console.log('[WebSocket] Agent status:', data.status, data.agent_name)
+            // Normalize status: "agent.thinking" -> "thinking"
+            const normalizedStatus = (data.status || 'idle').replace('agent.', '') as 'idle' | 'thinking' | 'acting' | 'waiting' | 'error'
+            setAgentStatus({
+              agentName: data.agent_name || null,
+              status: normalizedStatus,
+              currentAction: data.current_action,
+              executionId: data.execution_id,
+            })
             break
 
           case 'kanban_update':
@@ -253,11 +227,12 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
                 preview_id: data.preview_id!,
                 agent: data.agent || 'Agent',
                 preview_type: data.preview_type || 'unknown',
-                title: data.title!,
-                brief: data.brief,
-                flows: data.flows,
-                backlog: data.backlog,
-                sprint_plan: data.sprint_plan,
+                title: data.title,
+                brief: data.brief,  // For Gatherer Agent
+                vision: data.vision,  // For Vision Agent
+                backlog: data.backlog,  // For Backlog Agent
+                quality_score: data.quality_score,  // For Vision Agent
+                validation_result: data.validation_result,  // For Vision Agent
                 incomplete_flag: data.incomplete_flag || false,
                 options: data.options || ['approve', 'edit', 'regenerate'],
                 prompt: data.prompt || 'What would you like to do?',
@@ -314,32 +289,66 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     }
 
     try {
-      const authorType = params.author_type || 'user'
+      // Generate temporary ID for optimistic update
+      const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 
-      // Add optimistic message for user messages
-      if (authorType === 'user' && projectId) {
-        const tempMessage: Message = {
-          id: `temp-${Date.now()}`,
-          project_id: projectId,
-          author_type: AuthorType.USER,
-          content: params.content,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }
-        setMessages(prev => [...prev, tempMessage])
+      // Create optimistic message
+      const optimisticMessage: Message = {
+        id: tempId,
+        project_id: projectId || '',
+        author_type: AuthorType.USER,
+        content: params.content,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       }
 
-      wsRef.current!.send(JSON.stringify({
+      // Add to local state immediately (optimistic update)
+      setMessages(prev => [...prev, optimisticMessage])
+
+      // Send via WebSocket
+      wsRef.current.send(JSON.stringify({
         type: 'message',
         content: params.content,
-        author_type: authorType,
+        author_type: params.author_type || 'user',
+        temp_id: tempId, // Send temp_id for potential deduplication
       }))
+
       return true
     } catch (error) {
       console.error('Failed to send message:', error)
       return false
     }
-  }, [isWsReady, projectId])
+  }, [projectId])
+
+  const submitAnswer = useCallback((question_id: string, answer: string) => {
+    console.log('[submitAnswer] Called with:', { question_id, answer })
+    console.log('[submitAnswer] WebSocket state:', wsRef.current?.readyState)
+
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.error('[submitAnswer] WebSocket is not connected')
+      return false
+    }
+
+    try {
+      const message = {
+        type: 'user_answer',
+        question_id: question_id,
+        answer: answer,
+      }
+      console.log('[submitAnswer] Sending message:', message)
+
+      wsRef.current.send(JSON.stringify(message))
+
+      // Remove question from pending queue
+      setPendingQuestions(prev => prev.filter(q => q.question_id !== question_id))
+
+      console.log('[submitAnswer] ✓ Answer submitted successfully for question:', question_id)
+      return true
+    } catch (error) {
+      console.error('[submitAnswer] ✗ Failed to submit answer:', error)
+      return false
+    }
+  }, [])
 
   const submitPreviewChoice = useCallback((preview_id: string, choice: string, edit_changes?: string) => {
     if (!isWsReady()) {
@@ -393,7 +402,8 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     isReady,
     messages,
     typingAgents: Array.from(typingAgents),
-    agentProgress,
+    agentStatus,
+    pendingQuestions,
     pendingPreviews,
     kanbanData,
     activeTab,
