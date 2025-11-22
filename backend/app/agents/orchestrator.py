@@ -18,6 +18,7 @@ from sqlmodel import Session, select, update
 
 from app.agents.roles.team_leader import TeamLeaderRole
 from app.agents.roles.business_analyst import BusinessAnalystRole
+from app.agents.roles.developer import DeveloperRole
 from app.agents.roles.tester import TesterRole
 from app.models import Agent as AgentModel, Project, AgentStatus
 from app.core.db import engine
@@ -30,8 +31,8 @@ logger = logging.getLogger(__name__)
 ROLE_CLASS_MAP = {
     "team_leader": TeamLeaderRole,
     "business_analyst": BusinessAnalystRole,
+    "developer": DeveloperRole,
     "tester": TesterRole,
-    "developer": None,  # TODO: Add DeveloperRole when ready
 }
 
 

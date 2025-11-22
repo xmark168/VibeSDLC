@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.routes import (
+    agent_management,  # Agent pools and monitoring
     agents,
     auth,
     ba_agents,  # Business Analyst workflow
@@ -27,6 +28,7 @@ api_router.include_router(files.router)  # Project file management
 api_router.include_router(lean_kanban.router)  # Lean Kanban: WIP limits, policies, metrics
 api_router.include_router(messages.router)
 api_router.include_router(agents.router)
+api_router.include_router(agent_management.router)  # Agent pools and monitoring
 api_router.include_router(ba_agents.router, prefix="/ba", tags=["Business Analyst"])  # BA workflow
 api_router.include_router(project_rules.router)  # Project-specific rules and configurations
 api_router.include_router(chat.router)  # WebSocket chat endpoint
