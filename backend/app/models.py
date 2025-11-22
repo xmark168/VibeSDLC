@@ -56,6 +56,7 @@ class BaseModel(SQLModel):
 class User(BaseModel, table=True):
     __tablename__ = "users"
 
+    username : str | None = Field(default=None, max_length=50, nullable=True)
     full_name: str | None = Field(default=None, max_length=50, nullable=True)
     hashed_password: str = Field(nullable=True)
     email: EmailStr = Field(unique=True, index=True, max_length=255)
@@ -112,6 +113,7 @@ class Project(BaseModel, table=True):
 
     is_private: bool = Field(default=True)
     tech_stack: str = Field(default="nodejs-react")
+    wip_data: dict | None = Field(default=None, sa_column=Column(JSON))
     owner: User = Relationship(back_populates="owned_projects")
     stories: list["Story"] = Relationship(
         back_populates="project",
@@ -127,19 +129,6 @@ class Project(BaseModel, table=True):
         back_populates="project",
         sa_relationship_kwargs={"uselist": False, "cascade": "all, delete-orphan"}
     )
-
-
-class ColumnWIPLimit(BaseModel, table=True):
-    """WIP (Work In Progress) limits for Kanban columns"""
-    __tablename__ = "column_wip_limits"
-
-    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
-    column_name: str = Field(max_length=50, nullable=False)  # "Todo", "InProgress", "Review", "Done"
-    wip_limit: int = Field(nullable=False)  # Maximum number of items allowed in column
-    limit_type: LimitType = Field(default=LimitType.HARD, nullable=False)
-
-    # Relationships
-    project: "Project" = Relationship()
 
 
 class WorkflowPolicy(BaseModel, table=True):

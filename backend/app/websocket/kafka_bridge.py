@@ -32,9 +32,6 @@ def _to_uuid(value) -> UUID | None:
 class WebSocketKafkaBridge:
     """
     Bridges Kafka events to WebSocket connections
-
-    Subscribes to multiple Kafka topics and forwards relevant events
-    to connected WebSocket clients based on project_id
     """
 
     def __init__(self):

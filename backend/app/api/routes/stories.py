@@ -99,8 +99,6 @@ def get_kanban_board(
     Get Kanban board grouped by columns with WIP limits.
     Returns stories organized by status plus WIP limit information.
     """
-    from app.models import ColumnWIPLimit
-
     project = session.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -128,18 +126,14 @@ def get_kanban_board(
         if column in board:
             board[column].append(StoryPublic.model_validate(story))
 
-    # Fetch WIP limits for this project
-    wip_limits_query = session.exec(
-        select(ColumnWIPLimit).where(ColumnWIPLimit.project_id == project_id)
-    ).all()
-
-    wip_limits = {
-        limit.column_name: {
-            "wip_limit": limit.wip_limit,
-            "limit_type": limit.limit_type
-        }
-        for limit in wip_limits_query
-    }
+    # Get WIP limits from project wip_data JSONB column
+    wip_limits = {}
+    if project.wip_data:
+        for column_name, config in project.wip_data.items():
+            wip_limits[column_name] = {
+                "wip_limit": config.get("limit", 10),
+                "limit_type": config.get("type", "hard")
+            }
 
     return {
         "project_id": project_id,
@@ -208,7 +202,7 @@ async def update_story_status(
     """
     from datetime import datetime, timezone
     from sqlmodel import and_
-    from app.models import ColumnWIPLimit, WorkflowPolicy
+    from app.models import WorkflowPolicy
 
     story = session.get(Story, story_id)
     if not story:
@@ -220,17 +214,17 @@ async def update_story_status(
     if old_status == new_status:
         return story
 
-    # === STEP 1: Validate WIP Limits (Hard Enforcement) ===
-    wip_limit = session.exec(
-        select(ColumnWIPLimit).where(
-            and_(
-                ColumnWIPLimit.project_id == story.project_id,
-                ColumnWIPLimit.column_name == new_status.value
-            )
-        )
-    ).first()
+    # Get project for WIP data
+    project = session.get(Project, story.project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
 
-    if wip_limit:
+    # === STEP 1: Validate WIP Limits (Hard Enforcement) ===
+    if project.wip_data and new_status.value in project.wip_data:
+        wip_config = project.wip_data[new_status.value]
+        wip_limit_value = wip_config.get("limit", 10)
+        limit_type = wip_config.get("type", "hard")
+
         # Count current items in target column (excluding this story)
         current_count = session.exec(
             select(func.count()).select_from(Story).where(
@@ -243,15 +237,15 @@ async def update_story_status(
         ).one()
 
         # Check if exceeds WIP limit
-        if current_count >= wip_limit.wip_limit and wip_limit.limit_type == "hard":
+        if current_count >= wip_limit_value and limit_type == "hard":
             raise HTTPException(
                 status_code=409,
                 detail={
                     "error": "WIP_LIMIT_EXCEEDED",
-                    "message": f"Cannot move to {new_status.value}: WIP limit {wip_limit.wip_limit} exceeded",
+                    "message": f"Cannot move to {new_status.value}: WIP limit {wip_limit_value} exceeded",
                     "column": new_status.value,
                     "current_count": current_count,
-                    "wip_limit": wip_limit.wip_limit
+                    "wip_limit": wip_limit_value
                 }
             )
 
