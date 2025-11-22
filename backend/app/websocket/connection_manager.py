@@ -23,8 +23,6 @@ class ConnectionManager:
 
     async def connect(self, websocket: WebSocket, project_id: UUID):
         """Connect a WebSocket to a project room.
-
-        Note: WebSocket must already be accepted before calling this method.
         """
         if project_id not in self.active_connections:
             self.active_connections[project_id] = set()
