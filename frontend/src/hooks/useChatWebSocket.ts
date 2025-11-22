@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { AuthorType, type Message } from '@/types/message'
 
 export type WebSocketMessage = {
-  type: 'connected' | 'message' | 'agent_message' | 'agent_response' | 'typing' | 'pong' | 'error' | 'routing' | 'agent_routing' | 'agent_step' | 'agent_thinking' | 'tool_call' | 'agent_preview' | 'kanban_update' | 'story_created' | 'story_updated' | 'story_status_changed' | 'scrum_master_step' | 'switch_tab'
+  type: 'connected' | 'message' | 'agent_message' | 'agent_response' | 'typing' | 'pong' | 'error' | 'routing' | 'agent_routing' | 'agent_step' | 'agent_thinking' | 'tool_call' | 'kanban_update' | 'story_created' | 'story_updated' | 'story_status_changed' | 'scrum_master_step' | 'switch_tab'
   data?: Message | any
   agent_name?: string
   agent_type?: string
@@ -26,17 +26,6 @@ export type WebSocketMessage = {
   // Tool call
   tool?: string
   display_name?: string
-  // Preview (BA agent: brief, flows, backlog)
-  preview_id?: string
-  preview_type?: string
-  title?: string
-  brief?: any
-  flows?: any
-  backlog?: any
-  sprint_plan?: any
-  incomplete_flag?: boolean
-  options?: string[]
-  prompt?: string
   // Story events
   story_id?: string
   story_title?: string
@@ -45,21 +34,6 @@ export type WebSocketMessage = {
   updated_fields?: string[]
   // Tab switching
   tab?: string
-}
-
-export type AgentPreview = {
-  preview_id: string
-  agent: string
-  preview_type: string
-  title: string
-  brief?: any
-  flows?: any
-  backlog?: any
-  sprint_plan?: any
-  incomplete_flag: boolean
-  options: string[]
-  prompt: string
-  receivedAt: number
 }
 
 export type SendMessageParams = {
@@ -72,7 +46,6 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
   const [isReady, setIsReady] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [typingAgents, setTypingAgents] = useState<Set<string>>(new Set())
-  const [pendingPreviews, setPendingPreviews] = useState<AgentPreview[]>([])
   const [agentProgress, setAgentProgress] = useState<{
     isExecuting: boolean
     currentStep?: string
@@ -247,25 +220,6 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
             // Story events - kanban will auto-refresh via kanban_update
             break
 
-          case 'agent_preview':
-            if (data.preview_id && data.title) {
-              setPendingPreviews(prev => [...prev, {
-                preview_id: data.preview_id!,
-                agent: data.agent || 'Agent',
-                preview_type: data.preview_type || 'unknown',
-                title: data.title!,
-                brief: data.brief,
-                flows: data.flows,
-                backlog: data.backlog,
-                sprint_plan: data.sprint_plan,
-                incomplete_flag: data.incomplete_flag || false,
-                options: data.options || ['approve', 'edit', 'regenerate'],
-                prompt: data.prompt || 'What would you like to do?',
-                receivedAt: Date.now()
-              }])
-            }
-            break
-
           case 'pong':
           case 'error':
             if (data.type === 'error') {
@@ -341,39 +295,11 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     }
   }, [isWsReady, projectId])
 
-  const submitPreviewChoice = useCallback((preview_id: string, choice: string, edit_changes?: string) => {
-    if (!isWsReady()) {
-      console.error('WebSocket is not connected')
-      return false
-    }
-
-    try {
-      wsRef.current!.send(JSON.stringify({
-        type: 'user_answer',
-        question_id: preview_id,
-        answer: edit_changes ? { choice, edit_changes } : choice,
-      }))
-      setPendingPreviews(prev => prev.filter(p => p.preview_id !== preview_id))
-      return true
-    } catch (error) {
-      console.error('Failed to submit choice:', error)
-      return false
-    }
-  }, [isWsReady])
-
   const ping = useCallback(() => {
     if (isWsReady()) {
       wsRef.current!.send(JSON.stringify({ type: 'ping' }))
     }
   }, [isWsReady])
-
-  const reopenPreview = useCallback((preview: AgentPreview) => {
-    setPendingPreviews(prev => [...prev, preview])
-  }, [])
-
-  const closePreview = useCallback(() => {
-    setPendingPreviews(prev => prev.slice(1))
-  }, [])
 
   // Connect on mount
   useEffect(() => {
@@ -394,13 +320,9 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     messages,
     typingAgents: Array.from(typingAgents),
     agentProgress,
-    pendingPreviews,
     kanbanData,
     activeTab,
     sendMessage,
-    submitPreviewChoice,
-    reopenPreview,
-    closePreview,
     connect,
     disconnect,
   }
