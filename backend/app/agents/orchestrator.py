@@ -18,8 +18,9 @@ from sqlmodel import Session, select, update
 
 from app.agents.roles.team_leader import TeamLeaderRole
 from app.agents.roles.business_analyst import BusinessAnalystRole
+from app.agents.roles.developer import DeveloperRole
 from app.agents.roles.tester import TesterRole
-from app.models import Agent as AgentModel, Project
+from app.models import Agent as AgentModel, Project, AgentStatus
 from app.core.db import engine
 from app.agents.core.base_role import BaseAgentRole
 
@@ -30,8 +31,8 @@ logger = logging.getLogger(__name__)
 ROLE_CLASS_MAP = {
     "team_leader": TeamLeaderRole,
     "business_analyst": BusinessAnalystRole,
+    "developer": DeveloperRole,
     "tester": TesterRole,
-    "developer": None,  # TODO: Add DeveloperRole when ready
 }
 
 
@@ -76,7 +77,7 @@ class AgentOrchestrator:
                 # Skip: busy (stale), error (needs investigation), terminated (permanent shutdown)
                 agents = db_session.exec(
                     select(AgentModel)
-                    .where(AgentModel.status.in_(["idle", "stopped"]))
+                    .where(AgentModel.status.in_([AgentStatus.idle, AgentStatus.stopped]))
                 ).all()
 
                 logger.info(f"Found {len(agents)} agents to start (idle/stopped status)")
@@ -196,7 +197,7 @@ class AgentOrchestrator:
                     stmt = (
                         update(AgentModel)
                         .where(AgentModel.id.in_(agent_ids))
-                        .values(status="stopped")
+                        .values(status=AgentStatus.stopped)
                     )
                     db_session.exec(stmt)
                     db_session.commit()

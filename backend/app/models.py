@@ -11,11 +11,6 @@ class Role(str, Enum):
     USER = "user"
 
 
-class BlockerType(str, Enum):
-    DEV_BLOCKER = "DEV_BLOCKER"
-    TEST_BLOCKER = "TEST_BLOCKER"
-
-
 class LimitType(str, Enum):
     HARD = "hard"
     SOFT = "soft"
@@ -146,7 +141,7 @@ class WorkflowPolicy(BaseModel, table=True):
     from_status: str = Field(max_length=50, nullable=False)
     to_status: str = Field(max_length=50, nullable=False)
     criteria: dict | None = Field(default=None, sa_column=Column(JSON))
-    # Example criteria: {"assignee_required": true, "no_blockers": true, "acceptance_criteria_defined": true}
+    # Example criteria: {"assignee_required": true, "acceptance_criteria_defined": true}
     required_role: str | None = Field(default=None, max_length=50)
     is_active: bool = Field(default=True, nullable=False)
 
@@ -226,10 +221,6 @@ class Story(BaseModel, table=True):
     activities: list["IssueActivity"] = Relationship(
         back_populates="story", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
-    blockers: list["Blocker"] = Relationship(
-        back_populates="story",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
-    )
 
     # Lean Kanban flow metrics (computed properties)
     @property
@@ -261,10 +252,6 @@ class Story(BaseModel, table=True):
 
         current_time = datetime.now(timezone.utc)
         return (current_time - status_start_time).total_seconds() / 3600
-
-    def has_active_blockers(self) -> bool:
-        """Check if story has any active (unresolved) blockers"""
-        return any(not blocker.resolved for blocker in self.blockers)
 
 
 class Comment(BaseModel, table=True):
@@ -405,18 +392,6 @@ class ProjectRules(BaseModel, table=True):
     # Relationship
     project: Project = Relationship(back_populates="rules")
 
-
-class Blocker(BaseModel, table=True):
-    __tablename__ = "blockers"
-
-    backlog_item_id: UUID = Field(foreign_key="stories.id", nullable=False, ondelete="CASCADE")
-    reported_by_user_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")
-    blocker_type: BlockerType = Field(nullable=False)
-    description: str = Field(sa_column=Column(Text))
-
-    # Relationships
-    story: Story = Relationship(back_populates="blockers")
-    reported_by: User = Relationship()
 
 
 # ==================== AGENT PERSISTENCE MODELS ====================

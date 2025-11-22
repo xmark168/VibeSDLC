@@ -61,6 +61,28 @@ export interface Alert {
   stats: Record<string, unknown>
 }
 
+export interface AgentExecutionRecord {
+  id: string
+  project_id: string
+  agent_name: string
+  agent_type: string
+  status: "pending" | "running" | "completed" | "failed" | "cancelled"
+  started_at: string | null
+  completed_at: string | null
+  duration_ms: number | null
+  token_used: number
+  llm_calls: number
+  error_message: string | null
+  created_at: string
+}
+
+export interface ExecutionFilters {
+  limit?: number
+  status?: string
+  agent_type?: string
+  project_id?: string
+}
+
 export type AgentState =
   | "created"
   | "starting"
@@ -218,6 +240,32 @@ export const agentsApi = {
     return __request<{ message: string }>(OpenAPI, {
       method: "POST",
       url: "/api/v1/agents/system/stop",
+    })
+  },
+
+  // Execution History
+  getExecutions: async (filters?: ExecutionFilters): Promise<AgentExecutionRecord[]> => {
+    return __request<AgentExecutionRecord[]>(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/agents/executions",
+      query: {
+        limit: filters?.limit || 50,
+        status: filters?.status,
+        agent_type: filters?.agent_type,
+        project_id: filters?.project_id,
+      },
+    })
+  },
+
+  getExecutionDetail: async (executionId: string): Promise<AgentExecutionRecord & {
+    error_traceback: string | null
+    result: Record<string, unknown> | null
+    extra_metadata: Record<string, unknown> | null
+    updated_at: string
+  }> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: `/api/v1/agents/executions/${executionId}`,
     })
   },
 }

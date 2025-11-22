@@ -57,8 +57,6 @@ export function PolicyValidationDialog({
   const getViolationIcon = (violation: string) => {
     if (violation.toLowerCase().includes("assignee")) {
       return "👤"
-    } else if (violation.toLowerCase().includes("blocker")) {
-      return "🚧"
     } else if (violation.toLowerCase().includes("acceptance criteria")) {
       return "✓"
     } else if (violation.toLowerCase().includes("story point")) {

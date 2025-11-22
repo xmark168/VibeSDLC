@@ -5,26 +5,33 @@ This module provides a foundation for all agent crews with:
 - CrewAI Crew creation
 - Kafka event publishing (responses, status updates, routing)
 - Common execution patterns
+- Execution tracking in database
 """
 
 import asyncio
 import logging
+import traceback
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 from uuid import UUID, uuid4
 
 import yaml
 from crewai import Agent, Crew, Process, Task
+from sqlmodel import Session, create_engine
 
 from app.kafka.producer import get_kafka_producer
 from app.kafka.event_schemas import (
+    AgentProgressEvent,
     AgentResponseEvent,
     AgentRoutingEvent,
     AgentStatusEvent,
     AgentStatusType,
     KafkaTopics,
 )
+from app.models import AgentExecution, AgentExecutionStatus
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +56,11 @@ class BaseAgentCrew(ABC):
         self.agent: Optional[Agent] = None
         self.crew: Optional[Crew] = None
         self.execution_id: Optional[UUID] = None
+        self.db_execution_id: Optional[UUID] = None  # Track database record
         self._load_config()
+
+        # Create database engine for execution tracking
+        self.engine = create_engine(str(settings.SQLALCHEMY_DATABASE_URI))
 
     @property
     @abstractmethod
@@ -263,6 +274,55 @@ class BaseAgentCrew(ABC):
             logger.error(f"Failed to publish routing: {e}")
             return False
 
+    async def _publish_progress(
+        self,
+        step_number: int,
+        total_steps: int,
+        description: str,
+        status: str = "in_progress",
+        step_result: Optional[Dict] = None,
+        project_id: Optional[UUID] = None,
+    ) -> bool:
+        """Publish agent progress event to Kafka.
+
+        This method allows crews to publish real-time progress updates during execution,
+        providing users with granular feedback on what the agent is currently doing.
+
+        Args:
+            step_number: Current step number (1-indexed)
+            total_steps: Total number of steps in the workflow
+            description: Human-readable description of current step (e.g., "Đang phân tích requirements...")
+            status: Step status - "in_progress", "completed", or "failed" (default: "in_progress")
+            step_result: Optional result data for completed step
+            project_id: Optional project ID (required for routing to correct WebSocket clients)
+
+        Returns:
+            True if published successfully, False otherwise
+
+        Example:
+            await self._publish_progress(1, 3, "Đang phân tích yêu cầu...", project_id=project_id)
+            await self._publish_progress(2, 3, "Đang tạo PRD...", project_id=project_id)
+            await self._publish_progress(3, 3, "Hoàn thành", status="completed", project_id=project_id)
+        """
+        try:
+            producer = await get_kafka_producer()
+            event = AgentProgressEvent(
+                event_id=str(uuid4()),
+                agent_name=self.crew_name,
+                agent_id=None,  # Crews don't have agent_id
+                execution_id=self.execution_id,
+                step_number=step_number,
+                total_steps=total_steps,
+                step_description=description,
+                status=status,
+                step_result=step_result,
+                project_id=project_id,
+            )
+            return await producer.publish(KafkaTopics.AGENT_PROGRESS, event)
+        except Exception as e:
+            logger.error(f"Failed to publish progress: {e}")
+            return False
+
     async def execute(
         self,
         context: Dict[str, Any],
@@ -272,11 +332,16 @@ class BaseAgentCrew(ABC):
         """Execute the crew's workflow.
 
         This is the main entry point for crew execution. It:
-        1. Publishes THINKING status
-        2. Creates crew and tasks
-        3. Executes the crew
-        4. Publishes IDLE status
-        5. Returns results
+        1. Creates AgentExecution record in database
+        2. Publishes THINKING status
+        3. Creates crew and tasks
+        4. Executes the crew
+        5. Updates execution record with results
+        6. Publishes IDLE status
+        7. Returns results
+
+        Note: Subclasses can override this to provide custom progress tracking.
+        This base implementation provides generic 3-step progress.
 
         Args:
             context: Execution context with input data
@@ -287,13 +352,37 @@ class BaseAgentCrew(ABC):
             Execution result dictionary
         """
         self.execution_id = uuid4()
+        self.db_execution_id = uuid4()
         result = {"success": False, "output": "", "error": None}
+        started_at = datetime.now(timezone.utc)
+
+        # Create execution record in database
+        with Session(self.engine) as db_session:
+            db_execution = AgentExecution(
+                id=self.db_execution_id,
+                project_id=project_id or uuid4(),  # Fallback to dummy UUID if not provided
+                agent_name=self.crew_name,
+                agent_type=self.agent_type,
+                status=AgentExecutionStatus.RUNNING,
+                started_at=started_at,
+                user_id=user_id,
+            )
+            db_session.add(db_execution)
+            db_session.commit()
 
         try:
             # Publish thinking status
             await self.publish_status(
                 AgentStatusType.THINKING,
                 current_action=f"Analyzing request",
+                project_id=project_id,
+            )
+
+            # Step 1: Initializing (generic progress)
+            await self._publish_progress(
+                step_number=1,
+                total_steps=3,
+                description="Đang khởi tạo...",
                 project_id=project_id,
             )
 
@@ -305,6 +394,14 @@ class BaseAgentCrew(ABC):
             await self.publish_status(
                 AgentStatusType.ACTING,
                 current_action=f"Executing tasks",
+                project_id=project_id,
+            )
+
+            # Step 2: Executing (generic progress)
+            await self._publish_progress(
+                step_number=2,
+                total_steps=3,
+                description="Đang thực thi...",
                 project_id=project_id,
             )
 
@@ -332,6 +429,40 @@ class BaseAgentCrew(ABC):
 
             result["success"] = True
 
+            # Calculate duration
+            completed_at = datetime.now(timezone.utc)
+            duration_ms = int((completed_at - started_at).total_seconds() * 1000)
+
+            # Extract token usage and LLM calls if available from CrewAI
+            token_used = 0
+            llm_calls = 0
+            if hasattr(crew_result, "token_usage"):
+                token_used = crew_result.token_usage
+            if hasattr(crew_result, "tasks_output"):
+                llm_calls = len(crew_result.tasks_output)
+
+            # Update execution record - SUCCESS
+            with Session(self.engine) as db_session:
+                db_execution = db_session.get(AgentExecution, self.db_execution_id)
+                if db_execution:
+                    db_execution.status = AgentExecutionStatus.COMPLETED
+                    db_execution.completed_at = completed_at
+                    db_execution.duration_ms = duration_ms
+                    db_execution.token_used = token_used
+                    db_execution.llm_calls = llm_calls
+                    db_execution.result = result
+                    db_session.add(db_execution)
+                    db_session.commit()
+
+            # Step 3: Completed (generic progress)
+            await self._publish_progress(
+                step_number=3,
+                total_steps=3,
+                description="Hoàn thành",
+                status="completed",
+                project_id=project_id,
+            )
+
             # Publish idle status
             await self.publish_status(
                 AgentStatusType.IDLE,
@@ -343,6 +474,22 @@ class BaseAgentCrew(ABC):
         except Exception as e:
             logger.error(f"{self.crew_name} execution failed: {e}", exc_info=True)
             result["error"] = str(e)
+
+            # Calculate duration
+            completed_at = datetime.now(timezone.utc)
+            duration_ms = int((completed_at - started_at).total_seconds() * 1000)
+
+            # Update execution record - FAILED
+            with Session(self.engine) as db_session:
+                db_execution = db_session.get(AgentExecution, self.db_execution_id)
+                if db_execution:
+                    db_execution.status = AgentExecutionStatus.FAILED
+                    db_execution.completed_at = completed_at
+                    db_execution.duration_ms = duration_ms
+                    db_execution.error_message = str(e)
+                    db_execution.error_traceback = traceback.format_exc()
+                    db_session.add(db_execution)
+                    db_session.commit()
 
             # Publish error status
             await self.publish_status(
@@ -357,3 +504,4 @@ class BaseAgentCrew(ABC):
         """Reset crew state for new execution."""
         self.crew = None
         self.execution_id = None
+        self.db_execution_id = None

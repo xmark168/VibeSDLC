@@ -530,6 +530,14 @@ class BusinessAnalystCrew(BaseAgentCrew):
         if not self.ba_session:
             self.create_session(project_id, user_id)
 
+        # Step 1: Reading conversation history
+        await self._publish_progress(
+            step_number=1,
+            total_steps=4,
+            description="Đang đọc lịch sử hội thoại...",
+            project_id=project_id,
+        )
+
         # Add user message to history
         history = self.ba_session.conversation_history or []
         history.append({
@@ -542,6 +550,14 @@ class BusinessAnalystCrew(BaseAgentCrew):
         self.db_session.commit()
         self.db_session.refresh(self.ba_session)  # Refresh to ensure data is synced
 
+        # Step 2: Analyzing requirements
+        await self._publish_progress(
+            step_number=2,
+            total_steps=4,
+            description="Đang phân tích requirements...",
+            project_id=project_id,
+        )
+
         # Execute analysis task
         context = {
             "phase": "analysis",
@@ -553,6 +569,14 @@ class BusinessAnalystCrew(BaseAgentCrew):
         self.reset()
 
         result = await self.execute(context, project_id, user_id)
+
+        # Step 3: Extracting details
+        await self._publish_progress(
+            step_number=3,
+            total_steps=4,
+            description="Đang trích xuất chi tiết...",
+            project_id=project_id,
+        )
 
         # Parse and store requirements from result
         if result.get("success"):
@@ -573,6 +597,14 @@ class BusinessAnalystCrew(BaseAgentCrew):
             result["extracted_requirements"] = extracted.get("requirements", {})
             result["assistant_response"] = assistant_response
 
+            # Step 4: Publishing response
+            await self._publish_progress(
+                step_number=4,
+                total_steps=4,
+                description="Đang lưu kết quả...",
+                project_id=project_id,
+            )
+
             # Publish clean response via Kafka (not the raw output with markup)
             # For analysis phase, this is a plain text response - no structured_data needed
             await self.publish_response(
@@ -580,6 +612,15 @@ class BusinessAnalystCrew(BaseAgentCrew):
                 message_id=uuid4(),  # Generate new message ID
                 project_id=project_id,
                 user_id=user_id,
+            )
+
+            # Mark as completed
+            await self._publish_progress(
+                step_number=4,
+                total_steps=4,
+                description="Hoàn thành",
+                status="completed",
+                project_id=project_id,
             )
 
         return result
@@ -687,6 +728,14 @@ class BusinessAnalystCrew(BaseAgentCrew):
         if self.ba_session.current_phase == "analysis":
             self._transition_phase("brief", "Analysis complete, creating PRD")
 
+        # Step 1: Reviewing requirements
+        await self._publish_progress(
+            step_number=1,
+            total_steps=3,
+            description="Đang review requirements...",
+            project_id=project_id,
+        )
+
         # Get current brief if it exists (for refinement mode)
         current_brief_text = "None"
         if revision_feedback:
@@ -712,6 +761,14 @@ Scope:
 
 Revision Count: {existing_brief.revision_count}"""
 
+        # Step 2: Creating PRD
+        await self._publish_progress(
+            step_number=2,
+            total_steps=3,
+            description="Đang tạo PRD...",
+            project_id=project_id,
+        )
+
         context = {
             "phase": "brief",
             "current_brief": current_brief_text,
@@ -722,6 +779,14 @@ Revision Count: {existing_brief.revision_count}"""
         self.reset()
 
         result = await self.execute(context, project_id, user_id)
+
+        # Step 3: Saving PRD
+        await self._publish_progress(
+            step_number=3,
+            total_steps=3,
+            description="Đang lưu PRD...",
+            project_id=project_id,
+        )
 
         # Save brief to database
         if result.get("success") and result.get("pydantic"):
@@ -774,6 +839,15 @@ Revision Count: {existing_brief.revision_count}"""
                 },
             )
 
+            # Mark as completed
+            await self._publish_progress(
+                step_number=3,
+                total_steps=3,
+                description="Hoàn thành",
+                status="completed",
+                project_id=project_id,
+            )
+
         return result
 
     async def execute_solution_phase(
@@ -795,6 +869,14 @@ Revision Count: {existing_brief.revision_count}"""
         if self.ba_session.current_phase == "brief":
             self._transition_phase("solution", "Brief approved, designing solution")
 
+        # Step 1: Analyzing PRD
+        await self._publish_progress(
+            step_number=1,
+            total_steps=3,
+            description="Đang phân tích PRD...",
+            project_id=project_id,
+        )
+
         # Get current solution if it exists (for refinement mode)
         current_solution_text = "None"
         if revision_feedback:
@@ -815,6 +897,14 @@ Actors: {', '.join(flow.actors)}"""
 
                 current_solution_text = "\n\n".join(flow_texts)
 
+        # Step 2: Designing business flows
+        await self._publish_progress(
+            step_number=2,
+            total_steps=3,
+            description="Đang thiết kế business flows...",
+            project_id=project_id,
+        )
+
         context = {
             "phase": "solution",
             "current_solution": current_solution_text,
@@ -825,6 +915,14 @@ Actors: {', '.join(flow.actors)}"""
         self.reset()
 
         result = await self.execute(context, project_id, user_id)
+
+        # Step 3: Saving flows
+        await self._publish_progress(
+            step_number=3,
+            total_steps=3,
+            description="Đang lưu flows...",
+            project_id=project_id,
+        )
 
         # Save flows to database
         if result.get("success") and result.get("pydantic"):
@@ -873,6 +971,15 @@ Actors: {', '.join(flow.actors)}"""
                 },
             )
 
+            # Mark as completed
+            await self._publish_progress(
+                step_number=3,
+                total_steps=3,
+                description="Hoàn thành",
+                status="completed",
+                project_id=project_id,
+            )
+
         return result
 
     async def execute_backlog_phase(
@@ -893,6 +1000,14 @@ Actors: {', '.join(flow.actors)}"""
         """
         if self.ba_session.current_phase == "solution":
             self._transition_phase("backlog", "Solution approved, creating backlog")
+
+        # Step 1: Analyzing solution design
+        await self._publish_progress(
+            step_number=1,
+            total_steps=4,
+            description="Đang phân tích solution design...",
+            project_id=project_id,
+        )
 
         # Get current backlog if it exists (for refinement mode)
         current_backlog_text = "None"
@@ -934,6 +1049,14 @@ Actors: {', '.join(flow.actors)}"""
 
                 current_backlog_text = "\n".join(backlog_parts)
 
+        # Step 2: Creating epics
+        await self._publish_progress(
+            step_number=2,
+            total_steps=4,
+            description="Đang tạo epics...",
+            project_id=project_id,
+        )
+
         context = {
             "phase": "backlog",
             "current_backlog": current_backlog_text,
@@ -944,6 +1067,14 @@ Actors: {', '.join(flow.actors)}"""
         self.reset()
 
         result = await self.execute(context, project_id, user_id)
+
+        # Step 3: Creating user stories
+        await self._publish_progress(
+            step_number=3,
+            total_steps=4,
+            description="Đang tạo user stories...",
+            project_id=project_id,
+        )
 
         # Save epics and stories to database
         if result.get("success") and result.get("pydantic"):
@@ -1008,6 +1139,14 @@ Actors: {', '.join(flow.actors)}"""
                 )
                 self.db_session.add(story)
 
+            # Step 4: Saving backlog
+            await self._publish_progress(
+                step_number=4,
+                total_steps=4,
+                description="Đang lưu backlog...",
+                project_id=project_id,
+            )
+
             self.db_session.commit()
 
             # Note: Don't transition to "completed" here - wait for user approval
@@ -1048,6 +1187,15 @@ Actors: {', '.join(flow.actors)}"""
                         "stories": stories_data
                     }
                 },
+            )
+
+            # Mark as completed
+            await self._publish_progress(
+                step_number=4,
+                total_steps=4,
+                description="Hoàn thành",
+                status="completed",
+                project_id=project_id,
             )
 
         return result

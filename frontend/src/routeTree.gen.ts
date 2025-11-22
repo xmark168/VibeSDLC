@@ -12,13 +12,14 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LayoutRouteImport } from './routes/_layout'
 import { Route as AuthRouteRouteImport } from './routes/_auth/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as AdminAgentsRouteImport } from './routes/admin/agents'
 import { Route as UserProjectsRouteImport } from './routes/_user/projects'
 import { Route as AuthVerifyOtpRouteImport } from './routes/_auth/verify-otp'
 import { Route as AuthSignupRouteImport } from './routes/_auth/signup'
 import { Route as AuthResetPasswordRouteImport } from './routes/_auth/reset-password'
 import { Route as AuthLoginRouteImport } from './routes/_auth/login'
 import { Route as AuthForgotPasswordRouteImport } from './routes/_auth/forgot-password'
-import { Route as AdminAdminRouteImport } from './routes/_admin/admin'
 import { Route as UserWorkspaceWorkspaceIdRouteImport } from './routes/_user/workspace/$workspaceId'
 import { Route as UserChatChatIdRouteImport } from './routes/_user/chat/$chatId'
 
@@ -33,6 +34,16 @@ const AuthRouteRoute = AuthRouteRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/admin/',
+  path: '/admin/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminAgentsRoute = AdminAgentsRouteImport.update({
+  id: '/admin/agents',
+  path: '/admin/agents',
   getParentRoute: () => rootRouteImport,
 } as any)
 const UserProjectsRoute = UserProjectsRouteImport.update({
@@ -65,11 +76,6 @@ const AuthForgotPasswordRoute = AuthForgotPasswordRouteImport.update({
   path: '/forgot-password',
   getParentRoute: () => AuthRouteRoute,
 } as any)
-const AdminAdminRoute = AdminAdminRouteImport.update({
-  id: '/_admin/admin',
-  path: '/admin',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const UserWorkspaceWorkspaceIdRoute =
   UserWorkspaceWorkspaceIdRouteImport.update({
     id: '/_user/workspace/$workspaceId',
@@ -84,25 +90,27 @@ const UserChatChatIdRoute = UserChatChatIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/admin': typeof AdminAdminRoute
   '/forgot-password': typeof AuthForgotPasswordRoute
   '/login': typeof AuthLoginRoute
   '/reset-password': typeof AuthResetPasswordRoute
   '/signup': typeof AuthSignupRoute
   '/verify-otp': typeof AuthVerifyOtpRoute
   '/projects': typeof UserProjectsRoute
+  '/admin/agents': typeof AdminAgentsRoute
+  '/admin': typeof AdminIndexRoute
   '/chat/$chatId': typeof UserChatChatIdRoute
   '/workspace/$workspaceId': typeof UserWorkspaceWorkspaceIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/admin': typeof AdminAdminRoute
   '/forgot-password': typeof AuthForgotPasswordRoute
   '/login': typeof AuthLoginRoute
   '/reset-password': typeof AuthResetPasswordRoute
   '/signup': typeof AuthSignupRoute
   '/verify-otp': typeof AuthVerifyOtpRoute
   '/projects': typeof UserProjectsRoute
+  '/admin/agents': typeof AdminAgentsRoute
+  '/admin': typeof AdminIndexRoute
   '/chat/$chatId': typeof UserChatChatIdRoute
   '/workspace/$workspaceId': typeof UserWorkspaceWorkspaceIdRoute
 }
@@ -111,13 +119,14 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_auth': typeof AuthRouteRouteWithChildren
   '/_layout': typeof LayoutRoute
-  '/_admin/admin': typeof AdminAdminRoute
   '/_auth/forgot-password': typeof AuthForgotPasswordRoute
   '/_auth/login': typeof AuthLoginRoute
   '/_auth/reset-password': typeof AuthResetPasswordRoute
   '/_auth/signup': typeof AuthSignupRoute
   '/_auth/verify-otp': typeof AuthVerifyOtpRoute
   '/_user/projects': typeof UserProjectsRoute
+  '/admin/agents': typeof AdminAgentsRoute
+  '/admin/': typeof AdminIndexRoute
   '/_user/chat/$chatId': typeof UserChatChatIdRoute
   '/_user/workspace/$workspaceId': typeof UserWorkspaceWorkspaceIdRoute
 }
@@ -125,25 +134,27 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/admin'
     | '/forgot-password'
     | '/login'
     | '/reset-password'
     | '/signup'
     | '/verify-otp'
     | '/projects'
+    | '/admin/agents'
+    | '/admin'
     | '/chat/$chatId'
     | '/workspace/$workspaceId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/admin'
     | '/forgot-password'
     | '/login'
     | '/reset-password'
     | '/signup'
     | '/verify-otp'
     | '/projects'
+    | '/admin/agents'
+    | '/admin'
     | '/chat/$chatId'
     | '/workspace/$workspaceId'
   id:
@@ -151,13 +162,14 @@ export interface FileRouteTypes {
     | '/'
     | '/_auth'
     | '/_layout'
-    | '/_admin/admin'
     | '/_auth/forgot-password'
     | '/_auth/login'
     | '/_auth/reset-password'
     | '/_auth/signup'
     | '/_auth/verify-otp'
     | '/_user/projects'
+    | '/admin/agents'
+    | '/admin/'
     | '/_user/chat/$chatId'
     | '/_user/workspace/$workspaceId'
   fileRoutesById: FileRoutesById
@@ -166,8 +178,9 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRouteRoute: typeof AuthRouteRouteWithChildren
   LayoutRoute: typeof LayoutRoute
-  AdminAdminRoute: typeof AdminAdminRoute
   UserProjectsRoute: typeof UserProjectsRoute
+  AdminAgentsRoute: typeof AdminAgentsRoute
+  AdminIndexRoute: typeof AdminIndexRoute
   UserChatChatIdRoute: typeof UserChatChatIdRoute
   UserWorkspaceWorkspaceIdRoute: typeof UserWorkspaceWorkspaceIdRoute
 }
@@ -193,6 +206,20 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/': {
+      id: '/admin/'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/agents': {
+      id: '/admin/agents'
+      path: '/admin/agents'
+      fullPath: '/admin/agents'
+      preLoaderRoute: typeof AdminAgentsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_user/projects': {
@@ -237,13 +264,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthForgotPasswordRouteImport
       parentRoute: typeof AuthRouteRoute
     }
-    '/_admin/admin': {
-      id: '/_admin/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof AdminAdminRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/_user/workspace/$workspaceId': {
       id: '/_user/workspace/$workspaceId'
       path: '/workspace/$workspaceId'
@@ -285,8 +305,9 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRouteRoute: AuthRouteRouteWithChildren,
   LayoutRoute: LayoutRoute,
-  AdminAdminRoute: AdminAdminRoute,
   UserProjectsRoute: UserProjectsRoute,
+  AdminAgentsRoute: AdminAgentsRoute,
+  AdminIndexRoute: AdminIndexRoute,
   UserChatChatIdRoute: UserChatChatIdRoute,
   UserWorkspaceWorkspaceIdRoute: UserWorkspaceWorkspaceIdRoute,
 }

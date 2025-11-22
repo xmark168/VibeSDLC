@@ -366,23 +366,6 @@ class AgentsPublic(SQLModel):
     count: int
 
 
-class BlockerCreate(SQLModel):
-    backlog_item_id: UUID
-    blocker_type: str  # "DEV_BLOCKER" or "TEST_BLOCKER"
-    description: str
-
-class BlockerPublic(SQLModel):
-    id: UUID
-    backlog_item_id: UUID
-    reported_by_user_id: UUID
-    blocker_type: str
-    description: str
-    created_at: datetime
-
-class BlockersPublic(SQLModel):
-    data: list[BlockerPublic]
-    count: int
-
 class ProjectRulesCreate(SQLModel):
     project_id: UUID
     po_prompt: Optional[str] = None

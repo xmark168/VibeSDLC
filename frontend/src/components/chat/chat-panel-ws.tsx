@@ -30,6 +30,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useMessages } from "@/queries/messages";
 import { AuthorType, type Message } from "@/types/message";
 import { MessagePreviewCard } from "./MessagePreviewCard";
+import { ActivityMessage } from "./activity-message";
 import { AgentStatusIndicator } from "./agent-status-indicator";
 import { useProjectAgents } from "@/queries/agents";
 
@@ -563,6 +564,20 @@ export function ChatPanelWS({
                       </button>
                     </div>
                   </div>
+                </div>
+              </div>
+            );
+          }
+
+          // Activity message (progress tracking)
+          if (msg.message_type === 'activity') {
+            return (
+              <div key={msg.id} className="flex gap-3">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
+                  {getAgentAvatar(msg.author_type)}
+                </div>
+                <div className="flex-1">
+                  <ActivityMessage message={msg} />
                 </div>
               </div>
             );
