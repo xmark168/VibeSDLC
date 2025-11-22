@@ -46,6 +46,7 @@ interface ChatPanelProps {
   onConnectionChange?: (connected: boolean) => void;
   onKanbanDataChange?: (data: any) => void;
   onActiveTabChange?: (tab: string | null) => void;
+  onAgentStatusesChange?: (statuses: Map<string, { status: string; lastUpdate: string }>) => void; // NEW
 }
 
 export function ChatPanelWS({
@@ -58,6 +59,7 @@ export function ChatPanelWS({
   onConnectionChange,
   onKanbanDataChange,
   onActiveTabChange,
+  onAgentStatusesChange, // NEW
 }: ChatPanelProps) {
   const [message, setMessage] = useState("");
   const [showMentions, setShowMentions] = useState(false);
@@ -121,6 +123,7 @@ export function ChatPanelWS({
     typingAgents,
     agentProgress,
     agentStatus,
+    agentStatuses, // Extract agentStatuses
     kanbanData,
     activeTab,
     sendMessage: wsSendMessage,
@@ -171,6 +174,13 @@ export function ChatPanelWS({
       onActiveTabChange(activeTab);
     }
   }, [activeTab, onActiveTabChange]);
+
+  // Notify parent when agentStatuses changes
+  useEffect(() => {
+    if (agentStatuses && onAgentStatusesChange) {
+      onAgentStatusesChange(agentStatuses);
+    }
+  }, [agentStatuses, onAgentStatusesChange]);
 
   const toggleExpand = (id: string) => {
     setExpandedMessages((prev) => {

@@ -4,20 +4,19 @@ import type React from "react"
 import { useState, useRef, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { History, Globe, Code2, LayoutGrid, Pencil, ScrollText, PanelLeftOpen, PanelRightOpen, MessageCircle, Bot, Loader2 } from "lucide-react"
+import { History, Globe, Code2, LayoutGrid, Pencil, ScrollText, PanelLeftOpen, PanelRightOpen, MessageCircle, Loader2 } from "lucide-react"
 import { KanbanBoard } from "./kanban-board"
 import { FileExplorer } from "../shared/file-explorer"
 import { CodeViewer } from "../shared/code-viewer"
 import { AnimatedTooltip } from "../ui/animated-tooltip"
 import { AppViewer } from "./app-viewer"
-import { AgentDisplayPanel } from "../agents"
 import { DatabaseAgentDetailSheet } from "../agents/database-agent-detail-sheet"
 import { useProjectAgents } from "@/queries/agents"
 import { useQueryClient } from "@tanstack/react-query"
 import type { AgentPublic } from "@/client/types.gen"
 import { filesApi } from "@/apis/files"
 
-type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings" | "agents"
+type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings"
 interface Tab {
   id: string
   view: WorkspaceView
@@ -30,6 +29,7 @@ interface WorkspacePanelProps {
   kanbanData?: any
   projectId?: string
   activeTab?: string | null
+  agentStatuses?: Map<string, { status: string; lastUpdate: string }> // Real-time agent statuses from WebSocket
 }
 
 // Generate avatar URL from agent human_name using DiceBear API
@@ -55,7 +55,7 @@ const getRoleDesignation = (roleType: string): string => {
   return roleMap[roleType] || roleType
 }
 
-export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projectId, activeTab: wsActiveTab }: WorkspacePanelProps) {
+export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projectId, activeTab: wsActiveTab, agentStatuses }: WorkspacePanelProps) {
   const queryClient = useQueryClient()
 
   // Fetch project agents from database
@@ -69,28 +69,45 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
 
   // Transform agents for AnimatedTooltip component
   const agentItems = useMemo(() => {
-    if (!projectAgents || !projectAgents.length) return []
+    console.log('[WorkspacePanel] Project agents data:', projectAgents)
+    console.log('[WorkspacePanel] Agents loading:', agentsLoading)
+    console.log('[WorkspacePanel] WebSocket agent statuses:', agentStatuses)
 
-    return projectAgents.map((agent) => ({
-      id: agent.id,
-      name: agent.human_name, // Use human name like "Mike"
-      designation: getRoleDesignation(agent.role_type),
-      image: generateAvatarUrl(agent.human_name),
-      status: agent.status, // Include status for potential future use
-      onClick: () => {
-        // Open detail sheet when agent is clicked
-        setSelectedAgent(agent)
-        setAgentDetailOpen(true)
-      },
-    }))
-  }, [projectAgents])
+    if (!projectAgents || !projectAgents.length) {
+      console.log('[WorkspacePanel] No agents to display')
+      return []
+    }
+
+    const items = projectAgents.map((agent) => {
+      // Lấy status từ WebSocket (real-time), fallback về database nếu chưa có
+      const wsStatus = agentStatuses?.get(agent.human_name)
+      const displayStatus = wsStatus?.status || agent.status || 'idle'
+
+      console.log(`[WorkspacePanel] Agent ${agent.human_name}: WS status=${wsStatus?.status}, DB status=${agent.status}, Display=${displayStatus}`)
+
+      return {
+        id: agent.id,
+        name: agent.human_name, // Use human name like "Mike"
+        designation: getRoleDesignation(agent.role_type),
+        image: generateAvatarUrl(agent.human_name),
+        status: displayStatus, // Use WebSocket status (real-time) or fallback to DB
+        onClick: () => {
+          // Open detail sheet when agent is clicked
+          setSelectedAgent(agent)
+          setAgentDetailOpen(true)
+        },
+      }
+    })
+
+    console.log('[WorkspacePanel] Agent items for AnimatedTooltip:', items)
+    return items
+  }, [projectAgents, agentsLoading, agentStatuses]) // Include agentStatuses in dependencies
 
   const [tabs, setTabs] = useState<Tab[]>([
     { id: "tab-1", view: "app-preview", label: "App Preview" },
     { id: "tab-2", view: "kanban", label: "Kanban" },
     { id: "tab-3", view: "file", label: "File" },
     { id: "tab-4", view: "loggings", label: "Loggings" },
-    { id: "tab-5", view: "agents", label: "Agents" },
   ])
   const [activeTabId, setActiveTabId] = useState("tab-1")
 
@@ -102,7 +119,6 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
         'app-preview': 'tab-1',
         'file': 'tab-3',
         'loggings': 'tab-4',
-        'agents': 'tab-5',
       }
       const targetTabId = tabMap[wsActiveTab]
       if (targetTabId) {
@@ -181,8 +197,6 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
         return <Code2 className="w-3.5 h-3.5" />
       case "loggings":
         return <ScrollText className="w-3.5 h-3.5" />
-      case "agents":
-        return <Bot className="w-3.5 h-3.5" />
       default:
         return <Globe className="w-3.5 h-3.5" />
     }
@@ -240,12 +254,6 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
           <>
 
           </>
-        )
-      case "agents":
-        return (
-          <div className="flex-1 overflow-hidden">
-            <AgentDisplayPanel />
-          </div>
         )
       default:
         return null

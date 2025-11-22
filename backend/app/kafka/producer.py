@@ -85,14 +85,26 @@ class KafkaProducer:
             metadata = self.admin_client.list_topics(timeout=10)
             existing_topics = set(metadata.topics.keys())
 
-            # Define topics to create
+            # Define topics to create with optimized partition counts
+            # High-traffic topics get 6 partitions for better load distribution
+            high_traffic_topics = {
+                KafkaTopics.AGENT_RESPONSES,
+                KafkaTopics.AGENT_STATUS,
+                KafkaTopics.AGENT_PROGRESS,
+                KafkaTopics.AGENT_TASKS,
+                KafkaTopics.USER_MESSAGES,
+            }
+
             topics_to_create = []
             for topic in KafkaTopics:
                 if topic.value not in existing_topics:
+                    # High-traffic topics get 6 partitions, others get 3
+                    num_partitions = 6 if topic in high_traffic_topics else 3
+
                     topics_to_create.append(
                         NewTopic(
                             topic=topic.value,
-                            num_partitions=3,
+                            num_partitions=num_partitions,
                             replication_factor=1,  # Adjust for production
                             config={
                                 "retention.ms": str(7 * 24 * 60 * 60 * 1000),  # 7 days
@@ -139,10 +151,15 @@ class KafkaProducer:
     ) -> bool:
         """Publish an event to Kafka topic.
 
+        PARTITION KEY STRATEGY:
+        - Primary: project_id (ensures all events for a project go to same partition)
+        - Fallback: event_id (if no project_id available)
+        - Override: Explicitly provided key parameter
+
         Args:
             topic: Kafka topic (enum or string)
             event: Event to publish (Pydantic model or dict)
-            key: Optional partition key (defaults to event_id or project_id)
+            key: Optional partition key (overrides auto-detection)
 
         Returns:
             bool: True if published successfully, False otherwise
@@ -161,15 +178,26 @@ class KafkaProducer:
             else:
                 event_data = event
 
-            # Generate key if not provided
+            # OPTIMIZED PARTITION KEY STRATEGY
+            # Priority: explicit key > project_id > event_id
             if not key:
-                key = event_data.get("event_id") or event_data.get("project_id")
-                if isinstance(key, UUID):
-                    key = str(key)
+                # Try to use project_id first (optimal for project-based partitioning)
+                project_id = event_data.get("project_id")
+                if project_id:
+                    key = str(project_id) if isinstance(project_id, UUID) else project_id
+                else:
+                    # Fallback to event_id
+                    event_id = event_data.get("event_id")
+                    if event_id:
+                        key = str(event_id) if isinstance(event_id, UUID) else event_id
 
             # Serialize to JSON with UUID handling
             message_value = json.dumps(event_data, cls=UUIDEncoder).encode("utf-8")
             message_key = key.encode("utf-8") if key else None
+
+            # Log partition key usage for monitoring
+            if message_key:
+                logger.debug(f"Publishing to {topic_str} with partition key: {key}")
 
             # Ensure topic exists before publishing
             try:
@@ -177,9 +205,17 @@ class KafkaProducer:
                 if topic_str not in metadata.topics:
                     # Create topic on-the-fly if it doesn't exist
                     logger.warning(f"Topic {topic_str} not found, creating it...")
+
+                    # Determine partitions based on topic type
+                    high_traffic = topic_str in [
+                        "agent_responses", "agent_status", "agent_progress",
+                        "agent_tasks", "user_messages"
+                    ]
+                    num_partitions = 6 if high_traffic else 3
+
                     new_topic = NewTopic(
                         topic=topic_str,
-                        num_partitions=3,
+                        num_partitions=num_partitions,
                         replication_factor=1,
                         config={
                             "retention.ms": str(7 * 24 * 60 * 60 * 1000),
@@ -189,7 +225,7 @@ class KafkaProducer:
                     fs = self.admin_client.create_topics([new_topic])
                     for t, f in fs.items():
                         f.result()  # Wait for creation
-                        logger.info(f"Created topic {t} on-the-fly")
+                        logger.info(f"Created topic {t} on-the-fly with {num_partitions} partitions")
             except Exception as e:
                 logger.warning(f"Could not verify/create topic {topic_str}: {e}")
 

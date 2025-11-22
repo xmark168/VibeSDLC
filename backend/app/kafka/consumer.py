@@ -30,6 +30,7 @@ class BaseKafkaConsumer(ABC):
         max_reconnect_attempts: int = 10,
         base_backoff_seconds: float = 1.0,
         max_backoff_seconds: float = 60.0,
+        project_id_filter: Optional[List[str]] = None,
     ):
         """Initialize Kafka consumer.
 
@@ -40,6 +41,7 @@ class BaseKafkaConsumer(ABC):
             max_reconnect_attempts: Maximum number of reconnection attempts
             base_backoff_seconds: Base backoff time for exponential backoff
             max_backoff_seconds: Maximum backoff time cap
+            project_id_filter: Optional list of project IDs to filter (only process these projects)
         """
         self.topics = topics
         self.group_id = group_id or settings.KAFKA_GROUP_ID
@@ -54,6 +56,9 @@ class BaseKafkaConsumer(ABC):
         self.max_backoff_seconds = max_backoff_seconds
         self._reconnect_attempts = 0
         self._consecutive_errors = 0
+
+        # Project filtering (optional)
+        self.project_id_filter = set(project_id_filter) if project_id_filter else None
 
     def _build_config(self) -> Dict[str, Any]:
         """Build Kafka consumer configuration."""
@@ -213,6 +218,20 @@ class BaseKafkaConsumer(ABC):
             raw_value = msg.value().decode("utf-8")
             event_data = json.loads(raw_value)
 
+            # PROJECT FILTERING: Skip if project_id doesn't match filter
+            if self.project_id_filter:
+                msg_project_id = event_data.get("project_id")
+                if msg_project_id:
+                    # Convert to string for comparison
+                    msg_project_id_str = str(msg_project_id)
+                    if msg_project_id_str not in self.project_id_filter:
+                        # Skip this message - not in our project filter
+                        logger.debug(
+                            f"Skipping message from project {msg_project_id_str} "
+                            f"(filter: {self.project_id_filter})"
+                        )
+                        return
+
             # Get event type
             event_type = event_data.get("event_type")
             if not event_type:
@@ -291,8 +310,13 @@ class BaseKafkaConsumer(ABC):
 class EventHandlerConsumer(BaseKafkaConsumer):
     """Consumer that routes events to registered handlers by event type."""
 
-    def __init__(self, topics: List[str], group_id: Optional[str] = None):
-        super().__init__(topics, group_id)
+    def __init__(
+        self,
+        topics: List[str],
+        group_id: Optional[str] = None,
+        project_id_filter: Optional[List[str]] = None,
+    ):
+        super().__init__(topics, group_id, project_id_filter=project_id_filter)
         self.handlers: Dict[str, List[Callable]] = {}
 
     def register_handler(

@@ -32,7 +32,7 @@ export function useProjectAgents(projectId: string, options?: { enabled?: boolea
     queryKey: agentQueryKeys.project(projectId),
     queryFn: async () => {
       const response = await AgentsService.getProjectAgents({ projectId })
-      return response.data
+      return response || []
     },
     enabled: (options?.enabled ?? true) && !!projectId,
     staleTime: 10000, // Consider stale after 10s

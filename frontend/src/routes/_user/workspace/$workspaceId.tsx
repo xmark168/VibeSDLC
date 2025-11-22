@@ -26,6 +26,8 @@ function WorkspacePage() {
   const sendMessageRef = useRef<((params: { content: string; author_type?: 'user' | 'agent' }) => boolean) | null>(null)
   const [kanbanData, setKanbanData] = useState<any>(null)
   const [activeTab, setActiveTab] = useState<string | null>(null)
+  // Track agent statuses from WebSocket for avatar display
+  const [agentStatuses, setAgentStatuses] = useState<Map<string, { status: string; lastUpdate: string }>>(new Map())
 
   // Fetch messages to check if project is new
   const { data: messagesData, isLoading } = useMessages({
@@ -86,6 +88,7 @@ function WorkspacePage() {
                   onConnectionChange={setIsWebSocketConnected}
                   onKanbanDataChange={setKanbanData}
                   onActiveTabChange={setActiveTab}
+                  onAgentStatusesChange={setAgentStatuses}
                 />
               </div>
 
@@ -105,6 +108,7 @@ function WorkspacePage() {
               kanbanData={kanbanData}
               projectId={workspaceId}
               activeTab={activeTab}
+              agentStatuses={agentStatuses}
             />
           </div>
         </div>

@@ -65,7 +65,7 @@ class BaseAgentRole(ABC):
         self,
         agent_model: "AgentModel",
         config_path: Optional[Path] = None,
-        heartbeat_interval: int = 30,
+        heartbeat_interval: int = 10,
         max_idle_time: int = 300,
     ):
         """Initialize the agent role.
@@ -366,9 +366,32 @@ class BaseAgentRole(ABC):
         if self.agent_model:
             asyncio.create_task(self._sync_state_to_db(new_state))
 
+        # Publish status immediately to Kafka for real-time updates
+        asyncio.create_task(self._publish_state_status(new_state))
+
         # Trigger callback
         if self.on_state_change:
             asyncio.create_task(self.on_state_change(self, old_state, new_state))
+
+    async def _publish_state_status(self, state: AgentStatus) -> None:
+        """Publish Kafka status event based on agent state.
+
+        Args:
+            state: Current agent state
+        """
+        # Map AgentStatus to AgentStatusType
+        status_map = {
+            AgentStatus.idle: AgentStatusType.IDLE,
+            AgentStatus.busy: AgentStatusType.THINKING,
+            AgentStatus.error: AgentStatusType.ERROR,
+        }
+
+        # Only publish for states that have Kafka equivalents
+        if state in status_map:
+            await self._publish_status(
+                status_map[state],
+                current_action=f"State: {state.value}",
+            )
 
     async def _sync_state_to_db(self, new_state: AgentStatus) -> None:
         """Sync agent state to database.
@@ -746,7 +769,7 @@ class BaseAgentRole(ABC):
         Args:
             status: Agent status
             current_action: Current action
-            project_id: Optional project ID
+            project_id: Optional project ID (falls back to self.project_id)
             error_message: Optional error message
 
         Returns:
@@ -754,6 +777,9 @@ class BaseAgentRole(ABC):
         """
         try:
             producer = await get_kafka_producer()
+            # Use provided project_id or fall back to instance project_id
+            effective_project_id = project_id or self.project_id
+
             event = AgentStatusEvent(
                 event_id=str(uuid4()),
                 event_type=status.value,
@@ -762,12 +788,24 @@ class BaseAgentRole(ABC):
                 status=status,
                 current_action=current_action,
                 execution_id=self.execution_id,
-                project_id=project_id,
+                project_id=effective_project_id,
                 error_message=error_message,
             )
-            return await producer.publish(KafkaTopics.AGENT_STATUS, event)
+
+            success = await producer.publish(KafkaTopics.AGENT_STATUS, event)
+            if success:
+                logger.debug(
+                    f"Published status event: agent={self.human_name}, "
+                    f"status={status.value}, project={effective_project_id}"
+                )
+            else:
+                logger.warning(
+                    f"Failed to publish status event: agent={self.human_name}, "
+                    f"status={status.value}, project={effective_project_id}"
+                )
+            return success
         except Exception as e:
-            logger.error(f"Failed to publish status: {e}")
+            logger.error(f"Failed to publish status: {e}", exc_info=True)
             return False
 
     async def _publish_progress(
