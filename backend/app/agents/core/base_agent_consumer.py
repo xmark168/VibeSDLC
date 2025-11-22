@@ -65,7 +65,10 @@ class BaseAgentInstanceConsumer(EventHandlerConsumer):
 
         logger.info(
             f"Initialized consumer for agent {self.human_name} "
-            f"({self.role_type}) in project {self.project_id}"
+            f"({self.role_type}) in project {self.project_id}\n"
+            f"  Topic: {topic}\n"
+            f"  Group ID: {group_id}\n"
+            f"  Agent ID: {self.agent_id}"
         )
 
     async def _handle_user_message(self, event: UserMessageEvent | Dict[str, Any]) -> None:
@@ -94,6 +97,12 @@ class BaseAgentInstanceConsumer(EventHandlerConsumer):
             content = event_data.get("content", "")
             user_id = event_data.get("user_id")
             message_type = event_data.get("message_type", "text")
+
+            logger.debug(
+                f"[{self.human_name}] Received Kafka event - "
+                f"message_id={message_id}, target_agent={target_agent_id}, "
+                f"my_agent_id={self.agent_id}, my_role={self.role_type}"
+            )
 
             # Routing logic:
             # 1. If message has agent_id and it's this agent -> process
