@@ -22,7 +22,6 @@ from app.agents.core import (
     AgentPoolConfig,
     AgentMonitor,
     get_agent_monitor,
-    AgentLifecycleState,
 )
 from app.agents.core.name_generator import generate_agent_name, get_display_name
 
@@ -370,7 +369,7 @@ async def set_agent_idle(
         raise HTTPException(status_code=404, detail=f"Agent {agent_id} not found in pool '{pool_name}'")
 
     # Only allow setting to IDLE if agent is not in critical states
-    if agent.state in [AgentLifecycleState.STARTING, AgentLifecycleState.STOPPING, AgentLifecycleState.TERMINATED]:
+    if agent.state in [AgentStatus.starting, AgentStatus.stopping, AgentStatus.terminated]:
         raise HTTPException(
             status_code=400,
             detail=f"Cannot set agent to IDLE while in {agent.state.value} state"
@@ -380,13 +379,13 @@ async def set_agent_idle(
     previous_state = agent.state.value
 
     # Set state to IDLE
-    agent._set_state(AgentLifecycleState.IDLE)
+    agent._set_state(AgentStatus.idle)
 
     return {
         "message": f"Agent {agent_id} set to IDLE",
         "agent_id": str(agent_id),
         "previous_state": previous_state,
-        "current_state": AgentLifecycleState.IDLE.value,
+        "current_state": AgentStatus.idle.value,
     }
 
 

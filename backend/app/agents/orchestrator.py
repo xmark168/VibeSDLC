@@ -132,21 +132,6 @@ class AgentOrchestrator:
 
             if success:
                 self._agent_roles[agent.id] = role_instance
-
-                # Update agent status in database
-                if db_session:
-                    agent.status = "idle"
-                    db_session.add(agent)
-                    db_session.commit()
-                else:
-                    # Create new session if not provided
-                    with Session(engine) as new_session:
-                        db_agent = new_session.get(AgentModel, agent.id)
-                        if db_agent:
-                            db_agent.status = "idle"
-                            new_session.add(db_agent)
-                            new_session.commit()
-
                 logger.info(
                     f"✓ Started agent: {agent.human_name} ({agent.role_type}) "
                     f"for project {agent.project_id}"
@@ -180,15 +165,6 @@ class AgentOrchestrator:
 
             if success:
                 del self._agent_roles[agent_id]
-
-                # Update agent status in database
-                with Session(engine) as db_session:
-                    db_agent = db_session.get(AgentModel, agent_id)
-                    if db_agent:
-                        db_agent.status = "stopped"
-                        db_session.add(db_agent)
-                        db_session.commit()
-
                 logger.info(f"✓ Stopped agent {agent_id}")
                 return True
             else:
@@ -213,7 +189,8 @@ class AgentOrchestrator:
                 await self.stop_agent(agent_id)
 
             # Bulk update all stopped agents in database as a safety net
-            # This ensures agents are marked as stopped even if individual stop_agent() calls failed
+            # NOTE: State sync is now automatic via BaseAgentRole._sync_state_to_db()
+            # This is a fallback to ensure consistency if any auto-sync failed
             if agent_ids:
                 with Session(engine) as db_session:
                     stmt = (
@@ -223,7 +200,7 @@ class AgentOrchestrator:
                     )
                     db_session.exec(stmt)
                     db_session.commit()
-                    logger.info(f"Bulk updated {len(agent_ids)} agents to 'stopped' status in database")
+                    logger.info(f"Bulk updated {len(agent_ids)} agents to 'stopped' status (safety net)")
 
             self._agent_roles.clear()
             self._running = False

@@ -8,7 +8,8 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Type
 from uuid import UUID, uuid4
 
-from app.agents.core.base_role import BaseAgentRole, AgentLifecycleState
+from app.agents.core.base_role import BaseAgentRole
+from app.models import AgentStatus
 
 logger = logging.getLogger(__name__)
 
@@ -218,7 +219,7 @@ class AgentPool:
         """
         available_agents = [
             agent for agent in self.agents.values()
-            if agent.state == AgentLifecycleState.IDLE
+            if agent.state == AgentStatus.idle
         ]
 
         if not available_agents:
@@ -242,8 +243,8 @@ class AgentPool:
         Returns:
             Pool statistics dictionary
         """
-        idle_agents = sum(1 for a in self.agents.values() if a.state == AgentLifecycleState.IDLE)
-        busy_agents = sum(1 for a in self.agents.values() if a.state == AgentLifecycleState.BUSY)
+        idle_agents = sum(1 for a in self.agents.values() if a.state == AgentStatus.idle)
+        busy_agents = sum(1 for a in self.agents.values() if a.state == AgentStatus.busy)
         active_agents = idle_agents + busy_agents  # Active = IDLE + BUSY
         total_executions = sum(a.total_executions for a in self.agents.values())
         total_successful = sum(a.successful_executions for a in self.agents.values())

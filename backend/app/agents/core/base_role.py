@@ -6,7 +6,6 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
-from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Optional, Callable, TYPE_CHECKING
 from uuid import UUID, uuid4
@@ -27,20 +26,10 @@ if TYPE_CHECKING:
     from app.models import Agent as AgentModel
     from app.agents.core.base_agent_consumer import BaseAgentInstanceConsumer
 
+# Import AgentStatus for runtime use
+from app.models import AgentStatus
+
 logger = logging.getLogger(__name__)
-
-
-class AgentLifecycleState(str, Enum):
-    """Agent lifecycle states."""
-    CREATED = "created"
-    STARTING = "starting"
-    RUNNING = "running"
-    IDLE = "idle"
-    BUSY = "busy"
-    STOPPING = "stopping"
-    STOPPED = "stopped"
-    ERROR = "error"
-    TERMINATED = "terminated"
 
 
 class BaseAgentRole(ABC):
@@ -89,7 +78,7 @@ class BaseAgentRole(ABC):
         self.max_idle_time = max_idle_time
 
         # State management
-        self.state = AgentLifecycleState.CREATED
+        self.state = AgentStatus.created
         self.created_at = datetime.now(timezone.utc)
         self.started_at: Optional[datetime] = None
         self.stopped_at: Optional[datetime] = None
@@ -228,12 +217,12 @@ class BaseAgentRole(ABC):
         Returns:
             True if started successfully
         """
-        if self.state != AgentLifecycleState.CREATED:
+        if self.state != AgentStatus.created:
             logger.warning(f"Agent {self.agent_id} already started or stopped")
             return False
 
         try:
-            self._set_state(AgentLifecycleState.STARTING)
+            self._set_state(AgentStatus.starting)
 
             # Create agent if needed
             if self.agent is None:
@@ -246,14 +235,14 @@ class BaseAgentRole(ABC):
             self._consumer_task = asyncio.create_task(self._consumer_loop())
 
             self.started_at = datetime.now(timezone.utc)
-            self._set_state(AgentLifecycleState.IDLE)
+            self._set_state(AgentStatus.idle)
 
             logger.info(f"Agent {self.role_name} (ID: {self.agent_id}) started")
             return True
 
         except Exception as e:
             logger.error(f"Failed to start agent {self.agent_id}: {e}", exc_info=True)
-            self._set_state(AgentLifecycleState.ERROR)
+            self._set_state(AgentStatus.error)
             return False
 
     async def stop(self, graceful: bool = True) -> bool:
@@ -265,12 +254,12 @@ class BaseAgentRole(ABC):
         Returns:
             True if stopped successfully
         """
-        if self.state in [AgentLifecycleState.STOPPED, AgentLifecycleState.TERMINATED]:
+        if self.state in [AgentStatus.stopped, AgentStatus.terminated]:
             logger.warning(f"Agent {self.agent_id} already stopped")
             return False
 
         try:
-            self._set_state(AgentLifecycleState.STOPPING)
+            self._set_state(AgentStatus.stopping)
             self._shutdown_event.set()
 
             # Cancel heartbeat
@@ -298,14 +287,14 @@ class BaseAgentRole(ABC):
             await self._cleanup()
 
             self.stopped_at = datetime.now(timezone.utc)
-            self._set_state(AgentLifecycleState.STOPPED)
+            self._set_state(AgentStatus.stopped)
 
             logger.info(f"Agent {self.role_name} (ID: {self.agent_id}) stopped")
             return True
 
         except Exception as e:
             logger.error(f"Failed to stop agent {self.agent_id}: {e}", exc_info=True)
-            self._set_state(AgentLifecycleState.ERROR)
+            self._set_state(AgentStatus.error)
             return False
 
     async def health_check(self) -> Dict[str, Any]:
@@ -322,7 +311,7 @@ class BaseAgentRole(ABC):
             "agent_id": str(self.agent_id),
             "role_name": self.role_name,
             "state": self.state.value,
-            "healthy": self.state == AgentLifecycleState.RUNNING,
+            "healthy": self.state in [AgentStatus.idle, AgentStatus.busy],
             "uptime_seconds": uptime,
             "idle_seconds": idle_time,
             "last_heartbeat": self.last_heartbeat.isoformat() if self.last_heartbeat else None,
@@ -332,20 +321,47 @@ class BaseAgentRole(ABC):
             "success_rate": self.successful_executions / self.total_executions if self.total_executions > 0 else 0,
         }
 
-    def _set_state(self, new_state: AgentLifecycleState) -> None:
+    def _set_state(self, new_state: AgentStatus) -> None:
         """Set agent state and trigger callback.
 
         Args:
-            new_state: New lifecycle state
+            new_state: New agent status
         """
         old_state = self.state
         self.state = new_state
 
         logger.debug(f"Agent {self.agent_id} state: {old_state} -> {new_state}")
 
+        # Sync to database if agent_model exists
+        if self.agent_model:
+            asyncio.create_task(self._sync_state_to_db(new_state))
+
         # Trigger callback
         if self.on_state_change:
             asyncio.create_task(self.on_state_change(self, old_state, new_state))
+
+    async def _sync_state_to_db(self, new_state: AgentStatus) -> None:
+        """Sync agent state to database.
+
+        Args:
+            new_state: New agent status to persist
+        """
+        try:
+            from sqlmodel import Session
+            from app.core.db import engine
+            from app.models import Agent as AgentModel
+
+            with Session(engine) as db_session:
+                db_agent = db_session.get(AgentModel, self.agent_id)
+                if db_agent:
+                    db_agent.status = new_state
+                    db_session.add(db_agent)
+                    db_session.commit()
+                    logger.debug(f"Synced agent {self.agent_id} status to DB: {new_state.value}")
+                else:
+                    logger.warning(f"Agent {self.agent_id} not found in database for state sync")
+        except Exception as e:
+            logger.error(f"Failed to sync state to database for agent {self.agent_id}: {e}", exc_info=True)
 
     # ===== Heartbeat =====
 
@@ -367,7 +383,7 @@ class BaseAgentRole(ABC):
 
         # Publish heartbeat status
         await self._publish_status(
-            AgentStatusType.IDLE if self.state == AgentLifecycleState.IDLE else AgentStatusType.THINKING,
+            AgentStatusType.IDLE if self.state == AgentStatus.idle else AgentStatusType.THINKING,
             current_action=f"Heartbeat - State: {self.state.value}"
         )
 
@@ -474,7 +490,7 @@ class BaseAgentRole(ABC):
         self.execution_id = uuid4()
         self.total_executions += 1
         self.last_activity = datetime.now(timezone.utc)
-        self._set_state(AgentLifecycleState.BUSY)
+        self._set_state(AgentStatus.busy)
 
         result = {"success": False, "output": "", "error": None, "execution_id": str(self.execution_id)}
 
@@ -536,7 +552,7 @@ class BaseAgentRole(ABC):
             )
 
         finally:
-            self._set_state(AgentLifecycleState.IDLE)
+            self._set_state(AgentStatus.idle)
             self.last_activity = datetime.now(timezone.utc)
 
             # Trigger callback

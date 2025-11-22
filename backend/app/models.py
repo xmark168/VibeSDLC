@@ -317,11 +317,15 @@ class AuthorType(str, Enum):
 
 
 class AgentStatus(str, Enum):
-    """Runtime status of an agent"""
-    idle = "idle"
-    busy = "busy"
-    stopped = "stopped"
-    error = "error"
+    """Runtime status of an agent (unified for runtime and database)"""
+    created = "created"  # Initial state when agent is instantiated
+    starting = "starting"  # Agent is starting up
+    running = "running"  # Agent is running (legacy, mostly uses idle/busy)
+    idle = "idle"  # Agent is running and waiting for work
+    busy = "busy"  # Agent is actively executing a task
+    stopping = "stopping"  # Agent is shutting down
+    stopped = "stopped"  # Agent has stopped cleanly
+    error = "error"  # Agent encountered an error
     terminated = "terminated"  # Permanent shutdown, won't restart
 
 
