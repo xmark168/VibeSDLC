@@ -5,7 +5,7 @@ import { AuthorType, type Message } from '@/types/message'
 const processedMessageIds = new Set<string>()
 
 export type WebSocketMessage = {
-  type: 'connected' | 'message' | 'agent_message' | 'agent_response' | 'typing' | 'pong' | 'error' | 'routing' | 'agent_routing' | 'agent_step' | 'agent_thinking' | 'tool_call' | 'kanban_update' | 'story_created' | 'story_updated' | 'story_status_changed' | 'scrum_master_step' | 'switch_tab'
+  type: 'connected' | 'message' | 'agent_message' | 'agent_response' | 'typing' | 'pong' | 'error' | 'routing' | 'agent_routing' | 'agent_step' | 'agent_thinking' | 'tool_call' | 'kanban_update' | 'story_created' | 'story_updated' | 'story_status_changed' | 'scrum_master_step' | 'switch_tab' | 'agent_status' | 'agent_progress' | 'approval_request'
   data?: Message | any
   agent_name?: string
   agent_type?: string
@@ -24,6 +24,11 @@ export type WebSocketMessage = {
   // Tool call
   tool?: string
   display_name?: string
+  tool_name?: string
+  parameters?: any
+  result?: any
+  error_message?: string
+  status?: string
   // Story events
   story_id?: string
   story_title?: string
@@ -32,6 +37,16 @@ export type WebSocketMessage = {
   updated_fields?: string[]
   // Tab switching
   tab?: string
+  // Agent progress
+  step_number?: number
+  total_steps?: number
+  description?: string
+  // Approval request
+  approval_request_id?: string
+  request_type?: string
+  proposed_data?: any
+  preview_data?: any
+  explanation?: string
 }
 
 export type SendMessageParams = {
@@ -52,6 +67,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     currentAgent?: string
     currentTool?: string
     stepNumber?: number
+    totalSteps?: number
   }>({ isExecuting: false })
   const [agentStatus, setAgentStatus] = useState<{
     agentName: string | null
@@ -59,6 +75,8 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     currentAction?: string
     executionId?: string
   }>({ agentName: null, status: 'idle' })
+  const [approvalRequests, setApprovalRequests] = useState<any[]>([])
+  const [toolCalls, setToolCalls] = useState<any[]>([])
   const [kanbanData, setKanbanData] = useState<{
     sprints: any[]
     kanban_board: {
@@ -222,6 +240,52 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
             }
             break
 
+          case 'agent_progress':
+            console.log('[WebSocket] Agent progress:', data)
+            setAgentProgress({
+              isExecuting: data.status === 'in_progress',
+              currentStep: data.description,
+              currentAgent: data.agent_name,
+              stepNumber: data.step_number,
+              totalSteps: data.total_steps,
+            })
+            break
+
+          case 'tool_call':
+            console.log('[WebSocket] Tool call:', data.tool_name, data.status)
+            setToolCalls(prev => [...prev, {
+              agent_name: data.agent_name,
+              tool_name: data.tool_name,
+              display_name: data.display_name,
+              status: data.status,
+              timestamp: data.timestamp,
+              parameters: data.parameters,
+              result: data.result,
+              error_message: data.error_message,
+            }])
+
+            // Also update agentProgress to show tool being used
+            if (data.status === 'started') {
+              setAgentProgress(prev => ({
+                ...prev,
+                currentTool: data.display_name || data.tool_name,
+              }))
+            }
+            break
+
+          case 'approval_request':
+            console.log('[WebSocket] Approval request:', data.request_type)
+            setApprovalRequests(prev => [...prev, {
+              id: data.approval_request_id,
+              request_type: data.request_type,
+              agent_name: data.agent_name,
+              proposed_data: data.proposed_data,
+              preview_data: data.preview_data,
+              explanation: data.explanation,
+              timestamp: data.timestamp,
+            }])
+            break
+
           case 'story_created':
           case 'story_updated':
           case 'story_status_changed':
@@ -358,6 +422,8 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     typingAgents: Array.from(typingAgents),
     agentProgress,
     agentStatus,
+    approvalRequests,
+    toolCalls,
     kanbanData,
     activeTab,
     sendMessage,

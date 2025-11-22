@@ -72,6 +72,10 @@ class ConnectionManager:
                 logger.error(f"Error broadcasting to WebSocket: {e}")
                 disconnected.append(connection)
 
+        # Cleanup disconnected websockets
+        for connection in disconnected:
+            self.disconnect(connection)
+
     def get_project_connection_count(self, project_id: UUID) -> int:
         """Get the number of active connections for a project"""
         return len(self.active_connections.get(project_id, set()))

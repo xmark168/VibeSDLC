@@ -2,7 +2,7 @@ from typing import Any, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlmodel import select, func
+from sqlmodel import select, func, case
 
 from app.api.deps import CurrentUser, SessionDep
 from app.models import Agent as AgentModel, Role
@@ -51,6 +51,10 @@ def get_project_agents(
     """
     Get all agents for a specific project.
 
+    Agents are ordered by:
+    1. Role priority (Team Leader → Business Analyst → Developer → Tester)
+    2. Human name (alphabetically)
+
     Args:
         project_id: UUID of the project
         session: Database session
@@ -59,7 +63,20 @@ def get_project_agents(
     Returns:
         AgentsPublic: List of agents for the project
     """
-    stmt = select(AgentModel).where(AgentModel.project_id == project_id)
+    # Define role order priority
+    role_order = case(
+        (AgentModel.role_type == "team_leader", 1),
+        (AgentModel.role_type == "business_analyst", 2),
+        (AgentModel.role_type == "developer", 3),
+        (AgentModel.role_type == "tester", 4),
+        else_=5  # For any other roles
+    )
+
+    stmt = (
+        select(AgentModel)
+        .where(AgentModel.project_id == project_id)
+        .order_by(role_order, AgentModel.human_name)
+    )
     agents = session.exec(stmt).all()
     return AgentsPublic(data=agents, count=len(agents))
 

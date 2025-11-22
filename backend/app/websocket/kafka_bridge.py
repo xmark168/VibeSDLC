@@ -52,6 +52,8 @@ class WebSocketKafkaBridge:
                     KafkaTopics.STORY_EVENTS.value,
                     KafkaTopics.FLOW_STATUS.value,
                     KafkaTopics.AGENT_STATUS.value,
+                    KafkaTopics.AGENT_PROGRESS.value,
+                    KafkaTopics.TOOL_CALLS.value,
                     KafkaTopics.APPROVAL_REQUESTS.value,
                 ],
                 group_id="websocket_bridge_group",
@@ -75,6 +77,10 @@ class WebSocketKafkaBridge:
             self.consumer.register_handler("agent.acting", self.handle_agent_status)
             self.consumer.register_handler("agent.waiting", self.handle_agent_status)
             self.consumer.register_handler("agent.error", self.handle_agent_status)
+
+            # Register agent progress and tool call handlers
+            self.consumer.register_handler("agent.progress", self.handle_agent_progress)
+            self.consumer.register_handler("agent.tool_call", self.handle_tool_call)
 
             # Start consumer
             await self.consumer.start()
@@ -382,6 +388,85 @@ class WebSocketKafkaBridge:
 
         except Exception as e:
             logger.error(f"Error handling agent status event: {e}", exc_info=True)
+
+    async def handle_agent_progress(self, event):
+        """Handle agent progress events (step-by-step execution tracking)"""
+        try:
+            if hasattr(event, 'model_dump'):
+                event_data = event.model_dump()
+            else:
+                event_data = event
+
+            project_id = _to_uuid(event_data.get("project_id"))
+            if not project_id:
+                return
+
+            ws_message = {
+                "type": "agent_progress",
+                "agent_name": event_data.get("agent_name", ""),
+                "agent_id": event_data.get("agent_id"),
+                "execution_id": str(event_data.get("execution_id", "")) if event_data.get("execution_id") else None,
+                "step_number": event_data.get("step_number", 0),
+                "total_steps": event_data.get("total_steps", 0),
+                "description": event_data.get("step_description", ""),
+                "status": event_data.get("status", "in_progress"),
+                "timestamp": str(event_data.get("timestamp", "")),
+            }
+
+            if event_data.get("step_result"):
+                ws_message["result"] = event_data["step_result"]
+
+            await connection_manager.broadcast_to_project(ws_message, project_id)
+
+            logger.debug(
+                f"Forwarded agent progress to project {project_id}: "
+                f"{event_data.get('agent_name')} step {event_data.get('step_number')}/{event_data.get('total_steps')}"
+            )
+
+        except Exception as e:
+            logger.error(f"Error handling agent progress event: {e}", exc_info=True)
+
+    async def handle_tool_call(self, event):
+        """Handle tool call events (agent using tools/functions)"""
+        try:
+            if hasattr(event, 'model_dump'):
+                event_data = event.model_dump()
+            else:
+                event_data = event
+
+            project_id = _to_uuid(event_data.get("project_id"))
+            if not project_id:
+                return
+
+            ws_message = {
+                "type": "tool_call",
+                "agent_name": event_data.get("agent_name", ""),
+                "agent_id": event_data.get("agent_id"),
+                "execution_id": str(event_data.get("execution_id", "")) if event_data.get("execution_id") else None,
+                "tool_name": event_data.get("tool_name", ""),
+                "display_name": event_data.get("display_name", ""),
+                "status": event_data.get("status", "started"),
+                "timestamp": str(event_data.get("timestamp", "")),
+            }
+
+            if event_data.get("parameters"):
+                ws_message["parameters"] = event_data["parameters"]
+
+            if event_data.get("result"):
+                ws_message["result"] = event_data["result"]
+
+            if event_data.get("error_message"):
+                ws_message["error_message"] = event_data["error_message"]
+
+            await connection_manager.broadcast_to_project(ws_message, project_id)
+
+            logger.debug(
+                f"Forwarded tool call to project {project_id}: "
+                f"{event_data.get('agent_name')} using {event_data.get('tool_name')}"
+            )
+
+        except Exception as e:
+            logger.error(f"Error handling tool call event: {e}", exc_info=True)
 
 
 # Global bridge instance

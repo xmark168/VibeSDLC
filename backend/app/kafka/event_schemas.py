@@ -38,6 +38,8 @@ class KafkaTopics(str, Enum):
     STORY_EVENTS = "story_events"
     FLOW_STATUS = "flow_status"
     AGENT_STATUS = "agent_status"
+    AGENT_PROGRESS = "agent_progress"
+    TOOL_CALLS = "tool_calls"
     APPROVAL_REQUESTS = "approval_requests"
     APPROVAL_RESPONSES = "approval_responses"
     
@@ -212,9 +214,41 @@ class AgentStatusEvent(BaseKafkaEvent):
 
     event_type: str
     agent_name: str
+    agent_id: Optional[str] = None
     status: AgentStatusType
     current_action: Optional[str] = None
     execution_id: Optional[UUID] = None
+    error_message: Optional[str] = None
+
+
+# AGENT PROGRESS EVENTS
+class AgentProgressEvent(BaseKafkaEvent):
+    """Event emitted for agent progress tracking during execution."""
+
+    event_type: str = "agent.progress"
+    agent_name: str
+    agent_id: Optional[str] = None
+    execution_id: Optional[UUID] = None
+    step_number: int
+    total_steps: int
+    step_description: str
+    status: str  # "in_progress", "completed", "failed"
+    step_result: Optional[Dict[str, Any]] = None
+
+
+# TOOL CALL EVENTS
+class ToolCallEvent(BaseKafkaEvent):
+    """Event emitted when agent uses a tool."""
+
+    event_type: str = "agent.tool_call"
+    agent_name: str
+    agent_id: Optional[str] = None
+    execution_id: Optional[UUID] = None
+    tool_name: str  # "database_query", "file_write", "api_call", "create_story"
+    display_name: str  # Human-readable: "Querying stories from database"
+    parameters: Optional[Dict[str, Any]] = None
+    status: str  # "started", "completed", "failed"
+    result: Optional[Dict[str, Any]] = None
     error_message: Optional[str] = None
 
 
@@ -239,6 +273,8 @@ EVENT_TYPE_TO_SCHEMA = {
     "agent.acting": AgentStatusEvent,
     "agent.waiting": AgentStatusEvent,
     "agent.error": AgentStatusEvent,
+    "agent.progress": AgentProgressEvent,
+    "agent.tool_call": ToolCallEvent,
 }
 
 

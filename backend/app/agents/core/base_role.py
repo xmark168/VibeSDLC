@@ -19,6 +19,8 @@ from app.kafka.event_schemas import (
     AgentRoutingEvent,
     AgentStatusEvent,
     AgentStatusType,
+    AgentProgressEvent,
+    ToolCallEvent,
     KafkaTopics,
 )
 
@@ -782,6 +784,91 @@ class BaseAgentRole(ABC):
             return await producer.publish(KafkaTopics.AGENT_STATUS, event)
         except Exception as e:
             logger.error(f"Failed to publish status: {e}")
+            return False
+
+    async def _publish_progress(
+        self,
+        step_number: int,
+        total_steps: int,
+        description: str,
+        status: str = "in_progress",
+        step_result: Optional[Dict] = None,
+        project_id: Optional[UUID] = None,
+    ) -> bool:
+        """Publish agent progress event.
+
+        Args:
+            step_number: Current step number (1-indexed)
+            total_steps: Total number of steps
+            description: Human-readable description of current step
+            status: Step status ("in_progress", "completed", "failed")
+            step_result: Optional result data for completed step
+            project_id: Optional project ID
+
+        Returns:
+            True if published successfully
+        """
+        try:
+            producer = await get_kafka_producer()
+            event = AgentProgressEvent(
+                event_id=str(uuid4()),
+                agent_name=self.human_name or self.role_name,
+                agent_id=str(self.agent_id),
+                execution_id=self.execution_id,
+                step_number=step_number,
+                total_steps=total_steps,
+                step_description=description,
+                status=status,
+                step_result=step_result,
+                project_id=project_id or self.project_id,
+            )
+            return await producer.publish(KafkaTopics.AGENT_PROGRESS, event)
+        except Exception as e:
+            logger.error(f"Failed to publish progress: {e}")
+            return False
+
+    async def _publish_tool_call(
+        self,
+        tool_name: str,
+        display_name: str,
+        status: str = "started",
+        parameters: Optional[Dict] = None,
+        result: Optional[Dict] = None,
+        error_message: Optional[str] = None,
+        project_id: Optional[UUID] = None,
+    ) -> bool:
+        """Publish tool call event.
+
+        Args:
+            tool_name: Tool identifier (e.g., "database_query", "create_story")
+            display_name: Human-readable name (e.g., "Querying stories from database")
+            status: Tool call status ("started", "completed", "failed")
+            parameters: Optional tool parameters
+            result: Optional tool result (for completed calls)
+            error_message: Optional error message (for failed calls)
+            project_id: Optional project ID
+
+        Returns:
+            True if published successfully
+        """
+        try:
+            producer = await get_kafka_producer()
+            event = ToolCallEvent(
+                event_id=str(uuid4()),
+                agent_name=self.human_name or self.role_name,
+                agent_id=str(self.agent_id),
+                execution_id=self.execution_id,
+                tool_name=tool_name,
+                display_name=display_name,
+                parameters=parameters,
+                status=status,
+                result=result,
+                error_message=error_message,
+                project_id=project_id or self.project_id,
+            )
+            return await producer.publish(KafkaTopics.TOOL_CALLS, event)
+        except Exception as e:
+            logger.error(f"Failed to publish tool call: {e}")
             return False
 
     # ===== Cleanup =====
