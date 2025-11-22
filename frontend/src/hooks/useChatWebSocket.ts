@@ -48,6 +48,12 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     currentTool?: string
     stepNumber?: number
   }>({ isExecuting: false })
+  const [agentStatus, setAgentStatus] = useState<{
+    agentName: string | null
+    status: 'idle' | 'thinking' | 'acting' | 'waiting' | 'error'
+    currentAction?: string
+    executionId?: string
+  }>({ agentName: null, status: 'idle' })
   const [kanbanData, setKanbanData] = useState<{
     sprints: any[]
     kanban_board: {
@@ -103,37 +109,68 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
           case 'agent_message':
           case 'agent_response':
           case 'user_message':
-            console.log('[WebSocket] Received message:', data.type, data.data?.content?.substring(0, 100))
+            console.log('[WebSocket] Received message:', data.type, data.data?.content?.substring(0, 100) || data.content?.substring(0, 100))
+
+            // Handle both formats: with data field or flat structure
+            let messageData: Message | null = null
+
             if (data.data) {
+              // Format 1: Message wrapped in data field
+              messageData = data.data
+            } else if (data.content && data.message_id) {
+              // Format 2: Flat structure from backend
+              // Extract message_type from structured_data or default to 'text'
+              const messageType = data.structured_data?.message_type || 'text'
+              const structuredData = data.structured_data?.data || data.structured_data
+
+              messageData = {
+                id: data.message_id,
+                project_id: data.project_id || projectId || '',
+                author_type: data.type === 'user_message' ? AuthorType.USER : AuthorType.AGENT,
+                content: data.content,
+                created_at: data.timestamp || new Date().toISOString(),
+                updated_at: data.timestamp || new Date().toISOString(),
+                agent_name: data.agent_name,
+                message_type: messageType,
+                structured_data: structuredData,
+                metadata: data.metadata,
+                message_metadata: {
+                  agent_name: data.agent_name,
+                  agent_type: data.agent_type,
+                },
+              }
+            }
+
+            if (messageData) {
               setMessages((prev) => {
                 // Check if message already exists by ID
-                const existsById = prev.some(m => m.id === data.data!.id)
+                const existsById = prev.some(m => m.id === messageData!.id)
                 if (existsById) {
-                  console.log('[WebSocket] Message already exists, skipping:', data.data!.id)
+                  console.log('[WebSocket] Message already exists, skipping:', messageData!.id)
                   return prev
                 }
 
                 // Check if this is confirming an optimistic message (match by content for user messages)
-                if (data.data!.author_type === AuthorType.USER || data.type === 'user_message') {
+                if (messageData!.author_type === AuthorType.USER || data.type === 'user_message') {
                   const tempIndex = prev.findIndex(m =>
                     m.id.startsWith('temp_') &&
-                    m.content === data.data!.content
+                    m.content === messageData!.content
                   )
 
                   if (tempIndex !== -1) {
                     // Replace optimistic message with server-confirmed message
-                    console.log('[WebSocket] Replacing optimistic message:', prev[tempIndex].id, '->', data.data!.id)
+                    console.log('[WebSocket] Replacing optimistic message:', prev[tempIndex].id, '->', messageData!.id)
                     const newMessages = [...prev]
-                    newMessages[tempIndex] = data.data!
+                    newMessages[tempIndex] = messageData!
                     return newMessages
                   }
                 }
 
-                console.log('[WebSocket] Adding new message:', data.data!.id)
-                return [...prev, data.data!]
+                console.log('[WebSocket] Adding new message:', messageData!.id)
+                return [...prev, messageData!]
               })
             } else {
-              console.warn('[WebSocket] Received message without data:', data)
+              console.warn('[WebSocket] Received message without valid data:', data)
             }
             break
 
@@ -290,6 +327,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     messages,
     typingAgents: Array.from(typingAgents),
     agentProgress,
+    agentStatus,
     kanbanData,
     activeTab,
     sendMessage,

@@ -17,18 +17,23 @@ interface MessagePreviewCardProps {
 export function MessagePreviewCard({ message }: MessagePreviewCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
 
+  // Get message type - can be from message.message_type or structured_data.message_type
+  const messageType = message.message_type || message.structured_data?.message_type
+
   // Don't render if not a structured message type
-  if (!message.message_type || message.message_type === 'text') {
+  if (!messageType || messageType === 'text') {
     return null
   }
 
   const renderPreview = () => {
     if (!isExpanded || !message.structured_data) return null
 
-    // Get actual data - backend sends { phase, message_type, data: {...} }
+    // Get actual data - handle both formats:
+    // 1. New format: structured_data is already the array/object
+    // 2. Old format: structured_data = { message_type, data: {...} }
     const data = message.structured_data.data || message.structured_data
 
-    switch (message.message_type) {
+    switch (messageType) {
       case 'prd':
         return (
           <ProductBriefPreview
@@ -52,7 +57,7 @@ export function MessagePreviewCard({ message }: MessagePreviewCardProps) {
   }
 
   const getTypeLabel = () => {
-    switch (message.message_type) {
+    switch (messageType) {
       case 'prd':
         return '📋 PRD'
       case 'business_flows':

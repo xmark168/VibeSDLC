@@ -99,15 +99,11 @@ export function ChatPanelWS({
     messages: wsMessages,
     typingAgents,
     agentProgress,
+    agentStatus,
     kanbanData,
     activeTab,
     sendMessage: wsSendMessage,
   } = useChatWebSocket(projectId, token || undefined);
-
-  // Derive agentProgress from agentStatus
-  const agentProgress = {
-    isExecuting: agentStatus.status === 'thinking' || agentStatus.status === 'acting'
-  };
 
   // Combine existing messages with WebSocket messages
   const apiMessages = messagesData?.data || [];
