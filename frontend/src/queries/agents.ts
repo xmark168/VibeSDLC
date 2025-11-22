@@ -1,0 +1,249 @@
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { AgentsService } from "@/client/sdk.gen"
+import {
+  agentsApi,
+  type CreatePoolRequest,
+  type SpawnAgentRequest,
+} from "@/apis/agents"
+
+// ===== Query Keys =====
+export const agentQueryKeys = {
+  all: ["agents"] as const,
+  pools: () => [...agentQueryKeys.all, "pools"] as const,
+  pool: (poolName: string) => [...agentQueryKeys.pools(), poolName] as const,
+  health: () => [...agentQueryKeys.all, "health"] as const,
+  agentHealth: (agentId: string, poolName: string) =>
+    [...agentQueryKeys.health(), agentId, poolName] as const,
+  dashboard: () => [...agentQueryKeys.all, "dashboard"] as const,
+  systemStats: () => [...agentQueryKeys.all, "system-stats"] as const,
+  alerts: (limit?: number) => [...agentQueryKeys.all, "alerts", limit] as const,
+  project: (projectId: string) => [...agentQueryKeys.all, "project", projectId] as const,
+}
+
+// ===== Queries =====
+
+/**
+ * Fetch all agents for a specific project (from database)
+ */
+export function useProjectAgents(projectId: string, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: agentQueryKeys.project(projectId),
+    queryFn: async () => {
+      const response = await AgentsService.getProjectAgents({ projectId })
+      return response.data
+    },
+    enabled: (options?.enabled ?? true) && !!projectId,
+    staleTime: 10000, // Consider stale after 10s
+  })
+}
+
+/**
+ * Fetch all agent pools with polling
+ */
+export function useAgentPools(options?: { enabled?: boolean; refetchInterval?: number }) {
+  return useQuery({
+    queryKey: agentQueryKeys.pools(),
+    queryFn: () => agentsApi.listPools(),
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval ?? 30000, // Poll every 30s
+    staleTime: 10000, // Consider stale after 10s
+  })
+}
+
+/**
+ * Fetch specific pool statistics
+ */
+export function usePoolStats(poolName: string, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: agentQueryKeys.pool(poolName),
+    queryFn: () => agentsApi.getPoolStats(poolName),
+    enabled: (options?.enabled ?? true) && !!poolName,
+    refetchInterval: 30000,
+  })
+}
+
+/**
+ * Fetch all agent health data
+ */
+export function useAllAgentHealth(options?: { enabled?: boolean; refetchInterval?: number }) {
+  return useQuery({
+    queryKey: agentQueryKeys.health(),
+    queryFn: () => agentsApi.getAllAgentHealth(),
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval ?? 30000,
+    staleTime: 10000,
+  })
+}
+
+/**
+ * Fetch specific agent health
+ */
+export function useAgentHealth(
+  agentId: string,
+  poolName: string,
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: agentQueryKeys.agentHealth(agentId, poolName),
+    queryFn: () => agentsApi.getAgentHealth(agentId, poolName),
+    enabled: (options?.enabled ?? true) && !!agentId && !!poolName,
+    refetchInterval: 10000, // More frequent for individual agent
+  })
+}
+
+/**
+ * Fetch dashboard data (comprehensive view)
+ */
+export function useAgentDashboard(options?: { enabled?: boolean; refetchInterval?: number }) {
+  return useQuery({
+    queryKey: agentQueryKeys.dashboard(),
+    queryFn: () => agentsApi.getDashboard(),
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval ?? 30000,
+    staleTime: 10000,
+  })
+}
+
+/**
+ * Fetch system statistics
+ */
+export function useSystemStats(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: agentQueryKeys.systemStats(),
+    queryFn: () => agentsApi.getSystemStats(),
+    enabled: options?.enabled ?? true,
+    refetchInterval: 30000,
+  })
+}
+
+/**
+ * Fetch alerts
+ */
+export function useAgentAlerts(limit: number = 20, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: agentQueryKeys.alerts(limit),
+    queryFn: () => agentsApi.getAlerts(limit),
+    enabled: options?.enabled ?? true,
+    refetchInterval: 60000, // Less frequent for alerts
+  })
+}
+
+// ===== Mutations =====
+
+/**
+ * Create a new agent pool
+ */
+export function useCreatePool() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (body: CreatePoolRequest) => agentsApi.createPool(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.pools() })
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.dashboard() })
+    },
+  })
+}
+
+/**
+ * Delete an agent pool
+ */
+export function useDeletePool() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ poolName, graceful = true }: { poolName: string; graceful?: boolean }) =>
+      agentsApi.deletePool(poolName, graceful),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.pools() })
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.dashboard() })
+    },
+  })
+}
+
+/**
+ * Spawn a new agent in a pool
+ */
+export function useSpawnAgent() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (body: SpawnAgentRequest) => agentsApi.spawnAgent(body),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.pool(variables.pool_name) })
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.health() })
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.dashboard() })
+    },
+  })
+}
+
+/**
+ * Terminate an agent
+ */
+export function useTerminateAgent() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({
+      poolName,
+      agentId,
+      graceful = true,
+    }: {
+      poolName: string
+      agentId: string
+      graceful?: boolean
+    }) => agentsApi.terminateAgent(poolName, agentId, graceful),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.pool(variables.poolName) })
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.health() })
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.dashboard() })
+    },
+  })
+}
+
+/**
+ * Force set agent to idle state
+ */
+export function useSetAgentIdle() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ agentId, poolName }: { agentId: string; poolName: string }) =>
+      agentsApi.setAgentIdle(agentId, poolName),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: agentQueryKeys.agentHealth(variables.agentId, variables.poolName),
+      })
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.health() })
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.dashboard() })
+    },
+  })
+}
+
+/**
+ * Start monitoring system
+ */
+export function useStartMonitoring() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (monitorInterval: number = 30) => agentsApi.startMonitoring(monitorInterval),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.systemStats() })
+    },
+  })
+}
+
+/**
+ * Stop monitoring system
+ */
+export function useStopMonitoring() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => agentsApi.stopMonitoring(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.systemStats() })
+    },
+  })
+}

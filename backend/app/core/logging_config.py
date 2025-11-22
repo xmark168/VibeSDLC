@@ -10,12 +10,6 @@ from app.core.config import settings
 
 def setup_logging() -> None:
     """Configure application-wide logging.
-
-    Sets up:
-    - Console handler with colored output
-    - File handler with rotation (10MB, 5 backups)
-    - Appropriate log levels for different environments
-    - Reduced noise from third-party libraries
     """
     # Determine log level based on environment
     log_level = logging.DEBUG if settings.DEBUG else logging.INFO

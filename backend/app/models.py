@@ -56,6 +56,7 @@ class BaseModel(SQLModel):
 class User(BaseModel, table=True):
     __tablename__ = "users"
 
+    username : str | None = Field(default=None, max_length=50, nullable=True)
     full_name: str | None = Field(default=None, max_length=50, nullable=True)
     hashed_password: str = Field(nullable=True)
     email: EmailStr = Field(unique=True, index=True, max_length=255)
@@ -112,6 +113,10 @@ class Project(BaseModel, table=True):
 
     is_private: bool = Field(default=True)
     tech_stack: str = Field(default="nodejs-react")
+    wip_data: dict | None = Field(default=None, sa_column=Column(JSON))
+
+    # File system path for project files (auto-generated: projects/{project_id})
+    project_path: str | None = Field(default=None, max_length=500)
     owner: User = Relationship(back_populates="owned_projects")
     stories: list["Story"] = Relationship(
         back_populates="project",
@@ -121,25 +126,16 @@ class Project(BaseModel, table=True):
         back_populates="project",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+    agents: list["Agent"] = Relationship(
+        back_populates="project",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
     # TraDS ============= Project Rules
 
     rules: Optional["ProjectRules"] = Relationship(
         back_populates="project",
         sa_relationship_kwargs={"uselist": False, "cascade": "all, delete-orphan"}
     )
-
-
-class ColumnWIPLimit(BaseModel, table=True):
-    """WIP (Work In Progress) limits for Kanban columns"""
-    __tablename__ = "column_wip_limits"
-
-    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
-    column_name: str = Field(max_length=50, nullable=False)  # "Todo", "InProgress", "Review", "Done"
-    wip_limit: int = Field(nullable=False)  # Maximum number of items allowed in column
-    limit_type: LimitType = Field(default=LimitType.HARD, nullable=False)
-
-    # Relationships
-    project: "Project" = Relationship()
 
 
 class WorkflowPolicy(BaseModel, table=True):
@@ -320,13 +316,36 @@ class AuthorType(str, Enum):
     AGENT = "agent"
 
 
+class AgentStatus(str, Enum):
+    """Runtime status of an agent (unified for runtime and database)"""
+    created = "created"  # Initial state when agent is instantiated
+    starting = "starting"  # Agent is starting up
+    running = "running"  # Agent is running (legacy, mostly uses idle/busy)
+    idle = "idle"  # Agent is running and waiting for work
+    busy = "busy"  # Agent is actively executing a task
+    stopping = "stopping"  # Agent is shutting down
+    stopped = "stopped"  # Agent has stopped cleanly
+    error = "error"  # Agent encountered an error
+    terminated = "terminated"  # Permanent shutdown, won't restart
+
+
 class Agent(BaseModel, table=True):
     __tablename__ = "agents"
 
-    name: str
-    agent_type: str | None = Field(default=None)
+    # Project relationship - each agent belongs to a project
+    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
 
-    # Relationship to messages authored by this agent
+    # Agent identity
+    name: str  # Display name (e.g., "Mike (Developer)")
+    human_name: str = Field(nullable=False)  # Natural name like "Mike", "Alice"
+    role_type: str = Field(nullable=False)  # team_leader, business_analyst, developer, tester
+    agent_type: str | None = Field(default=None)  # Legacy field for compatibility
+
+    # Runtime status
+    status: AgentStatus = Field(default=AgentStatus.idle)
+
+    # Relationships
+    project: "Project" = Relationship(back_populates="agents")
     messages: list["Message"] = Relationship(back_populates="agent")
 
 

@@ -1,9 +1,9 @@
-
 import type React from "react"
 
-import { useState, useRef, useEffect } from "react"
-import { Settings, Activity, Shield, TrendingUp } from "lucide-react"
+import { useState, useRef, useEffect, useMemo, useCallback } from "react"
+import { Settings, Activity, Shield, TrendingUp, Search, Filter, X, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { KanbanColumn, type KanbanColumnData } from "./kanban-column"
 import { TaskDetailModal } from "./task-detail-modal"
 import { WIPLimitSettingsDialog } from "./wip-limit-settings-dialog"
@@ -14,6 +14,7 @@ import { AgingItemsAlert } from "./aging-items-alert"
 import { BottleneckAlert } from "./bottleneck-alert"
 import { CumulativeFlowDiagram } from "./cumulative-flow-diagram"
 import type { KanbanCardData } from "./kanban-card"
+import { CreateStoryDialog, type StoryFormData } from "./create-story-dialog"
 import { useKanbanBoard } from "@/queries/backlog-items"
 import { backlogItemsApi } from "@/apis/backlog-items"
 
@@ -38,9 +39,24 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
   const [showFlowMetrics, setShowFlowMetrics] = useState(false)
   const [showPolicySettings, setShowPolicySettings] = useState(false)
   const [showCFD, setShowCFD] = useState(false)
+  const [showCreateStoryDialog, setShowCreateStoryDialog] = useState(false)
   const [policyViolation, setPolicyViolation] = useState<PolicyViolation | null>(null)
   const [flowMetrics, setFlowMetrics] = useState<any>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+
+  // Search and Filter state
+  const [searchQuery, setSearchQuery] = useState("")
+  const [showFilters, setShowFilters] = useState(false)
+  const [selectedFilters, setSelectedFilters] = useState<{
+    types: string[]
+    priorities: string[]
+  }>({
+    types: [],
+    priorities: []
+  })
+
+  // Keyboard shortcuts state
+  const [focusedCardId, setFocusedCardId] = useState<string | null>(null)
 
   // Load initial data from database
   const { data: dbKanbanData, isLoading } = useKanbanBoard(projectId)
@@ -72,14 +88,68 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     }
   }, [projectId])
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return
+      }
+
+      // Get all cards (flattened from columns)
+      const allCards = columns.flatMap(col => col.cards)
+
+      // Find currently focused card
+      const focusedCard = focusedCardId ? allCards.find(c => c.id === focusedCardId) : null
+
+      switch (e.key.toLowerCase()) {
+        case 'e':
+          // Edit card
+          if (focusedCard) {
+            e.preventDefault()
+            handleEditCard(focusedCard)
+          }
+          break
+        case 'd':
+          // Duplicate card
+          if (focusedCard) {
+            e.preventDefault()
+            handleDuplicateCard(focusedCard.id)
+          }
+          break
+        case 'delete':
+        case 'backspace':
+          // Delete card
+          if (focusedCard && !e.metaKey && !e.ctrlKey) {
+            e.preventDefault()
+            const column = columns.find(col => col.cards.some(c => c.id === focusedCard.id))
+            if (column) {
+              handleDeleteCard(column.id, focusedCard.id)
+              setFocusedCardId(null)
+            }
+          }
+          break
+        case 'escape':
+          // Clear focus
+          e.preventDefault()
+          setFocusedCardId(null)
+          break
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [focusedCardId, columns])
+
   // Load initial data from database when component mounts
   useEffect(() => {
     if (dbKanbanData && dbKanbanData.board) {
       console.log('[KanbanBoard] Loading Kanban board from database:', dbKanbanData)
 
-      // TraDS ============= Kanban Hierarchy: Filter out Epics and Sub-tasks from board display
+      // Lean Kanban: Only show UserStory and EnablerStory on board
+      // Epic managed separately, Tasks are implementation details
       const filterItems = (items: any[]) => items.filter((item: any) =>
-        item.type !== "Epic" && item.type !== "Sub-task"
+        item.type === "UserStory" || item.type === "EnablerStory"
       )
 
       // TraDS ============= Kanban Hierarchy: Map items with parent/children relationships
@@ -165,9 +235,10 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     if (kanbanData && kanbanData.kanban_board) {
       console.log('Updating Kanban board with WebSocket data:', kanbanData)
 
-      // TraDS ============= Kanban Hierarchy: Filter out Epics and Sub-tasks from board display
+      // Lean Kanban: Only show UserStory and EnablerStory on board
+      // Epic managed separately, Tasks are implementation details
       const filterItems = (items: any[]) => items.filter((item: any) =>
-        item.type !== "Epic" && item.type !== "Sub-task"
+        item.type === "UserStory" || item.type === "EnablerStory"
       )
 
       // TraDS ============= Kanban Hierarchy: Map items with parent/children relationships
@@ -234,7 +305,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     }
   }, [kanbanData])
 
-  const handleDownloadResult = (card: KanbanCardData) => {
+  const handleDownloadResult = useCallback((card: KanbanCardData) => {
     if (!card.result) return
 
     const blob = new Blob([card.result], { type: "text/markdown" })
@@ -246,9 +317,9 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-  }
+  }, [])
 
-  const handleAddCard = (columnId: string, content: string) => {
+  const handleAddCard = useCallback((columnId: string, storyData: StoryFormData) => {
     setColumns((prev) =>
       prev.map((col) => {
         if (col.id === columnId) {
@@ -258,14 +329,13 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
               ...col.cards,
               {
                 id: Date.now().toString(),
-                content,
+                content: storyData.title,
+                description: storyData.description,
                 columnId,
-                agentName: "Agent Smith",
-                agentAvatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${Date.now()}`,
-                taskId: `T${Math.floor(Math.random() * 10000)}`,
-                result: `# Task Result\n\nThis is the result of the task: ${content}`,
-                subtasks: ["Subtask 1", "Subtask 2"],
-                branch: "feature/task-" + Date.now(),
+                type: storyData.type,
+                story_point: storyData.story_point,
+                rank: storyData.priority === "High" ? 1 : storyData.priority === "Medium" ? 5 : 9,
+                taskId: `STORY-${Math.floor(Math.random() * 10000)}`,
               },
             ],
           }
@@ -273,9 +343,14 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         return col
       }),
     )
-  }
+  }, [])
 
-  const handleDeleteCard = (columnId: string, cardId: string) => {
+  const handleCreateStory = useCallback((storyData: StoryFormData) => {
+    // Always add to Todo column
+    handleAddCard("todo", storyData)
+  }, [handleAddCard])
+
+  const handleDeleteCard = useCallback((columnId: string, cardId: string) => {
     setColumns((prev) =>
       prev.map((col) => {
         if (col.id === columnId) {
@@ -287,20 +362,82 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         return col
       }),
     )
-  }
+  }, [])
 
-  const handleDragStart = (card: KanbanCardData) => {
+  const handleDuplicateCard = useCallback((cardId: string) => {
+    setColumns((prev) =>
+      prev.map((col) => {
+        const cardIndex = col.cards.findIndex(c => c.id === cardId)
+        if (cardIndex !== -1) {
+          const originalCard = col.cards[cardIndex]
+          const duplicatedCard: KanbanCardData = {
+            ...originalCard,
+            id: `${originalCard.id}-copy-${Date.now()}`,
+            taskId: `${originalCard.taskId}-copy`,
+            content: `${originalCard.content} (Copy)`,
+          }
+          return {
+            ...col,
+            cards: [...col.cards.slice(0, cardIndex + 1), duplicatedCard, ...col.cards.slice(cardIndex + 1)]
+          }
+        }
+        return col
+      })
+    )
+  }, [])
+
+  const handleMoveCard = useCallback((cardId: string, targetColumnId: string) => {
+    let cardToMove: KanbanCardData | null = null
+    let sourceColumnId: string | null = null
+
+    // Find the card and remove from source column
+    setColumns((prev) => {
+      const newColumns = prev.map((col) => {
+        const cardIndex = col.cards.findIndex(c => c.id === cardId)
+        if (cardIndex !== -1) {
+          cardToMove = col.cards[cardIndex]
+          sourceColumnId = col.id
+          return {
+            ...col,
+            cards: col.cards.filter((card) => card.id !== cardId),
+          }
+        }
+        return col
+      })
+
+      // Add to target column
+      if (cardToMove) {
+        return newColumns.map((col) => {
+          if (col.id === targetColumnId) {
+            return {
+              ...col,
+              cards: [...col.cards, { ...cardToMove!, columnId: targetColumnId }],
+            }
+          }
+          return col
+        })
+      }
+      return newColumns
+    })
+  }, [])
+
+  const handleEditCard = useCallback((card: KanbanCardData) => {
+    // Open the card detail modal for editing
+    setSelectedCard(card)
+  }, [])
+
+  const handleDragStart = useCallback((card: KanbanCardData) => {
     setDraggedCard(card)
-  }
+  }, [])
 
-  const handleDragOver = (e: React.DragEvent, columnId: string) => {
+  const handleDragOver = useCallback((e: React.DragEvent, columnId: string) => {
     e.preventDefault()
     setDraggedOverColumn(columnId)
-  }
+  }, [])
 
-  const handleDragLeave = () => {
+  const handleDragLeave = useCallback(() => {
     setDraggedOverColumn(null)
-  }
+  }, [])
 
   const handleDrop = async (e: React.DragEvent, targetColumnId: string) => {
     e.preventDefault()
@@ -400,102 +537,274 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     setDraggedOverColumn(null)
   }
 
-  const handleDragEnd = () => {
+  const handleDragEnd = useCallback(() => {
     setDraggedCard(null)
     setDraggedOverColumn(null)
-  }
+  }, [])
+
+  // Filter columns based on search query and filters
+  const filteredColumns = useMemo(() => {
+    return columns.map(column => {
+      const filteredCards = column.cards.filter(card => {
+        // Search filter
+        const matchesSearch = !searchQuery ||
+          card.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          card.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          card.taskId?.toLowerCase().includes(searchQuery.toLowerCase())
+
+        // Type filter
+        const matchesType = selectedFilters.types.length === 0 ||
+          (card.type && selectedFilters.types.includes(card.type))
+
+        // Priority filter (based on rank)
+        let matchesPriority = true
+        if (selectedFilters.priorities.length > 0 && card.rank !== undefined && card.rank !== null) {
+          matchesPriority = selectedFilters.priorities.some(priority => {
+            if (priority === "high" && card.rank! <= 3) return true
+            if (priority === "medium" && card.rank! > 3 && card.rank! <= 7) return true
+            if (priority === "low" && card.rank! > 7) return true
+            return false
+          })
+        } else if (selectedFilters.priorities.length > 0) {
+          matchesPriority = false
+        }
+
+        return matchesSearch && matchesType && matchesPriority
+      })
+
+      return {
+        ...column,
+        cards: filteredCards
+      }
+    })
+  }, [columns, searchQuery, selectedFilters])
+
+  // Calculate active filter count for UI
+  const activeFilterCount = selectedFilters.types.length + selectedFilters.priorities.length
 
   return (
     <>
-      <div
-        ref={scrollContainerRef}
-        className="h-full overflow-x-auto bg-background border-t flex flex-col"
-        style={{ scrollBehavior: "smooth" }}
-      >
-        {/* Header with Settings Buttons */}
-        <div className="flex items-center justify-between px-6 pt-4 pb-2">
-          <h2 className="text-lg font-semibold text-foreground">Kanban Board</h2>
-          {projectId && (
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowCFD(true)}
-                className="gap-2"
-              >
-                <TrendingUp className="w-4 h-4" />
-                CFD
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowFlowMetrics(true)}
-                className="gap-2"
-              >
-                <Activity className="w-4 h-4" />
-                Metrics
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowPolicySettings(true)}
-                className="gap-2"
-              >
-                <Shield className="w-4 h-4" />
-                Policies
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowWIPSettings(true)}
-                className="gap-2"
-              >
-                <Settings className="w-4 h-4" />
-                WIP Limits
-              </Button>
+      <div className="h-full bg-background flex flex-col">
+        {/* Fixed Header with Settings Buttons - Modern & Minimal */}
+        <div className="flex-shrink-0 flex flex-col gap-4 px-8 pt-6 pb-4 border-b border-border/40 bg-background">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-foreground tracking-tight">Kanban Board</h2>
+            {projectId && (
+              <div className="flex gap-2.5">
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => setShowCreateStoryDialog(true)}
+                  className="gap-2 h-9 px-3.5 rounded-lg"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span className="font-medium">Create Story</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowCFD(true)}
+                  className="gap-2 h-9 px-3.5 rounded-lg hover:bg-muted/80 transition-colors"
+                >
+                  <TrendingUp className="w-4 h-4" />
+                  <span className="font-medium">CFD</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowFlowMetrics(true)}
+                  className="gap-2 h-9 px-3.5 rounded-lg hover:bg-muted/80 transition-colors"
+                >
+                  <Activity className="w-4 h-4" />
+                  <span className="font-medium">Metrics</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowPolicySettings(true)}
+                  className="gap-2 h-9 px-3.5 rounded-lg hover:bg-muted/80 transition-colors"
+                >
+                  <Shield className="w-4 h-4" />
+                  <span className="font-medium">Policies</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowWIPSettings(true)}
+                  className="gap-2 h-9 px-3.5 rounded-lg hover:bg-muted/80 transition-colors"
+                >
+                  <Settings className="w-4 h-4" />
+                  <span className="font-medium">WIP Limits</span>
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {/* Search and Filter Bar */}
+          <div className="flex gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="Search cards..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 pr-10 h-9 rounded-lg bg-muted/30 border-border/50 focus:bg-background transition-colors"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            <Button
+              variant={activeFilterCount > 0 ? "default" : "outline"}
+              size="sm"
+              onClick={() => setShowFilters(!showFilters)}
+              className="gap-2 h-9 px-3.5 rounded-lg"
+            >
+              <Filter className="w-4 h-4" />
+              <span className="font-medium">
+                Filters
+                {activeFilterCount > 0 && ` (${activeFilterCount})`}
+              </span>
+            </Button>
+          </div>
+
+          {/* Filter Panel */}
+          {showFilters && (
+            <div className="p-4 rounded-lg bg-muted/30 border border-border/50 space-y-4">
+              {/* Type Filter - Lean Kanban: Only UserStory and EnablerStory */}
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-foreground">Type</label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { value: "UserStory", label: "User Story" },
+                    { value: "EnablerStory", label: "Enabler Story" }
+                  ].map((type) => (
+                    <button
+                      key={type.value}
+                      onClick={() => {
+                        setSelectedFilters(prev => ({
+                          ...prev,
+                          types: prev.types.includes(type.value)
+                            ? prev.types.filter(t => t !== type.value)
+                            : [...prev.types, type.value]
+                        }))
+                      }}
+                      className={`
+                        px-3 py-1.5 text-xs font-medium rounded-lg transition-colors
+                        ${selectedFilters.types.includes(type.value)
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-background border border-border/50 hover:bg-muted"
+                        }
+                      `}
+                    >
+                      {type.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Priority Filter */}
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-foreground">Priority</label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { value: "high", label: "High (1-3)" },
+                    { value: "medium", label: "Medium (4-7)" },
+                    { value: "low", label: "Low (8+)" }
+                  ].map((priority) => (
+                    <button
+                      key={priority.value}
+                      onClick={() => {
+                        setSelectedFilters(prev => ({
+                          ...prev,
+                          priorities: prev.priorities.includes(priority.value)
+                            ? prev.priorities.filter(p => p !== priority.value)
+                            : [...prev.priorities, priority.value]
+                        }))
+                      }}
+                      className={`
+                        px-3 py-1.5 text-xs font-medium rounded-lg transition-colors
+                        ${selectedFilters.priorities.includes(priority.value)
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-background border border-border/50 hover:bg-muted"
+                        }
+                      `}
+                    >
+                      {priority.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Clear Filters */}
+              {activeFilterCount > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedFilters({ types: [], priorities: [] })}
+                  className="w-full h-8"
+                >
+                  Clear All Filters
+                </Button>
+              )}
             </div>
           )}
         </div>
 
-        {/* Lean Kanban Alerts */}
-        {projectId && flowMetrics && (
-          <div className="px-6">
-            <AgingItemsAlert
-              projectId={projectId}
-              agingItems={flowMetrics.aging_items || []}
-              onCardClick={(itemId) => {
-                // Find and select the card
-                const allCards = columns.flatMap(col => col.cards)
-                const card = allCards.find(c => c.taskId === itemId || c.id === itemId)
-                if (card) setSelectedCard(card)
-              }}
-            />
-            <BottleneckAlert
-              bottlenecks={flowMetrics.bottlenecks || {}}
-              threshold={48}
-            />
-          </div>
-        )}
+        {/* Scrollable Content Area */}
+        <div
+          ref={scrollContainerRef}
+          className="flex-1 overflow-x-auto overflow-y-auto"
+          style={{ scrollBehavior: "smooth" }}
+        >
+          {/* Lean Kanban Alerts - Better spacing */}
+          {projectId && flowMetrics && (
+            <div className="px-8 pt-4 space-y-3">
+              <AgingItemsAlert
+                projectId={projectId}
+                agingItems={flowMetrics.aging_items || []}
+                onCardClick={(itemId) => {
+                  // Find and select the card
+                  const allCards = columns.flatMap(col => col.cards)
+                  const card = allCards.find(c => c.taskId === itemId || c.id === itemId)
+                  if (card) setSelectedCard(card)
+                }}
+              />
+              <BottleneckAlert
+                bottlenecks={flowMetrics.bottlenecks || {}}
+                threshold={48}
+              />
+            </div>
+          )}
 
-        {/* Columns */}
-        <div className="flex gap-4 min-w-max px-6 pb-6">
-          {columns.map((column) => (
-            <KanbanColumn
-              key={column.id}
-              column={column}
-              isDraggedOver={draggedOverColumn === column.id}
-              draggedCardId={draggedCard?.id}
-              onDragOver={(e) => handleDragOver(e, column.id)}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDrop(e, column.id)}
-              onCardDragStart={handleDragStart}
-              onCardDragEnd={handleDragEnd}
-              onCardClick={setSelectedCard}
-              onCardDelete={(cardId) => handleDeleteCard(column.id, cardId)}
-              onCardDownloadResult={handleDownloadResult}
-              onAddCard={(content) => handleAddCard(column.id, content)}
-            />
-          ))}
+          {/* Columns - Better spacing and layout */}
+          <div className="flex gap-6 min-w-max px-8 py-6">
+            {filteredColumns.map((column) => (
+              <KanbanColumn
+                key={column.id}
+                column={column}
+                isDraggedOver={draggedOverColumn === column.id}
+                draggedCardId={draggedCard?.id}
+                onDragOver={(e) => handleDragOver(e, column.id)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, column.id)}
+                onCardDragStart={handleDragStart}
+                onCardDragEnd={handleDragEnd}
+                onCardClick={setSelectedCard}
+                onCardDelete={(cardId) => handleDeleteCard(column.id, cardId)}
+                onCardDownloadResult={handleDownloadResult}
+                onCardDuplicate={handleDuplicateCard}
+                onCardMove={handleMoveCard}
+                onCardEdit={handleEditCard}
+              />
+            ))}
+          </div>
         </div>
       </div>
 
@@ -535,6 +844,12 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         projectId={projectId}
         open={showCFD}
         onOpenChange={setShowCFD}
+      />
+
+      <CreateStoryDialog
+        open={showCreateStoryDialog}
+        onOpenChange={setShowCreateStoryDialog}
+        onCreateStory={handleCreateStory}
       />
     </>
   )

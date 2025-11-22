@@ -42,6 +42,28 @@ def list_agents(
     return AgentsPublic(data=rows, count=count)
 
 
+@router.get("/project/{project_id}", response_model=AgentsPublic)
+def get_project_agents(
+    project_id: UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> Any:
+    """
+    Get all agents for a specific project.
+
+    Args:
+        project_id: UUID of the project
+        session: Database session
+        current_user: Current authenticated user
+
+    Returns:
+        AgentsPublic: List of agents for the project
+    """
+    stmt = select(AgentModel).where(AgentModel.project_id == project_id)
+    agents = session.exec(stmt).all()
+    return AgentsPublic(data=agents, count=len(agents))
+
+
 @router.get("/{agent_id}", response_model=AgentPublic)
 def get_agent(
     agent_id: UUID,

@@ -76,6 +76,7 @@ class StoryData(BaseModel):
     story_points: int
     priority: str = "Medium"
     dependencies: ListType[str] = []
+    story_type: str = "UserStory"  # "UserStory" or "EnablerStory"
 
 
 class BacklogOutput(BaseModel):
@@ -984,10 +985,20 @@ Actors: {', '.join(flow.actors)}"""
                     "Low": StoryPriority.LOW
                 }
 
+                # Map story type (UserStory vs EnablerStory)
+                story_type_map = {
+                    "UserStory": StoryType.USER_STORY,
+                    "EnablerStory": StoryType.ENABLER_STORY
+                }
+                mapped_type = story_type_map.get(
+                    story_data.story_type,
+                    StoryType.USER_STORY  # Default to UserStory if not specified
+                )
+
                 story = Story(
                     project_id=self.project_id,
                     epic_id=epic_uuid,
-                    type=StoryType.USER_STORY,
+                    type=mapped_type,
                     title=story_data.title,
                     description=story_data.description,
                     acceptance_criteria="\n".join(story_data.acceptance_criteria),

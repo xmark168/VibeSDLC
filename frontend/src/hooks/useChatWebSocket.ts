@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { AuthorType, type Message } from '@/types/message'
 
+// Track processed message IDs to prevent duplicates
+const processedMessageIds = new Set<string>()
+
 export type WebSocketMessage = {
   type: 'connected' | 'message' | 'agent_message' | 'agent_response' | 'typing' | 'pong' | 'error' | 'routing' | 'agent_routing' | 'agent_step' | 'agent_thinking' | 'tool_call' | 'kanban_update' | 'story_created' | 'story_updated' | 'story_status_changed' | 'scrum_master_step' | 'switch_tab'
   data?: Message | any
@@ -34,6 +37,8 @@ export type WebSocketMessage = {
 export type SendMessageParams = {
   content: string
   author_type?: 'user' | 'agent'
+  agent_id?: string  // ID of mentioned agent for routing
+  agent_name?: string  // Name of mentioned agent for display
 }
 
 export function useChatWebSocket(projectId: string | undefined, token: string | undefined) {
@@ -260,6 +265,8 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
       wsRef.current.close()
       wsRef.current = null
     }
+    // Clear processed message tracking on disconnect
+    processedMessageIds.clear()
     setIsConnected(false)
     setIsReady(false)
   }, [])
@@ -292,6 +299,8 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
         type: 'message',
         content: params.content,
         author_type: params.author_type || 'user',
+        agent_id: params.agent_id,  // Include agent_id for routing
+        agent_name: params.agent_name,  // Include agent_name for display
         temp_id: tempId, // Send temp_id for potential deduplication
       }))
 
@@ -320,6 +329,27 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     const interval = setInterval(ping, 30000)
     return () => clearInterval(interval)
   }, [isConnected, ping])
+
+  // Clean up stale temp messages (older than 10 seconds without server confirmation)
+  useEffect(() => {
+    const cleanup = setInterval(() => {
+      const now = Date.now()
+      setMessages(prev => {
+        const filtered = prev.filter(m => {
+          if (!m.id.startsWith('temp_')) return true
+          const msgTime = new Date(m.created_at).getTime()
+          const isStale = now - msgTime > 10000 // 10 seconds
+          if (isStale) {
+            console.log('[WebSocket] Removing stale temp message:', m.id)
+          }
+          return !isStale
+        })
+        return filtered.length === prev.length ? prev : filtered
+      })
+    }, 5000) // Check every 5 seconds
+
+    return () => clearInterval(cleanup)
+  }, [])
 
   return {
     isConnected,

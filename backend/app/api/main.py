@@ -6,6 +6,7 @@ from app.api.routes import (
     ba_agents,  # Business Analyst workflow
     blockers,  # Story blockers tracking
     chat,  # WebSocket chat endpoint
+    files,  # Project file management
     lean_kanban,  # Lean Kanban features: WIP limits, policies, flow metrics
     messages,
     private,
@@ -23,6 +24,7 @@ api_router.include_router(users.router)
 api_router.include_router(utils.router)
 api_router.include_router(stories.router)  # Story API (Kanban: Todo/InProgress/Review/Done)
 api_router.include_router(projects.router)
+api_router.include_router(files.router)  # Project file management
 api_router.include_router(lean_kanban.router)  # Lean Kanban: WIP limits, policies, metrics
 api_router.include_router(messages.router)
 api_router.include_router(agents.router)

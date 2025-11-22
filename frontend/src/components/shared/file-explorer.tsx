@@ -4,105 +4,99 @@ import {
   File,
   Folder,
   FolderOpen,
+  Loader2,
+  AlertCircle,
+  RefreshCw,
+  GitBranch,
+  Circle,
 } from "lucide-react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
-
-interface FileNode {
-  name: string
-  type: "file" | "folder"
-  path: string
-  children?: FileNode[]
-  modified?: string
-}
-
-const fileTree: FileNode[] = [
-  {
-    name: "app",
-    type: "folder",
-    path: "app",
-    children: [
-      { name: "globals.css", type: "file", path: "app/globals.css" },
-      { name: "layout.tsx", type: "file", path: "app/layout.tsx" },
-      { name: "page.tsx", type: "file", path: "app/page.tsx" },
-    ],
-  },
-  {
-    name: "components",
-    type: "folder",
-    path: "components",
-    children: [
-      {
-        name: "chat-panel.tsx",
-        type: "file",
-        path: "components/chat-panel.tsx",
-      },
-      {
-        name: "kanban-board.tsx",
-        type: "file",
-        path: "components/kanban-board.tsx",
-      },
-      {
-        name: "kanban-card.tsx",
-        type: "file",
-        path: "components/kanban-card.tsx",
-      },
-      {
-        name: "kanban-column.tsx",
-        type: "file",
-        path: "components/kanban-column.tsx",
-      },
-      {
-        name: "resizable-handle.tsx",
-        type: "file",
-        path: "components/resizable-handle.tsx",
-        modified: "+2/-2",
-      },
-      { name: "sidebar.tsx", type: "file", path: "components/sidebar.tsx" },
-      {
-        name: "task-detail-modal.tsx",
-        type: "file",
-        path: "components/task-detail-modal.tsx",
-      },
-      {
-        name: "theme-toggle.tsx",
-        type: "file",
-        path: "components/theme-toggle.tsx",
-      },
-      {
-        name: "workspace-panel.tsx",
-        type: "file",
-        path: "components/workspace-panel.tsx",
-      },
-    ],
-  },
-  {
-    name: "public",
-    type: "folder",
-    path: "public",
-    children: [
-      {
-        name: "abstract-infinity-symbol-design-in-white-on-black-.jpg",
-        type: "file",
-        path: "public/abstract-infinity-symbol-design-in-white-on-black-.jpg",
-      },
-    ],
-  },
-  { name: "package.json", type: "file", path: "package.json" },
-]
+import { filesApi, type FileNode, type GitStatusResponse } from "@/apis/files"
+import { Button } from "@/components/ui/button"
 
 interface FileExplorerProps {
+  projectId?: string
   onFileSelect: (path: string) => void
   selectedFile: string | null
 }
 
 export function FileExplorer({
+  projectId,
   onFileSelect,
   selectedFile,
 }: FileExplorerProps) {
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
-    new Set(["components"]),
-  )
+  const [fileTree, setFileTree] = useState<FileNode[]>([])
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Git status state
+  const [gitStatus, setGitStatus] = useState<GitStatusResponse | null>(null)
+
+  // Fetch file tree when projectId changes
+  useEffect(() => {
+    if (projectId) {
+      fetchFileTree()
+      fetchGitStatus()
+    } else {
+      setFileTree([])
+      setError(null)
+      setGitStatus(null)
+    }
+  }, [projectId])
+
+  // Poll git status every 5 seconds when tab is visible
+  useEffect(() => {
+    if (!projectId) return
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchGitStatus()
+      }
+    }, 5000)
+
+    return () => clearInterval(interval)
+  }, [projectId])
+
+  const fetchFileTree = async () => {
+    if (!projectId) return
+
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const response = await filesApi.getFileTree(projectId, 5)
+
+      // Convert root node children to array (or use root if it has children)
+      if (response.root.children) {
+        setFileTree(response.root.children)
+        // Auto-expand first folder
+        if (response.root.children.length > 0 && response.root.children[0].type === "folder") {
+          setExpandedFolders(new Set([response.root.children[0].path]))
+        }
+      } else {
+        setFileTree([])
+      }
+    } catch (err: any) {
+      console.error("Failed to fetch file tree:", err)
+      setError(err.message || "Failed to load files")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const fetchGitStatus = async () => {
+    if (!projectId) return
+
+    try {
+      const response = await filesApi.getGitStatus(projectId)
+      setGitStatus(response)
+    } catch (err: any) {
+      console.error("Failed to fetch git status:", err)
+      // Silent fail - git status is optional
+    }
+  }
 
   const toggleFolder = (path: string) => {
     const newExpanded = new Set(expandedFolders)
@@ -112,6 +106,33 @@ export function FileExplorer({
       newExpanded.add(path)
     }
     setExpandedFolders(newExpanded)
+  }
+
+  // Get git status for a file
+  const getFileChangeType = (filePath: string): string | null => {
+    if (!gitStatus?.is_git_repo || !gitStatus.files) return null
+    return gitStatus.files[filePath] || null
+  }
+
+  // Get color/icon for change type
+  const getChangeIndicator = (changeType: string | null) => {
+    if (!changeType) return null
+
+    const indicators: Record<string, { color: string; label: string }> = {
+      'M': { color: 'text-yellow-500', label: 'Modified' },
+      'A': { color: 'text-green-500', label: 'Added' },
+      'D': { color: 'text-red-500', label: 'Deleted' },
+      'R': { color: 'text-blue-500', label: 'Renamed' },
+      'U': { color: 'text-gray-500', label: 'Untracked' },
+    }
+
+    const indicator = indicators[changeType] || { color: 'text-gray-400', label: changeType }
+    return (
+      <Circle
+        className={cn('w-2 h-2 fill-current', indicator.color)}
+        title={indicator.label}
+      />
+    )
   }
 
   const renderNode = (node: FileNode, depth = 0) => {
@@ -157,17 +178,80 @@ export function FileExplorer({
         )}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
       >
-        <div className="w-3.5 flex-shrink-0" />
+        <div className="w-3.5 flex-shrink-0 flex items-center justify-center">
+          {getChangeIndicator(getFileChangeType(node.path))}
+        </div>
         <File className="w-4 h-4 text-muted-foreground flex-shrink-0" />
         <span className="text-foreground truncate flex-1 text-left">
           {node.name}
         </span>
-        {node.modified && (
+        {node.size && (
           <span className="text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-            {node.modified}
+            {formatFileSize(node.size)}
           </span>
         )}
       </button>
+    )
+  }
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="h-full flex items-center justify-center bg-background border-r border-border">
+        <div className="flex flex-col items-center gap-2 text-muted-foreground">
+          <Loader2 className="w-6 h-6 animate-spin" />
+          <span className="text-sm">Loading files...</span>
+        </div>
+      </div>
+    )
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="h-full flex items-center justify-center bg-background border-r border-border p-4">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <AlertCircle className="w-8 h-8 text-destructive" />
+          <div>
+            <p className="text-sm font-medium text-foreground">Failed to load files</p>
+            <p className="text-xs text-muted-foreground mt-1">{error}</p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchFileTree}
+            className="gap-2"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Retry
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // No project selected
+  if (!projectId) {
+    return (
+      <div className="h-full flex items-center justify-center bg-background border-r border-border p-4">
+        <p className="text-sm text-muted-foreground text-center">
+          Select a project to view files
+        </p>
+      </div>
+    )
+  }
+
+  // Empty state
+  if (fileTree.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center bg-background border-r border-border p-4">
+        <div className="flex flex-col items-center gap-2 text-center">
+          <Folder className="w-8 h-8 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">
+            No files in this project yet
+          </p>
+        </div>
+      </div>
     )
   }
 
@@ -176,4 +260,11 @@ export function FileExplorer({
       <div className="py-2">{fileTree.map((node) => renderNode(node))}</div>
     </div>
   )
+}
+
+// Helper function to format file size
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }

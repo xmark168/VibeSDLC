@@ -11,12 +11,10 @@ Each role is a self-contained CrewAI Crew with:
 
 from .team_leader.crew import TeamLeaderCrew
 from .business_analyst.crew import BusinessAnalystCrew
-from .developer.crew import DeveloperCrew
 from .tester.crew import TesterCrew
 
 __all__ = [
     "TeamLeaderCrew",
     "BusinessAnalystCrew",
-    "DeveloperCrew",
     "TesterCrew",
 ]

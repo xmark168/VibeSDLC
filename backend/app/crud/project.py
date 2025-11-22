@@ -47,6 +47,47 @@ def generate_project_code(*, session: Session) -> str:
     return f"PRJ-{next_number:03d}"
 
 
+def create_project_no_commit(
+    *,
+    session: Session,
+    project_in: ProjectCreate,
+    owner_id: UUID,
+) -> Project:
+    """
+    Create a new project without committing - for use in larger transactions.
+
+    Args:
+        session: Database session
+        project_in: Project creation schema
+        owner_id: UUID of the project owner
+
+    Returns:
+        Project: Created project instance (not committed)
+    """
+    # Generate unique project code
+    project_code = generate_project_code(session=session)
+
+    # Prepare update dict with required fields
+    update_dict = {
+        "code": project_code,
+        "owner_id": owner_id,
+        "is_init": False,  # Default value for new projects
+    }
+
+    # Create project with auto-generated code
+    db_project = Project.model_validate(
+        project_in,
+        update=update_dict,
+    )
+
+    session.add(db_project)
+    # Flush to get the ID without committing
+    session.flush()
+
+    logger.info(f"Prepared project {db_project.code} (ID: {db_project.id}) for user {owner_id}")
+    return db_project
+
+
 def create_project(
     *,
     session: Session,

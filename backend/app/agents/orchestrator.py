@@ -1,136 +1,208 @@
-"""Agent Orchestrator Service.
+"""Agent Orchestrator Service - Refactored for dynamic per-agent consumers.
 
-Central service that manages all agent crews and their lifecycle.
+Central service that manages all agent instances and their lifecycle.
 This orchestrator:
-1. Initializes all crew modules (Team Leader, BA, Developer, Tester)
-2. Starts/stops Kafka consumers for each crew
-3. Manages crew lifecycle
-4. Integrates with FastAPI app startup/shutdown
+1. Loads agent instances from database on startup
+2. Creates BaseAgentRole instance for each agent
+3. Starts Kafka consumers for each agent
+4. Manages agent lifecycle
+5. Integrates with FastAPI app startup/shutdown
 """
 
 import asyncio
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, Optional
+from uuid import UUID
 
-from app.agents.roles.team_leader import TeamLeaderCrew, TeamLeaderConsumer
-from app.agents.roles.business_analyst import BusinessAnalystCrew, BusinessAnalystConsumer
-from app.agents.roles.developer import DeveloperCrew, DeveloperConsumer
-from app.agents.roles.tester import TesterCrew, TesterConsumer
+from sqlmodel import Session, select, update
+
+from app.agents.roles.team_leader import TeamLeaderRole
+from app.agents.roles.business_analyst import BusinessAnalystRole
+from app.agents.roles.tester import TesterRole
+from app.models import Agent as AgentModel, Project
+from app.core.db import engine
+from app.agents.core.base_role import BaseAgentRole
 
 logger = logging.getLogger(__name__)
 
 
+# Mapping of role_type to Role class
+ROLE_CLASS_MAP = {
+    "team_leader": TeamLeaderRole,
+    "business_analyst": BusinessAnalystRole,
+    "tester": TesterRole,
+    "developer": None,  # TODO: Add DeveloperRole when ready
+}
+
+
 class AgentOrchestrator:
-    """Central orchestrator for all agent crews.
+    """Central orchestrator for all agent instances.
 
     Manages:
-    - Team Leader Crew (orchestrates task delegation)
-    - Business Analyst Crew (requirements and PRD)
-    - Developer Crew (code implementation)
-    - Tester Crew (QA and testing)
+    - Dynamic loading of agents from database
+    - Per-agent BaseAgentRole instances
+    - Per-agent Kafka consumers
+    - Agent lifecycle (start/stop)
 
     Flow:
-    1. User message → Team Leader analyzes → Delegates to specialist
-    2. Specialist crew receives routing event → Executes task → Publishes response
-    3. WebSocket bridge forwards response to UI
+    1. User message → published to project_{project_id}_messages topic
+    2. All agents in that project listen to the topic
+    3. Agent with matching agent_id (or Team Leader if no match) processes message
+    4. Agent publishes response back to WebSocket
     """
 
     def __init__(self):
-        """Initialize the orchestrator with all crews."""
+        """Initialize the orchestrator."""
         self._running = False
-        self._consumers: Dict[str, any] = {}
-        self._tasks: List[asyncio.Task] = []
-
-        # Initialize crews
-        self.team_leader = TeamLeaderCrew()
-        self.business_analyst = BusinessAnalystCrew()
-        self.developer = DeveloperCrew()
-        self.tester = TesterCrew()
-
-        # Initialize consumers
-        self._consumers = {
-            "team_leader": TeamLeaderConsumer(group_id="team-leader-consumer"),
-            "business_analyst": BusinessAnalystConsumer(group_id="business-analyst-consumer"),
-            "developer": DeveloperConsumer(group_id="developer-consumer"),
-            "tester": TesterConsumer(group_id="tester-consumer"),
-        }
-
-        logger.info("Agent Orchestrator initialized with 4 crews")
+        self._agent_roles: Dict[UUID, BaseAgentRole] = {}  # agent_id -> BaseAgentRole instance
+        logger.info("Agent Orchestrator initialized (dynamic architecture)")
 
     async def start(self) -> None:
-        """Start all crew consumers.
+        """Start orchestrator and load all agents from database.
 
-        This starts Kafka consumers that listen for events:
-        - Team Leader: listens for UserMessageEvent
-        - Specialists: listen for AgentRoutingEvent
+        This loads ALL agent instances from the database and starts their consumers.
         """
         if self._running:
             logger.warning("Agent Orchestrator already running")
             return
 
-        logger.info("Starting Agent Orchestrator...")
+        logger.info("Starting Agent Orchestrator (loading agents from database)...")
 
         try:
-            # Start all consumers in parallel
-            start_tasks = [
-                self._start_consumer("team_leader"),
-                self._start_consumer("business_analyst"),
-                self._start_consumer("developer"),
-                self._start_consumer("tester"),
-            ]
+            # Load all agents from database
+            with Session(engine) as db_session:
+                # Query agents that should be running
+                # Only load: idle (ready to run) and stopped (cleanly stopped, safe to restart)
+                # Skip: busy (stale), error (needs investigation), terminated (permanent shutdown)
+                agents = db_session.exec(
+                    select(AgentModel)
+                    .where(AgentModel.status.in_(["idle", "stopped"]))
+                ).all()
 
-            await asyncio.gather(*start_tasks, return_exceptions=True)
+                logger.info(f"Found {len(agents)} agents to start (idle/stopped status)")
+
+                # Start each agent
+                for agent in agents:
+                    try:
+                        await self.start_agent(agent, db_session)
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to start agent {agent.human_name} ({agent.id}): {e}",
+                            exc_info=True
+                        )
 
             self._running = True
-            logger.info("Agent Orchestrator started successfully - all crews listening for events")
+            logger.info(
+                f"Agent Orchestrator started successfully - {len(self._agent_roles)} agents running"
+            )
 
         except Exception as e:
             logger.error(f"Failed to start Agent Orchestrator: {e}", exc_info=True)
             raise
 
-    async def _start_consumer(self, crew_name: str) -> None:
-        """Start a specific crew consumer.
+    async def start_agent(self, agent: AgentModel, db_session: Optional[Session] = None) -> bool:
+        """Start a specific agent instance.
 
         Args:
-            crew_name: Name of the crew to start
+            agent: Agent model from database
+            db_session: Optional database session
+
+        Returns:
+            True if started successfully
         """
         try:
-            consumer = self._consumers.get(crew_name)
-            if consumer:
-                # Start consumer in background task
-                task = asyncio.create_task(consumer.start())
-                self._tasks.append(task)
-                logger.info(f"{crew_name} consumer started")
+            # Check if already running
+            if agent.id in self._agent_roles:
+                logger.warning(f"Agent {agent.human_name} ({agent.id}) already running")
+                return False
+
+            # Get role class for this agent type
+            role_class = ROLE_CLASS_MAP.get(agent.role_type)
+            if not role_class:
+                logger.warning(
+                    f"No role class found for agent type '{agent.role_type}', skipping agent {agent.id}"
+                )
+                return False
+
+            # Create role instance
+            role_instance = role_class(agent_model=agent)
+
+            # Start the role (which starts consumer)
+            success = await role_instance.start()
+
+            if success:
+                self._agent_roles[agent.id] = role_instance
+                logger.info(
+                    f"✓ Started agent: {agent.human_name} ({agent.role_type}) "
+                    f"for project {agent.project_id}"
+                )
+                return True
             else:
-                logger.warning(f"Consumer not found for crew: {crew_name}")
+                logger.error(f"Failed to start agent {agent.human_name}")
+                return False
+
         except Exception as e:
-            logger.error(f"Failed to start {crew_name} consumer: {e}", exc_info=True)
+            logger.error(f"Error starting agent {agent.id}: {e}", exc_info=True)
+            return False
+
+    async def stop_agent(self, agent_id: UUID) -> bool:
+        """Stop a specific agent instance.
+
+        Args:
+            agent_id: UUID of the agent to stop
+
+        Returns:
+            True if stopped successfully
+        """
+        try:
+            role_instance = self._agent_roles.get(agent_id)
+            if not role_instance:
+                logger.warning(f"Agent {agent_id} not found in running agents")
+                return False
+
+            # Stop the role (which stops consumer)
+            success = await role_instance.stop()
+
+            if success:
+                del self._agent_roles[agent_id]
+                logger.info(f"✓ Stopped agent {agent_id}")
+                return True
+            else:
+                logger.error(f"Failed to stop agent {agent_id}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error stopping agent {agent_id}: {e}", exc_info=True)
+            return False
 
     async def stop(self) -> None:
-        """Stop all crew consumers."""
+        """Stop all agent instances."""
         if not self._running:
             return
 
         logger.info("Stopping Agent Orchestrator...")
 
         try:
-            # Stop all consumers
-            stop_tasks = [
-                consumer.stop()
-                for consumer in self._consumers.values()
-            ]
+            # Stop all agents
+            agent_ids = list(self._agent_roles.keys())
+            for agent_id in agent_ids:
+                await self.stop_agent(agent_id)
 
-            await asyncio.gather(*stop_tasks, return_exceptions=True)
+            # Bulk update all stopped agents in database as a safety net
+            # NOTE: State sync is now automatic via BaseAgentRole._sync_state_to_db()
+            # This is a fallback to ensure consistency if any auto-sync failed
+            if agent_ids:
+                with Session(engine) as db_session:
+                    stmt = (
+                        update(AgentModel)
+                        .where(AgentModel.id.in_(agent_ids))
+                        .values(status="stopped")
+                    )
+                    db_session.exec(stmt)
+                    db_session.commit()
+                    logger.info(f"Bulk updated {len(agent_ids)} agents to 'stopped' status (safety net)")
 
-            # Cancel background tasks
-            for task in self._tasks:
-                if not task.done():
-                    task.cancel()
-
-            # Wait for tasks to complete
-            await asyncio.gather(*self._tasks, return_exceptions=True)
-
-            self._tasks.clear()
+            self._agent_roles.clear()
             self._running = False
 
             logger.info("Agent Orchestrator stopped")
@@ -143,30 +215,38 @@ class AgentOrchestrator:
         """Check if orchestrator is running."""
         return self._running
 
-    def get_crew_status(self) -> Dict[str, Dict[str, any]]:
-        """Get status of all crews.
+    def get_agent_status(self, agent_id: UUID) -> Optional[Dict]:
+        """Get status of a specific agent.
+
+        Args:
+            agent_id: UUID of the agent
 
         Returns:
-            Dictionary with crew names and their status
+            Agent status dictionary or None if not found
+        """
+        role_instance = self._agent_roles.get(agent_id)
+        if not role_instance:
+            return None
+
+        return {
+            "agent_id": str(agent_id),
+            "role_name": role_instance.role_name,
+            "agent_type": role_instance.agent_type,
+            "state": role_instance.state.value,
+            "project_id": str(role_instance.project_id) if role_instance.project_id else None,
+            "human_name": role_instance.human_name,
+            "running": role_instance.state.value in ["running", "idle", "busy"],
+        }
+
+    def get_all_agent_status(self) -> Dict[UUID, Dict]:
+        """Get status of all running agents.
+
+        Returns:
+            Dictionary mapping agent_id to status dict
         """
         return {
-            "team_leader": {
-                "crew": self.team_leader.crew_name,
-                "consumer_running": self._consumers["team_leader"].is_running,
-            },
-            "business_analyst": {
-                "crew": self.business_analyst.crew_name,
-                "consumer_running": self._consumers["business_analyst"].is_running,
-            },
-            "developer": {
-                "crew": self.developer.crew_name,
-                "consumer_running": self._consumers["developer"].is_running,
-            },
-            "tester": {
-                "crew": self.tester.crew_name,
-                "consumer_running": self._consumers["tester"].is_running,
-            },
-            "orchestrator_running": self._running,
+            agent_id: self.get_agent_status(agent_id)
+            for agent_id in self._agent_roles.keys()
         }
 
 

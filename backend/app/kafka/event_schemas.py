@@ -1,7 +1,5 @@
-"""Kafka event schemas and topic definitions.
-
-This module defines all Pydantic schemas for events flowing through Kafka,
-ensuring type safety and validation across the event-driven architecture.
+"""
+Kafka event schemas and topic definitions.
 """
 
 from datetime import datetime
@@ -12,7 +10,25 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
-# TOPIC DEFINITIONS
+def get_project_topic(project_id: UUID) -> str:
+    """Get the Kafka topic name for a specific project.
+
+    Each project has its own topic where all agents in that project
+    listen for user messages and delegation events.
+
+    Args:
+        project_id: UUID of the project
+
+    Returns:
+        Topic name in format: project_{project_id}_messages
+
+    Example:
+        >>> get_project_topic(UUID("abc-123"))
+        'project_abc-123_messages'
+    """
+    return f"project_{project_id}_messages"
+
+
 class KafkaTopics(str, Enum):
     """Kafka topic names for different event types."""
 
@@ -24,7 +40,7 @@ class KafkaTopics(str, Enum):
     AGENT_STATUS = "agent_status"
     APPROVAL_REQUESTS = "approval_requests"
     APPROVAL_RESPONSES = "approval_responses"
-
+    
 
 # BASE EVENT SCHEMA
 class BaseKafkaEvent(BaseModel):
@@ -47,6 +63,8 @@ class UserMessageEvent(BaseKafkaEvent):
     content: str
     author_type: str = "USER"
     message_type: str = "text"  # text, prd, product_vision, etc.
+    agent_id: Optional[UUID] = None  # ID of mentioned/targeted agent for routing
+    agent_name: Optional[str] = None  # Name of mentioned/targeted agent for display
 
 
 # AGENT RESPONSE EVENTS

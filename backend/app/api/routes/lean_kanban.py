@@ -9,7 +9,7 @@ from sqlmodel import Session, select, func, and_
 from typing import Any
 
 from app.api.deps import get_current_user, get_db
-from app.models import User, Story, StoryStatus, ColumnWIPLimit, WorkflowPolicy
+from app.models import User, Story, StoryStatus, WorkflowPolicy, Project
 from app.schemas import (
     WIPLimitCreate, WIPLimitUpdate, WIPLimitPublic, WIPLimitsPublic,
     WorkflowPolicyCreate, WorkflowPolicyUpdate, WorkflowPolicyPublic, WorkflowPoliciesPublic,
@@ -27,10 +27,24 @@ def get_wip_limits(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> Any:
-    """Get all WIP limits for a project"""
-    limits = db.exec(
-        select(ColumnWIPLimit).where(ColumnWIPLimit.project_id == project_id)
-    ).all()
+    """Get all WIP limits for a project from wip_data JSONB column"""
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Convert wip_data JSONB to WIPLimit list format
+    limits = []
+    if project.wip_data:
+        for column_name, config in project.wip_data.items():
+            limits.append({
+                "id": str(project_id),  # Using project_id as id
+                "project_id": str(project_id),
+                "column_name": column_name,
+                "wip_limit": config.get("limit", 10),
+                "limit_type": config.get("type", "hard"),
+                "created_at": project.created_at,
+                "updated_at": project.updated_at
+            })
 
     return WIPLimitsPublic(data=limits, count=len(limits))
 
@@ -43,39 +57,36 @@ def update_wip_limit(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> Any:
-    """Update or create WIP limit for a column"""
-    # Try to find existing limit
-    existing_limit = db.exec(
-        select(ColumnWIPLimit).where(
-            and_(
-                ColumnWIPLimit.project_id == project_id,
-                ColumnWIPLimit.column_name == column_name
-            )
-        )
-    ).first()
+    """Update or create WIP limit for a column in wip_data JSONB"""
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
 
-    if existing_limit:
-        # Update existing
-        existing_limit.wip_limit = limit_update.wip_limit
-        if limit_update.limit_type:
-            existing_limit.limit_type = limit_update.limit_type
-        existing_limit.updated_at = datetime.now(timezone.utc)
-        db.add(existing_limit)
-        db.commit()
-        db.refresh(existing_limit)
-        return existing_limit
-    else:
-        # Create new
-        new_limit = ColumnWIPLimit(
-            project_id=project_id,
-            column_name=column_name,
-            wip_limit=limit_update.wip_limit,
-            limit_type=limit_update.limit_type or "hard"
-        )
-        db.add(new_limit)
-        db.commit()
-        db.refresh(new_limit)
-        return new_limit
+    # Initialize wip_data if None
+    if project.wip_data is None:
+        project.wip_data = {}
+
+    # Update the specific column's WIP limit
+    project.wip_data[column_name] = {
+        "limit": limit_update.wip_limit,
+        "type": limit_update.limit_type or "hard"
+    }
+
+    project.updated_at = datetime.now(timezone.utc)
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+
+    # Return response in the expected format
+    return {
+        "id": str(project_id),
+        "project_id": str(project_id),
+        "column_name": column_name,
+        "wip_limit": limit_update.wip_limit,
+        "limit_type": limit_update.limit_type or "hard",
+        "created_at": project.created_at,
+        "updated_at": project.updated_at
+    }
 
 
 @router.post("/projects/{project_id}/stories/{story_id}/validate-wip")
@@ -90,19 +101,19 @@ def validate_wip_before_move(
     Validate if moving a story to target status would violate WIP limits.
     Returns {"allowed": true/false, "violation": {...}}
     """
-    # Get WIP limit for target column
-    wip_limit = db.exec(
-        select(ColumnWIPLimit).where(
-            and_(
-                ColumnWIPLimit.project_id == project_id,
-                ColumnWIPLimit.column_name == target_status
-            )
-        )
-    ).first()
+    # Get project and WIP data
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
 
-    if not wip_limit:
+    # Check if WIP limit is configured for this column
+    if not project.wip_data or target_status not in project.wip_data:
         # No WIP limit configured, allow
         return {"allowed": True, "violation": None}
+
+    wip_config = project.wip_data[target_status]
+    wip_limit_value = wip_config.get("limit", 10)
+    limit_type = wip_config.get("type", "hard")
 
     # Count current items in target column (excluding the story being moved)
     current_count = db.exec(
@@ -118,18 +129,18 @@ def validate_wip_before_move(
     # Check if adding this story would exceed limit
     new_count = current_count + 1
 
-    if new_count > wip_limit.wip_limit:
+    if new_count > wip_limit_value:
         # WIP limit exceeded
         violation = WIPViolation(
             column_name=target_status,
             current_count=current_count,
-            wip_limit=wip_limit.wip_limit,
-            limit_type=wip_limit.limit_type,
-            message=f"Cannot move to {target_status}: WIP limit {wip_limit.wip_limit} exceeded (current: {current_count})"
+            wip_limit=wip_limit_value,
+            limit_type=limit_type,
+            message=f"Cannot move to {target_status}: WIP limit {wip_limit_value} exceeded (current: {current_count})"
         )
 
         # For hard limits, block the move
-        if wip_limit.limit_type == "hard":
+        if limit_type == "hard":
             return {"allowed": False, "violation": violation.model_dump()}
         else:
             # Soft limit: allow but warn

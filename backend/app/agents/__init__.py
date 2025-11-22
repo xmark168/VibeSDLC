@@ -37,7 +37,6 @@ from app.agents.orchestrator import (
 from app.agents.roles import (
     TeamLeaderCrew,
     BusinessAnalystCrew,
-    DeveloperCrew,
     TesterCrew,
 )
 
@@ -47,9 +46,7 @@ __all__ = [
     "get_orchestrator",
     "start_orchestrator",
     "stop_orchestrator",
-    # Crews
     "TeamLeaderCrew",
     "BusinessAnalystCrew",
-    "DeveloperCrew",
     "TesterCrew",
 ]

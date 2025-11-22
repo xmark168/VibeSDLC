@@ -1,6 +1,6 @@
 """Team Leader Crew - Orchestrator with task assignment authority."""
 
 from .crew import TeamLeaderCrew
-from .consumer import TeamLeaderConsumer
+from .role import TeamLeaderRole, TeamLeaderConsumer
 
-__all__ = ["TeamLeaderCrew", "TeamLeaderConsumer"]
+__all__ = ["TeamLeaderCrew", "TeamLeaderRole", "TeamLeaderConsumer"]

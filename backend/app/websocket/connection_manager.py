@@ -1,7 +1,5 @@
 """
 WebSocket Connection Manager
-
-Manages WebSocket connections grouped by project_id for real-time communication
 """
 
 from typing import Dict, List, Set
@@ -22,9 +20,8 @@ class ConnectionManager:
         self.websocket_to_project: Dict[WebSocket, UUID] = {}
 
     async def connect(self, websocket: WebSocket, project_id: UUID):
-        """Connect a WebSocket to a project room.
-
-        Note: WebSocket must already be accepted before calling this method.
+        """
+        Connect a WebSocket to a project room.
         """
         if project_id not in self.active_connections:
             self.active_connections[project_id] = set()
@@ -32,10 +29,7 @@ class ConnectionManager:
         self.active_connections[project_id].add(websocket)
         self.websocket_to_project[websocket] = project_id
 
-        logger.info(
-            f"WebSocket connected to project {project_id}. "
-            f"Total connections for project: {len(self.active_connections[project_id])}"
-        )
+        logger.info(f"WebSocket connected to project {project_id}.")
 
     def disconnect(self, websocket: WebSocket):
         """Disconnect a WebSocket"""
@@ -44,11 +38,9 @@ class ConnectionManager:
 
         project_id = self.websocket_to_project[websocket]
 
-        # Remove from project connections
         if project_id in self.active_connections:
             self.active_connections[project_id].discard(websocket)
 
-            # Clean up empty project rooms
             if not self.active_connections[project_id]:
                 del self.active_connections[project_id]
                 logger.info(f"Project {project_id} room closed (no active connections)")
@@ -56,10 +48,7 @@ class ConnectionManager:
         # Remove from mapping
         del self.websocket_to_project[websocket]
 
-        logger.info(
-            f"WebSocket disconnected from project {project_id}. "
-            f"Remaining connections: {len(self.active_connections.get(project_id, set()))}"
-        )
+        logger.info(f"WebSocket disconnected from project {project_id}.")
 
     async def send_personal_message(self, message: dict, websocket: WebSocket):
         """Send a message to a specific WebSocket"""
@@ -83,10 +72,6 @@ class ConnectionManager:
                 logger.error(f"Error broadcasting to WebSocket: {e}")
                 disconnected.append(connection)
 
-        # Clean up disconnected sockets
-        for connection in disconnected:
-            self.disconnect(connection)
-
     def get_project_connection_count(self, project_id: UUID) -> int:
         """Get the number of active connections for a project"""
         return len(self.active_connections.get(project_id, set()))
@@ -99,6 +84,4 @@ class ConnectionManager:
         """Get list of projects with active connections"""
         return list(self.active_connections.keys())
 
-
-# Global connection manager instance
 connection_manager = ConnectionManager()

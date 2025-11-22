@@ -461,6 +461,39 @@ epic_story_creation_task:
     For EACH business flow step, create User Stories that enable that step.
     IMPORTANT: Consider Target Users from PRD when writing stories (use correct roles like "customer", "admin", "warehouse manager").
 
+    CRITICAL - STORY TYPE CLASSIFICATION:
+    Classify EACH story as UserStory or EnablerStory:
+
+    ** Use "UserStory" for:**
+    - Features directly used by end users (customers, admins, managers)
+    - Business capabilities that deliver direct value
+    - User-facing workflows and interfaces
+    - Business logic and rules users interact with
+    Examples: Login, shopping cart, product search, order tracking, payment, user profile
+
+    **Use "EnablerStory" for:**
+    - Infrastructure and architecture work
+    - Technical foundations that enable future features
+    - DevOps, CI/CD, deployment automation
+    - Database optimization, caching, performance
+    - API development, integration services
+    - Security implementation, authentication systems
+    - Code refactoring, technical debt reduction
+    - Monitoring, logging, observability
+    - Development tools and frameworks setup
+    Examples: Setup CI/CD pipeline, implement caching layer, database migration, API authentication, monitoring dashboard
+
+    KEYWORDS FOR EnablerStory (if title/description contains these, likely EnablerStory):
+    - Infrastructure, architecture, framework, platform
+    - API, service, integration, microservice
+    - Database, schema, migration, optimization
+    - DevOps, CI/CD, deployment, pipeline
+    - Security, authentication, authorization
+    - Cache, performance, scalability
+    - Monitoring, logging, observability
+    - Refactor, technical debt, code quality
+    - Setup, configure, implement (technical components)
+
     APPLY INVEST PRINCIPLES TO EVERY STORY:
 
     Each story must have:
@@ -468,6 +501,7 @@ epic_story_creation_task:
     - title: In format "As a [role from Target Users], I want [feature] so that [benefit aligned with Product Goals]"
     - description: Detailed description of the story
     - acceptance_criteria: List of criteria in Given-When-Then format
+    - story_type: "UserStory" or "EnablerStory" (REQUIRED - classify based on guidance above)
 
     INVEST FIELDS (REQUIRED):
     - story_points: Estimate using Fibonacci (1,2,3,5,8,13). Use estimation guide from your backstory.
