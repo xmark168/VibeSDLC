@@ -1,6 +1,6 @@
-import { ApiError, GithubService, ProjectPublic } from "@/client"
+import {  ProjectPublic } from "@/client"
 import { ProjectCard } from "./project-card"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import {  useQueryClient } from "@tanstack/react-query"
 
 import { useAppStore } from "@/stores/auth-store"
 import { useNavigate } from "@tanstack/react-router"
@@ -11,19 +11,15 @@ interface ProjectListProps {
   openInstallGithubModal: React.Dispatch<React.SetStateAction<boolean>>
 }
 
-export const ProjectList = ({ projects, openLinkGithubModal, openInstallGithubModal }: ProjectListProps) => {
+export const ProjectList = ({ projects }: ProjectListProps) => {
   const queryClient = useQueryClient()
   const user = useAppStore((state) => state.user)
   const naviagate = useNavigate()
 
   const handleClickProject = (project: ProjectPublic) => {
-    if (user?.github_installations === null) {
-      openLinkGithubModal(true)
-      return
-    }
-    else {
+
       naviagate({ to: "/workspace/$workspaceId", params: { workspaceId: project.id }})
-    }
+    
 
   }
   if (projects.length === 0) {

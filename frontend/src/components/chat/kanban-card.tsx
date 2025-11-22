@@ -1,6 +1,17 @@
-import { X, Eye, Zap, User } from "lucide-react"
+import { X, Eye, Zap, User, MoreVertical, Copy, Edit, Trash2, MoveRight } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { useState, memo } from "react"
 
 export type KanbanCardData = {
   id: string
@@ -37,9 +48,12 @@ interface KanbanCardProps {
   onClick: () => void
   onDelete: () => void
   onDownloadResult: () => void
+  onDuplicate?: () => void
+  onMove?: (targetColumn: string) => void
+  onEdit?: () => void
 }
 
-export function KanbanCard({
+function KanbanCardComponent({
   card,
   isDragging,
   onDragStart,
@@ -47,20 +61,35 @@ export function KanbanCard({
   onClick,
   onDelete,
   onDownloadResult,
+  onDuplicate,
+  onMove,
+  onEdit,
 }: KanbanCardProps) {
-  // Get type badge color
+  const [showQuickActions, setShowQuickActions] = useState(false)
+
+  // Get type badge color - Modern & Minimal: More subtle colors
+  // Lean Kanban: Only UserStory and EnablerStory on board
   const getTypeBadgeColor = (type?: string) => {
     switch (type) {
-      case "Epic":
-        return "bg-purple-500/10 text-purple-600 dark:text-purple-400"
-      case "User Story":
-        return "bg-blue-500/10 text-blue-600 dark:text-blue-400"
-      case "Task":
-        return "bg-green-500/10 text-green-600 dark:text-green-400"
-      case "Sub-task":
-        return "bg-orange-500/10 text-orange-600 dark:text-orange-400"
+      case "UserStory":
+        return "bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border-blue-200/50 dark:border-blue-800/50"
+      case "EnablerStory":
+        return "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-200/50 dark:border-emerald-800/50"
       default:
-        return "bg-gray-500/10 text-gray-600 dark:text-gray-400"
+        return "bg-slate-50 dark:bg-slate-900/30 text-slate-700 dark:text-slate-300 border-slate-200/50 dark:border-slate-800/50"
+    }
+  }
+
+  // Format type name for display (UserStory -> User Story)
+  const formatTypeName = (type?: string) => {
+    if (!type) return ""
+    switch (type) {
+      case "UserStory":
+        return "User Story"
+      case "EnablerStory":
+        return "Enabler Story"
+      default:
+        return type
     }
   }
 
@@ -72,17 +101,17 @@ export function KanbanCard({
     return `${days}d`
   }
 
-  // Get age badge color based on age
+  // Get age badge color based on age - Modern & Minimal: Softer warning colors
   const getAgeBadgeColor = (hours?: number) => {
     if (!hours) return ""
     if (hours >= 120) { // 5+ days
-      return "bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300"
+      return "bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 border-red-200/50 dark:border-red-800/50"
     } else if (hours >= 72) { // 3-5 days
-      return "bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300"
+      return "bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-300 border-orange-200/50 dark:border-orange-800/50"
     } else if (hours >= 48) { // 2-3 days
-      return "bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-300"
+      return "bg-yellow-50 dark:bg-yellow-950/30 text-yellow-700 dark:text-yellow-300 border-yellow-200/50 dark:border-yellow-800/50"
     } else {
-      return "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
+      return "bg-slate-50 dark:bg-slate-900/30 text-slate-600 dark:text-slate-400 border-slate-200/50 dark:border-slate-800/50"
     }
   }
 
@@ -92,89 +121,168 @@ export function KanbanCard({
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onClick={onClick}
-      className={`bg-card rounded-lg border border-border p-3 group relative hover:shadow-md transition-all cursor-pointer ${isDragging ? "opacity-50" : ""
-        }`}
+      className={`
+        bg-card rounded-xl border border-border/50
+        p-4 group relative
+        hover:shadow-sm hover:border-border
+        transition-all duration-200 cursor-pointer
+        ${isDragging ? "opacity-50 scale-95" : ""}
+      `}
     >
-      {/* Action Buttons */}
-      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-        {card.result && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onDownloadResult()
-            }}
-            className="p-1.5 rounded hover:bg-muted bg-background/80"
-            title="Download result"
-          >
-            <Eye className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
-          </button>
-        )}
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            onDelete()
-          }}
-          className="p-1.5 rounded hover:bg-muted bg-background/80"
-        >
-          <X className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
-        </button>
+      {/* Action Buttons - Quick Actions Menu */}
+      <div className="absolute top-3 right-3 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+        {/* Quick Actions Dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              onClick={(e) => e.stopPropagation()}
+              className="p-1.5 rounded-lg hover:bg-muted/80 bg-background/90 backdrop-blur-sm shadow-sm"
+              title="Quick actions"
+            >
+              <MoreVertical className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground transition-colors" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            {onEdit && (
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onEdit()
+                }}
+              >
+                <Edit className="w-4 h-4 mr-2" />
+                <span>Edit</span>
+                <span className="ml-auto text-xs text-muted-foreground">E</span>
+              </DropdownMenuItem>
+            )}
+            {onDuplicate && (
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDuplicate()
+                }}
+              >
+                <Copy className="w-4 h-4 mr-2" />
+                <span>Duplicate</span>
+                <span className="ml-auto text-xs text-muted-foreground">D</span>
+              </DropdownMenuItem>
+            )}
+            {onMove && (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <MoveRight className="w-4 h-4 mr-2" />
+                  <span>Move to</span>
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  {["todo", "inprogress", "review", "done"].map((col) => {
+                    const colName = col === "inprogress" ? "InProgress" : col.charAt(0).toUpperCase() + col.slice(1)
+                    return (
+                      <DropdownMenuItem
+                        key={col}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onMove(col)
+                        }}
+                        disabled={card.columnId === col}
+                      >
+                        {colName}
+                      </DropdownMenuItem>
+                    )
+                  })}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            )}
+            {card.result && (
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDownloadResult()
+                }}
+              >
+                <Eye className="w-4 h-4 mr-2" />
+                <span>Download Result</span>
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete()
+              }}
+              className="text-destructive focus:text-destructive"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              <span>Delete</span>
+              <span className="ml-auto text-xs">⌫</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
-      <div className="space-y-2">
-        {/* Header: Type Badge, Age, and Story Points */}
+      <div className="space-y-3">
+        {/* Header: Type Badge and Age */}
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             {card.type && (
-              <Badge variant="outline" className={`text-xs ${getTypeBadgeColor(card.type)}`}>
-                {card.type}
+              <Badge variant="outline" className={`text-xs font-medium ${getTypeBadgeColor(card.type)}`}>
+                {formatTypeName(card.type)}
               </Badge>
             )}
             {card.age_hours !== undefined && formatAge(card.age_hours) && (
-              <Badge variant="outline" className={`text-xs ${getAgeBadgeColor(card.age_hours)}`} title="Time in current status">
+              <Badge variant="outline" className={`text-xs font-medium ${getAgeBadgeColor(card.age_hours)}`} title="Time in current status">
                 {formatAge(card.age_hours)}
               </Badge>
             )}
           </div>
           {card.story_point !== undefined && card.story_point !== null && (
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Zap className="w-3 h-3" />
-              <span>{card.story_point} SP</span>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
+              <Zap className="w-3.5 h-3.5" />
+              <span>{card.story_point}</span>
             </div>
           )}
         </div>
 
-        {/* Task Title */}
-        <h4 className="text-sm font-medium text-foreground line-clamp-2 pr-16">{card.content}</h4>
+        {/* Task Title - Better typography */}
+        <h4 className="text-sm font-semibold text-foreground leading-snug line-clamp-2 pr-14">
+          {card.content}
+        </h4>
 
-        {/* Description (if available) */}
+        {/* Description (if available) - More space */}
         {card.description && (
-          <p className="text-xs text-muted-foreground line-clamp-2">{card.description}</p>
+          <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
+            {card.description}
+          </p>
         )}
 
-        {/* Footer: Task ID, Priority, Assignee */}
-        <div className="flex items-center justify-between gap-2 pt-1">
-          <div className="flex items-center gap-2">
+        {/* Footer: Task ID, Priority, Assignee - Better separation */}
+        <div className="flex items-center justify-between gap-2 pt-0.5 border-t border-border/30">
+          <div className="flex items-center gap-2 pt-2">
             {card.taskId && (
-              <span className="text-xs text-muted-foreground font-mono">#{card.taskId.slice(0, 8)}</span>
+              <span className="text-xs text-muted-foreground font-mono">
+                #{card.taskId.slice(0, 8)}
+              </span>
             )}
             {card.rank !== undefined && card.rank !== null && (
               <Badge
                 variant="outline"
-                className={`text-xs ${card.rank <= 3
-                    ? "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20"
+                className={`text-xs font-medium ${
+                  card.rank <= 3
+                    ? "bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 border-red-200/50 dark:border-red-800/50"
                     : card.rank <= 7
-                      ? "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20"
-                      : "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
-                  }`}
+                      ? "bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-300 border-orange-200/50 dark:border-orange-800/50"
+                      : "bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border-blue-200/50 dark:border-blue-800/50"
+                }`}
               >
-                #{card.rank}
+                P{card.rank}
               </Badge>
             )}
           </div>
           {card.assignee_id && (
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <User className="w-3 h-3" />
-              <span className="truncate max-w-[60px]">{card.assignee_id.slice(0, 8)}</span>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground pt-2">
+              <User className="w-3.5 h-3.5" />
+              <span className="truncate max-w-[60px] font-medium">
+                {card.assignee_id.slice(0, 8)}
+              </span>
             </div>
           )}
         </div>
@@ -182,3 +290,26 @@ export function KanbanCard({
     </div>
   )
 }
+
+// Memoized export for performance optimization
+// Only re-render when card data, isDragging state, or callbacks change
+export const KanbanCard = memo(KanbanCardComponent, (prevProps, nextProps) => {
+  // Custom comparison function
+  // Re-render if card data changed
+  if (prevProps.card.id !== nextProps.card.id) return false
+  if (prevProps.card.content !== nextProps.card.content) return false
+  if (prevProps.card.description !== nextProps.card.description) return false
+  if (prevProps.card.type !== nextProps.card.type) return false
+  if (prevProps.card.rank !== nextProps.card.rank) return false
+  if (prevProps.card.story_point !== nextProps.card.story_point) return false
+  if (prevProps.card.assignee_id !== nextProps.card.assignee_id) return false
+  if (prevProps.card.age_hours !== nextProps.card.age_hours) return false
+
+  // Re-render if dragging state changed
+  if (prevProps.isDragging !== nextProps.isDragging) return false
+
+  // Don't re-render if only callbacks changed (they're memoized)
+  return true
+})
+
+KanbanCard.displayName = 'KanbanCard'

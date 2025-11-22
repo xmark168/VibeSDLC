@@ -20,19 +20,32 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
 
   if (!card) return null
 
-  // Get type badge color
+  // Get type badge color - Lean Kanban: UserStory, EnablerStory on board; Epic as parent
   const getTypeBadgeColor = (type?: string) => {
     switch (type) {
       case "Epic":
         return "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20"
-      case "User Story":
+      case "UserStory":
         return "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
-      case "Task":
+      case "EnablerStory":
         return "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20"
-      case "Sub-task":
-        return "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20"
       default:
         return "bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-500/20"
+    }
+  }
+
+  // Format type name for display (UserStory -> User Story)
+  const formatTypeName = (type?: string) => {
+    if (!type) return ""
+    switch (type) {
+      case "UserStory":
+        return "User Story"
+      case "EnablerStory":
+        return "Enabler Story"
+      case "Epic":
+        return "Epic"
+      default:
+        return type
     }
   }
 
@@ -61,7 +74,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
               <div className="flex items-center gap-2 mb-2">
                 {card.type && (
                   <Badge variant="outline" className={getTypeBadgeColor(card.type)}>
-                    {card.type}
+                    {formatTypeName(card.type)}
                   </Badge>
                 )}
                 {card.status && (
@@ -136,8 +149,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
                     {card.assignee_id.slice(0, 8)}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {card.type === "Task" && card.estimate_value ? "Developer" :
-                      card.type === "Sub-task" ? "Developer/Tester" : "Developer"}
+                    {card.type === "EnablerStory" ? "Developer/Infrastructure" : "Developer"}
                   </div>
                 </div>
               </div>
@@ -166,18 +178,18 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
               <h4 className="text-sm font-semibold text-foreground mb-2">Epic</h4>
               <div className="flex items-center gap-2 p-2 rounded border border-border bg-muted/50">
                 <Badge variant="outline" className={getTypeBadgeColor(card.parent.type)}>
-                  {card.parent.type}
+                  {formatTypeName(card.parent.type)}
                 </Badge>
                 <span className="text-sm flex-1">{card.parent.content || card.parent.title}</span>
               </div>
             </div>
           )}
 
-          {/* TraDS ============= Kanban Hierarchy: Children (Tasks or Sub-tasks) Display */}
+          {/* TraDS ============= Kanban Hierarchy: Children Display */}
           {card.children && card.children.length > 0 && (
             <div>
               <h4 className="text-sm font-semibold text-foreground mb-2">
-                {card.type === "User Story" ? "Tasks" : "Sub-tasks"} ({card.children.length})
+                Công việc con ({card.children.length})
               </h4>
               <div className="space-y-2">
                 {card.children.map((child) => (
@@ -187,7 +199,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
                     className="flex items-center gap-2 p-2 rounded border border-border hover:bg-muted/50 cursor-pointer transition-colors"
                   >
                     <Badge variant="outline" className={getTypeBadgeColor(child.type)}>
-                      {child.type}
+                      {formatTypeName(child.type)}
                     </Badge>
                     <span className="text-sm flex-1">{child.content || child.title}</span>
                     {child.status && (
