@@ -50,16 +50,7 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Failed to start Kafka consumers: {e}")
         logger.warning("Continuing without consumer support...")
 
-    # Start Agent Orchestrator (manages all crew consumers)
-    from app.agents.orchestrator import start_orchestrator, stop_orchestrator
-    try:
-        await start_orchestrator()
-        logger.info("Agent Orchestrator started - all crews ready")
-    except Exception as e:
-        logger.warning(f"Failed to start Agent Orchestrator: {e}")
-        logger.warning("Continuing without agent support...")
-
-    # Initialize default agent pools
+    # Initialize default agent pools (now handles agent lifecycle - orchestrator removed)
     from app.api.routes.agent_management import initialize_default_pools
     try:
         await initialize_default_pools()
@@ -116,12 +107,6 @@ async def lifespan(app: FastAPI):
         logger.info("All agent pools shut down")
     except Exception as e:
         logger.error(f"Error shutting down agent pools: {e}")
-
-    try:
-        await stop_orchestrator()
-        logger.info("Agent Orchestrator shut down")
-    except Exception as e:
-        logger.error(f"Error shutting down orchestrator: {e}")
 
     try:
         await shutdown_all_consumers()

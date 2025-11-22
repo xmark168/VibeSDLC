@@ -63,8 +63,7 @@ class BaseAgentRole(ABC):
 
     def __init__(
         self,
-        agent_id: Optional[UUID] = None,
-        agent_model: Optional["AgentModel"] = None,
+        agent_model: "AgentModel",
         config_path: Optional[Path] = None,
         heartbeat_interval: int = 30,
         max_idle_time: int = 300,
@@ -72,23 +71,16 @@ class BaseAgentRole(ABC):
         """Initialize the agent role.
 
         Args:
-            agent_id: Unique agent instance ID (deprecated, use agent_model)
-            agent_model: Agent database model instance (new approach)
+            agent_model: Agent database model instance (REQUIRED - provides ID, project, name)
             config_path: Path to agent config.yaml
             heartbeat_interval: Seconds between heartbeats
             max_idle_time: Max seconds idle before auto-shutdown
         """
-        # Support both old and new initialization
-        if agent_model:
-            self.agent_id = agent_model.id
-            self.agent_model = agent_model
-            self.project_id = agent_model.project_id
-            self.human_name = agent_model.human_name
-        else:
-            self.agent_id = agent_id or uuid4()
-            self.agent_model = None
-            self.project_id = None
-            self.human_name = None
+        # Extract agent info from model
+        self.agent_id = agent_model.id
+        self.agent_model = agent_model
+        self.project_id = agent_model.project_id
+        self.human_name = agent_model.human_name
 
         self.config_path = config_path or self._get_default_config_path()
         self.heartbeat_interval = heartbeat_interval
@@ -116,7 +108,7 @@ class BaseAgentRole(ABC):
         self.agent: Optional[Agent] = None
         self.crew: Optional[Crew] = None
 
-        # Kafka consumer (new approach)
+        # Kafka consumer
         self.consumer: Optional["BaseAgentInstanceConsumer"] = None
 
         # Async tasks
@@ -283,6 +275,8 @@ class BaseAgentRole(ABC):
         try:
             _log_lifecycle(self.human_name or self.role_name, self.agent_id, "STOPPING", f"graceful={graceful}")
             self._set_state(AgentStatus.stopping)
+            # Explicitly sync 'stopping' state to DB during shutdown
+            await self._sync_state_to_db(AgentStatus.stopping)
             self._shutdown_event.set()
 
             # Cancel heartbeat
@@ -314,6 +308,9 @@ class BaseAgentRole(ABC):
 
             self.stopped_at = datetime.now(timezone.utc)
             self._set_state(AgentStatus.stopped)
+
+            # Explicitly sync 'stopped' state to DB during shutdown to prevent stuck states
+            await self._sync_state_to_db(AgentStatus.stopped)
 
             _log_lifecycle(self.human_name or self.role_name, self.agent_id, "STOPPED", "agent terminated successfully")
             return True
@@ -436,22 +433,9 @@ class BaseAgentRole(ABC):
     async def _consumer_loop(self) -> None:
         """Consumer loop for processing messages.
 
-        Creates and starts the BaseAgentInstanceConsumer if agent_model is provided.
-        Falls back to placeholder behavior for backward compatibility.
+        Creates and starts the BaseAgentInstanceConsumer for this agent.
+        The agent_model is now required, so consumer is always created.
         """
-        if not self.agent_model:
-            # Backward compatibility: placeholder loop
-            logger.warning(
-                f"Agent {self.agent_id} started without agent_model, "
-                "consumer functionality disabled"
-            )
-            while not self._shutdown_event.is_set():
-                try:
-                    await asyncio.sleep(1)
-                except asyncio.CancelledError:
-                    break
-            return
-
         logger.info(f"Starting Kafka consumer for agent {self.human_name} ({self.role_name})")
 
         try:
