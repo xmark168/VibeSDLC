@@ -32,6 +32,7 @@ import { AuthorType, type Message } from "@/types/message";
 import { AgentPreviewModal } from "./agent-preview-modal";
 import { MessagePreviewCard } from "./MessagePreviewCard";
 import { AgentStatusIndicator } from "./agent-status-indicator";
+import { useProjectAgents } from "@/queries/agents";
 
 interface ChatPanelProps {
   sidebarCollapsed: boolean;
@@ -46,15 +47,6 @@ interface ChatPanelProps {
   onKanbanDataChange?: (data: any) => void;
   onActiveTabChange?: (tab: string | null) => void;
 }
-
-const AGENTS = [
-  { name: "Mike", role: "Team Leader", avatar: "👨‍💼" },
-  { name: "Emma", role: "Product Manager", avatar: "👩‍💼" },
-  { name: "Bob", role: "Architect", avatar: "👨‍🔧" },
-  { name: "Alex", role: "Engineer", avatar: "👨‍💻" },
-  { name: "Developer", role: "Developer", avatar: "🔧" },
-  { name: "Tester", role: "Tester", avatar: "🧪" },
-];
 
 export function ChatPanelWS({
   sidebarCollapsed,
@@ -85,6 +77,33 @@ export function ChatPanelWS({
 
   // Get access token
   const token = localStorage.getItem("access_token");
+
+  // Fetch real agents from database
+  const { data: projectAgents, isLoading: agentsLoading } = useProjectAgents(projectId || "", {
+    enabled: !!projectId,
+  });
+
+  // Map role_type to user-friendly designation and avatar
+  const getRoleInfo = (roleType: string): { role: string; avatar: string } => {
+    const roleMap: Record<string, { role: string; avatar: string }> = {
+      team_leader: { role: "Team Leader", avatar: "👨‍💼" },
+      business_analyst: { role: "Business Analyst", avatar: "👩‍💼" },
+      developer: { role: "Developer", avatar: "👨‍💻" },
+      tester: { role: "Tester", avatar: "🧪" },
+    };
+    return roleMap[roleType] || { role: roleType, avatar: "🤖" };
+  };
+
+  // Transform database agents to dropdown format
+  const AGENTS = (projectAgents || []).map((agent) => {
+    const roleInfo = getRoleInfo(agent.role_type);
+    return {
+      id: agent.id,
+      name: agent.human_name,
+      role: roleInfo.role,
+      avatar: roleInfo.avatar,
+    };
+  });
 
   // Fetch existing messages
   const { data: messagesData } = useMessages({

@@ -114,6 +114,9 @@ class Project(BaseModel, table=True):
     is_private: bool = Field(default=True)
     tech_stack: str = Field(default="nodejs-react")
     wip_data: dict | None = Field(default=None, sa_column=Column(JSON))
+
+    # File system path for project files (auto-generated: projects/{project_id})
+    project_path: str | None = Field(default=None, max_length=500)
     owner: User = Relationship(back_populates="owned_projects")
     stories: list["Story"] = Relationship(
         back_populates="project",

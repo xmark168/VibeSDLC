@@ -65,6 +65,8 @@ export type AgentPreview = {
 export type SendMessageParams = {
   content: string
   author_type?: 'user' | 'agent'
+  agent_id?: string  // ID of mentioned agent for routing
+  agent_name?: string  // Name of mentioned agent for display
 }
 
 export function useChatWebSocket(projectId: string | undefined, token: string | undefined) {
@@ -310,6 +312,8 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
         type: 'message',
         content: params.content,
         author_type: params.author_type || 'user',
+        agent_id: params.agent_id,  // Include agent_id for routing
+        agent_name: params.agent_name,  // Include agent_name for display
         temp_id: tempId, // Send temp_id for potential deduplication
       }))
 

@@ -142,9 +142,6 @@ export const KanbanColumn = memo(KanbanColumnComponent, (prevProps, nextProps) =
   if (prevProps.column.wipLimit !== nextProps.column.wipLimit) return false
   if (prevProps.column.limitType !== nextProps.column.limitType) return false
 
-  // Re-render if allowAddCard changed
-  if (prevProps.allowAddCard !== nextProps.allowAddCard) return false
-
   // Don't re-render if only callbacks changed (they're memoized)
   return true
 })

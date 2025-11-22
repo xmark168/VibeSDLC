@@ -1,6 +1,8 @@
 """Project management endpoints."""
 
 import logging
+import os
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -141,6 +143,14 @@ def create_project(
             project_in=project_in,
             owner_id=current_user.id,
         )
+
+        # Auto-generate project_path: projects/{project_id}
+        project.project_path = f"projects/{project.id}"
+
+        # Create the project folder if it doesn't exist
+        project_folder = Path(project.project_path)
+        project_folder.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Created project folder: {project_folder}")
 
         # Auto-create default agents for the project (1 per role type)
         created_agents = []

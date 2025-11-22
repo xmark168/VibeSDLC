@@ -327,6 +327,7 @@ class ProjectPublic(SQLModel):
     is_init: bool
     is_private: bool
     tech_stack: str
+    project_path: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
