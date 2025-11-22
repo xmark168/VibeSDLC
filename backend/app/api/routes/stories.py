@@ -110,7 +110,8 @@ def get_kanban_board(
         Story.project_id == project_id
     ).options(
         selectinload(Story.parent),
-        selectinload(Story.children)
+        selectinload(Story.children),
+        selectinload(Story.epic)
     ).order_by(Story.status, Story.rank)
 
     stories = session.exec(statement).all()

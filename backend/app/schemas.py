@@ -212,6 +212,14 @@ class StoryUpdate(SQLModel):
     token_used: Optional[int] = None
 
 
+class EpicSimple(SQLModel):
+    """Simple epic schema for story references"""
+    id: UUID
+    title: str
+    description: Optional[str] = None
+    domain: Optional[str] = None
+
+
 class StorySimple(StoryBase):
     """Simple story schema without nested relationships"""
     id: UUID
@@ -230,6 +238,7 @@ class StoryPublic(StoryBase):
     updated_at: datetime
     parent: Optional[StorySimple] = None
     children: list[StorySimple] = []
+    epic: Optional[EpicSimple] = None
 
 
 class StoriesPublic(SQLModel):

@@ -21,6 +21,15 @@ export type KanbanCardData = {
   rank?: number
   assignee_id?: string
   reviewer_id?: string
+  acceptance_criteria?: string
+  story_priority?: string
+  epic_id?: string
+  epic?: {
+    id: string
+    title: string
+    description?: string
+    domain?: string
+  }
   // Flow metrics
   created_at?: string
   age_hours?: number  // Age in current status (hours)

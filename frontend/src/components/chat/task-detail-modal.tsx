@@ -1,5 +1,5 @@
 
-import { Download, Zap, User, Users, Flag, Calendar, ChevronRight } from "lucide-react"
+import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, CheckCircle2, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -103,6 +103,19 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
             </div>
           )}
 
+          {/* Acceptance Criteria */}
+          {card.acceptance_criteria && (
+            <div>
+              <h4 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-600" />
+                Tiêu chí chấp nhận
+              </h4>
+              <div className="text-sm text-muted-foreground whitespace-pre-wrap bg-muted/50 p-3 rounded border border-border">
+                {card.acceptance_criteria}
+              </div>
+            </div>
+          )}
+
           {/* Metadata Grid */}
           <div className="grid grid-cols-2 gap-4">
             {/* Story Points / Estimate */}
@@ -112,6 +125,30 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
                 <div>
                   <div className="text-xs text-muted-foreground">Story Points</div>
                   <div className="text-sm font-medium">{card.story_point} SP</div>
+                </div>
+              </div>
+            )}
+
+            {/* Priority */}
+            {card.story_priority && (
+              <div className="flex items-center gap-2">
+                <AlertCircle className={`w-4 h-4 ${
+                  card.story_priority === 'High' ? 'text-red-600' :
+                  card.story_priority === 'Medium' ? 'text-orange-600' :
+                  'text-blue-600'
+                }`} />
+                <div>
+                  <div className="text-xs text-muted-foreground">Ưu tiên</div>
+                  <div className="text-sm font-medium">
+                    <Badge variant="outline" className={
+                      card.story_priority === 'High' ? 'bg-red-500/10 text-red-600 border-red-500/20' :
+                      card.story_priority === 'Medium' ? 'bg-orange-500/10 text-orange-600 border-orange-500/20' :
+                      'bg-blue-500/10 text-blue-600 border-blue-500/20'
+                    }>
+                      {card.story_priority === 'High' ? 'Cao' :
+                       card.story_priority === 'Medium' ? 'Trung bình' : 'Thấp'}
+                    </Badge>
+                  </div>
                 </div>
               </div>
             )}
@@ -160,8 +197,31 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
 
           <Separator />
 
-          {/* TraDS ============= Kanban Hierarchy: Parent Epic Display */}
-          {card.parent && card.parent.type === "Epic" && (
+          {/* Epic Display */}
+          {card.epic && (
+            <div>
+              <h4 className="text-sm font-semibold text-foreground mb-2">Epic</h4>
+              <div className="p-3 rounded border border-purple-500/20 bg-purple-500/5">
+                <div className="flex items-start gap-2 mb-2">
+                  <Badge variant="outline" className="bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20">
+                    Epic
+                  </Badge>
+                  {card.epic.domain && (
+                    <Badge variant="outline" className="bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20">
+                      {card.epic.domain}
+                    </Badge>
+                  )}
+                </div>
+                <div className="text-sm font-medium mb-1">{card.epic.title}</div>
+                {card.epic.description && (
+                  <div className="text-xs text-muted-foreground">{card.epic.description}</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TraDS ============= Kanban Hierarchy: Parent Epic Display (fallback) */}
+          {!card.epic && card.parent && card.parent.type === "Epic" && (
             <div>
               <h4 className="text-sm font-semibold text-foreground mb-2">Epic</h4>
               <div className="flex items-center gap-2 p-2 rounded border border-border bg-muted/50">

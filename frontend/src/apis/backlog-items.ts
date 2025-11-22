@@ -24,16 +24,18 @@ export interface BacklogItem {
 }
 
 export interface KanbanBoard {
-  project: {
-    id: string
-    name: string
-  }
+  project_id: string
+  project_name: string
   board: {
-    Backlog: BacklogItem[]
     Todo: BacklogItem[]
-    Doing: BacklogItem[]
+    InProgress: BacklogItem[]
+    Review: BacklogItem[]
     Done: BacklogItem[]
   }
+  wip_limits?: Record<string, {
+    wip_limit: number
+    limit_type: 'hard' | 'soft'
+  }>
 }
 
 export interface FetchBacklogItemsParams {
@@ -83,7 +85,7 @@ export const backlogItemsApi = {
   getKanbanBoard: async (projectId: string): Promise<KanbanBoard> => {
     return __request<KanbanBoard>(OpenAPI, {
       method: 'GET',
-      url: `/api/v1/backlog-items/project/${projectId}/kanban`,
+      url: `/api/v1/stories/kanban/${projectId}`,
     })
   },
 

@@ -96,6 +96,10 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         rank: item.rank,
         assignee_id: item.assignee_id,
         reviewer_id: item.reviewer_id,
+        acceptance_criteria: item.acceptance_criteria,
+        story_priority: item.story_priority,
+        epic_id: item.epic_id,
+        epic: item.epic,
         parent: item.parent ? {
           id: item.parent.id,
           content: item.parent.title,
@@ -117,6 +121,10 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
           rank: child.rank,
           assignee_id: child.assignee_id,
           reviewer_id: child.reviewer_id,
+          acceptance_criteria: child.acceptance_criteria,
+          story_priority: child.story_priority,
+          epic_id: child.epic_id,
+          epic: child.epic,
           title: child.title,
         })) : [],
       })
@@ -134,7 +142,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
           id: "inprogress",
           title: "InProgress",
           color: "border-red-500",
-          cards: filterItems(dbKanbanData.board.InProgress || dbKanbanData.board.Doing || []).map((item: any) => mapItem(item, "inprogress")),
+          cards: filterItems(dbKanbanData.board.InProgress || []).map((item: any) => mapItem(item, "inprogress")),
           wipLimit: dbKanbanData.wip_limits?.InProgress?.wip_limit,
           limitType: dbKanbanData.wip_limits?.InProgress?.limit_type
         },
