@@ -322,6 +322,7 @@ class AgentStatus(str, Enum):
     busy = "busy"
     stopped = "stopped"
     error = "error"
+    terminated = "terminated"  # Permanent shutdown, won't restart
 
 
 class Agent(BaseModel, table=True):

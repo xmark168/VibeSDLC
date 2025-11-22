@@ -14,7 +14,7 @@ import logging
 from typing import Dict, Optional
 from uuid import UUID
 
-from sqlmodel import Session, select
+from sqlmodel import Session, select, update
 
 from app.agents.roles.team_leader import TeamLeaderRole
 from app.agents.roles.business_analyst import BusinessAnalystRole
@@ -71,13 +71,15 @@ class AgentOrchestrator:
         try:
             # Load all agents from database
             with Session(engine) as db_session:
-                # Query all active agents
+                # Query agents that should be running
+                # Only load: idle (ready to run) and stopped (cleanly stopped, safe to restart)
+                # Skip: busy (stale), error (needs investigation), terminated (permanent shutdown)
                 agents = db_session.exec(
                     select(AgentModel)
-                    .where(AgentModel.status != "stopped")
+                    .where(AgentModel.status.in_(["idle", "stopped"]))
                 ).all()
 
-                logger.info(f"Found {len(agents)} active agents in database")
+                logger.info(f"Found {len(agents)} agents to start (idle/stopped status)")
 
                 # Start each agent
                 for agent in agents:
@@ -130,6 +132,21 @@ class AgentOrchestrator:
 
             if success:
                 self._agent_roles[agent.id] = role_instance
+
+                # Update agent status in database
+                if db_session:
+                    agent.status = "idle"
+                    db_session.add(agent)
+                    db_session.commit()
+                else:
+                    # Create new session if not provided
+                    with Session(engine) as new_session:
+                        db_agent = new_session.get(AgentModel, agent.id)
+                        if db_agent:
+                            db_agent.status = "idle"
+                            new_session.add(db_agent)
+                            new_session.commit()
+
                 logger.info(
                     f"✓ Started agent: {agent.human_name} ({agent.role_type}) "
                     f"for project {agent.project_id}"
@@ -163,6 +180,15 @@ class AgentOrchestrator:
 
             if success:
                 del self._agent_roles[agent_id]
+
+                # Update agent status in database
+                with Session(engine) as db_session:
+                    db_agent = db_session.get(AgentModel, agent_id)
+                    if db_agent:
+                        db_agent.status = "stopped"
+                        db_session.add(db_agent)
+                        db_session.commit()
+
                 logger.info(f"✓ Stopped agent {agent_id}")
                 return True
             else:
@@ -185,6 +211,19 @@ class AgentOrchestrator:
             agent_ids = list(self._agent_roles.keys())
             for agent_id in agent_ids:
                 await self.stop_agent(agent_id)
+
+            # Bulk update all stopped agents in database as a safety net
+            # This ensures agents are marked as stopped even if individual stop_agent() calls failed
+            if agent_ids:
+                with Session(engine) as db_session:
+                    stmt = (
+                        update(AgentModel)
+                        .where(AgentModel.id.in_(agent_ids))
+                        .values(status="stopped")
+                    )
+                    db_session.exec(stmt)
+                    db_session.commit()
+                    logger.info(f"Bulk updated {len(agent_ids)} agents to 'stopped' status in database")
 
             self._agent_roles.clear()
             self._running = False
