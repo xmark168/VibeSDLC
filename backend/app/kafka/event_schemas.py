@@ -1,7 +1,5 @@
-"""Kafka event schemas and topic definitions.
-
-This module defines all Pydantic schemas for events flowing through Kafka,
-ensuring type safety and validation across the event-driven architecture.
+"""
+Kafka event schemas and topic definitions.
 """
 
 from datetime import datetime
@@ -12,7 +10,6 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
-# TOPIC DEFINITIONS
 class KafkaTopics(str, Enum):
     """Kafka topic names for different event types."""
 
@@ -24,7 +21,7 @@ class KafkaTopics(str, Enum):
     AGENT_STATUS = "agent_status"
     APPROVAL_REQUESTS = "approval_requests"
     APPROVAL_RESPONSES = "approval_responses"
-
+    
 
 # BASE EVENT SCHEMA
 class BaseKafkaEvent(BaseModel):

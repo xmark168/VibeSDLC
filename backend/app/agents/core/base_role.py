@@ -1,11 +1,5 @@
 """Enhanced base role with lifecycle management, heartbeat, and pool support.
 
-This module provides an enhanced foundation for agent roles with:
-- Lifecycle management (start, stop, health check)
-- Heartbeat mechanism for monitoring
-- Consumer pattern support
-- Pool management compatibility
-- State persistence
 """
 
 import asyncio
@@ -232,7 +226,7 @@ class BaseAgentRole(ABC):
             self._consumer_task = asyncio.create_task(self._consumer_loop())
 
             self.started_at = datetime.now(timezone.utc)
-            self._set_state(AgentLifecycleState.RUNNING)
+            self._set_state(AgentLifecycleState.IDLE)
 
             logger.info(f"Agent {self.role_name} (ID: {self.agent_id}) started")
             return True
@@ -353,7 +347,7 @@ class BaseAgentRole(ABC):
 
         # Publish heartbeat status
         await self._publish_status(
-            AgentStatusType.IDLE if self.state == AgentLifecycleState.RUNNING else AgentStatusType.THINKING,
+            AgentStatusType.IDLE if self.state == AgentLifecycleState.IDLE else AgentStatusType.THINKING,
             current_action=f"Heartbeat - State: {self.state.value}"
         )
 
@@ -469,7 +463,7 @@ class BaseAgentRole(ABC):
             )
 
         finally:
-            self._set_state(AgentLifecycleState.RUNNING)
+            self._set_state(AgentLifecycleState.IDLE)
             self.last_activity = datetime.now(timezone.utc)
 
             # Trigger callback

@@ -4,15 +4,16 @@ import type React from "react"
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { History, Globe, Code2, LayoutGrid, Pencil, ScrollText, PanelLeftOpen, PanelRightOpen, MessageCircle } from "lucide-react"
+import { History, Globe, Code2, LayoutGrid, Pencil, ScrollText, PanelLeftOpen, PanelRightOpen, MessageCircle, Bot } from "lucide-react"
 import { KanbanBoard } from "./kanban-board"
 import { FileExplorer } from "../shared/file-explorer"
 import { CodeViewer } from "../shared/code-viewer"
 import { AnimatedTooltip } from "../ui/animated-tooltip"
 import { AppViewer } from "./app-viewer"
+import { AgentDisplayPanel } from "../agents"
 
 import { useQueryClient } from "@tanstack/react-query"
-type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings"
+type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings" | "agents"
 interface Tab {
   id: string
   view: WorkspaceView
@@ -74,6 +75,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
     { id: "tab-2", view: "kanban", label: "Kanban" },
     { id: "tab-3", view: "file", label: "File" },
     { id: "tab-4", view: "loggings", label: "Loggings" },
+    { id: "tab-5", view: "agents", label: "Agents" },
   ])
   const [activeTabId, setActiveTabId] = useState("tab-1")
 
@@ -85,6 +87,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
         'app-preview': 'tab-1',
         'file': 'tab-3',
         'loggings': 'tab-4',
+        'agents': 'tab-5',
       }
       const targetTabId = tabMap[wsActiveTab]
       if (targetTabId) {
@@ -129,6 +132,8 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
         return <Code2 className="w-3.5 h-3.5" />
       case "loggings":
         return <ScrollText className="w-3.5 h-3.5" />
+      case "agents":
+        return <Bot className="w-3.5 h-3.5" />
       default:
         return <Globe className="w-3.5 h-3.5" />
     }
@@ -169,8 +174,14 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
       case "loggings":
         return (
           <>
-           
+
           </>
+        )
+      case "agents":
+        return (
+          <div className="flex-1 overflow-hidden">
+            <AgentDisplayPanel />
+          </div>
         )
       default:
         return null

@@ -1,11 +1,5 @@
 """Agent Pool Manager for dynamic agent lifecycle management.
 
-This module provides centralized management of agent instances with:
-- Dynamic agent spawning and termination
-- Load balancing
-- Health monitoring
-- Auto-scaling capabilities
-- Resource pooling
 """
 
 import asyncio
@@ -246,7 +240,7 @@ class AgentPool:
         """
         available_agents = [
             agent for agent in self.agents.values()
-            if agent.state == AgentLifecycleState.RUNNING
+            if agent.state == AgentLifecycleState.IDLE
         ]
 
         if not available_agents:
@@ -270,8 +264,9 @@ class AgentPool:
         Returns:
             Pool statistics dictionary
         """
-        active_agents = sum(1 for a in self.agents.values() if a.state == AgentLifecycleState.RUNNING)
+        idle_agents = sum(1 for a in self.agents.values() if a.state == AgentLifecycleState.IDLE)
         busy_agents = sum(1 for a in self.agents.values() if a.state == AgentLifecycleState.BUSY)
+        active_agents = idle_agents + busy_agents  # Active = IDLE + BUSY
         total_executions = sum(a.total_executions for a in self.agents.values())
         total_successful = sum(a.successful_executions for a in self.agents.values())
         total_failed = sum(a.failed_executions for a in self.agents.values())
@@ -282,7 +277,7 @@ class AgentPool:
             "total_agents": len(self.agents),
             "active_agents": active_agents,
             "busy_agents": busy_agents,
-            "idle_agents": active_agents - busy_agents,
+            "idle_agents": idle_agents,
             "total_spawned": self.total_spawned,
             "total_terminated": self.total_terminated,
             "total_executions": total_executions,
@@ -350,7 +345,7 @@ class AgentPool:
                     if len(self.agents) > self.config.min_agents:
                         # Find idle agent to terminate
                         idle_agent = next(
-                            (a for a in self.agents.values() if a.state == AgentLifecycleState.RUNNING),
+                            (a for a in self.agents.values() if a.state == AgentLifecycleState.IDLE),
                             None
                         )
                         if idle_agent:

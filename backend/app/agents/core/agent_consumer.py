@@ -1,11 +1,4 @@
 """Kafka consumer pattern for agents.
-
-This module provides a reusable consumer pattern for agents to consume
-messages from Kafka topics with:
-- Automatic message routing
-- Error handling and retry
-- Dead letter queue support
-- Message acknowledgment
 """
 
 import asyncio
@@ -23,14 +16,8 @@ logger = logging.getLogger(__name__)
 
 
 class AgentConsumer:
-    """Kafka consumer for agent message processing.
-
-    Features:
-    - Subscribe to specific topics
-    - Message deserialization
-    - Error handling
-    - Graceful shutdown
-    - Message acknowledgment
+    """
+    Kafka consumer for agent message processing.
     """
 
     def __init__(
@@ -41,14 +28,7 @@ class AgentConsumer:
         group_id: str,
         message_handler: Callable,
     ):
-        """Initialize agent consumer.
-
-        Args:
-            agent_id: Agent ID
-            agent_name: Agent name
-            topics: List of Kafka topics to consume
-            group_id: Consumer group ID
-            message_handler: Async function to process messages
+        """Initialize agent consumer
         """
         self.agent_id = agent_id
         self.agent_name = agent_name
@@ -80,7 +60,7 @@ class AgentConsumer:
                 bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
                 group_id=self.group_id,
                 auto_offset_reset="latest",
-                enable_auto_commit=True,
+                enable_auto_commit=False,
                 value_deserializer=lambda m: json.loads(m.decode("utf-8")),
             )
 
@@ -129,6 +109,9 @@ class AgentConsumer:
         """Main consumption loop."""
         while not self._shutdown_event.is_set():
             try:
+                if not self.consumer:
+                    logger.error(f"Consumer not initialized for {self.agent_name}")
+                    break
                 async for message in self.consumer:
                     if self._shutdown_event.is_set():
                         break
@@ -140,7 +123,7 @@ class AgentConsumer:
                 break
             except KafkaError as e:
                 logger.error(f"Kafka error in consumer for {self.agent_name}: {e}")
-                await asyncio.sleep(5)  # Backoff before retry
+                await asyncio.sleep(5)  
             except Exception as e:
                 logger.error(f"Error in consumer loop for {self.agent_name}: {e}", exc_info=True)
                 await asyncio.sleep(1)

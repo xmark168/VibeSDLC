@@ -1,11 +1,5 @@
-"""Agent Monitor - Centralized monitoring for all agent pools.
-
-This module provides system-wide monitoring of agent pools with:
-- Multi-pool monitoring
-- Aggregated statistics
-- Health dashboards
-- Alert notifications
-- Metrics export
+"""
+Agent Monitor - Centralized monitoring for all agent pools.
 """
 
 import asyncio

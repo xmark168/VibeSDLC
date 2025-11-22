@@ -2,7 +2,7 @@
 
 Central service that manages all agent crews and their lifecycle.
 This orchestrator:
-1. Initializes all crew modules (Team Leader, BA, Developer, Tester)
+1. Initializes all crew modules (Team Leader, BA, Tester)
 2. Starts/stops Kafka consumers for each crew
 3. Manages crew lifecycle
 4. Integrates with FastAPI app startup/shutdown
@@ -14,7 +14,6 @@ from typing import Dict, List, Optional
 
 from app.agents.roles.team_leader import TeamLeaderCrew, TeamLeaderConsumer
 from app.agents.roles.business_analyst import BusinessAnalystCrew, BusinessAnalystConsumer
-from app.agents.roles.developer import DeveloperCrew, DeveloperConsumer
 from app.agents.roles.tester import TesterCrew, TesterConsumer
 
 logger = logging.getLogger(__name__)
@@ -38,20 +37,17 @@ class AgentOrchestrator:
     def __init__(self):
         """Initialize the orchestrator with all crews."""
         self._running = False
-        self._consumers: Dict[str, any] = {}
         self._tasks: List[asyncio.Task] = []
 
         # Initialize crews
         self.team_leader = TeamLeaderCrew()
         self.business_analyst = BusinessAnalystCrew()
-        self.developer = DeveloperCrew()
         self.tester = TesterCrew()
 
         # Initialize consumers
         self._consumers = {
             "team_leader": TeamLeaderConsumer(group_id="team-leader-consumer"),
             "business_analyst": BusinessAnalystConsumer(group_id="business-analyst-consumer"),
-            "developer": DeveloperConsumer(group_id="developer-consumer"),
             "tester": TesterConsumer(group_id="tester-consumer"),
         }
 
@@ -75,7 +71,6 @@ class AgentOrchestrator:
             start_tasks = [
                 self._start_consumer("team_leader"),
                 self._start_consumer("business_analyst"),
-                self._start_consumer("developer"),
                 self._start_consumer("tester"),
             ]
 
@@ -158,10 +153,7 @@ class AgentOrchestrator:
                 "crew": self.business_analyst.crew_name,
                 "consumer_running": self._consumers["business_analyst"].is_running,
             },
-            "developer": {
-                "crew": self.developer.crew_name,
-                "consumer_running": self._consumers["developer"].is_running,
-            },
+           
             "tester": {
                 "crew": self.tester.crew_name,
                 "consumer_running": self._consumers["tester"].is_running,
