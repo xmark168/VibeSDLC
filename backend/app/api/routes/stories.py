@@ -268,9 +268,6 @@ async def update_story_status(
         if policy.criteria.get("assignee_required") and not story.assignee_id:
             violations.append("Story must have an assignee")
 
-        if policy.criteria.get("no_blockers") and story.has_active_blockers():
-            violations.append("Story has active blockers that must be resolved")
-
         if policy.criteria.get("acceptance_criteria_defined") and not story.acceptance_criteria:
             violations.append("Acceptance criteria must be defined")
 

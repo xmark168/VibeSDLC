@@ -34,7 +34,6 @@ const statusOptions = ["Todo", "InProgress", "Review", "Done"]
 const criteriaOptions = [
   { key: "assignee_required", label: "Assignee Required", icon: "👤" },
   { key: "story_points_estimated", label: "Story Points Estimated", icon: "📊" },
-  { key: "no_blockers", label: "No Active Blockers", icon: "🚧" },
   { key: "acceptance_criteria_defined", label: "Acceptance Criteria Defined", icon: "✓" },
   { key: "reviewer_id", label: "Reviewer Assigned", icon: "👁️" },
 ]
@@ -80,9 +79,7 @@ export function PolicySettingsDialog({
         {
           from_status: "InProgress",
           to_status: "Review",
-          criteria: {
-            no_blockers: true,
-          },
+          criteria: {},
           is_active: true,
         },
       ])

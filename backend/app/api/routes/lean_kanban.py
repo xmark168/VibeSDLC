@@ -174,9 +174,7 @@ def initialize_default_policies(
         {
             "from_status": "InProgress",
             "to_status": "Review",
-            "criteria": {
-                "no_blockers": True
-            },
+            "criteria": {},
             "is_active": True
         },
         {
@@ -184,8 +182,7 @@ def initialize_default_policies(
             "to_status": "Done",
             "criteria": {
                 "reviewer_id": True,
-                "acceptance_criteria_defined": True,
-                "no_blockers": True
+                "acceptance_criteria_defined": True
             },
             "is_active": True
         }
@@ -324,9 +321,6 @@ def validate_policy_before_move(
 
     if criteria.get("assignee_required") and not story.assignee_id:
         violations.append("Story must have an assignee")
-
-    if criteria.get("no_blockers") and story.has_active_blockers():
-        violations.append("Story has active blockers")
 
     if criteria.get("acceptance_criteria_defined") and not story.acceptance_criteria:
         violations.append("Acceptance criteria must be defined")
