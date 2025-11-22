@@ -34,8 +34,8 @@ export type KanbanCardData = {
   created_at?: string
   age_hours?: number  // Age in current status (hours)
   // TraDS ============= Kanban Hierarchy: Parent/children relationships
-  parent?: KanbanCardData
-  children?: KanbanCardData[]
+  parent?: KanbanCardData & { title?: string }
+  children?: (KanbanCardData & { title?: string })[]
 }
 
 interface KanbanCardProps {
