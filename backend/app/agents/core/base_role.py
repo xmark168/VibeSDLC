@@ -27,9 +27,24 @@ if TYPE_CHECKING:
     from app.agents.core.base_agent_consumer import BaseAgentInstanceConsumer
 
 # Import AgentStatus for runtime use
-from app.models import AgentStatus
+from app.models import AgentStatus, AgentExecution, AgentExecutionStatus
 
 logger = logging.getLogger(__name__)
+
+
+# ===== Lifecycle Logging Helpers =====
+
+def _log_lifecycle(agent_name: str, agent_id: UUID, event: str, details: str = "") -> None:
+    """Log a lifecycle event with standard format."""
+    detail_str = f" - {details}" if details else ""
+    logger.info(f"[LIFECYCLE] Agent {agent_name} ({agent_id}): {event}{detail_str}")
+
+
+def _log_message(agent_name: str, event: str, message_id: Optional[str] = None, details: str = "") -> None:
+    """Log a message event with standard format."""
+    msg_str = f" message={message_id}" if message_id else ""
+    detail_str = f" - {details}" if details else ""
+    logger.info(f"[MESSAGE] Agent {agent_name}:{msg_str} {event}{detail_str}")
 
 
 class BaseAgentRole(ABC):
@@ -222,25 +237,30 @@ class BaseAgentRole(ABC):
             return False
 
         try:
+            _log_lifecycle(self.human_name or self.role_name, self.agent_id, "STARTING", "initializing...")
             self._set_state(AgentStatus.starting)
 
             # Create agent if needed
             if self.agent is None:
+                _log_lifecycle(self.human_name or self.role_name, self.agent_id, "STARTING", "creating CrewAI agent...")
                 self.agent = self.create_agent()
 
             # Start heartbeat
+            _log_lifecycle(self.human_name or self.role_name, self.agent_id, "STARTING", "starting heartbeat...")
             self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
             # Start consumer
+            _log_lifecycle(self.human_name or self.role_name, self.agent_id, "STARTING", "starting consumer...")
             self._consumer_task = asyncio.create_task(self._consumer_loop())
 
             self.started_at = datetime.now(timezone.utc)
             self._set_state(AgentStatus.idle)
 
-            logger.info(f"Agent {self.role_name} (ID: {self.agent_id}) started")
+            _log_lifecycle(self.human_name or self.role_name, self.agent_id, "STARTED", "ready and waiting for messages")
             return True
 
         except Exception as e:
+            _log_lifecycle(self.human_name or self.role_name, self.agent_id, "START_FAILED", str(e))
             logger.error(f"Failed to start agent {self.agent_id}: {e}", exc_info=True)
             self._set_state(AgentStatus.error)
             return False
@@ -259,10 +279,12 @@ class BaseAgentRole(ABC):
             return False
 
         try:
+            _log_lifecycle(self.human_name or self.role_name, self.agent_id, "STOPPING", f"graceful={graceful}")
             self._set_state(AgentStatus.stopping)
             self._shutdown_event.set()
 
             # Cancel heartbeat
+            _log_lifecycle(self.human_name or self.role_name, self.agent_id, "STOPPING", "stopping heartbeat...")
             if self._heartbeat_task:
                 self._heartbeat_task.cancel()
                 try:
@@ -271,10 +293,11 @@ class BaseAgentRole(ABC):
                     pass
 
             # Stop consumer
+            _log_lifecycle(self.human_name or self.role_name, self.agent_id, "STOPPING", "stopping consumer...")
             if self._consumer_task:
                 if graceful:
                     # Wait for current execution
-                    logger.info(f"Waiting for agent {self.agent_id} to finish...")
+                    _log_lifecycle(self.human_name or self.role_name, self.agent_id, "STOPPING", "waiting for current execution to finish...")
                     await self._consumer_task
                 else:
                     self._consumer_task.cancel()
@@ -284,15 +307,17 @@ class BaseAgentRole(ABC):
                         pass
 
             # Cleanup resources
+            _log_lifecycle(self.human_name or self.role_name, self.agent_id, "STOPPING", "cleaning up resources...")
             await self._cleanup()
 
             self.stopped_at = datetime.now(timezone.utc)
             self._set_state(AgentStatus.stopped)
 
-            logger.info(f"Agent {self.role_name} (ID: {self.agent_id}) stopped")
+            _log_lifecycle(self.human_name or self.role_name, self.agent_id, "STOPPED", "agent terminated successfully")
             return True
 
         except Exception as e:
+            _log_lifecycle(self.human_name or self.role_name, self.agent_id, "STOP_FAILED", str(e))
             logger.error(f"Failed to stop agent {self.agent_id}: {e}", exc_info=True)
             self._set_state(AgentStatus.error)
             return False
@@ -330,7 +355,13 @@ class BaseAgentRole(ABC):
         old_state = self.state
         self.state = new_state
 
-        logger.debug(f"Agent {self.agent_id} state: {old_state} -> {new_state}")
+        # Log state transition with standard format
+        _log_lifecycle(
+            self.human_name or self.role_name,
+            self.agent_id,
+            "STATE_CHANGED",
+            f"{old_state.value} → {new_state.value}"
+        )
 
         # Sync to database if agent_model exists
         if self.agent_model:
@@ -469,6 +500,117 @@ class BaseAgentRole(ABC):
         )
         return None
 
+    # ===== Execution Persistence =====
+
+    def _create_execution_record(
+        self,
+        project_id: Optional[UUID] = None,
+        user_id: Optional[UUID] = None,
+        trigger_message_id: Optional[UUID] = None,
+    ) -> Optional[UUID]:
+        """Create an AgentExecution record in database.
+
+        Args:
+            project_id: Project ID for the execution
+            user_id: User who triggered the execution
+            trigger_message_id: Message that triggered the execution
+
+        Returns:
+            Execution ID if created successfully, None otherwise
+        """
+        if not project_id:
+            project_id = self.project_id
+
+        if not project_id:
+            logger.warning(f"Cannot create execution record without project_id for agent {self.agent_id}")
+            return None
+
+        try:
+            from sqlmodel import Session
+            from app.core.db import engine
+
+            execution = AgentExecution(
+                project_id=project_id,
+                agent_name=self.human_name or self.role_name,
+                agent_type=self.role_name,
+                status=AgentExecutionStatus.RUNNING,
+                started_at=datetime.now(timezone.utc),
+                trigger_message_id=trigger_message_id,
+                user_id=user_id,
+            )
+
+            with Session(engine) as db_session:
+                db_session.add(execution)
+                db_session.commit()
+                db_session.refresh(execution)
+
+                _log_lifecycle(
+                    self.human_name or self.role_name,
+                    self.agent_id,
+                    "EXECUTION_STARTED",
+                    f"execution_id={execution.id}"
+                )
+                return execution.id
+
+        except Exception as e:
+            logger.error(f"Failed to create execution record: {e}", exc_info=True)
+            return None
+
+    def _update_execution_record(
+        self,
+        execution_id: UUID,
+        success: bool,
+        result: Optional[Dict] = None,
+        error_message: Optional[str] = None,
+        token_used: int = 0,
+    ) -> None:
+        """Update an AgentExecution record with results.
+
+        Args:
+            execution_id: ID of the execution record
+            success: Whether execution was successful
+            result: Execution result data
+            error_message: Error message if failed
+            token_used: Number of tokens used
+        """
+        try:
+            from sqlmodel import Session
+            from app.core.db import engine
+
+            with Session(engine) as db_session:
+                execution = db_session.get(AgentExecution, execution_id)
+                if execution:
+                    execution.completed_at = datetime.now(timezone.utc)
+                    execution.status = (
+                        AgentExecutionStatus.COMPLETED if success
+                        else AgentExecutionStatus.FAILED
+                    )
+
+                    # Calculate duration
+                    if execution.started_at:
+                        duration = (execution.completed_at - execution.started_at).total_seconds() * 1000
+                        execution.duration_ms = int(duration)
+
+                    execution.token_used = token_used
+                    execution.result = result
+                    execution.error_message = error_message
+
+                    db_session.add(execution)
+                    db_session.commit()
+
+                    status_str = "COMPLETED" if success else "FAILED"
+                    _log_lifecycle(
+                        self.human_name or self.role_name,
+                        self.agent_id,
+                        f"EXECUTION_{status_str}",
+                        f"execution_id={execution_id}, duration={execution.duration_ms}ms"
+                    )
+                else:
+                    logger.warning(f"Execution record {execution_id} not found for update")
+
+        except Exception as e:
+            logger.error(f"Failed to update execution record: {e}", exc_info=True)
+
     # ===== Execution =====
 
     async def execute(
@@ -476,6 +618,7 @@ class BaseAgentRole(ABC):
         context: Dict[str, Any],
         project_id: Optional[UUID] = None,
         user_id: Optional[UUID] = None,
+        message_id: Optional[UUID] = None,
     ) -> Dict[str, Any]:
         """Execute agent workflow.
 
@@ -483,6 +626,7 @@ class BaseAgentRole(ABC):
             context: Execution context
             project_id: Optional project ID
             user_id: Optional user ID
+            message_id: Optional trigger message ID for tracking
 
         Returns:
             Execution result
@@ -492,7 +636,15 @@ class BaseAgentRole(ABC):
         self.last_activity = datetime.now(timezone.utc)
         self._set_state(AgentStatus.busy)
 
+        # Create execution record in database
+        db_execution_id = self._create_execution_record(
+            project_id=project_id,
+            user_id=user_id,
+            trigger_message_id=message_id,
+        )
+
         result = {"success": False, "output": "", "error": None, "execution_id": str(self.execution_id)}
+        error_msg = None
 
         try:
             # Publish thinking status
@@ -538,11 +690,10 @@ class BaseAgentRole(ABC):
                 project_id=project_id,
             )
 
-            logger.info(f"{self.role_name} execution {self.execution_id} completed")
-
         except Exception as e:
-            logger.error(f"{self.role_name} execution failed: {e}", exc_info=True)
+            logger.error(f"[EXECUTION] {self.role_name} execution failed: {e}", exc_info=True)
             result["error"] = str(e)
+            error_msg = str(e)
             self.failed_executions += 1
 
             await self._publish_status(
@@ -554,6 +705,15 @@ class BaseAgentRole(ABC):
         finally:
             self._set_state(AgentStatus.idle)
             self.last_activity = datetime.now(timezone.utc)
+
+            # Update execution record in database
+            if db_execution_id:
+                self._update_execution_record(
+                    execution_id=db_execution_id,
+                    success=result.get("success", False),
+                    result=result,
+                    error_message=error_msg,
+                )
 
             # Trigger callback
             if self.on_execution_complete:

@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { AuthorType, type Message } from '@/types/message'
 
+// Track processed message IDs to prevent duplicates
+const processedMessageIds = new Set<string>()
+
 export type WebSocketMessage = {
   type: 'connected' | 'message' | 'agent_message' | 'agent_response' | 'typing' | 'pong' | 'error' | 'routing' | 'agent_routing' | 'agent_thinking' | 'agent_question' | 'agent_preview' | 'kanban_update' | 'story_created' | 'story_updated' | 'story_status_changed' | 'switch_tab'
   data?: Message | any
@@ -142,31 +145,47 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
           case 'user_message':
             console.log('[WebSocket] Received message:', data.type, data.data?.content?.substring(0, 100))
             if (data.data) {
+              const messageId = data.data.id
+
+              // Skip if we've already processed this message ID
+              if (processedMessageIds.has(messageId)) {
+                console.log('[WebSocket] Already processed message, skipping:', messageId)
+                return
+              }
+
               setMessages((prev) => {
-                // Check if message already exists by ID
-                const existsById = prev.some(m => m.id === data.data!.id)
+                // Check if message already exists by ID in state
+                const existsById = prev.some(m => m.id === messageId)
                 if (existsById) {
-                  console.log('[WebSocket] Message already exists, skipping:', data.data!.id)
+                  console.log('[WebSocket] Message already exists in state, skipping:', messageId)
                   return prev
                 }
 
-                // Check if this is confirming an optimistic message (match by content for user messages)
+                // Check if this is confirming an optimistic message (match by content + time for user messages)
                 if (data.data!.author_type === AuthorType.USER || data.type === 'user_message') {
-                  const tempIndex = prev.findIndex(m =>
-                    m.id.startsWith('temp_') &&
-                    m.content === data.data!.content
-                  )
+                  const serverTime = new Date(data.data!.created_at).getTime()
+
+                  const tempIndex = prev.findIndex(m => {
+                    if (!m.id.startsWith('temp_')) return false
+                    if (m.content !== data.data!.content) return false
+
+                    // Match if within 10 seconds of temp message creation
+                    const tempTime = new Date(m.created_at).getTime()
+                    return Math.abs(serverTime - tempTime) < 10000
+                  })
 
                   if (tempIndex !== -1) {
                     // Replace optimistic message with server-confirmed message
-                    console.log('[WebSocket] Replacing optimistic message:', prev[tempIndex].id, '->', data.data!.id)
+                    console.log('[WebSocket] Replacing optimistic message:', prev[tempIndex].id, '->', messageId)
+                    processedMessageIds.add(messageId)
                     const newMessages = [...prev]
                     newMessages[tempIndex] = data.data!
                     return newMessages
                   }
                 }
 
-                console.log('[WebSocket] Adding new message:', data.data!.id)
+                console.log('[WebSocket] Adding new message:', messageId)
+                processedMessageIds.add(messageId)
                 return [...prev, data.data!]
               })
             } else {
@@ -280,6 +299,8 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
       wsRef.current.close()
       wsRef.current = null
     }
+    // Clear processed message tracking on disconnect
+    processedMessageIds.clear()
     setIsConnected(false)
     setIsReady(false)
   }, [])
@@ -400,6 +421,27 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     const interval = setInterval(ping, 30000)
     return () => clearInterval(interval)
   }, [isConnected, ping])
+
+  // Clean up stale temp messages (older than 10 seconds without server confirmation)
+  useEffect(() => {
+    const cleanup = setInterval(() => {
+      const now = Date.now()
+      setMessages(prev => {
+        const filtered = prev.filter(m => {
+          if (!m.id.startsWith('temp_')) return true
+          const msgTime = new Date(m.created_at).getTime()
+          const isStale = now - msgTime > 10000 // 10 seconds
+          if (isStale) {
+            console.log('[WebSocket] Removing stale temp message:', m.id)
+          }
+          return !isStale
+        })
+        return filtered.length === prev.length ? prev : filtered
+      })
+    }, 5000) // Check every 5 seconds
+
+    return () => clearInterval(cleanup)
+  }, [])
 
   return {
     isConnected,
