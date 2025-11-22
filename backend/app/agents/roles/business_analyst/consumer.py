@@ -158,21 +158,36 @@ class BusinessAnalystConsumer:
             elif current_phase == "backlog":
                 # In backlog phase - waiting for backlog approval/feedback
                 if user_msg_lower == "next" or user_msg_lower in ["ok", "approve", "approved", "đồng ý", "chấp nhận"]:
-                    logger.info("User approved backlog, BA workflow complete")
-                    # Mark session as completed
-                    crew._transition_phase("completed", "User approved backlog")
-                    from datetime import datetime, timezone
-                    crew.ba_session.completed_at = datetime.now(timezone.utc)
-                    db_session.commit()
+                    logger.info("User approved backlog")
 
-                    # Publish completion message
-                    await crew.publish_response(
-                        content="✅ Hoàn tất! Product Backlog đã được chấp nhận. Quy trình Business Analyst đã hoàn thành.",
-                        message_id=message_id,
-                        project_id=project_id,
-                        user_id=user_id
-                    )
-                    result = {"success": True, "message": "BA workflow completed"}
+                    # Save pending backlog to database
+                    save_result = crew.approve_and_save_backlog()
+
+                    if save_result.get("success"):
+                        # Mark session as completed
+                        crew._transition_phase("completed", "User approved backlog")
+                        from datetime import datetime, timezone
+                        crew.ba_session.completed_at = datetime.now(timezone.utc)
+                        db_session.commit()
+
+                        # Publish completion message
+                        await crew.publish_response(
+                            content="✅ Hoàn tất! Quy trình Business Analyst đã hoàn thành.",
+                            message_id=message_id,
+                            project_id=project_id,
+                            user_id=user_id
+                        )
+                        result = {"success": True, "message": "BA workflow completed", **save_result}
+                    else:
+                        # Failed to save
+                        logger.error(f"Failed to save backlog: {save_result.get('error')}")
+                        await crew.publish_response(
+                            content=f"❌ Có lỗi xảy ra, vui lòng thử lại.",
+                            message_id=message_id,
+                            project_id=project_id,
+                            user_id=user_id
+                        )
+                        result = {"success": False, "error": save_result.get('error')}
                 else:
                     # User provided feedback, regenerate backlog
                     logger.info(f"User provided feedback on backlog: {user_message}")

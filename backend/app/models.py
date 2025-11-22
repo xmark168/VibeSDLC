@@ -240,14 +240,20 @@ class Story(BaseModel, table=True):
     def cycle_time_hours(self) -> float | None:
         """Cycle time: time from started (InProgress) to completed (Done)"""
         if self.started_at and self.completed_at:
-            return (self.completed_at - self.started_at).total_seconds() / 3600
+            # Ensure both datetimes are timezone-aware
+            started = self.started_at.replace(tzinfo=timezone.utc) if self.started_at.tzinfo is None else self.started_at
+            completed = self.completed_at.replace(tzinfo=timezone.utc) if self.completed_at.tzinfo is None else self.completed_at
+            return (completed - started).total_seconds() / 3600
         return None
 
     @property
     def lead_time_hours(self) -> float | None:
         """Lead time: time from created to completed"""
         if self.completed_at:
-            return (self.completed_at - self.created_at).total_seconds() / 3600
+            # Ensure both datetimes are timezone-aware
+            created = self.created_at.replace(tzinfo=timezone.utc) if self.created_at.tzinfo is None else self.created_at
+            completed = self.completed_at.replace(tzinfo=timezone.utc) if self.completed_at.tzinfo is None else self.completed_at
+            return (completed - created).total_seconds() / 3600
         return None
 
     @property
@@ -264,6 +270,11 @@ class Story(BaseModel, table=True):
             status_start_time = self.completed_at
 
         current_time = datetime.now(timezone.utc)
+
+        # Ensure status_start_time is timezone-aware
+        if status_start_time.tzinfo is None:
+            status_start_time = status_start_time.replace(tzinfo=timezone.utc)
+
         return (current_time - status_start_time).total_seconds() / 3600
 
     def has_active_blockers(self) -> bool:

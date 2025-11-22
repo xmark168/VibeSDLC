@@ -23,7 +23,7 @@ from app.agents.roles.business_analyst.tools import get_ba_tools
 from app.models import (
     BASession, BASessionStatus, Requirement, RequirementCategory,
     ProductBrief, BusinessFlow, Epic, Story,
-    EpicStatus, StoryType, StoryPriority
+    EpicStatus, StoryType, StoryPriority, StoryStatus
 )
 from app.core.config import settings
 
@@ -893,45 +893,47 @@ Actors: {', '.join(flow.actors)}"""
         if self.ba_session.current_phase == "solution":
             self._transition_phase("backlog", "Solution approved, creating backlog")
 
-        # Get current backlog if it exists (for refinement mode)
+        # Get current backlog from session metadata (for refinement mode)
         current_backlog_text = "None"
         if revision_feedback:
-            existing_epics = self.db_session.query(Epic).filter(
-                Epic.project_id == self.project_id
-            ).all()
+            # Get pending backlog from session metadata
+            session_meta = self.ba_session.session_metadata or {}
+            pending_backlog = session_meta.get("pending_backlog")
 
-            existing_stories = self.db_session.query(Story).filter(
-                Story.project_id == self.project_id
-            ).all()
+            if pending_backlog:
+                pending_epics = pending_backlog.get("epics", [])
+                pending_stories = pending_backlog.get("stories", [])
 
-            if existing_epics or existing_stories:
-                # Format current backlog for agent to refine
-                backlog_parts = []
+                if pending_epics or pending_stories:
+                    # Format current backlog for agent to refine
+                    backlog_parts = []
 
-                if existing_epics:
-                    backlog_parts.append("EPICS:")
-                    for epic in existing_epics:
-                        epic_text = f"""- {epic.title}
-  Domain: {epic.domain or 'N/A'}
-  Description: {epic.description or 'N/A'}"""
-                        backlog_parts.append(epic_text)
+                    if pending_epics:
+                        backlog_parts.append("EPICS:")
+                        for epic in pending_epics:
+                            epic_text = f"""- {epic['name']}
+  Domain: {epic.get('domain', 'N/A')}
+  Description: {epic.get('description', 'N/A')}"""
+                            backlog_parts.append(epic_text)
 
-                if existing_stories:
-                    backlog_parts.append("\nSTORIES:")
-                    for story in existing_stories:
-                        epic_name = "Independent"
-                        if story.epic_id:
-                            epic = next((e for e in existing_epics if e.id == story.epic_id), None)
-                            if epic:
-                                epic_name = epic.title
+                    if pending_stories:
+                        backlog_parts.append("\nSTORIES:")
+                        for story in pending_stories:
+                            # Find epic name from temp_id
+                            epic_name = "Independent"
+                            epic_temp_id = story.get('epic_temp_id')
+                            if epic_temp_id:
+                                epic = next((e for e in pending_epics if e['temp_id'] == epic_temp_id), None)
+                                if epic:
+                                    epic_name = epic['name']
 
-                        story_text = f"""- {story.title}
+                            story_text = f"""- {story['title']}
   Epic: {epic_name}
-  Points: {story.story_point}, Priority: {story.story_priority.value if story.story_priority else 'Medium'}
-  Acceptance Criteria: {story.acceptance_criteria or 'N/A'}"""
-                        backlog_parts.append(story_text)
+  Points: {story.get('story_points')}, Priority: {story.get('priority', 'Medium')}
+  Acceptance Criteria: {', '.join(story.get('acceptance_criteria', [])) or 'N/A'}"""
+                            backlog_parts.append(story_text)
 
-                current_backlog_text = "\n".join(backlog_parts)
+                    current_backlog_text = "\n".join(backlog_parts)
 
         context = {
             "phase": "backlog",
@@ -944,63 +946,50 @@ Actors: {', '.join(flow.actors)}"""
 
         result = await self.execute(context, project_id, user_id)
 
-        # Save epics and stories to database
+        # Save epics and stories to session metadata (PENDING approval)
+        # DO NOT save to database yet - wait for user approval
         if result.get("success") and result.get("pydantic"):
             backlog = result["pydantic"]
 
-            # Clear existing stories first (they reference epics)
-            self.db_session.query(Story).filter(
-                Story.project_id == self.project_id
-            ).delete()
-
-            # Clear existing epics
-            self.db_session.query(Epic).filter(
-                Epic.project_id == self.project_id
-            ).delete()
-
-            # Create epics
-            epic_id_map = {}  # Map temp IDs to real IDs
-            for epic_data in backlog.epics:
-                epic = Epic(
-                    project_id=self.project_id,
-                    title=epic_data.name,
-                    description=epic_data.description,
-                    domain=epic_data.domain,
-                    epic_status=EpicStatus.PLANNED
-                )
-                self.db_session.add(epic)
-                self.db_session.flush()  # Get the ID
-                epic_id_map[epic_data.id] = epic.id
-
-            # Create stories
-            for story_data in backlog.stories:
-                # Map epic ID
-                epic_uuid = epic_id_map.get(story_data.epic_id)
-
-                # Map priority
-                priority_map = {
-                    "High": StoryPriority.HIGH,
-                    "Medium": StoryPriority.MEDIUM,
-                    "Low": StoryPriority.LOW
+            # Store pending backlog in session metadata for approval
+            # This allows user to review before committing to database
+            pending_epics = [
+                {
+                    "temp_id": epic_data.id,
+                    "name": epic_data.name,
+                    "description": epic_data.description,
+                    "domain": epic_data.domain
                 }
+                for epic_data in backlog.epics
+            ]
 
-                story = Story(
-                    project_id=self.project_id,
-                    epic_id=epic_uuid,
-                    type=StoryType.USER_STORY,
-                    title=story_data.title,
-                    description=story_data.description,
-                    acceptance_criteria="\n".join(story_data.acceptance_criteria),
-                    story_point=story_data.story_points,
-                    story_priority=priority_map.get(story_data.priority, StoryPriority.MEDIUM),
-                    dependencies=story_data.dependencies
-                )
-                self.db_session.add(story)
+            pending_stories = [
+                {
+                    "epic_temp_id": story_data.epic_id,
+                    "title": story_data.title,
+                    "description": story_data.description,
+                    "acceptance_criteria": story_data.acceptance_criteria,
+                    "story_points": story_data.story_points,
+                    "priority": story_data.priority,
+                    "dependencies": story_data.dependencies
+                }
+                for story_data in backlog.stories
+            ]
 
+            # Store in session metadata
+            session_meta = self.ba_session.session_metadata or {}
+            session_meta["pending_backlog"] = {
+                "epics": pending_epics,
+                "stories": pending_stories,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            self.ba_session.session_metadata = session_meta
             self.db_session.commit()
 
-            # Note: Don't transition to "completed" here - wait for user approval
-            # The transition happens in consumer.py when user approves the backlog
+            logger.info(f"Stored {len(pending_epics)} epics and {len(pending_stories)} stories in session metadata (pending approval)")
+
+            # Note: Epic/Story will be saved to database ONLY when user approves
+            # The approval logic is in consumer.py
 
             # Publish response for backlog phase
             epics_data = [
@@ -1040,6 +1029,102 @@ Actors: {', '.join(flow.actors)}"""
             )
 
         return result
+
+    def approve_and_save_backlog(self) -> Dict[str, Any]:
+        """Approve backlog and save Epics/Stories to database.
+
+        This is called when user approves the backlog.
+        Moves pending backlog from session_metadata to database.
+
+        Returns:
+            Result with epic/story counts
+        """
+        try:
+            # Get pending backlog from session metadata
+            session_meta = self.ba_session.session_metadata or {}
+            pending_backlog = session_meta.get("pending_backlog")
+
+            if not pending_backlog:
+                logger.warning("No pending backlog found in session metadata")
+                return {
+                    "success": False,
+                    "error": "No pending backlog to approve"
+                }
+
+            pending_epics = pending_backlog.get("epics", [])
+            pending_stories = pending_backlog.get("stories", [])
+
+            # Clear existing stories first (they reference epics)
+            self.db_session.query(Story).filter(
+                Story.project_id == self.project_id
+            ).delete()
+
+            # Clear existing epics
+            self.db_session.query(Epic).filter(
+                Epic.project_id == self.project_id
+            ).delete()
+
+            # Create epics
+            epic_id_map = {}  # Map temp IDs to real UUIDs
+            for epic_data in pending_epics:
+                epic = Epic(
+                    project_id=self.project_id,
+                    title=epic_data['name'],
+                    description=epic_data.get('description'),
+                    domain=epic_data.get('domain'),
+                    epic_status=EpicStatus.PLANNED
+                )
+                self.db_session.add(epic)
+                self.db_session.flush()  # Get the ID
+                epic_id_map[epic_data['temp_id']] = epic.id
+
+            # Create stories
+            for story_data in pending_stories:
+                # Map epic ID
+                epic_uuid = epic_id_map.get(story_data.get('epic_temp_id'))
+
+                # Map priority
+                priority_map = {
+                    "High": StoryPriority.HIGH,
+                    "Medium": StoryPriority.MEDIUM,
+                    "Low": StoryPriority.LOW
+                }
+
+                story = Story(
+                    project_id=self.project_id,
+                    epic_id=epic_uuid,
+                    type=StoryType.USER_STORY,
+                    title=story_data['title'],
+                    description=story_data.get('description'),
+                    acceptance_criteria="\n".join(story_data.get('acceptance_criteria', [])),
+                    story_point=story_data.get('story_points'),
+                    story_priority=priority_map.get(story_data.get('priority', 'Medium'), StoryPriority.MEDIUM),
+                    dependencies=story_data.get('dependencies', []),
+                    status=StoryStatus.TODO  # Start in TODO column
+                )
+                self.db_session.add(story)
+
+            # Commit to database
+            self.db_session.commit()
+
+            # Clear pending backlog from metadata
+            session_meta.pop("pending_backlog", None)
+            self.ba_session.session_metadata = session_meta
+            self.db_session.commit()
+
+            return {
+                "success": True,
+                "epics_count": len(pending_epics),
+                "stories_count": len(pending_stories)
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to approve and save backlog: {e}", exc_info=True)
+            self.db_session.rollback()
+            return {
+                "success": False,
+                "error": str(e)
+            }
 
     async def execute(
         self,
