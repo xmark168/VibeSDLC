@@ -48,11 +48,9 @@ interface ChatPanelProps {
 
 const AGENTS = [
   { name: "Mike", role: "Team Leader", avatar: "👨‍💼" },
-  { name: "Emma", role: "Product Manager", avatar: "👩‍💼" },
-  { name: "Bob", role: "Architect", avatar: "👨‍🔧" },
-  { name: "Alex", role: "Engineer", avatar: "👨‍💻" },
-  { name: "Developer", role: "Developer", avatar: "🔧" },
-  { name: "Tester", role: "Tester", avatar: "🧪" },
+  { name: "Emma", role: "Business Analysis", avatar: "👩‍💼" },
+  { name: "Bob", role: "Developer", avatar: "👨‍🔧" },
+  { name: "Alex", role: "Tester", avatar: "👨‍💻" },
 ];
 
 export function ChatPanelWS({
@@ -77,7 +75,7 @@ export function ChatPanelWS({
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = useRef<HTMLDivElement>(null);
   const mentionDropdownRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const prevMessagesLengthRef = useRef(0);
@@ -168,35 +166,83 @@ export function ChatPanelWS({
   );
 
   const insertMention = (agentName: string) => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
+    const editor = textareaRef.current;
+    if (!editor) return;
 
-    const cursorPos = textarea.selectionStart;
-    const textBeforeCursor = message.slice(0, cursorPos);
-    const textAfterCursor = message.slice(cursorPos);
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
 
+    const range = selection.getRangeAt(0);
+
+    // Get current position and text
+    const preCaretRange = range.cloneRange();
+    preCaretRange.selectNodeContents(editor);
+    preCaretRange.setEnd(range.endContainer, range.endOffset);
+    const cursorPos = preCaretRange.toString().length;
+    const fullText = editor.innerText || '';
+
+    // Find the @ symbol before cursor
+    const textBeforeCursor = fullText.slice(0, cursorPos);
     const atIndex = textBeforeCursor.lastIndexOf("@");
-    const newText =
-      textBeforeCursor.slice(0, atIndex) + `@${agentName} ` + textAfterCursor;
 
+    if (atIndex === -1) return;
+
+    // Delete from @ to cursor
+    range.setStart(preCaretRange.endContainer, preCaretRange.endOffset - (cursorPos - atIndex));
+    range.deleteContents();
+
+    // Create mention span
+    const mentionSpan = document.createElement('span');
+    mentionSpan.className = 'bg-purple-500/20 text-purple-600 dark:text-purple-400 rounded px-1.5 py-0.5 mx-0.5 font-medium inline-block';
+    mentionSpan.contentEditable = 'false';
+    mentionSpan.setAttribute('data-mention', `@${agentName}`);
+    mentionSpan.textContent = `@${agentName}`;
+
+    // Insert mention span
+    range.insertNode(mentionSpan);
+
+    // Add space after mention
+    const spaceNode = document.createTextNode(' ');
+    range.setStartAfter(mentionSpan);
+    range.insertNode(spaceNode);
+
+    // Move cursor after space
+    range.setStartAfter(spaceNode);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    // Update state
+    const newText = editor.innerText || '';
     setMessage(newText);
     setShowMentions(false);
     setMentionSearch("");
 
-    setTimeout(() => {
-      const newCursorPos = atIndex + agentName.length + 2;
-      textarea.setSelectionRange(newCursorPos, newCursorPos);
-      textarea.focus();
-    }, 0);
+    editor.focus();
   };
 
-  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const value = e.target.value;
+  const handleContentEditableInput = (e: React.FormEvent<HTMLDivElement>) => {
+    const editor = e.currentTarget;
+    const value = editor.innerText || '';
+
+    // Update state without re-rendering children
     setMessage(value);
 
-    const cursorPos = e.target.selectionStart;
-    const textBeforeCursor = value.slice(0, cursorPos);
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      setShowMentions(false);
+      return;
+    }
 
+    // Get cursor position by walking through all text nodes
+    let cursorPos = 0;
+    const range = selection.getRangeAt(0);
+    const preCaretRange = range.cloneRange();
+    preCaretRange.selectNodeContents(editor);
+    preCaretRange.setEnd(range.endContainer, range.endOffset);
+    cursorPos = preCaretRange.toString().length;
+
+    const textBeforeCursor = value.slice(0, cursorPos);
     const atIndex = textBeforeCursor.lastIndexOf("@");
     const spaceAfterAt = textBeforeCursor.slice(atIndex).indexOf(" ");
 
@@ -227,6 +273,10 @@ export function ChatPanelWS({
 
     if (success) {
       setMessage("");
+      // Clear contentEditable div
+      if (textareaRef.current) {
+        textareaRef.current.innerHTML = '';
+      }
       setTimeout(() => {
         textareaRef.current?.focus();
       }, 0);
@@ -249,7 +299,35 @@ export function ChatPanelWS({
     }
   }, [typingAgents, agentProgress.isExecuting]);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Handle Backspace to delete entire mention tag
+    if (e.key === "Backspace" && !showMentions) {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return;
+
+      const range = selection.getRangeAt(0);
+
+      // Only delete mention if cursor is RIGHT AFTER it (offset 0 or 1 in text node after mention)
+      if (range.startContainer.nodeType === Node.TEXT_NODE &&
+          range.startOffset <= 1) {
+        const prevSibling = range.startContainer.previousSibling;
+        if (prevSibling &&
+            prevSibling.nodeType === Node.ELEMENT_NODE) {
+          const prevElement = prevSibling as HTMLElement;
+          if (prevElement.hasAttribute('data-mention')) {
+            e.preventDefault();
+            prevElement.remove();
+            // Update state
+            const editor = textareaRef.current;
+            if (editor) {
+              setMessage(editor.innerText || '');
+            }
+            return;
+          }
+        }
+      }
+    }
+
     if (showMentions && filteredAgents.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -283,39 +361,6 @@ export function ChatPanelWS({
       console.error("Failed to copy:", err);
     }
   };
-
-  // Handle edit message - reopen preview modal with existing data
-  const handleEditMessage = (message: Message) => {
-    if (!message.message_type || !message.structured_data) return
-
-    // Convert Message to AgentPreview format
-    const preview: any = {
-      preview_id: `edit_${message.id}_${Date.now()}`, // New preview ID for edit
-      preview_type: message.message_type,
-      title: `Edit ${message.message_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}`,
-      prompt: 'You can edit or regenerate this preview',
-      options: ['approve', 'edit', 'regenerate'],
-    }
-
-    // Add structured data based on type
-    switch (message.message_type) {
-      case 'product_brief':
-        preview.brief = message.structured_data
-        preview.incomplete_flag = message.metadata?.incomplete_flag
-        break
-      case 'product_vision':
-        preview.vision = message.structured_data
-        preview.quality_score = message.metadata?.quality_score
-        preview.validation_result = message.metadata?.validation_result
-        break
-      case 'product_backlog':
-        preview.backlog = message.structured_data
-        break
-    }
-
-    // Reopen modal
-    reopenPreview(preview)
-  }
 
   const formatTimestamp = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -352,23 +397,30 @@ export function ChatPanelWS({
   };
 
   const triggerMention = () => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
+    const editor = textareaRef.current;
+    if (!editor) return;
 
-    const cursorPos = textarea.selectionStart;
-    const newMessage =
-      message.slice(0, cursorPos) + "@" + message.slice(cursorPos);
+    const selection = window.getSelection();
+    if (!selection) return;
 
-    setMessage(newMessage);
+    editor.focus();
+
+    // Insert @ at cursor position
+    const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : document.createRange();
+    const atNode = document.createTextNode('@');
+    range.insertNode(atNode);
+
+    // Move cursor after @
+    range.setStartAfter(atNode);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    // Update state
+    setMessage(editor.innerText || '');
     setShowMentions(true);
     setMentionSearch("");
     setSelectedMentionIndex(0);
-
-    setTimeout(() => {
-      textarea.focus();
-      const newCursorPos = cursorPos + 1;
-      textarea.setSelectionRange(newCursorPos, newCursorPos);
-    }, 0);
   };
 
   // Notify parent about connection status (use isReady for accurate status)
@@ -720,13 +772,19 @@ export function ChatPanelWS({
         )}
 
         <div className="bg-transparent rounded-4xl p-1 border-0">
-          <Textarea
+          <div
             ref={textareaRef}
-            value={message}
-            onChange={handleTextareaChange}
+            contentEditable={isReady}
+            onInput={handleContentEditableInput}
             onKeyDown={handleKeyDown}
-            className="min-h-[40px] resize-none bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground p-1 focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
-            disabled={!isReady}
+            className="min-h-[40px] max-h-[200px] overflow-y-auto resize-none bg-transparent border-0 text-sm text-foreground p-1 focus-visible:outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground"
+            data-placeholder="Type a message..."
+            suppressContentEditableWarning
+            style={{
+              wordWrap: 'break-word',
+              whiteSpace: 'pre-wrap',
+              lineHeight: '1.5rem'
+            }}
           />
           <div className="flex items-center justify-between pt-3">
             <div className="flex gap-2">
