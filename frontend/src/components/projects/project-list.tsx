@@ -1,8 +1,7 @@
 import { ApiError, GithubService, ProjectPublic } from "@/client"
 import { ProjectCard } from "./project-card"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import toast from "react-hot-toast"
-import { handleError } from "@/utils"
+
 import { useAppStore } from "@/stores/auth-store"
 import { useNavigate } from "@tanstack/react-router"
 

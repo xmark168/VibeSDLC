@@ -339,17 +339,24 @@ class ProjectsPublic(SQLModel):
 # agent
 class AgentBase(SQLModel):
     name: str
+    human_name: str
+    role_type: str  # team_leader, business_analyst, developer, tester
     agent_type: Optional[str] = None
 
-class AgentCreate(AgentBase):
-    pass
+class AgentCreate(SQLModel):
+    project_id: UUID
+    role_type: str
+    human_name: Optional[str] = None  # Auto-generated if not provided
 
 class AgentUpdate(SQLModel):
     name: Optional[str] = None
-    agent_type: Optional[str] = None
+    human_name: Optional[str] = None
+    status: Optional[str] = None
 
 class AgentPublic(AgentBase):
     id: UUID
+    project_id: UUID
+    status: str
     created_at: datetime
     updated_at: datetime
 

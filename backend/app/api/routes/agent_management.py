@@ -13,10 +13,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
-from sqlmodel import Session
+from sqlmodel import Session, select
 
-from app.api.deps import get_current_user, get_db
-from app.models import User
+from app.api.deps import get_current_user, get_db, SessionDep
+from app.models import User, Agent, AgentStatus
 from app.agents.core import (
     AgentPool,
     AgentPoolConfig,
@@ -24,6 +24,7 @@ from app.agents.core import (
     get_agent_monitor,
     AgentLifecycleState,
 )
+from app.agents.core.name_generator import generate_agent_name, get_display_name
 
 # Import role classes
 from app.agents.roles.team_leader.crew import TeamLeaderCrew
@@ -37,23 +38,21 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 
 class PoolConfigSchema(BaseModel):
     """Pool configuration schema."""
-    min_agents: int = Field(default=0, ge=0)
     max_agents: int = Field(default=10, ge=1)
-    scale_up_threshold: float = Field(default=0.8, ge=0, le=1)
-    scale_down_threshold: float = Field(default=0.2, ge=0, le=1)
-    idle_timeout: int = Field(default=300, ge=0)
     health_check_interval: int = Field(default=60, ge=10)
 
 
 class CreatePoolRequest(BaseModel):
     """Request to create agent pool."""
-    role_type: str = Field(..., description="Role type: team_leader, business_analyst, tester")
+    role_type: str = Field(..., description="Role type: team_leader, business_analyst, developer, tester")
     pool_name: str = Field(..., description="Unique pool name")
     config: Optional[PoolConfigSchema] = None
 
 
 class SpawnAgentRequest(BaseModel):
     """Request to spawn agent."""
+    project_id: UUID = Field(..., description="Project ID to assign agent to")
+    role_type: str = Field(..., description="Role type: team_leader, business_analyst, developer, tester")
     pool_name: str = Field(..., description="Pool name")
     heartbeat_interval: int = Field(default=30, ge=10)
     max_idle_time: int = Field(default=300, ge=60)
@@ -219,25 +218,70 @@ async def delete_pool(
 @router.post("/spawn")
 async def spawn_agent(
     request: SpawnAgentRequest,
+    session: SessionDep,
     current_user: User = Depends(get_current_user),
 ) -> Any:
-    """Spawn a new agent in the specified pool."""
+    """Spawn a new agent in the specified pool and persist to database.
+
+    The agent is created in the database and then spawned into the runtime pool.
+    """
+    # Validate role type
+    if request.role_type not in ROLE_CLASS_MAP:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid role_type. Must be one of: {list(ROLE_CLASS_MAP.keys())}"
+        )
+
     pool = get_pool(request.pool_name)
 
-    agent = await pool.spawn_agent(
+    # Get existing agent names for this project/role to avoid duplicates
+    existing_agents = session.exec(
+        select(Agent).where(
+            Agent.project_id == request.project_id,
+            Agent.role_type == request.role_type
+        )
+    ).all()
+    existing_names = [a.human_name for a in existing_agents]
+
+    # Generate unique human name
+    human_name = generate_agent_name(request.role_type, existing_names)
+    display_name = get_display_name(human_name, request.role_type)
+
+    # Create agent in database first
+    db_agent = Agent(
+        project_id=request.project_id,
+        name=display_name,
+        human_name=human_name,
+        role_type=request.role_type,
+        agent_type=request.role_type,
+        status=AgentStatus.idle,
+    )
+    session.add(db_agent)
+    session.commit()
+    session.refresh(db_agent)
+
+    # Spawn into runtime pool
+    runtime_agent = await pool.spawn_agent(
+        agent_id=db_agent.id,
         heartbeat_interval=request.heartbeat_interval,
         max_idle_time=request.max_idle_time,
     )
 
-    if not agent:
-        raise HTTPException(status_code=500, detail="Failed to spawn agent")
+    if not runtime_agent:
+        # Rollback database entry if pool spawn fails
+        session.delete(db_agent)
+        session.commit()
+        raise HTTPException(status_code=500, detail="Failed to spawn agent in pool")
 
     return {
-        "agent_id": str(agent.agent_id),
-        "role_name": agent.role_name,
+        "agent_id": str(db_agent.id),
+        "human_name": human_name,
+        "display_name": display_name,
+        "role_type": request.role_type,
+        "project_id": str(request.project_id),
         "pool_name": request.pool_name,
-        "state": agent.state.value,
-        "created_at": agent.created_at.isoformat(),
+        "state": runtime_agent.state.value,
+        "created_at": db_agent.created_at.isoformat(),
     }
 
 
@@ -256,6 +300,31 @@ async def terminate_agent(
         "message": f"Agent {request.agent_id} terminated successfully",
         "pool_name": request.pool_name,
     }
+
+
+@router.get("/project/{project_id}")
+async def get_project_agents(
+    project_id: UUID,
+    session: SessionDep,
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Get all agents for a specific project."""
+    agents = session.exec(
+        select(Agent).where(Agent.project_id == project_id)
+    ).all()
+
+    return [
+        {
+            "id": str(agent.id),
+            "name": agent.name,
+            "human_name": agent.human_name,
+            "role_type": agent.role_type,
+            "status": agent.status.value,
+            "project_id": str(agent.project_id),
+            "created_at": agent.created_at.isoformat(),
+        }
+        for agent in agents
+    ]
 
 
 @router.get("/health")

@@ -123,6 +123,10 @@ class Project(BaseModel, table=True):
         back_populates="project",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+    agents: list["Agent"] = Relationship(
+        back_populates="project",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
     # TraDS ============= Project Rules
 
     rules: Optional["ProjectRules"] = Relationship(
@@ -309,13 +313,31 @@ class AuthorType(str, Enum):
     AGENT = "agent"
 
 
+class AgentStatus(str, Enum):
+    """Runtime status of an agent"""
+    idle = "idle"
+    busy = "busy"
+    stopped = "stopped"
+    error = "error"
+
+
 class Agent(BaseModel, table=True):
     __tablename__ = "agents"
 
-    name: str
-    agent_type: str | None = Field(default=None)
+    # Project relationship - each agent belongs to a project
+    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
 
-    # Relationship to messages authored by this agent
+    # Agent identity
+    name: str  # Display name (e.g., "Mike (Developer)")
+    human_name: str = Field(nullable=False)  # Natural name like "Mike", "Alice"
+    role_type: str = Field(nullable=False)  # team_leader, business_analyst, developer, tester
+    agent_type: str | None = Field(default=None)  # Legacy field for compatibility
+
+    # Runtime status
+    status: AgentStatus = Field(default=AgentStatus.idle)
+
+    # Relationships
+    project: "Project" = Relationship(back_populates="agents")
     messages: list["Message"] = Relationship(back_populates="agent")
 
 

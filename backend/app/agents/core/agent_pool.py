@@ -18,28 +18,16 @@ class AgentPoolConfig:
 
     def __init__(
         self,
-        min_agents: int = 0,
         max_agents: int = 10,
-        scale_up_threshold: float = 0.8,
-        scale_down_threshold: float = 0.2,
-        idle_timeout: int = 300,
         health_check_interval: int = 60,
     ):
         """Initialize pool configuration.
 
         Args:
-            min_agents: Minimum number of agents to maintain
             max_agents: Maximum number of agents allowed
-            scale_up_threshold: CPU/load threshold to spawn new agents (0-1)
-            scale_down_threshold: CPU/load threshold to stop agents (0-1)
-            idle_timeout: Seconds before idle agent is stopped
             health_check_interval: Seconds between health checks
         """
-        self.min_agents = min_agents
         self.max_agents = max_agents
-        self.scale_up_threshold = scale_up_threshold
-        self.scale_down_threshold = scale_down_threshold
-        self.idle_timeout = idle_timeout
         self.health_check_interval = health_check_interval
 
 
@@ -47,10 +35,9 @@ class AgentPool:
     """Manages a pool of agent instances for a specific role.
 
     Features:
-    - Dynamic agent spawning/stopping
+    - Manual agent spawning/stopping via API
     - Load balancing (round-robin, least-busy)
     - Health monitoring
-    - Auto-scaling based on load
     - Resource cleanup
     """
 
@@ -82,7 +69,6 @@ class AgentPool:
 
         # Background tasks
         self._monitor_task: Optional[asyncio.Task] = None
-        self._autoscaler_task: Optional[asyncio.Task] = None
         self._shutdown_event = asyncio.Event()
 
         logger.info(f"AgentPool '{pool_name}' created for role {role_class.__name__}")
@@ -94,17 +80,10 @@ class AgentPool:
             True if started successfully
         """
         try:
-            # Spawn minimum agents
-            for _ in range(self.config.min_agents):
-                await self.spawn_agent()
-
-            # Start monitor
+            # Start monitor (no auto-spawn, agents are created via API)
             self._monitor_task = asyncio.create_task(self._monitor_loop())
 
-            # Start autoscaler
-            self._autoscaler_task = asyncio.create_task(self._autoscaler_loop())
-
-            logger.info(f"AgentPool '{self.pool_name}' started with {len(self.agents)} agents")
+            logger.info(f"AgentPool '{self.pool_name}' started")
             return True
 
         except Exception as e:
@@ -124,13 +103,12 @@ class AgentPool:
             self._shutdown_event.set()
 
             # Stop background tasks
-            for task in [self._monitor_task, self._autoscaler_task]:
-                if task:
-                    task.cancel()
-                    try:
-                        await task
-                    except asyncio.CancelledError:
-                        pass
+            if self._monitor_task:
+                self._monitor_task.cancel()
+                try:
+                    await self._monitor_task
+                except asyncio.CancelledError:
+                    pass
 
             # Stop all agents
             stop_tasks = [self.terminate_agent(agent_id, graceful) for agent_id in list(self.agents.keys())]
@@ -314,48 +292,10 @@ class AgentPool:
                         logger.warning(f"Agent {agent_id} unhealthy, terminating")
                         await self.terminate_agent(agent_id)
 
-                    # Terminate if idle too long
-                    elif health["idle_seconds"] > self.config.idle_timeout:
-                        if len(self.agents) > self.config.min_agents:
-                            logger.info(f"Agent {agent_id} idle for {health['idle_seconds']}s, terminating")
-                            await self.terminate_agent(agent_id)
-
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Monitor loop error: {e}", exc_info=True)
-
-    async def _autoscaler_loop(self) -> None:
-        """Auto-scale agents based on load."""
-        while not self._shutdown_event.is_set():
-            try:
-                await asyncio.sleep(30)  # Check every 30 seconds
-
-                stats = self.get_pool_stats()
-                load = stats["load"]
-
-                # Scale up if load is high
-                if load > self.config.scale_up_threshold:
-                    if len(self.agents) < self.config.max_agents:
-                        logger.info(f"Pool '{self.pool_name}' load {load:.2f}, scaling up")
-                        await self.spawn_agent()
-
-                # Scale down if load is low
-                elif load < self.config.scale_down_threshold:
-                    if len(self.agents) > self.config.min_agents:
-                        # Find idle agent to terminate
-                        idle_agent = next(
-                            (a for a in self.agents.values() if a.state == AgentLifecycleState.IDLE),
-                            None
-                        )
-                        if idle_agent:
-                            logger.info(f"Pool '{self.pool_name}' load {load:.2f}, scaling down")
-                            await self.terminate_agent(idle_agent.agent_id)
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Autoscaler loop error: {e}", exc_info=True)
 
     # ===== Agent Callbacks =====
 
