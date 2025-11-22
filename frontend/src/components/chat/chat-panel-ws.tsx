@@ -111,7 +111,7 @@ export function ChatPanelWS({
   // 2. For temp messages, keep them unless API has the exact same message (by checking timestamp proximity)
   const filteredWsMessages = wsMessages.filter(wsMsg => {
     // Keep non-temp messages
-    if (!wsMsg.id.startsWith('temp-')) return true;
+    if (!wsMsg.id.startsWith('temp_')) return true;
 
     // For temp messages, check if API has a real message with same content AND close timestamp
     // This prevents filtering out new messages when user sends same content multiple times

@@ -58,11 +58,11 @@ export function WIPLimitSettingsDialog({ projectId, open, onOpenChange }: WIPLim
 
   // Initialize local settings when WIP limits are loaded
   useEffect(() => {
-    if (wipLimits) {
+    if (wipLimits && wipLimits.data) {
       const settings: Record<string, { limit: number; type: 'hard' | 'soft' }> = {}
 
       COLUMNS.forEach((col) => {
-        const wipLimit = wipLimits.find((w) => w.column_name === col.name)
+        const wipLimit = wipLimits.data.find((w) => w.column_name === col.name)
         settings[col.name] = {
           limit: wipLimit?.wip_limit || col.defaultLimit,
           type: wipLimit?.limit_type || 'hard',
@@ -117,10 +117,10 @@ export function WIPLimitSettingsDialog({ projectId, open, onOpenChange }: WIPLim
   }
 
   const handleReset = () => {
-    if (wipLimits) {
+    if (wipLimits && wipLimits.data) {
       const settings: Record<string, { limit: number; type: 'hard' | 'soft' }> = {}
       COLUMNS.forEach((col) => {
-        const wipLimit = wipLimits.find((w) => w.column_name === col.name)
+        const wipLimit = wipLimits.data.find((w) => w.column_name === col.name)
         settings[col.name] = {
           limit: wipLimit?.wip_limit || col.defaultLimit,
           type: wipLimit?.limit_type || 'hard',

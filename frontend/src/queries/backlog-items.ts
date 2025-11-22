@@ -15,7 +15,10 @@ export function useKanbanBoard(projectId: string | undefined) {
 export function useWIPLimits(projectId: string | undefined) {
   return useQuery({
     queryKey: ['wip-limits', projectId],
-    queryFn: () => backlogItemsApi.getWIPLimits(projectId!),
+    queryFn: async () => {
+      const response = await backlogItemsApi.getWIPLimits(projectId!)
+      return response
+    },
     enabled: !!projectId,
   })
 }

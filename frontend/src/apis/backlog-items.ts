@@ -118,8 +118,8 @@ export const backlogItemsApi = {
   /**
    * Get WIP limits for a project
    */
-  getWIPLimits: async (projectId: string): Promise<WIPLimit[]> => {
-    return __request<WIPLimit[]>(OpenAPI, {
+  getWIPLimits: async (projectId: string): Promise<{ data: WIPLimit[]; count: number }> => {
+    return __request<{ data: WIPLimit[]; count: number }>(OpenAPI, {
       method: 'GET',
       url: `/api/v1/projects/${projectId}/wip-limits`,
     })
