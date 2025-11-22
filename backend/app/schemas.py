@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 from pydantic import EmailStr
 from sqlmodel import Field, SQLModel
 from .models import Role, StoryStatus, StoryType
-from typing import Optional
+from typing import Optional, Any
 from enum import Enum
 from app.models import AuthorType
 
@@ -74,7 +74,7 @@ class ChatMessageBase(SQLModel):
 class ChatMessageCreate(ChatMessageBase):
     project_id: UUID
     agent_id: Optional[UUID] = None
-    message_type: Optional[str] = "text"  # "text" | "prd" | "product_vision" | "product_backlog"
+    message_type: Optional[str] = "text"  # "text" | "prd" | "business_flows" | "product_backlog"
     structured_data: Optional[dict] = None
 
 class ChatMessageUpdate(SQLModel):
@@ -87,8 +87,8 @@ class ChatMessagePublic(SQLModel):
     user_id: Optional[UUID] = None
     agent_id: Optional[UUID] = None
     content: str
-    message_type: Optional[str] = "text"  # NEW: "text" | "prd" | "product_vision" | "product_backlog"
-    structured_data: Optional[dict] = None  # NEW: JSON data for previews
+    message_type: Optional[str] = "text"  # NEW: "text" | "prd" | "business_flows" | "product_backlog"
+    structured_data: Optional[Any] = None  # NEW: JSON data for previews (dict or list)
     message_metadata: Optional[dict] = None  # NEW: Message metadata (preview_id, quality_score, etc.)
     created_at: datetime
     updated_at: datetime

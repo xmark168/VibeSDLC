@@ -29,7 +29,6 @@ import { useChatWebSocket } from "@/hooks/useChatWebSocket";
 import { useAuth } from "@/hooks/useAuth";
 import { useMessages } from "@/queries/messages";
 import { AuthorType, type Message } from "@/types/message";
-import { AgentPreviewModal } from "./agent-preview-modal";
 import { MessagePreviewCard } from "./MessagePreviewCard";
 import { AgentStatusIndicator } from "./agent-status-indicator";
 import { useProjectAgents } from "@/queries/agents";
@@ -119,21 +118,12 @@ export function ChatPanelWS({
     isReady,
     messages: wsMessages,
     typingAgents,
+    agentProgress,
     agentStatus,
-    pendingQuestions,
-    pendingPreviews,
     kanbanData,
     activeTab,
     sendMessage: wsSendMessage,
-    submitPreviewChoice,
-    reopenPreview,
-    closePreview,
   } = useChatWebSocket(projectId, token || undefined);
-
-  // Derive agentProgress from agentStatus
-  const agentProgress = {
-    isExecuting: agentStatus.status === 'thinking' || agentStatus.status === 'acting'
-  };
 
   // Combine existing messages with WebSocket messages
   const apiMessages = messagesData?.data || [];
@@ -405,11 +395,6 @@ export function ChatPanelWS({
       const newCursorPos = cursorPos + 1;
       textarea.setSelectionRange(newCursorPos, newCursorPos);
     }, 0);
-  };
-
-  // Agent preview handlers
-  const handleSubmitPreview = (preview_id: string, choice: string, edit_changes?: string) => {
-    submitPreviewChoice(preview_id, choice, edit_changes);
   };
 
   // Notify parent about connection status (use isReady for accurate status)
@@ -814,12 +799,6 @@ export function ChatPanelWS({
         </div>
       </div>
 
-      {/* Agent Preview Modal */}
-      <AgentPreviewModal
-        preview={pendingPreviews[0] || null}
-        onSubmit={handleSubmitPreview}
-        onClose={closePreview}
-      />
     </div>
   );
 }

@@ -10,3 +10,4 @@
 
 export { ProductBriefPreview } from './ProductBriefPreview'
 export { BacklogPreview } from './BacklogPreview'
+export { BusinessFlowsPreview } from './BusinessFlowsPreview'
