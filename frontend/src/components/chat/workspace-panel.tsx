@@ -1,7 +1,7 @@
 
 import type React from "react"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { History, Globe, Code2, LayoutGrid, Pencil, ScrollText, PanelLeftOpen, PanelRightOpen, MessageCircle, Bot } from "lucide-react"
@@ -11,8 +11,11 @@ import { CodeViewer } from "../shared/code-viewer"
 import { AnimatedTooltip } from "../ui/animated-tooltip"
 import { AppViewer } from "./app-viewer"
 import { AgentDisplayPanel } from "../agents"
-
+import { DatabaseAgentDetailSheet } from "../agents/database-agent-detail-sheet"
+import { useProjectAgents } from "@/queries/agents"
 import { useQueryClient } from "@tanstack/react-query"
+import type { AgentPublic } from "@/client/types.gen"
+
 type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings" | "agents"
 interface Tab {
   id: string
@@ -28,47 +31,58 @@ interface WorkspacePanelProps {
   activeTab?: string | null
 }
 
-const agent = [
-  {
-    id: 1,
-    name: "John Doe",
-    designation: "Product Owner",
-    image:
-      "https://images.unsplash.com/photo-1599566150163-29194dcaad36?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=3387&q=80",
-  },
-  {
-    id: 2,
-    name: "Robert Johnson",
-    designation: "Scrum Master",
-    image:
-      "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8YXZhdGFyfGVufDB8fDB8fHww&auto=format&fit=crop&w=800&q=60",
-  },
-  {
-    id: 3,
-    name: "Jane Smith",
-    designation: "Developer",
-    image:
-      "https://images.unsplash.com/photo-1580489944761-15a19d654956?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8NXx8YXZhdGFyfGVufDB8fDB8fHww&auto=format&fit=crop&w=800&q=60",
-  },
-  {
-    id: 4,
-    name: "Emily Davis",
-    designation: "Designer",
-    image:
-      "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTB8fGF2YXRhcnxlbnwwfHwwfHx8MA%3D%3D&auto=format&fit=crop&w=800&q=60",
-  },
-  {
-    id: 5,
-    name: "Tyler Durden",
-    designation: "Tester",
-    image:
-      "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=3540&q=80",
-  },
-];
+// Generate avatar URL from agent human_name using DiceBear API
+const generateAvatarUrl = (name: string): string => {
+  const initials = name
+    .split(' ')
+    .map(part => part[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2)
+  // Using DiceBear API for initials-based avatars
+  return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}&chars=2&backgroundColor=6366f1`
+}
 
+// Map role_type to user-friendly designation
+const getRoleDesignation = (roleType: string): string => {
+  const roleMap: Record<string, string> = {
+    team_leader: "Team Leader",
+    business_analyst: "Business Analyst",
+    developer: "Developer",
+    tester: "Tester",
+  }
+  return roleMap[roleType] || roleType
+}
 
 export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projectId, activeTab: wsActiveTab }: WorkspacePanelProps) {
   const queryClient = useQueryClient()
+
+  // Fetch project agents from database
+  const { data: projectAgents, isLoading: agentsLoading } = useProjectAgents(projectId || "", {
+    enabled: !!projectId,
+  })
+
+  // State for agent detail sheet
+  const [selectedAgent, setSelectedAgent] = useState<AgentPublic | null>(null)
+  const [agentDetailOpen, setAgentDetailOpen] = useState(false)
+
+  // Transform agents for AnimatedTooltip component
+  const agentItems = useMemo(() => {
+    if (!projectAgents || !projectAgents.length) return []
+
+    return projectAgents.map((agent) => ({
+      id: agent.id,
+      name: agent.human_name, // Use human name like "Mike"
+      designation: getRoleDesignation(agent.role_type),
+      image: generateAvatarUrl(agent.human_name),
+      status: agent.status, // Include status for potential future use
+      onClick: () => {
+        // Open detail sheet when agent is clicked
+        setSelectedAgent(agent)
+        setAgentDetailOpen(true)
+      },
+    }))
+  }, [projectAgents])
 
   const [tabs, setTabs] = useState<Tab[]>([
     { id: "tab-1", view: "app-preview", label: "App Preview" },
@@ -300,7 +314,11 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-10">
-            <AnimatedTooltip items={agent} />
+            {agentItems.length > 0 ? (
+              <AnimatedTooltip items={agentItems} />
+            ) : agentsLoading ? (
+              <span className="text-xs text-muted-foreground">Loading agents...</span>
+            ) : null}
             <Button size="sm" className="h-8 text-xs bg-[#6366f1] hover:bg-[#5558e3]">
               Share
             </Button>
@@ -326,6 +344,13 @@ export default function Home() {
       <div className="border border-3 mb-3 mr-3 shadow-2xs rounded-2xl h-screen overflow-auto">
         {renderView()}
       </div>
+
+      {/* Agent Detail Sheet */}
+      <DatabaseAgentDetailSheet
+        agent={selectedAgent}
+        open={agentDetailOpen}
+        onOpenChange={setAgentDetailOpen}
+      />
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { AgentsService } from "@/client/sdk.gen"
 import {
   agentsApi,
   type CreatePoolRequest,
@@ -16,9 +17,25 @@ export const agentQueryKeys = {
   dashboard: () => [...agentQueryKeys.all, "dashboard"] as const,
   systemStats: () => [...agentQueryKeys.all, "system-stats"] as const,
   alerts: (limit?: number) => [...agentQueryKeys.all, "alerts", limit] as const,
+  project: (projectId: string) => [...agentQueryKeys.all, "project", projectId] as const,
 }
 
 // ===== Queries =====
+
+/**
+ * Fetch all agents for a specific project (from database)
+ */
+export function useProjectAgents(projectId: string, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: agentQueryKeys.project(projectId),
+    queryFn: async () => {
+      const response = await AgentsService.getProjectAgents({ projectId })
+      return response.data
+    },
+    enabled: (options?.enabled ?? true) && !!projectId,
+    staleTime: 10000, // Consider stale after 10s
+  })
+}
 
 /**
  * Fetch all agent pools with polling

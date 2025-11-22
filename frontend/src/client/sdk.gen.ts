@@ -3,7 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { AgentsListAgentsData, AgentsListAgentsResponse, AgentsCreateAgentData, AgentsCreateAgentResponse, AgentsGetAgentData, AgentsGetAgentResponse, AgentsUpdateAgentData, AgentsUpdateAgentResponse, AgentsDeleteAgentData, AgentsDeleteAgentResponse, AuthenticationLoginAccessTokenData, AuthenticationLoginAccessTokenResponse, AuthenticationLoginData, AuthenticationLoginResponse, AuthenticationRegisterData, AuthenticationRegisterResponse, AuthenticationConfirmCodeData, AuthenticationConfirmCodeResponse, AuthenticationResendCodeData, AuthenticationResendCodeResponse, AuthenticationRefreshTokenData, AuthenticationRefreshTokenResponse, AuthenticationForgotPasswordData, AuthenticationForgotPasswordResponse, AuthenticationResetPasswordData, AuthenticationResetPasswordResponse, AuthenticationLogoutResponse, BacklogItemsGetBacklogItemsData, BacklogItemsGetBacklogItemsResponse, BacklogItemsCreateBacklogItemData, BacklogItemsCreateBacklogItemResponse, BacklogItemsGetBacklogItemData, BacklogItemsGetBacklogItemResponse, BacklogItemsUpdateBacklogItemData, BacklogItemsUpdateBacklogItemResponse, BacklogItemsDeleteBacklogItemData, BacklogItemsDeleteBacklogItemResponse, BacklogItemsMoveBacklogItemData, BacklogItemsMoveBacklogItemResponse, BacklogItemsGetKanbanBoardData, BacklogItemsGetKanbanBoardResponse, BlockersCreateBlockerData, BlockersCreateBlockerResponse, BlockersGetBlockersByBacklogItemData, BlockersGetBlockersByBacklogItemResponse, BlockersGetBlockersByProjectData, BlockersGetBlockersByProjectResponse, GithubGithubWebhookResponse, GithubGithubCallbackData, GithubGithubCallbackResponse, GithubLinkInstallationToUserData, GithubLinkInstallationToUserResponse, GithubListGithubRepositoriesData, GithubListGithubRepositoriesResponse, GithubLinkGithubRepositoryData, GithubLinkGithubRepositoryResponse, GithubUnlinkGithubRepositoryData, GithubUnlinkGithubRepositoryResponse, GithubCheckGithubInstallationStatusResponse, GithubListGithubInstallationsData, GithubListGithubInstallationsResponse, GithubCreateRepoFromTemplateEndpointData, GithubCreateRepoFromTemplateEndpointResponse, MessagesListMessagesData, MessagesListMessagesResponse, MessagesCreateMessageData, MessagesCreateMessageResponse, MessagesUpdateMessageData, MessagesUpdateMessageResponse, MessagesDeleteMessageData, MessagesDeleteMessageResponse, MessagesDeleteAllMessagesByProjectData, MessagesDeleteAllMessagesByProjectResponse, PrivateCreateUserData, PrivateCreateUserResponse, ProjectRulesCreateProjectRulesData, ProjectRulesCreateProjectRulesResponse, ProjectRulesGetProjectRulesData, ProjectRulesGetProjectRulesResponse, ProjectRulesUpdateProjectRulesData, ProjectRulesUpdateProjectRulesResponse, ProjectsListProjectsData, ProjectsListProjectsResponse, ProjectsCreateProjectData, ProjectsCreateProjectResponse, ProjectsGetProjectData, ProjectsGetProjectResponse, ProjectsUpdateProjectData, ProjectsUpdateProjectResponse, ProjectsDeleteProjectData, ProjectsDeleteProjectResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsHealthCheckResponse } from './types.gen';
+import type { AgentsListAgentsData, AgentsListAgentsResponse, AgentsCreateAgentData, AgentsCreateAgentResponse, AgentsGetProjectAgentsData, AgentsGetProjectAgentsResponse, AgentsGetAgentData, AgentsGetAgentResponse, AgentsUpdateAgentData, AgentsUpdateAgentResponse, AgentsDeleteAgentData, AgentsDeleteAgentResponse, AuthenticationLoginAccessTokenData, AuthenticationLoginAccessTokenResponse, AuthenticationLoginData, AuthenticationLoginResponse, AuthenticationRegisterData, AuthenticationRegisterResponse, AuthenticationConfirmCodeData, AuthenticationConfirmCodeResponse, AuthenticationResendCodeData, AuthenticationResendCodeResponse, AuthenticationRefreshTokenData, AuthenticationRefreshTokenResponse, AuthenticationForgotPasswordData, AuthenticationForgotPasswordResponse, AuthenticationResetPasswordData, AuthenticationResetPasswordResponse, AuthenticationLogoutResponse, BlockersCreateBlockerData, BlockersCreateBlockerResponse, BlockersGetBlockersByStoryData, BlockersGetBlockersByStoryResponse, BlockersGetBlockersByProjectData, BlockersGetBlockersByProjectResponse, BusinessAnalystCreateBaSessionData, BusinessAnalystCreateBaSessionResponse, BusinessAnalystGetSessionStatusData, BusinessAnalystGetSessionStatusResponse, BusinessAnalystSendMessageData, BusinessAnalystSendMessageResponse, BusinessAnalystGetRequirementsData, BusinessAnalystGetRequirementsResponse, BusinessAnalystCreateProductBriefData, BusinessAnalystCreateProductBriefResponse, BusinessAnalystGetProductBriefData, BusinessAnalystGetProductBriefResponse, BusinessAnalystDesignSolutionData, BusinessAnalystDesignSolutionResponse, BusinessAnalystCreateBacklogData, BusinessAnalystCreateBacklogResponse, BusinessAnalystApproveBriefData, BusinessAnalystApproveBriefResponse, BusinessAnalystCancelSessionData, BusinessAnalystCancelSessionResponse, BusinessAnalystListProjectSessionsData, BusinessAnalystListProjectSessionsResponse, ChatChatHealthResponse, LeanKanbanGetWipLimitsData, LeanKanbanGetWipLimitsResponse, LeanKanbanUpdateWipLimitData, LeanKanbanUpdateWipLimitResponse, LeanKanbanValidateWipBeforeMoveData, LeanKanbanValidateWipBeforeMoveResponse, LeanKanbanInitializeDefaultPoliciesData, LeanKanbanInitializeDefaultPoliciesResponse, LeanKanbanGetWorkflowPoliciesData, LeanKanbanGetWorkflowPoliciesResponse, LeanKanbanUpdateWorkflowPolicyData, LeanKanbanUpdateWorkflowPolicyResponse, LeanKanbanValidatePolicyBeforeMoveData, LeanKanbanValidatePolicyBeforeMoveResponse, LeanKanbanGetProjectFlowMetricsData, LeanKanbanGetProjectFlowMetricsResponse, LeanKanbanGetStoryFlowMetricsData, LeanKanbanGetStoryFlowMetricsResponse, MessagesListMessagesData, MessagesListMessagesResponse, MessagesCreateMessageData, MessagesCreateMessageResponse, MessagesUpdateMessageData, MessagesUpdateMessageResponse, MessagesDeleteMessageData, MessagesDeleteMessageResponse, MessagesDeleteAllMessagesByProjectData, MessagesDeleteAllMessagesByProjectResponse, PrivateCreateUserData, PrivateCreateUserResponse, ProjectRulesCreateProjectRulesData, ProjectRulesCreateProjectRulesResponse, ProjectRulesGetProjectRulesData, ProjectRulesGetProjectRulesResponse, ProjectRulesUpdateProjectRulesData, ProjectRulesUpdateProjectRulesResponse, ProjectsListProjectsData, ProjectsListProjectsResponse, ProjectsCreateProjectData, ProjectsCreateProjectResponse, ProjectsGetProjectData, ProjectsGetProjectResponse, ProjectsUpdateProjectData, ProjectsUpdateProjectResponse, ProjectsDeleteProjectData, ProjectsDeleteProjectResponse, StoriesCreateStoryData, StoriesCreateStoryResponse, StoriesListStoriesData, StoriesListStoriesResponse, StoriesGetKanbanBoardData, StoriesGetKanbanBoardResponse, StoriesAssignStoryData, StoriesAssignStoryResponse, StoriesUpdateStoryStatusData, StoriesUpdateStoryStatusResponse, StoriesGetStoryData, StoriesGetStoryResponse, StoriesUpdateStoryData, StoriesUpdateStoryResponse, StoriesDeleteStoryData, StoriesDeleteStoryResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsHealthCheckResponse } from './types.gen';
 
 export class AgentsService {
     /**
@@ -45,6 +45,35 @@ export class AgentsService {
             url: '/api/v1/agents/',
             body: data.requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Get Project Agents
+     * Get all agents for a specific project.
+     *
+     * Args:
+     * project_id: UUID of the project
+     * session: Database session
+     * current_user: Current authenticated user
+     *
+     * Returns:
+     * AgentsPublic: List of agents for the project
+     * @param data The data for the request.
+     * @param data.projectId
+     * @returns AgentsPublic Successful Response
+     * @throws ApiError
+     */
+    public static getProjectAgents(data: AgentsGetProjectAgentsData): CancelablePromise<AgentsGetProjectAgentsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/agents/project/{project_id}',
+            path: {
+                project_id: data.projectId
+            },
             errors: {
                 422: 'Validation Error'
             }
@@ -306,181 +335,10 @@ export class AuthenticationService {
     }
 }
 
-export class BacklogItemsService {
-    /**
-     * Get Backlog Items
-     * Lấy danh sách backlog items với filter
-     * - project_id: Filter theo project
-     * - status: Filter theo trạng thái (Backlog, Todo, Doing, Done)
-     * - assignee_id: Filter theo người được assign
-     * - type: Filter theo loại (Epic, User Story, Task, Sub-task)
-     * @param data The data for the request.
-     * @param data.projectId
-     * @param data.status
-     * @param data.assigneeId
-     * @param data.type
-     * @param data.skip
-     * @param data.limit
-     * @returns BacklogItemsPublic Successful Response
-     * @throws ApiError
-     */
-    public static getBacklogItems(data: BacklogItemsGetBacklogItemsData = {}): CancelablePromise<BacklogItemsGetBacklogItemsResponse> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/v1/backlog-items/',
-            query: {
-                project_id: data.projectId,
-                status: data.status,
-                assignee_id: data.assigneeId,
-                type: data.type,
-                skip: data.skip,
-                limit: data.limit
-            },
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-    
-    /**
-     * Create Backlog Item
-     * Tạo backlog item mới
-     * @param data The data for the request.
-     * @param data.requestBody
-     * @returns BacklogItemPublic Successful Response
-     * @throws ApiError
-     */
-    public static createBacklogItem(data: BacklogItemsCreateBacklogItemData): CancelablePromise<BacklogItemsCreateBacklogItemResponse> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/v1/backlog-items/',
-            body: data.requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-    
-    /**
-     * Get Backlog Item
-     * Lấy chi tiết một backlog item
-     * @param data The data for the request.
-     * @param data.itemId
-     * @returns BacklogItemPublic Successful Response
-     * @throws ApiError
-     */
-    public static getBacklogItem(data: BacklogItemsGetBacklogItemData): CancelablePromise<BacklogItemsGetBacklogItemResponse> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/v1/backlog-items/{item_id}',
-            path: {
-                item_id: data.itemId
-            },
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-    
-    /**
-     * Update Backlog Item
-     * Cập nhật backlog item
-     * @param data The data for the request.
-     * @param data.itemId
-     * @param data.requestBody
-     * @returns BacklogItemPublic Successful Response
-     * @throws ApiError
-     */
-    public static updateBacklogItem(data: BacklogItemsUpdateBacklogItemData): CancelablePromise<BacklogItemsUpdateBacklogItemResponse> {
-        return __request(OpenAPI, {
-            method: 'PATCH',
-            url: '/api/v1/backlog-items/{item_id}',
-            path: {
-                item_id: data.itemId
-            },
-            body: data.requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-    
-    /**
-     * Delete Backlog Item
-     * Xóa backlog item
-     * @param data The data for the request.
-     * @param data.itemId
-     * @returns unknown Successful Response
-     * @throws ApiError
-     */
-    public static deleteBacklogItem(data: BacklogItemsDeleteBacklogItemData): CancelablePromise<BacklogItemsDeleteBacklogItemResponse> {
-        return __request(OpenAPI, {
-            method: 'DELETE',
-            url: '/api/v1/backlog-items/{item_id}',
-            path: {
-                item_id: data.itemId
-            },
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-    
-    /**
-     * Move Backlog Item
-     * Di chuyển item giữa các cột hoặc trong cùng cột
-     * @param data The data for the request.
-     * @param data.itemId
-     * @param data.newStatus Cột đích (Backlog, Todo, Doing, Done)
-     * @param data.newRank Vị trí mới trong cột
-     * @returns BacklogItemPublic Successful Response
-     * @throws ApiError
-     */
-    public static moveBacklogItem(data: BacklogItemsMoveBacklogItemData): CancelablePromise<BacklogItemsMoveBacklogItemResponse> {
-        return __request(OpenAPI, {
-            method: 'PUT',
-            url: '/api/v1/backlog-items/{item_id}/move',
-            path: {
-                item_id: data.itemId
-            },
-            query: {
-                new_status: data.newStatus,
-                new_rank: data.newRank
-            },
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-    
-    /**
-     * Get Kanban Board
-     * Lấy dữ liệu Kanban board, nhóm theo status
-     * @param data The data for the request.
-     * @param data.projectId
-     * @returns unknown Successful Response
-     * @throws ApiError
-     */
-    public static getKanbanBoard(data: BacklogItemsGetKanbanBoardData): CancelablePromise<BacklogItemsGetKanbanBoardResponse> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/v1/backlog-items/project/{project_id}/kanban',
-            path: {
-                project_id: data.projectId
-            },
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-}
-
 export class BlockersService {
     /**
      * Create Blocker
-     * Create a new blocker for a backlog item.
+     * Create a new blocker for a story.
      * @param data The data for the request.
      * @param data.requestBody
      * @returns BlockerPublic Successful Response
@@ -499,19 +357,19 @@ export class BlockersService {
     }
     
     /**
-     * Get Blockers By Backlog Item
-     * Get all blockers for a backlog item.
+     * Get Blockers By Story
+     * Get all blockers for a story.
      * @param data The data for the request.
-     * @param data.backlogItemId
+     * @param data.storyId
      * @returns BlockersPublic Successful Response
      * @throws ApiError
      */
-    public static getBlockersByBacklogItem(data: BlockersGetBlockersByBacklogItemData): CancelablePromise<BlockersGetBlockersByBacklogItemResponse> {
+    public static getBlockersByStory(data: BlockersGetBlockersByStoryData): CancelablePromise<BlockersGetBlockersByStoryResponse> {
         return __request(OpenAPI, {
             method: 'GET',
-            url: '/api/v1/blockers/backlog-item/{backlog_item_id}',
+            url: '/api/v1/blockers/story/{story_id}',
             path: {
-                backlog_item_id: data.backlogItemId
+                story_id: data.storyId
             },
             errors: {
                 422: 'Validation Error'
@@ -541,152 +399,67 @@ export class BlockersService {
     }
 }
 
-export class GithubService {
+export class BusinessAnalystService {
     /**
-     * Github Webhook
-     * Handle GitHub App webhook events.
+     * Create Ba Session
+     * Create a new BA analysis session for a project.
      *
-     * Supported events:
-     * - installation.created: User installs the GitHub App
-     * - installation.deleted: User uninstalls the GitHub App
-     * - installation_repositories.added: User adds repositories to the app
-     * - installation_repositories.removed: User removes repositories from the app
-     * @returns unknown Successful Response
-     * @throws ApiError
-     */
-    public static githubWebhook(): CancelablePromise<GithubGithubWebhookResponse> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/v1/github/webhook'
-        });
-    }
-    
-    /**
-     * Github Callback
-     * Handle GitHub App OAuth callback.
-     *
-     * This endpoint is called by GitHub after user installs the GitHub App.
-     * GitHub redirects here WITHOUT authentication, so we create a pending installation.
-     *
-     * Query Parameters:
-     * - installation_id: GitHub's installation ID (required)
-     * - setup_action: "install" or "update" (optional)
-     *
-     * Flow:
-     * 1. User clicks "Install GitHub App" button
-     * 2. Redirects to GitHub App installation page
-     * 3. User installs app on GitHub
-     * 4. GitHub redirects to this endpoint with installation_id
-     * 5. Backend creates pending installation (user_id = NULL)
-     * 6. Webhook updates installation details
-     * 7. Frontend links installation with current user
-     *
-     * Note: This endpoint does NOT require authentication because GitHub
-     * redirects here without JWT token. Installation is created as "pending"
-     * and will be linked to user later.
+     * This starts the requirements gathering workflow.
      * @param data The data for the request.
-     * @param data.installationId
-     * @param data.setupAction
-     * @returns unknown Successful Response
-     * @throws ApiError
-     */
-    public static githubCallback(data: GithubGithubCallbackData): CancelablePromise<GithubGithubCallbackResponse> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/v1/github/callback',
-            query: {
-                installation_id: data.installationId,
-                setup_action: data.setupAction
-            },
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-    
-    /**
-     * Link Installation To User
-     * Link a pending GitHub installation with the current user.
-     *
-     * This endpoint is called by frontend after user confirms linking.
-     *
-     * Request Body:
-     * - installation_id: GitHub installation ID to link
-     *
-     * Response:
-     * - status: "linked" or "error"
-     * - installation_id: GitHub installation ID
-     * - db_id: Database installation ID
-     * - message: Status message
-     *
-     * Flow:
-     * 1. User installs GitHub App (callback creates pending installation)
-     * 2. Frontend shows "Link with your account?" prompt
-     * 3. User clicks "Link"
-     * 4. Frontend calls this endpoint with installation_id
-     * 5. Backend links installation with current user
-     * 6. Frontend shows success message
-     * @param data The data for the request.
-     * @param data.installationId
-     * @returns unknown Successful Response
-     * @throws ApiError
-     */
-    public static linkInstallationToUser(data: GithubLinkInstallationToUserData): CancelablePromise<GithubLinkInstallationToUserResponse> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/v1/github/link-installation',
-            query: {
-                installation_id: data.installationId
-            },
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-    
-    /**
-     * List Github Repositories
-     * List available GitHub repositories for the current user.
-     *
-     * If installation_id is provided, list repositories for that specific installation.
-     * Otherwise, list repositories from all user's installations.
-     * @param data The data for the request.
-     * @param data.installationId
-     * @param data.skip
-     * @param data.limit
-     * @returns GitHubRepositoriesPublic Successful Response
-     * @throws ApiError
-     */
-    public static listGithubRepositories(data: GithubListGithubRepositoriesData = {}): CancelablePromise<GithubListGithubRepositoriesResponse> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/v1/github/repositories',
-            query: {
-                installation_id: data.installationId,
-                skip: data.skip,
-                limit: data.limit
-            },
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-    
-    /**
-     * Link Github Repository
-     * Link a GitHub repository to a project.
-     * @param data The data for the request.
-     * @param data.projectId
      * @param data.requestBody
-     * @returns ProjectPublic Successful Response
+     * @returns CreateSessionResponse Successful Response
      * @throws ApiError
      */
-    public static linkGithubRepository(data: GithubLinkGithubRepositoryData): CancelablePromise<GithubLinkGithubRepositoryResponse> {
+    public static createBaSession(data: BusinessAnalystCreateBaSessionData): CancelablePromise<BusinessAnalystCreateBaSessionResponse> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/v1/github/projects/{project_id}/link-repository',
+            url: '/api/v1/ba/sessions',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Get Session Status
+     * Get status and progress of a BA session.
+     * @param data The data for the request.
+     * @param data.sessionId
+     * @returns SessionStatusResponse Successful Response
+     * @throws ApiError
+     */
+    public static getSessionStatus(data: BusinessAnalystGetSessionStatusData): CancelablePromise<BusinessAnalystGetSessionStatusResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/ba/sessions/{session_id}',
             path: {
-                project_id: data.projectId
+                session_id: data.sessionId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Send Message
+     * Send a message during analysis phase.
+     *
+     * This extracts requirements from the message and returns assistant response.
+     * @param data The data for the request.
+     * @param data.sessionId
+     * @param data.requestBody
+     * @returns SendMessageResponse Successful Response
+     * @throws ApiError
+     */
+    public static sendMessage(data: BusinessAnalystSendMessageData): CancelablePromise<BusinessAnalystSendMessageResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/ba/sessions/{session_id}/message',
+            path: {
+                session_id: data.sessionId
             },
             body: data.requestBody,
             mediaType: 'application/json',
@@ -697,17 +470,220 @@ export class GithubService {
     }
     
     /**
-     * Unlink Github Repository
-     * Unlink a GitHub repository from a project.
+     * Get Requirements
+     * Get all requirements collected in the session.
      * @param data The data for the request.
-     * @param data.projectId
-     * @returns ProjectPublic Successful Response
+     * @param data.sessionId
+     * @returns RequirementsResponse Successful Response
      * @throws ApiError
      */
-    public static unlinkGithubRepository(data: GithubUnlinkGithubRepositoryData): CancelablePromise<GithubUnlinkGithubRepositoryResponse> {
+    public static getRequirements(data: BusinessAnalystGetRequirementsData): CancelablePromise<BusinessAnalystGetRequirementsResponse> {
         return __request(OpenAPI, {
-            method: 'DELETE',
-            url: '/api/v1/github/projects/{project_id}/unlink-repository',
+            method: 'GET',
+            url: '/api/v1/ba/sessions/{session_id}/requirements',
+            path: {
+                session_id: data.sessionId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Create Product Brief
+     * Execute brief phase to create PRD.
+     *
+     * Can also be used to revise the brief with feedback.
+     * @param data The data for the request.
+     * @param data.sessionId
+     * @param data.requestBody
+     * @returns PhaseExecutionResponse Successful Response
+     * @throws ApiError
+     */
+    public static createProductBrief(data: BusinessAnalystCreateProductBriefData): CancelablePromise<BusinessAnalystCreateProductBriefResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/ba/sessions/{session_id}/create-brief',
+            path: {
+                session_id: data.sessionId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Get Product Brief
+     * Get the PRD for a session.
+     * @param data The data for the request.
+     * @param data.sessionId
+     * @returns ProductBriefResponse Successful Response
+     * @throws ApiError
+     */
+    public static getProductBrief(data: BusinessAnalystGetProductBriefData): CancelablePromise<BusinessAnalystGetProductBriefResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/ba/sessions/{session_id}/brief',
+            path: {
+                session_id: data.sessionId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Design Solution
+     * Execute solution phase to design business flows.
+     *
+     * Can also be used to revise the solution with feedback.
+     * @param data The data for the request.
+     * @param data.sessionId
+     * @param data.requestBody
+     * @returns PhaseExecutionResponse Successful Response
+     * @throws ApiError
+     */
+    public static designSolution(data: BusinessAnalystDesignSolutionData): CancelablePromise<BusinessAnalystDesignSolutionResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/ba/sessions/{session_id}/design-solution',
+            path: {
+                session_id: data.sessionId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Create Backlog
+     * Execute backlog phase to create Epics & Stories.
+     *
+     * Can also be used to revise the backlog with feedback.
+     * @param data The data for the request.
+     * @param data.sessionId
+     * @param data.requestBody
+     * @returns PhaseExecutionResponse Successful Response
+     * @throws ApiError
+     */
+    public static createBacklog(data: BusinessAnalystCreateBacklogData): CancelablePromise<BusinessAnalystCreateBacklogResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/ba/sessions/{session_id}/create-backlog',
+            path: {
+                session_id: data.sessionId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Approve Brief
+     * Approve or request revision of PRD.
+     * @param data The data for the request.
+     * @param data.sessionId
+     * @param data.requestBody
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static approveBrief(data: BusinessAnalystApproveBriefData): CancelablePromise<BusinessAnalystApproveBriefResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/ba/sessions/{session_id}/approve-brief',
+            path: {
+                session_id: data.sessionId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Cancel Session
+     * Cancel a BA session.
+     * @param data The data for the request.
+     * @param data.sessionId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static cancelSession(data: BusinessAnalystCancelSessionData): CancelablePromise<BusinessAnalystCancelSessionResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/ba/sessions/{session_id}/cancel',
+            path: {
+                session_id: data.sessionId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * List Project Sessions
+     * List all BA sessions for a project.
+     * @param data The data for the request.
+     * @param data.projectId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static listProjectSessions(data: BusinessAnalystListProjectSessionsData): CancelablePromise<BusinessAnalystListProjectSessionsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/ba/projects/{project_id}/sessions',
+            path: {
+                project_id: data.projectId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+}
+
+export class ChatService {
+    /**
+     * Chat Health
+     * Health check endpoint for chat service
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static chatHealth(): CancelablePromise<ChatChatHealthResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/chat/health'
+        });
+    }
+}
+
+export class LeanKanbanService {
+    /**
+     * Get Wip Limits
+     * Get all WIP limits for a project from wip_data JSONB column
+     * @param data The data for the request.
+     * @param data.projectId
+     * @returns WIPLimitsPublic Successful Response
+     * @throws ApiError
+     */
+    public static getWipLimits(data: LeanKanbanGetWipLimitsData): CancelablePromise<LeanKanbanGetWipLimitsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/projects/{project_id}/wip-limits',
             path: {
                 project_id: data.projectId
             },
@@ -718,39 +694,52 @@ export class GithubService {
     }
     
     /**
-     * Check Github Installation Status
-     * Check if the current user has installed GitHub App.
-     *
-     * Returns:
-     * - has_installation: Boolean indicating if user has at least one GitHub installation
-     * - installations_count: Total number of installations
-     * - installations: List of installation summaries (max 5)
-     * @returns unknown Successful Response
+     * Update Wip Limit
+     * Update or create WIP limit for a column in wip_data JSONB
+     * @param data The data for the request.
+     * @param data.projectId
+     * @param data.columnName
+     * @param data.requestBody
+     * @returns WIPLimitPublic Successful Response
      * @throws ApiError
      */
-    public static checkGithubInstallationStatus(): CancelablePromise<GithubCheckGithubInstallationStatusResponse> {
+    public static updateWipLimit(data: LeanKanbanUpdateWipLimitData): CancelablePromise<LeanKanbanUpdateWipLimitResponse> {
         return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/v1/github/installation-status'
+            method: 'PUT',
+            url: '/api/v1/projects/{project_id}/wip-limits/{column_name}',
+            path: {
+                project_id: data.projectId,
+                column_name: data.columnName
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
         });
     }
     
     /**
-     * List Github Installations
-     * List all GitHub App installations for the current user.
+     * Validate Wip Before Move
+     * Validate if moving a story to target status would violate WIP limits.
+     * Returns {"allowed": true/false, "violation": {...}}
      * @param data The data for the request.
-     * @param data.skip
-     * @param data.limit
+     * @param data.projectId
+     * @param data.storyId
+     * @param data.targetStatus
      * @returns unknown Successful Response
      * @throws ApiError
      */
-    public static listGithubInstallations(data: GithubListGithubInstallationsData = {}): CancelablePromise<GithubListGithubInstallationsResponse> {
+    public static validateWipBeforeMove(data: LeanKanbanValidateWipBeforeMoveData): CancelablePromise<LeanKanbanValidateWipBeforeMoveResponse> {
         return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/v1/github/installations',
+            method: 'POST',
+            url: '/api/v1/projects/{project_id}/stories/{story_id}/validate-wip',
+            path: {
+                project_id: data.projectId,
+                story_id: data.storyId
+            },
             query: {
-                skip: data.skip,
-                limit: data.limit
+                target_status: data.targetStatus
             },
             errors: {
                 422: 'Validation Error'
@@ -759,33 +748,146 @@ export class GithubService {
     }
     
     /**
-     * Create Repo From Template Endpoint
-     * Create a new GitHub repository from a template.
-     *
-     * This endpoint allows authenticated users to create a new repository
-     * based on an existing template repository using their GitHub App installation.
-     *
-     * Args:
-     * request: Request containing template info and new repo details
-     * current_user: Current authenticated user
-     * session: Database session
-     *
-     * Returns:
-     * CreateRepoFromTemplateResponse with repository creation details
-     *
-     * Raises:
-     * HTTPException: If installation not found, user lacks permissions, or GitHub API fails
+     * Initialize Default Policies
+     * Initialize default workflow policies for a project.
+     * Creates standard policies for common transitions if they don't exist.
      * @param data The data for the request.
-     * @param data.requestBody
-     * @returns CreateRepoFromTemplateResponse Successful Response
+     * @param data.projectId
+     * @returns unknown Successful Response
      * @throws ApiError
      */
-    public static createRepoFromTemplateEndpoint(data: GithubCreateRepoFromTemplateEndpointData): CancelablePromise<GithubCreateRepoFromTemplateEndpointResponse> {
+    public static initializeDefaultPolicies(data: LeanKanbanInitializeDefaultPoliciesData): CancelablePromise<LeanKanbanInitializeDefaultPoliciesResponse> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/v1/github/create-repo-from-template',
+            url: '/api/v1/projects/{project_id}/policies/initialize-defaults',
+            path: {
+                project_id: data.projectId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Get Workflow Policies
+     * Get all workflow policies for a project
+     * @param data The data for the request.
+     * @param data.projectId
+     * @returns WorkflowPoliciesPublic Successful Response
+     * @throws ApiError
+     */
+    public static getWorkflowPolicies(data: LeanKanbanGetWorkflowPoliciesData): CancelablePromise<LeanKanbanGetWorkflowPoliciesResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/projects/{project_id}/policies',
+            path: {
+                project_id: data.projectId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Update Workflow Policy
+     * Update or create workflow policy
+     * @param data The data for the request.
+     * @param data.projectId
+     * @param data.fromStatus
+     * @param data.toStatus
+     * @param data.requestBody
+     * @returns WorkflowPolicyPublic Successful Response
+     * @throws ApiError
+     */
+    public static updateWorkflowPolicy(data: LeanKanbanUpdateWorkflowPolicyData): CancelablePromise<LeanKanbanUpdateWorkflowPolicyResponse> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/v1/projects/{project_id}/policies/{from_status}/{to_status}',
+            path: {
+                project_id: data.projectId,
+                from_status: data.fromStatus,
+                to_status: data.toStatus
+            },
             body: data.requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Validate Policy Before Move
+     * Validate if a story transition meets workflow policy criteria.
+     * Returns {"allowed": true/false, "violations": [...]}
+     * @param data The data for the request.
+     * @param data.projectId
+     * @param data.storyId
+     * @param data.fromStatus
+     * @param data.toStatus
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static validatePolicyBeforeMove(data: LeanKanbanValidatePolicyBeforeMoveData): CancelablePromise<LeanKanbanValidatePolicyBeforeMoveResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/projects/{project_id}/stories/{story_id}/validate-policy',
+            path: {
+                project_id: data.projectId,
+                story_id: data.storyId
+            },
+            query: {
+                from_status: data.fromStatus,
+                to_status: data.toStatus
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Get Project Flow Metrics
+     * Get aggregated flow metrics for a project
+     * @param data The data for the request.
+     * @param data.projectId
+     * @param data.days
+     * @returns ProjectFlowMetrics Successful Response
+     * @throws ApiError
+     */
+    public static getProjectFlowMetrics(data: LeanKanbanGetProjectFlowMetricsData): CancelablePromise<LeanKanbanGetProjectFlowMetricsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/projects/{project_id}/flow-metrics',
+            path: {
+                project_id: data.projectId
+            },
+            query: {
+                days: data.days
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Get Story Flow Metrics
+     * Get flow metrics for a specific story
+     * @param data The data for the request.
+     * @param data.storyId
+     * @returns StoryFlowMetrics Successful Response
+     * @throws ApiError
+     */
+    public static getStoryFlowMetrics(data: LeanKanbanGetStoryFlowMetricsData): CancelablePromise<LeanKanbanGetStoryFlowMetricsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/stories/{story_id}/flow-metrics',
+            path: {
+                story_id: data.storyId
+            },
             errors: {
                 422: 'Validation Error'
             }
@@ -1028,6 +1130,9 @@ export class ProjectsService {
      * Create a new project.
      *
      * The project code is automatically generated in format PRJ-001, PRJ-002, etc.
+     * Default agents (1 per role type) are automatically created for the project.
+     *
+     * Uses a single transaction - if agent creation fails, the project is rolled back.
      *
      * Args:
      * project_in: Project creation schema
@@ -1036,6 +1141,9 @@ export class ProjectsService {
      *
      * Returns:
      * ProjectPublic: Created project details
+     *
+     * Raises:
+     * HTTPException: If project or agent creation fails
      * @param data The data for the request.
      * @param data.requestBody
      * @returns ProjectPublic Successful Response
@@ -1151,10 +1259,208 @@ export class ProjectsService {
     }
 }
 
+export class StoriesService {
+    /**
+     * Create Story
+     * Create new story (BA role).
+     * BA creates stories in TODO column by default.
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns StoryPublic Successful Response
+     * @throws ApiError
+     */
+    public static createStory(data: StoriesCreateStoryData): CancelablePromise<StoriesCreateStoryResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/stories/',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * List Stories
+     * List stories with filters
+     * @param data The data for the request.
+     * @param data.projectId
+     * @param data.status
+     * @param data.assigneeId
+     * @param data.type
+     * @param data.skip
+     * @param data.limit
+     * @returns StoriesPublic Successful Response
+     * @throws ApiError
+     */
+    public static listStories(data: StoriesListStoriesData = {}): CancelablePromise<StoriesListStoriesResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/stories/',
+            query: {
+                project_id: data.projectId,
+                status: data.status,
+                assignee_id: data.assigneeId,
+                type: data.type,
+                skip: data.skip,
+                limit: data.limit
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Get Kanban Board
+     * Get Kanban board grouped by columns with WIP limits.
+     * Returns stories organized by status plus WIP limit information.
+     * @param data The data for the request.
+     * @param data.projectId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static getKanbanBoard(data: StoriesGetKanbanBoardData): CancelablePromise<StoriesGetKanbanBoardResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/stories/kanban/{project_id}',
+            path: {
+                project_id: data.projectId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Assign Story
+     * Assign story to Dev/Tester (TeamLeader role).
+     * Updates assignee_id and optionally reviewer_id.
+     * @param data The data for the request.
+     * @param data.storyId
+     * @param data.assigneeId
+     * @param data.reviewerId
+     * @returns StoryPublic Successful Response
+     * @throws ApiError
+     */
+    public static assignStory(data: StoriesAssignStoryData): CancelablePromise<StoriesAssignStoryResponse> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/v1/stories/{story_id}/assign',
+            path: {
+                story_id: data.storyId
+            },
+            query: {
+                assignee_id: data.assigneeId,
+                reviewer_id: data.reviewerId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Update Story Status
+     * Update story status with Lean Kanban enforcement.
+     * - Enforces WIP limits (hard limits block transition)
+     * - Validates workflow policies (DoR/DoD)
+     * - Tracks flow metrics timestamps
+     * @param data The data for the request.
+     * @param data.storyId
+     * @param data.newStatus
+     * @returns StoryPublic Successful Response
+     * @throws ApiError
+     */
+    public static updateStoryStatus(data: StoriesUpdateStoryStatusData): CancelablePromise<StoriesUpdateStoryStatusResponse> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/v1/stories/{story_id}/status',
+            path: {
+                story_id: data.storyId
+            },
+            query: {
+                new_status: data.newStatus
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Get Story
+     * Get story details
+     * @param data The data for the request.
+     * @param data.storyId
+     * @returns StoryPublic Successful Response
+     * @throws ApiError
+     */
+    public static getStory(data: StoriesGetStoryData): CancelablePromise<StoriesGetStoryResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/stories/{story_id}',
+            path: {
+                story_id: data.storyId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Update Story
+     * Update story (BA/TeamLeader role)
+     * @param data The data for the request.
+     * @param data.storyId
+     * @param data.requestBody
+     * @returns StoryPublic Successful Response
+     * @throws ApiError
+     */
+    public static updateStory(data: StoriesUpdateStoryData): CancelablePromise<StoriesUpdateStoryResponse> {
+        return __request(OpenAPI, {
+            method: 'PATCH',
+            url: '/api/v1/stories/{story_id}',
+            path: {
+                story_id: data.storyId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Delete Story
+     * Delete story
+     * @param data The data for the request.
+     * @param data.storyId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static deleteStory(data: StoriesDeleteStoryData): CancelablePromise<StoriesDeleteStoryResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/stories/{story_id}',
+            path: {
+                story_id: data.storyId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+}
+
 export class UsersService {
     /**
      * Read Users
-     * Retrieve users with GitHub installation data.
+     * Retrieve users.
      * @param data The data for the request.
      * @param data.skip
      * @param data.limit
@@ -1197,7 +1503,7 @@ export class UsersService {
     
     /**
      * Read User Me
-     * Get current user with GitHub installation data.
+     * Get current user.
      * @returns UserPublic Successful Response
      * @throws ApiError
      */

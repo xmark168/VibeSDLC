@@ -13,14 +13,15 @@ export const AnimatedTooltip = ({
     className,
 }: {
     items: {
-        id: number;
+        id: number | string;
         name: string;
         designation: string;
         image: string;
+        onClick?: () => void;
     }[];
     className?: string;
 }) => {
-    const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+    const [hoveredIndex, setHoveredIndex] = useState<number | string | null>(null);
     const springConfig = { stiffness: 100, damping: 5 };
     const x = useMotionValue(0);
     const rotate = useSpring(
@@ -41,9 +42,11 @@ export const AnimatedTooltip = ({
             {items.map((item) => (
                 <div
                     className="-mr-4 relative group"
-                    key={item.name}
+                    key={item.id}
                     onMouseEnter={() => setHoveredIndex(item.id)}
                     onMouseLeave={() => setHoveredIndex(null)}
+                    onClick={() => item.onClick?.()}
+                    style={{ cursor: item.onClick ? 'pointer' : 'default' }}
                 >
                     <AnimatePresence mode="popLayout">
                         {hoveredIndex === item.id && (

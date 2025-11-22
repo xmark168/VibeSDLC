@@ -58,7 +58,7 @@ export function WIPLimitSettingsDialog({ projectId, open, onOpenChange }: WIPLim
 
   // Initialize local settings when WIP limits are loaded
   useEffect(() => {
-    if (wipLimits) {
+    if (wipLimits && Array.isArray(wipLimits)) {
       const settings: Record<string, { limit: number; type: 'hard' | 'soft' }> = {}
 
       COLUMNS.forEach((col) => {
@@ -117,7 +117,7 @@ export function WIPLimitSettingsDialog({ projectId, open, onOpenChange }: WIPLim
   }
 
   const handleReset = () => {
-    if (wipLimits) {
+    if (wipLimits && Array.isArray(wipLimits)) {
       const settings: Record<string, { limit: number; type: 'hard' | 'soft' }> = {}
       COLUMNS.forEach((col) => {
         const wipLimit = wipLimits.find((w) => w.column_name === col.name)

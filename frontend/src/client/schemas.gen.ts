@@ -2,11 +2,16 @@
 
 export const AgentCreateSchema = {
     properties: {
-        name: {
+        project_id: {
             type: 'string',
-            title: 'Name'
+            format: 'uuid',
+            title: 'Project Id'
         },
-        agent_type: {
+        role_type: {
+            type: 'string',
+            title: 'Role Type'
+        },
+        human_name: {
             anyOf: [
                 {
                     type: 'string'
@@ -15,11 +20,11 @@ export const AgentCreateSchema = {
                     type: 'null'
                 }
             ],
-            title: 'Agent Type'
+            title: 'Human Name'
         }
     },
     type: 'object',
-    required: ['name'],
+    required: ['project_id', 'role_type'],
     title: 'AgentCreate'
 } as const;
 
@@ -28,6 +33,14 @@ export const AgentPublicSchema = {
         name: {
             type: 'string',
             title: 'Name'
+        },
+        human_name: {
+            type: 'string',
+            title: 'Human Name'
+        },
+        role_type: {
+            type: 'string',
+            title: 'Role Type'
         },
         agent_type: {
             anyOf: [
@@ -45,6 +58,15 @@ export const AgentPublicSchema = {
             format: 'uuid',
             title: 'Id'
         },
+        project_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Project Id'
+        },
+        status: {
+            type: 'string',
+            title: 'Status'
+        },
         created_at: {
             type: 'string',
             format: 'date-time',
@@ -57,7 +79,7 @@ export const AgentPublicSchema = {
         }
     },
     type: 'object',
-    required: ['name', 'id', 'created_at', 'updated_at'],
+    required: ['name', 'human_name', 'role_type', 'id', 'project_id', 'status', 'created_at', 'updated_at'],
     title: 'AgentPublic'
 } as const;
 
@@ -74,7 +96,7 @@ export const AgentUpdateSchema = {
             ],
             title: 'Name'
         },
-        agent_type: {
+        human_name: {
             anyOf: [
                 {
                     type: 'string'
@@ -83,7 +105,18 @@ export const AgentUpdateSchema = {
                     type: 'null'
                 }
             ],
-            title: 'Agent Type'
+            title: 'Human Name'
+        },
+        status: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Status'
         }
     },
     type: 'object',
@@ -109,612 +142,34 @@ export const AgentsPublicSchema = {
     title: 'AgentsPublic'
 } as const;
 
+export const ApproveRequestSchema = {
+    properties: {
+        approved: {
+            type: 'boolean',
+            title: 'Approved'
+        },
+        feedback: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Feedback'
+        }
+    },
+    type: 'object',
+    required: ['approved'],
+    title: 'ApproveRequest',
+    description: 'Request to approve or refine phase output'
+} as const;
+
 export const AuthorTypeSchema = {
     type: 'string',
     enum: ['user', 'agent'],
     title: 'AuthorType'
-} as const;
-
-export const BacklogItemCreateSchema = {
-    properties: {
-        title: {
-            type: 'string',
-            maxLength: 255,
-            minLength: 1,
-            title: 'Title'
-        },
-        description: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Description'
-        },
-        type: {
-            type: 'string',
-            title: 'Type',
-            description: 'Type: Epic, Story, Task, Sub-task'
-        },
-        status: {
-            type: 'string',
-            title: 'Status',
-            description: 'Status: Backlog, Todo, Doing, Done'
-        },
-        rank: {
-            anyOf: [
-                {
-                    type: 'integer'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Rank'
-        },
-        estimate_value: {
-            anyOf: [
-                {
-                    type: 'integer'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Estimate Value'
-        },
-        story_point: {
-            anyOf: [
-                {
-                    type: 'integer'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Story Point'
-        },
-        pause: {
-            type: 'boolean',
-            title: 'Pause',
-            default: false
-        },
-        deadline: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'date-time'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Deadline'
-        },
-        assignee_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'uuid'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Assignee Id'
-        },
-        reviewer_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'uuid'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Reviewer Id'
-        },
-        parent_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'uuid'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Parent Id'
-        },
-        project_id: {
-            type: 'string',
-            format: 'uuid',
-            title: 'Project Id'
-        }
-    },
-    type: 'object',
-    required: ['title', 'type', 'status', 'project_id'],
-    title: 'BacklogItemCreate'
-} as const;
-
-export const BacklogItemPublicSchema = {
-    properties: {
-        title: {
-            type: 'string',
-            maxLength: 255,
-            minLength: 1,
-            title: 'Title'
-        },
-        description: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Description'
-        },
-        type: {
-            type: 'string',
-            title: 'Type',
-            description: 'Type: Epic, Story, Task, Sub-task'
-        },
-        status: {
-            type: 'string',
-            title: 'Status',
-            description: 'Status: Backlog, Todo, Doing, Done'
-        },
-        rank: {
-            anyOf: [
-                {
-                    type: 'integer'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Rank'
-        },
-        estimate_value: {
-            anyOf: [
-                {
-                    type: 'integer'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Estimate Value'
-        },
-        story_point: {
-            anyOf: [
-                {
-                    type: 'integer'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Story Point'
-        },
-        pause: {
-            type: 'boolean',
-            title: 'Pause',
-            default: false
-        },
-        deadline: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'date-time'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Deadline'
-        },
-        assignee_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'uuid'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Assignee Id'
-        },
-        reviewer_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'uuid'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Reviewer Id'
-        },
-        parent_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'uuid'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Parent Id'
-        },
-        id: {
-            type: 'string',
-            format: 'uuid',
-            title: 'Id'
-        },
-        project_id: {
-            type: 'string',
-            format: 'uuid',
-            title: 'Project Id'
-        },
-        created_at: {
-            type: 'string',
-            format: 'date-time',
-            title: 'Created At'
-        },
-        updated_at: {
-            type: 'string',
-            format: 'date-time',
-            title: 'Updated At'
-        },
-        parent: {
-            anyOf: [
-                {
-                    '$ref': '#/components/schemas/BacklogItemSimple'
-                },
-                {
-                    type: 'null'
-                }
-            ]
-        },
-        children: {
-            items: {
-                '$ref': '#/components/schemas/BacklogItemSimple'
-            },
-            type: 'array',
-            title: 'Children',
-            default: []
-        }
-    },
-    type: 'object',
-    required: ['title', 'type', 'status', 'id', 'project_id', 'created_at', 'updated_at'],
-    title: 'BacklogItemPublic',
-    description: 'Public schema with parent/children for Kanban hierarchy display'
-} as const;
-
-export const BacklogItemSimpleSchema = {
-    properties: {
-        title: {
-            type: 'string',
-            maxLength: 255,
-            minLength: 1,
-            title: 'Title'
-        },
-        description: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Description'
-        },
-        type: {
-            type: 'string',
-            title: 'Type',
-            description: 'Type: Epic, Story, Task, Sub-task'
-        },
-        status: {
-            type: 'string',
-            title: 'Status',
-            description: 'Status: Backlog, Todo, Doing, Done'
-        },
-        rank: {
-            anyOf: [
-                {
-                    type: 'integer'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Rank'
-        },
-        estimate_value: {
-            anyOf: [
-                {
-                    type: 'integer'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Estimate Value'
-        },
-        story_point: {
-            anyOf: [
-                {
-                    type: 'integer'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Story Point'
-        },
-        pause: {
-            type: 'boolean',
-            title: 'Pause',
-            default: false
-        },
-        deadline: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'date-time'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Deadline'
-        },
-        assignee_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'uuid'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Assignee Id'
-        },
-        reviewer_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'uuid'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Reviewer Id'
-        },
-        parent_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'uuid'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Parent Id'
-        },
-        id: {
-            type: 'string',
-            format: 'uuid',
-            title: 'Id'
-        },
-        project_id: {
-            type: 'string',
-            format: 'uuid',
-            title: 'Project Id'
-        },
-        created_at: {
-            type: 'string',
-            format: 'date-time',
-            title: 'Created At'
-        },
-        updated_at: {
-            type: 'string',
-            format: 'date-time',
-            title: 'Updated At'
-        }
-    },
-    type: 'object',
-    required: ['title', 'type', 'status', 'id', 'project_id', 'created_at', 'updated_at'],
-    title: 'BacklogItemSimple',
-    description: 'Simple schema without nested relationships to prevent recursion'
-} as const;
-
-export const BacklogItemUpdateSchema = {
-    properties: {
-        title: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Title'
-        },
-        description: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Description'
-        },
-        type: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Type'
-        },
-        status: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Status'
-        },
-        rank: {
-            anyOf: [
-                {
-                    type: 'integer'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Rank'
-        },
-        estimate_value: {
-            anyOf: [
-                {
-                    type: 'integer'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Estimate Value'
-        },
-        story_point: {
-            anyOf: [
-                {
-                    type: 'integer'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Story Point'
-        },
-        pause: {
-            anyOf: [
-                {
-                    type: 'boolean'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Pause'
-        },
-        deadline: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'date-time'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Deadline'
-        },
-        assignee_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'uuid'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Assignee Id'
-        },
-        reviewer_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'uuid'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Reviewer Id'
-        },
-        parent_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'uuid'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Parent Id'
-        },
-        project_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'uuid'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Project Id'
-        }
-    },
-    type: 'object',
-    title: 'BacklogItemUpdate'
-} as const;
-
-export const BacklogItemsPublicSchema = {
-    properties: {
-        data: {
-            items: {
-                '$ref': '#/components/schemas/BacklogItemPublic'
-            },
-            type: 'array',
-            title: 'Data'
-        },
-        count: {
-            type: 'integer',
-            title: 'Count'
-        }
-    },
-    type: 'object',
-    required: ['data', 'count'],
-    title: 'BacklogItemsPublic'
 } as const;
 
 export const BlockerCreateSchema = {
@@ -875,6 +330,30 @@ export const ChatMessageCreateSchema = {
                 }
             ],
             title: 'Agent Id'
+        },
+        message_type: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Message Type',
+            default: 'text'
+        },
+        structured_data: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Structured Data'
         }
     },
     type: 'object',
@@ -1051,152 +530,40 @@ export const ConfirmCodeResponseSchema = {
     title: 'ConfirmCodeResponse'
 } as const;
 
-export const CreateRepoFromTemplateRequestSchema = {
+export const CreateSessionRequestSchema = {
     properties: {
-        template_owner: {
+        project_id: {
             type: 'string',
-            title: 'Template Owner',
-            description: "Owner of the template repository (e.g., 'organization' or 'username')"
-        },
-        template_repo: {
-            type: 'string',
-            title: 'Template Repo',
-            description: 'Name of the template repository'
-        },
-        new_repo_name: {
-            type: 'string',
-            maxLength: 255,
-            minLength: 1,
-            title: 'New Repo Name',
-            description: 'Name for the new repository'
-        },
-        new_repo_description: {
-            anyOf: [
-                {
-                    type: 'string',
-                    maxLength: 1000
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'New Repo Description',
-            description: 'Description for the new repository'
-        },
-        is_private: {
-            type: 'boolean',
-            title: 'Is Private',
-            description: 'Whether the new repository should be private',
-            default: false
-        },
-        github_installation_id: {
-            type: 'integer',
-            title: 'Github Installation Id',
-            description: 'GitHub installation ID to use for creating the repository'
+            format: 'uuid',
+            title: 'Project Id'
         }
     },
     type: 'object',
-    required: ['template_owner', 'template_repo', 'new_repo_name', 'github_installation_id'],
-    title: 'CreateRepoFromTemplateRequest',
-    description: 'Request schema for creating a repository from a template.'
+    required: ['project_id'],
+    title: 'CreateSessionRequest',
+    description: 'Request to create a new BA session'
 } as const;
 
-export const CreateRepoFromTemplateResponseSchema = {
+export const CreateSessionResponseSchema = {
     properties: {
-        success: {
-            type: 'boolean',
-            title: 'Success',
-            description: 'Whether the repository was created successfully'
+        session_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Session Id'
         },
-        repository_id: {
-            anyOf: [
-                {
-                    type: 'integer'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Repository Id',
-            description: 'GitHub repository ID'
+        status: {
+            type: 'string',
+            title: 'Status'
         },
-        repository_name: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Repository Name',
-            description: 'Name of the created repository'
-        },
-        repository_full_name: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Repository Full Name',
-            description: 'Full name of the created repository (owner/name)'
-        },
-        repository_url: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Repository Url',
-            description: 'URL of the created repository'
-        },
-        repository_description: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Repository Description',
-            description: 'Description of the created repository'
-        },
-        repository_private: {
-            anyOf: [
-                {
-                    type: 'boolean'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Repository Private',
-            description: 'Whether the repository is private'
-        },
-        message: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Message',
-            description: 'Success or error message'
+        current_phase: {
+            type: 'string',
+            title: 'Current Phase'
         }
     },
     type: 'object',
-    required: ['success'],
-    title: 'CreateRepoFromTemplateResponse',
-    description: 'Response schema for repository creation.'
+    required: ['session_id', 'status', 'current_phase'],
+    title: 'CreateSessionResponse',
+    description: 'Response with created session info'
 } as const;
 
 export const ForgotPasswordRequestSchema = {
@@ -1226,148 +593,6 @@ export const ForgotPasswordResponseSchema = {
     type: 'object',
     required: ['message', 'expires_in'],
     title: 'ForgotPasswordResponse'
-} as const;
-
-export const GitHubAccountTypeSchema = {
-    type: 'string',
-    enum: ['User', 'Organization'],
-    title: 'GitHubAccountType'
-} as const;
-
-export const GitHubInstallationPublicSchema = {
-    properties: {
-        installation_id: {
-            anyOf: [
-                {
-                    type: 'integer'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Installation Id'
-        },
-        account_login: {
-            type: 'string',
-            title: 'Account Login'
-        },
-        account_type: {
-            '$ref': '#/components/schemas/GitHubAccountType'
-        },
-        account_status: {
-            '$ref': '#/components/schemas/GitHubInstallationStatus'
-        },
-        repositories: {
-            anyOf: [
-                {
-                    additionalProperties: true,
-                    type: 'object'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Repositories'
-        },
-        id: {
-            type: 'string',
-            format: 'uuid',
-            title: 'Id'
-        },
-        user_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'uuid'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'User Id'
-        },
-        created_at: {
-            type: 'string',
-            format: 'date-time',
-            title: 'Created At'
-        },
-        updated_at: {
-            type: 'string',
-            format: 'date-time',
-            title: 'Updated At'
-        }
-    },
-    type: 'object',
-    required: ['installation_id', 'account_login', 'account_type', 'account_status', 'id', 'user_id', 'created_at', 'updated_at'],
-    title: 'GitHubInstallationPublic'
-} as const;
-
-export const GitHubInstallationStatusSchema = {
-    type: 'string',
-    enum: ['pending', 'installed', 'deleted'],
-    title: 'GitHubInstallationStatus'
-} as const;
-
-export const GitHubRepositoriesPublicSchema = {
-    properties: {
-        data: {
-            items: {
-                '$ref': '#/components/schemas/GitHubRepository'
-            },
-            type: 'array',
-            title: 'Data'
-        },
-        count: {
-            type: 'integer',
-            title: 'Count'
-        }
-    },
-    type: 'object',
-    required: ['data', 'count'],
-    title: 'GitHubRepositoriesPublic'
-} as const;
-
-export const GitHubRepositorySchema = {
-    properties: {
-        id: {
-            type: 'integer',
-            title: 'Id'
-        },
-        name: {
-            type: 'string',
-            title: 'Name'
-        },
-        full_name: {
-            type: 'string',
-            title: 'Full Name'
-        },
-        url: {
-            type: 'string',
-            title: 'Url'
-        },
-        description: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Description'
-        },
-        private: {
-            type: 'boolean',
-            title: 'Private'
-        },
-        owner: {
-            type: 'string',
-            title: 'Owner'
-        }
-    },
-    type: 'object',
-    required: ['id', 'name', 'full_name', 'url', 'private', 'owner'],
-    title: 'GitHubRepository'
 } as const;
 
 export const HTTPValidationErrorSchema = {
@@ -1469,6 +694,50 @@ export const MessageSchema = {
     title: 'Message'
 } as const;
 
+export const PhaseExecutionRequestSchema = {
+    properties: {
+        revision_feedback: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Revision Feedback'
+        }
+    },
+    type: 'object',
+    title: 'PhaseExecutionRequest',
+    description: 'Request to execute a phase (with optional revision feedback)'
+} as const;
+
+export const PhaseExecutionResponseSchema = {
+    properties: {
+        success: {
+            type: 'boolean',
+            title: 'Success'
+        },
+        phase: {
+            type: 'string',
+            title: 'Phase'
+        },
+        output: {
+            type: 'string',
+            title: 'Output'
+        },
+        message: {
+            type: 'string',
+            title: 'Message'
+        }
+    },
+    type: 'object',
+    required: ['success', 'phase', 'output', 'message'],
+    title: 'PhaseExecutionResponse',
+    description: 'Response from phase execution'
+} as const;
+
 export const PrivateUserCreateSchema = {
     properties: {
         email: {
@@ -1492,6 +761,39 @@ export const PrivateUserCreateSchema = {
     type: 'object',
     required: ['email', 'password', 'full_name'],
     title: 'PrivateUserCreate'
+} as const;
+
+export const ProductBriefResponseSchema = {
+    properties: {
+        product_summary: {
+            type: 'string',
+            title: 'Product Summary'
+        },
+        problem_statement: {
+            type: 'string',
+            title: 'Problem Statement'
+        },
+        target_users: {
+            type: 'string',
+            title: 'Target Users'
+        },
+        product_goals: {
+            type: 'string',
+            title: 'Product Goals'
+        },
+        scope: {
+            type: 'string',
+            title: 'Scope'
+        },
+        revision_count: {
+            type: 'integer',
+            title: 'Revision Count'
+        }
+    },
+    type: 'object',
+    required: ['product_summary', 'problem_statement', 'target_users', 'product_goals', 'scope', 'revision_count'],
+    title: 'ProductBriefResponse',
+    description: 'Response with PRD'
 } as const;
 
 export const ProjectCreateSchema = {
@@ -1531,25 +833,60 @@ export const ProjectCreateSchema = {
     description: 'Schema for creating a new project. Code is auto-generated.'
 } as const;
 
-export const ProjectGitHubLinkSchema = {
+export const ProjectFlowMetricsSchema = {
     properties: {
-        github_repository_id: {
+        avg_cycle_time_hours: {
+            anyOf: [
+                {
+                    type: 'number'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Avg Cycle Time Hours'
+        },
+        avg_lead_time_hours: {
+            anyOf: [
+                {
+                    type: 'number'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Avg Lead Time Hours'
+        },
+        throughput_per_week: {
+            type: 'number',
+            title: 'Throughput Per Week'
+        },
+        total_completed: {
             type: 'integer',
-            title: 'Github Repository Id'
+            title: 'Total Completed'
         },
-        github_repository_name: {
-            type: 'string',
-            title: 'Github Repository Name'
+        work_in_progress: {
+            type: 'integer',
+            title: 'Work In Progress'
         },
-        github_installation_id: {
-            type: 'string',
-            format: 'uuid',
-            title: 'Github Installation Id'
+        aging_items: {
+            items: {
+                additionalProperties: true,
+                type: 'object'
+            },
+            type: 'array',
+            title: 'Aging Items'
+        },
+        bottlenecks: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Bottlenecks'
         }
     },
     type: 'object',
-    required: ['github_repository_id', 'github_repository_name', 'github_installation_id'],
-    title: 'ProjectGitHubLink'
+    required: ['throughput_per_week', 'total_completed', 'work_in_progress', 'aging_items', 'bottlenecks'],
+    title: 'ProjectFlowMetrics',
+    description: 'Aggregated flow metrics for a project'
 } as const;
 
 export const ProjectPublicSchema = {
@@ -1583,51 +920,6 @@ export const ProjectPublicSchema = {
         tech_stack: {
             type: 'string',
             title: 'Tech Stack'
-        },
-        github_repository_url: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Github Repository Url'
-        },
-        github_repository_id: {
-            anyOf: [
-                {
-                    type: 'integer'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Github Repository Id'
-        },
-        github_repository_name: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Github Repository Name'
-        },
-        github_installation_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'uuid'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Github Installation Id'
         },
         created_at: {
             type: 'string',
@@ -1965,6 +1257,40 @@ export const RegisterResponseSchema = {
     title: 'RegisterResponse'
 } as const;
 
+export const RequirementsResponseSchema = {
+    properties: {
+        problem_goals: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Problem Goals'
+        },
+        users_stakeholders: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Users Stakeholders'
+        },
+        features_scope: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Features Scope'
+        },
+        total: {
+            type: 'integer',
+            title: 'Total'
+        }
+    },
+    type: 'object',
+    required: ['problem_goals', 'users_stakeholders', 'features_scope', 'total'],
+    title: 'RequirementsResponse',
+    description: 'Response with requirements list'
+} as const;
+
 export const ResendCodeRequestSchema = {
     properties: {
         email: {
@@ -2038,6 +1364,1009 @@ export const RoleSchema = {
     title: 'Role'
 } as const;
 
+export const SendMessageRequestSchema = {
+    properties: {
+        message: {
+            type: 'string',
+            title: 'Message'
+        }
+    },
+    type: 'object',
+    required: ['message'],
+    title: 'SendMessageRequest',
+    description: 'Request to send a message in analysis phase'
+} as const;
+
+export const SendMessageResponseSchema = {
+    properties: {
+        success: {
+            type: 'boolean',
+            title: 'Success'
+        },
+        assistant_response: {
+            type: 'string',
+            title: 'Assistant Response'
+        },
+        extracted_requirements: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Extracted Requirements'
+        },
+        turn_count: {
+            type: 'integer',
+            title: 'Turn Count'
+        },
+        total_requirements: {
+            type: 'integer',
+            title: 'Total Requirements'
+        }
+    },
+    type: 'object',
+    required: ['success', 'assistant_response', 'extracted_requirements', 'turn_count', 'total_requirements'],
+    title: 'SendMessageResponse',
+    description: 'Response with extracted requirements and assistant response'
+} as const;
+
+export const SessionStatusResponseSchema = {
+    properties: {
+        session_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Session Id'
+        },
+        status: {
+            type: 'string',
+            title: 'Status'
+        },
+        current_phase: {
+            type: 'string',
+            title: 'Current Phase'
+        },
+        turn_count: {
+            type: 'integer',
+            title: 'Turn Count'
+        },
+        requirements_count: {
+            type: 'integer',
+            title: 'Requirements Count'
+        },
+        has_brief: {
+            type: 'boolean',
+            title: 'Has Brief'
+        },
+        flows_count: {
+            type: 'integer',
+            title: 'Flows Count'
+        },
+        epics_count: {
+            type: 'integer',
+            title: 'Epics Count'
+        },
+        stories_count: {
+            type: 'integer',
+            title: 'Stories Count'
+        }
+    },
+    type: 'object',
+    required: ['session_id', 'status', 'current_phase', 'turn_count', 'requirements_count', 'has_brief', 'flows_count', 'epics_count', 'stories_count'],
+    title: 'SessionStatusResponse',
+    description: 'Response with session status and progress'
+} as const;
+
+export const StoriesPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/StoryPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'StoriesPublic',
+    description: 'List of stories response'
+} as const;
+
+export const StoryCreateSchema = {
+    properties: {
+        title: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Title'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        type: {
+            '$ref': '#/components/schemas/StoryType',
+            default: 'UserStory'
+        },
+        status: {
+            '$ref': '#/components/schemas/StoryStatus',
+            default: 'Todo'
+        },
+        epic_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Epic Id'
+        },
+        acceptance_criteria: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Acceptance Criteria'
+        },
+        rank: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Rank'
+        },
+        estimate_value: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Estimate Value'
+        },
+        story_point: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Story Point'
+        },
+        priority: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Priority'
+        },
+        pause: {
+            type: 'boolean',
+            title: 'Pause',
+            default: false
+        },
+        deadline: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Deadline'
+        },
+        assignee_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Assignee Id'
+        },
+        reviewer_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Reviewer Id'
+        },
+        parent_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Parent Id'
+        },
+        token_used: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Token Used'
+        },
+        project_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Project Id'
+        }
+    },
+    type: 'object',
+    required: ['title', 'project_id'],
+    title: 'StoryCreate',
+    description: 'Schema for creating a new story (BA agent)'
+} as const;
+
+export const StoryFlowMetricsSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        title: {
+            type: 'string',
+            title: 'Title'
+        },
+        status: {
+            type: 'string',
+            title: 'Status'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        started_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Started At'
+        },
+        review_started_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Review Started At'
+        },
+        testing_started_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Testing Started At'
+        },
+        completed_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Completed At'
+        },
+        cycle_time_hours: {
+            anyOf: [
+                {
+                    type: 'number'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Cycle Time Hours'
+        },
+        lead_time_hours: {
+            anyOf: [
+                {
+                    type: 'number'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Lead Time Hours'
+        },
+        age_in_current_status_hours: {
+            type: 'number',
+            title: 'Age In Current Status Hours'
+        }
+    },
+    type: 'object',
+    required: ['id', 'title', 'status', 'created_at', 'age_in_current_status_hours'],
+    title: 'StoryFlowMetrics',
+    description: 'Flow metrics for a single story'
+} as const;
+
+export const StoryPublicSchema = {
+    properties: {
+        title: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Title'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        type: {
+            '$ref': '#/components/schemas/StoryType',
+            default: 'UserStory'
+        },
+        status: {
+            '$ref': '#/components/schemas/StoryStatus',
+            default: 'Todo'
+        },
+        epic_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Epic Id'
+        },
+        acceptance_criteria: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Acceptance Criteria'
+        },
+        rank: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Rank'
+        },
+        estimate_value: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Estimate Value'
+        },
+        story_point: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Story Point'
+        },
+        priority: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Priority'
+        },
+        pause: {
+            type: 'boolean',
+            title: 'Pause',
+            default: false
+        },
+        deadline: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Deadline'
+        },
+        assignee_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Assignee Id'
+        },
+        reviewer_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Reviewer Id'
+        },
+        parent_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Parent Id'
+        },
+        token_used: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Token Used'
+        },
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        project_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Project Id'
+        },
+        completed_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Completed At'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        },
+        parent: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/StorySimple'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        children: {
+            items: {
+                '$ref': '#/components/schemas/StorySimple'
+            },
+            type: 'array',
+            title: 'Children',
+            default: []
+        }
+    },
+    type: 'object',
+    required: ['title', 'id', 'project_id', 'created_at', 'updated_at'],
+    title: 'StoryPublic',
+    description: 'Full story schema with relationships for Kanban display'
+} as const;
+
+export const StorySimpleSchema = {
+    properties: {
+        title: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Title'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        type: {
+            '$ref': '#/components/schemas/StoryType',
+            default: 'UserStory'
+        },
+        status: {
+            '$ref': '#/components/schemas/StoryStatus',
+            default: 'Todo'
+        },
+        epic_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Epic Id'
+        },
+        acceptance_criteria: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Acceptance Criteria'
+        },
+        rank: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Rank'
+        },
+        estimate_value: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Estimate Value'
+        },
+        story_point: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Story Point'
+        },
+        priority: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Priority'
+        },
+        pause: {
+            type: 'boolean',
+            title: 'Pause',
+            default: false
+        },
+        deadline: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Deadline'
+        },
+        assignee_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Assignee Id'
+        },
+        reviewer_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Reviewer Id'
+        },
+        parent_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Parent Id'
+        },
+        token_used: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Token Used'
+        },
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        project_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Project Id'
+        },
+        completed_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Completed At'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: ['title', 'id', 'project_id', 'created_at', 'updated_at'],
+    title: 'StorySimple',
+    description: 'Simple story schema without nested relationships'
+} as const;
+
+export const StoryStatusSchema = {
+    type: 'string',
+    enum: ['Todo', 'InProgress', 'Review', 'Done'],
+    title: 'StoryStatus'
+} as const;
+
+export const StoryTypeSchema = {
+    type: 'string',
+    enum: ['UserStory', 'EnablerStory'],
+    title: 'StoryType'
+} as const;
+
+export const StoryUpdateSchema = {
+    properties: {
+        title: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Title'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        type: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/StoryType'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        status: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/StoryStatus'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        epic_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Epic Id'
+        },
+        acceptance_criteria: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Acceptance Criteria'
+        },
+        rank: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Rank'
+        },
+        estimate_value: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Estimate Value'
+        },
+        story_point: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Story Point'
+        },
+        priority: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Priority'
+        },
+        pause: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Pause'
+        },
+        deadline: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Deadline'
+        },
+        completed_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Completed At'
+        },
+        assignee_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Assignee Id'
+        },
+        reviewer_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Reviewer Id'
+        },
+        parent_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Parent Id'
+        },
+        token_used: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Token Used'
+        }
+    },
+    type: 'object',
+    title: 'StoryUpdate',
+    description: 'Schema for updating story fields (BA/TL/Dev/Tester)'
+} as const;
+
 export const UpdatePasswordSchema = {
     properties: {
         current_password: {
@@ -2059,7 +2388,14 @@ export const UpdatePasswordSchema = {
 export const UserCreateSchema = {
     properties: {
         username: {
-            type: 'string',
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
             title: 'Username'
         },
         password: {
@@ -2073,7 +2409,7 @@ export const UserCreateSchema = {
         }
     },
     type: 'object',
-    required: ['username', 'password', 'email'],
+    required: ['password', 'email'],
     title: 'UserCreate'
 } as const;
 
@@ -2102,31 +2438,6 @@ export const UserPublicSchema = {
         },
         role: {
             '$ref': '#/components/schemas/Role'
-        },
-        github_installation_id: {
-            anyOf: [
-                {
-                    type: 'integer'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Github Installation Id'
-        },
-        github_installations: {
-            anyOf: [
-                {
-                    items: {
-                        '$ref': '#/components/schemas/GitHubInstallationPublic'
-                    },
-                    type: 'array'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Github Installations'
         }
     },
     type: 'object',
@@ -2276,4 +2587,209 @@ export const ValidationErrorSchema = {
     type: 'object',
     required: ['loc', 'msg', 'type'],
     title: 'ValidationError'
+} as const;
+
+export const WIPLimitPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        project_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Project Id'
+        },
+        column_name: {
+            type: 'string',
+            title: 'Column Name'
+        },
+        wip_limit: {
+            type: 'integer',
+            title: 'Wip Limit'
+        },
+        limit_type: {
+            type: 'string',
+            title: 'Limit Type'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'project_id', 'column_name', 'wip_limit', 'limit_type', 'created_at', 'updated_at'],
+    title: 'WIPLimitPublic'
+} as const;
+
+export const WIPLimitUpdateSchema = {
+    properties: {
+        wip_limit: {
+            type: 'integer',
+            title: 'Wip Limit'
+        },
+        limit_type: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Limit Type'
+        }
+    },
+    type: 'object',
+    required: ['wip_limit'],
+    title: 'WIPLimitUpdate'
+} as const;
+
+export const WIPLimitsPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/WIPLimitPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'WIPLimitsPublic'
+} as const;
+
+export const WorkflowPoliciesPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/WorkflowPolicyPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'WorkflowPoliciesPublic'
+} as const;
+
+export const WorkflowPolicyPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        project_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Project Id'
+        },
+        from_status: {
+            type: 'string',
+            title: 'From Status'
+        },
+        to_status: {
+            type: 'string',
+            title: 'To Status'
+        },
+        criteria: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Criteria'
+        },
+        required_role: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Required Role'
+        },
+        is_active: {
+            type: 'boolean',
+            title: 'Is Active'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'project_id', 'from_status', 'to_status', 'is_active', 'created_at', 'updated_at'],
+    title: 'WorkflowPolicyPublic'
+} as const;
+
+export const WorkflowPolicyUpdateSchema = {
+    properties: {
+        criteria: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Criteria'
+        },
+        required_role: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Required Role'
+        },
+        is_active: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Is Active'
+        }
+    },
+    type: 'object',
+    title: 'WorkflowPolicyUpdate'
 } as const;
