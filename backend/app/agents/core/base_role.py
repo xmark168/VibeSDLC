@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Optional, Callable
+from typing import Any, Dict, Optional, Callable, TYPE_CHECKING
 from uuid import UUID, uuid4
 
 import yaml
@@ -22,6 +22,10 @@ from app.kafka.event_schemas import (
     AgentStatusType,
     KafkaTopics,
 )
+
+if TYPE_CHECKING:
+    from app.models import Agent as AgentModel
+    from app.agents.core.base_agent_consumer import BaseAgentInstanceConsumer
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +58,7 @@ class BaseAgentRole(ABC):
     def __init__(
         self,
         agent_id: Optional[UUID] = None,
+        agent_model: Optional["AgentModel"] = None,
         config_path: Optional[Path] = None,
         heartbeat_interval: int = 30,
         max_idle_time: int = 300,
@@ -61,12 +66,24 @@ class BaseAgentRole(ABC):
         """Initialize the agent role.
 
         Args:
-            agent_id: Unique agent instance ID
+            agent_id: Unique agent instance ID (deprecated, use agent_model)
+            agent_model: Agent database model instance (new approach)
             config_path: Path to agent config.yaml
             heartbeat_interval: Seconds between heartbeats
             max_idle_time: Max seconds idle before auto-shutdown
         """
-        self.agent_id = agent_id or uuid4()
+        # Support both old and new initialization
+        if agent_model:
+            self.agent_id = agent_model.id
+            self.agent_model = agent_model
+            self.project_id = agent_model.project_id
+            self.human_name = agent_model.human_name
+        else:
+            self.agent_id = agent_id or uuid4()
+            self.agent_model = None
+            self.project_id = None
+            self.human_name = None
+
         self.config_path = config_path or self._get_default_config_path()
         self.heartbeat_interval = heartbeat_interval
         self.max_idle_time = max_idle_time
@@ -92,6 +109,9 @@ class BaseAgentRole(ABC):
         # CrewAI components
         self.agent: Optional[Agent] = None
         self.crew: Optional[Crew] = None
+
+        # Kafka consumer (new approach)
+        self.consumer: Optional["BaseAgentInstanceConsumer"] = None
 
         # Async tasks
         self._heartbeat_task: Optional[asyncio.Task] = None
@@ -367,18 +387,71 @@ class BaseAgentRole(ABC):
     async def _consumer_loop(self) -> None:
         """Consumer loop for processing messages.
 
-        This is a placeholder - actual implementation should use Kafka consumer.
+        Creates and starts the BaseAgentInstanceConsumer if agent_model is provided.
+        Falls back to placeholder behavior for backward compatibility.
         """
-        logger.info(f"Consumer loop started for agent {self.agent_id}")
+        if not self.agent_model:
+            # Backward compatibility: placeholder loop
+            logger.warning(
+                f"Agent {self.agent_id} started without agent_model, "
+                "consumer functionality disabled"
+            )
+            while not self._shutdown_event.is_set():
+                try:
+                    await asyncio.sleep(1)
+                except asyncio.CancelledError:
+                    break
+            return
 
-        # Placeholder - override in subclass with actual Kafka consumer
-        while not self._shutdown_event.is_set():
-            try:
+        logger.info(f"Starting Kafka consumer for agent {self.human_name} ({self.role_name})")
+
+        try:
+            # Import here to avoid circular dependency
+            from app.agents.core.base_agent_consumer import BaseAgentInstanceConsumer
+
+            # Create consumer instance (will be created by subclass)
+            self.consumer = self._create_consumer()
+
+            if not self.consumer:
+                logger.error(f"Failed to create consumer for agent {self.agent_id}")
+                return
+
+            # Start consumer
+            await self.consumer.start()
+
+            logger.info(f"Kafka consumer started for agent {self.human_name}")
+
+            # Keep loop alive while consumer runs
+            while not self._shutdown_event.is_set():
                 await asyncio.sleep(1)
-            except asyncio.CancelledError:
-                break
 
-        logger.info(f"Consumer loop stopped for agent {self.agent_id}")
+        except asyncio.CancelledError:
+            logger.info(f"Consumer loop cancelled for agent {self.agent_id}")
+        except Exception as e:
+            logger.error(f"Consumer loop error for agent {self.agent_id}: {e}", exc_info=True)
+        finally:
+            # Stop consumer
+            if self.consumer:
+                try:
+                    await self.consumer.stop()
+                    logger.info(f"Consumer stopped for agent {self.human_name}")
+                except Exception as e:
+                    logger.error(f"Error stopping consumer: {e}")
+
+    def _create_consumer(self) -> Optional["BaseAgentInstanceConsumer"]:
+        """Create the consumer instance for this agent.
+
+        Subclasses should override this to return their specific consumer implementation.
+        The consumer should extend BaseAgentInstanceConsumer and implement process_user_message().
+
+        Returns:
+            Consumer instance or None
+        """
+        logger.warning(
+            f"Agent {self.role_name} did not implement _create_consumer(), "
+            "consumer functionality will be disabled"
+        )
+        return None
 
     # ===== Execution =====
 

@@ -14,6 +14,7 @@ from app.websocket.connection_manager import connection_manager
 from app.core.security import decode_access_token
 from app.models import User, Message as MessageModel, Project, AuthorType
 from app.kafka import get_kafka_producer, KafkaTopics, UserMessageEvent
+from app.kafka.event_schemas import get_project_topic
 from sqlmodel import select
 
 logger = logging.getLogger(__name__)
@@ -103,6 +104,11 @@ async def websocket_endpoint(
                             })
                             continue
 
+                        # Parse agent routing info from @ mention
+                        agent_id_str = message.get("agent_id")
+                        agent_name = message.get("agent_name")
+                        agent_id = UUID(agent_id_str) if agent_id_str else None
+
                         # Save message to database
                         from app.core.db import engine
                         from sqlmodel import Session as DBSession
@@ -117,11 +123,11 @@ async def websocket_endpoint(
                                 })
                                 continue
 
-                            # Create message
+                            # Create message with agent routing info
                             db_message = MessageModel(
                                 project_id=project_id,
                                 user_id=user.id,
-                                agent_id=None,
+                                agent_id=agent_id,  # Save mentioned agent ID for routing
                                 content=content,
                                 author_type=AuthorType.USER,
                                 message_type=message.get("message_type", "text"),
@@ -132,7 +138,8 @@ async def websocket_endpoint(
 
                             message_id = db_message.id
 
-                        logger.info(f"Message saved: {message_id} from user {user.id}")
+                        logger.info(f"Message saved: {message_id} from user {user.id}" +
+                                  (f" targeting agent {agent_name} ({agent_id})" if agent_id else ""))
 
                         # Publish to Kafka for agent processing
                         try:
@@ -143,12 +150,20 @@ async def websocket_endpoint(
                                 user_id=user.id,
                                 content=content,
                                 message_type=message.get("message_type", "text"),
+                                agent_id=agent_id,  # Include agent ID for routing
+                                agent_name=agent_name,  # Include agent name for display
                             )
+
+                            # Publish to project-specific topic instead of global USER_MESSAGES
+                            project_topic = get_project_topic(project_id)
                             await producer.publish(
-                                topic=KafkaTopics.USER_MESSAGES,
+                                topic=project_topic,
                                 event=user_message_event,
                             )
-                            logger.info(f"Message {message_id} published to Kafka")
+                            logger.info(
+                                f"Message {message_id} published to topic '{project_topic}'" +
+                                (f" with routing to {agent_name}" if agent_name else "")
+                            )
                         except Exception as e:
                             logger.error(f"Failed to publish message to Kafka: {e}")
 

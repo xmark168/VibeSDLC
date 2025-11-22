@@ -1,6 +1,6 @@
 """Tester Crew - QA, testing, and validation."""
 
 from .crew import TesterCrew
-from .consumer import TesterConsumer
+from .role import TesterRole, TesterConsumer
 
-__all__ = ["TesterCrew", "TesterConsumer"]
+__all__ = ["TesterCrew", "TesterRole", "TesterConsumer"]

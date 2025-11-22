@@ -63,6 +63,7 @@ export function ChatPanelWS({
   const [showMentions, setShowMentions] = useState(false);
   const [mentionSearch, setMentionSearch] = useState("");
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
+  const [mentionedAgent, setMentionedAgent] = useState<{ id: string; name: string } | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(
     new Set()
@@ -196,7 +197,7 @@ export function ChatPanelWS({
     agent.name.toLowerCase().includes(mentionSearch.toLowerCase())
   );
 
-  const insertMention = (agentName: string) => {
+  const insertMention = (agent: { id: string; name: string; role: string; avatar: string }) => {
     const textarea = textareaRef.current;
     if (!textarea) return;
 
@@ -206,14 +207,17 @@ export function ChatPanelWS({
 
     const atIndex = textBeforeCursor.lastIndexOf("@");
     const newText =
-      textBeforeCursor.slice(0, atIndex) + `@${agentName} ` + textAfterCursor;
+      textBeforeCursor.slice(0, atIndex) + `@${agent.name} ` + textAfterCursor;
 
     setMessage(newText);
     setShowMentions(false);
     setMentionSearch("");
 
+    // Store the mentioned agent for routing
+    setMentionedAgent({ id: agent.id, name: agent.name });
+
     setTimeout(() => {
-      const newCursorPos = atIndex + agentName.length + 2;
+      const newCursorPos = atIndex + agent.name.length + 2;
       textarea.setSelectionRange(newCursorPos, newCursorPos);
       textarea.focus();
     }, 0);
@@ -248,14 +252,17 @@ export function ChatPanelWS({
 
     let finalMessage = message.trim();
 
-    // Send via WebSocket
+    // Send via WebSocket with agent routing info if agent was mentioned
     const success = wsSendMessage({
       content: finalMessage,
       author_type: "user",
+      agent_id: mentionedAgent?.id,
+      agent_name: mentionedAgent?.name,
     });
 
     if (success) {
       setMessage("");
+      setMentionedAgent(null);  // Clear mentioned agent after sending
       setTimeout(() => {
         textareaRef.current?.focus();
       }, 0);
@@ -291,7 +298,7 @@ export function ChatPanelWS({
       } else if (e.key === "Tab" || e.key === "Enter") {
         if (showMentions) {
           e.preventDefault();
-          insertMention(filteredAgents[selectedMentionIndex].name);
+          insertMention(filteredAgents[selectedMentionIndex]);
         }
       } else if (e.key === "Escape") {
         e.preventDefault();
@@ -732,7 +739,7 @@ export function ChatPanelWS({
               {filteredAgents.map((agent, index) => (
                 <button
                   key={agent.name}
-                  onClick={() => insertMention(agent.name)}
+                  onClick={() => insertMention(agent)}
                   className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors ${index === selectedMentionIndex ? "bg-accent/50" : ""
                     }`}
                 >

@@ -1,6 +1,6 @@
 """Business Analyst Crew - Requirements analysis and PRD generation."""
 
 from .crew import BusinessAnalystCrew
-from .consumer import BusinessAnalystConsumer
+from .role import BusinessAnalystRole, BusinessAnalystConsumer
 
-__all__ = ["BusinessAnalystCrew", "BusinessAnalystConsumer"]
+__all__ = ["BusinessAnalystCrew", "BusinessAnalystRole", "BusinessAnalystConsumer"]
