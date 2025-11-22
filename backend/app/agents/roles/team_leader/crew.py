@@ -96,11 +96,27 @@ class TeamLeaderCrew(BaseAgentCrew):
         Returns:
             Result with delegation information
         """
+        # Step 1: Analyzing user request
+        await self._publish_progress(
+            step_number=1,
+            total_steps=3,
+            description="Đang phân tích yêu cầu...",
+            project_id=project_id,
+        )
+
         # Execute base workflow
         result = await super().execute(context, project_id, user_id)
 
         if not result.get("success"):
             return result
+
+        # Step 2: Determining best specialist
+        await self._publish_progress(
+            step_number=2,
+            total_steps=3,
+            description="Đang xác định specialist phù hợp...",
+            project_id=project_id,
+        )
 
         # Parse the delegation decision
         try:
@@ -131,12 +147,29 @@ class TeamLeaderCrew(BaseAgentCrew):
             if specialist == "none":
                 direct_response = delegation_data.get("direct_response", "")
 
+                # Step 3: Preparing direct response
+                await self._publish_progress(
+                    step_number=3,
+                    total_steps=3,
+                    description="Đang chuẩn bị trả lời...",
+                    project_id=project_id,
+                )
+
                 # Publish direct response
                 await self.publish_response(
                     content=direct_response,
                     message_id=uuid4(),
                     project_id=project_id,
                     user_id=user_id,
+                )
+
+                # Mark as completed
+                await self._publish_progress(
+                    step_number=3,
+                    total_steps=3,
+                    description="Hoàn thành",
+                    status="completed",
+                    project_id=project_id,
                 )
 
                 result["direct_response"] = {
@@ -156,6 +189,14 @@ class TeamLeaderCrew(BaseAgentCrew):
             if specialist not in valid_specialists:
                 raise ValueError(f"Invalid specialist: {specialist}")
 
+            # Step 3: Delegating to specialist
+            await self._publish_progress(
+                step_number=3,
+                total_steps=3,
+                description=f"Đang giao nhiệm vụ cho {specialist}...",
+                project_id=project_id,
+            )
+
             # Publish routing event to delegate to specialist
             await self.publish_routing(
                 to_agent=specialist,
@@ -169,6 +210,15 @@ class TeamLeaderCrew(BaseAgentCrew):
                 },
                 project_id=project_id,
                 user_id=user_id,
+            )
+
+            # Mark as completed
+            await self._publish_progress(
+                step_number=3,
+                total_steps=3,
+                description="Hoàn thành",
+                status="completed",
+                project_id=project_id,
             )
 
             # Update result with delegation info

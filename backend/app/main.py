@@ -59,6 +59,25 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Failed to start Agent Orchestrator: {e}")
         logger.warning("Continuing without agent support...")
 
+    # Initialize default agent pools
+    from app.api.routes.agent_management import initialize_default_pools
+    try:
+        await initialize_default_pools()
+        logger.info("Default agent pools initialized")
+    except Exception as e:
+        logger.warning(f"Failed to initialize agent pools: {e}")
+        logger.warning("Continuing without agent pools...")
+
+    # Start agent monitoring system
+    from app.agents.core import get_agent_monitor
+    try:
+        monitor = get_agent_monitor()
+        await monitor.start(monitor_interval=30)
+        logger.info("Agent monitoring system started")
+    except Exception as e:
+        logger.warning(f"Failed to start monitoring system: {e}")
+        logger.warning("Continuing without monitoring system...")
+
     # Start WebSocket-Kafka bridge
     from app.websocket.kafka_bridge import websocket_kafka_bridge
     try:
@@ -78,6 +97,25 @@ async def lifespan(app: FastAPI):
         logger.info("WebSocket-Kafka bridge shut down")
     except Exception as e:
         logger.error(f"Error shutting down WebSocket-Kafka bridge: {e}")
+
+    # Shutdown agent monitoring system
+    try:
+        monitor = get_agent_monitor()
+        await monitor.stop()
+        logger.info("Agent monitoring system shut down")
+    except Exception as e:
+        logger.error(f"Error shutting down monitoring system: {e}")
+
+    # Shutdown agent pools
+    from app.api.routes.agent_management import _pool_registry
+    try:
+        for pool_name, pool in list(_pool_registry.items()):
+            await pool.stop(graceful=True)
+            logger.info(f"Pool '{pool_name}' shut down")
+        _pool_registry.clear()
+        logger.info("All agent pools shut down")
+    except Exception as e:
+        logger.error(f"Error shutting down agent pools: {e}")
 
     try:
         await stop_orchestrator()

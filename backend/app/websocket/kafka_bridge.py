@@ -7,7 +7,7 @@ Consumes events from Kafka topics and forwards them to WebSocket clients
 import asyncio
 import logging
 from typing import Dict, Any, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 from datetime import datetime, timezone
 
 from sqlmodel import Session, create_engine
@@ -38,6 +38,8 @@ class WebSocketKafkaBridge:
         self.consumer: Optional[EventHandlerConsumer] = None
         self.running = False
         self.engine = create_engine(str(settings.SQLALCHEMY_DATABASE_URI))
+        # Track execution_id -> message_id mapping for activity updates
+        self.execution_activities: Dict[str, UUID] = {}  # execution_id (str) -> message_id (UUID)
 
     async def start(self):
         """Start the WebSocket-Kafka bridge consumer"""
@@ -193,6 +195,7 @@ class WebSocketKafkaBridge:
                 "from_agent": event_data.get("from_agent", ""),
                 "to_agent": event_data.get("to_agent", ""),
                 "reason": event_data.get("delegation_reason", ""),
+                "context": event_data.get("context", {}),  # Include full context for delegation details
                 "timestamp": str(event_data.get("timestamp", "")),
             }
 
@@ -390,7 +393,10 @@ class WebSocketKafkaBridge:
             logger.error(f"Error handling agent status event: {e}", exc_info=True)
 
     async def handle_agent_progress(self, event):
-        """Handle agent progress events (step-by-step execution tracking)"""
+        """Handle agent progress events (step-by-step execution tracking)
+
+        Creates/updates activity messages in the database to persist progress.
+        """
         try:
             if hasattr(event, 'model_dump'):
                 event_data = event.model_dump()
@@ -401,27 +407,147 @@ class WebSocketKafkaBridge:
             if not project_id:
                 return
 
-            ws_message = {
-                "type": "agent_progress",
-                "agent_name": event_data.get("agent_name", ""),
-                "agent_id": event_data.get("agent_id"),
-                "execution_id": str(event_data.get("execution_id", "")) if event_data.get("execution_id") else None,
-                "step_number": event_data.get("step_number", 0),
-                "total_steps": event_data.get("total_steps", 0),
-                "description": event_data.get("step_description", ""),
-                "status": event_data.get("status", "in_progress"),
-                "timestamp": str(event_data.get("timestamp", "")),
-            }
+            execution_id = event_data.get("execution_id")
+            if not execution_id:
+                logger.warning("Agent progress event missing execution_id")
+                return
 
-            if event_data.get("step_result"):
-                ws_message["result"] = event_data["step_result"]
+            execution_id_str = str(execution_id)
+            agent_name = event_data.get("agent_name", "Agent")
+            step_number = event_data.get("step_number", 0)
+            total_steps = event_data.get("total_steps", 0)
+            step_description = event_data.get("step_description", "")
+            step_status = event_data.get("status", "in_progress")
 
-            await connection_manager.broadcast_to_project(ws_message, project_id)
+            # Check if activity message exists for this execution
+            message_id = self.execution_activities.get(execution_id_str)
 
-            logger.debug(
-                f"Forwarded agent progress to project {project_id}: "
-                f"{event_data.get('agent_name')} step {event_data.get('step_number')}/{event_data.get('total_steps')}"
-            )
+            with Session(self.engine) as db_session:
+                if not message_id:
+                    # FIRST progress event - CREATE new activity message
+                    message_id = uuid4()
+
+                    activity_data = {
+                        "message_type": "activity",
+                        "data": {
+                            "execution_id": execution_id_str,
+                            "agent_name": agent_name,
+                            "total_steps": total_steps,
+                            "current_step": step_number,
+                            "steps": [
+                                {
+                                    "step": step_number,
+                                    "description": step_description,
+                                    "status": step_status,
+                                    "timestamp": datetime.now(timezone.utc).isoformat()
+                                }
+                            ],
+                            "status": "in_progress",
+                            "started_at": datetime.now(timezone.utc).isoformat(),
+                            "completed_at": None
+                        }
+                    }
+
+                    db_message = MessageModel(
+                        id=message_id,
+                        project_id=project_id,
+                        user_id=None,
+                        agent_id=None,
+                        content=f"{agent_name} đang thực thi...",
+                        author_type=AuthorType.AGENT,
+                        message_type="activity",
+                        structured_data=activity_data,
+                        message_metadata={"agent_name": agent_name}
+                    )
+                    db_session.add(db_message)
+                    db_session.commit()
+                    db_session.refresh(db_message)
+
+                    # Track mapping
+                    self.execution_activities[execution_id_str] = message_id
+
+                    logger.info(f"Created activity message {message_id} for execution {execution_id_str}")
+
+                    # Send as NEW message to WebSocket
+                    ws_message = {
+                        "type": "agent_message",
+                        "data": {
+                            "id": str(message_id),
+                            "project_id": str(project_id),
+                            "author_type": "agent",
+                            "content": db_message.content,
+                            "created_at": db_message.created_at.isoformat(),
+                            "updated_at": db_message.updated_at.isoformat(),
+                            "agent_name": agent_name,
+                            "message_type": "activity",
+                            "structured_data": activity_data,
+                            "message_metadata": {"agent_name": agent_name}
+                        }
+                    }
+
+                else:
+                    # UPDATE existing activity message
+                    db_message = db_session.get(MessageModel, message_id)
+
+                    if not db_message:
+                        logger.warning(f"Activity message {message_id} not found in database")
+                        # Clean up stale mapping
+                        del self.execution_activities[execution_id_str]
+                        return
+
+                    # Get existing activity data
+                    activity_data = db_message.structured_data or {}
+                    if "data" not in activity_data:
+                        activity_data["data"] = {}
+
+                    data = activity_data["data"]
+
+                    # Append new step to steps array
+                    if "steps" not in data:
+                        data["steps"] = []
+
+                    data["steps"].append({
+                        "step": step_number,
+                        "description": step_description,
+                        "status": step_status,
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    })
+
+                    # Update current step
+                    data["current_step"] = step_number
+
+                    # If completed, mark as done and cleanup mapping
+                    if step_status == "completed":
+                        data["status"] = "completed"
+                        data["completed_at"] = datetime.now(timezone.utc).isoformat()
+                        db_message.content = f"{agent_name} đã hoàn thành"
+
+                        # Clean up mapping
+                        if execution_id_str in self.execution_activities:
+                            del self.execution_activities[execution_id_str]
+
+                        logger.info(f"Completed activity {message_id} for execution {execution_id_str}")
+
+                    # Update message in database
+                    db_message.structured_data = activity_data
+                    db_message.updated_at = datetime.now(timezone.utc)
+                    db_session.add(db_message)
+                    db_session.commit()
+                    db_session.refresh(db_message)
+
+                    logger.debug(f"Updated activity message {message_id}: step {step_number}/{total_steps}")
+
+                    # Send as UPDATE to WebSocket
+                    ws_message = {
+                        "type": "activity_update",
+                        "message_id": str(message_id),
+                        "structured_data": activity_data,
+                        "updated_at": db_message.updated_at.isoformat(),
+                        "content": db_message.content,
+                    }
+
+                # Broadcast to project
+                await connection_manager.broadcast_to_project(ws_message, project_id)
 
         except Exception as e:
             logger.error(f"Error handling agent progress event: {e}", exc_info=True)

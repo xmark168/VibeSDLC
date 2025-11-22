@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from app.api.deps import get_current_user, get_db, SessionDep
-from app.models import User, Agent, AgentStatus
+from app.models import User, Agent, AgentStatus, AgentExecution, AgentExecutionStatus
 from app.agents.core import (
     AgentPool,
     AgentPoolConfig,
@@ -28,6 +28,7 @@ from app.agents.core.name_generator import generate_agent_name, get_display_name
 # Import role classes
 from app.agents.roles.team_leader.crew import TeamLeaderCrew
 from app.agents.roles.business_analyst.crew import BusinessAnalystCrew
+from app.agents.roles.developer.crew import DeveloperCrew
 from app.agents.roles.tester.crew import TesterCrew
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -74,6 +75,10 @@ class PoolResponse(BaseModel):
     idle_agents: int
     total_spawned: int
     total_terminated: int
+    total_executions: int
+    successful_executions: int
+    failed_executions: int
+    success_rate: float
     load: float
     created_at: str
 
@@ -99,8 +104,98 @@ _pool_registry: Dict[str, AgentPool] = {}
 ROLE_CLASS_MAP = {
     "team_leader": TeamLeaderCrew,
     "business_analyst": BusinessAnalystCrew,
+    "developer": DeveloperCrew,
     "tester": TesterCrew,
 }
+
+
+async def initialize_default_pools() -> None:
+    """Initialize default agent pools for all role types.
+
+    This function is called on application startup to automatically create
+    pools for all available role types and restore agents from database.
+    """
+    import logging
+    from sqlmodel import Session, select
+    from app.core.db import engine
+
+    logger = logging.getLogger(__name__)
+
+    default_pools = [
+        {"role_type": "team_leader", "pool_name": "team_leader_pool"},
+        {"role_type": "business_analyst", "pool_name": "business_analyst_pool"},
+        {"role_type": "developer", "pool_name": "developer_pool"},
+        {"role_type": "tester", "pool_name": "tester_pool"},
+    ]
+
+    for pool_config in default_pools:
+        role_type = pool_config["role_type"]
+        pool_name = pool_config["pool_name"]
+
+        # Skip if pool already exists
+        if pool_name in _pool_registry:
+            logger.info(f"Pool '{pool_name}' already exists, skipping")
+            continue
+
+        try:
+            # Create pool config with defaults
+            config = AgentPoolConfig(
+                max_agents=10,
+                health_check_interval=60,
+            )
+
+            # Create pool
+            role_class = ROLE_CLASS_MAP[role_type]
+            pool = AgentPool(role_class=role_class, pool_name=pool_name, config=config)
+
+            # Start pool
+            if await pool.start():
+                _pool_registry[pool_name] = pool
+
+                # Register with monitor
+                monitor = get_agent_monitor()
+                monitor.register_pool(pool)
+
+                logger.info(f"✓ Auto-created pool: {pool_name} ({role_type})")
+
+                # Restore agents from database
+                with Session(engine) as db_session:
+                    # Query agents for this role type that are not terminated
+                    agents_query = select(Agent).where(
+                        Agent.role_type == role_type,
+                        Agent.status != AgentStatus.terminated
+                    )
+                    db_agents = db_session.exec(agents_query).all()
+
+                    logger.info(f"Found {len(db_agents)} {role_type} agents to restore")
+
+                    # Spawn each agent into the pool
+                    for db_agent in db_agents:
+                        try:
+                            runtime_agent = await pool.spawn_agent(
+                                agent_id=db_agent.id,
+                                heartbeat_interval=30,
+                                max_idle_time=300,
+                            )
+
+                            if runtime_agent:
+                                # Update agent status to idle/running
+                                db_agent.status = AgentStatus.idle
+                                db_session.add(db_agent)
+                                logger.info(f"  ✓ Restored agent: {db_agent.name} ({db_agent.id})")
+                            else:
+                                logger.warning(f"  ✗ Failed to restore agent: {db_agent.name}")
+                        except Exception as e:
+                            logger.error(f"  ✗ Error restoring agent {db_agent.name}: {e}")
+
+                    # Commit all status updates
+                    db_session.commit()
+
+            else:
+                logger.error(f"✗ Failed to start pool: {pool_name}")
+
+        except Exception as e:
+            logger.error(f"✗ Error creating pool '{pool_name}': {e}", exc_info=True)
 
 
 def get_pool(pool_name: str) -> AgentPool:
@@ -287,13 +382,21 @@ async def spawn_agent(
 @router.post("/terminate")
 async def terminate_agent(
     request: TerminateAgentRequest,
+    session: SessionDep,
     current_user: User = Depends(get_current_user),
 ) -> Any:
-    """Terminate an agent in the specified pool."""
+    """Terminate an agent in the specified pool and update database."""
     pool = get_pool(request.pool_name)
 
     if not await pool.terminate_agent(request.agent_id, graceful=request.graceful):
         raise HTTPException(status_code=500, detail="Failed to terminate agent")
+
+    # Update agent status in database
+    db_agent = session.get(Agent, request.agent_id)
+    if db_agent:
+        db_agent.status = AgentStatus.terminated
+        session.add(db_agent)
+        session.commit()
 
     return {
         "message": f"Agent {request.agent_id} terminated successfully",
@@ -418,6 +521,138 @@ async def get_alerts(
     """Get recent monitoring alerts."""
     monitor = get_agent_monitor()
     return monitor.get_recent_alerts(limit=limit)
+
+
+# ===== Execution History Endpoints =====
+
+@router.get("/executions")
+async def get_executions(
+    session: SessionDep,
+    limit: int = Query(default=50, ge=1, le=200),
+    status: Optional[str] = Query(default=None, description="Filter by status: pending, running, completed, failed, cancelled"),
+    agent_type: Optional[str] = Query(default=None, description="Filter by agent type"),
+    project_id: Optional[UUID] = Query(default=None, description="Filter by project ID"),
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Get agent execution history with optional filters."""
+    query = select(AgentExecution).order_by(AgentExecution.created_at.desc())
+
+    # Apply filters
+    if status:
+        try:
+            status_enum = AgentExecutionStatus(status)
+            query = query.where(AgentExecution.status == status_enum)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+
+    if agent_type:
+        query = query.where(AgentExecution.agent_type == agent_type)
+
+    if project_id:
+        query = query.where(AgentExecution.project_id == project_id)
+
+    query = query.limit(limit)
+
+    executions = session.exec(query).all()
+
+    return [
+        {
+            "id": str(ex.id),
+            "project_id": str(ex.project_id),
+            "agent_name": ex.agent_name,
+            "agent_type": ex.agent_type,
+            "status": ex.status.value,
+            "started_at": ex.started_at.isoformat() if ex.started_at else None,
+            "completed_at": ex.completed_at.isoformat() if ex.completed_at else None,
+            "duration_ms": ex.duration_ms,
+            "token_used": ex.token_used,
+            "llm_calls": ex.llm_calls,
+            "error_message": ex.error_message,
+            "created_at": ex.created_at.isoformat(),
+        }
+        for ex in executions
+    ]
+
+
+@router.get("/executions/{execution_id}")
+async def get_execution_detail(
+    execution_id: UUID,
+    session: SessionDep,
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Get detailed information about a specific execution."""
+    execution = session.get(AgentExecution, execution_id)
+
+    if not execution:
+        raise HTTPException(status_code=404, detail=f"Execution {execution_id} not found")
+
+    return {
+        "id": str(execution.id),
+        "project_id": str(execution.project_id),
+        "agent_name": execution.agent_name,
+        "agent_type": execution.agent_type,
+        "status": execution.status.value,
+        "started_at": execution.started_at.isoformat() if execution.started_at else None,
+        "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
+        "duration_ms": execution.duration_ms,
+        "token_used": execution.token_used,
+        "llm_calls": execution.llm_calls,
+        "error_message": execution.error_message,
+        "error_traceback": execution.error_traceback,
+        "result": execution.result,
+        "extra_metadata": execution.extra_metadata,
+        "created_at": execution.created_at.isoformat(),
+        "updated_at": execution.updated_at.isoformat(),
+    }
+
+
+@router.get("/executions/stats/summary")
+async def get_execution_stats(
+    session: SessionDep,
+    project_id: Optional[UUID] = Query(default=None),
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Get execution statistics summary."""
+    from sqlalchemy import func
+
+    query = select(
+        AgentExecution.agent_type,
+        AgentExecution.status,
+        func.count(AgentExecution.id).label("count"),
+        func.avg(AgentExecution.duration_ms).label("avg_duration"),
+        func.sum(AgentExecution.token_used).label("total_tokens"),
+    ).group_by(AgentExecution.agent_type, AgentExecution.status)
+
+    if project_id:
+        query = query.where(AgentExecution.project_id == project_id)
+
+    results = session.exec(query).all()
+
+    # Aggregate stats
+    stats = {}
+    for row in results:
+        agent_type = row[0]
+        if agent_type not in stats:
+            stats[agent_type] = {
+                "total": 0,
+                "completed": 0,
+                "failed": 0,
+                "avg_duration_ms": 0,
+                "total_tokens": 0,
+            }
+
+        stats[agent_type]["total"] += row[2]
+        if row[1] == AgentExecutionStatus.COMPLETED:
+            stats[agent_type]["completed"] += row[2]
+        elif row[1] == AgentExecutionStatus.FAILED:
+            stats[agent_type]["failed"] += row[2]
+
+        if row[3]:
+            stats[agent_type]["avg_duration_ms"] = float(row[3])
+        if row[4]:
+            stats[agent_type]["total_tokens"] += row[4]
+
+    return stats
 
 
 # ===== Lifecycle Management =====

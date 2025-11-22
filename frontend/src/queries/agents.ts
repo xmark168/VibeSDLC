@@ -4,6 +4,7 @@ import {
   agentsApi,
   type CreatePoolRequest,
   type SpawnAgentRequest,
+  type ExecutionFilters,
 } from "@/apis/agents"
 
 // ===== Query Keys =====
@@ -18,6 +19,7 @@ export const agentQueryKeys = {
   systemStats: () => [...agentQueryKeys.all, "system-stats"] as const,
   alerts: (limit?: number) => [...agentQueryKeys.all, "alerts", limit] as const,
   project: (projectId: string) => [...agentQueryKeys.all, "project", projectId] as const,
+  executions: (filters?: ExecutionFilters) => [...agentQueryKeys.all, "executions", filters] as const,
 }
 
 // ===== Queries =====
@@ -125,6 +127,22 @@ export function useAgentAlerts(limit: number = 20, options?: { enabled?: boolean
     queryFn: () => agentsApi.getAlerts(limit),
     enabled: options?.enabled ?? true,
     refetchInterval: 60000, // Less frequent for alerts
+  })
+}
+
+/**
+ * Fetch execution history
+ */
+export function useAgentExecutions(
+  filters?: ExecutionFilters,
+  options?: { enabled?: boolean; refetchInterval?: number }
+) {
+  return useQuery({
+    queryKey: agentQueryKeys.executions(filters),
+    queryFn: () => agentsApi.getExecutions(filters),
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval ?? 30000,
+    staleTime: 10000,
   })
 }
 

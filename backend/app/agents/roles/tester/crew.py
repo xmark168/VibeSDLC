@@ -114,10 +114,42 @@ class TesterCrew(BaseAgentCrew):
         Returns:
             Result with test plan/cases
         """
+        # Step 1: Analyzing requirements
+        await self._publish_progress(
+            step_number=1,
+            total_steps=4,
+            description="Đang phân tích requirements...",
+            project_id=project_id,
+        )
+
+        # Step 2: Identifying test scenarios
+        await self._publish_progress(
+            step_number=2,
+            total_steps=4,
+            description="Đang xác định test scenarios...",
+            project_id=project_id,
+        )
+
         # Execute base workflow
         result = await super().execute(context, project_id, user_id)
 
+        # Step 3: Creating test cases
+        await self._publish_progress(
+            step_number=3,
+            total_steps=4,
+            description="Đang tạo test cases...",
+            project_id=project_id,
+        )
+
         if result.get("success"):
+            # Step 4: Preparing test plan
+            await self._publish_progress(
+                step_number=4,
+                total_steps=4,
+                description="Đang chuẩn bị test plan...",
+                project_id=project_id,
+            )
+
             # Publish the test plan as a response
             await self.publish_response(
                 content=result.get("output", ""),
@@ -128,6 +160,15 @@ class TesterCrew(BaseAgentCrew):
                     "qa_type": "test_planning",
                     "task_description": context.get("task_description", ""),
                 },
+            )
+
+            # Mark as completed
+            await self._publish_progress(
+                step_number=4,
+                total_steps=4,
+                description="Hoàn thành",
+                status="completed",
+                project_id=project_id,
             )
 
             logger.info("Tester completed QA task")

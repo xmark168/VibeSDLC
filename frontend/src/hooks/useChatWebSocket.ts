@@ -5,7 +5,7 @@ import { AuthorType, type Message } from '@/types/message'
 const processedMessageIds = new Set<string>()
 
 export type WebSocketMessage = {
-  type: 'connected' | 'message' | 'agent_message' | 'agent_response' | 'typing' | 'pong' | 'error' | 'routing' | 'agent_routing' | 'agent_step' | 'agent_thinking' | 'tool_call' | 'kanban_update' | 'story_created' | 'story_updated' | 'story_status_changed' | 'scrum_master_step' | 'switch_tab' | 'agent_status' | 'agent_progress' | 'approval_request'
+  type: 'connected' | 'message' | 'agent_message' | 'agent_response' | 'typing' | 'pong' | 'error' | 'routing' | 'agent_routing' | 'agent_step' | 'agent_thinking' | 'tool_call' | 'kanban_update' | 'story_created' | 'story_updated' | 'story_status_changed' | 'scrum_master_step' | 'switch_tab' | 'agent_status' | 'agent_progress' | 'approval_request' | 'activity_update'
   data?: Message | any
   agent_name?: string
   agent_type?: string
@@ -16,11 +16,13 @@ export type WebSocketMessage = {
   agent_selected?: string
   confidence?: number
   reasoning?: string
+  context?: any  // Full delegation context from Team Leader
   // For agent_thinking messages
   content?: string
   structured_data?: any
   message_id?: string
   timestamp?: string
+  updated_at?: string  // For activity updates
   // Tool call
   tool?: string
   display_name?: string
@@ -54,6 +56,27 @@ export type SendMessageParams = {
   author_type?: 'user' | 'agent'
   agent_id?: string  // ID of mentioned agent for routing
   agent_name?: string  // Name of mentioned agent for display
+}
+
+/**
+ * Format delegation message from Team Leader to specialist agent
+ */
+function formatDelegationMessage(data: any): string {
+  const toAgent = data.to_agent || 'specialist'
+  const taskDescription = data.reason || 'Xử lý yêu cầu'
+
+  // Extract detailed context if available
+  const context = data.context || {}
+  const reasoning = context.reasoning || context.context || data.reasoning || ''
+
+  let message = `📋 **Đã giao nhiệm vụ cho @${toAgent}**\n\n`
+  message += `**Nhiệm vụ:** ${taskDescription}`
+
+  if (reasoning) {
+    message += `\n\n**Lý do:** ${reasoning}`
+  }
+
+  return message
 }
 
 export function useChatWebSocket(projectId: string | undefined, token: string | undefined) {
@@ -209,7 +232,27 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
 
           case 'routing':
           case 'agent_routing':
-            // Agent routing info - can be used for UI feedback
+            console.log('[WebSocket] Agent routing:', data.from_agent, '→', data.to_agent)
+
+            // Create delegation message from Team Leader
+            const delegationMessage: Message = {
+              id: `delegation_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              project_id: projectId || '',
+              author_type: AuthorType.AGENT,
+              content: formatDelegationMessage(data),
+              created_at: data.timestamp || new Date().toISOString(),
+              updated_at: data.timestamp || new Date().toISOString(),
+              agent_name: data.from_agent,
+              message_type: 'delegation',
+              message_metadata: {
+                from_agent: data.from_agent,
+                to_agent: data.to_agent,
+                delegation_reason: data.reason,
+                context: data.context,
+              }
+            }
+
+            setMessages(prev => [...prev, delegationMessage])
             break
 
           case 'agent_thinking':
@@ -290,6 +333,23 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
           case 'story_updated':
           case 'story_status_changed':
             // Story events - kanban will auto-refresh via kanban_update
+            break
+
+          case 'activity_update':
+            console.log('[WebSocket] Activity update:', data.message_id)
+            // Update existing activity message
+            if (data.message_id) {
+              setMessages((prev) => prev.map(msg =>
+                msg.id === data.message_id
+                  ? {
+                      ...msg,
+                      structured_data: data.structured_data,
+                      content: data.content || msg.content,
+                      updated_at: data.updated_at || new Date().toISOString()
+                    }
+                  : msg
+              ))
+            }
             break
 
           case 'pong':
