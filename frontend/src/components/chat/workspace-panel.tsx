@@ -4,14 +4,14 @@ import type React from "react"
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { History, Globe, Code2, ExternalLink, LayoutGrid, Pencil, ScrollText, Plus, X, PanelLeftOpen, PanelRightOpen, MessageCircle } from "lucide-react"
+import { History, Globe, Code2, LayoutGrid, Pencil, ScrollText, PanelLeftOpen, PanelRightOpen, MessageCircle } from "lucide-react"
 import { KanbanBoard } from "./kanban-board"
 import { FileExplorer } from "../shared/file-explorer"
 import { CodeViewer } from "../shared/code-viewer"
 import { AnimatedTooltip } from "../ui/animated-tooltip"
 import { AppViewer } from "./app-viewer"
+
 import { useQueryClient } from "@tanstack/react-query"
-//type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings"
 type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings"
 interface Tab {
   id: string
@@ -119,31 +119,6 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
     }
   }
 
-  const handleAddTab = () => {
-    const newTab: Tab = {
-      id: `tab-${Date.now()}`,
-      view: "app-preview",
-      label: "New Tab",
-    }
-    setTabs([...tabs, newTab])
-    setActiveTabId(newTab.id)
-  }
-
-  const handleCloseTab = (tabId: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (tabs.length === 1) return // Don't close the last tab
-
-    const tabIndex = tabs.findIndex((t) => t.id === tabId)
-    const newTabs = tabs.filter((t) => t.id !== tabId)
-    setTabs(newTabs)
-
-    // If closing active tab, switch to adjacent tab
-    if (activeTabId === tabId) {
-      const newActiveTab = newTabs[Math.max(0, tabIndex - 1)]
-      setActiveTabId(newActiveTab.id)
-    }
-  }
-
   const getViewIcon = (view: WorkspaceView) => {
     switch (view) {
       case "app-preview":
@@ -194,6 +169,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
       case "loggings":
         return (
           <>
+           
           </>
         )
       default:
@@ -333,22 +309,8 @@ export default function Home() {
           >
             {getViewIcon(tab.view)}
             <span className="max-w-[120px] truncate">{tab.label}</span>
-            {/* {tabs.length > 1 && (
-                <button
-                  onClick={(e) => handleCloseTab(tab.id, e)}
-                  className="ml-1 opacity-0 group-hover:opacity-100 hover:bg-background/50 rounded p-0.5 transition-opacity"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              )} */}
           </button>
         ))}
-        {/* <button
-            onClick={handleAddTab}
-            className="flex items-center justify-center w-8 h-8 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-          </button> */}
       </div>
       <div className="border border-3 mb-3 mr-3 shadow-2xs rounded-2xl h-screen overflow-auto">
         {renderView()}

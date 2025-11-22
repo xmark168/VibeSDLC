@@ -16,6 +16,11 @@ class BlockerType(str, Enum):
     TEST_BLOCKER = "TEST_BLOCKER"
 
 
+class LimitType(str, Enum):
+    HARD = "hard"
+    SOFT = "soft"
+
+
 class StoryStatus(str, Enum):
     TODO = "Todo"
     IN_PROGRESS = "InProgress"
@@ -124,6 +129,35 @@ class Project(BaseModel, table=True):
     )
 
 
+class ColumnWIPLimit(BaseModel, table=True):
+    """WIP (Work In Progress) limits for Kanban columns"""
+    __tablename__ = "column_wip_limits"
+
+    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
+    column_name: str = Field(max_length=50, nullable=False)  # "Todo", "InProgress", "Review", "Done"
+    wip_limit: int = Field(nullable=False)  # Maximum number of items allowed in column
+    limit_type: LimitType = Field(default=LimitType.HARD, nullable=False)
+
+    # Relationships
+    project: "Project" = Relationship()
+
+
+class WorkflowPolicy(BaseModel, table=True):
+    """Explicit policies for workflow transitions (DoR/DoD)"""
+    __tablename__ = "workflow_policies"
+
+    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
+    from_status: str = Field(max_length=50, nullable=False)
+    to_status: str = Field(max_length=50, nullable=False)
+    criteria: dict | None = Field(default=None, sa_column=Column(JSON))
+    # Example criteria: {"assignee_required": true, "no_blockers": true, "acceptance_criteria_defined": true}
+    required_role: str | None = Field(default=None, max_length=50)
+    is_active: bool = Field(default=True, nullable=False)
+
+    # Relationships
+    project: "Project" = Relationship()
+
+
 class Story(BaseModel, table=True):
     """
     Story model for Kanban board.
@@ -174,6 +208,10 @@ class Story(BaseModel, table=True):
     deadline: datetime | None = Field(default=None)
     completed_at: datetime | None = Field(default=None)
 
+    # Flow metrics tracking (Lean Kanban)
+    started_at: datetime | None = Field(default=None)  # When moved to InProgress
+    review_started_at: datetime | None = Field(default=None)  # When moved to Review
+
     # Token usage tracking (for AI agents)
     token_used: int | None = Field(default=None)
 
@@ -196,6 +234,41 @@ class Story(BaseModel, table=True):
         back_populates="story",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
+
+    # Lean Kanban flow metrics (computed properties)
+    @property
+    def cycle_time_hours(self) -> float | None:
+        """Cycle time: time from started (InProgress) to completed (Done)"""
+        if self.started_at and self.completed_at:
+            return (self.completed_at - self.started_at).total_seconds() / 3600
+        return None
+
+    @property
+    def lead_time_hours(self) -> float | None:
+        """Lead time: time from created to completed"""
+        if self.completed_at:
+            return (self.completed_at - self.created_at).total_seconds() / 3600
+        return None
+
+    @property
+    def age_in_current_status_hours(self) -> float:
+        """How long the story has been in its current status"""
+        # Determine when the current status started
+        status_start_time = self.created_at  # Default to creation
+
+        if self.status == StoryStatus.IN_PROGRESS and self.started_at:
+            status_start_time = self.started_at
+        elif self.status == StoryStatus.REVIEW and self.review_started_at:
+            status_start_time = self.review_started_at
+        elif self.status == StoryStatus.DONE and self.completed_at:
+            status_start_time = self.completed_at
+
+        current_time = datetime.now(timezone.utc)
+        return (current_time - status_start_time).total_seconds() / 3600
+
+    def has_active_blockers(self) -> bool:
+        """Check if story has any active (unresolved) blockers"""
+        return any(not blocker.resolved for blocker in self.blockers)
 
 
 class Comment(BaseModel, table=True):

@@ -96,9 +96,11 @@ def get_kanban_board(
     project_id: uuid.UUID
 ) -> Any:
     """
-    Get Kanban board grouped by columns (Todo, InProgress, Review, Done).
-    Returns stories organized by status for UI display.
+    Get Kanban board grouped by columns with WIP limits.
+    Returns stories organized by status plus WIP limit information.
     """
+    from app.models import ColumnWIPLimit
+
     project = session.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -126,10 +128,24 @@ def get_kanban_board(
         if column in board:
             board[column].append(StoryPublic.model_validate(story))
 
+    # Fetch WIP limits for this project
+    wip_limits_query = session.exec(
+        select(ColumnWIPLimit).where(ColumnWIPLimit.project_id == project_id)
+    ).all()
+
+    wip_limits = {
+        limit.column_name: {
+            "wip_limit": limit.wip_limit,
+            "limit_type": limit.limit_type
+        }
+        for limit in wip_limits_query
+    }
+
     return {
         "project_id": project_id,
         "project_name": project.name,
-        "board": board
+        "board": board,
+        "wip_limits": wip_limits  # Include WIP limits in response
     }
 
 
@@ -185,21 +201,113 @@ async def update_story_status(
     new_status: StoryStatus
 ) -> Any:
     """
-    Update story status (Dev/Tester role).
-    Dev moves: Todo -> InProgress -> Review
-    Tester moves: Review -> Done (or back to InProgress if issues)
+    Update story status with Lean Kanban enforcement.
+    - Enforces WIP limits (hard limits block transition)
+    - Validates workflow policies (DoR/DoD)
+    - Tracks flow metrics timestamps
     """
+    from datetime import datetime, timezone
+    from sqlmodel import and_
+    from app.models import ColumnWIPLimit, WorkflowPolicy
+
     story = session.get(Story, story_id)
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
 
     old_status = story.status
-    story.status = new_status
 
-    # Set completed_at when moving to Done
-    if new_status == StoryStatus.DONE and old_status != StoryStatus.DONE:
-        from datetime import datetime, timezone
-        story.completed_at = datetime.now(timezone.utc)
+    # Skip validation if status unchanged
+    if old_status == new_status:
+        return story
+
+    # === STEP 1: Validate WIP Limits (Hard Enforcement) ===
+    wip_limit = session.exec(
+        select(ColumnWIPLimit).where(
+            and_(
+                ColumnWIPLimit.project_id == story.project_id,
+                ColumnWIPLimit.column_name == new_status.value
+            )
+        )
+    ).first()
+
+    if wip_limit:
+        # Count current items in target column (excluding this story)
+        current_count = session.exec(
+            select(func.count()).select_from(Story).where(
+                and_(
+                    Story.project_id == story.project_id,
+                    Story.status == new_status,
+                    Story.id != story_id
+                )
+            )
+        ).one()
+
+        # Check if exceeds WIP limit
+        if current_count >= wip_limit.wip_limit and wip_limit.limit_type == "hard":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "WIP_LIMIT_EXCEEDED",
+                    "message": f"Cannot move to {new_status.value}: WIP limit {wip_limit.wip_limit} exceeded",
+                    "column": new_status.value,
+                    "current_count": current_count,
+                    "wip_limit": wip_limit.wip_limit
+                }
+            )
+
+    # === STEP 2: Validate Workflow Policies ===
+    policy = session.exec(
+        select(WorkflowPolicy).where(
+            and_(
+                WorkflowPolicy.project_id == story.project_id,
+                WorkflowPolicy.from_status == old_status.value,
+                WorkflowPolicy.to_status == new_status.value,
+                WorkflowPolicy.is_active == True
+            )
+        )
+    ).first()
+
+    if policy and policy.criteria:
+        violations = []
+
+        # Check each criteria
+        if policy.criteria.get("assignee_required") and not story.assignee_id:
+            violations.append("Story must have an assignee")
+
+        if policy.criteria.get("no_blockers") and story.has_active_blockers():
+            violations.append("Story has active blockers that must be resolved")
+
+        if policy.criteria.get("acceptance_criteria_defined") and not story.acceptance_criteria:
+            violations.append("Acceptance criteria must be defined")
+
+        if policy.criteria.get("story_points_estimated") and not story.story_point:
+            violations.append("Story points must be estimated")
+
+        if violations:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "POLICY_VIOLATION",
+                    "message": "Workflow policy not satisfied",
+                    "violations": violations,
+                    "policy": {
+                        "from": old_status.value,
+                        "to": new_status.value
+                    }
+                }
+            )
+
+    # === STEP 3: Update Status and Flow Timestamps ===
+    story.status = new_status
+    now = datetime.now(timezone.utc)
+
+    # Track flow metrics based on new status
+    if new_status == StoryStatus.IN_PROGRESS and not story.started_at:
+        story.started_at = now
+    elif new_status == StoryStatus.REVIEW and not story.review_started_at:
+        story.review_started_at = now
+    elif new_status == StoryStatus.DONE and old_status != StoryStatus.DONE:
+        story.completed_at = now
 
     session.add(story)
     session.commit()

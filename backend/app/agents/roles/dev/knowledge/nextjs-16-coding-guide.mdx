@@ -1,0 +1,194 @@
+---
+name: nextjs-16-coding-guide
+description: A comprehensive toolkit for coding with Next.js 16, providing best practices, architectural patterns, optimization techniques, and real-world examples to help developers build scalable, high-performance web applications.
+---
+
+# Next.js 16 Coding Guide
+
+This guide outlines the best practices and mandatory patterns for coding in Next.js 16, specifically focusing on the breaking changes and new features introduced in this version.
+
+## 1. Async Request APIs (CRITICAL)
+
+In Next.js 16, APIs that access dynamic request data are now **asynchronous**. You MUST await them.
+
+### 1.1 Page & Layout Params
+**Incorrect (Next.js 14/15 style):**
+```tsx
+// ❌ ERROR: params is a Promise in Next.js 16
+export default function Page({ params }: { params: { slug: string } }) {
+  return <div>{params.slug}</div>;
+}
+```
+
+**Correct (Next.js 16 style):**
+```tsx
+// ✅ CORRECT: Await params
+export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  return <div>{slug}</div>;
+}
+```
+
+### 1.2 Search Params
+**Incorrect:**
+```tsx
+export default function Page({ searchParams }: { searchParams: { q: string } }) {
+  return <div>Query: {searchParams.q}</div>;
+}
+```
+
+**Correct:**
+```tsx
+export default async function Page({ searchParams }: { searchParams: Promise<{ q: string }> }) {
+  const { q } = await searchParams;
+  return <div>Query: {q}</div>;
+}
+```
+
+### 1.3 Headers & Cookies
+**Incorrect:**
+```tsx
+import { cookies, headers } from 'next/headers';
+
+export default function Page() {
+  const cookieStore = cookies(); // ❌ Error
+  const headersList = headers(); // ❌ Error
+  // ...
+}
+```
+
+**Correct:**
+```tsx
+import { cookies, headers } from 'next/headers';
+
+export default async function Page() {
+  const cookieStore = await cookies(); // ✅ Await
+  const headersList = await headers(); // ✅ Await
+  const token = cookieStore.get('token');
+  // ...
+}
+```
+
+## 2. Metadata Generation
+
+`generateMetadata` also receives `params` and `searchParams` as Promises.
+
+**Correct Implementation:**
+```tsx
+import type { Metadata } from 'next';
+
+type Props = {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+};
+
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
+  const { id } = await params; // ✅ Await params
+  const { q } = await searchParams; // ✅ Await searchParams
+  
+  return {
+    title: `Product ${id}`,
+  };
+}
+```
+
+## 3. Server Actions & Caching
+
+Next.js 16 introduces refined caching APIs.
+
+### 3.1 Revalidating Data
+Use `revalidateTag` for eventual consistency (e.g., blog posts).
+
+```ts
+'use server'
+import { revalidateTag } from 'next/cache';
+
+export async function updatePost(id: string) {
+  await db.post.update(...);
+  revalidateTag(`post-${id}`); // Mark as stale
+}
+```
+
+### 3.2 Instant Updates (Read-Your-Writes)
+Use `updateTag` for immediate feedback (e.g., user profile updates).
+
+```ts
+'use server'
+import { updateTag } from 'next/cache';
+
+export async function updateProfile(userId: string, data: any) {
+  await db.user.update(...);
+  updateTag(`user-${userId}`); // Expire and refresh immediately
+}
+```
+
+### 3.3 Refreshing Client Router
+Use `refresh()` to reload the current route on the client.
+
+```ts
+'use server'
+import { refresh } from 'next/cache';
+
+export async function markAsRead(id: string) {
+  await db.notification.update(...);
+  refresh(); // Trigger client-side refresh
+}
+```
+
+## 4. Route Handlers
+
+Route Handlers (`route.ts`) also receive `params` as a Promise.
+
+```ts
+import { NextResponse } from 'next/server';
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params; // ✅ Await params
+  return NextResponse.json({ id });
+}
+```
+
+## 5. Image & Sitemap Generation
+
+### 5.1 OpenGraph Images
+`opengraph-image.tsx` now receives `params` as a Promise.
+
+```tsx
+import { ImageResponse } from 'next/og';
+
+export default async function Image({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  return new ImageResponse(
+    (
+      <div style={{ fontSize: 48 }}>{slug}</div>
+    )
+  );
+}
+```
+
+### 5.2 Sitemaps
+`sitemap.ts` `id` parameter is now a Promise.
+
+```ts
+export default async function sitemap({ id }: { id: Promise<number> }): Promise<MetadataRoute.Sitemap> {
+  const start = await id;
+  // ...
+}
+```
+
+## 6. General Best Practices
+
+1.  **Server Components by Default**: Keep components as Server Components unless you need interactivity (hooks, event listeners). Add `'use client'` at the top of the file for Client Components.
+2.  **Type Safety**: Use `bun x next typegen` to generate types for `PageProps`, `LayoutProps`, etc.
+3.  **Data Fetching**: Fetch data directly in Server Components using `async/await`.
+4.  **Forms**: Use Server Actions for form submissions instead of API routes where possible.
+
+---
+**Summary Checklist for Next.js 16:**
+- [ ] Await `params` in Pages, Layouts, and Metadata.
+- [ ] Await `searchParams` in Pages.
+- [ ] Await `cookies()` and `headers()`.
+- [ ] Use `updateTag` for instant UI updates in Server Actions.
