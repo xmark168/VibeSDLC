@@ -8,7 +8,6 @@ from app.api.routes import (
     files,  # Project file management
     lean_kanban,  # Lean Kanban features: WIP limits, policies, flow metrics
     messages,
-    private,
     project_rules,  # Project-specific rules and configurations
     projects,
     stories,  # Story management (Kanban with Todo/InProgress/Review/Done)
@@ -30,6 +29,3 @@ api_router.include_router(agent_management.router)  # Agent pools and monitoring
 api_router.include_router(agents.router)
 api_router.include_router(project_rules.router)  # Project-specific rules and configurations
 api_router.include_router(chat.router)  # WebSocket chat endpoint
-
-if settings.ENVIRONMENT == "local":
-    api_router.include_router(private.router)

@@ -17,7 +17,6 @@ import {
   useStopMonitoring,
   useMetricsTimeseries,
   useMetricsAggregated,
-  useProcessMetrics,
   useTokenMetrics,
 } from "@/queries/agents"
 import {
@@ -96,7 +95,6 @@ import {
   AgentUtilizationChart,
   ExecutionTrendsChart,
   TokenUsageChart,
-  ProcessMetricsChart,
   SuccessRateChart,
   LLMCallsChart,
 } from "@/components/charts"
@@ -233,7 +231,6 @@ function SystemStatsCards({
   )
 
   const { data: tokenData } = useTokenMetrics({ time_range: "24h" })
-  const { data: processData } = useProcessMetrics({ refetchInterval: 30000 })
 
   if (isLoading) {
     return (
@@ -278,7 +275,7 @@ function SystemStatsCards({
     ? ((tokenData.data[tokenData.data.length - 1].total_tokens - tokenData.data[0].total_tokens) / (tokenData.data[0].total_tokens || 1)) * 100
     : 0
 
-  const processUtilization = processData?.summary.avg_utilization || 0
+  const processUtilization = 0  // Process metrics removed (single-process architecture)
 
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -314,7 +311,7 @@ function SystemStatsCards({
         value={`${processUtilization.toFixed(1)}%`}
         change={undefined}
         icon={<Server className="h-4 w-4 text-muted-foreground" />}
-        subtitle={`${processData?.summary.used_capacity || 0}/${processData?.summary.total_capacity || 0} capacity`}
+        subtitle="Single-process architecture"
       />
     </div>
   )
@@ -1206,7 +1203,6 @@ function AnalyticsTab() {
   )
 
   const { data: tokenData } = useTokenMetrics({ time_range: timeRange })
-  const { data: processData } = useProcessMetrics({ refetchInterval: 30000 })
 
   return (
     <div className="space-y-6">
@@ -1244,11 +1240,6 @@ function AnalyticsTab() {
               success_rate: (d as any).success_rate || 0,
             }))}
           />
-        )}
-
-        {/* Process Metrics Chart */}
-        {processData && (
-          <ProcessMetricsChart summary={processData.summary} processes={processData.processes} />
         )}
 
         {/* Token Usage Chart */}

@@ -761,58 +761,6 @@ async def get_metrics_aggregated(
         raise HTTPException(status_code=400, detail=f"Invalid group_by: {group_by}")
 
 
-@router.get("/metrics/processes")
-async def get_process_metrics(
-    current_user: User = Depends(get_current_user),
-) -> Any:
-    """Get current process metrics.
-
-    Note: In-memory architecture uses only one process (the main FastAPI process).
-    Worker processes are not used.
-    """
-
-    all_processes = []
-
-    for pool_name in _manager_registry.keys():
-        # Get processes for this pool
-        process_ids = await process_registry.get_pool_processes(pool_name)
-
-        for process_id in process_ids:
-            process_info = await process_registry.get_info(process_id)
-            if process_info:
-                # Get agents in this process
-                agent_count = len(process_info.get("agents", []))
-                max_agents = process_info.get("max_agents", 10)
-
-                all_processes.append({
-                    "process_id": process_id,
-                    "pool_name": pool_name,
-                    "agent_count": agent_count,
-                    "max_agents": max_agents,
-                    "utilization": (agent_count / max_agents * 100) if max_agents > 0 else 0,
-                    "pid": process_info.get("pid"),
-                    "status": process_info.get("status", "unknown"),
-                    "started_at": process_info.get("started_at"),
-                })
-
-    # Calculate summary
-    total_processes = len(all_processes)
-    total_capacity = sum(p["max_agents"] for p in all_processes)
-    used_capacity = sum(p["agent_count"] for p in all_processes)
-    avg_utilization = (used_capacity / total_capacity * 100) if total_capacity > 0 else 0
-
-    return {
-        "summary": {
-            "total_processes": total_processes,
-            "total_capacity": total_capacity,
-            "used_capacity": used_capacity,
-            "available_capacity": total_capacity - used_capacity,
-            "avg_utilization": round(avg_utilization, 2),
-        },
-        "processes": all_processes,
-    }
-
-
 @router.get("/metrics/tokens")
 async def get_token_metrics(
     session: SessionDep,

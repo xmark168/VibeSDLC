@@ -53,16 +53,20 @@ class User(BaseModel, table=True):
 
     username : str | None = Field(default=None, max_length=50, nullable=True)
     full_name: str | None = Field(default=None, max_length=50, nullable=True)
-    hashed_password: str = Field(nullable=True)
+    hashed_password: str = Field(nullable=True, sa_column_kwargs={"name": "password_hash"})
     email: EmailStr = Field(unique=True, index=True, max_length=255)
-    role: Role = Field(default=Role.USER, nullable=True)
-
-    # Account status fields for security
+    
+    # Database columns that exist
+    address: str | None = Field(default=None, nullable=True)
+    balance: float = Field(default=0.0, nullable=True)
     is_active: bool = Field(default=True, nullable=True)
-    is_locked: bool = Field(default=False, nullable=False)
-    locked_until: datetime | None = Field(default=None)
     failed_login_attempts: int = Field(default=0, nullable=False)
-
+    locked_until: datetime | None = Field(default=None)
+    two_factor_enabled: bool = Field(default=False, nullable=True)
+    
+    # Additional columns needed by application logic
+    role: Role = Field(default=Role.USER, nullable=False)
+    is_locked: bool = Field(default=False, nullable=False)
     login_provider: bool = Field(default=False, nullable=False)
 
     owned_projects: list["Project"] = Relationship(

@@ -199,18 +199,7 @@ export function useMetricsAggregated(
   })
 }
 
-/**
- * Fetch process metrics (current state)
- */
-export function useProcessMetrics(options?: { enabled?: boolean; refetchInterval?: number }) {
-  return useQuery({
-    queryKey: agentQueryKeys.processMetrics(),
-    queryFn: () => agentsApi.getProcessMetrics(),
-    enabled: options?.enabled ?? true,
-    refetchInterval: options?.refetchInterval ?? 30000, // More frequent for real-time data
-    staleTime: 10000,
-  })
-}
+
 
 /**
  * Fetch token usage metrics
