@@ -226,10 +226,6 @@ class BaseKafkaConsumer(ABC):
                     msg_project_id_str = str(msg_project_id)
                     if msg_project_id_str not in self.project_id_filter:
                         # Skip this message - not in our project filter
-                        logger.debug(
-                            f"Skipping message from project {msg_project_id_str} "
-                            f"(filter: {self.project_id_filter})"
-                        )
                         return
 
             # Get event type
@@ -350,7 +346,6 @@ class EventHandlerConsumer(BaseKafkaConsumer):
 
         handlers = self.handlers.get(event_type, [])
         if not handlers:
-            logger.debug(f"No handlers registered for event type: {event_type}")
             return
 
         # Call all registered handlers

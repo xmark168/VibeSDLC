@@ -38,12 +38,10 @@ class WebSocketKafkaBridge:
         self.consumer: Optional[EventHandlerConsumer] = None
         self.running = False
         self.engine = create_engine(str(settings.SQLALCHEMY_DATABASE_URI))
-        # Track execution_id -> message_id mapping for activity updates
-        self.execution_activities: Dict[str, UUID] = {}  # execution_id (str) -> message_id (UUID)
-        # Locks to prevent race conditions in activity updates
-        self._activity_locks: Dict[str, asyncio.Lock] = {}  # execution_id (str) -> Lock
-        # Background cleanup task
-        self._cleanup_task: Optional[asyncio.Task] = None
+        
+        # Activity tracking now handled by activity_buffer
+        # Removed: execution_activities, _activity_locks, _cleanup_task
+        # ActivityBuffer handles all buffering and database writes
 
     def _has_active_connections(self, project_id: UUID) -> bool:
         """Check if project has active WebSocket connections.
@@ -115,9 +113,6 @@ class WebSocketKafkaBridge:
 
             self.running = True
 
-            # Start background cleanup task
-            self._cleanup_task = asyncio.create_task(self._cleanup_stale_executions())
-
             logger.info("WebSocket-Kafka bridge started successfully")
 
         except Exception as e:
@@ -128,90 +123,11 @@ class WebSocketKafkaBridge:
         """Stop the WebSocket-Kafka bridge consumer"""
         self.running = False
 
-        # Stop cleanup task
-        if self._cleanup_task:
-            self._cleanup_task.cancel()
-            try:
-                await self._cleanup_task
-            except asyncio.CancelledError:
-                pass
-
         # Stop consumer
         if self.consumer:
             await self.consumer.stop()
 
         logger.info("WebSocket-Kafka bridge stopped")
-
-    async def _cleanup_stale_executions(self):
-        """Background task to cleanup stale execution mappings and prevent memory leaks.
-
-        Runs every 5 minutes and removes executions that haven't been updated in 10+ minutes.
-        """
-        import time
-
-        logger.info("Starting background cleanup task for stale executions")
-
-        while self.running:
-            try:
-                await asyncio.sleep(300)  # Run every 5 minutes
-
-                now = time.time()
-                to_delete = []
-
-                # Check all tracked executions
-                for exec_id, msg_id in list(self.execution_activities.items()):
-                    try:
-                        # Query database to check message age
-                        with Session(self.engine) as db_session:
-                            msg = db_session.get(MessageModel, msg_id)
-
-                            if msg:
-                                # Calculate age in seconds
-                                age = (now - msg.updated_at.timestamp())
-
-                                # If message hasn't been updated in 10 minutes, consider it stale
-                                if age > 600:
-                                    to_delete.append(exec_id)
-                                    logger.info(
-                                        f"Marking stale execution {exec_id} for cleanup "
-                                        f"(age: {age:.0f}s, message: {msg_id})"
-                                    )
-                            else:
-                                # Message not found in DB, cleanup mapping
-                                to_delete.append(exec_id)
-                                logger.warning(
-                                    f"Message {msg_id} for execution {exec_id} not found in DB, "
-                                    "cleaning up stale mapping"
-                                )
-
-                    except Exception as e:
-                        logger.error(f"Error checking execution {exec_id}: {e}")
-                        # On error, mark for cleanup to prevent permanent leaks
-                        to_delete.append(exec_id)
-
-                # Delete stale entries
-                deleted_count = 0
-                for exec_id in to_delete:
-                    if exec_id in self.execution_activities:
-                        del self.execution_activities[exec_id]
-                        deleted_count += 1
-
-                    if exec_id in self._activity_locks:
-                        del self._activity_locks[exec_id]
-
-                if deleted_count > 0:
-                    logger.info(
-                        f"Cleaned up {deleted_count} stale execution(s). "
-                        f"Active executions: {len(self.execution_activities)}"
-                    )
-
-            except asyncio.CancelledError:
-                logger.info("Cleanup task cancelled, exiting...")
-                break
-            except Exception as e:
-                logger.error(f"Error in cleanup task: {e}", exc_info=True)
-                # Continue running despite errors
-                await asyncio.sleep(60)  # Wait 1 minute before retrying
 
     async def handle_agent_response(self, event):
         """
@@ -285,8 +201,6 @@ class WebSocketKafkaBridge:
             # Broadcast to all clients in the project
             await connection_manager.broadcast_to_project(ws_message, project_id)
 
-            logger.info(f"Forwarded agent response to project {project_id}")
-
         except Exception as e:
             logger.error(f"Error handling agent response event: {e}", exc_info=True)
 
@@ -323,8 +237,6 @@ class WebSocketKafkaBridge:
 
             await connection_manager.broadcast_to_project(ws_message, project_id)
 
-            logger.debug(f"Forwarded routing decision to project {project_id}")
-
         except Exception as e:
             logger.error(f"Error handling routing event: {e}", exc_info=True)
 
@@ -357,8 +269,6 @@ class WebSocketKafkaBridge:
 
             await connection_manager.broadcast_to_project(ws_message, project_id)
 
-            logger.debug(f"Forwarded story created event to project {project_id}")
-
         except Exception as e:
             logger.error(f"Error handling story created event: {e}", exc_info=True)
 
@@ -388,8 +298,6 @@ class WebSocketKafkaBridge:
             }
 
             await connection_manager.broadcast_to_project(ws_message, project_id)
-
-            logger.debug(f"Forwarded story updated event to project {project_id}")
 
         except Exception as e:
             logger.error(f"Error handling story updated event: {e}", exc_info=True)
@@ -421,8 +329,6 @@ class WebSocketKafkaBridge:
             }
 
             await connection_manager.broadcast_to_project(ws_message, project_id)
-
-            logger.debug(f"Forwarded story status change to project {project_id}")
 
         except Exception as e:
             logger.error(f"Error handling story status change event: {e}", exc_info=True)
@@ -469,8 +375,6 @@ class WebSocketKafkaBridge:
 
             await connection_manager.broadcast_to_project(ws_message, project_id)
 
-            logger.debug(f"Forwarded flow event to project {project_id}")
-
         except Exception as e:
             logger.error(f"Error handling flow event: {e}", exc_info=True)
 
@@ -504,8 +408,6 @@ class WebSocketKafkaBridge:
             }
 
             await connection_manager.broadcast_to_project(ws_message, project_id)
-
-            logger.info(f"Forwarded approval request to project {project_id}")
 
         except Exception as e:
             logger.error(f"Error handling approval request event: {e}", exc_info=True)
@@ -564,9 +466,9 @@ class WebSocketKafkaBridge:
             logger.error(f"Error handling agent status event: {e}", exc_info=True)
 
     async def handle_agent_progress(self, event):
-        """Handle agent progress events (step-by-step execution tracking)
-
-        Creates/updates activity messages in the database to persist progress.
+        """Handle agent progress events using activity buffer.
+        
+        Now simplified with activity_buffer handling database writes.
         """
         try:
             if hasattr(event, 'model_dump'):
@@ -577,24 +479,18 @@ class WebSocketKafkaBridge:
             project_id = _to_uuid(event_data.get("project_id"))
             if not project_id:
                 logger.warning(
-                    f"Agent progress event missing project_id - cannot broadcast. "
-                    f"Agent: {event_data.get('agent_name')}, "
-                    f"Execution ID: {event_data.get('execution_id')}, "
-                    f"Event ID: {event_data.get('event_id')}"
+                    f"Agent progress event missing project_id. "
+                    f"Agent: {event_data.get('agent_name')}"
                 )
                 return
 
-            # EARLY RETURN: Skip if no active connections (real-time progress tracking)
+            # EARLY RETURN: Skip if no active connections (real-time only)
             if not self._has_active_connections(project_id):
                 return
 
             execution_id = event_data.get("execution_id")
             if not execution_id:
-                logger.warning(
-                    f"Agent progress event missing execution_id - cannot track. "
-                    f"Agent: {event_data.get('agent_name')}, "
-                    f"Project ID: {project_id}"
-                )
+                logger.warning(f"Agent progress event missing execution_id")
                 return
 
             execution_id_str = str(execution_id)
@@ -604,143 +500,56 @@ class WebSocketKafkaBridge:
             step_description = event_data.get("step_description", "")
             step_status = event_data.get("status", "in_progress")
 
-            # Get or create lock for this execution to prevent race conditions
-            if execution_id_str not in self._activity_locks:
-                self._activity_locks[execution_id_str] = asyncio.Lock()
+            # Update activity buffer (handles DB writes asynchronously)
+            message_id = activity_buffer.update_activity(
+                execution_id=execution_id_str,
+                project_id=project_id,
+                agent_name=agent_name,
+                step_number=step_number,
+                total_steps=total_steps,
+                step_description=step_description,
+                step_status=step_status
+            )
+            
+            # Get activity data from buffer for WebSocket broadcast
+            activity_data_obj = activity_buffer.get_activity(execution_id_str)
+            
+            if not activity_data_obj:
+                logger.warning(f"Activity not found in buffer: {execution_id_str}")
+                return
+            
+            # Build WebSocket message from buffered data
+            is_new = len(activity_data_obj.steps) == 1
+            
+            activity_data = {
+                "message_type": "activity",
+                "data": {
+                    "execution_id": execution_id_str,
+                    "agent_name": agent_name,
+                    "total_steps": total_steps,
+                    "current_step": step_number,
+                    "steps": activity_data_obj.steps,
+                    "status": activity_data_obj.status,
+                    "started_at": activity_data_obj.started_at.isoformat() if activity_data_obj.started_at else None,
+                    "completed_at": activity_data_obj.completed_at.isoformat() if activity_data_obj.completed_at else None
+                }
+            }
+            
+            ws_message = {
+                "type": "activity_update",
+                "message_id": str(activity_data_obj.message_id) if activity_data_obj.message_id else "pending",
+                "is_new": is_new,
+                "structured_data": activity_data,
+                "content": f"{agent_name} {'đã hoàn thành' if activity_data_obj.is_completed else 'đang thực thi...'}",
+                "updated_at": activity_data_obj.last_update.isoformat(),
+                "agent_name": agent_name,
+            }
+            
+            if is_new:
+                ws_message["created_at"] = activity_data_obj.started_at.isoformat() if activity_data_obj.started_at else None
 
-            lock = self._activity_locks[execution_id_str]
-
-            # Critical section: check/create/update activity message
-            async with lock:
-                # Check if activity message exists for this execution
-                message_id = self.execution_activities.get(execution_id_str)
-
-                with Session(self.engine) as db_session:
-                    if not message_id:
-                        # FIRST progress event - CREATE new activity message
-                        message_id = uuid4()
-
-                        activity_data = {
-                            "message_type": "activity",
-                            "data": {
-                                "execution_id": execution_id_str,
-                                "agent_name": agent_name,
-                                "total_steps": total_steps,
-                                "current_step": step_number,
-                                "steps": [
-                                    {
-                                        "step": step_number,
-                                        "description": step_description,
-                                        "status": step_status,
-                                        "timestamp": datetime.now(timezone.utc).isoformat()
-                                    }
-                                ],
-                                "status": "in_progress",
-                                "started_at": datetime.now(timezone.utc).isoformat(),
-                                "completed_at": None
-                            }
-                        }
-
-                        db_message = MessageModel(
-                            id=message_id,
-                            project_id=project_id,
-                            user_id=None,
-                            agent_id=None,
-                            content=f"{agent_name} đang thực thi...",
-                            author_type=AuthorType.AGENT,
-                            message_type="activity",
-                            structured_data=activity_data,
-                            message_metadata={"agent_name": agent_name}
-                        )
-                        db_session.add(db_message)
-                        db_session.commit()
-                        db_session.refresh(db_message)
-
-                        # Track mapping
-                        self.execution_activities[execution_id_str] = message_id
-
-                        logger.info(f"Created activity message {message_id} for execution {execution_id_str}")
-
-                        # Send as NEW activity_update (unified format)
-                        ws_message = {
-                            "type": "activity_update",
-                            "message_id": str(message_id),
-                            "is_new": True,  # Indicates this is a new message, not an update
-                            "structured_data": activity_data,
-                            "content": db_message.content,
-                            "created_at": db_message.created_at.isoformat(),
-                            "updated_at": db_message.updated_at.isoformat(),
-                            "project_id": str(project_id),
-                            "agent_name": agent_name,
-                        }
-
-                    else:
-                        # UPDATE existing activity message
-                        db_message = db_session.get(MessageModel, message_id)
-
-                        if not db_message:
-                            logger.warning(f"Activity message {message_id} not found in database")
-                            # Clean up stale mapping
-                            del self.execution_activities[execution_id_str]
-                            return
-
-                        # Get existing activity data
-                        activity_data = db_message.structured_data or {}
-                        if "data" not in activity_data:
-                            activity_data["data"] = {}
-
-                        data = activity_data["data"]
-
-                        # Append new step to steps array
-                        if "steps" not in data:
-                            data["steps"] = []
-
-                        data["steps"].append({
-                            "step": step_number,
-                            "description": step_description,
-                            "status": step_status,
-                            "timestamp": datetime.now(timezone.utc).isoformat()
-                        })
-
-                        # Update current step
-                        data["current_step"] = step_number
-
-                        # If completed, mark as done and cleanup mapping
-                        if step_status == "completed":
-                            data["status"] = "completed"
-                            data["completed_at"] = datetime.now(timezone.utc).isoformat()
-                            db_message.content = f"{agent_name} đã hoàn thành"
-
-                            # Clean up mapping and lock
-                            if execution_id_str in self.execution_activities:
-                                del self.execution_activities[execution_id_str]
-                            if execution_id_str in self._activity_locks:
-                                del self._activity_locks[execution_id_str]
-
-                            logger.info(f"Completed activity {message_id} for execution {execution_id_str}")
-
-                        # Update message in database
-                        db_message.structured_data = activity_data
-                        db_message.updated_at = datetime.now(timezone.utc)
-                        db_session.add(db_message)
-                        db_session.commit()
-                        db_session.refresh(db_message)
-
-                        logger.debug(f"Updated activity message {message_id}: step {step_number}/{total_steps}")
-
-                        # Send as UPDATE to WebSocket (unified format)
-                        ws_message = {
-                            "type": "activity_update",
-                            "message_id": str(message_id),
-                            "is_new": False,  # Indicates this is an update to existing message
-                            "structured_data": activity_data,
-                            "updated_at": db_message.updated_at.isoformat(),
-                            "content": db_message.content,
-                            "agent_name": agent_name,
-                        }
-
-                    # Broadcast to project
-                    await connection_manager.broadcast_to_project(ws_message, project_id)
+            # Broadcast to WebSocket immediately (real-time feedback)
+            await connection_manager.broadcast_to_project(ws_message, project_id)
 
         except Exception as e:
             logger.error(f"Error handling agent progress event: {e}", exc_info=True)
@@ -829,7 +638,6 @@ class WebSocketKafkaBridge:
             }
 
             await connection_manager.broadcast_to_project(ws_message, project_id)
-            logger.debug(f"Forwarded task assigned event to project {project_id}")
 
         except Exception as e:
             logger.error(f"Error handling task assigned event: {e}", exc_info=True)
@@ -862,7 +670,6 @@ class WebSocketKafkaBridge:
             }
 
             await connection_manager.broadcast_to_project(ws_message, project_id)
-            logger.debug(f"Forwarded task started event to project {project_id}")
 
         except Exception as e:
             logger.error(f"Error handling task started event: {e}", exc_info=True)
@@ -901,7 +708,6 @@ class WebSocketKafkaBridge:
                 ws_message["estimated_completion"] = str(event_data["estimated_completion"])
 
             await connection_manager.broadcast_to_project(ws_message, project_id)
-            logger.debug(f"Forwarded task progress event to project {project_id}")
 
         except Exception as e:
             logger.error(f"Error handling task progress event: {e}", exc_info=True)
@@ -937,7 +743,6 @@ class WebSocketKafkaBridge:
                 ws_message["artifacts"] = event_data["artifacts"]
 
             await connection_manager.broadcast_to_project(ws_message, project_id)
-            logger.info(f"Forwarded task completed event to project {project_id}")
 
         except Exception as e:
             logger.error(f"Error handling task completed event: {e}", exc_info=True)
@@ -1000,7 +805,6 @@ class WebSocketKafkaBridge:
             }
 
             await connection_manager.broadcast_to_project(ws_message, project_id)
-            logger.info(f"Forwarded task cancelled event to project {project_id}")
 
         except Exception as e:
             logger.error(f"Error handling task cancelled event: {e}", exc_info=True)

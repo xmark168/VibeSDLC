@@ -295,6 +295,32 @@ class BaseAgent(ABC):
             await self._consumer.stop()
             logger.info(f"[{self.name}] Agent consumer stopped")
 
+    async def health_check(self) -> dict:
+        """Check if agent is healthy.
+        
+        Returns:
+            Dict with health status: {"healthy": bool, "reason": str}
+        """
+        try:
+            # Check if consumer is running
+            if not self._consumer:
+                return {
+                    "healthy": False,
+                    "reason": "Consumer not started"
+                }
+            
+            # Agent is healthy if it has a consumer
+            return {
+                "healthy": True,
+                "reason": "Consumer running"
+            }
+        except Exception as e:
+            logger.error(f"[{self.name}] Health check failed: {e}")
+            return {
+                "healthy": False,
+                "reason": f"Exception: {str(e)}"
+            }
+
     # ===== Internal Methods =====
 
     async def _get_producer(self) -> KafkaProducer:
