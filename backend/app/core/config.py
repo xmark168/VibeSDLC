@@ -157,9 +157,6 @@ class Settings(BaseSettings):
     REDIS_DB: int = 0
     REDIS_URL: str | None = None
 
-    # AGENT POOL SETTINGS
-    USE_SIMPLIFIED_AGENT_POOL: bool = True  # True = new optimized pool, False = old multiprocessing pool
-
     @computed_field
     @property
     def redis_url(self) -> str:

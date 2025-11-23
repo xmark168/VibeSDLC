@@ -104,11 +104,11 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Failed to start Kafka consumers: {e}")
         logger.warning("Continuing without consumer support...")
 
-    # Initialize default agent pools (now handles agent lifecycle - orchestrator removed)
+    # Initialize default agent pools (using AgentPoolManager)
     from app.api.routes.agent_management import initialize_default_pools
     try:
         await initialize_default_pools()
-        logger.info("Default agent pools initialized")
+        logger.info("Default agent pools initialized with AgentPoolManager")
     except Exception as e:
         logger.warning(f"Failed to initialize agent pools: {e}")
         logger.warning("Continuing without agent pools...")
@@ -168,7 +168,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error shutting down monitoring system: {e}")
 
-    # Shutdown agent pools (multiprocessing managers)
+    # Shutdown agent pools (in-memory managers)
     from app.api.routes.agent_management import _manager_registry
     try:
         for pool_name, manager in list(_manager_registry.items()):

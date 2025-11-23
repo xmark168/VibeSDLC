@@ -1,29 +1,29 @@
 """Agent core components.
 
-This module exports the simplified agent pool manager.
+This module exports the agent pool manager.
 
 ARCHITECTURE:
-- SimplifiedAgentPoolManager: In-memory single-process pool management
+- AgentPoolManager: In-memory single-process pool management
 - BaseAgent pattern: All agents (TeamLeader, Developer, Tester, BusinessAnalyst)
   inherit from BaseAgent directly
 
 REMOVED (old multiprocessing architecture):
-- AgentPool (382 lines) - merged into SimplifiedAgentPoolManager
-- AgentPoolManager (512 lines) - replaced by SimplifiedAgentPoolManager
+- AgentPool (382 lines) - merged into AgentPoolManager
+- MultiprocessingAgentPoolManager (512 lines) - replaced by current AgentPoolManager
 - AgentPoolWorker (536 lines) - no longer needed (no multiprocessing)
 - RedisClient (625 lines) - no longer needed (no IPC coordination)
 - AgentRegistry/ProcessRegistry (406 lines) - no longer needed
-- AgentMonitor (323 lines) - monitoring built into SimplifiedAgentPoolManager
+- AgentMonitor (323 lines) - monitoring built into AgentPoolManager
 
 Total removed: ~2,784 lines of complex multiprocessing code
 """
 
-from .simple_pool_manager import SimplifiedAgentPoolManager
+from .agent_pool_manager import AgentPoolManager
 
 # Import AgentStatus from models for convenience
 from app.models import AgentStatus
 
 __all__ = [
     "AgentStatus",
-    "SimplifiedAgentPoolManager",
+    "AgentPoolManager",
 ]

@@ -13,8 +13,8 @@ from app.core.db import engine
 logger = logging.getLogger(__name__)
 
 
-class SimplifiedAgentPoolManager:
-    """Simplified in-memory agent pool manager.
+class AgentPoolManager:
+    """In-memory agent pool manager.
 
     Manages agents directly in single process using asyncio.
     No multiprocessing, no Redis, no IPC complexity.
@@ -33,7 +33,7 @@ class SimplifiedAgentPoolManager:
         max_agents: int = 100,
         health_check_interval: int = 60,
     ):
-        """Initialize simplified pool manager.
+        """Initialize pool manager.
 
         Args:
             pool_name: Pool name (e.g., "universal_pool")
@@ -57,7 +57,7 @@ class SimplifiedAgentPoolManager:
         self.total_terminated = 0
 
         logger.info(
-            f"SimplifiedAgentPoolManager initialized: pool={pool_name}, "
+            f"AgentPoolManager initialized: pool={pool_name}, "
             f"max_agents={max_agents}"
         )
 
@@ -71,7 +71,7 @@ class SimplifiedAgentPoolManager:
             # Start health monitor
             self._monitor_task = asyncio.create_task(self._monitor_loop())
 
-            logger.info(f"✓ SimplifiedAgentPoolManager started: {self.pool_name}")
+            logger.info(f"✓ AgentPoolManager started: {self.pool_name}")
             return True
 
         except Exception as e:
@@ -123,7 +123,7 @@ class SimplifiedAgentPoolManager:
     ) -> bool:
         """Spawn an agent directly in memory.
 
-        This is the simplified version - no multiprocessing, no IPC overhead.
+        No multiprocessing, no IPC overhead.
         Flow:
         1. Check capacity
         2. Load agent from DB
@@ -266,7 +266,7 @@ class SimplifiedAgentPoolManager:
 
         return {
             "pool_name": self.pool_name,
-            "manager_type": "simplified",  # Distinguish from old multiprocessing manager
+            "manager_type": "in-memory",
             "total_agents": len(self.agents),
             "active_agents": active_agents,
             "busy_agents": busy_agents,
@@ -297,7 +297,6 @@ class SimplifiedAgentPoolManager:
         """Single health check monitor loop.
 
         Periodically checks agent health and terminates unhealthy agents.
-        This replaces the 3 separate monitor loops in old architecture.
         """
         logger.info(f"Health monitor started for pool '{self.pool_name}'")
 
@@ -330,38 +329,38 @@ class SimplifiedAgentPoolManager:
 
 # ===== Migration Helper =====
 
-async def migrate_to_simplified_manager(
+async def migrate_to_agent_pool_manager(
     old_manager_registry: Dict[str, Any],
-    use_simplified: bool = False,
-) -> Dict[str, SimplifiedAgentPoolManager]:
-    """Helper to migrate from old multiprocessing manager to simplified.
+    use_new_manager: bool = False,
+) -> Dict[str, AgentPoolManager]:
+    """Helper to migrate from old multiprocessing manager to new in-memory manager.
 
     Args:
         old_manager_registry: Existing manager registry
-        use_simplified: If True, create simplified managers
+        use_new_manager: If True, create new managers
 
     Returns:
-        New simplified manager registry
+        New manager registry
     """
-    if not use_simplified:
+    if not use_new_manager:
         return {}
 
-    simplified_registry: Dict[str, SimplifiedAgentPoolManager] = {}
+    registry: Dict[str, AgentPoolManager] = {}
 
-    logger.info("Migrating to simplified agent pool managers...")
+    logger.info("Migrating to agent pool managers...")
 
-    # Create simplified universal pool
+    # Create universal pool
     pool_name = "universal_pool"
-    manager = SimplifiedAgentPoolManager(
+    manager = AgentPoolManager(
         pool_name=pool_name,
         max_agents=100,  # Higher limit since no process overhead
         health_check_interval=60,
     )
 
     if await manager.start():
-        simplified_registry[pool_name] = manager
-        logger.info(f"✓ Created simplified manager: {pool_name}")
+        registry[pool_name] = manager
+        logger.info(f"✓ Created agent pool manager: {pool_name}")
     else:
-        logger.error(f"✗ Failed to create simplified manager: {pool_name}")
+        logger.error(f"✗ Failed to create agent pool manager: {pool_name}")
 
-    return simplified_registry
+    return registry

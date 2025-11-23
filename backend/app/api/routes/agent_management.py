@@ -17,7 +17,7 @@ from sqlmodel import Session, select, update
 
 from app.api.deps import get_current_user, get_db, SessionDep
 from app.models import User, Agent, AgentStatus, AgentExecution, AgentExecutionStatus
-from app.agents.core import SimplifiedAgentPoolManager
+from app.agents.core import AgentPoolManager
 from app.agents.core.name_generator import generate_agent_name, get_display_name
 from app.core.config import settings
 
@@ -58,10 +58,10 @@ class TerminateAgentRequest(BaseModel):
 
 
 class PoolResponse(BaseModel):
-    """Pool information response (flexible for both manager types)."""
+    """Pool information response."""
     pool_name: str
-    manager_type: Optional[str] = None  # "simplified" or "multiprocessing"
-    role_class: Optional[str] = None  # May not exist in simplified manager
+    manager_type: Optional[str] = None  # "in-memory" manager type
+    role_class: Optional[str] = None  # Not used in current manager
     total_agents: int
     active_agents: int
     busy_agents: int
@@ -91,8 +91,8 @@ class SystemStatsResponse(BaseModel):
 
 # ===== Global Manager Registry =====
 
-# Manager registry - can hold either AgentPoolManager (old) or SimplifiedAgentPoolManager (new)
-_manager_registry: Dict[str, Any] = {}
+# Manager registry - holds AgentPoolManager instances
+_manager_registry: Dict[str, AgentPoolManager] = {}
 
 # Role class mapping - lazy loaded to avoid circular imports
 def get_role_class_map():
@@ -121,9 +121,9 @@ def ensure_role_class_map():
 
 
 async def initialize_default_pools() -> None:
-    """Initialize UNIVERSAL agent pool with simplified in-memory management.
+    """Initialize UNIVERSAL agent pool with in-memory management.
 
-    Uses SimplifiedAgentPoolManager:
+    Uses AgentPoolManager:
     - Single-process in-memory management
     - No multiprocessing overhead
     - No Redis coordination needed
@@ -141,12 +141,12 @@ async def initialize_default_pools() -> None:
     if ROLE_CLASS_MAP is None:
         ROLE_CLASS_MAP = get_role_class_map()
 
-    logger.info("🚀 Initializing SIMPLIFIED agent pool manager (optimized architecture)")
-    await _initialize_simplified_pool(logger, ROLE_CLASS_MAP)
+    logger.info("🚀 Initializing agent pool manager (optimized architecture)")
+    await _initialize_pool(logger, ROLE_CLASS_MAP)
 
 
-async def _initialize_simplified_pool(logger, role_class_map) -> None:
-    """Initialize simplified in-memory pool manager."""
+async def _initialize_pool(logger, role_class_map) -> None:
+    """Initialize in-memory pool manager."""
     from sqlmodel import Session, select
     from app.core.db import engine
 
@@ -158,8 +158,8 @@ async def _initialize_simplified_pool(logger, role_class_map) -> None:
         return
 
     try:
-        # Create simplified manager (no Redis, no multiprocessing)
-        manager = SimplifiedAgentPoolManager(
+        # Create manager (no Redis, no multiprocessing)
+        manager = AgentPoolManager(
             pool_name=pool_name,
             max_agents=100,  # Higher limit since no process overhead
             health_check_interval=60,
@@ -168,20 +168,20 @@ async def _initialize_simplified_pool(logger, role_class_map) -> None:
         # Start manager
         if await manager.start():
             _manager_registry[pool_name] = manager
-            logger.info(f"✓ Created SIMPLIFIED pool: {pool_name} (supports all role types)")
+            logger.info(f"✓ Created agent pool: {pool_name} (supports all role types)")
 
             # Restore agents from database
-            await _restore_agents_simplified(logger, manager, role_class_map)
+            await _restore_agents(logger, manager, role_class_map)
 
         else:
-            logger.error(f"✗ Failed to start simplified manager: {pool_name}")
+            logger.error(f"✗ Failed to start agent pool manager: {pool_name}")
 
     except Exception as e:
-        logger.error(f"✗ Error creating simplified pool '{pool_name}': {e}", exc_info=True)
+        logger.error(f"✗ Error creating agent pool '{pool_name}': {e}", exc_info=True)
 
 
-async def _restore_agents_simplified(logger, manager, role_class_map) -> None:
-    """Restore agents for simplified manager."""
+async def _restore_agents(logger, manager, role_class_map) -> None:
+    """Restore agents for manager."""
     from sqlmodel import Session, select
     from app.core.db import engine
 
@@ -236,10 +236,10 @@ async def _restore_agents_simplified(logger, manager, role_class_map) -> None:
             except Exception as e:
                 logger.error(f"Error restoring {db_agent.human_name}: {e}")
 
-        logger.info(f"📊 Restored {len(db_agents)} agents in simplified pool")
+        logger.info(f"📊 Restored {len(db_agents)} agents in agent pool")
 
 
-def get_manager(pool_name: str) -> SimplifiedAgentPoolManager:
+def get_manager(pool_name: str) -> AgentPoolManager:
     """Get pool manager by name or raise 404.
 
     Args:
@@ -267,7 +267,7 @@ async def create_pool(
     """Create a new agent pool manager.
 
     Creates and starts a new agent pool manager for the specified role type.
-    The manager will automatically spawn worker processes and manage agent lifecycle.
+    Uses AgentPoolManager with in-memory management (no multiprocessing).
     """
     # Ensure role class map is loaded
     role_class_map = ensure_role_class_map()
@@ -283,18 +283,19 @@ async def create_pool(
     if request.pool_name in _manager_registry:
         raise HTTPException(status_code=400, detail=f"Pool manager '{request.pool_name}' already exists")
 
-    # Extract max_agents if provided (default 10)
-    max_agents_per_process = 10
+    # Extract max_agents and health_check_interval if provided
+    max_agents = 100  # Default for in-memory pool (no process overhead)
+    health_check_interval = 60  # Default
+    
     if request.config:
-        max_agents_per_process = request.config.max_agents
+        max_agents = request.config.max_agents
+        health_check_interval = request.config.health_check_interval
 
-    # Create pool manager
-    role_class = role_class_map[request.role_type]
+    # Create pool manager (no multiprocessing)
     manager = AgentPoolManager(
         pool_name=request.pool_name,
-        role_class=role_class,
-        max_agents_per_process=max_agents_per_process,
-        heartbeat_interval=30,
+        max_agents=max_agents,
+        health_check_interval=health_check_interval,
     )
 
     # Start manager
@@ -361,8 +362,7 @@ async def spawn_agent(
 ) -> Any:
     """Spawn a new agent in the specified pool and persist to database.
 
-    Works with both simplified and multiprocessing pool managers.
-    The manager type is determined by the USE_SIMPLIFIED_AGENT_POOL setting.
+    Uses AgentPoolManager for in-memory agent management.
     """
     # Ensure role class map is loaded
     role_class_map = ensure_role_class_map()
@@ -407,7 +407,7 @@ async def spawn_agent(
     # Get role_class for this agent
     role_class = role_class_map[request.role_type]
 
-    # Spawn via manager (works with both simplified and multiprocessing)
+    # Spawn via manager
     success = await manager.spawn_agent(
         agent_id=db_agent.id,
         role_class=role_class,
@@ -441,11 +441,11 @@ async def terminate_agent(
 ) -> Any:
     """Terminate an agent in the specified pool and update database.
 
-    Works with both simplified and multiprocessing pool managers.
+    Uses AgentPoolManager for agent termination.
     """
     manager = get_manager(request.pool_name)
 
-    # Terminate via manager (works with both simplified and multiprocessing)
+    # Terminate via manager
     success = await manager.terminate_agent(request.agent_id, graceful=request.graceful)
 
     if not success:
@@ -497,33 +497,37 @@ async def get_system_stats(
     current_user: User = Depends(get_current_user),
 ) -> Any:
     """Get system-wide agent statistics from all pool managers."""
-    from app.agents.core.registry import ProcessRegistry, AgentRegistry
     from datetime import datetime, timezone
-
-    redis = get_redis_client()
-    agent_registry = AgentRegistry(redis_client=redis)
-    process_registry = ProcessRegistry(redis_client=redis)
 
     # Aggregate stats from all pool managers
     total_agents = 0
-    total_processes = 0
-    total_capacity = 0
+    total_executions = 0
+    successful_executions = 0
+    failed_executions = 0
 
     for pool_name, manager in _manager_registry.items():
         stats = await manager.get_stats()
-        total_agents += stats.get("agent_count", 0)
-        total_processes += stats.get("process_count", 0)
-        total_capacity += stats.get("total_capacity", 0)
+        total_agents += stats.get("total_agents", 0)
+        total_executions += stats.get("total_executions", 0)
+        successful_executions += stats.get("successful_executions", 0)
+        failed_executions += stats.get("failed_executions", 0)
+
+    # Calculate uptime from first manager
+    uptime_seconds = 0.0
+    if _manager_registry:
+        first_manager = next(iter(_manager_registry.values()))
+        stats = await first_manager.get_stats()
+        uptime_seconds = stats.get("manager_uptime_seconds", 0.0)
 
     return SystemStatsResponse(
-        uptime_seconds=0,  # Can track startup time if needed
+        uptime_seconds=uptime_seconds,
         total_pools=len(_manager_registry),
         total_agents=total_agents,
-        total_executions=0,  # Would need to aggregate from DB
-        successful_executions=0,
-        failed_executions=0,
-        success_rate=0.0,
-        recent_alerts=0,
+        total_executions=total_executions,
+        successful_executions=successful_executions,
+        failed_executions=failed_executions,
+        success_rate=successful_executions / total_executions if total_executions > 0 else 0.0,
+        recent_alerts=0,  # Alerts not implemented yet
     )
 
 
@@ -531,7 +535,7 @@ async def get_system_stats(
 async def get_dashboard_data(
     current_user: User = Depends(get_current_user),
 ) -> Any:
-    """Get comprehensive dashboard data for monitoring multiprocessing pools."""
+    """Get comprehensive dashboard data for monitoring agent pools."""
     from datetime import datetime, timezone
 
     # Get stats from all managers
@@ -542,7 +546,7 @@ async def get_dashboard_data(
     return {
         "pools": pools_data,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "mode": "multiprocessing",
+        "mode": "in-memory",  # In-memory architecture
     }
 
 
@@ -553,8 +557,7 @@ async def get_alerts(
 ) -> Any:
     """Get recent monitoring alerts.
 
-    Note: In multiprocessing mode, alerts would need to be stored in Redis.
-    This is a placeholder implementation.
+    Note: Alerts tracking not yet implemented.
     """
     return []
 
@@ -762,15 +765,11 @@ async def get_metrics_aggregated(
 async def get_process_metrics(
     current_user: User = Depends(get_current_user),
 ) -> Any:
-    """Get current worker process metrics.
+    """Get current process metrics.
 
-    Returns real-time process distribution, capacity, and utilization.
+    Note: In-memory architecture uses only one process (the main FastAPI process).
+    Worker processes are not used.
     """
-    from app.agents.core.registry import ProcessRegistry, AgentRegistry
-
-    redis = get_redis_client()
-    process_registry = ProcessRegistry(redis_client=redis)
-    agent_registry = AgentRegistry(redis_client=redis)
 
     all_processes = []
 
@@ -1070,29 +1069,5 @@ async def get_execution_detail(
 
 
 # ===== Lifecycle Management =====
-
-@router.post("/system/start")
-async def start_monitoring_system(
-    monitor_interval: int = Query(default=30, ge=10),
-    current_user: User = Depends(get_current_user),
-) -> Any:
-    """Start the agent monitoring system."""
-    monitor = get_agent_monitor()
-
-    if not await monitor.start(monitor_interval=monitor_interval):
-        raise HTTPException(status_code=500, detail="Failed to start monitoring system")
-
-    return {"message": "Monitoring system started successfully"}
-
-
-@router.post("/system/stop")
-async def stop_monitoring_system(
-    current_user: User = Depends(get_current_user),
-) -> Any:
-    """Stop the agent monitoring system."""
-    monitor = get_agent_monitor()
-
-    if not await monitor.stop():
-        raise HTTPException(status_code=500, detail="Failed to stop monitoring system")
-
-    return {"message": "Monitoring system stopped successfully"}
+# Note: Monitoring is built into AgentPoolManager
+# No separate start/stop needed (starts automatically with pool initialization)
