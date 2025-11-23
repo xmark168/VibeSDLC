@@ -78,6 +78,15 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Failed to start WebSocket-Kafka bridge: {e}")
         logger.warning("Continuing without WebSocket bridge...")
 
+    # Start metrics collector for analytics
+    from app.tasks import start_metrics_collector
+    try:
+        await start_metrics_collector(interval_seconds=300, retention_days=30)
+        logger.info("Metrics collector started (5-minute intervals, 30-day retention)")
+    except Exception as e:
+        logger.warning(f"Failed to start metrics collector: {e}")
+        logger.warning("Continuing without metrics collection...")
+
     yield
 
     # Shutdown: cleanup consumers and producer
@@ -89,6 +98,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error shutting down WebSocket-Kafka bridge: {e}")
 
+    # Shutdown metrics collector
+    from app.tasks import stop_metrics_collector
+    try:
+        await stop_metrics_collector()
+        logger.info("Metrics collector shut down")
+    except Exception as e:
+        logger.error(f"Error shutting down metrics collector: {e}")
+
     # Shutdown agent monitoring system
     try:
         monitor = get_agent_monitor()
@@ -97,14 +114,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error shutting down monitoring system: {e}")
 
-    # Shutdown agent pools
-    from app.api.routes.agent_management import _pool_registry
+    # Shutdown agent pools (multiprocessing managers)
+    from app.api.routes.agent_management import _manager_registry
     try:
-        for pool_name, pool in list(_pool_registry.items()):
-            await pool.stop(graceful=True)
-            logger.info(f"Pool '{pool_name}' shut down")
-        _pool_registry.clear()
-        logger.info("All agent pools shut down")
+        for pool_name, manager in list(_manager_registry.items()):
+            await manager.stop(graceful=True)
+            logger.info(f"Pool manager '{pool_name}' shut down")
+        _manager_registry.clear()
+        logger.info("All agent pool managers shut down")
     except Exception as e:
         logger.error(f"Error shutting down agent pools: {e}")
 

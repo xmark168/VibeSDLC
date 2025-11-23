@@ -20,6 +20,17 @@ export const agentQueryKeys = {
   alerts: (limit?: number) => [...agentQueryKeys.all, "alerts", limit] as const,
   project: (projectId: string) => [...agentQueryKeys.all, "project", projectId] as const,
   executions: (filters?: ExecutionFilters) => [...agentQueryKeys.all, "executions", filters] as const,
+  metrics: () => [...agentQueryKeys.all, "metrics"] as const,
+  metricsTimeseries: (params: {
+    metric_type: string
+    time_range?: string
+    pool_name?: string
+  }) => [...agentQueryKeys.metrics(), "timeseries", params] as const,
+  metricsAggregated: (params: { time_range?: string; group_by?: string }) =>
+    [...agentQueryKeys.metrics(), "aggregated", params] as const,
+  processMetrics: () => [...agentQueryKeys.metrics(), "processes"] as const,
+  tokenMetrics: (params: { time_range?: string; group_by?: string }) =>
+    [...agentQueryKeys.metrics(), "tokens", params] as const,
 }
 
 // ===== Queries =====
@@ -143,6 +154,80 @@ export function useAgentExecutions(
     enabled: options?.enabled ?? true,
     refetchInterval: options?.refetchInterval ?? 30000,
     staleTime: 10000,
+  })
+}
+
+// ===== Metrics Queries =====
+
+/**
+ * Fetch time-series metrics for charts
+ */
+export function useMetricsTimeseries(
+  params: {
+    metric_type: "utilization" | "executions" | "tokens" | "success_rate"
+    time_range?: "1h" | "6h" | "24h" | "7d" | "30d"
+    interval?: string
+    pool_name?: string
+  },
+  options?: { enabled?: boolean; refetchInterval?: number }
+) {
+  return useQuery({
+    queryKey: agentQueryKeys.metricsTimeseries(params),
+    queryFn: () => agentsApi.getMetricsTimeseries(params),
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval ?? 60000, // 1 minute default
+    staleTime: 30000,
+  })
+}
+
+/**
+ * Fetch aggregated metrics statistics
+ */
+export function useMetricsAggregated(
+  params: {
+    time_range?: "1h" | "6h" | "24h" | "7d" | "30d"
+    group_by?: "pool" | "hour" | "day"
+  },
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: agentQueryKeys.metricsAggregated(params),
+    queryFn: () => agentsApi.getMetricsAggregated(params),
+    enabled: options?.enabled ?? true,
+    refetchInterval: 60000,
+    staleTime: 30000,
+  })
+}
+
+/**
+ * Fetch process metrics (current state)
+ */
+export function useProcessMetrics(options?: { enabled?: boolean; refetchInterval?: number }) {
+  return useQuery({
+    queryKey: agentQueryKeys.processMetrics(),
+    queryFn: () => agentsApi.getProcessMetrics(),
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval ?? 30000, // More frequent for real-time data
+    staleTime: 10000,
+  })
+}
+
+/**
+ * Fetch token usage metrics
+ */
+export function useTokenMetrics(
+  params: {
+    time_range?: "1h" | "6h" | "24h" | "7d" | "30d"
+    group_by?: "pool" | "agent_type"
+  },
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: agentQueryKeys.tokenMetrics(params),
+    queryFn: () => agentsApi.getTokenMetrics(params),
+    enabled: options?.enabled ?? true,
+    refetchInterval: 60000,
+    staleTime: 30000,
   })
 }
 

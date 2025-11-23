@@ -45,6 +45,19 @@ class WebSocketKafkaBridge:
         # Background cleanup task
         self._cleanup_task: Optional[asyncio.Task] = None
 
+    def _has_active_connections(self, project_id: UUID) -> bool:
+        """Check if project has active WebSocket connections.
+
+        Used to skip processing non-critical events when no one is listening.
+
+        Args:
+            project_id: Project UUID to check
+
+        Returns:
+            True if project has at least one active connection
+        """
+        return connection_manager.get_project_connection_count(project_id) > 0
+
     async def start(self):
         """Start the WebSocket-Kafka bridge consumer"""
         try:
@@ -295,6 +308,10 @@ class WebSocketKafkaBridge:
                 )
                 return
 
+            # EARLY RETURN: Skip if no active connections (real-time delegation info)
+            if not self._has_active_connections(project_id):
+                return
+
             ws_message = {
                 "type": "routing",
                 "from_agent": event_data.get("from_agent", ""),
@@ -511,6 +528,10 @@ class WebSocketKafkaBridge:
                 )
                 return
 
+            # EARLY RETURN: Skip if no active connections (real-time only event)
+            if not self._has_active_connections(project_id):
+                return
+
             # Extract status - handle both enum and string
             status = event_data.get("status", "")
             if hasattr(status, 'value'):
@@ -561,6 +582,10 @@ class WebSocketKafkaBridge:
                     f"Execution ID: {event_data.get('execution_id')}, "
                     f"Event ID: {event_data.get('event_id')}"
                 )
+                return
+
+            # EARLY RETURN: Skip if no active connections (real-time progress tracking)
+            if not self._has_active_connections(project_id):
                 return
 
             execution_id = event_data.get("execution_id")
@@ -738,6 +763,10 @@ class WebSocketKafkaBridge:
                 )
                 return
 
+            # EARLY RETURN: Skip if no active connections (real-time debugging info)
+            if not self._has_active_connections(project_id):
+                return
+
             ws_message = {
                 "type": "tool_call",
                 "agent_name": event_data.get("agent_name", ""),
@@ -818,6 +847,10 @@ class WebSocketKafkaBridge:
                 logger.warning(f"Task started event missing project_id")
                 return
 
+            # EARLY RETURN: Skip if no active connections (real-time notification only)
+            if not self._has_active_connections(project_id):
+                return
+
             ws_message = {
                 "type": "task_started",
                 "task_id": str(event_data.get("task_id", "")),
@@ -845,6 +878,10 @@ class WebSocketKafkaBridge:
             project_id = _to_uuid(event_data.get("project_id"))
             if not project_id:
                 logger.warning(f"Task progress event missing project_id")
+                return
+
+            # EARLY RETURN: Skip if no active connections (real-time progress only)
+            if not self._has_active_connections(project_id):
                 return
 
             ws_message = {

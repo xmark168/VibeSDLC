@@ -461,6 +461,46 @@ class AgentConversation(BaseModel, table=True):
     extra_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
 
 
+class AgentMetricsSnapshot(BaseModel, table=True):
+    """Periodic snapshots of agent pool metrics for historical analysis"""
+    __tablename__ = "agent_metrics_snapshots"
+
+    # Snapshot metadata
+    snapshot_timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        nullable=False,
+        index=True
+    )
+    pool_name: str = Field(nullable=False, index=True)
+
+    # Agent state counts
+    total_agents: int = Field(default=0)
+    idle_agents: int = Field(default=0)
+    busy_agents: int = Field(default=0)
+    error_agents: int = Field(default=0)
+
+    # Execution metrics (aggregated from agent_executions)
+    total_executions: int = Field(default=0)
+    successful_executions: int = Field(default=0)
+    failed_executions: int = Field(default=0)
+
+    # Resource usage metrics
+    total_tokens: int = Field(default=0)
+    total_llm_calls: int = Field(default=0)
+
+    # Performance metrics
+    avg_execution_duration_ms: float | None = Field(default=None)
+
+    # Process metrics (multiprocessing specific)
+    process_count: int = Field(default=0)
+    total_capacity: int = Field(default=0)
+    used_capacity: int = Field(default=0)
+    utilization_percentage: float | None = Field(default=None)
+
+    # Additional snapshot metadata
+    snapshot_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
+
+
 class ApprovalStatus(str, Enum):
     """Status of an approval request"""
     PENDING = "pending"

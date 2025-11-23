@@ -77,3 +77,16 @@ dynamic_context = "test_function"
 [tool.coverage.report]
 show_missing = true
 sort = "-Cover"
+
+[tool.uvicorn]
+# Reload settings for development
+reload = true
+reload-excludes = [
+    "logs/*",
+    "*.log",
+    "__pycache__/*",
+    ".pytest_cache/*",
+    "*.pyc",
+    ".venv/*",
+    "alembic/versions/*.pyc",
+]

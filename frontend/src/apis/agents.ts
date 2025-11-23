@@ -268,6 +268,116 @@ export const agentsApi = {
       url: `/api/v1/agents/executions/${executionId}`,
     })
   },
+
+  // Metrics & Analytics
+  getMetricsTimeseries: async (params: {
+    metric_type: "utilization" | "executions" | "tokens" | "success_rate"
+    time_range?: "1h" | "6h" | "24h" | "7d" | "30d"
+    interval?: string
+    pool_name?: string
+  }): Promise<{
+    metric_type: string
+    time_range: string
+    interval: string
+    pool_name: string | null
+    data: Array<{
+      timestamp: string
+      pool_name: string
+      [key: string]: unknown
+    }>
+    count: number
+  }> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/agents/metrics/timeseries",
+      query: {
+        metric_type: params.metric_type,
+        time_range: params.time_range || "24h",
+        interval: params.interval || "auto",
+        pool_name: params.pool_name,
+      },
+    })
+  },
+
+  getMetricsAggregated: async (params: {
+    time_range?: "1h" | "6h" | "24h" | "7d" | "30d"
+    group_by?: "pool" | "hour" | "day"
+  }): Promise<{
+    group_by: string
+    time_range: string
+    data: Array<{
+      pool_name?: string
+      timestamp?: string
+      [key: string]: unknown
+    }>
+    count: number
+  }> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/agents/metrics/aggregated",
+      query: {
+        time_range: params.time_range || "24h",
+        group_by: params.group_by || "pool",
+      },
+    })
+  },
+
+  getProcessMetrics: async (): Promise<{
+    summary: {
+      total_processes: number
+      total_capacity: number
+      used_capacity: number
+      available_capacity: number
+      avg_utilization: number
+    }
+    processes: Array<{
+      process_id: string
+      pool_name: string
+      agent_count: number
+      max_agents: number
+      utilization: number
+      pid: number
+      status: string
+      started_at: string
+    }>
+  }> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/agents/metrics/processes",
+    })
+  },
+
+  getTokenMetrics: async (params: {
+    time_range?: "1h" | "6h" | "24h" | "7d" | "30d"
+    group_by?: "pool" | "agent_type"
+  }): Promise<{
+    time_range: string
+    group_by: string
+    summary: {
+      total_tokens: number
+      total_llm_calls: number
+      avg_tokens_per_call: number
+      estimated_total_cost_usd: number
+    }
+    data: Array<{
+      pool_name: string
+      total_tokens: number
+      total_llm_calls: number
+      avg_tokens_per_call: number
+      avg_duration_ms: number
+      estimated_cost_usd: number
+    }>
+    count: number
+  }> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/agents/metrics/tokens",
+      query: {
+        time_range: params.time_range || "24h",
+        group_by: params.group_by || "pool",
+      },
+    })
+  },
 }
 
 // ===== Utility Functions =====
