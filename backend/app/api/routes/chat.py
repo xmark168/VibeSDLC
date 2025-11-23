@@ -14,7 +14,6 @@ from app.websocket.connection_manager import connection_manager
 from app.core.security import decode_access_token
 from app.models import User, Message as MessageModel, Project, AuthorType
 from app.kafka import get_kafka_producer, KafkaTopics, UserMessageEvent
-from app.kafka.event_schemas import get_project_topic
 from sqlmodel import select
 
 logger = logging.getLogger(__name__)
