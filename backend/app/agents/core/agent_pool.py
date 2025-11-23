@@ -8,8 +8,11 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Type
 from uuid import UUID, uuid4
 
+from sqlmodel import Session
+
 from app.agents.core.base_role import BaseAgentRole
-from app.models import AgentStatus
+from app.models import AgentStatus, Agent as AgentModel
+from app.core.db import engine
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +115,34 @@ class AgentPool:
                     pass
 
             # Stop all agents
-            stop_tasks = [self.terminate_agent(agent_id, graceful) for agent_id in list(self.agents.keys())]
-            await asyncio.gather(*stop_tasks, return_exceptions=True)
+            agent_ids = list(self.agents.keys())
+            stop_tasks = [self.terminate_agent(agent_id, graceful) for agent_id in agent_ids]
+            results = await asyncio.gather(*stop_tasks, return_exceptions=True)
+
+            # Log any failures
+            for idx, result in enumerate(results):
+                if isinstance(result, Exception):
+                    logger.error(f"Failed to terminate agent during pool shutdown: {result}")
+
+            # Bulk update all agent states to 'stopped' in DB as a safety net
+            # This ensures state is persisted even if individual sync tasks didn't complete
+            if agent_ids:
+                try:
+                    from sqlmodel import Session, update
+                    from app.core.db import engine
+                    from app.models import Agent as AgentModel, AgentStatus
+
+                    with Session(engine) as db_session:
+                        stmt = (
+                            update(AgentModel)
+                            .where(AgentModel.id.in_(agent_ids))
+                            .values(status=AgentStatus.stopped)
+                        )
+                        db_session.exec(stmt)
+                        db_session.commit()
+                        logger.info(f"Bulk updated {len(agent_ids)} agents to 'stopped' status in pool '{self.pool_name}'")
+                except Exception as e:
+                    logger.error(f"Failed to bulk update agent states during shutdown: {e}")
 
             logger.info(f"AgentPool '{self.pool_name}' stopped")
             return True
@@ -126,14 +155,17 @@ class AgentPool:
 
     async def spawn_agent(
         self,
-        agent_id: Optional[UUID] = None,
+        agent_id: UUID,
         heartbeat_interval: int = 30,
         max_idle_time: int = 300,
     ) -> Optional[BaseAgentRole]:
-        """Spawn a new agent instance.
+        """Spawn a new agent instance from database.
+
+        This method loads the agent from database and creates a runtime instance
+        with full Kafka consumer support.
 
         Args:
-            agent_id: Optional agent ID
+            agent_id: Agent ID (must exist in database)
             heartbeat_interval: Heartbeat interval in seconds
             max_idle_time: Max idle time in seconds
 
@@ -145,36 +177,52 @@ class AgentPool:
             return None
 
         try:
-            # Create agent instance
-            agent = self.role_class(
-                agent_id=agent_id,
-                heartbeat_interval=heartbeat_interval,
-                max_idle_time=max_idle_time,
-            )
+            # Load agent from database
+            with Session(engine) as db_session:
+                agent_model = db_session.get(AgentModel, agent_id)
 
-            # Set up callbacks
-            agent.on_state_change = self._on_agent_state_change
-            agent.on_execution_complete = self._on_agent_execution_complete
-            agent.on_heartbeat = self._on_agent_heartbeat
+                if not agent_model:
+                    logger.error(f"Agent {agent_id} not found in database")
+                    return None
 
-            # Start agent
-            if await agent.start():
-                self.agents[agent.agent_id] = agent
-                self.agent_stats[agent.agent_id] = {
-                    "spawned_at": datetime.now(timezone.utc),
-                    "executions": 0,
-                    "last_execution": None,
-                }
-                self.total_spawned += 1
+                # Verify agent isn't already in pool
+                if agent_id in self.agents:
+                    logger.warning(f"Agent {agent_id} already exists in pool '{self.pool_name}'")
+                    return None
 
-                logger.info(f"Agent {agent.agent_id} spawned in pool '{self.pool_name}'")
-                return agent
-            else:
-                logger.error(f"Failed to start agent {agent.agent_id}")
-                return None
+                # Create agent instance with agent_model (enables Kafka consumer)
+                agent = self.role_class(
+                    agent_model=agent_model,
+                    heartbeat_interval=heartbeat_interval,
+                    max_idle_time=max_idle_time,
+                )
+
+                # Set up callbacks
+                agent.on_state_change = self._on_agent_state_change
+                agent.on_execution_complete = self._on_agent_execution_complete
+                agent.on_heartbeat = self._on_agent_heartbeat
+
+                # Start agent (starts Kafka consumer + heartbeat)
+                if await agent.start():
+                    self.agents[agent.agent_id] = agent
+                    self.agent_stats[agent.agent_id] = {
+                        "spawned_at": datetime.now(timezone.utc),
+                        "executions": 0,
+                        "last_execution": None,
+                    }
+                    self.total_spawned += 1
+
+                    logger.info(
+                        f"✓ Spawned agent: {agent_model.human_name} ({agent_id}) "
+                        f"in pool '{self.pool_name}' with Kafka consumer enabled"
+                    )
+                    return agent
+                else:
+                    logger.error(f"Failed to start agent {agent_id}")
+                    return None
 
         except Exception as e:
-            logger.error(f"Failed to spawn agent: {e}", exc_info=True)
+            logger.error(f"Failed to spawn agent {agent_id}: {e}", exc_info=True)
             return None
 
     async def terminate_agent(self, agent_id: UUID, graceful: bool = True) -> bool:

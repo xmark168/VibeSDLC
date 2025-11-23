@@ -43,6 +43,20 @@ services:
       timeout: 5s
       retries: 5
 
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: vibeSDLC-kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: vibeSDLC
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    networks:
+      - vibeSDLC-network
+
 volumes:
   zookeeper_data:
   zookeeper_logs:

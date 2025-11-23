@@ -23,6 +23,8 @@ from app.kafka.event_schemas import (
     ToolCallEvent,
     KafkaTopics,
 )
+from app.agents.core.task_queue import AgentTaskQueue
+from app.kafka.consumer import EventHandlerConsumer
 
 if TYPE_CHECKING:
     from app.models import Agent as AgentModel
@@ -49,7 +51,226 @@ def _log_message(agent_name: str, event: str, message_id: Optional[str] = None, 
     logger.info(f"[MESSAGE] Agent {agent_name}:{msg_str} {event}{detail_str}")
 
 
-class BaseAgentRole(ABC):
+# ===== Task Consumer Mixin =====
+
+class TaskConsumerMixin:
+    """Mixin to add task consumption capabilities to agents.
+
+    Provides:
+    - Automatic subscription to AGENT_TASKS topic
+    - Task routing to @on_task decorated handlers
+    - Progress tracking via AgentTaskQueue
+    - Auto crew kickoff integration
+    """
+
+    def _init_task_consumer(self):
+        """Initialize task consumer components.
+
+        Should be called in __init__ after agent_id is set.
+        """
+        # Task consumer and handlers
+        self._task_consumer: Optional[EventHandlerConsumer] = None
+        self._task_handlers: Dict[str, Callable] = {}
+
+        # Task queue for progress reporting
+        self.task_queue = AgentTaskQueue(
+            agent_id=self.agent_id,
+            agent_name=self.human_name,
+            project_id=self.project_id
+        )
+
+        # Register task handlers from @on_task decorated methods
+        self._register_task_handlers()
+
+    def _register_task_handlers(self):
+        """Auto-discover and register @on_task decorated methods."""
+        for attr_name in dir(self):
+            try:
+                attr = getattr(self, attr_name)
+                if hasattr(attr, '_is_task_handler'):
+                    task_type = attr._task_type
+                    self._task_handlers[task_type] = attr
+                    logger.info(
+                        f"[{self.human_name}] Registered task handler: "
+                        f"{task_type} -> {attr_name}()"
+                    )
+            except Exception as e:
+                logger.debug(f"Error checking attribute {attr_name}: {e}")
+
+    async def start_task_consumer(self):
+        """Start consuming from AGENT_TASKS topic.
+
+        Consumer filters by agent_id via partition key.
+        """
+        try:
+            # Create consumer for AGENT_TASKS
+            self._task_consumer = EventHandlerConsumer(
+                topics=[KafkaTopics.AGENT_TASKS.value],
+                group_id=f"agent_{self.agent_id}_tasks",
+            )
+
+            # Register handler for task.assigned events
+            self._task_consumer.register_handler(
+                "agent.task.assigned",
+                self._on_task_assigned
+            )
+
+            # Start consumer
+            await self._task_consumer.start()
+
+            logger.info(
+                f"[{self.human_name}] Task consumer started - "
+                f"listening for tasks on AGENT_TASKS"
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to start task consumer: {e}", exc_info=True)
+            raise
+
+    async def _on_task_assigned(self, event):
+        """Internal handler for task.assigned events.
+
+        Routes tasks to appropriate @on_task handlers.
+
+        Args:
+            event: AgentTaskAssignedEvent or dict
+        """
+        try:
+            # Convert to dict if Pydantic
+            if hasattr(event, 'model_dump'):
+                task = event.model_dump()
+            else:
+                task = event
+
+            task_id = task.get("task_id")
+            task_type = task.get("task_type")
+            agent_id = task.get("agent_id")
+
+            # Verify task is for THIS agent (partition key should handle this)
+            if str(agent_id) != str(self.agent_id):
+                logger.debug(
+                    f"[{self.human_name}] Task {task_id} not for me "
+                    f"(agent_id={agent_id})"
+                )
+                return
+
+            logger.info(
+                f"[{self.human_name}] ✓ Received task: {task_type} - "
+                f"task_id={task_id}"
+            )
+
+            # Find handler for task type
+            handler = self._task_handlers.get(task_type)
+            if not handler:
+                error_msg = f"No handler registered for task type: {task_type}"
+                logger.warning(f"[{self.human_name}] {error_msg}")
+
+                # Fail task - no handler
+                await self.task_queue.fail_task(
+                    task_id=task_id,
+                    execution_id=uuid4(),
+                    error_message=error_msg,
+                    error_type="NoHandlerError",
+                    can_retry=False
+                )
+                return
+
+            # Execute handler
+            execution_id = uuid4()
+            start_time = datetime.now(timezone.utc)
+
+            try:
+                logger.info(
+                    f"[{self.human_name}] Starting task {task_id} "
+                    f"with handler: {handler.__name__}"
+                )
+
+                # Publish task started
+                await self.task_queue.start_task(task_id, execution_id)
+
+                # Call handler (may return crew or result)
+                result = await handler(event)
+
+                # Calculate duration
+                duration = int((datetime.now(timezone.utc) - start_time).total_seconds())
+
+                # Publish task completed
+                await self.task_queue.complete_task(
+                    task_id=task_id,
+                    execution_id=execution_id,
+                    result=result if isinstance(result, dict) else {"status": "completed"},
+                    duration_seconds=duration
+                )
+
+                logger.info(
+                    f"[{self.human_name}] ✓ Task {task_id} completed "
+                    f"(duration: {duration}s)"
+                )
+
+            except Exception as e:
+                error_msg = f"Task execution failed: {str(e)}"
+                logger.error(
+                    f"[{self.human_name}] ✗ Task {task_id} failed: {e}",
+                    exc_info=True
+                )
+
+                # Publish task failed
+                await self.task_queue.fail_task(
+                    task_id=task_id,
+                    execution_id=execution_id,
+                    error_message=error_msg,
+                    error_type=type(e).__name__,
+                    can_retry=True
+                )
+
+        except Exception as e:
+            logger.error(
+                f"[{self.human_name}] Error in _on_task_assigned: {e}",
+                exc_info=True
+            )
+
+    async def _kickoff_crew(self, crew: Crew, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Kickoff a Crew asynchronously.
+
+        Args:
+            crew: CrewAI Crew instance
+            context: Input context for crew
+
+        Returns:
+            Crew result as dict
+        """
+        import asyncio
+
+        logger.info(f"[{self.human_name}] Kicking off crew with context keys: {list(context.keys())}")
+
+        # Run crew.kickoff() in thread pool (blocking call)
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: crew.kickoff(inputs=context)
+        )
+
+        logger.info(f"[{self.human_name}] Crew kickoff completed")
+
+        # Convert result to dict
+        if hasattr(result, 'model_dump'):
+            return result.model_dump()
+        elif hasattr(result, '__dict__'):
+            return vars(result)
+        else:
+            return {"result": str(result)}
+
+    async def stop_task_consumer(self):
+        """Stop task consumer."""
+        if self._task_consumer:
+            try:
+                await self._task_consumer.stop()
+                logger.info(f"[{self.human_name}] Task consumer stopped")
+            except Exception as e:
+                logger.error(f"Error stopping task consumer: {e}")
+
+
+class BaseAgentRole(TaskConsumerMixin, ABC):
     """Enhanced base class for agent roles with lifecycle management.
 
     Features:
@@ -63,32 +284,24 @@ class BaseAgentRole(ABC):
 
     def __init__(
         self,
-        agent_id: Optional[UUID] = None,
-        agent_model: Optional["AgentModel"] = None,
+        agent_model: "AgentModel",
         config_path: Optional[Path] = None,
-        heartbeat_interval: int = 30,
+        heartbeat_interval: int = 10,
         max_idle_time: int = 300,
     ):
         """Initialize the agent role.
 
         Args:
-            agent_id: Unique agent instance ID (deprecated, use agent_model)
-            agent_model: Agent database model instance (new approach)
+            agent_model: Agent database model instance (REQUIRED - provides ID, project, name)
             config_path: Path to agent config.yaml
             heartbeat_interval: Seconds between heartbeats
             max_idle_time: Max seconds idle before auto-shutdown
         """
-        # Support both old and new initialization
-        if agent_model:
-            self.agent_id = agent_model.id
-            self.agent_model = agent_model
-            self.project_id = agent_model.project_id
-            self.human_name = agent_model.human_name
-        else:
-            self.agent_id = agent_id or uuid4()
-            self.agent_model = None
-            self.project_id = None
-            self.human_name = None
+        # Extract agent info from model
+        self.agent_id = agent_model.id
+        self.agent_model = agent_model
+        self.project_id = agent_model.project_id
+        self.human_name = agent_model.human_name
 
         self.config_path = config_path or self._get_default_config_path()
         self.heartbeat_interval = heartbeat_interval
@@ -116,7 +329,7 @@ class BaseAgentRole(ABC):
         self.agent: Optional[Agent] = None
         self.crew: Optional[Crew] = None
 
-        # Kafka consumer (new approach)
+        # Kafka consumer
         self.consumer: Optional["BaseAgentInstanceConsumer"] = None
 
         # Async tasks
@@ -128,6 +341,9 @@ class BaseAgentRole(ABC):
         self.on_heartbeat: Optional[Callable] = None
         self.on_state_change: Optional[Callable] = None
         self.on_execution_complete: Optional[Callable] = None
+
+        # Initialize task consumer mixin (AFTER agent_id is set)
+        self._init_task_consumer()
 
         logger.info(f"Agent {self.role_name} (ID: {self.agent_id}) created")
 
@@ -255,6 +471,10 @@ class BaseAgentRole(ABC):
             _log_lifecycle(self.human_name or self.role_name, self.agent_id, "STARTING", "starting consumer...")
             self._consumer_task = asyncio.create_task(self._consumer_loop())
 
+            # Start task consumer (for @on_task handlers)
+            _log_lifecycle(self.human_name or self.role_name, self.agent_id, "STARTING", "starting task consumer...")
+            await self.start_task_consumer()
+
             self.started_at = datetime.now(timezone.utc)
             self._set_state(AgentStatus.idle)
 
@@ -283,6 +503,8 @@ class BaseAgentRole(ABC):
         try:
             _log_lifecycle(self.human_name or self.role_name, self.agent_id, "STOPPING", f"graceful={graceful}")
             self._set_state(AgentStatus.stopping)
+            # Explicitly sync 'stopping' state to DB during shutdown
+            await self._sync_state_to_db(AgentStatus.stopping)
             self._shutdown_event.set()
 
             # Cancel heartbeat
@@ -308,12 +530,19 @@ class BaseAgentRole(ABC):
                     except asyncio.CancelledError:
                         pass
 
+            # Stop task consumer
+            _log_lifecycle(self.human_name or self.role_name, self.agent_id, "STOPPING", "stopping task consumer...")
+            await self.stop_task_consumer()
+
             # Cleanup resources
             _log_lifecycle(self.human_name or self.role_name, self.agent_id, "STOPPING", "cleaning up resources...")
             await self._cleanup()
 
             self.stopped_at = datetime.now(timezone.utc)
             self._set_state(AgentStatus.stopped)
+
+            # Explicitly sync 'stopped' state to DB during shutdown to prevent stuck states
+            await self._sync_state_to_db(AgentStatus.stopped)
 
             _log_lifecycle(self.human_name or self.role_name, self.agent_id, "STOPPED", "agent terminated successfully")
             return True
@@ -369,9 +598,32 @@ class BaseAgentRole(ABC):
         if self.agent_model:
             asyncio.create_task(self._sync_state_to_db(new_state))
 
+        # Publish status immediately to Kafka for real-time updates
+        asyncio.create_task(self._publish_state_status(new_state))
+
         # Trigger callback
         if self.on_state_change:
             asyncio.create_task(self.on_state_change(self, old_state, new_state))
+
+    async def _publish_state_status(self, state: AgentStatus) -> None:
+        """Publish Kafka status event based on agent state.
+
+        Args:
+            state: Current agent state
+        """
+        # Map AgentStatus to AgentStatusType
+        status_map = {
+            AgentStatus.idle: AgentStatusType.IDLE,
+            AgentStatus.busy: AgentStatusType.THINKING,
+            AgentStatus.error: AgentStatusType.ERROR,
+        }
+
+        # Only publish for states that have Kafka equivalents
+        if state in status_map:
+            await self._publish_status(
+                status_map[state],
+                current_action=f"State: {state.value}",
+            )
 
     async def _sync_state_to_db(self, new_state: AgentStatus) -> None:
         """Sync agent state to database.
@@ -436,22 +688,9 @@ class BaseAgentRole(ABC):
     async def _consumer_loop(self) -> None:
         """Consumer loop for processing messages.
 
-        Creates and starts the BaseAgentInstanceConsumer if agent_model is provided.
-        Falls back to placeholder behavior for backward compatibility.
+        Creates and starts the BaseAgentInstanceConsumer for this agent.
+        The agent_model is now required, so consumer is always created.
         """
-        if not self.agent_model:
-            # Backward compatibility: placeholder loop
-            logger.warning(
-                f"Agent {self.agent_id} started without agent_model, "
-                "consumer functionality disabled"
-            )
-            while not self._shutdown_event.is_set():
-                try:
-                    await asyncio.sleep(1)
-                except asyncio.CancelledError:
-                    break
-            return
-
         logger.info(f"Starting Kafka consumer for agent {self.human_name} ({self.role_name})")
 
         try:
@@ -762,7 +1001,7 @@ class BaseAgentRole(ABC):
         Args:
             status: Agent status
             current_action: Current action
-            project_id: Optional project ID
+            project_id: Optional project ID (falls back to self.project_id)
             error_message: Optional error message
 
         Returns:
@@ -770,6 +1009,9 @@ class BaseAgentRole(ABC):
         """
         try:
             producer = await get_kafka_producer()
+            # Use provided project_id or fall back to instance project_id
+            effective_project_id = project_id or self.project_id
+
             event = AgentStatusEvent(
                 event_id=str(uuid4()),
                 event_type=status.value,
@@ -778,12 +1020,24 @@ class BaseAgentRole(ABC):
                 status=status,
                 current_action=current_action,
                 execution_id=self.execution_id,
-                project_id=project_id,
+                project_id=effective_project_id,
                 error_message=error_message,
             )
-            return await producer.publish(KafkaTopics.AGENT_STATUS, event)
+
+            success = await producer.publish(KafkaTopics.AGENT_STATUS, event)
+            if success:
+                logger.debug(
+                    f"Published status event: agent={self.human_name}, "
+                    f"status={status.value}, project={effective_project_id}"
+                )
+            else:
+                logger.warning(
+                    f"Failed to publish status event: agent={self.human_name}, "
+                    f"status={status.value}, project={effective_project_id}"
+                )
+            return success
         except Exception as e:
-            logger.error(f"Failed to publish status: {e}")
+            logger.error(f"Failed to publish status: {e}", exc_info=True)
             return False
 
     async def _publish_progress(

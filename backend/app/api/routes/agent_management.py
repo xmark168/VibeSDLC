@@ -13,7 +13,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
-from sqlmodel import Session, select
+from sqlmodel import Session, select, update
 
 from app.api.deps import get_current_user, get_db, SessionDep
 from app.models import User, Agent, AgentStatus, AgentExecution, AgentExecutionStatus
@@ -25,13 +25,13 @@ from app.agents.core import (
 )
 from app.agents.core.name_generator import generate_agent_name, get_display_name
 
-# Import role classes
-from app.agents.roles.team_leader.crew import TeamLeaderCrew
-from app.agents.roles.business_analyst.crew import BusinessAnalystCrew
-from app.agents.roles.developer.crew import DeveloperCrew
-from app.agents.roles.tester.crew import TesterCrew
+# Import role classes (NOT crew classes - Role classes wrap Crews and handle lifecycle)
+from app.agents.roles.team_leader import TeamLeaderRole
+from app.agents.roles.business_analyst import BusinessAnalystRole
+from app.agents.roles.developer import DeveloperRole
+from app.agents.roles.tester import TesterRole
 
-router = APIRouter(prefix="/agents", tags=["agents"])
+router = APIRouter(prefix="/agents", tags=["agent-management"])
 
 
 # ===== Schemas =====
@@ -100,12 +100,13 @@ class SystemStatsResponse(BaseModel):
 # Pool registry (in production, use Redis or database)
 _pool_registry: Dict[str, AgentPool] = {}
 
-# Role class mapping
+# Role class mapping (use Role classes, NOT Crew classes)
+# Role classes handle lifecycle, consumers, and wrap Crew functionality
 ROLE_CLASS_MAP = {
-    "team_leader": TeamLeaderCrew,
-    "business_analyst": BusinessAnalystCrew,
-    "developer": DeveloperCrew,
-    "tester": TesterCrew,
+    "team_leader": TeamLeaderRole,
+    "business_analyst": BusinessAnalystRole,
+    "developer": DeveloperRole,
+    "tester": TesterRole,
 }
 
 
@@ -160,10 +161,29 @@ async def initialize_default_pools() -> None:
 
                 # Restore agents from database
                 with Session(engine) as db_session:
-                    # Query agents for this role type that are not terminated
+                    # First, reset any agents stuck in transient states from previous shutdown
+                    # This handles cases where server was hard-killed (SIGKILL) without graceful shutdown
+                    transient_states = [AgentStatus.starting, AgentStatus.stopping, AgentStatus.busy]
+                    reset_stmt = (
+                        update(Agent)
+                        .where(
+                            Agent.role_type == role_type,
+                            Agent.status.in_(transient_states)
+                        )
+                        .values(status=AgentStatus.idle)
+                    )
+                    reset_result = db_session.exec(reset_stmt)
+                    db_session.commit()
+
+                    if reset_result.rowcount > 0:
+                        logger.info(f"Auto-reset {reset_result.rowcount} {role_type} agents from transient states to idle")
+
+                    # Query agents for this role type that should be loaded
+                    # Load: idle (ready to work), stopped (cleanly stopped, can restart)
+                    # Skip: error, terminated (manual intervention needed)
                     agents_query = select(Agent).where(
                         Agent.role_type == role_type,
-                        Agent.status != AgentStatus.terminated
+                        Agent.status.in_([AgentStatus.idle, AgentStatus.stopped])
                     )
                     db_agents = db_session.exec(agents_query).all()
 
@@ -429,6 +449,38 @@ async def get_project_agents(
     ]
 
 
+# ===== Monitoring Endpoints =====
+# NOTE: These must be defined BEFORE /{agent_id}/* routes to avoid catch-all matching
+
+@router.get("/monitor/system", response_model=SystemStatsResponse)
+async def get_system_stats(
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Get system-wide agent statistics."""
+    monitor = get_agent_monitor()
+    stats = monitor.get_system_stats()
+    return SystemStatsResponse(**stats)
+
+
+@router.get("/monitor/dashboard")
+async def get_dashboard_data(
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Get comprehensive dashboard data for monitoring."""
+    monitor = get_agent_monitor()
+    return await monitor.get_dashboard_data()
+
+
+@router.get("/monitor/alerts")
+async def get_alerts(
+    limit: int = Query(default=20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Get recent monitoring alerts."""
+    monitor = get_agent_monitor()
+    return monitor.get_recent_alerts(limit=limit)
+
+
 @router.get("/health")
 async def get_all_agent_health(
     current_user: User = Depends(get_current_user),
@@ -438,6 +490,9 @@ async def get_all_agent_health(
     health_data = await monitor.get_all_agent_health()
     return health_data
 
+
+# ===== Agent-specific Endpoints (with {agent_id} path parameter) =====
+# NOTE: These catch-all routes must come AFTER specific routes like /monitor/*
 
 @router.get("/{agent_id}/health")
 async def get_agent_health(
@@ -492,38 +547,8 @@ async def set_agent_idle(
     }
 
 
-# ===== Monitoring Endpoints =====
-
-@router.get("/monitor/system", response_model=SystemStatsResponse)
-async def get_system_stats(
-    current_user: User = Depends(get_current_user),
-) -> Any:
-    """Get system-wide agent statistics."""
-    monitor = get_agent_monitor()
-    stats = monitor.get_system_stats()
-    return SystemStatsResponse(**stats)
-
-
-@router.get("/monitor/dashboard")
-async def get_dashboard_data(
-    current_user: User = Depends(get_current_user),
-) -> Any:
-    """Get comprehensive dashboard data for monitoring."""
-    monitor = get_agent_monitor()
-    return await monitor.get_dashboard_data()
-
-
-@router.get("/monitor/alerts")
-async def get_alerts(
-    limit: int = Query(default=20, ge=1, le=100),
-    current_user: User = Depends(get_current_user),
-) -> Any:
-    """Get recent monitoring alerts."""
-    monitor = get_agent_monitor()
-    return monitor.get_recent_alerts(limit=limit)
-
-
 # ===== Execution History Endpoints =====
+# NOTE: Specific routes like /stats/summary must come BEFORE /{execution_id}
 
 @router.get("/executions")
 async def get_executions(
@@ -574,38 +599,6 @@ async def get_executions(
     ]
 
 
-@router.get("/executions/{execution_id}")
-async def get_execution_detail(
-    execution_id: UUID,
-    session: SessionDep,
-    current_user: User = Depends(get_current_user),
-) -> Any:
-    """Get detailed information about a specific execution."""
-    execution = session.get(AgentExecution, execution_id)
-
-    if not execution:
-        raise HTTPException(status_code=404, detail=f"Execution {execution_id} not found")
-
-    return {
-        "id": str(execution.id),
-        "project_id": str(execution.project_id),
-        "agent_name": execution.agent_name,
-        "agent_type": execution.agent_type,
-        "status": execution.status.value,
-        "started_at": execution.started_at.isoformat() if execution.started_at else None,
-        "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
-        "duration_ms": execution.duration_ms,
-        "token_used": execution.token_used,
-        "llm_calls": execution.llm_calls,
-        "error_message": execution.error_message,
-        "error_traceback": execution.error_traceback,
-        "result": execution.result,
-        "extra_metadata": execution.extra_metadata,
-        "created_at": execution.created_at.isoformat(),
-        "updated_at": execution.updated_at.isoformat(),
-    }
-
-
 @router.get("/executions/stats/summary")
 async def get_execution_stats(
     session: SessionDep,
@@ -653,6 +646,38 @@ async def get_execution_stats(
             stats[agent_type]["total_tokens"] += row[4]
 
     return stats
+
+
+@router.get("/executions/{execution_id}")
+async def get_execution_detail(
+    execution_id: UUID,
+    session: SessionDep,
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Get detailed information about a specific execution."""
+    execution = session.get(AgentExecution, execution_id)
+
+    if not execution:
+        raise HTTPException(status_code=404, detail=f"Execution {execution_id} not found")
+
+    return {
+        "id": str(execution.id),
+        "project_id": str(execution.project_id),
+        "agent_name": execution.agent_name,
+        "agent_type": execution.agent_type,
+        "status": execution.status.value,
+        "started_at": execution.started_at.isoformat() if execution.started_at else None,
+        "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
+        "duration_ms": execution.duration_ms,
+        "token_used": execution.token_used,
+        "llm_calls": execution.llm_calls,
+        "error_message": execution.error_message,
+        "error_traceback": execution.error_traceback,
+        "result": execution.result,
+        "extra_metadata": execution.extra_metadata,
+        "created_at": execution.created_at.isoformat(),
+        "updated_at": execution.updated_at.isoformat(),
+    }
 
 
 # ===== Lifecycle Management =====

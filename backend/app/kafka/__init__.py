@@ -11,10 +11,19 @@ from app.kafka.consumer_registry import (
     start_all_consumers,
 )
 from app.kafka.event_schemas import (
+    AgentProgressEvent,
     AgentResponseEvent,
     AgentRoutingEvent,
     AgentStatusEvent,
     AgentStatusType,
+    AgentTaskAssignedEvent,
+    AgentTaskCancelledEvent,
+    AgentTaskCompletedEvent,
+    AgentTaskFailedEvent,
+    AgentTaskProgressEvent,
+    AgentTaskStartedEvent,
+    AgentTaskStatus,
+    AgentTaskType,
     ApprovalRequestEvent,
     ApprovalResponseEvent,
     BaseKafkaEvent,
@@ -26,6 +35,7 @@ from app.kafka.event_schemas import (
     StoryEventType,
     StoryStatusChangedEvent,
     StoryUpdatedEvent,
+    ToolCallEvent,
     UserMessageEvent,
     get_event_schema,
 )
@@ -51,6 +61,7 @@ __all__ = [
     "AgentRoutingEvent",
     "AgentStatusEvent",
     "AgentStatusType",
+    "AgentProgressEvent",
     "StoryCreatedEvent",
     "StoryUpdatedEvent",
     "StoryStatusChangedEvent",
@@ -60,5 +71,16 @@ __all__ = [
     "ApprovalResponseEvent",
     "FlowStatusEvent",
     "FlowStatusType",
+    "ToolCallEvent",
+    # Agent Task Events
+    "AgentTaskType",
+    "AgentTaskStatus",
+    "AgentTaskAssignedEvent",
+    "AgentTaskStartedEvent",
+    "AgentTaskProgressEvent",
+    "AgentTaskCompletedEvent",
+    "AgentTaskFailedEvent",
+    "AgentTaskCancelledEvent",
+    # Utils
     "get_event_schema",
 ]

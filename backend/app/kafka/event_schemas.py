@@ -11,10 +11,13 @@ from pydantic import BaseModel, Field
 
 
 def get_project_topic(project_id: UUID) -> str:
-    """Get the Kafka topic name for a specific project.
+    """DEPRECATED: Get the Kafka topic name for a specific project.
 
-    Each project has its own topic where all agents in that project
-    listen for user messages and delegation events.
+    WARNING: This function is deprecated. Use the global KafkaTopics.USER_MESSAGES
+    topic instead and filter by project_id in the consumer.
+
+    Project-specific topics caused errors when topics didn't exist.
+    Global topics with partition keys are more scalable and reliable.
 
     Args:
         project_id: UUID of the project
@@ -23,9 +26,21 @@ def get_project_topic(project_id: UUID) -> str:
         Topic name in format: project_{project_id}_messages
 
     Example:
+        >>> # DEPRECATED - Don't use this
         >>> get_project_topic(UUID("abc-123"))
         'project_abc-123_messages'
+
+        >>> # Use this instead:
+        >>> topic = KafkaTopics.USER_MESSAGES
+        >>> # Then filter by project_id in consumer handler
     """
+    import warnings
+    warnings.warn(
+        "get_project_topic() is deprecated. Use KafkaTopics.USER_MESSAGES "
+        "with project_id filtering instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return f"project_{project_id}_messages"
 
 
@@ -42,6 +57,7 @@ class KafkaTopics(str, Enum):
     TOOL_CALLS = "tool_calls"
     APPROVAL_REQUESTS = "approval_requests"
     APPROVAL_RESPONSES = "approval_responses"
+    AGENT_TASKS = "agent_tasks"
     
 
 # BASE EVENT SCHEMA
@@ -252,6 +268,124 @@ class ToolCallEvent(BaseKafkaEvent):
     error_message: Optional[str] = None
 
 
+# AGENT TASK EVENTS
+class AgentTaskType(str, Enum):
+    """Types of tasks that can be assigned to agents."""
+
+    # Specific task types
+    CODE_REVIEW = "code_review"
+    IMPLEMENT_STORY = "implement_story"
+    WRITE_TESTS = "write_tests"
+    FIX_BUG = "fix_bug"
+    REFACTOR = "refactor"
+    ANALYZE_REQUIREMENTS = "analyze_requirements"
+    CREATE_STORIES = "create_stories"
+
+    # Abstraction task types (high-level)
+    USER_STORY = "user_story"  # BA: Analyze requirements → create user stories
+    MESSAGE = "message"  # Any agent: Handle/respond to user message
+
+    # Generic
+    CUSTOM = "custom"
+
+
+class AgentTaskStatus(str, Enum):
+    """Status of agent tasks."""
+
+    PENDING = "pending"
+    ASSIGNED = "assigned"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class AgentTaskAssignedEvent(BaseKafkaEvent):
+    """Event emitted when a task is assigned to an agent."""
+
+    event_type: str = "agent.task.assigned"
+    task_id: UUID
+    task_type: AgentTaskType
+    agent_id: UUID
+    agent_name: str
+    assigned_by: str  # user_id or agent_name
+    title: str
+    description: Optional[str] = None
+    priority: str = "medium"  # low, medium, high, critical
+    story_id: Optional[UUID] = None
+    epic_id: Optional[UUID] = None
+    estimated_duration: Optional[int] = None  # minutes
+    due_date: Optional[datetime] = None
+    context: Dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentTaskStartedEvent(BaseKafkaEvent):
+    """Event emitted when agent starts working on a task."""
+
+    event_type: str = "agent.task.started"
+    task_id: UUID
+    agent_id: UUID
+    agent_name: str
+    execution_id: UUID
+    started_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class AgentTaskProgressEvent(BaseKafkaEvent):
+    """Event emitted for task progress updates."""
+
+    event_type: str = "agent.task.progress"
+    task_id: UUID
+    agent_id: UUID
+    agent_name: str
+    execution_id: UUID
+    progress_percentage: int  # 0-100
+    current_step: str
+    steps_completed: int
+    total_steps: int
+    estimated_completion: Optional[datetime] = None
+
+
+class AgentTaskCompletedEvent(BaseKafkaEvent):
+    """Event emitted when task is completed successfully."""
+
+    event_type: str = "agent.task.completed"
+    task_id: UUID
+    agent_id: UUID
+    agent_name: str
+    execution_id: UUID
+    completed_at: datetime = Field(default_factory=datetime.utcnow)
+    duration_seconds: int
+    result: Optional[Dict[str, Any]] = None
+    artifacts: Optional[Dict[str, Any]] = None  # Files created, PRs, etc.
+
+
+class AgentTaskFailedEvent(BaseKafkaEvent):
+    """Event emitted when task fails."""
+
+    event_type: str = "agent.task.failed"
+    task_id: UUID
+    agent_id: UUID
+    agent_name: str
+    execution_id: UUID
+    failed_at: datetime = Field(default_factory=datetime.utcnow)
+    error_message: str
+    error_type: Optional[str] = None
+    retry_count: int = 0
+    can_retry: bool = True
+
+
+class AgentTaskCancelledEvent(BaseKafkaEvent):
+    """Event emitted when task is cancelled."""
+
+    event_type: str = "agent.task.cancelled"
+    task_id: UUID
+    agent_id: UUID
+    agent_name: str
+    cancelled_by: str  # user_id or agent_name
+    cancelled_at: datetime = Field(default_factory=datetime.utcnow)
+    reason: Optional[str] = None
+
+
 # EVENT REGISTRY
 EVENT_TYPE_TO_SCHEMA = {
     "user.message.sent": UserMessageEvent,
@@ -275,6 +409,12 @@ EVENT_TYPE_TO_SCHEMA = {
     "agent.error": AgentStatusEvent,
     "agent.progress": AgentProgressEvent,
     "agent.tool_call": ToolCallEvent,
+    "agent.task.assigned": AgentTaskAssignedEvent,
+    "agent.task.started": AgentTaskStartedEvent,
+    "agent.task.progress": AgentTaskProgressEvent,
+    "agent.task.completed": AgentTaskCompletedEvent,
+    "agent.task.failed": AgentTaskFailedEvent,
+    "agent.task.cancelled": AgentTaskCancelledEvent,
 }
 
 

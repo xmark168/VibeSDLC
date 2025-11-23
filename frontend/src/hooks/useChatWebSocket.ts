@@ -98,6 +98,12 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     currentAction?: string
     executionId?: string
   }>({ agentName: null, status: 'idle' })
+
+  // Track status of ALL agents (for avatars display)
+  const [agentStatuses, setAgentStatuses] = useState<Map<string, {
+    status: 'idle' | 'thinking' | 'acting' | 'waiting' | 'error' | 'busy' | 'running' | 'stopped' | 'starting' | 'stopping' | 'terminated' | 'created'
+    lastUpdate: string
+  }>>(new Map())
   const [approvalRequests, setApprovalRequests] = useState<any[]>([])
   const [toolCalls, setToolCalls] = useState<any[]>([])
   const [kanbanData, setKanbanData] = useState<{
@@ -269,6 +275,18 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
               currentAction: data.current_action,
               executionId: data.execution_id,
             })
+
+            // Update global agent statuses map for avatars
+            if (data.agent_name) {
+              setAgentStatuses(prev => {
+                const newMap = new Map(prev)
+                newMap.set(data.agent_name, {
+                  status: normalizedStatus,
+                  lastUpdate: new Date().toISOString()
+                })
+                return newMap
+              })
+            }
             break
 
           case 'kanban_update':
@@ -336,19 +354,64 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
             break
 
           case 'activity_update':
-            console.log('[WebSocket] Activity update:', data.message_id)
-            // Update existing activity message
+            console.log('[WebSocket] Activity update:', data.message_id, 'is_new:', data.is_new)
+
             if (data.message_id) {
-              setMessages((prev) => prev.map(msg =>
-                msg.id === data.message_id
-                  ? {
-                      ...msg,
-                      structured_data: data.structured_data,
-                      content: data.content || msg.content,
-                      updated_at: data.updated_at || new Date().toISOString()
-                    }
-                  : msg
-              ))
+              if (data.is_new) {
+                // This is a NEW activity message (first progress event)
+                setMessages((prev) => {
+                  // Check if message already exists (prevent duplicates)
+                  const exists = prev.some(m => m.id === data.message_id)
+                  if (exists) {
+                    console.log('[WebSocket] Activity message already exists, skipping:', data.message_id)
+                    return prev
+                  }
+
+                  // Create new activity message
+                  const newMessage: Message = {
+                    id: data.message_id,
+                    project_id: data.project_id || projectId || '',
+                    author_type: AuthorType.AGENT,
+                    content: data.content || '',
+                    created_at: data.created_at || new Date().toISOString(),
+                    updated_at: data.updated_at || new Date().toISOString(),
+                    agent_name: data.agent_name,
+                    message_type: 'activity',
+                    structured_data: data.structured_data,
+                    message_metadata: { agent_name: data.agent_name }
+                  }
+
+                  console.log('[WebSocket] Adding new activity message:', newMessage.id)
+                  return [...prev, newMessage]
+                })
+              } else {
+                // This is an UPDATE to existing activity message
+                setMessages((prev) => {
+                  const updated = prev.map(msg =>
+                    msg.id === data.message_id
+                      ? {
+                          ...msg,
+                          structured_data: data.structured_data,
+                          content: data.content || msg.content,
+                          updated_at: data.updated_at || new Date().toISOString()
+                        }
+                      : msg
+                  )
+
+                  // Check if update was successful
+                  const wasUpdated = updated.some((msg, idx) =>
+                    msg.id === data.message_id && prev[idx] !== msg
+                  )
+
+                  if (!wasUpdated) {
+                    console.warn('[WebSocket] Activity update failed - message not found:', data.message_id)
+                  } else {
+                    console.log('[WebSocket] Updated activity message:', data.message_id)
+                  }
+
+                  return updated
+                })
+              }
             }
             break
 
@@ -482,6 +545,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     typingAgents: Array.from(typingAgents),
     agentProgress,
     agentStatus,
+    agentStatuses, // Map of all agent statuses for avatars
     approvalRequests,
     toolCalls,
     kanbanData,

@@ -25,13 +25,6 @@ export function Sidebar({
 }: SidebarProps) {
   const [myChatsExpanded, setMyChatsExpanded] = useState(true)
 
-  const chats = [
-    { id: "1", title: "ádf", active: false },
-    { id: "2", title: "Website sobre camisetas", active: true },
-    { id: "3", title: "create mobile web", active: false },
-    { id: "4", title: "App Development for Selling", active: false },
-    { id: "5", title: "T-shirt Costume Website Code", active: false },
-  ]
 
   const _isVisible = !collapsed || hovered
 
@@ -102,29 +95,7 @@ export function Sidebar({
           )}
         </button>
 
-        {myChatsExpanded && (
-          <>
-            <div className="mb-2 px-3">
-              <p className="text-xs text-muted-foreground">Recents</p>
-            </div>
-
-            <div className="space-y-0.5">
-              {chats.map((chat) => (
-                <button
-                  key={chat.id}
-                  className={cn(
-                    "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
-                    chat.active
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                      : "text-sidebar-foreground hover:bg-sidebar-accent/50",
-                  )}
-                >
-                  {chat.title}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
+        
       </div>
 
       <div className="p-3">
