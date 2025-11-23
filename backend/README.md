@@ -6,11 +6,9 @@ Backend API service with auto-scaling multiprocessing agent pools.
 
 - **FastAPI** - Modern async Python web framework
 - **PostgreSQL** - Primary database
-- **PgBouncer** - Connection pooler for PostgreSQL
-- **Redis** - Agent pool coordination & IPC
+- **Redis** - Agent coordination & caching
 - **Kafka** - Event streaming for agent communication
 - **SQLModel** - ORM with Pydantic integration
-- **Multiprocessing** - Auto-scaling worker processes
 
 ## Architecture
 
@@ -53,8 +51,7 @@ Backend API service with auto-scaling multiprocessing agent pools.
 docker-compose up -d
 
 # This starts:
-# - PostgreSQL (port 5432)
-# - PgBouncer (port 6432)
+# - PostgreSQL (port 5433)
 # - Redis (port 6379)
 # - Kafka + Zookeeper (ports 9092, 2181)
 # - Redis Commander UI (port 8081)
@@ -76,9 +73,6 @@ POSTGRES_PORT=5432
 POSTGRES_USER=vibeSDLC_user
 POSTGRES_PASSWORD=your_password
 POSTGRES_DB=vibeSDLC
-
-# PgBouncer connection (recommended for production)
-PGBOUNCER_URL=postgresql+psycopg://vibeSDLC_user:your_password@localhost:6432/vibeSDLC
 
 # Redis connection
 REDIS_HOST=localhost
@@ -234,10 +228,7 @@ uv run mypy app/
 
 ```bash
 # PostgreSQL
-psql -h localhost -p 5432 -U vibeSDLC_user vibeSDLC
-
-# PgBouncer stats
-psql -h localhost -p 6432 -U vibeSDLC_user pgbouncer -c "SHOW POOLS;"
+psql -h localhost -p 5433 -U vibeSDLC_user vibeSDLC
 
 # Redis
 redis-cli ping
@@ -309,12 +300,15 @@ docker-compose up -d redis
 
 **Error**: `FATAL: sorry, too many clients already`
 
-**Fix**: Use PgBouncer (already configured in docker-compose)
+**Fix**: Increase PostgreSQL max_connections or check for connection leaks.
 
-Update backend `.env`:
 ```bash
-# Use PgBouncer instead of direct PostgreSQL
-SQLALCHEMY_DATABASE_URI=postgresql+psycopg://vibeSDLC_user:password@localhost:6432/vibeSDLC
+# Check current connections
+psql -h localhost -p 5433 -U vibeSDLC_user vibeSDLC \
+  -c "SELECT count(*) FROM pg_stat_activity;"
+
+# Increase max_connections (edit postgresql.conf or docker env)
+# Default is 100, increase if needed
 ```
 
 ### Agent Stuck in "spawning" State
@@ -352,18 +346,18 @@ redis-cli CONFIG SET maxmemory 1gb
 redis-cli CONFIG SET maxmemory-policy allkeys-lru
 ```
 
-### PgBouncer
+### Database Connection Pool
 
-Edit `/etc/pgbouncer/pgbouncer.ini`:
-```ini
-# Increase pool size for high concurrency
-default_pool_size = 50
-reserve_pool_size = 10
+Adjust SQLAlchemy pool settings in `app/core/db.py`:
 
-# Or in docker-compose.yml:
-environment:
-  DEFAULT_POOL_SIZE: 50
-  RESERVE_POOL_SIZE: 10
+```python
+# Main engine
+engine = create_engine(
+    str(settings.SQLALCHEMY_DATABASE_URI),
+    pool_size=10,        # Increase from default 5
+    max_overflow=20,     # Increase from default 10
+    pool_pre_ping=True,  # Verify connections
+)
 ```
 
 ### Worker Scaling

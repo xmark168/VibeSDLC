@@ -1,322 +1,226 @@
-"""
-Agent Monitor - Centralized monitoring for all agent pools.
+"""Agent monitoring system.
+
+Lightweight monitoring coordinator that aggregates stats from AgentPoolManager
+instances and provides system-wide monitoring interface.
 """
 
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
-from uuid import UUID
-
-from app.agents.core.agent_pool import AgentPool
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 
 class AgentMonitor:
-    """Centralized monitor for all agent pools.
-
+    """Lightweight monitoring coordinator for agent system.
+    
+    Aggregates statistics from AgentPoolManager instances and provides
+    unified monitoring interface. Does NOT perform health checks (those
+    are handled by individual AgentPoolManager instances).
+    
     Features:
-    - Track multiple pools
-    - Aggregate statistics
-    - Health monitoring
-    - Alert generation
-    - Metrics export for dashboards
+    - System-wide statistics aggregation
+    - Periodic logging of key metrics
+    - Optional component (system continues if monitor fails)
     """
 
-    def __init__(self, alert_threshold: float = 0.5):
+    def __init__(
+        self,
+        manager_registry: Dict[str, Any],  # Dict[str, AgentPoolManager]
+        monitor_interval: int = 30,
+    ):
         """Initialize agent monitor.
-
+        
         Args:
-            alert_threshold: Failure rate threshold for alerts (0-1)
+            manager_registry: Dictionary of pool managers {pool_name: AgentPoolManager}
+            monitor_interval: Seconds between stat logging (default 30)
         """
-        self.pools: Dict[str, AgentPool] = {}
-        self.alert_threshold = alert_threshold
+        self.manager_registry = manager_registry
+        self.monitor_interval = monitor_interval
+        self.running = False
+        self._task: Optional[asyncio.Task] = None
+        self.started_at = datetime.now(timezone.utc)
+        
+        logger.info(f"AgentMonitor initialized with {len(manager_registry)} pools")
 
-        # Monitoring state
-        self.started_at: Optional[datetime] = None
-        self._monitor_task: Optional[asyncio.Task] = None
-        self._shutdown_event = asyncio.Event()
-
-        # Alert tracking
-        self.alerts: List[Dict] = []
-        self.max_alerts = 100
-
-        logger.info("AgentMonitor initialized")
-
-    async def start(self, monitor_interval: int = 30) -> bool:
-        """Start the monitor.
-
+    async def start(self, monitor_interval: Optional[int] = None) -> bool:
+        """Start the monitoring system.
+        
         Args:
-            monitor_interval: Seconds between monitoring checks
-
+            monitor_interval: Override default monitoring interval
+            
         Returns:
             True if started successfully
         """
+        if self.running:
+            logger.warning("Monitor is already running")
+            return False
+        
+        if monitor_interval:
+            self.monitor_interval = monitor_interval
+        
         try:
-            self.started_at = datetime.now(timezone.utc)
-            self._monitor_task = asyncio.create_task(self._monitor_loop(monitor_interval))
-
-            logger.info("AgentMonitor started")
+            self.running = True
+            self._task = asyncio.create_task(self._monitoring_loop())
+            logger.info(f"✓ AgentMonitor started (interval: {self.monitor_interval}s)")
             return True
-
+            
         except Exception as e:
-            logger.error(f"Failed to start monitor: {e}", exc_info=True)
+            logger.error(f"Failed to start AgentMonitor: {e}", exc_info=True)
+            self.running = False
             return False
 
     async def stop(self) -> bool:
-        """Stop the monitor.
-
+        """Stop the monitoring system.
+        
         Returns:
             True if stopped successfully
         """
+        if not self.running:
+            return True
+        
         try:
-            self._shutdown_event.set()
-
-            if self._monitor_task:
-                self._monitor_task.cancel()
+            self.running = False
+            
+            if self._task:
+                self._task.cancel()
                 try:
-                    await self._monitor_task
+                    await self._task
                 except asyncio.CancelledError:
                     pass
-
+            
             logger.info("AgentMonitor stopped")
             return True
-
+            
         except Exception as e:
-            logger.error(f"Failed to stop monitor: {e}", exc_info=True)
+            logger.error(f"Error stopping AgentMonitor: {e}", exc_info=True)
             return False
 
-    # ===== Pool Management =====
-
-    def register_pool(self, pool: AgentPool) -> bool:
-        """Register a pool for monitoring.
-
-        Args:
-            pool: Agent pool to monitor
-
+    async def get_system_stats(self) -> Dict[str, Any]:
+        """Get aggregated system-wide statistics.
+        
         Returns:
-            True if registered successfully
+            Dictionary with system statistics
         """
-        if pool.pool_name in self.pools:
-            logger.warning(f"Pool '{pool.pool_name}' already registered")
-            return False
-
-        self.pools[pool.pool_name] = pool
-        logger.info(f"Pool '{pool.pool_name}' registered for monitoring")
-        return True
-
-    def unregister_pool(self, pool_name: str) -> bool:
-        """Unregister a pool from monitoring.
-
-        Args:
-            pool_name: Pool name to unregister
-
-        Returns:
-            True if unregistered successfully
-        """
-        if pool_name not in self.pools:
-            logger.warning(f"Pool '{pool_name}' not registered")
-            return False
-
-        del self.pools[pool_name]
-        logger.info(f"Pool '{pool_name}' unregistered from monitoring")
-        return True
-
-    # ===== Monitoring =====
-
-    async def _monitor_loop(self, interval: int) -> None:
-        """Monitor all pools periodically."""
-        while not self._shutdown_event.is_set():
+        total_agents = 0
+        total_busy = 0
+        total_idle = 0
+        total_executions = 0
+        successful_executions = 0
+        failed_executions = 0
+        
+        pool_stats = []
+        
+        for pool_name, manager in self.manager_registry.items():
             try:
-                await asyncio.sleep(interval)
-                await self._check_all_pools()
+                stats = await manager.get_stats()
+                pool_stats.append(stats)
+                
+                total_agents += stats.get("total_agents", 0)
+                total_busy += stats.get("busy_agents", 0)
+                total_idle += stats.get("idle_agents", 0)
+                total_executions += stats.get("total_executions", 0)
+                successful_executions += stats.get("successful_executions", 0)
+                failed_executions += stats.get("failed_executions", 0)
+                
+            except Exception as e:
+                logger.error(f"Error getting stats from pool '{pool_name}': {e}")
+        
+        uptime_seconds = (datetime.now(timezone.utc) - self.started_at).total_seconds()
+        
+        return {
+            "uptime_seconds": uptime_seconds,
+            "total_pools": len(self.manager_registry),
+            "total_agents": total_agents,
+            "busy_agents": total_busy,
+            "idle_agents": total_idle,
+            "active_agents": total_busy + total_idle,
+            "total_executions": total_executions,
+            "successful_executions": successful_executions,
+            "failed_executions": failed_executions,
+            "success_rate": successful_executions / total_executions if total_executions > 0 else 0.0,
+            "utilization": total_busy / total_agents if total_agents > 0 else 0.0,
+            "pools": pool_stats,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
 
+    async def get_pool_stats(self, pool_name: str) -> Optional[Dict[str, Any]]:
+        """Get statistics for a specific pool.
+        
+        Args:
+            pool_name: Name of the pool
+            
+        Returns:
+            Pool statistics dictionary or None if pool not found
+        """
+        manager = self.manager_registry.get(pool_name)
+        if not manager:
+            logger.warning(f"Pool '{pool_name}' not found in registry")
+            return None
+        
+        try:
+            return await manager.get_stats()
+        except Exception as e:
+            logger.error(f"Error getting stats for pool '{pool_name}': {e}")
+            return None
+
+    async def get_all_pools_health(self) -> List[Dict[str, Any]]:
+        """Get health status of all pools.
+        
+        Returns:
+            List of pool health dictionaries
+        """
+        health_statuses = []
+        
+        for pool_name, manager in self.manager_registry.items():
+            try:
+                stats = await manager.get_stats()
+                health_statuses.append({
+                    "pool_name": pool_name,
+                    "healthy": True,  # If we can get stats, pool is healthy
+                    "total_agents": stats.get("total_agents", 0),
+                    "active_agents": stats.get("active_agents", 0),
+                    "manager_type": stats.get("manager_type", "unknown"),
+                })
+            except Exception as e:
+                health_statuses.append({
+                    "pool_name": pool_name,
+                    "healthy": False,
+                    "error": str(e),
+                })
+        
+        return health_statuses
+
+    # ===== Background Task =====
+
+    async def _monitoring_loop(self) -> None:
+        """Periodic monitoring loop that logs system statistics.
+        
+        This is NOT for health checking (that's done by AgentPoolManager).
+        This is for system-wide observability and logging.
+        """
+        logger.info("AgentMonitor loop started")
+        
+        while self.running:
+            try:
+                await asyncio.sleep(self.monitor_interval)
+                
+                # Get and log system stats
+                stats = await self.get_system_stats()
+                
+                logger.info(
+                    f"[MONITOR] Pools: {stats['total_pools']}, "
+                    f"Agents: {stats['total_agents']} "
+                    f"(busy: {stats['busy_agents']}, idle: {stats['idle_agents']}), "
+                    f"Executions: {stats['total_executions']} "
+                    f"(success rate: {stats['success_rate']:.1%}), "
+                    f"Utilization: {stats['utilization']:.1%}"
+                )
+                
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Monitor loop error: {e}", exc_info=True)
-
-    async def _check_all_pools(self) -> None:
-        """Check health of all pools and generate alerts."""
-        for pool_name, pool in self.pools.items():
-            try:
-                stats = pool.get_pool_stats()
-
-                # Check for alerts
-                if stats["total_executions"] > 0:
-                    failure_rate = stats["failed_executions"] / stats["total_executions"]
-
-                    if failure_rate > self.alert_threshold:
-                        await self._create_alert(
-                            severity="WARNING",
-                            pool_name=pool_name,
-                            message=f"High failure rate: {failure_rate:.2%}",
-                            stats=stats
-                        )
-
-                # Check if pool has no active agents
-                if stats["active_agents"] == 0 and stats["total_agents"] > 0:
-                    await self._create_alert(
-                        severity="ERROR",
-                        pool_name=pool_name,
-                        message="No active agents in pool",
-                        stats=stats
-                    )
-
-            except Exception as e:
-                logger.error(f"Error checking pool '{pool_name}': {e}")
-
-    async def _create_alert(
-        self,
-        severity: str,
-        pool_name: str,
-        message: str,
-        stats: Dict,
-    ) -> None:
-        """Create an alert.
-
-        Args:
-            severity: Alert severity (INFO, WARNING, ERROR)
-            pool_name: Pool name
-            message: Alert message
-            stats: Pool statistics
-        """
-        alert = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "severity": severity,
-            "pool_name": pool_name,
-            "message": message,
-            "stats": stats,
-        }
-
-        self.alerts.append(alert)
-
-        # Keep only recent alerts
-        if len(self.alerts) > self.max_alerts:
-            self.alerts = self.alerts[-self.max_alerts:]
-
-        logger.warning(f"[{severity}] Pool '{pool_name}': {message}")
-
-    # ===== Statistics =====
-
-    def get_system_stats(self) -> Dict:
-        """Get system-wide statistics.
-
-        Returns:
-            Aggregated statistics across all pools
-        """
-        total_pools = len(self.pools)
-        total_agents = sum(len(pool.agents) for pool in self.pools.values())
-        total_executions = sum(
-            sum(a.total_executions for a in pool.agents.values())
-            for pool in self.pools.values()
-        )
-        total_successful = sum(
-            sum(a.successful_executions for a in pool.agents.values())
-            for pool in self.pools.values()
-        )
-        total_failed = sum(
-            sum(a.failed_executions for a in pool.agents.values())
-            for pool in self.pools.values()
-        )
-
-        return {
-            "uptime_seconds": (datetime.now(timezone.utc) - self.started_at).total_seconds() if self.started_at else 0,
-            "total_pools": total_pools,
-            "total_agents": total_agents,
-            "total_executions": total_executions,
-            "successful_executions": total_successful,
-            "failed_executions": total_failed,
-            "success_rate": total_successful / total_executions if total_executions > 0 else 0,
-            "recent_alerts": len([a for a in self.alerts if a["severity"] in ["WARNING", "ERROR"]]),
-        }
-
-    def get_pool_stats(self, pool_name: str) -> Optional[Dict]:
-        """Get statistics for a specific pool.
-
-        Args:
-            pool_name: Pool name
-
-        Returns:
-            Pool statistics or None if not found
-        """
-        pool = self.pools.get(pool_name)
-        if not pool:
-            return None
-
-        return pool.get_pool_stats()
-
-    def get_all_pool_stats(self) -> Dict[str, Dict]:
-        """Get statistics for all pools.
-
-        Returns:
-            Dictionary mapping pool names to statistics
-        """
-        return {
-            pool_name: pool.get_pool_stats()
-            for pool_name, pool in self.pools.items()
-        }
-
-    async def get_all_agent_health(self) -> Dict[str, List[Dict]]:
-        """Get health status of all agents across all pools.
-
-        Returns:
-            Dictionary mapping pool names to agent health lists
-        """
-        health_data = {}
-
-        for pool_name, pool in self.pools.items():
-            health_data[pool_name] = await pool.get_all_agent_health()
-
-        return health_data
-
-    def get_recent_alerts(self, limit: int = 20) -> List[Dict]:
-        """Get recent alerts.
-
-        Args:
-            limit: Maximum number of alerts to return
-
-        Returns:
-            List of recent alerts
-        """
-        return self.alerts[-limit:]
-
-    # ===== Dashboard Data =====
-
-    async def get_dashboard_data(self) -> Dict:
-        """Get comprehensive data for monitoring dashboard.
-
-        Returns:
-            Dashboard data dictionary
-        """
-        system_stats = self.get_system_stats()
-        pool_stats = self.get_all_pool_stats()
-        agent_health = await self.get_all_agent_health()
-        recent_alerts = self.get_recent_alerts()
-
-        return {
-            "system": system_stats,
-            "pools": pool_stats,
-            "agents": agent_health,
-            "alerts": recent_alerts,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-
-
-# Global monitor instance
-_global_monitor: Optional[AgentMonitor] = None
-
-
-def get_agent_monitor() -> AgentMonitor:
-    """Get or create global agent monitor instance.
-
-    Returns:
-        AgentMonitor instance
-    """
-    global _global_monitor
-
-    if _global_monitor is None:
-        _global_monitor = AgentMonitor()
-
-    return _global_monitor
+                logger.error(f"Error in monitoring loop: {e}", exc_info=True)
+        
+        logger.info("AgentMonitor loop stopped")

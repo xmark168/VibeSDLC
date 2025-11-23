@@ -10,13 +10,13 @@ from uuid import UUID
 
 from crewai import Agent, Task
 
-from app.agents.roles.base_crew import BaseAgentCrew
-from app.agents.roles.tester.tasks import (
+from app.agents.base_crew import BaseAgentCrew
+from app.agents.tester.tasks import (
     create_test_plan_task,
     create_validate_requirements_task,
     create_test_cases_task,
 )
-from app.agents.roles.tester.tools import get_tester_tools
+from app.agents.tester.tools import get_tester_tools
 
 logger = logging.getLogger(__name__)
 

@@ -12,35 +12,20 @@ engine = create_engine(str(settings.SQLALCHEMY_DATABASE_URI))
 
 
 def get_worker_engine(pool_size: int = 5, max_overflow: int = 10):
-    """Get database engine for worker processes.
+    """Get database engine for background tasks and workers.
 
-    This creates a fresh engine instance for worker processes to avoid
-    connection pool corruption when using multiprocessing.
-
-    If PGBOUNCER_URL is set in environment, uses that instead of direct
-    PostgreSQL connection for better connection pooling.
+    Creates a fresh engine instance with custom pool settings for
+    background tasks like metrics collection.
 
     Args:
-        pool_size: Connection pool size for this worker
+        pool_size: Connection pool size
         max_overflow: Max overflow connections
 
     Returns:
         SQLModel engine instance
     """
-    # Check for PgBouncer URL in environment
-    pgbouncer_url = os.getenv("PGBOUNCER_URL")
-
-    if pgbouncer_url:
-        # Use PgBouncer (connection pooler)
-        # PgBouncer URL format: postgresql+psycopg://user:pass@pgbouncer_host:6432/dbname
-        db_url = pgbouncer_url
-    else:
-        # Fallback to direct PostgreSQL connection
-        db_url = str(settings.SQLALCHEMY_DATABASE_URI)
-
-    # Create engine with worker-specific pool settings
     worker_engine = create_engine(
-        db_url,
+        str(settings.SQLALCHEMY_DATABASE_URI),
         pool_size=pool_size,
         max_overflow=max_overflow,
         pool_pre_ping=True,  # Verify connections before using

@@ -28,7 +28,6 @@ export const agentQueryKeys = {
   }) => [...agentQueryKeys.metrics(), "timeseries", params] as const,
   metricsAggregated: (params: { time_range?: string; group_by?: string }) =>
     [...agentQueryKeys.metrics(), "aggregated", params] as const,
-  processMetrics: () => [...agentQueryKeys.metrics(), "processes"] as const,
   tokenMetrics: (params: { time_range?: string; group_by?: string }) =>
     [...agentQueryKeys.metrics(), "tokens", params] as const,
 }
@@ -199,18 +198,7 @@ export function useMetricsAggregated(
   })
 }
 
-/**
- * Fetch process metrics (current state)
- */
-export function useProcessMetrics(options?: { enabled?: boolean; refetchInterval?: number }) {
-  return useQuery({
-    queryKey: agentQueryKeys.processMetrics(),
-    queryFn: () => agentsApi.getProcessMetrics(),
-    enabled: options?.enabled ?? true,
-    refetchInterval: options?.refetchInterval ?? 30000, // More frequent for real-time data
-    staleTime: 10000,
-  })
-}
+
 
 /**
  * Fetch token usage metrics

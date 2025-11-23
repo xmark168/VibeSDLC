@@ -9,7 +9,7 @@ from typing import Any, Dict
 
 from crewai import Agent, Task
 
-from app.agents.roles.base_crew import BaseAgentCrew
+from app.agents.base_crew import BaseAgentCrew
 
 logger = logging.getLogger(__name__)
 

@@ -17,8 +17,6 @@ from app.models import (
 )
 from app.core.db import get_worker_engine
 from app.api.routes.agent_management import get_manager, _manager_registry
-from app.agents.core.registry import ProcessRegistry, AgentRegistry
-from app.agents.core.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -120,33 +118,33 @@ class MetricsCollector:
 
             stats = await manager.get_stats()
 
-            # Get agent state distribution from Redis
-            redis = get_redis_client()
-            agent_registry = AgentRegistry(redis_client=redis)
-            process_registry = ProcessRegistry(redis_client=redis)
+            # Get agent state distribution from database
+            # Pool name format: "{role_type}_pool"
+            role_type = pool_name.replace("_pool", "")
+            
+            with Session(self.engine) as session:
+                # Query agents by role type
+                agents = session.exec(
+                    select(Agent).where(Agent.role_type == role_type)
+                ).all()
 
-            # Count agents by state
-            agent_ids = await agent_registry.get_pool_agents(pool_name)
-            state_counts = {
-                "idle": 0,
-                "busy": 0,
-                "error": 0,
-                "total": len(agent_ids),
-            }
+                # Count agents by state
+                state_counts = {
+                    "idle": 0,
+                    "busy": 0,
+                    "error": 0,
+                    "total": len(agents),
+                }
 
-            for agent_id_str in agent_ids:
-                try:
-                    agent_info = await agent_registry.get_info(UUID(agent_id_str))
-                    if agent_info:
-                        state = agent_info.get("state", "idle")
-                        if state == "idle":
-                            state_counts["idle"] += 1
-                        elif state in ["busy", "thinking", "working"]:
-                            state_counts["busy"] += 1
-                        elif state == "error":
-                            state_counts["error"] += 1
-                except Exception as e:
-                    logger.warning(f"Error getting agent {agent_id_str} info: {e}")
+                for agent in agents:
+                    if agent.status == AgentStatus.idle:
+                        state_counts["idle"] += 1
+                    elif agent.status in [AgentStatus.busy, AgentStatus.starting]:
+                        state_counts["busy"] += 1
+                    elif agent.status == AgentStatus.error:
+                        state_counts["error"] += 1
+                
+                agent_ids = [agent.id for agent in agents]
 
             # Get execution metrics from database
             execution_metrics = await self._get_execution_metrics(pool_name)

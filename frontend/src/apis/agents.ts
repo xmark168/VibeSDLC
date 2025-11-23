@@ -322,31 +322,6 @@ export const agentsApi = {
     })
   },
 
-  getProcessMetrics: async (): Promise<{
-    summary: {
-      total_processes: number
-      total_capacity: number
-      used_capacity: number
-      available_capacity: number
-      avg_utilization: number
-    }
-    processes: Array<{
-      process_id: string
-      pool_name: string
-      agent_count: number
-      max_agents: number
-      utilization: number
-      pid: number
-      status: string
-      started_at: string
-    }>
-  }> => {
-    return __request(OpenAPI, {
-      method: "GET",
-      url: "/api/v1/agents/metrics/processes",
-    })
-  },
-
   getTokenMetrics: async (params: {
     time_range?: "1h" | "6h" | "24h" | "7d" | "30d"
     group_by?: "pool" | "agent_type"
