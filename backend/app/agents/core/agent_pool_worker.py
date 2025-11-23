@@ -38,18 +38,22 @@ def get_role_class_map():
     """Lazy import role classes to avoid circular imports.
 
     This function is called at runtime instead of module import time.
+
+    NEW ARCHITECTURE:
+    - TeamLeader uses BaseAgent (merged role+crew)
+    - Others still use old Role classes (to be migrated)
     """
     # Import role classes dynamically (only when needed)
-    from app.agents.roles.team_leader import TeamLeaderRole
-    from app.agents.roles.business_analyst import BusinessAnalystRole
-    from app.agents.roles.developer import DeveloperRole
-    from app.agents.roles.tester import TesterRole
+    from app.agents.team_leader import TeamLeader  # NEW ARCHITECTURE
+    from app.agents.roles.business_analyst import BusinessAnalystRole  # OLD
+    from app.agents.roles.developer import DeveloperRole  # OLD
+    from app.agents.roles.tester import TesterRole  # OLD
 
     return {
-        "TeamLeaderRole": TeamLeaderRole,
-        "BusinessAnalystRole": BusinessAnalystRole,
-        "DeveloperRole": DeveloperRole,
-        "TesterRole": TesterRole,
+        "TeamLeader": TeamLeader,  # NEW - uses BaseAgent
+        "BusinessAnalystRole": BusinessAnalystRole,  # OLD
+        "DeveloperRole": DeveloperRole,  # OLD
+        "TesterRole": TesterRole,  # OLD
     }
 
 

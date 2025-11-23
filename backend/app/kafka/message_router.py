@@ -25,6 +25,7 @@ from sqlmodel import Session, select
 from app.kafka.event_schemas import (
     AgentResponseEvent,
     AgentStatusEvent,
+    AgentTaskType,
     ApprovalResponseEvent,
     BaseKafkaEvent,
     RouterTaskEvent,
@@ -84,6 +85,7 @@ class BaseEventRouter(ABC):
     async def publish_task(
         self,
         agent_id: UUID,
+        task_type: "AgentTaskType",
         source_event: BaseKafkaEvent | Dict[str, Any],
         routing_reason: str,
         priority: str = "medium",
@@ -93,6 +95,7 @@ class BaseEventRouter(ABC):
 
         Args:
             agent_id: Target agent UUID
+            task_type: Type of task (AgentTaskType enum)
             source_event: Original event that triggered routing
             routing_reason: Explanation of why this agent was chosen
             priority: Task priority (low, medium, high, critical)
@@ -109,6 +112,7 @@ class BaseEventRouter(ABC):
         # Create router task
         task = RouterTaskEvent(
             task_id=uuid4(),
+            task_type=task_type,  # NEW: Required field
             agent_id=agent_id,
             source_event_type=event_dict.get("event_type", "unknown"),
             source_event_id=event_dict.get("event_id", "unknown"),
@@ -189,15 +193,19 @@ class UserMessageRouter(BaseEventRouter):
             agent = session.exec(statement).first()
 
             if agent:
-                # Found mentioned agent
+                # Found mentioned agent - infer task type
+                task_type = self._infer_task_type(event_dict, agent.role_type)
+
                 await self.publish_task(
                     agent_id=agent.id,
+                    task_type=task_type,
                     source_event=event_dict,
                     routing_reason=f"@mention:{mentioned_name}",
                     priority="high",  # Mentions are high priority
                 )
                 self.logger.info(
-                    f"Routed message to mentioned agent: {agent.name} ({agent.id})"
+                    f"Routed message to mentioned agent: {agent.name} ({agent.id}), "
+                    f"task_type={task_type.value}"
                 )
             else:
                 # Mentioned agent not found → fallback to Team Leader
@@ -221,8 +229,10 @@ class UserMessageRouter(BaseEventRouter):
             team_leader = session.exec(statement).first()
 
             if team_leader:
+                # Team Leader gets MESSAGE task type
                 await self.publish_task(
                     agent_id=team_leader.id,
+                    task_type=AgentTaskType.MESSAGE,
                     source_event=event_dict,
                     routing_reason="no_mention_default_team_leader",
                     priority="medium",
@@ -234,6 +244,54 @@ class UserMessageRouter(BaseEventRouter):
                 self.logger.error(
                     f"No Team Leader found in project {project_id}, cannot route message!"
                 )
+
+    def _infer_task_type(self, event_dict: Dict[str, Any], agent_role: str = None) -> AgentTaskType:
+        """Infer task type from message content and type.
+
+        Args:
+            event_dict: Event dictionary with message data
+            agent_role: Role of target agent (optional, for role-specific inference)
+
+        Returns:
+            AgentTaskType enum value
+        """
+        message_type = event_dict.get("message_type", "text")
+        content = event_dict.get("content", "").lower()
+
+        # Infer from message_type
+        if message_type == "product_brief" or message_type == "product_vision":
+            return AgentTaskType.ANALYZE_REQUIREMENTS
+        elif message_type == "prd":
+            return AgentTaskType.CREATE_STORIES
+        elif message_type == "code_review":
+            return AgentTaskType.CODE_REVIEW
+
+        # Infer from content keywords
+        if "review" in content and "code" in content:
+            return AgentTaskType.CODE_REVIEW
+        elif "test" in content or "bug" in content:
+            return AgentTaskType.WRITE_TESTS if "test" in content else AgentTaskType.FIX_BUG
+        elif "implement" in content or "develop" in content:
+            return AgentTaskType.IMPLEMENT_STORY
+        elif "refactor" in content:
+            return AgentTaskType.REFACTOR
+        elif "analyze" in content or "requirements" in content:
+            return AgentTaskType.ANALYZE_REQUIREMENTS
+        elif "story" in content or "stories" in content:
+            return AgentTaskType.CREATE_STORIES
+
+        # Default based on agent role
+        if agent_role:
+            role_defaults = {
+                "business_analyst": AgentTaskType.ANALYZE_REQUIREMENTS,
+                "developer": AgentTaskType.IMPLEMENT_STORY,
+                "tester": AgentTaskType.WRITE_TESTS,
+                "team_leader": AgentTaskType.MESSAGE,
+            }
+            return role_defaults.get(agent_role, AgentTaskType.MESSAGE)
+
+        # Final fallback
+        return AgentTaskType.MESSAGE
 
 
 class AgentResponseRouter(BaseEventRouter):

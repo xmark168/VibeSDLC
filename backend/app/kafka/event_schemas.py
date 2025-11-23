@@ -397,6 +397,7 @@ class RouterTaskEvent(BaseKafkaEvent):
 
     event_type: str = "router.task.dispatched"
     task_id: UUID = Field(default_factory=uuid4)
+    task_type: AgentTaskType  # NEW: Type of task for agent to perform
     agent_id: UUID  # Target agent to handle this task
     agent_role: Optional[str] = None  # team_leader, business_analyst, developer, tester
     source_event_type: str  # Original event type: user.message.sent, agent.response.created, etc.
