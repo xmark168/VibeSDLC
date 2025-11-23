@@ -77,6 +77,18 @@ async def lifespan(app: FastAPI):
     with Session(engine) as session:
         init_db(session)
 
+    # Ensure Kafka topics exist before starting services
+    from app.kafka import ensure_kafka_topics
+    try:
+        topics_ok = await ensure_kafka_topics()
+        if topics_ok:
+            logger.info("✅ All Kafka topics verified/created")
+        else:
+            logger.warning("⚠️  Some Kafka topics failed to create")
+    except Exception as e:
+        logger.warning(f"Failed to ensure Kafka topics: {e}")
+        logger.warning("Continuing anyway - topics may auto-create...")
+
     # Start Kafka producer
     from app.kafka import get_kafka_producer, shutdown_kafka_producer
     try:

@@ -30,13 +30,14 @@ class Developer(BaseAgent):
     - Router sends tasks via @Developer mentions
     """
 
-    def __init__(self, agent_model: AgentModel):
+    def __init__(self, agent_model: AgentModel, **kwargs):
         """Initialize Developer.
 
         Args:
             agent_model: Agent database model
+            **kwargs: Additional arguments (heartbeat_interval, max_idle_time)
         """
-        super().__init__(agent_model)
+        super().__init__(agent_model, **kwargs)
 
         # Load configuration
         self.config = self._load_config()

@@ -30,13 +30,14 @@ class BusinessAnalyst(BaseAgent):
     - Provides requirements analysis, PRD generation, and business documentation
     """
 
-    def __init__(self, agent_model: AgentModel):
+    def __init__(self, agent_model: AgentModel, **kwargs):
         """Initialize Business Analyst.
 
         Args:
             agent_model: Agent database model
+            **kwargs: Additional arguments (heartbeat_interval, max_idle_time)
         """
-        super().__init__(agent_model)
+        super().__init__(agent_model, **kwargs)
 
         # Create CrewAI agent with inline config
         self.crew_agent = self._create_crew_agent()

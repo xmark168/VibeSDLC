@@ -21,7 +21,7 @@ from app.kafka.event_schemas import (
     KafkaTopics,
     RouterTaskEvent,
 )
-from app.models import Agent as AgentModel
+from app.models import Agent as AgentModel, AgentStatus
 
 
 logger = logging.getLogger(__name__)
@@ -107,6 +107,12 @@ class BaseAgent(ABC):
         # For AgentPool compatibility
         self.heartbeat_interval = kwargs.get("heartbeat_interval", 30)
         self.max_idle_time = kwargs.get("max_idle_time", 300)
+
+        # Agent state and statistics
+        self.state = AgentStatus.idle  # Current agent state
+        self.total_executions = 0  # Total tasks completed
+        self.successful_executions = 0  # Successful tasks
+        self.failed_executions = 0  # Failed tasks
 
         # Callbacks (for AgentPool compatibility)
         self.on_state_change = None
@@ -259,18 +265,26 @@ class BaseAgent(ABC):
 
     # ===== Consumer Management (Internal) =====
 
-    async def start(self) -> None:
+    async def start(self) -> bool:
         """Start the agent's Kafka consumer.
 
         Called during agent initialization.
+        
+        Returns:
+            True if started successfully, False otherwise
         """
         from app.agents.core.base_agent_consumer import BaseAgentInstanceConsumer
 
-        # Create consumer with wrapper that calls our handle_task
-        self._consumer = AgentTaskConsumer(self)
-        await self._consumer.start()
+        try:
+            # Create consumer with wrapper that calls our handle_task
+            self._consumer = AgentTaskConsumer(self)
+            await self._consumer.start()
 
-        logger.info(f"[{self.name}] Agent consumer started")
+            logger.info(f"[{self.name}] Agent consumer started")
+            return True
+        except Exception as e:
+            logger.error(f"[{self.name}] Failed to start consumer: {e}")
+            return False
 
     async def stop(self) -> None:
         """Stop the agent's Kafka consumer.
@@ -331,8 +345,21 @@ class BaseAgent(ABC):
                 f"type={task.task_type}, reason={task.routing_reason}"
             )
 
+            # Update state to busy
+            self.state = AgentStatus.busy
+
             # Call agent's implementation
             result = await self.handle_task(task)
+            
+            # Update statistics
+            self.total_executions += 1
+            if result.success:
+                self.successful_executions += 1
+            else:
+                self.failed_executions += 1
+            
+            # Return to idle
+            self.state = AgentStatus.idle
 
             # Publish response if successful
             if result.success:

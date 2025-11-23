@@ -71,6 +71,8 @@ class KafkaProducer:
                 "bootstrap.servers": settings.KAFKA_BOOTSTRAP_SERVERS
             })
 
+            # Topics are now created by ensure_kafka_topics() in main.py startup
+            # But keep this as backup for lazy initialization
             await self._create_topics()
             logger.info("Kafka producer initialized successfully")
 

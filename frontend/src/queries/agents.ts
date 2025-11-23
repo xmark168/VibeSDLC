@@ -28,7 +28,6 @@ export const agentQueryKeys = {
   }) => [...agentQueryKeys.metrics(), "timeseries", params] as const,
   metricsAggregated: (params: { time_range?: string; group_by?: string }) =>
     [...agentQueryKeys.metrics(), "aggregated", params] as const,
-  processMetrics: () => [...agentQueryKeys.metrics(), "processes"] as const,
   tokenMetrics: (params: { time_range?: string; group_by?: string }) =>
     [...agentQueryKeys.metrics(), "tokens", params] as const,
 }
