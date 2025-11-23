@@ -32,49 +32,60 @@ class TeamLeaderConsumer(BaseAgentInstanceConsumer):
         super().__init__(agent)
         self.crew = crew
 
-    async def process_user_message(self, message_data: Dict[str, Any]) -> None:
-        """Process user message for Team Leader.
+    async def process_task(self, task_data: Dict[str, Any]) -> None:
+        """Process task assigned by Central Message Router.
 
-        Team Leader analyzes the message and decides whether to:
+        Team Leader analyzes the task (usually user messages) and decides whether to:
         1. Respond directly (for simple messages)
-        2. Delegate to specialist agents
+        2. Delegate to specialist agents (delegation no longer happens here - Router handles it)
 
         Args:
-            message_data: Message data dictionary
+            task_data: RouterTaskEvent data containing task and context
         """
         try:
-            message_id = message_data.get("message_id")
-            project_id = message_data.get("project_id")
-            user_id = message_data.get("user_id")
-            content = message_data.get("content", "")
+            # Extract task metadata
+            task_id = task_data.get("task_id")
+            source_event_type = task_data.get("source_event_type")
+            routing_reason = task_data.get("routing_reason")
+
+            # Extract context (original event data)
+            context_data = task_data.get("context", {})
+
+            message_id = context_data.get("message_id")
+            project_id = context_data.get("project_id")
+            user_id = context_data.get("user_id")
+            content = context_data.get("content", "")
+            message_type = context_data.get("message_type", "text")
 
             logger.info(
-                f"Team Leader {self.human_name} processing message {message_id}: '{content[:50]}...'"
+                f"Team Leader {self.human_name} processing task {task_id} "
+                f"(source: {source_event_type}, reason: {routing_reason}): '{content[:50]}...'"
             )
 
             # Execute crew
-            context = {
+            crew_context = {
                 "user_message": content,
                 "message_id": str(message_id),
-                "message_type": message_data.get("message_type", "text"),
+                "message_type": message_type,
+                "routing_reason": routing_reason,
             }
 
             result = await self.crew.execute(
-                context=context,
+                context=crew_context,
                 project_id=UUID(project_id) if isinstance(project_id, str) else project_id,
                 user_id=UUID(user_id) if isinstance(user_id, str) else user_id,
             )
 
             if result.get("success"):
                 logger.info(
-                    f"Team Leader successfully handled message {message_id}: "
+                    f"Team Leader successfully handled task {task_id}: "
                     f"{result.get('delegation', 'direct response')}"
                 )
             else:
                 logger.error(f"Team Leader execution failed: {result.get('error')}")
 
         except Exception as e:
-            logger.error(f"Error in Team Leader processing message: {e}", exc_info=True)
+            logger.error(f"Error in Team Leader processing task: {e}", exc_info=True)
 
 
 class TeamLeaderRole(BaseAgentRole):

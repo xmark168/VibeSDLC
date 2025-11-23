@@ -86,6 +86,15 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Failed to start Kafka producer: {e}")
         logger.warning("Continuing without Kafka support...")
 
+    # Start Central Message Router (dispatches tasks to agents)
+    from app.kafka.router_service import start_router_service, stop_router_service
+    try:
+        await start_router_service()
+        logger.info("Central Message Router started")
+    except Exception as e:
+        logger.warning(f"Failed to start Message Router: {e}")
+        logger.warning("Continuing without router support...")
+
     # Start all Kafka consumers (legacy consumer registry)
     from app.kafka.consumer_registry import start_all_consumers, shutdown_all_consumers
     try:
@@ -175,6 +184,13 @@ async def lifespan(app: FastAPI):
         logger.info("Kafka consumers shut down")
     except Exception as e:
         logger.error(f"Error shutting down consumers: {e}")
+
+    # Shutdown Central Message Router
+    try:
+        await stop_router_service()
+        logger.info("Central Message Router shut down")
+    except Exception as e:
+        logger.error(f"Error shutting down Message Router: {e}")
 
     try:
         await shutdown_kafka_producer()

@@ -5,7 +5,7 @@ Kafka event schemas and topic definitions.
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
@@ -386,6 +386,26 @@ class AgentTaskCancelledEvent(BaseKafkaEvent):
     reason: Optional[str] = None
 
 
+# ROUTER TASK EVENT (for Central Message Router)
+class RouterTaskEvent(BaseKafkaEvent):
+    """Event emitted by Central Message Router to dispatch tasks to agents.
+
+    This is the primary event type used by the routing system to assign work to agents.
+    The Router subscribes to various source events (USER_MESSAGES, AGENT_RESPONSES, etc.)
+    and publishes RouterTaskEvent to AGENT_TASKS topic for agents to consume.
+    """
+
+    event_type: str = "router.task.dispatched"
+    task_id: UUID = Field(default_factory=uuid4)
+    agent_id: UUID  # Target agent to handle this task
+    agent_role: Optional[str] = None  # team_leader, business_analyst, developer, tester
+    source_event_type: str  # Original event type: user.message.sent, agent.response.created, etc.
+    source_event_id: str  # Original event ID for tracing
+    routing_reason: str  # How routing decision was made
+    priority: str = "medium"  # low, medium, high, critical
+    context: Dict[str, Any] = Field(default_factory=dict)  # Contains source event data + additional context
+
+
 # EVENT REGISTRY
 EVENT_TYPE_TO_SCHEMA = {
     "user.message.sent": UserMessageEvent,
@@ -415,6 +435,7 @@ EVENT_TYPE_TO_SCHEMA = {
     "agent.task.completed": AgentTaskCompletedEvent,
     "agent.task.failed": AgentTaskFailedEvent,
     "agent.task.cancelled": AgentTaskCancelledEvent,
+    "router.task.dispatched": RouterTaskEvent,
 }
 
 

@@ -1,7 +1,10 @@
 """Base consumer class for agent instances.
 
-Each agent instance gets its own consumer that listens to project-specific topics.
-This replaces the old role-based global consumer pattern.
+NEW ARCHITECTURE (Post-Router Refactor):
+- Agents subscribe to AGENT_TASKS topic only
+- All routing logic handled by Central Message Router
+- Agents receive RouterTaskEvent with tasks assigned to them
+- Consumer group: project_{project_id}_agent_tasks (all agents in project)
 """
 
 import asyncio
@@ -13,7 +16,7 @@ from typing import Any, Dict, Optional
 from uuid import UUID
 
 from app.kafka.consumer import EventHandlerConsumer
-from app.kafka.event_schemas import BaseKafkaEvent, UserMessageEvent, KafkaTopics
+from app.kafka.event_schemas import BaseKafkaEvent, RouterTaskEvent, KafkaTopics
 from app.models import Agent, AgentConversation
 
 logger = logging.getLogger(__name__)
@@ -31,23 +34,17 @@ def _log_message(agent_name: str, event: str, message_id: Optional[str] = None, 
 class BaseAgentInstanceConsumer(EventHandlerConsumer):
     """Base consumer for individual agent instances.
 
-    HYBRID CONSUMER GROUP STRATEGY:
-    - Topic: USER_MESSAGES (global topic, partitioned by project_id)
-    - Group ID: project_{project_id}_role_{role_type}
-    - Load Balancing: Multiple agents of same role in project share messages via Kafka consumer group
+    NEW ARCHITECTURE:
+    - Topic: AGENT_TASKS (global topic with RouterTaskEvent)
+    - Group ID: project_{project_id}_agent_tasks (all agents in project share this group)
+    - Filtering: Each agent only processes tasks where agent_id matches
+    - Routing: Handled by Central Message Router (not here)
 
-    This allows:
-    - Efficient message delivery (only project messages delivered to group)
-    - Automatic load balancing across agents of same role
-    - Kafka handles partition assignment and rebalancing
-    - Direct message routing via agent_id field (filtered in handler)
-    - Team leader default routing for unmention messages
-
-    Example:
-    - Project A has 3 developers → Consumer group "project_A_role_developer"
-    - Kafka automatically distributes messages across the 3 developers
-    - If message has agent_id, only matching developer processes it
-    - If no agent_id, all 3 developers skip (unless team leader)
+    This provides:
+    - Centralized routing logic in Router
+    - Clean separation of concerns
+    - Agents focus on task execution, not routing
+    - Automatic load balancing via Kafka consumer groups
     """
 
     def __init__(self, agent: Agent):
@@ -62,40 +59,39 @@ class BaseAgentInstanceConsumer(EventHandlerConsumer):
         self.role_type = agent.role_type
         self.human_name = agent.human_name
 
-        # Configure topic and group ID
-        # Use global USER_MESSAGES topic (partitioned by project_id for load balancing)
-        topic = KafkaTopics.USER_MESSAGES.value
+        # NEW: Subscribe to AGENT_TASKS topic
+        topic = KafkaTopics.AGENT_TASKS.value
 
-        # HYBRID STRATEGY: Group by project + role for load balancing
-        # Multiple agents of same role in project share workload via consumer group
-        group_id = f"project_{self.project_id}_role_{self.role_type}"
+        # NEW: All agents in project share one consumer group
+        # Kafka will distribute tasks across available agents
+        # Each agent filters by agent_id to only process its own tasks
+        group_id = f"project_{self.project_id}_agent_tasks"
 
         # Initialize parent EventHandlerConsumer
         super().__init__(topics=[topic], group_id=group_id)
 
-        # Register handlers for user messages
-        self.register_handler("user.message.sent", self._handle_user_message)
+        # Register handler for router tasks
+        self.register_handler("router.task.dispatched", self._handle_router_task)
 
         logger.info(
             f"Initialized consumer for agent {self.human_name} "
             f"({self.role_type}) in project {self.project_id}\n"
-            f"  Topic: {topic} (global)\n"
-            f"  Group ID: {group_id} (project-role load balanced)\n"
+            f"  Topic: {topic} (global task queue)\n"
+            f"  Group ID: {group_id} (project-wide)\n"
             f"  Agent ID: {self.agent_id}\n"
-            f"  Strategy: Share workload with other {self.role_type}s in project"
+            f"  Strategy: Filter tasks by agent_id"
         )
 
-    async def _handle_user_message(self, event: UserMessageEvent | Dict[str, Any]) -> None:
-        """Internal handler that routes user messages to agent.
+    async def _handle_router_task(self, event: RouterTaskEvent | Dict[str, Any]) -> None:
+        """Handle task dispatched by Central Message Router.
 
         This method:
-        1. Filters by project_id (since using global topic now)
-        2. Checks if message is targeted to this specific agent
-        3. Checks if message has no target (Team Leader handles these)
-        4. Calls abstract process_user_message() if agent should process
+        1. Filters tasks by agent_id (only process tasks assigned to this agent)
+        2. Extracts task context (contains original event data)
+        3. Calls process_task() for agent to execute
 
         Args:
-            event: UserMessageEvent or dict
+            event: RouterTaskEvent or dict
         """
         start_time = time.time()
 
@@ -106,95 +102,51 @@ class BaseAgentInstanceConsumer(EventHandlerConsumer):
             else:
                 event_data = event
 
-            # Extract routing info
-            message_project_id = event_data.get("project_id")
+            # Extract task info
+            task_id = event_data.get("task_id")
             target_agent_id = event_data.get("agent_id")
-            message_id = event_data.get("message_id")
-            content = event_data.get("content", "")
-            user_id = event_data.get("user_id")
-            message_type = event_data.get("message_type", "text")
+            routing_reason = event_data.get("routing_reason", "unknown")
+            source_event_type = event_data.get("source_event_type", "unknown")
+            context = event_data.get("context", {})
+            priority = event_data.get("priority", "medium")
 
-            # FILTER 1: Check project_id (since we're using global topic)
-            if message_project_id and str(message_project_id) != str(self.project_id):
+            # FILTER: Only process tasks assigned to this agent
+            if str(target_agent_id) != str(self.agent_id):
                 logger.debug(
-                    f"[{self.human_name}] Skipping message {message_id} - "
-                    f"wrong project (message project: {message_project_id}, my project: {self.project_id})"
+                    f"[{self.human_name}] Skipping task {task_id} - "
+                    f"assigned to different agent (target: {target_agent_id}, me: {self.agent_id})"
                 )
                 return
 
-            logger.debug(
-                f"[{self.human_name}] Received Kafka event - "
-                f"message_id={message_id}, target_agent={target_agent_id}, "
-                f"my_agent_id={self.agent_id}, my_role={self.role_type}"
+            logger.info(
+                f"[TASK] Agent {self.human_name}: task={task_id} RECEIVED - "
+                f"source={source_event_type}, reason={routing_reason}, priority={priority}"
             )
 
-            # Routing logic:
-            # 1. If message has agent_id and it's this agent -> process
-            # 2. If message has no agent_id and this is Team Leader -> process
-            # 3. Otherwise -> skip
-
-            should_process = False
-            routing_reason = ""
-
-            if target_agent_id:
-                # Direct mention - check if it's this agent
-                if str(target_agent_id) == str(self.agent_id):
-                    should_process = True
-                    routing_reason = "direct_mention"
-                    _log_message(
-                        self.human_name, "RECEIVED",
-                        message_id, f"type={message_type}, routing=direct_mention"
-                    )
-            else:
-                # No mention - Team Leader handles
-                if self.role_type == "team_leader":
-                    should_process = True
-                    routing_reason = "team_leader_default"
-                    _log_message(
-                        self.human_name, "RECEIVED",
-                        message_id, f"type={message_type}, routing=team_leader_default"
-                    )
-
-            if should_process:
-                # Log processing start
-                _log_message(
-                    self.human_name, "PROCESSING",
-                    message_id, f"content_length={len(content)}"
-                )
-
-                # Persist conversation record
+            # Save conversation record if task originated from user message
+            if source_event_type == "user.message.sent":
                 self._save_conversation(
-                    message_id=message_id,
-                    user_id=user_id,
-                    content=content,
-                    message_type=message_type,
+                    message_id=context.get("message_id"),
+                    user_id=context.get("user_id"),
+                    content=context.get("content", ""),
+                    message_type=context.get("message_type", "text"),
                 )
 
-                # Call abstract method for agent to process
-                await self.process_user_message(event_data)
+            # Call abstract method for agent to process task
+            await self.process_task(event_data)
 
-                # Log processing complete
-                duration_ms = int((time.time() - start_time) * 1000)
-                _log_message(
-                    self.human_name, "PROCESSED",
-                    message_id, f"duration={duration_ms}ms"
-                )
-            else:
-                # Message not for this agent, skip quietly
-                logger.debug(
-                    f"[MESSAGE] Agent {self.human_name}: message={message_id} SKIPPED - "
-                    f"target={target_agent_id or 'TeamLeader'}"
-                )
+            # Log task completion
+            duration_ms = int((time.time() - start_time) * 1000)
+            logger.info(
+                f"[TASK] Agent {self.human_name}: task={task_id} COMPLETED - "
+                f"duration={duration_ms}ms"
+            )
 
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
-            _log_message(
-                self.human_name, "FAILED",
-                str(message_id) if 'message_id' in dir() else None,
-                f"error={str(e)}, duration={duration_ms}ms"
-            )
             logger.error(
-                f"Error in {self.human_name} consumer handling message: {e}",
+                f"[TASK] Agent {self.human_name}: task={task_id if 'task_id' in dir() else 'unknown'} FAILED - "
+                f"error={str(e)}, duration={duration_ms}ms",
                 exc_info=True
             )
 
@@ -240,24 +192,31 @@ class BaseAgentInstanceConsumer(EventHandlerConsumer):
             logger.error(f"Failed to save conversation record: {e}", exc_info=True)
 
     @abstractmethod
-    async def process_user_message(self, message_data: Dict[str, Any]) -> None:
-        """Process a user message targeted to this agent.
+    async def process_task(self, task_data: Dict[str, Any]) -> None:
+        """Process a task assigned by Central Message Router.
 
         This method must be implemented by agent role classes.
         It should:
-        1. Parse the message content
-        2. Execute agent crew/logic
-        3. Publish response back to WebSocket
+        1. Extract context from task_data
+        2. Execute agent crew/logic based on task source
+        3. Publish response back to appropriate channel
 
         Args:
-            message_data: Dictionary containing message fields:
-                - message_id: UUID of the message
-                - project_id: UUID of the project
-                - user_id: UUID of the user
-                - content: Message content text
-                - agent_id: UUID of targeted agent (if mentioned)
-                - agent_name: Name of targeted agent (if mentioned)
-                - message_type: Type of message (text, etc.)
+            task_data: Dictionary containing RouterTaskEvent fields:
+                - task_id: UUID of the task
+                - agent_id: UUID of the agent (this agent)
+                - source_event_type: Type of original event (user.message.sent, etc.)
+                - source_event_id: ID of original event
+                - routing_reason: Why task was routed to this agent
+                - priority: Task priority level
+                - context: Dict containing original event data
+                    - For user messages:
+                        - message_id: UUID of the message
+                        - project_id: UUID of the project
+                        - user_id: UUID of the user
+                        - content: Message content text
+                        - message_type: Type of message (text, etc.)
+                    - For other events: varies by source_event_type
         """
         pass
 
