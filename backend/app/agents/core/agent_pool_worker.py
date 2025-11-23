@@ -26,12 +26,6 @@ from app.agents.core.registry import AgentRegistry, ProcessRegistry
 from app.core.db import engine, get_worker_engine
 from sqlmodel import Session
 
-# Import role classes for dynamic instantiation
-from app.agents.roles.team_leader import TeamLeaderRole
-from app.agents.roles.business_analyst import BusinessAnalystRole
-from app.agents.roles.developer import DeveloperRole
-from app.agents.roles.tester import TesterRole
-
 # Configure logging for worker process
 logging.basicConfig(
     level=logging.INFO,
@@ -39,13 +33,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Role class mapping for dynamic instantiation
-ROLE_CLASS_MAP = {
-    "TeamLeaderRole": TeamLeaderRole,
-    "BusinessAnalystRole": BusinessAnalystRole,
-    "DeveloperRole": DeveloperRole,
-    "TesterRole": TesterRole,
-}
+
+def get_role_class_map():
+    """Lazy import role classes to avoid circular imports.
+
+    This function is called at runtime instead of module import time.
+    """
+    # Import role classes dynamically (only when needed)
+    from app.agents.roles.team_leader import TeamLeaderRole
+    from app.agents.roles.business_analyst import BusinessAnalystRole
+    from app.agents.roles.developer import DeveloperRole
+    from app.agents.roles.tester import TesterRole
+
+    return {
+        "TeamLeaderRole": TeamLeaderRole,
+        "BusinessAnalystRole": BusinessAnalystRole,
+        "DeveloperRole": DeveloperRole,
+        "TesterRole": TesterRole,
+    }
 
 
 class AgentPoolWorker:
@@ -336,11 +341,13 @@ class AgentPoolWorker:
             role_class_name = data.get("role_class_name")
             role_class = None
             if role_class_name:
-                role_class = ROLE_CLASS_MAP.get(role_class_name)
+                # Lazy load role class map to avoid circular imports
+                role_class_map = get_role_class_map()
+                role_class = role_class_map.get(role_class_name)
                 if not role_class:
                     logger.error(
                         f"[{self.process_id}] Unknown role_class_name: {role_class_name}. "
-                        f"Available: {list(ROLE_CLASS_MAP.keys())}"
+                        f"Available: {list(role_class_map.keys())}"
                     )
                     return
                 logger.info(f"[{self.process_id}] Spawning agent {agent_id} with role {role_class_name}...")
