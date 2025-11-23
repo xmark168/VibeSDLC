@@ -897,33 +897,33 @@ async def get_token_metrics(
 
 @router.get("/health")
 async def get_all_agent_health(
+    session: SessionDep,
     current_user: User = Depends(get_current_user),
 ) -> Any:
     """Get health status of all agents across all pools.
 
-    Returns agent states from Redis registry (agents run in worker processes).
+    Returns agent states from database.
     """
-    from app.agents.core.registry import AgentRegistry
-
-    redis = get_redis_client()
-    agent_registry = AgentRegistry(redis_client=redis)
-
     health_data = {}
+    
     for pool_name in _manager_registry.keys():
-        # Get agents for this pool from Redis
-        agent_ids = await agent_registry.get_pool_agents(pool_name)
+        # Extract role type from pool name (format: "{role_type}_pool")
+        role_type = pool_name.replace("_pool", "")
+        
+        # Query agents from database
+        agents = session.exec(
+            select(Agent).where(Agent.role_type == role_type)
+        ).all()
 
         pool_health = []
-        for agent_id_str in agent_ids:
-            from uuid import UUID
-            agent_info = await agent_registry.get_info(UUID(agent_id_str))
-            if agent_info:
-                pool_health.append({
-                    "agent_id": agent_id_str,
-                    "status": agent_info.get("status"),
-                    "process_id": agent_info.get("process_id"),
-                    "role_type": agent_info.get("role_type"),
-                })
+        for agent in agents:
+            pool_health.append({
+                "agent_id": str(agent.id),
+                "status": agent.status.value,
+                "role_type": agent.role_type,
+                "name": agent.name,
+                "human_name": agent.human_name,
+            })
 
         health_data[pool_name] = pool_health
 
