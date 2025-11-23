@@ -10,40 +10,6 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, Field
 
 
-def get_project_topic(project_id: UUID) -> str:
-    """DEPRECATED: Get the Kafka topic name for a specific project.
-
-    WARNING: This function is deprecated. Use the global KafkaTopics.USER_MESSAGES
-    topic instead and filter by project_id in the consumer.
-
-    Project-specific topics caused errors when topics didn't exist.
-    Global topics with partition keys are more scalable and reliable.
-
-    Args:
-        project_id: UUID of the project
-
-    Returns:
-        Topic name in format: project_{project_id}_messages
-
-    Example:
-        >>> # DEPRECATED - Don't use this
-        >>> get_project_topic(UUID("abc-123"))
-        'project_abc-123_messages'
-
-        >>> # Use this instead:
-        >>> topic = KafkaTopics.USER_MESSAGES
-        >>> # Then filter by project_id in consumer handler
-    """
-    import warnings
-    warnings.warn(
-        "get_project_topic() is deprecated. Use KafkaTopics.USER_MESSAGES "
-        "with project_id filtering instead.",
-        DeprecationWarning,
-        stacklevel=2
-    )
-    return f"project_{project_id}_messages"
-
-
 class KafkaTopics(str, Enum):
     """Kafka topic names for different event types."""
 

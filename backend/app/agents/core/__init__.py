@@ -10,11 +10,9 @@ This module exports the core components for agent lifecycle management:
 - Registry: Agent and process tracking
 """
 
-from .base_role import BaseAgentRole
 from .agent_pool import AgentPool, AgentPoolConfig
 from .agent_pool_manager import AgentPoolManager
 from .agent_monitor import AgentMonitor, get_agent_monitor
-from .agent_consumer import AgentConsumer
 from .redis_client import RedisClient, get_redis_client, init_redis, close_redis
 from .registry import AgentRegistry, ProcessRegistry
 
@@ -22,14 +20,12 @@ from .registry import AgentRegistry, ProcessRegistry
 from app.models import AgentStatus
 
 __all__ = [
-    "BaseAgentRole",
     "AgentStatus",
     "AgentPool",
     "AgentPoolConfig",
     "AgentPoolManager",
     "AgentMonitor",
     "get_agent_monitor",
-    "AgentConsumer",
     "RedisClient",
     "get_redis_client",
     "init_redis",
