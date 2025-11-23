@@ -1,6 +1,20 @@
 """Tester Crew - QA planning, test case creation, and quality assurance.
 
-This crew creates test plans and ensures software quality.
+⚠️ LEGACY - NOT IN USE
+This crew class is kept for reference only.
+Use Tester (BaseAgent) in tester.py instead.
+
+Migration Status: ✅ MIGRATED to Tester(BaseAgent)
+- tester.py contains the active implementation
+- Uses BaseAgent pattern with Kafka auto-consume
+- Managed by AgentPoolManager
+- Better scaling and health monitoring
+
+This file provides:
+- CrewAI multi-agent patterns (if needed for complex workflows)
+- Reference implementation for other roles
+- Task creation patterns (test_plan, validate, test_cases)
+- Documentation of previous architecture
 """
 
 import logging
