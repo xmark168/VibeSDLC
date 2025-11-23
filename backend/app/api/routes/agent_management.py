@@ -18,7 +18,7 @@ from sqlmodel import Session, select, update
 from app.api.deps import get_current_user, get_db, SessionDep
 from app.models import User, Agent, AgentStatus, AgentExecution, AgentExecutionStatus
 from app.agents.core import AgentPoolManager
-from app.agents.core.name_generator import generate_agent_name, get_display_name
+from app.utils.name_generator import generate_agent_name, get_display_name
 from app.core.config import settings
 
 

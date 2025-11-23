@@ -17,7 +17,7 @@ from app.schemas import (
     ProjectPublic,
     ProjectsPublic,
 )
-from app.agents.core.name_generator import generate_agent_name, get_display_name
+from app.utils.name_generator import generate_agent_name, get_display_name
 
 logger = logging.getLogger(__name__)
 
