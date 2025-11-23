@@ -61,7 +61,6 @@ class ConnectionManager:
     async def broadcast_to_project(self, message: dict, project_id: UUID):
         """Broadcast a message to all connections in a project"""
         if project_id not in self.active_connections:
-            logger.warning(f"No active connections for project {project_id}")
             return
 
         disconnected = []

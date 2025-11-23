@@ -23,6 +23,8 @@ from app.agents.core import (
     AgentMonitor,
     get_agent_monitor,
 )
+from app.agents.core.agent_pool_manager import AgentPoolManager
+from app.agents.core.redis_client import init_redis, close_redis, get_redis_client
 from app.agents.core.name_generator import generate_agent_name, get_display_name
 
 # Import role classes (NOT crew classes - Role classes wrap Crews and handle lifecycle)
@@ -95,10 +97,10 @@ class SystemStatsResponse(BaseModel):
     recent_alerts: int
 
 
-# ===== Global Pool Registry =====
+# ===== Global Manager Registry =====
 
-# Pool registry (in production, use Redis or database)
-_pool_registry: Dict[str, AgentPool] = {}
+# Manager registry - manages auto-scaling pools with multiprocessing
+_manager_registry: Dict[str, AgentPoolManager] = {}
 
 # Role class mapping (use Role classes, NOT Crew classes)
 # Role classes handle lifecycle, consumers, and wrap Crew functionality
@@ -113,14 +115,26 @@ ROLE_CLASS_MAP = {
 async def initialize_default_pools() -> None:
     """Initialize default agent pools for all role types.
 
-    This function is called on application startup to automatically create
-    pools for all available role types and restore agents from database.
+    Creates AgentPoolManager instances that:
+    - Spawn worker processes dynamically
+    - Auto-restore agents from database on startup
+    - Auto-scale by spawning new workers when capacity is reached (10 agents/process)
     """
     import logging
     from sqlmodel import Session, select
     from app.core.db import engine
 
     logger = logging.getLogger(__name__)
+
+    # Initialize Redis (required for multiprocessing mode)
+    logger.info("Initializing Redis for multiprocessing agent pools...")
+    if not await init_redis():
+        raise RuntimeError(
+            "Failed to connect to Redis. Redis is required for multiprocessing mode.\n"
+            "Please ensure Redis is running: docker-compose up -d redis"
+        )
+
+    logger.info("✓ Redis connected successfully")
 
     default_pools = [
         {"role_type": "team_leader", "pool_name": "team_leader_pool"},
@@ -132,43 +146,42 @@ async def initialize_default_pools() -> None:
     for pool_config in default_pools:
         role_type = pool_config["role_type"]
         pool_name = pool_config["pool_name"]
+        role_class = ROLE_CLASS_MAP[role_type]
 
-        # Skip if pool already exists
-        if pool_name in _pool_registry:
-            logger.info(f"Pool '{pool_name}' already exists, skipping")
+        # Skip if manager already exists
+        if pool_name in _manager_registry:
+            logger.info(f"Manager '{pool_name}' already exists, skipping")
             continue
 
         try:
-            # Create pool config with defaults
-            config = AgentPoolConfig(
-                max_agents=10,
-                health_check_interval=60,
+            # Create AgentPoolManager
+            manager = AgentPoolManager(
+                pool_name=pool_name,
+                role_class=role_class,
+                max_agents_per_process=10,
+                heartbeat_interval=30,
             )
 
-            # Create pool
-            role_class = ROLE_CLASS_MAP[role_type]
-            pool = AgentPool(role_class=role_class, pool_name=pool_name, config=config)
-
-            # Start pool
-            if await pool.start():
-                _pool_registry[pool_name] = pool
-
-                # Register with monitor
-                monitor = get_agent_monitor()
-                monitor.register_pool(pool)
-
-                logger.info(f"✓ Auto-created pool: {pool_name} ({role_type})")
+            # Start manager
+            if await manager.start():
+                _manager_registry[pool_name] = manager
+                logger.info(f"✓ Created manager: {pool_name} ({role_type})")
 
                 # Restore agents from database
                 with Session(engine) as db_session:
-                    # First, reset any agents stuck in transient states from previous shutdown
-                    # This handles cases where server was hard-killed (SIGKILL) without graceful shutdown
-                    transient_states = [AgentStatus.starting, AgentStatus.stopping, AgentStatus.busy]
+                    # Reset transient states
+                    reset_states = [
+                        AgentStatus.starting,
+                        AgentStatus.stopping,
+                        AgentStatus.busy,
+                        AgentStatus.error,
+                        AgentStatus.terminated,
+                    ]
                     reset_stmt = (
                         update(Agent)
                         .where(
                             Agent.role_type == role_type,
-                            Agent.status.in_(transient_states)
+                            Agent.status.in_(reset_states)
                         )
                         .values(status=AgentStatus.idle)
                     )
@@ -176,64 +189,71 @@ async def initialize_default_pools() -> None:
                     db_session.commit()
 
                     if reset_result.rowcount > 0:
-                        logger.info(f"Auto-reset {reset_result.rowcount} {role_type} agents from transient states to idle")
+                        logger.info(
+                            f"Auto-reset {reset_result.rowcount} {role_type} agents "
+                            f"from problematic states to idle"
+                        )
 
-                    # Query agents for this role type that should be loaded
-                    # Load: idle (ready to work), stopped (cleanly stopped, can restart)
-                    # Skip: error, terminated (manual intervention needed)
+                    # Query agents to restore
                     agents_query = select(Agent).where(
                         Agent.role_type == role_type,
                         Agent.status.in_([AgentStatus.idle, AgentStatus.stopped])
                     )
                     db_agents = db_session.exec(agents_query).all()
 
-                    logger.info(f"Found {len(db_agents)} {role_type} agents to restore")
+                    logger.info(
+                        f"Restoring {len(db_agents)} {role_type} agents "
+                        f"(workers will auto-spawn as needed)..."
+                    )
 
-                    # Spawn each agent into the pool
+                    # Spawn agents via manager (auto-scales workers)
                     for db_agent in db_agents:
                         try:
-                            runtime_agent = await pool.spawn_agent(
+                            success = await manager.spawn_agent(
                                 agent_id=db_agent.id,
                                 heartbeat_interval=30,
                                 max_idle_time=300,
                             )
 
-                            if runtime_agent:
-                                # Update agent status to idle/running
+                            if success:
                                 db_agent.status = AgentStatus.idle
                                 db_session.add(db_agent)
-                                logger.info(f"  ✓ Restored agent: {db_agent.name} ({db_agent.id})")
+                                logger.debug(f"  ✓ Queued: {db_agent.human_name}")
                             else:
-                                logger.warning(f"  ✗ Failed to restore agent: {db_agent.name}")
-                        except Exception as e:
-                            logger.error(f"  ✗ Error restoring agent {db_agent.name}: {e}")
+                                logger.warning(f"  ✗ Failed: {db_agent.human_name}")
 
-                    # Commit all status updates
+                        except Exception as e:
+                            logger.error(f"Error restoring {db_agent.human_name}: {e}")
+
                     db_session.commit()
 
+                    logger.info(
+                        f"📊 Queued {len(db_agents)} {role_type} agents for restoration"
+                    )
+
             else:
-                logger.error(f"✗ Failed to start pool: {pool_name}")
+                logger.error(f"✗ Failed to start manager: {pool_name}")
 
         except Exception as e:
             logger.error(f"✗ Error creating pool '{pool_name}': {e}", exc_info=True)
 
 
-def get_pool(pool_name: str) -> AgentPool:
-    """Get pool by name or raise 404.
+def get_manager(pool_name: str) -> AgentPoolManager:
+    """Get pool manager by name or raise 404.
 
     Args:
         pool_name: Pool name
 
     Returns:
-        Agent pool
+        Agent pool manager
 
     Raises:
-        HTTPException: If pool not found
+        HTTPException: If manager not found
     """
-    pool = _pool_registry.get(pool_name)
-    if not pool:
-        raise HTTPException(status_code=404, detail=f"Pool '{pool_name}' not found")
-    return pool
+    manager = _manager_registry.get(pool_name)
+    if not manager:
+        raise HTTPException(status_code=404, detail=f"Pool manager '{pool_name}' not found")
+    return manager
 
 
 # ===== Pool Management Endpoints =====
@@ -243,10 +263,10 @@ async def create_pool(
     request: CreatePoolRequest,
     current_user: User = Depends(get_current_user),
 ) -> Any:
-    """Create a new agent pool.
+    """Create a new agent pool manager.
 
-    This endpoint creates and starts a new agent pool for the specified role type.
-    The pool will automatically manage agent lifecycle and scaling.
+    Creates and starts a new agent pool manager for the specified role type.
+    The manager will automatically spawn worker processes and manage agent lifecycle.
     """
     # Validate role type
     if request.role_type not in ROLE_CLASS_MAP:
@@ -255,30 +275,33 @@ async def create_pool(
             detail=f"Invalid role_type. Must be one of: {list(ROLE_CLASS_MAP.keys())}"
         )
 
-    # Check if pool already exists
-    if request.pool_name in _pool_registry:
-        raise HTTPException(status_code=400, detail=f"Pool '{request.pool_name}' already exists")
+    # Check if pool manager already exists
+    if request.pool_name in _manager_registry:
+        raise HTTPException(status_code=400, detail=f"Pool manager '{request.pool_name}' already exists")
 
-    # Create pool config
-    config = AgentPoolConfig(**request.config.model_dump()) if request.config else AgentPoolConfig()
+    # Extract max_agents if provided (default 10)
+    max_agents_per_process = 10
+    if request.config:
+        max_agents_per_process = request.config.max_agents
 
-    # Create pool
+    # Create pool manager
     role_class = ROLE_CLASS_MAP[request.role_type]
-    pool = AgentPool(role_class=role_class, pool_name=request.pool_name, config=config)
+    manager = AgentPoolManager(
+        pool_name=request.pool_name,
+        role_class=role_class,
+        max_agents_per_process=max_agents_per_process,
+        heartbeat_interval=30,
+    )
 
-    # Start pool
-    if not await pool.start():
-        raise HTTPException(status_code=500, detail="Failed to start pool")
+    # Start manager
+    if not await manager.start():
+        raise HTTPException(status_code=500, detail="Failed to start pool manager")
 
-    # Register pool
-    _pool_registry[request.pool_name] = pool
+    # Register manager
+    _manager_registry[request.pool_name] = manager
 
-    # Register with monitor
-    monitor = get_agent_monitor()
-    monitor.register_pool(pool)
-
-    # Return pool stats
-    stats = pool.get_pool_stats()
+    # Return manager stats
+    stats = await manager.get_stats()
     return PoolResponse(**stats)
 
 
@@ -286,11 +309,12 @@ async def create_pool(
 async def list_pools(
     current_user: User = Depends(get_current_user),
 ) -> Any:
-    """List all agent pools."""
-    return [
-        PoolResponse(**pool.get_pool_stats())
-        for pool in _pool_registry.values()
-    ]
+    """List all agent pool managers and their statistics."""
+    stats_list = []
+    for manager in _manager_registry.values():
+        stats = await manager.get_stats()
+        stats_list.append(PoolResponse(**stats))
+    return stats_list
 
 
 @router.get("/pools/{pool_name}", response_model=PoolResponse)
@@ -299,8 +323,8 @@ async def get_pool_stats(
     current_user: User = Depends(get_current_user),
 ) -> Any:
     """Get statistics for a specific pool."""
-    pool = get_pool(pool_name)
-    stats = pool.get_pool_stats()
+    manager = get_manager(pool_name)
+    stats = await manager.get_stats()
     return PoolResponse(**stats)
 
 
@@ -310,21 +334,17 @@ async def delete_pool(
     graceful: bool = Query(default=True),
     current_user: User = Depends(get_current_user),
 ) -> Any:
-    """Stop and delete an agent pool."""
-    pool = get_pool(pool_name)
+    """Stop and delete an agent pool manager and all its workers."""
+    manager = get_manager(pool_name)
 
-    # Stop pool
-    if not await pool.stop(graceful=graceful):
-        raise HTTPException(status_code=500, detail="Failed to stop pool")
-
-    # Unregister from monitor
-    monitor = get_agent_monitor()
-    monitor.unregister_pool(pool_name)
+    # Stop manager and all workers
+    if not await manager.stop(graceful=graceful):
+        raise HTTPException(status_code=500, detail="Failed to stop pool manager")
 
     # Remove from registry
-    del _pool_registry[pool_name]
+    del _manager_registry[pool_name]
 
-    return {"message": f"Pool '{pool_name}' deleted successfully"}
+    return {"message": f"Pool manager '{pool_name}' and all workers deleted successfully"}
 
 
 # ===== Agent Management Endpoints =====
@@ -337,7 +357,8 @@ async def spawn_agent(
 ) -> Any:
     """Spawn a new agent in the specified pool and persist to database.
 
-    The agent is created in the database and then spawned into the runtime pool.
+    Creates agent in database then sends spawn command to AgentPoolManager.
+    Manager auto-scales workers and routes spawn request to available worker.
     """
     # Validate role type
     if request.role_type not in ROLE_CLASS_MAP:
@@ -345,8 +366,6 @@ async def spawn_agent(
             status_code=400,
             detail=f"Invalid role_type. Must be one of: {list(ROLE_CLASS_MAP.keys())}"
         )
-
-    pool = get_pool(request.pool_name)
 
     # Get existing agent names for this project/role to avoid duplicates
     existing_agents = session.exec(
@@ -374,18 +393,21 @@ async def spawn_agent(
     session.commit()
     session.refresh(db_agent)
 
-    # Spawn into runtime pool
-    runtime_agent = await pool.spawn_agent(
+    # Get manager and spawn via multiprocessing
+    manager = get_manager(request.pool_name)
+
+    # Spawn via manager (auto-scales workers)
+    success = await manager.spawn_agent(
         agent_id=db_agent.id,
         heartbeat_interval=request.heartbeat_interval,
         max_idle_time=request.max_idle_time,
     )
 
-    if not runtime_agent:
-        # Rollback database entry if pool spawn fails
+    if not success:
+        # Rollback database entry if spawn fails
         session.delete(db_agent)
         session.commit()
-        raise HTTPException(status_code=500, detail="Failed to spawn agent in pool")
+        raise HTTPException(status_code=500, detail="Failed to spawn agent")
 
     return {
         "agent_id": str(db_agent.id),
@@ -394,7 +416,7 @@ async def spawn_agent(
         "role_type": request.role_type,
         "project_id": str(request.project_id),
         "pool_name": request.pool_name,
-        "state": runtime_agent.state.value,
+        "state": "spawning",
         "created_at": db_agent.created_at.isoformat(),
     }
 
@@ -405,10 +427,15 @@ async def terminate_agent(
     session: SessionDep,
     current_user: User = Depends(get_current_user),
 ) -> Any:
-    """Terminate an agent in the specified pool and update database."""
-    pool = get_pool(request.pool_name)
+    """Terminate an agent in the specified pool and update database.
 
-    if not await pool.terminate_agent(request.agent_id, graceful=request.graceful):
+    Sends terminate command to AgentPoolManager which routes to appropriate worker.
+    """
+    manager = get_manager(request.pool_name)
+
+    success = await manager.terminate_agent(request.agent_id, graceful=request.graceful)
+
+    if not success:
         raise HTTPException(status_code=500, detail="Failed to terminate agent")
 
     # Update agent status in database
@@ -456,19 +483,54 @@ async def get_project_agents(
 async def get_system_stats(
     current_user: User = Depends(get_current_user),
 ) -> Any:
-    """Get system-wide agent statistics."""
-    monitor = get_agent_monitor()
-    stats = monitor.get_system_stats()
-    return SystemStatsResponse(**stats)
+    """Get system-wide agent statistics from all pool managers."""
+    from app.agents.core.registry import ProcessRegistry, AgentRegistry
+    from datetime import datetime, timezone
+
+    redis = get_redis_client()
+    agent_registry = AgentRegistry(redis_client=redis)
+    process_registry = ProcessRegistry(redis_client=redis)
+
+    # Aggregate stats from all pool managers
+    total_agents = 0
+    total_processes = 0
+    total_capacity = 0
+
+    for pool_name, manager in _manager_registry.items():
+        stats = await manager.get_stats()
+        total_agents += stats.get("agent_count", 0)
+        total_processes += stats.get("process_count", 0)
+        total_capacity += stats.get("total_capacity", 0)
+
+    return SystemStatsResponse(
+        uptime_seconds=0,  # Can track startup time if needed
+        total_pools=len(_manager_registry),
+        total_agents=total_agents,
+        total_executions=0,  # Would need to aggregate from DB
+        successful_executions=0,
+        failed_executions=0,
+        success_rate=0.0,
+        recent_alerts=0,
+    )
 
 
 @router.get("/monitor/dashboard")
 async def get_dashboard_data(
     current_user: User = Depends(get_current_user),
 ) -> Any:
-    """Get comprehensive dashboard data for monitoring."""
-    monitor = get_agent_monitor()
-    return await monitor.get_dashboard_data()
+    """Get comprehensive dashboard data for monitoring multiprocessing pools."""
+    from datetime import datetime, timezone
+
+    # Get stats from all managers
+    pools_data = {}
+    for pool_name, manager in _manager_registry.items():
+        pools_data[pool_name] = await manager.get_stats()
+
+    return {
+        "pools": pools_data,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "mode": "multiprocessing",
+    }
 
 
 @router.get("/monitor/alerts")
@@ -476,75 +538,52 @@ async def get_alerts(
     limit: int = Query(default=20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
 ) -> Any:
-    """Get recent monitoring alerts."""
-    monitor = get_agent_monitor()
-    return monitor.get_recent_alerts(limit=limit)
+    """Get recent monitoring alerts.
+
+    Note: In multiprocessing mode, alerts would need to be stored in Redis.
+    This is a placeholder implementation.
+    """
+    return []
 
 
 @router.get("/health")
 async def get_all_agent_health(
     current_user: User = Depends(get_current_user),
 ) -> Any:
-    """Get health status of all agents across all pools."""
-    monitor = get_agent_monitor()
-    health_data = await monitor.get_all_agent_health()
+    """Get health status of all agents across all pools.
+
+    Returns agent states from Redis registry (agents run in worker processes).
+    """
+    from app.agents.core.registry import AgentRegistry
+
+    redis = get_redis_client()
+    agent_registry = AgentRegistry(redis_client=redis)
+
+    health_data = {}
+    for pool_name in _manager_registry.keys():
+        # Get agents for this pool from Redis
+        agent_ids = await agent_registry.get_pool_agents(pool_name)
+
+        pool_health = []
+        for agent_id_str in agent_ids:
+            from uuid import UUID
+            agent_info = await agent_registry.get_info(UUID(agent_id_str))
+            if agent_info:
+                pool_health.append({
+                    "agent_id": agent_id_str,
+                    "status": agent_info.get("status"),
+                    "process_id": agent_info.get("process_id"),
+                    "role_type": agent_info.get("role_type"),
+                })
+
+        health_data[pool_name] = pool_health
+
     return health_data
 
 
 # ===== Agent-specific Endpoints (with {agent_id} path parameter) =====
-# NOTE: These catch-all routes must come AFTER specific routes like /monitor/*
-
-@router.get("/{agent_id}/health")
-async def get_agent_health(
-    agent_id: UUID,
-    pool_name: str = Query(..., description="Pool name"),
-    current_user: User = Depends(get_current_user),
-) -> Any:
-    """Get health status of a specific agent."""
-    pool = get_pool(pool_name)
-
-    agent = pool.agents.get(agent_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail=f"Agent {agent_id} not found in pool '{pool_name}'")
-
-    return await agent.health_check()
-
-
-@router.post("/{agent_id}/set-idle")
-async def set_agent_idle(
-    agent_id: UUID,
-    pool_name: str = Query(..., description="Pool name"),
-    current_user: User = Depends(get_current_user),
-) -> Any:
-    """Force set an agent to IDLE state.
-
-    Useful for resetting agent state when it's stuck or needs to be manually reset.
-    """
-    pool = get_pool(pool_name)
-
-    agent = pool.agents.get(agent_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail=f"Agent {agent_id} not found in pool '{pool_name}'")
-
-    # Only allow setting to IDLE if agent is not in critical states
-    if agent.state in [AgentStatus.starting, AgentStatus.stopping, AgentStatus.terminated]:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot set agent to IDLE while in {agent.state.value} state"
-        )
-
-    # Save previous state
-    previous_state = agent.state.value
-
-    # Set state to IDLE
-    agent._set_state(AgentStatus.idle)
-
-    return {
-        "message": f"Agent {agent_id} set to IDLE",
-        "agent_id": str(agent_id),
-        "previous_state": previous_state,
-        "current_state": AgentStatus.idle.value,
-    }
+# NOTE: In multiprocessing mode, agents run in separate worker processes.
+# Direct agent access is not available. Use database and Redis for agent state.
 
 
 # ===== Execution History Endpoints =====

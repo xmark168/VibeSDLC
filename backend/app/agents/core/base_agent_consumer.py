@@ -31,15 +31,23 @@ def _log_message(agent_name: str, event: str, message_id: Optional[str] = None, 
 class BaseAgentInstanceConsumer(EventHandlerConsumer):
     """Base consumer for individual agent instances.
 
-    Each agent instance (not role) gets its own consumer with:
+    HYBRID CONSUMER GROUP STRATEGY:
     - Topic: USER_MESSAGES (global topic, partitioned by project_id)
-    - Group ID: agent_{agent_id} (each agent has unique group)
+    - Group ID: project_{project_id}_role_{role_type}
+    - Load Balancing: Multiple agents of same role in project share messages via Kafka consumer group
 
     This allows:
-    - All agents to receive messages from global topic
-    - Filtering by project_id in the handler
-    - Direct message routing via agent_id
-    - Multiple agents per role per project
+    - Efficient message delivery (only project messages delivered to group)
+    - Automatic load balancing across agents of same role
+    - Kafka handles partition assignment and rebalancing
+    - Direct message routing via agent_id field (filtered in handler)
+    - Team leader default routing for unmention messages
+
+    Example:
+    - Project A has 3 developers → Consumer group "project_A_role_developer"
+    - Kafka automatically distributes messages across the 3 developers
+    - If message has agent_id, only matching developer processes it
+    - If no agent_id, all 3 developers skip (unless team leader)
     """
 
     def __init__(self, agent: Agent):
@@ -57,7 +65,10 @@ class BaseAgentInstanceConsumer(EventHandlerConsumer):
         # Configure topic and group ID
         # Use global USER_MESSAGES topic (partitioned by project_id for load balancing)
         topic = KafkaTopics.USER_MESSAGES.value
-        group_id = f"agent_{self.agent_id}"
+
+        # HYBRID STRATEGY: Group by project + role for load balancing
+        # Multiple agents of same role in project share workload via consumer group
+        group_id = f"project_{self.project_id}_role_{self.role_type}"
 
         # Initialize parent EventHandlerConsumer
         super().__init__(topics=[topic], group_id=group_id)
@@ -69,9 +80,9 @@ class BaseAgentInstanceConsumer(EventHandlerConsumer):
             f"Initialized consumer for agent {self.human_name} "
             f"({self.role_type}) in project {self.project_id}\n"
             f"  Topic: {topic} (global)\n"
-            f"  Group ID: {group_id}\n"
+            f"  Group ID: {group_id} (project-role load balanced)\n"
             f"  Agent ID: {self.agent_id}\n"
-            f"  Will filter by project_id: {self.project_id}"
+            f"  Strategy: Share workload with other {self.role_type}s in project"
         )
 
     async def _handle_user_message(self, event: UserMessageEvent | Dict[str, Any]) -> None:

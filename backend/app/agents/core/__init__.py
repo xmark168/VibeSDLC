@@ -2,25 +2,38 @@
 
 This module exports the core components for agent lifecycle management:
 - BaseAgentRole: Enhanced base class with lifecycle management
-- AgentPool: Pool manager for dynamic agent scaling
+- AgentPool: Pool manager for dynamic agent scaling (single-process)
+- AgentPoolManager: Auto-scaling pool manager (multiprocessing)
 - AgentMonitor: System-wide monitoring
 - AgentConsumer: Kafka consumer pattern
+- Redis Client: Shared state and IPC
+- Registry: Agent and process tracking
 """
 
 from .base_role import BaseAgentRole
 from .agent_pool import AgentPool, AgentPoolConfig
+from .agent_pool_manager import AgentPoolManager
 from .agent_monitor import AgentMonitor, get_agent_monitor
 from .agent_consumer import AgentConsumer
+from .redis_client import RedisClient, get_redis_client, init_redis, close_redis
+from .registry import AgentRegistry, ProcessRegistry
 
 # Import AgentStatus from models for convenience
 from app.models import AgentStatus
 
 __all__ = [
     "BaseAgentRole",
-    "AgentStatus",  # Replaced AgentLifecycleState with AgentStatus
+    "AgentStatus",
     "AgentPool",
     "AgentPoolConfig",
+    "AgentPoolManager",
     "AgentMonitor",
     "get_agent_monitor",
     "AgentConsumer",
+    "RedisClient",
+    "get_redis_client",
+    "init_redis",
+    "close_redis",
+    "AgentRegistry",
+    "ProcessRegistry",
 ]
