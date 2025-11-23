@@ -24,8 +24,10 @@ from app.agents.core import (
     get_agent_monitor,
 )
 from app.agents.core.agent_pool_manager import AgentPoolManager
+from app.agents.core.simple_pool_manager import SimplifiedAgentPoolManager
 from app.agents.core.redis_client import init_redis, close_redis, get_redis_client
 from app.agents.core.name_generator import generate_agent_name, get_display_name
+from app.core.config import settings
 
 
 
@@ -95,27 +97,156 @@ class SystemStatsResponse(BaseModel):
 
 # ===== Global Manager Registry =====
 
-# Manager registry - manages auto-scaling pools with multiprocessing
-_manager_registry: Dict[str, AgentPoolManager] = {}
+# Manager registry - can hold either AgentPoolManager (old) or SimplifiedAgentPoolManager (new)
+_manager_registry: Dict[str, Any] = {}
 
-# Role class mapping
-# NEW: team_leader uses BaseAgent architecture
+# Role class mapping - lazy loaded to avoid circular imports
+def get_role_class_map():
+    """Get role class mapping with lazy imports."""
+    from app.agents.team_leader import TeamLeader
+    from app.agents.roles.developer import Developer
+    from app.agents.roles.tester import Tester
+    from app.agents.roles.business_analyst import BusinessAnalyst
+    
+    return {
+        "team_leader": TeamLeader,
+        "developer": Developer,
+        "tester": Tester,
+        "business_analyst": BusinessAnalyst,
+    }
+
+ROLE_CLASS_MAP = None  # Will be lazy loaded
 
 
 async def initialize_default_pools() -> None:
     """Initialize UNIVERSAL agent pool.
 
-    Creates ONE AgentPoolManager that can spawn agents of ANY role type:
-    - Spawn worker processes dynamically
-    - Auto-restore agents from database on startup
-    - Auto-scale by spawning new workers when capacity is reached (10 agents/process)
-    - Workers can handle agents of multiple role types
+    Supports two modes:
+    1. NEW (simplified): Single-process in-memory management (no multiprocessing, no Redis)
+    2. OLD (complex): Multiprocessing with Redis coordination
+
+    Mode is controlled by settings.USE_SIMPLIFIED_AGENT_POOL feature flag.
     """
     import logging
     from sqlmodel import Session, select
     from app.core.db import engine
 
     logger = logging.getLogger(__name__)
+    global ROLE_CLASS_MAP
+    
+    # Lazy load role class map
+    if ROLE_CLASS_MAP is None:
+        ROLE_CLASS_MAP = get_role_class_map()
+
+    # Check which mode to use
+    use_simplified = settings.USE_SIMPLIFIED_AGENT_POOL
+
+    if use_simplified:
+        logger.info("🚀 Using SIMPLIFIED agent pool manager (optimized, no multiprocessing)")
+        await _initialize_simplified_pool(logger, ROLE_CLASS_MAP)
+    else:
+        logger.info("⚙️  Using OLD multiprocessing agent pool manager (complex, Redis-based)")
+        await _initialize_multiprocessing_pool(logger, ROLE_CLASS_MAP)
+
+
+async def _initialize_simplified_pool(logger, role_class_map) -> None:
+    """Initialize simplified in-memory pool manager."""
+    from sqlmodel import Session, select
+    from app.core.db import engine
+
+    pool_name = "universal_pool"
+
+    # Skip if manager already exists
+    if pool_name in _manager_registry:
+        logger.info(f"Universal pool already exists, skipping")
+        return
+
+    try:
+        # Create simplified manager (no Redis, no multiprocessing)
+        manager = SimplifiedAgentPoolManager(
+            pool_name=pool_name,
+            max_agents=100,  # Higher limit since no process overhead
+            health_check_interval=60,
+        )
+
+        # Start manager
+        if await manager.start():
+            _manager_registry[pool_name] = manager
+            logger.info(f"✓ Created SIMPLIFIED pool: {pool_name} (supports all role types)")
+
+            # Restore agents from database
+            await _restore_agents_simplified(logger, manager, role_class_map)
+
+        else:
+            logger.error(f"✗ Failed to start simplified manager: {pool_name}")
+
+    except Exception as e:
+        logger.error(f"✗ Error creating simplified pool '{pool_name}': {e}", exc_info=True)
+
+
+async def _restore_agents_simplified(logger, manager, role_class_map) -> None:
+    """Restore agents for simplified manager."""
+    from sqlmodel import Session, select
+    from app.core.db import engine
+
+    with Session(engine) as db_session:
+        # Reset transient states
+        reset_states = [
+            AgentStatus.starting,
+            AgentStatus.stopping,
+            AgentStatus.busy,
+            AgentStatus.error,
+            AgentStatus.terminated,
+        ]
+        reset_stmt = (
+            update(Agent)
+            .where(Agent.status.in_(reset_states))
+            .values(status=AgentStatus.idle)
+        )
+        reset_result = db_session.exec(reset_stmt)
+        db_session.commit()
+
+        if reset_result.rowcount > 0:
+            logger.info(f"Auto-reset {reset_result.rowcount} agents from problematic states to idle")
+
+        # Query agents to restore
+        agents_query = select(Agent).where(
+            Agent.status.in_([AgentStatus.idle, AgentStatus.stopped])
+        )
+        db_agents = db_session.exec(agents_query).all()
+
+        logger.info(f"Restoring {len(db_agents)} agents...")
+
+        # Spawn agents
+        for db_agent in db_agents:
+            try:
+                role_class = role_class_map.get(db_agent.role_type)
+                if not role_class:
+                    logger.warning(f"  ✗ Unknown role_type '{db_agent.role_type}' for agent {db_agent.human_name}")
+                    continue
+
+                success = await manager.spawn_agent(
+                    agent_id=db_agent.id,
+                    role_class=role_class,
+                    heartbeat_interval=30,
+                    max_idle_time=300,
+                )
+
+                if success:
+                    logger.debug(f"  ✓ Restored: {db_agent.human_name} [{db_agent.role_type}]")
+                else:
+                    logger.warning(f"  ✗ Failed: {db_agent.human_name}")
+
+            except Exception as e:
+                logger.error(f"Error restoring {db_agent.human_name}: {e}")
+
+        logger.info(f"📊 Restored {len(db_agents)} agents in simplified pool")
+
+
+async def _initialize_multiprocessing_pool(logger, role_class_map) -> None:
+    """Initialize old multiprocessing pool manager with Redis."""
+    from sqlmodel import Session, select
+    from app.core.db import engine
 
     # Initialize Redis (required for multiprocessing mode)
     logger.info("Initializing Redis for multiprocessing agent pools...")
