@@ -66,7 +66,16 @@ def setup_logging() -> None:
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("openai").setLevel(logging.WARNING)
     logging.getLogger("asyncio").setLevel(logging.WARNING)
-    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+
+    # Enable HTTP access logs (Uvicorn)
+    uvicorn_access_logger = logging.getLogger("uvicorn.access")
+    uvicorn_access_logger.setLevel(logging.INFO)
+    uvicorn_access_logger.propagate = True  # Ensure it propagates to root logger
+
+    # Also enable uvicorn error logger
+    uvicorn_error_logger = logging.getLogger("uvicorn.error")
+    uvicorn_error_logger.setLevel(logging.INFO)
+    uvicorn_error_logger.propagate = True
 
     # Log startup message
     logger = logging.getLogger(__name__)

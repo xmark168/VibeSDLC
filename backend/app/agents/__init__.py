@@ -1,52 +1,44 @@
 """
-VibeSDLC Agent System
+VibeSDLC Agent System - NEW ARCHITECTURE
 
-Unified event-driven agent architecture with Team Leader orchestrator
-and modular specialist crews (Business Analyst, Developer, Tester).
+Centralized routing with specialized agents using BaseAgent pattern.
 
 Architecture:
-    User Message → Team Leader → Specialist Crews → Response
+    User Message → Central Router → Agent (via AGENT_TASKS topic)
                         ↓
                    (via Kafka)
 
+NEW PATTERN:
+- TeamLeader: Merged BaseAgent class (no delegation, provides guidance)
+- BA/Developer/Tester: To be migrated to BaseAgent (currently old architecture)
+- Router: Handles all message routing based on @mentions
+
 Usage:
-    # Start all crews (automatic with FastAPI app)
-    from app.agents.orchestrator import start_orchestrator
-    await start_orchestrator()
+    # Agents are managed by AgentPoolManager (started in main.py)
+    # Router started automatically in main.py lifespan
 
-    # Get orchestrator status
-    from app.agents.orchestrator import get_orchestrator
-    orchestrator = await get_orchestrator()
-    status = orchestrator.get_crew_status()
-
-    # Access individual crews
-    from app.agents.roles import (
-        TeamLeaderCrew,
-        BusinessAnalystCrew,
-        DeveloperCrew,
-        TesterCrew,
-    )
+    # To spawn agents:
+    from app.api.routes.agent_management import initialize_default_pools
+    await initialize_default_pools()
 """
 
-from app.agents.orchestrator import (
-    AgentOrchestrator,
-    get_orchestrator,
-    start_orchestrator,
-    stop_orchestrator,
-)
-from app.agents.roles import (
-    TeamLeaderCrew,
-    BusinessAnalystCrew,
-    TesterCrew,
-)
+# NEW ARCHITECTURE exports
+from app.agents.team_leader import TeamLeader
+from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
+
+# OLD ARCHITECTURE exports (will be deprecated after migration)
+from app.agents.roles.business_analyst import BusinessAnalystRole
+from app.agents.roles.developer import DeveloperRole
+from app.agents.roles.tester import TesterRole
 
 __all__ = [
-    # Orchestrator
-    "AgentOrchestrator",
-    "get_orchestrator",
-    "start_orchestrator",
-    "stop_orchestrator",
-    "TeamLeaderCrew",
-    "BusinessAnalystCrew",
-    "TesterCrew",
+    # New Architecture
+    "BaseAgent",
+    "TaskContext",
+    "TaskResult",
+    "TeamLeader",
+    # Old Architecture (deprecated, will be removed)
+    "BusinessAnalystRole",
+    "DeveloperRole",
+    "TesterRole",
 ]
