@@ -178,18 +178,29 @@ class KafkaProducer:
             else:
                 event_data = event
 
-            # OPTIMIZED PARTITION KEY STRATEGY
-            # Priority: explicit key > project_id > event_id
+            # HYBRID PARTITION KEY STRATEGY
+            # AGENT_TASKS: partition by agent_id (one partition per agent)
+            # OTHER TOPICS: partition by project_id (ordering within project)
+            # Priority: explicit key > agent_id (for AGENT_TASKS) > project_id > event_id
             if not key:
-                # Try to use project_id first (optimal for project-based partitioning)
-                project_id = event_data.get("project_id")
-                if project_id:
-                    key = str(project_id) if isinstance(project_id, UUID) else project_id
-                else:
-                    # Fallback to event_id
-                    event_id = event_data.get("event_id")
-                    if event_id:
-                        key = str(event_id) if isinstance(event_id, UUID) else event_id
+                # Special handling for AGENT_TASKS topic
+                if topic_str == "agent_tasks":
+                    # Use agent_id for task partitioning
+                    agent_id = event_data.get("agent_id")
+                    if agent_id:
+                        key = str(agent_id) if isinstance(agent_id, UUID) else agent_id
+                        logger.debug(f"AGENT_TASKS: Using agent_id as partition key: {key}")
+
+                # For all other topics or if agent_id not available, use project_id
+                if not key:
+                    project_id = event_data.get("project_id")
+                    if project_id:
+                        key = str(project_id) if isinstance(project_id, UUID) else project_id
+                    else:
+                        # Final fallback to event_id
+                        event_id = event_data.get("event_id")
+                        if event_id:
+                            key = str(event_id) if isinstance(event_id, UUID) else event_id
 
             # Serialize to JSON with UUID handling
             message_value = json.dumps(event_data, cls=UUIDEncoder).encode("utf-8")

@@ -257,6 +257,7 @@ class ToolCallEvent(BaseKafkaEvent):
 class AgentTaskType(str, Enum):
     """Types of tasks that can be assigned to agents."""
 
+    # Specific task types
     CODE_REVIEW = "code_review"
     IMPLEMENT_STORY = "implement_story"
     WRITE_TESTS = "write_tests"
@@ -264,6 +265,12 @@ class AgentTaskType(str, Enum):
     REFACTOR = "refactor"
     ANALYZE_REQUIREMENTS = "analyze_requirements"
     CREATE_STORIES = "create_stories"
+
+    # Abstraction task types (high-level)
+    USER_STORY = "user_story"  # BA: Analyze requirements → create user stories
+    MESSAGE = "message"  # Any agent: Handle/respond to user message
+
+    # Generic
     CUSTOM = "custom"
 
 
