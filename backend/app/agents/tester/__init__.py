@@ -6,6 +6,5 @@ NEW ARCHITECTURE:
 """
 
 from .tester import Tester
-from .crew import TesterCrew
 
-__all__ = ["Tester", "TesterCrew"]
+__all__ = ["Tester"]

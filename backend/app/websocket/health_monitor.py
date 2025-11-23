@@ -164,10 +164,12 @@ class WebSocketHealthMonitor:
                         # No recent pong, increment missed count
                         health.missed_pongs += 1
                         
-                        logger.warning(
-                            f"WebSocket {ws_id} missed pong "
-                            f"({health.missed_pongs}/{self.max_missed_pongs})"
-                        )
+                        # Only log warning if getting critical (last chance)
+                        if health.missed_pongs >= self.max_missed_pongs - 1:
+                            logger.warning(
+                                f"WebSocket {ws_id} missed pong "
+                                f"({health.missed_pongs}/{self.max_missed_pongs})"
+                            )
                         
                         if health.missed_pongs >= self.max_missed_pongs:
                             # Connection is dead, close it

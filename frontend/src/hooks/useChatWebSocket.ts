@@ -161,7 +161,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
           case 'agent_message':
           case 'agent_response':
           case 'user_message':
-            console.log('[WebSocket] Received message:', data.type, data.data?.content?.substring(0, 100) || data.content?.substring(0, 100))
+            // Message received (silent)
 
             // Handle both formats: with data field or flat structure
             let messageData: Message | null = null
@@ -198,7 +198,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
                 // Check if message already exists by ID
                 const existsById = prev.some(m => m.id === messageData!.id)
                 if (existsById) {
-                  console.log('[WebSocket] Message already exists, skipping:', messageData!.id)
+                    // Message already exists, skip (silently)
                   return prev
                 }
 
@@ -206,19 +206,19 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
                 if (messageData!.author_type === AuthorType.USER || data.type === 'user_message') {
                   const tempIndex = prev.findIndex(m =>
                     m.id.startsWith('temp_') &&
-                    m.content === messageData!.content
+                    m.content === messageData!.content &&
+                    m.author_type === messageData!.author_type
                   )
 
                   if (tempIndex !== -1) {
-                    // Replace optimistic message with server-confirmed message
-                    console.log('[WebSocket] Replacing optimistic message:', prev[tempIndex].id, '->', messageData!.id)
+                    // Replace optimistic message with server-confirmed message (silently)
                     const newMessages = [...prev]
                     newMessages[tempIndex] = messageData!
                     return newMessages
                   }
                 }
 
-                console.log('[WebSocket] Adding new message:', messageData!.id)
+                // Add new message (silently)
                 return [...prev, messageData!]
               })
             } else {
@@ -238,7 +238,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
 
           case 'routing':
           case 'agent_routing':
-            console.log('[WebSocket] Agent routing:', data.from_agent, '→', data.to_agent)
+            // Agent routing (silent)
 
             // Create delegation message from Team Leader
             const delegationMessage: Message = {
@@ -266,7 +266,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
             break
 
           case 'agent_status':
-            console.log('[WebSocket] Agent status:', data.status, data.agent_name)
+            // Agent status update (silent)
             // Normalize status: "agent.thinking" -> "thinking"
             const normalizedStatus = (data.status || 'idle').replace('agent.', '') as 'idle' | 'thinking' | 'acting' | 'waiting' | 'error'
             setAgentStatus({
@@ -302,7 +302,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
             break
 
           case 'agent_progress':
-            console.log('[WebSocket] Agent progress:', data)
+            // Agent progress update (silent)
             setAgentProgress({
               isExecuting: data.status === 'in_progress',
               currentStep: data.description,
@@ -313,7 +313,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
             break
 
           case 'tool_call':
-            console.log('[WebSocket] Tool call:', data.tool_name, data.status)
+            // Tool call (silent)
             setToolCalls(prev => [...prev, {
               agent_name: data.agent_name,
               tool_name: data.tool_name,
@@ -335,7 +335,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
             break
 
           case 'approval_request':
-            console.log('[WebSocket] Approval request:', data.request_type)
+            // Approval request (silent)
             setApprovalRequests(prev => [...prev, {
               id: data.approval_request_id,
               request_type: data.request_type,
@@ -354,7 +354,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
             break
 
           case 'activity_update':
-            console.log('[WebSocket] Activity update:', data.message_id, 'is_new:', data.is_new)
+            // Activity update (silent)
 
             if (data.message_id) {
               if (data.is_new) {
@@ -363,7 +363,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
                   // Check if message already exists (prevent duplicates)
                   const exists = prev.some(m => m.id === data.message_id)
                   if (exists) {
-                    console.log('[WebSocket] Activity message already exists, skipping:', data.message_id)
+                    // Activity already exists (silent)
                     return prev
                   }
 
@@ -381,7 +381,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
                     message_metadata: { agent_name: data.agent_name }
                   }
 
-                  console.log('[WebSocket] Adding new activity message:', newMessage.id)
+                  // Add activity message (silent)
                   return [...prev, newMessage]
                 })
               } else {
@@ -406,7 +406,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
                   if (!wasUpdated) {
                     console.warn('[WebSocket] Activity update failed - message not found:', data.message_id)
                   } else {
-                    console.log('[WebSocket] Updated activity message:', data.message_id)
+                    // Update activity message (silent)
                   }
 
                   return updated
@@ -526,9 +526,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
           if (!m.id.startsWith('temp_')) return true
           const msgTime = new Date(m.created_at).getTime()
           const isStale = now - msgTime > 10000 // 10 seconds
-          if (isStale) {
-            console.log('[WebSocket] Removing stale temp message:', m.id)
-          }
+          // Silently remove stale messages
           return !isStale
         })
         return filtered.length === prev.length ? prev : filtered

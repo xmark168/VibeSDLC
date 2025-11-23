@@ -229,6 +229,7 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
   return {
     state,
     isReady: state === 'connected',
+    ws: wsRef.current,
     send,
     connect,
     disconnect,

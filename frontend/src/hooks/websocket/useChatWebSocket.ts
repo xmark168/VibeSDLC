@@ -116,9 +116,10 @@ export function useChatWebSocket(
     },
   })
 
-  // Message handling
-  const messages = useWebSocketMessages({
+  // Message handling (pass ws ref for pong replies)
+  const messagesHook = useWebSocketMessages({
     projectId,
+    wsRef: { current: ws.ws },
   })
 
   // Agent status tracking
@@ -151,7 +152,7 @@ export function useChatWebSocket(
       return false
     }
 
-    // Add optimistic message
+    // Add optimistic message with 'pending' status
     const tempId = messages.addOptimisticMessage(params.content)
 
     // Send via WebSocket
@@ -163,6 +164,13 @@ export function useChatWebSocket(
       agent_name: params.agent_name,
       temp_id: tempId,
     })
+
+    // Update to 'sent' status after successful send
+    if (success) {
+      setTimeout(() => {
+        messages.updateMessageStatus(tempId, 'sent')
+      }, 100)
+    }
 
     return success
   }, [ws, messages])

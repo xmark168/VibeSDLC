@@ -41,6 +41,8 @@ export interface UseWebSocketMessagesOptions {
   projectId?: string
   /** Callback when message received */
   onMessage?: (event: MessageEvent) => void
+  /** WebSocket ref for sending pong responses */
+  wsRef?: { current: WebSocket | null }
 }
 
 export interface UseWebSocketMessagesReturn {
@@ -48,6 +50,8 @@ export interface UseWebSocketMessagesReturn {
   messages: Message[]
   /** Add message (optimistic) */
   addOptimisticMessage: (content: string) => string
+  /** Update message status */
+  updateMessageStatus: (messageId: string, status: 'sent' | 'delivered' | 'failed') => void
   /** Confirm optimistic message */
   confirmMessage: (tempId: string, serverMessage: Message) => void
   /** Remove stale temp messages */
@@ -76,7 +80,7 @@ function formatDelegationMessage(data: WebSocketMessageData): string {
 }
 
 export function useWebSocketMessages(options: UseWebSocketMessagesOptions): UseWebSocketMessagesReturn {
-  const { projectId, onMessage } = options
+  const { projectId, onMessage, wsRef } = options
 
   const [messages, setMessages] = useState<Message[]>([])
   const processedIdsRef = useRef(new Set<string>())
@@ -92,20 +96,34 @@ export function useWebSocketMessages(options: UseWebSocketMessagesOptions): UseW
       content,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      status: 'pending', // Start with pending status
     }
 
     setMessages(prev => [...prev, optimisticMessage])
     return tempId
   }, [projectId])
 
-  // Confirm optimistic message with server data
+  // Update message status (no replacement, just status change)
+  const updateMessageStatus = useCallback((messageId: string, status: 'sent' | 'delivered' | 'failed') => {
+    setMessages(prev => prev.map(m => 
+      m.id === messageId ? { ...m, status } : m
+    ))
+  }, [])
+
+  // Confirm optimistic message with server data (update ID and status)
   const confirmMessage = useCallback((tempId: string, serverMessage: Message) => {
     setMessages(prev => {
       const tempIndex = prev.findIndex(m => m.id === tempId)
       if (tempIndex === -1) return prev
 
       const newMessages = [...prev]
-      newMessages[tempIndex] = serverMessage
+      // Update temp message with server ID and mark as delivered
+      newMessages[tempIndex] = {
+        ...newMessages[tempIndex],
+        id: serverMessage.id,
+        status: 'delivered',
+        updated_at: serverMessage.updated_at,
+      }
       return newMessages
     })
   }, [])
@@ -118,10 +136,7 @@ export function useWebSocketMessages(options: UseWebSocketMessagesOptions): UseW
         if (!m.id.startsWith('temp_')) return true
         const msgTime = new Date(m.created_at).getTime()
         const isStale = now - msgTime > 10000 // 10 seconds
-        if (isStale) {
-          console.log('[useWebSocketMessages] Removing stale message:', m.id)
-        }
-        return !isStale
+            return !isStale
       })
       return filtered.length === prev.length ? prev : filtered
     })
@@ -182,13 +197,20 @@ export function useWebSocketMessages(options: UseWebSocketMessagesOptions): UseW
               // Check if confirming optimistic message
               if (messageData!.author_type === AuthorType.USER) {
                 const tempIndex = prev.findIndex(m =>
-                  m.id.startsWith('temp_') && m.content === messageData!.content
+                  m.id.startsWith('temp_') && 
+                  m.content === messageData!.content &&
+                  m.author_type === messageData!.author_type
                 )
 
                 if (tempIndex !== -1) {
-                  // Replace optimistic with confirmed
+                  // Update temp message with server ID and status (no replacement)
                   const newMessages = [...prev]
-                  newMessages[tempIndex] = messageData!
+                  newMessages[tempIndex] = {
+                    ...newMessages[tempIndex],
+                    id: messageData!.id,
+                    status: 'delivered',
+                    updated_at: messageData!.updated_at,
+                  }
                   return newMessages
                 }
               }
@@ -221,6 +243,19 @@ export function useWebSocketMessages(options: UseWebSocketMessagesOptions): UseW
           }
 
           setMessages(prev => [...prev, delegationMessage])
+          break
+        }
+
+        case 'ping': {
+          // Respond to ping with pong to keep connection alive
+          if (wsRef?.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: 'pong' }))
+          }
+          break
+        }
+
+        case 'pong': {
+          // Pong received (if we send ping)
           break
         }
 
@@ -288,6 +323,7 @@ export function useWebSocketMessages(options: UseWebSocketMessagesOptions): UseW
   return {
     messages,
     addOptimisticMessage,
+    updateMessageStatus,
     confirmMessage,
     cleanupStaleMessages,
     clearMessages,

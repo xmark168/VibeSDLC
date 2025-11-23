@@ -3,6 +3,8 @@ export enum AuthorType {
   AGENT = "agent",
 }
 
+export type MessageStatus = 'pending' | 'sent' | 'delivered' | 'failed'
+
 export type Message = {
   id: string
   project_id: string
@@ -16,6 +18,7 @@ export type Message = {
   message_metadata?: any // Message metadata (agent_name, preview_id, incomplete_flag, etc.)
   created_at: string
   updated_at: string
+  status?: MessageStatus // Message delivery status (for user messages)
 }
 
 export type MessagesPage = {
