@@ -93,7 +93,7 @@ class Settings(BaseSettings):
 
     # DATABASE SETTINGS 
     POSTGRES_SERVER: str
-    POSTGRES_PORT: int = 5432
+    POSTGRES_PORT: int = 5433
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str = ""
     POSTGRES_DB: str = ""

@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vibeSDLC_pass}
       POSTGRES_DB: ${POSTGRES_DB:-vibeSDLC}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -42,15 +42,14 @@ services:
       RESERVE_POOL_SIZE: 5
       RESERVE_POOL_TIMEOUT: 5
 
-      # Auth
-      AUTH_TYPE: md5
-      AUTH_FILE: /etc/pgbouncer/userlist.txt
+      # Auth - use trust for simplicity
+      AUTH_TYPE: trust
 
       # Logging
       ADMIN_USERS: ${POSTGRES_USER:-vibeSDLC_user}
       STATS_USERS: ${POSTGRES_USER:-vibeSDLC_user}
     ports:
-      - "6432:6432"
+      - "6432:5432"
     depends_on:
       postgres:
         condition: service_healthy

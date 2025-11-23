@@ -36,10 +36,11 @@ class AgentPoolConfig:
 
 
 class AgentPool:
-    """Manages a pool of agent instances for a specific role.
+    """Manages a pool of agent instances with support for multiple roles (Universal Pool).
 
     Features:
     - Manual agent spawning/stopping via API
+    - Supports multiple role types in single pool
     - Load balancing (round-robin, least-busy)
     - Health monitoring
     - Resource cleanup
@@ -47,18 +48,19 @@ class AgentPool:
 
     def __init__(
         self,
-        role_class: Type[BaseAgentRole],
         pool_name: str,
         config: Optional[AgentPoolConfig] = None,
+        role_class: Optional[Type[BaseAgentRole]] = None,
     ):
         """Initialize agent pool.
 
         Args:
-            role_class: Agent role class to instantiate
             pool_name: Unique pool name
             config: Pool configuration
+            role_class: (Optional) Default role class for backward compatibility.
+                       If None, pool is universal and accepts any role type.
         """
-        self.role_class = role_class
+        self.role_class = role_class  # Optional, for backward compatibility
         self.pool_name = pool_name
         self.config = config or AgentPoolConfig()
 
@@ -75,7 +77,10 @@ class AgentPool:
         self._monitor_task: Optional[asyncio.Task] = None
         self._shutdown_event = asyncio.Event()
 
-        logger.info(f"AgentPool '{pool_name}' created for role {role_class.__name__}")
+        if role_class:
+            logger.info(f"AgentPool '{pool_name}' created for role {role_class.__name__}")
+        else:
+            logger.info(f"Universal AgentPool '{pool_name}' created (supports all role types)")
 
     async def start(self) -> bool:
         """Start the agent pool and background services.
@@ -156,6 +161,7 @@ class AgentPool:
     async def spawn_agent(
         self,
         agent_id: UUID,
+        role_class: Optional[Type[BaseAgentRole]] = None,
         heartbeat_interval: int = 30,
         max_idle_time: int = 300,
     ) -> Optional[BaseAgentRole]:
@@ -166,6 +172,8 @@ class AgentPool:
 
         Args:
             agent_id: Agent ID (must exist in database)
+            role_class: Role class to instantiate. If None, uses pool's default role_class.
+                       For universal pools, this parameter is REQUIRED.
             heartbeat_interval: Heartbeat interval in seconds
             max_idle_time: Max idle time in seconds
 
@@ -174,6 +182,15 @@ class AgentPool:
         """
         if len(self.agents) >= self.config.max_agents:
             logger.warning(f"Pool '{self.pool_name}' at max capacity ({self.config.max_agents})")
+            return None
+
+        # Determine which role_class to use
+        effective_role_class = role_class or self.role_class
+        if not effective_role_class:
+            logger.error(
+                f"No role_class specified for agent {agent_id} in universal pool '{self.pool_name}'. "
+                f"Must provide role_class parameter when spawning agents in universal pools."
+            )
             return None
 
         try:
@@ -191,7 +208,7 @@ class AgentPool:
                     return None
 
                 # Create agent instance with agent_model (enables Kafka consumer)
-                agent = self.role_class(
+                agent = effective_role_class(
                     agent_model=agent_model,
                     heartbeat_interval=heartbeat_interval,
                     max_idle_time=max_idle_time,
@@ -209,12 +226,13 @@ class AgentPool:
                         "spawned_at": datetime.now(timezone.utc),
                         "executions": 0,
                         "last_execution": None,
+                        "role_class": effective_role_class.__name__,
                     }
                     self.total_spawned += 1
 
                     logger.info(
                         f"✓ Spawned agent: {agent_model.human_name} ({agent_id}) "
-                        f"in pool '{self.pool_name}' with Kafka consumer enabled"
+                        f"[{effective_role_class.__name__}] in pool '{self.pool_name}'"
                     )
                     return agent
                 else:

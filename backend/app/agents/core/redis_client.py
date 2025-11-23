@@ -41,7 +41,6 @@ class RedisClient:
         """
         self.redis_url = redis_url or settings.redis_url
         self._client: Optional[Redis] = None
-        self._pubsub: Optional[redis.client.PubSub] = None
         self._connected = False
 
         logger.info(f"RedisClient initialized with URL: {self._mask_password(self.redis_url)}")
@@ -84,12 +83,11 @@ class RedisClient:
             return False
 
     async def disconnect(self) -> None:
-        """Disconnect from Redis server."""
-        try:
-            if self._pubsub:
-                await self._pubsub.close()
-                self._pubsub = None
+        """Disconnect from Redis server.
 
+        Note: Pubsub instances are managed by callers (not stored in this class).
+        """
+        try:
             if self._client:
                 await self._client.close()
                 self._client = None
@@ -488,18 +486,18 @@ class RedisClient:
             pool_name: Pool name
 
         Returns:
-            PubSub instance
+            PubSub instance (new instance for each subscription)
         """
         try:
             channel = f"pool:{pool_name}:commands"
 
-            if not self._pubsub:
-                self._pubsub = self.client.pubsub()
-
-            await self._pubsub.subscribe(channel)
+            # Create a NEW pubsub instance for each subscription
+            # to avoid concurrent read errors
+            pubsub = self.client.pubsub()
+            await pubsub.subscribe(channel)
             logger.info(f"Subscribed to pool '{pool_name}' commands")
 
-            return self._pubsub
+            return pubsub
 
         except Exception as e:
             logger.error(f"Failed to subscribe to pool commands: {e}")
@@ -543,18 +541,18 @@ class RedisClient:
             pool_name: Pool name
 
         Returns:
-            PubSub instance
+            PubSub instance (new instance for each subscription)
         """
         try:
             channel = f"pool:{pool_name}:events"
 
-            if not self._pubsub:
-                self._pubsub = self.client.pubsub()
-
-            await self._pubsub.subscribe(channel)
+            # Create a NEW pubsub instance for each subscription
+            # to avoid concurrent read errors
+            pubsub = self.client.pubsub()
+            await pubsub.subscribe(channel)
             logger.info(f"Subscribed to pool '{pool_name}' events")
 
-            return self._pubsub
+            return pubsub
 
         except Exception as e:
             logger.error(f"Failed to subscribe to pool events: {e}")

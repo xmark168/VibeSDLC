@@ -26,12 +26,26 @@ from app.agents.core.registry import AgentRegistry, ProcessRegistry
 from app.core.db import engine, get_worker_engine
 from sqlmodel import Session
 
+# Import role classes for dynamic instantiation
+from app.agents.roles.team_leader import TeamLeaderRole
+from app.agents.roles.business_analyst import BusinessAnalystRole
+from app.agents.roles.developer import DeveloperRole
+from app.agents.roles.tester import TesterRole
+
 # Configure logging for worker process
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
 )
 logger = logging.getLogger(__name__)
+
+# Role class mapping for dynamic instantiation
+ROLE_CLASS_MAP = {
+    "TeamLeaderRole": TeamLeaderRole,
+    "BusinessAnalystRole": BusinessAnalystRole,
+    "DeveloperRole": DeveloperRole,
+    "TesterRole": TesterRole,
+}
 
 
 class AgentPoolWorker:
@@ -47,22 +61,23 @@ class AgentPoolWorker:
     def __init__(
         self,
         pool_name: str,
-        role_class: Type[BaseAgentRole],
         max_agents: int = 10,
         heartbeat_interval: int = 30,
         redis_url: Optional[str] = None,
+        role_class: Optional[Type[BaseAgentRole]] = None,
     ):
         """Initialize worker process.
 
         Args:
             pool_name: Pool name
-            role_class: Agent role class to instantiate
             max_agents: Maximum agents for this worker
             heartbeat_interval: Heartbeat interval in seconds
             redis_url: Redis connection URL (optional)
+            role_class: (Optional) Default role class for backward compatibility.
+                       If None, worker creates a universal pool.
         """
         self.pool_name = pool_name
-        self.role_class = role_class
+        self.role_class = role_class  # Optional, for backward compatibility
         self.max_agents = max_agents
         self.heartbeat_interval = heartbeat_interval
 
@@ -86,9 +101,10 @@ class AgentPoolWorker:
         # Statistics
         self.started_at: Optional[datetime] = None
 
+        pool_type = f"role={role_class.__name__}" if role_class else "universal"
         logger.info(
             f"AgentPoolWorker initialized: process_id={self.process_id}, "
-            f"pool={pool_name}, max_agents={max_agents}, pid={self.pid}"
+            f"pool={pool_name}, max_agents={max_agents}, type={pool_type}, pid={self.pid}"
         )
 
     async def start(self) -> bool:
@@ -113,26 +129,30 @@ class AgentPoolWorker:
 
             # 3. Register this process
             logger.info(f"[{self.process_id}] Registering process in Redis...")
+            metadata = {"type": "universal"}
+            if self.role_class:
+                metadata["role_class"] = self.role_class.__name__
+
             if not await self.process_registry.register(
                 process_id=self.process_id,
                 pool_name=self.pool_name,
                 pid=self.pid,
                 max_agents=self.max_agents,
-                metadata={"role_class": self.role_class.__name__},
+                metadata=metadata,
             ):
                 logger.error(f"[{self.process_id}] Failed to register process")
                 return False
 
-            # 4. Create AgentPool
+            # 4. Create AgentPool (universal or role-specific)
             logger.info(f"[{self.process_id}] Creating AgentPool...")
             pool_config = AgentPoolConfig(
                 max_agents=self.max_agents,
                 health_check_interval=60,
             )
             self.pool = AgentPool(
-                role_class=self.role_class,
                 pool_name=self.pool_name,
                 config=pool_config,
+                role_class=self.role_class,  # None for universal pool
             )
 
             if not await self.pool.start():
@@ -299,7 +319,7 @@ class AgentPoolWorker:
         """Handle spawn agent command.
 
         Args:
-            data: Command data with agent_id, heartbeat_interval, max_idle_time
+            data: Command data with agent_id, role_class_name, heartbeat_interval, max_idle_time
         """
         try:
             # Check if this command is for this process
@@ -312,11 +332,25 @@ class AgentPoolWorker:
             heartbeat_interval = data.get("heartbeat_interval", 30)
             max_idle_time = data.get("max_idle_time", 300)
 
-            logger.info(f"[{self.process_id}] Spawning agent {agent_id}...")
+            # Get role_class from command data (for universal pools)
+            role_class_name = data.get("role_class_name")
+            role_class = None
+            if role_class_name:
+                role_class = ROLE_CLASS_MAP.get(role_class_name)
+                if not role_class:
+                    logger.error(
+                        f"[{self.process_id}] Unknown role_class_name: {role_class_name}. "
+                        f"Available: {list(ROLE_CLASS_MAP.keys())}"
+                    )
+                    return
+                logger.info(f"[{self.process_id}] Spawning agent {agent_id} with role {role_class_name}...")
+            else:
+                logger.info(f"[{self.process_id}] Spawning agent {agent_id}...")
 
-            # Spawn agent
+            # Spawn agent (role_class may be None if pool has default role_class)
             runtime_agent = await self.pool.spawn_agent(
                 agent_id=agent_id,
+                role_class=role_class,
                 heartbeat_interval=heartbeat_interval,
                 max_idle_time=max_idle_time,
             )
@@ -453,10 +487,10 @@ class AgentPoolWorker:
 
 def run_worker_process(
     pool_name: str,
-    role_class: Type[BaseAgentRole],
     max_agents: int = 10,
     heartbeat_interval: int = 30,
     redis_url: Optional[str] = None,
+    role_class: Optional[Type[BaseAgentRole]] = None,
 ) -> None:
     """Entry point for worker process.
 
@@ -464,22 +498,22 @@ def run_worker_process(
 
     Args:
         pool_name: Pool name
-        role_class: Agent role class
         max_agents: Maximum agents
         heartbeat_interval: Heartbeat interval
         redis_url: Redis URL
+        role_class: (Optional) Role class for backward compatibility. If None, creates universal worker.
     """
     # Create new event loop for this process
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    # Create worker
+    # Create worker (universal or role-specific)
     worker = AgentPoolWorker(
         pool_name=pool_name,
-        role_class=role_class,
         max_agents=max_agents,
         heartbeat_interval=heartbeat_interval,
         redis_url=redis_url,
+        role_class=role_class,
     )
 
     # Run worker

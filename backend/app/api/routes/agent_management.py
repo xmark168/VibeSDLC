@@ -113,12 +113,13 @@ ROLE_CLASS_MAP = {
 
 
 async def initialize_default_pools() -> None:
-    """Initialize default agent pools for all role types.
+    """Initialize UNIVERSAL agent pool.
 
-    Creates AgentPoolManager instances that:
+    Creates ONE AgentPoolManager that can spawn agents of ANY role type:
     - Spawn worker processes dynamically
     - Auto-restore agents from database on startup
     - Auto-scale by spawning new workers when capacity is reached (10 agents/process)
+    - Workers can handle agents of multiple role types
     """
     import logging
     from sqlmodel import Session, select
@@ -136,106 +137,98 @@ async def initialize_default_pools() -> None:
 
     logger.info("✓ Redis connected successfully")
 
-    default_pools = [
-        {"role_type": "team_leader", "pool_name": "team_leader_pool"},
-        {"role_type": "business_analyst", "pool_name": "business_analyst_pool"},
-        {"role_type": "developer", "pool_name": "developer_pool"},
-        {"role_type": "tester", "pool_name": "tester_pool"},
-    ]
+    # Create ONE universal pool instead of 4 role-specific pools
+    pool_name = "universal_pool"
 
-    for pool_config in default_pools:
-        role_type = pool_config["role_type"]
-        pool_name = pool_config["pool_name"]
-        role_class = ROLE_CLASS_MAP[role_type]
+    # Skip if manager already exists
+    if pool_name in _manager_registry:
+        logger.info(f"Universal pool already exists, skipping")
+        return
 
-        # Skip if manager already exists
-        if pool_name in _manager_registry:
-            logger.info(f"Manager '{pool_name}' already exists, skipping")
-            continue
+    try:
+        # Create Universal AgentPoolManager (no role_class - accepts all roles)
+        manager = AgentPoolManager(
+            pool_name=pool_name,
+            max_agents_per_process=10,
+            heartbeat_interval=30,
+        )
 
-        try:
-            # Create AgentPoolManager
-            manager = AgentPoolManager(
-                pool_name=pool_name,
-                role_class=role_class,
-                max_agents_per_process=10,
-                heartbeat_interval=30,
-            )
+        # Start manager
+        if await manager.start():
+            _manager_registry[pool_name] = manager
+            logger.info(f"✓ Created UNIVERSAL pool: {pool_name} (supports all role types)")
 
-            # Start manager
-            if await manager.start():
-                _manager_registry[pool_name] = manager
-                logger.info(f"✓ Created manager: {pool_name} ({role_type})")
+            # Restore ALL agents from database (all role types)
+            with Session(engine) as db_session:
+                # Reset transient states for ALL agents
+                reset_states = [
+                    AgentStatus.starting,
+                    AgentStatus.stopping,
+                    AgentStatus.busy,
+                    AgentStatus.error,
+                    AgentStatus.terminated,
+                ]
+                reset_stmt = (
+                    update(Agent)
+                    .where(Agent.status.in_(reset_states))
+                    .values(status=AgentStatus.idle)
+                )
+                reset_result = db_session.exec(reset_stmt)
+                db_session.commit()
 
-                # Restore agents from database
-                with Session(engine) as db_session:
-                    # Reset transient states
-                    reset_states = [
-                        AgentStatus.starting,
-                        AgentStatus.stopping,
-                        AgentStatus.busy,
-                        AgentStatus.error,
-                        AgentStatus.terminated,
-                    ]
-                    reset_stmt = (
-                        update(Agent)
-                        .where(
-                            Agent.role_type == role_type,
-                            Agent.status.in_(reset_states)
-                        )
-                        .values(status=AgentStatus.idle)
-                    )
-                    reset_result = db_session.exec(reset_stmt)
-                    db_session.commit()
-
-                    if reset_result.rowcount > 0:
-                        logger.info(
-                            f"Auto-reset {reset_result.rowcount} {role_type} agents "
-                            f"from problematic states to idle"
-                        )
-
-                    # Query agents to restore
-                    agents_query = select(Agent).where(
-                        Agent.role_type == role_type,
-                        Agent.status.in_([AgentStatus.idle, AgentStatus.stopped])
-                    )
-                    db_agents = db_session.exec(agents_query).all()
-
+                if reset_result.rowcount > 0:
                     logger.info(
-                        f"Restoring {len(db_agents)} {role_type} agents "
-                        f"(workers will auto-spawn as needed)..."
+                        f"Auto-reset {reset_result.rowcount} agents from problematic states to idle"
                     )
 
-                    # Spawn agents via manager (auto-scales workers)
-                    for db_agent in db_agents:
-                        try:
-                            success = await manager.spawn_agent(
-                                agent_id=db_agent.id,
-                                heartbeat_interval=30,
-                                max_idle_time=300,
+                # Query ALL agents to restore (all role types)
+                agents_query = select(Agent).where(
+                    Agent.status.in_([AgentStatus.idle, AgentStatus.stopped])
+                )
+                db_agents = db_session.exec(agents_query).all()
+
+                logger.info(
+                    f"Restoring {len(db_agents)} agents across all role types "
+                    f"(workers will auto-spawn as needed)..."
+                )
+
+                # Spawn agents via universal manager
+                for db_agent in db_agents:
+                    try:
+                        # Get role_class for this agent
+                        role_class = ROLE_CLASS_MAP.get(db_agent.role_type)
+                        if not role_class:
+                            logger.warning(
+                                f"  ✗ Unknown role_type '{db_agent.role_type}' for agent {db_agent.human_name}"
                             )
+                            continue
 
-                            if success:
-                                db_agent.status = AgentStatus.idle
-                                db_session.add(db_agent)
-                                logger.debug(f"  ✓ Queued: {db_agent.human_name}")
-                            else:
-                                logger.warning(f"  ✗ Failed: {db_agent.human_name}")
+                        success = await manager.spawn_agent(
+                            agent_id=db_agent.id,
+                            role_class=role_class,
+                            heartbeat_interval=30,
+                            max_idle_time=300,
+                        )
 
-                        except Exception as e:
-                            logger.error(f"Error restoring {db_agent.human_name}: {e}")
+                        if success:
+                            db_agent.status = AgentStatus.idle
+                            db_session.add(db_agent)
+                            logger.debug(f"  ✓ Queued: {db_agent.human_name} [{db_agent.role_type}]")
+                        else:
+                            logger.warning(f"  ✗ Failed: {db_agent.human_name}")
 
-                    db_session.commit()
+                    except Exception as e:
+                        logger.error(f"Error restoring {db_agent.human_name}: {e}")
 
-                    logger.info(
-                        f"📊 Queued {len(db_agents)} {role_type} agents for restoration"
-                    )
+                db_session.commit()
 
-            else:
-                logger.error(f"✗ Failed to start manager: {pool_name}")
+                logger.info(f"📊 Queued {len(db_agents)} agents for restoration in universal pool")
 
-        except Exception as e:
-            logger.error(f"✗ Error creating pool '{pool_name}': {e}", exc_info=True)
+        else:
+            logger.error(f"✗ Failed to start manager: {pool_name}")
+
+    except Exception as e:
+        logger.error(f"✗ Error creating pool '{pool_name}': {e}", exc_info=True)
 
 
 def get_manager(pool_name: str) -> AgentPoolManager:
@@ -393,12 +386,17 @@ async def spawn_agent(
     session.commit()
     session.refresh(db_agent)
 
-    # Get manager and spawn via multiprocessing
-    manager = get_manager(request.pool_name)
+    # Get universal pool manager
+    pool_name = "universal_pool"
+    manager = get_manager(pool_name)
 
-    # Spawn via manager (auto-scales workers)
+    # Get role_class for this agent
+    role_class = ROLE_CLASS_MAP[request.role_type]
+
+    # Spawn via universal manager (auto-scales workers)
     success = await manager.spawn_agent(
         agent_id=db_agent.id,
+        role_class=role_class,
         heartbeat_interval=request.heartbeat_interval,
         max_idle_time=request.max_idle_time,
     )
@@ -415,7 +413,7 @@ async def spawn_agent(
         "display_name": display_name,
         "role_type": request.role_type,
         "project_id": str(request.project_id),
-        "pool_name": request.pool_name,
+        "pool_name": pool_name,  # Always "universal_pool"
         "state": "spawning",
         "created_at": db_agent.created_at.isoformat(),
     }
@@ -544,6 +542,343 @@ async def get_alerts(
     This is a placeholder implementation.
     """
     return []
+
+
+# ===== Metrics Endpoints for Analytics =====
+
+@router.get("/metrics/timeseries")
+async def get_metrics_timeseries(
+    session: SessionDep,
+    metric_type: str = Query(..., description="Metric type: utilization, executions, tokens, success_rate"),
+    time_range: str = Query(default="24h", description="Time range: 1h, 6h, 24h, 7d, 30d"),
+    interval: str = Query(default="auto", description="Data point interval: auto, 5m, 15m, 1h, 1d"),
+    pool_name: Optional[str] = Query(default=None, description="Filter by pool name"),
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Get time-series metrics data for visualizations.
+
+    Returns historical metrics snapshots for creating charts and graphs.
+    """
+    from datetime import datetime, timezone, timedelta
+    from app.models import AgentMetricsSnapshot
+
+    # Parse time range
+    time_map = {
+        "1h": timedelta(hours=1),
+        "6h": timedelta(hours=6),
+        "24h": timedelta(hours=24),
+        "7d": timedelta(days=7),
+        "30d": timedelta(days=30),
+    }
+
+    if time_range not in time_map:
+        raise HTTPException(status_code=400, detail=f"Invalid time_range: {time_range}")
+
+    cutoff_time = datetime.now(timezone.utc) - time_map[time_range]
+
+    # Build query
+    query = select(AgentMetricsSnapshot).where(
+        AgentMetricsSnapshot.snapshot_timestamp >= cutoff_time
+    ).order_by(AgentMetricsSnapshot.snapshot_timestamp.asc())
+
+    if pool_name:
+        query = query.where(AgentMetricsSnapshot.pool_name == pool_name)
+
+    snapshots = session.exec(query).all()
+
+    # Format data based on metric type
+    data_points = []
+    for snapshot in snapshots:
+        point = {
+            "timestamp": snapshot.snapshot_timestamp.isoformat(),
+            "pool_name": snapshot.pool_name,
+        }
+
+        if metric_type == "utilization":
+            point["idle"] = snapshot.idle_agents
+            point["busy"] = snapshot.busy_agents
+            point["error"] = snapshot.error_agents
+            point["total"] = snapshot.total_agents
+            point["utilization_pct"] = snapshot.utilization_percentage or 0
+        elif metric_type == "executions":
+            point["total"] = snapshot.total_executions
+            point["successful"] = snapshot.successful_executions
+            point["failed"] = snapshot.failed_executions
+            point["success_rate"] = (
+                (snapshot.successful_executions / snapshot.total_executions * 100)
+                if snapshot.total_executions > 0 else 0
+            )
+        elif metric_type == "tokens":
+            point["tokens"] = snapshot.total_tokens
+            point["llm_calls"] = snapshot.total_llm_calls
+            point["avg_duration_ms"] = snapshot.avg_execution_duration_ms
+        elif metric_type == "success_rate":
+            point["total"] = snapshot.total_executions
+            point["successful"] = snapshot.successful_executions
+            point["failed"] = snapshot.failed_executions
+            point["success_rate"] = (
+                (snapshot.successful_executions / snapshot.total_executions * 100)
+                if snapshot.total_executions > 0 else 0
+            )
+        else:
+            raise HTTPException(status_code=400, detail=f"Invalid metric_type: {metric_type}")
+
+        data_points.append(point)
+
+    return {
+        "metric_type": metric_type,
+        "time_range": time_range,
+        "interval": interval,
+        "pool_name": pool_name,
+        "data": data_points,
+        "count": len(data_points),
+    }
+
+
+@router.get("/metrics/aggregated")
+async def get_metrics_aggregated(
+    session: SessionDep,
+    time_range: str = Query(default="24h", description="Time range: 1h, 6h, 24h, 7d, 30d"),
+    group_by: str = Query(default="pool", description="Group by: pool, hour, day"),
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Get aggregated metrics statistics.
+
+    Returns summarized metrics grouped by pool, time period, or agent type.
+    """
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import and_, func
+    from app.models import AgentMetricsSnapshot
+
+    # Parse time range
+    time_map = {
+        "1h": timedelta(hours=1),
+        "6h": timedelta(hours=6),
+        "24h": timedelta(hours=24),
+        "7d": timedelta(days=7),
+        "30d": timedelta(days=30),
+    }
+
+    if time_range not in time_map:
+        raise HTTPException(status_code=400, detail=f"Invalid time_range: {time_range}")
+
+    cutoff_time = datetime.now(timezone.utc) - time_map[time_range]
+
+    # Build aggregation query based on group_by
+    if group_by == "pool":
+        # Aggregate by pool name
+        query = select(
+            AgentMetricsSnapshot.pool_name,
+            func.avg(AgentMetricsSnapshot.total_agents).label("avg_agents"),
+            func.avg(AgentMetricsSnapshot.utilization_percentage).label("avg_utilization"),
+            func.sum(AgentMetricsSnapshot.total_executions).label("total_executions"),
+            func.sum(AgentMetricsSnapshot.successful_executions).label("successful_executions"),
+            func.sum(AgentMetricsSnapshot.failed_executions).label("failed_executions"),
+            func.sum(AgentMetricsSnapshot.total_tokens).label("total_tokens"),
+            func.sum(AgentMetricsSnapshot.total_llm_calls).label("total_llm_calls"),
+            func.avg(AgentMetricsSnapshot.avg_execution_duration_ms).label("avg_duration_ms"),
+        ).where(
+            AgentMetricsSnapshot.snapshot_timestamp >= cutoff_time
+        ).group_by(
+            AgentMetricsSnapshot.pool_name
+        )
+
+        results = session.exec(query).all()
+
+        aggregated_data = []
+        for row in results:
+            total_exec = row.total_executions or 0
+            success_rate = (
+                (row.successful_executions / total_exec * 100) if total_exec > 0 else 0
+            )
+
+            aggregated_data.append({
+                "pool_name": row.pool_name,
+                "avg_agents": round(row.avg_agents or 0, 2),
+                "avg_utilization": round(row.avg_utilization or 0, 2),
+                "total_executions": total_exec,
+                "successful_executions": row.successful_executions or 0,
+                "failed_executions": row.failed_executions or 0,
+                "success_rate": round(success_rate, 2),
+                "total_tokens": row.total_tokens or 0,
+                "total_llm_calls": row.total_llm_calls or 0,
+                "avg_duration_ms": round(row.avg_duration_ms or 0, 2),
+            })
+
+        return {
+            "group_by": group_by,
+            "time_range": time_range,
+            "data": aggregated_data,
+            "count": len(aggregated_data),
+        }
+
+    elif group_by in ["hour", "day"]:
+        # Time-based aggregation
+        # Note: This is simplified - production code would use date_trunc
+        query = select(AgentMetricsSnapshot).where(
+            AgentMetricsSnapshot.snapshot_timestamp >= cutoff_time
+        ).order_by(AgentMetricsSnapshot.snapshot_timestamp.asc())
+
+        snapshots = session.exec(query).all()
+
+        # Group snapshots by time bucket
+        # Simplified implementation - just return raw snapshots for now
+        return {
+            "group_by": group_by,
+            "time_range": time_range,
+            "data": [
+                {
+                    "timestamp": s.snapshot_timestamp.isoformat(),
+                    "pool_name": s.pool_name,
+                    "total_agents": s.total_agents,
+                    "total_executions": s.total_executions,
+                    "total_tokens": s.total_tokens,
+                }
+                for s in snapshots
+            ],
+            "count": len(snapshots),
+        }
+
+    else:
+        raise HTTPException(status_code=400, detail=f"Invalid group_by: {group_by}")
+
+
+@router.get("/metrics/processes")
+async def get_process_metrics(
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Get current worker process metrics.
+
+    Returns real-time process distribution, capacity, and utilization.
+    """
+    from app.agents.core.registry import ProcessRegistry, AgentRegistry
+
+    redis = get_redis_client()
+    process_registry = ProcessRegistry(redis_client=redis)
+    agent_registry = AgentRegistry(redis_client=redis)
+
+    all_processes = []
+
+    for pool_name in _manager_registry.keys():
+        # Get processes for this pool
+        process_ids = await process_registry.get_pool_processes(pool_name)
+
+        for process_id in process_ids:
+            process_info = await process_registry.get_info(process_id)
+            if process_info:
+                # Get agents in this process
+                agent_count = len(process_info.get("agents", []))
+                max_agents = process_info.get("max_agents", 10)
+
+                all_processes.append({
+                    "process_id": process_id,
+                    "pool_name": pool_name,
+                    "agent_count": agent_count,
+                    "max_agents": max_agents,
+                    "utilization": (agent_count / max_agents * 100) if max_agents > 0 else 0,
+                    "pid": process_info.get("pid"),
+                    "status": process_info.get("status", "unknown"),
+                    "started_at": process_info.get("started_at"),
+                })
+
+    # Calculate summary
+    total_processes = len(all_processes)
+    total_capacity = sum(p["max_agents"] for p in all_processes)
+    used_capacity = sum(p["agent_count"] for p in all_processes)
+    avg_utilization = (used_capacity / total_capacity * 100) if total_capacity > 0 else 0
+
+    return {
+        "summary": {
+            "total_processes": total_processes,
+            "total_capacity": total_capacity,
+            "used_capacity": used_capacity,
+            "available_capacity": total_capacity - used_capacity,
+            "avg_utilization": round(avg_utilization, 2),
+        },
+        "processes": all_processes,
+    }
+
+
+@router.get("/metrics/tokens")
+async def get_token_metrics(
+    session: SessionDep,
+    time_range: str = Query(default="24h", description="Time range: 1h, 6h, 24h, 7d, 30d"),
+    group_by: str = Query(default="pool", description="Group by: pool, agent_type"),
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Get token usage analytics.
+
+    Returns token consumption, LLM call counts, and cost estimates.
+    """
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import and_, func
+    from app.models import AgentMetricsSnapshot
+
+    # Parse time range
+    time_map = {
+        "1h": timedelta(hours=1),
+        "6h": timedelta(hours=6),
+        "24h": timedelta(hours=24),
+        "7d": timedelta(days=7),
+        "30d": timedelta(days=30),
+    }
+
+    if time_range not in time_map:
+        raise HTTPException(status_code=400, detail=f"Invalid time_range: {time_range}")
+
+    cutoff_time = datetime.now(timezone.utc) - time_map[time_range]
+
+    # Aggregate token usage by pool
+    query = select(
+        AgentMetricsSnapshot.pool_name,
+        func.sum(AgentMetricsSnapshot.total_tokens).label("total_tokens"),
+        func.sum(AgentMetricsSnapshot.total_llm_calls).label("total_llm_calls"),
+        func.avg(AgentMetricsSnapshot.avg_execution_duration_ms).label("avg_duration_ms"),
+        func.count(AgentMetricsSnapshot.id).label("snapshot_count"),
+    ).where(
+        AgentMetricsSnapshot.snapshot_timestamp >= cutoff_time
+    ).group_by(
+        AgentMetricsSnapshot.pool_name
+    )
+
+    results = session.exec(query).all()
+
+    token_data = []
+    total_tokens = 0
+    total_llm_calls = 0
+
+    for row in results:
+        tokens = row.total_tokens or 0
+        llm_calls = row.total_llm_calls or 0
+
+        # Rough cost estimate (using GPT-4 pricing as example: $0.03/1K tokens)
+        # This should be configurable based on actual model used
+        estimated_cost = (tokens / 1000) * 0.03
+
+        token_data.append({
+            "pool_name": row.pool_name,
+            "total_tokens": tokens,
+            "total_llm_calls": llm_calls,
+            "avg_tokens_per_call": round(tokens / llm_calls, 2) if llm_calls > 0 else 0,
+            "avg_duration_ms": round(row.avg_duration_ms or 0, 2),
+            "estimated_cost_usd": round(estimated_cost, 4),
+        })
+
+        total_tokens += tokens
+        total_llm_calls += llm_calls
+
+    return {
+        "time_range": time_range,
+        "group_by": group_by,
+        "summary": {
+            "total_tokens": total_tokens,
+            "total_llm_calls": total_llm_calls,
+            "avg_tokens_per_call": round(total_tokens / total_llm_calls, 2) if total_llm_calls > 0 else 0,
+            "estimated_total_cost_usd": round((total_tokens / 1000) * 0.03, 4),
+        },
+        "data": token_data,
+        "count": len(token_data),
+    }
 
 
 @router.get("/health")

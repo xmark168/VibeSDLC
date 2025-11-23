@@ -38,22 +38,19 @@ class AgentPoolManager:
     def __init__(
         self,
         pool_name: str,
-        role_class: Type[BaseAgentRole],
         max_agents_per_process: int = 10,
         heartbeat_interval: int = 30,
         redis_client: Optional[RedisClient] = None,
     ):
-        """Initialize pool manager.
+        """Initialize universal pool manager.
 
         Args:
             pool_name: Pool name
-            role_class: Agent role class to instantiate in workers
             max_agents_per_process: Max agents per worker process
             heartbeat_interval: Worker heartbeat interval in seconds
             redis_client: Redis client instance (optional)
         """
         self.pool_name = pool_name
-        self.role_class = role_class
         self.max_agents_per_process = max_agents_per_process
         self.heartbeat_interval = heartbeat_interval
 
@@ -77,7 +74,7 @@ class AgentPoolManager:
         self.total_workers_terminated = 0
 
         logger.info(
-            f"AgentPoolManager initialized: pool={pool_name}, "
+            f"Universal AgentPoolManager initialized: pool={pool_name}, "
             f"max_agents_per_process={max_agents_per_process}"
         )
 
@@ -157,15 +154,15 @@ class AgentPoolManager:
             Process ID if spawned successfully, None otherwise
         """
         try:
-            # Create worker process
+            # Create worker process (universal worker - no role_class)
             process = Process(
                 target=run_worker_process,
                 args=(
                     self.pool_name,
-                    self.role_class,
                     self.max_agents_per_process,
                     self.heartbeat_interval,
                     self.redis.redis_url,
+                    None,  # role_class=None for universal worker
                 ),
                 daemon=False,  # Not daemon - we want graceful shutdown
             )
@@ -271,19 +268,21 @@ class AgentPoolManager:
     async def spawn_agent(
         self,
         agent_id: UUID,
+        role_class: Type[BaseAgentRole],
         heartbeat_interval: int = 30,
         max_idle_time: int = 300,
     ) -> bool:
-        """Spawn an agent, auto-scaling workers if needed.
+        """Spawn an agent with specified role, auto-scaling workers if needed.
 
         This is the main method called by the API to spawn agents.
         It handles:
         - Finding available worker process
         - Auto-spawning new worker if all are at capacity
-        - Routing spawn command to target worker
+        - Routing spawn command with role_class to target worker
 
         Args:
             agent_id: Agent UUID (must exist in database)
+            role_class: Agent role class to instantiate
             heartbeat_interval: Agent heartbeat interval
             max_idle_time: Agent max idle time
 
@@ -321,12 +320,13 @@ class AgentPoolManager:
                     logger.error("Failed to spawn new worker process")
                     return False
 
-            # 4. Send spawn command to target worker
+            # 4. Send spawn command to target worker with role_class
             success = await self.redis.publish_command(
                 pool_name=self.pool_name,
                 command="spawn",
                 data={
                     "agent_id": str(agent_id),
+                    "role_class_name": role_class.__name__,  # Send role class name
                     "target_process_id": target_process_id,
                     "heartbeat_interval": heartbeat_interval,
                     "max_idle_time": max_idle_time,
@@ -334,7 +334,10 @@ class AgentPoolManager:
             )
 
             if success:
-                logger.info(f"✓ Spawn command sent for agent {agent_id} to worker {target_process_id}")
+                logger.info(
+                    f"✓ Spawn command sent for agent {agent_id} [{role_class.__name__}] "
+                    f"to worker {target_process_id}"
+                )
                 return True
             else:
                 logger.error(f"Failed to send spawn command for agent {agent_id}")

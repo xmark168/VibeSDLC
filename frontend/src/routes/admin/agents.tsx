@@ -15,6 +15,10 @@ import {
   useSetAgentIdle,
   useStartMonitoring,
   useStopMonitoring,
+  useMetricsTimeseries,
+  useMetricsAggregated,
+  useProcessMetrics,
+  useTokenMetrics,
 } from "@/queries/agents"
 import {
   type PoolResponse,
@@ -84,9 +88,19 @@ import {
   Timer,
   History,
   FileText,
+  BarChart3,
 } from "lucide-react"
 import { toast } from "sonner"
 import { formatDistanceToNow } from "date-fns"
+import {
+  AgentUtilizationChart,
+  ExecutionTrendsChart,
+  TokenUsageChart,
+  ProcessMetricsChart,
+  SuccessRateChart,
+  LLMCallsChart,
+} from "@/components/charts"
+import { TimeRangeSelector, type TimeRange, MetricCard } from "@/components/admin"
 
 export const Route = createFileRoute("/admin/agents")({
   beforeLoad: async () => {
@@ -132,7 +146,7 @@ function AgentAdminPage() {
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="pools">
             <Server className="w-4 h-4 mr-2" />
             Pools
@@ -148,6 +162,10 @@ function AgentAdminPage() {
           <TabsTrigger value="executions">
             <History className="w-4 h-4 mr-2" />
             Executions
+          </TabsTrigger>
+          <TabsTrigger value="analytics">
+            <BarChart3 className="w-4 h-4 mr-2" />
+            Analytics
           </TabsTrigger>
           <TabsTrigger value="alerts">
             <AlertTriangle className="w-4 h-4 mr-2" />
@@ -176,6 +194,10 @@ function AgentAdminPage() {
           <ExecutionsTab executions={executions || []} isLoading={executionsLoading} />
         </TabsContent>
 
+        <TabsContent value="analytics" className="mt-6">
+          <AnalyticsTab />
+        </TabsContent>
+
         <TabsContent value="alerts" className="mt-6">
           <AlertsTab alerts={alerts || []} isLoading={alertsLoading} />
         </TabsContent>
@@ -199,6 +221,20 @@ function SystemStatsCards({
   }
   isLoading: boolean
 }) {
+  // Fetch 24h metrics for sparklines
+  const { data: utilizationData } = useMetricsTimeseries(
+    { metric_type: "utilization", time_range: "24h" },
+    { refetchInterval: 60000 }
+  )
+
+  const { data: executionData } = useMetricsTimeseries(
+    { metric_type: "executions", time_range: "24h" },
+    { refetchInterval: 60000 }
+  )
+
+  const { data: tokenData } = useTokenMetrics({ time_range: "24h" })
+  const { data: processData } = useProcessMetrics({ refetchInterval: 30000 })
+
   if (isLoading) {
     return (
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -216,57 +252,70 @@ function SystemStatsCards({
     )
   }
 
+  // Calculate trends (compare first half vs second half of 24h data)
+  const calculateTrend = (data: any[], key: string): number => {
+    if (!data || data.length < 2) return 0
+    const midpoint = Math.floor(data.length / 2)
+    const firstHalf = data.slice(0, midpoint)
+    const secondHalf = data.slice(midpoint)
+
+    const firstAvg = firstHalf.reduce((sum, d) => sum + (d[key] || 0), 0) / firstHalf.length
+    const secondAvg = secondHalf.reduce((sum, d) => sum + (d[key] || 0), 0) / secondHalf.length
+
+    if (firstAvg === 0) return 0
+    return ((secondAvg - firstAvg) / firstAvg) * 100
+  }
+
+  // Prepare sparkline data
+  const agentTrend = utilizationData?.data.map((d: any) => ({ value: d.total || 0 })) || []
+  const agentChange = calculateTrend(utilizationData?.data || [], "total")
+
+  const successTrend = executionData?.data.map((d: any) => ({ value: d.success_rate || 0 })) || []
+  const successChange = calculateTrend(executionData?.data || [], "success_rate")
+
+  const tokenTrend = tokenData?.data.map((d) => ({ value: d.total_tokens })) || []
+  const tokenChange = tokenData?.data.length > 1
+    ? ((tokenData.data[tokenData.data.length - 1].total_tokens - tokenData.data[0].total_tokens) / (tokenData.data[0].total_tokens || 1)) * 100
+    : 0
+
+  const processUtilization = processData?.summary.avg_utilization || 0
+
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Total Pools</CardTitle>
-          <Server className="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold">{stats?.total_pools || 0}</div>
-          <p className="text-xs text-muted-foreground">Active agent pools</p>
-        </CardContent>
-      </Card>
+      <MetricCard
+        title="Total Agents"
+        value={stats?.total_agents || 0}
+        change={agentChange}
+        trend={agentTrend}
+        icon={<Users className="h-4 w-4 text-muted-foreground" />}
+        subtitle="Running instances"
+      />
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Total Agents</CardTitle>
-          <Users className="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold">{stats?.total_agents || 0}</div>
-          <p className="text-xs text-muted-foreground">Running agent instances</p>
-        </CardContent>
-      </Card>
+      <MetricCard
+        title="Success Rate"
+        value={stats?.success_rate ? `${(stats.success_rate * 100).toFixed(1)}%` : "N/A"}
+        change={successChange}
+        trend={successTrend}
+        icon={<Activity className="h-4 w-4 text-muted-foreground" />}
+        subtitle={`${stats?.total_executions || 0} executions`}
+      />
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Success Rate</CardTitle>
-          <Activity className="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold">
-            {stats?.success_rate ? `${(stats.success_rate * 100).toFixed(1)}%` : "N/A"}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {stats?.total_executions || 0} total executions
-          </p>
-        </CardContent>
-      </Card>
+      <MetricCard
+        title="Token Usage (24h)"
+        value={tokenData?.summary.total_tokens.toLocaleString() || "0"}
+        change={tokenChange}
+        trend={tokenTrend}
+        icon={<Zap className="h-4 w-4 text-muted-foreground" />}
+        subtitle={`$${tokenData?.summary.estimated_total_cost_usd.toFixed(4) || "0.00"} cost`}
+      />
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Recent Alerts</CardTitle>
-          <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold">{stats?.recent_alerts || 0}</div>
-          <p className="text-xs text-muted-foreground">
-            Uptime: {stats?.uptime_seconds ? formatUptime(stats.uptime_seconds) : "N/A"}
-          </p>
-        </CardContent>
-      </Card>
+      <MetricCard
+        title="Process Utilization"
+        value={`${processUtilization.toFixed(1)}%`}
+        change={undefined}
+        icon={<Server className="h-4 w-4 text-muted-foreground" />}
+        subtitle={`${processData?.summary.used_capacity || 0}/${processData?.summary.total_capacity || 0} capacity`}
+      />
     </div>
   )
 }
@@ -1137,6 +1186,140 @@ function ExecutionsTab({
         )}
       </CardContent>
     </Card>
+  )
+}
+
+// ===== Analytics Tab =====
+function AnalyticsTab() {
+  const [timeRange, setTimeRange] = useState<TimeRange>("24h")
+  const [selectedPool, setSelectedPool] = useState<string | undefined>()
+
+  // Fetch metrics data
+  const { data: utilizationData } = useMetricsTimeseries(
+    { metric_type: "utilization", time_range: timeRange, pool_name: selectedPool },
+    { refetchInterval: 60000 }
+  )
+
+  const { data: executionData } = useMetricsTimeseries(
+    { metric_type: "executions", time_range: timeRange, pool_name: selectedPool },
+    { refetchInterval: 60000 }
+  )
+
+  const { data: tokenData } = useTokenMetrics({ time_range: timeRange })
+  const { data: processData } = useProcessMetrics({ refetchInterval: 30000 })
+
+  return (
+    <div className="space-y-6">
+      {/* Controls */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold">Analytics & Metrics</h2>
+        <div className="flex items-center gap-4">
+          <TimeRangeSelector value={timeRange} onChange={setTimeRange} />
+        </div>
+      </div>
+
+      {/* Charts Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Agent Utilization Chart */}
+        {utilizationData && (
+          <AgentUtilizationChart
+            data={utilizationData.data.map((d) => ({
+              timestamp: d.timestamp,
+              idle: (d as any).idle || 0,
+              busy: (d as any).busy || 0,
+              error: (d as any).error || 0,
+              total: (d as any).total || 0,
+            }))}
+          />
+        )}
+
+        {/* Execution Trends Chart */}
+        {executionData && (
+          <ExecutionTrendsChart
+            data={executionData.data.map((d) => ({
+              timestamp: d.timestamp,
+              total: (d as any).total || 0,
+              successful: (d as any).successful || 0,
+              failed: (d as any).failed || 0,
+              success_rate: (d as any).success_rate || 0,
+            }))}
+          />
+        )}
+
+        {/* Process Metrics Chart */}
+        {processData && (
+          <ProcessMetricsChart summary={processData.summary} processes={processData.processes} />
+        )}
+
+        {/* Token Usage Chart */}
+        {tokenData && <TokenUsageChart data={tokenData.data} />}
+
+        {/* Success Rate Chart */}
+        {executionData && (
+          <SuccessRateChart
+            data={executionData.data.map((d) => ({
+              timestamp: d.timestamp,
+              success_rate: (d as any).success_rate || 0,
+              successful: (d as any).successful || 0,
+              failed: (d as any).failed || 0,
+            }))}
+            showArea={true}
+          />
+        )}
+
+        {/* LLM Calls Chart */}
+        {tokenData && (
+          <LLMCallsChart
+            data={tokenData.data.map((d) => ({
+              pool_name: d.pool_name,
+              llm_calls: d.total_llm_calls,
+              tokens: d.total_tokens,
+              avg_tokens_per_call: d.avg_tokens_per_call,
+            }))}
+          />
+        )}
+      </div>
+
+      {/* Summary Stats */}
+      {tokenData && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Summary Statistics</CardTitle>
+            <CardDescription>
+              Aggregated metrics for the selected time range ({timeRange})
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <div className="text-sm text-muted-foreground">Total Tokens</div>
+                <div className="text-2xl font-bold">
+                  {tokenData.summary.total_tokens.toLocaleString()}
+                </div>
+              </div>
+              <div>
+                <div className="text-sm text-muted-foreground">Total LLM Calls</div>
+                <div className="text-2xl font-bold">
+                  {tokenData.summary.total_llm_calls.toLocaleString()}
+                </div>
+              </div>
+              <div>
+                <div className="text-sm text-muted-foreground">Avg Tokens/Call</div>
+                <div className="text-2xl font-bold">
+                  {tokenData.summary.avg_tokens_per_call.toFixed(0)}
+                </div>
+              </div>
+              <div>
+                <div className="text-sm text-muted-foreground">Estimated Cost</div>
+                <div className="text-2xl font-bold">
+                  ${tokenData.summary.estimated_total_cost_usd.toFixed(4)}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
   )
 }
 
