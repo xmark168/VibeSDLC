@@ -14,6 +14,7 @@ from sqlmodel import Session, create_engine
 
 from app.kafka import EventHandlerConsumer, KafkaTopics
 from app.websocket.connection_manager import connection_manager
+from app.websocket.activity_buffer import activity_buffer
 from app.core.config import settings
 from app.models import Message as MessageModel, AuthorType
 

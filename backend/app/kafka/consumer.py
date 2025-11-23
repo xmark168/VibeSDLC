@@ -94,9 +94,11 @@ class BaseKafkaConsumer(ABC):
             logger.info(
                 f"Kafka consumer started for topics {self.topics} with group {self.group_id}"
             )
+            logger.info(f"Consumer config: bootstrap.servers={config.get('bootstrap.servers')}")
 
             # Start consume loop in background
             self._consume_task = asyncio.create_task(self._consume_loop())
+            logger.info(f"Consume loop task created for topics {self.topics}")
 
         except Exception as e:
             logger.error(f"Failed to start Kafka consumer: {e}")
@@ -157,6 +159,7 @@ class BaseKafkaConsumer(ABC):
 
     async def _consume_loop(self):
         """Main consume loop running in background."""
+        logger.info(f"[CONSUMER] Starting consume loop for topics {self.topics}")
         while self.running:
             try:
                 # Poll with timeout (non-blocking)

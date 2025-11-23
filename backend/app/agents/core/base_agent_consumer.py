@@ -62,10 +62,11 @@ class BaseAgentInstanceConsumer(EventHandlerConsumer):
         # NEW: Subscribe to AGENT_TASKS topic
         topic = KafkaTopics.AGENT_TASKS.value
 
-        # NEW: All agents in project share one consumer group
-        # Kafka will distribute tasks across available agents
+        # FIXED: Each agent has unique consumer group
+        # This ensures ALL agents receive ALL tasks
         # Each agent filters by agent_id to only process its own tasks
-        group_id = f"project_{self.project_id}_agent_tasks"
+        # Tradeoff: More messages consumed, but guaranteed delivery
+        group_id = f"agent_{self.agent_id}_tasks"
 
         # Initialize parent EventHandlerConsumer
         super().__init__(topics=[topic], group_id=group_id)

@@ -110,19 +110,29 @@ Your analysis should identify:
             expected_output="Clear analysis of user needs and request type"
         )
         
-        # Task 2: Suggest specialist
+        # Task 2: Respond to user naturally
         coordinate_task = Task(
-            description=f"""Based on the requirements analysis, suggest which specialist the user should tag:
+            description=f"""Respond to the user's request naturally and helpfully.
 
-Available specialists:
-- @BusinessAnalyst: For PRD creation, user stories, requirements documentation
-- @Developer: For code implementation, technical architecture, system design
-- @Tester: For QA planning, test cases, testing strategy
+User Message: {user_message}
+Analysis: (from previous task)
 
-Provide clear guidance on who to tag and why.
+Guidelines:
+- Be friendly and concise
+- For simple greetings: Respond naturally and ask how you can help
+- For specific requests: Provide helpful response OR if complex/specialist needed, mention specialist naturally
+- Don't lecture about tagging system
+- Be conversational, not instructional
+
+Examples:
+User: "xin chào" → "Xin chào! Tôi là Victoria, Team Leader của dự án. Bạn cần giúp gì hôm nay? Tôi có thể giúp bạn với requirements, development, hoặc testing."
+
+User: "tạo một feature login" → "Được! Feature login cần phân tích requirements trước. @BusinessAnalyst sẽ giúp bạn tạo PRD và user stories chi tiết cho feature này."
+
+User: "kiểm tra code có bug không" → "Tôi sẽ nhờ @Tester review code và tìm bugs cho bạn."
 """,
             agent=self.agents["project_coordinator"],
-            expected_output="Recommendation of which specialist to tag with clear reasoning",
+            expected_output="Natural, helpful response to user (not meta-explanation about tagging)",
             context=[analyze_task]
         )
         

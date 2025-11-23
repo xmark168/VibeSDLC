@@ -15,7 +15,7 @@ Architecture:
 
 import asyncio
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from app.kafka.consumer import BaseKafkaConsumer
 from app.kafka.event_schemas import KafkaTopics
@@ -45,11 +45,12 @@ class MessageRouterService(BaseKafkaConsumer):
     def __init__(self):
         """Initialize the router service."""
         # Subscribe to all source topics that need routing
+        # Convert enum values to strings
         topics = [
-            KafkaTopics.USER_MESSAGES,
-            KafkaTopics.AGENT_RESPONSES,
-            KafkaTopics.APPROVAL_RESPONSES,
-            KafkaTopics.AGENT_STATUS,
+            KafkaTopics.USER_MESSAGES.value,
+            KafkaTopics.AGENT_RESPONSES.value,
+            KafkaTopics.APPROVAL_RESPONSES.value,
+            KafkaTopics.AGENT_STATUS.value,
         ]
 
         # Use a dedicated consumer group for the router
@@ -92,24 +93,40 @@ class MessageRouterService(BaseKafkaConsumer):
         await super().stop()
         self.logger.info("Message Router Service stopped")
 
-    async def handle_message(self, event: Dict[str, Any]) -> None:
+    async def handle_message(
+        self,
+        topic: str,
+        event: Dict[str, Any],
+        raw_data: Dict[str, Any],
+        key: Optional[str],
+        partition: int,
+        offset: int,
+    ) -> None:
         """Handle incoming event by dispatching to appropriate router.
 
         This method is called by BaseKafkaConsumer for each message.
 
         Args:
-            event: Deserialized event dictionary
+            topic: Kafka topic name
+            event: Validated event object or raw dict
+            raw_data: Raw event data dict
+            key: Message key
+            partition: Partition number
+            offset: Message offset
         """
-        event_type = event.get("event_type", "unknown")
+        event_type = raw_data.get("event_type", "unknown")
 
-        self.logger.debug(f"Received event: {event_type}")
+        self.logger.info(f"[ROUTER] Received event: {event_type} from topic: {topic}")  # Changed to INFO for visibility
+        
+        # Use raw_data for routing (event might be validated object)
+        event_dict = raw_data if isinstance(raw_data, dict) else (event if isinstance(event, dict) else event.model_dump())
 
         # Dispatch to routers
         routed = False
         for router in self.routers:
             try:
-                if router.should_handle(event):
-                    await router.route(event)
+                if router.should_handle(event_dict):
+                    await router.route(event_dict)
                     routed = True
                     break  # Only first matching router handles the event
             except Exception as e:

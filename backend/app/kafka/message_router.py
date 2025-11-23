@@ -166,7 +166,7 @@ class UserMessageRouter(BaseEventRouter):
         content = event_dict.get("content", "")
         message_id = event_dict.get("message_id")
 
-        self.logger.debug(f"Routing user message {message_id} in project {project_id}")
+        self.logger.info(f"[USER_MESSAGE_ROUTER] Routing user message {message_id} in project {project_id}")  # Changed to INFO
 
         # Parse @mentions
         mentions = self.MENTION_PATTERN.findall(content)
