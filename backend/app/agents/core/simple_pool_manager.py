@@ -1,30 +1,3 @@
-"""Simplified Agent Pool Manager - Direct in-memory agent management.
-
-This is the optimized replacement for the complex 3-layer multiprocessing architecture.
-
-OLD ARCHITECTURE (Complex):
-- AgentPoolManager (master) → multiprocessing.Process → AgentPoolWorker → AgentPool
-- Redis pub/sub for IPC
-- JSON serialization overhead
-- 3 monitor loops
-- ~2000 lines of code
-
-NEW ARCHITECTURE (Simple):
-- SimplifiedAgentPoolManager (direct in-memory management)
-- No multiprocessing (agents are I/O-bound, not CPU-bound)
-- No Redis coordination
-- Direct async method calls
-- Single monitor loop
-- ~300 lines of code
-
-Benefits:
-- 100-200ms faster spawning (no IPC overhead)
-- Simpler debugging (direct stack traces)
-- More reliable (fewer moving parts)
-- Easier to maintain (1 file vs 3)
-- Less memory usage (no process overhead)
-"""
-
 import asyncio
 import logging
 from datetime import datetime, timezone

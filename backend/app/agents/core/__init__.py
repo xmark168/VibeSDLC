@@ -1,36 +1,29 @@
 """Agent core components.
 
-This module exports the core components for agent lifecycle management:
-- AgentPool: Pool manager for dynamic agent scaling (single-process)
-- AgentPoolManager: Auto-scaling pool manager (multiprocessing)
-- AgentMonitor: System-wide monitoring
-- Redis Client: Shared state and IPC
-- Registry: Agent and process tracking
+This module exports the simplified agent pool manager.
 
-NOTE: BaseAgent pattern is now the standard. All agents (TeamLeader, Developer, 
-Tester, BusinessAnalyst) inherit from BaseAgent directly.
+ARCHITECTURE:
+- SimplifiedAgentPoolManager: In-memory single-process pool management
+- BaseAgent pattern: All agents (TeamLeader, Developer, Tester, BusinessAnalyst)
+  inherit from BaseAgent directly
+
+REMOVED (old multiprocessing architecture):
+- AgentPool (382 lines) - merged into SimplifiedAgentPoolManager
+- AgentPoolManager (512 lines) - replaced by SimplifiedAgentPoolManager
+- AgentPoolWorker (536 lines) - no longer needed (no multiprocessing)
+- RedisClient (625 lines) - no longer needed (no IPC coordination)
+- AgentRegistry/ProcessRegistry (406 lines) - no longer needed
+- AgentMonitor (323 lines) - monitoring built into SimplifiedAgentPoolManager
+
+Total removed: ~2,784 lines of complex multiprocessing code
 """
 
-from .agent_pool import AgentPool, AgentPoolConfig
-from .agent_pool_manager import AgentPoolManager
-from .agent_monitor import AgentMonitor, get_agent_monitor
-from .redis_client import RedisClient, get_redis_client, init_redis, close_redis
-from .registry import AgentRegistry, ProcessRegistry
+from .simple_pool_manager import SimplifiedAgentPoolManager
 
 # Import AgentStatus from models for convenience
 from app.models import AgentStatus
 
 __all__ = [
     "AgentStatus",
-    "AgentPool",
-    "AgentPoolConfig",
-    "AgentPoolManager",
-    "AgentMonitor",
-    "get_agent_monitor",
-    "RedisClient",
-    "get_redis_client",
-    "init_redis",
-    "close_redis",
-    "AgentRegistry",
-    "ProcessRegistry",
+    "SimplifiedAgentPoolManager",
 ]
