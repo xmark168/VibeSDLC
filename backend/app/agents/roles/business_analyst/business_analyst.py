@@ -1,13 +1,10 @@
-"""Business Analyst Agent - Merged Role + Crew Implementation.
+"""Business Analyst Agent - Simple chat-based requirements analysis.
 
 NEW ARCHITECTURE:
 - Inherits from BaseAgent (Kafka abstracted)
 - Handles requirements analysis and business tasks
-- Integrates CrewAI crew logic directly
-
-NOTE: This is a simplified BA agent for chat/task handling.
-The complex multi-phase BA workflow (analysis → PRD → flows → epics/stories)
-remains in ba_agents.py API endpoint using BusinessAnalystCrew directly.
+- Responds to @BusinessAnalyst mentions in chat
+- Provides PRD generation and requirements gathering
 """
 
 import logging
@@ -29,8 +26,8 @@ class BusinessAnalyst(BaseAgent):
     NEW ARCHITECTURE:
     - No more separate Consumer/Role layers
     - Handles tasks via handle_task() method
-    - Router sends tasks via @BusinessAnalyst mentions
-    - For complex workflows, use ba_agents.py API endpoints
+    - Router sends tasks via @BusinessAnalyst mentions in chat
+    - Provides requirements analysis, PRD generation, and business documentation
     """
 
     def __init__(self, agent_model: AgentModel):
@@ -62,8 +59,8 @@ class BusinessAnalyst(BaseAgent):
 - Identifying edge cases and potential issues early
 - Translating business needs into actionable requirements
 
-When users ask for requirements analysis or PRDs, you provide structured documentation.
-For complex multi-phase analysis workflows, suggest using the dedicated BA workflow API.""",
+When users ask for requirements analysis or PRDs, you provide structured, 
+comprehensive documentation that helps the development team understand what to build.""",
             verbose=True,
             allow_delegation=False,
             llm="openai/gpt-4",
