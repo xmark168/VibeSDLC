@@ -154,9 +154,17 @@ class WebSocketKafkaBridge:
             content = event_data.get("content", "")
             structured_data = event_data.get("structured_data")
             agent_name = event_data.get("agent_name", "")
+            
+            # Extract task and execution IDs for tracking
+            task_id = event_data.get("task_id")
+            execution_id = event_data.get("execution_id")
 
             # Build metadata with agent_name so it persists in database
             metadata = {"agent_name": agent_name} if agent_name else {}
+            if task_id:
+                metadata["task_id"] = str(task_id)
+            if execution_id:
+                metadata["execution_id"] = str(execution_id)
             if structured_data:
                 metadata.update(structured_data)
 
@@ -176,7 +184,10 @@ class WebSocketKafkaBridge:
                 db_session.refresh(db_message)
                 message_id = db_message.id
 
-            logger.info(f"Saved agent response to database: {message_id}")
+            logger.info(
+                f"Saved agent response to database: {message_id}, "
+                f"task_id={task_id}, execution_id={execution_id}"
+            )
 
             # Format message for WebSocket
             # Use timezone-aware datetime so JavaScript parses it correctly
@@ -190,6 +201,12 @@ class WebSocketKafkaBridge:
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "requires_approval": event_data.get("requires_approval", False),
             }
+            
+            # Include task and execution IDs if present
+            if task_id:
+                ws_message["task_id"] = str(task_id)
+            if execution_id:
+                ws_message["execution_id"] = str(execution_id)
 
             # Only include structured_data if it's actual preview data (has message_type)
             # This prevents plain text messages from being displayed as preview cards
@@ -201,6 +218,19 @@ class WebSocketKafkaBridge:
 
             # Broadcast to all clients in the project
             await connection_manager.broadcast_to_project(ws_message, project_id)
+            
+            # If we have execution_id, also broadcast task completion event
+            if execution_id:
+                task_complete_message = {
+                    "type": "task_completed",
+                    "task_id": str(task_id) if task_id else None,
+                    "execution_id": str(execution_id),
+                    "agent_name": agent_name,
+                    "message_id": str(message_id),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+                await connection_manager.broadcast_to_project(task_complete_message, project_id)
+                logger.debug(f"Broadcast task_completed for execution_id={execution_id}")
 
         except Exception as e:
             logger.error(f"Error handling agent response event: {e}", exc_info=True)

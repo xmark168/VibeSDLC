@@ -262,33 +262,13 @@ export function useWebSocketMessages(options: UseWebSocketMessagesOptions): UseW
         case 'activity_update': {
           if (!data.message_id) break
 
-          if (data.is_new) {
-            // New activity message
-            const newMessage: Message = {
-              id: data.message_id,
-              project_id: data.project_id || projectId || '',
-              author_type: AuthorType.AGENT,
-              content: data.content || '',
-              created_at: data.created_at || new Date().toISOString(),
-              updated_at: data.updated_at || new Date().toISOString(),
-              agent_name: data.agent_name,
-              message_type: 'activity',
-              structured_data: data.structured_data,
-              message_metadata: { agent_name: data.agent_name }
-            }
+          setMessages(prev => {
+            const existingIndex = prev.findIndex(m => m.id === data.message_id)
 
-            setMessages(prev => {
-              // Prevent duplicates
-              if (prev.some(m => m.id === data.message_id)) {
-                return prev
-              }
-              return [...prev, newMessage]
-            })
-          } else {
-            // Update existing activity message
-            setMessages(prev => {
-              return prev.map(msg =>
-                msg.id === data.message_id
+            if (existingIndex !== -1) {
+              // Update existing activity message
+              return prev.map((msg, idx) =>
+                idx === existingIndex
                   ? {
                       ...msg,
                       structured_data: data.structured_data,
@@ -297,8 +277,23 @@ export function useWebSocketMessages(options: UseWebSocketMessagesOptions): UseW
                     }
                   : msg
               )
-            })
-          }
+            } else {
+              // Create new activity message
+              const newMessage: Message = {
+                id: data.message_id,
+                project_id: data.project_id || projectId || '',
+                author_type: AuthorType.AGENT,
+                content: data.content || '',
+                created_at: data.created_at || new Date().toISOString(),
+                updated_at: data.updated_at || new Date().toISOString(),
+                agent_name: data.agent_name,
+                message_type: 'activity',
+                structured_data: data.structured_data,
+                message_metadata: { agent_name: data.agent_name }
+              }
+              return [...prev, newMessage]
+            }
+          })
           break
         }
 

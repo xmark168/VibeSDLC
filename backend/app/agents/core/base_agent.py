@@ -242,6 +242,8 @@ class BaseAgent(ABC):
 
             response_event = AgentResponseEvent(
                 message_id=message_id or self._current_task_id,
+                task_id=self._current_task_id,  # Include task ID for tracking
+                execution_id=self._current_execution_id,  # Link to activity timeline
                 agent_name=self.name,
                 agent_type=self.role_type,
                 content=content,
@@ -258,6 +260,7 @@ class BaseAgent(ABC):
 
             logger.info(
                 f"[{self.name}] Published response: {len(content)} chars, "
+                f"task_id={self._current_task_id}, execution_id={self._current_execution_id}, "
                 f"approval_required={requires_approval}"
             )
         except Exception as e:
@@ -266,7 +269,7 @@ class BaseAgent(ABC):
     # ===== Consumer Management (Internal) =====
 
     async def start(self) -> bool:
-        """Start the agent's Kafka consumer.
+        """Start the agent's Kafka consumer and task queue worker.
 
         Called during agent initialization.
         
@@ -276,24 +279,38 @@ class BaseAgent(ABC):
         from app.agents.core.base_agent_consumer import BaseAgentInstanceConsumer
 
         try:
+            # Start task queue worker
+            self._queue_running = True
+            self._queue_worker_task = asyncio.create_task(self._task_queue_worker())
+            
             # Create consumer with wrapper that calls our handle_task
             self._consumer = AgentTaskConsumer(self)
             await self._consumer.start()
 
-            logger.info(f"[{self.name}] Agent consumer started")
+            logger.info(f"[{self.name}] Agent consumer and task queue started")
             return True
         except Exception as e:
             logger.error(f"[{self.name}] Failed to start consumer: {e}")
             return False
 
     async def stop(self) -> None:
-        """Stop the agent's Kafka consumer.
+        """Stop the agent's Kafka consumer and task queue worker.
 
         Called during shutdown.
         """
+        # Stop queue worker
+        self._queue_running = False
+        if self._queue_worker_task:
+            self._queue_worker_task.cancel()
+            try:
+                await self._queue_worker_task
+            except asyncio.CancelledError:
+                pass
+        
+        # Stop consumer
         if self._consumer:
             await self._consumer.stop()
-            logger.info(f"[{self.name}] Agent consumer stopped")
+            logger.info(f"[{self.name}] Agent consumer and task queue stopped")
 
     async def health_check(self) -> dict:
         """Check if agent is healthy.
@@ -333,10 +350,75 @@ class BaseAgent(ABC):
             self._producer = await get_kafka_producer()
         return self._producer
 
-    async def _process_router_task(self, task_data: Dict[str, Any]) -> None:
-        """Process task from router (internal method).
+    async def _task_queue_worker(self) -> None:
+        """Worker loop that processes tasks from queue one by one.
+        
+        This ensures:
+        - Tasks are processed sequentially (no concurrent execution)
+        - No state overwrite (task_id, execution_id)
+        - Proper busy status management
+        """
+        logger.info(f"[{self.name}] Task queue worker started")
+        
+        while self._queue_running:
+            try:
+                # Wait for next task (with timeout to check _queue_running)
+                try:
+                    task_data = await asyncio.wait_for(
+                        self._task_queue.get(), 
+                        timeout=1.0
+                    )
+                except asyncio.TimeoutError:
+                    continue  # Check if still running
+                
+                # Process task
+                await self._execute_task(task_data)
+                
+                # Mark task as done in queue
+                self._task_queue.task_done()
+                
+            except asyncio.CancelledError:
+                logger.info(f"[{self.name}] Task queue worker cancelled")
+                break
+            except Exception as e:
+                logger.error(f"[{self.name}] Task queue worker error: {e}", exc_info=True)
+        
+        logger.info(f"[{self.name}] Task queue worker stopped")
 
-        This is called by the consumer. It:
+    async def _process_router_task(self, task_data: Dict[str, Any]) -> None:
+        """Enqueue task from router for processing.
+
+        This is called by the Kafka consumer. It:
+        1. Checks if queue has space
+        2. Enqueues task for sequential processing
+        3. Worker loop will process it
+
+        Args:
+            task_data: RouterTaskEvent as dict
+        """
+        task_id = task_data.get("task_id", "unknown")
+        
+        try:
+            # Try to add to queue (non-blocking)
+            self._task_queue.put_nowait(task_data)
+            
+            queue_size = self._task_queue.qsize()
+            logger.info(
+                f"[{self.name}] Task {task_id} enqueued "
+                f"(queue: {queue_size}/{self._task_queue.maxsize})"
+            )
+            
+        except asyncio.QueueFull:
+            logger.error(
+                f"[{self.name}] Task queue FULL! Rejecting task {task_id}. "
+                f"Agent is overloaded ({self._task_queue.maxsize} tasks pending)"
+            )
+            # TODO: Publish task rejection event back to router
+
+    async def _execute_task(self, task_data: Dict[str, Any]) -> None:
+        """Execute a single task (called by worker loop).
+
+        This is the actual task execution logic. It:
         1. Converts RouterTaskEvent → TaskContext
         2. Calls agent's handle_task()
         3. Publishes response
@@ -348,6 +430,7 @@ class BaseAgent(ABC):
             # Extract task info
             task_id = task_data.get("task_id")
             self._current_task_id = task_id
+            self._current_execution_id = uuid4()  # Generate execution ID for linking response to activity
 
             # Extract context
             context = task_data.get("context", {})
@@ -408,6 +491,7 @@ class BaseAgent(ABC):
             )
         finally:
             self._current_task_id = None
+            self._current_execution_id = None
 
 
 # ===== Internal Consumer Wrapper =====

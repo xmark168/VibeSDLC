@@ -1,9 +1,10 @@
-import { useState } from 'react'
-import { ChevronDown, ChevronRight, CheckCircle2, Loader2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { CheckCircle2, Loader2, XCircle } from 'lucide-react'
 import type { Message } from '@/types/message'
 
 interface ActivityMessageProps {
   message: Message
+  onComplete?: () => void
 }
 
 interface ActivityStep {
@@ -24,13 +25,11 @@ interface ActivityData {
   completed_at: string | null
 }
 
-export function ActivityMessage({ message }: ActivityMessageProps) {
+export function ActivityMessage({ message, onComplete }: ActivityMessageProps) {
   const activityData = message.structured_data?.data as ActivityData | undefined
+  const [isVisible, setIsVisible] = useState(true)
 
-  // Auto-expand if in progress, auto-collapse if completed
-  const [isExpanded, setIsExpanded] = useState(activityData?.status === 'in_progress')
-
-  if (!activityData) {
+  if (!activityData || !isVisible) {
     return null
   }
 
@@ -40,127 +39,77 @@ export function ActivityMessage({ message }: ActivityMessageProps) {
 
   const isCompleted = activityData.status === 'completed'
   const isFailed = activityData.status === 'failed'
+  const isInProgress = activityData.status === 'in_progress'
+
+  // Get current step description
+  const currentStepData = activityData.steps.find(s => s.status === 'in_progress')
+  const currentStepDesc = currentStepData?.description || 
+    (isCompleted ? 'Complete' : isFailed ? 'Failed' : 'Processing...')
+
+  // Auto-hide completed activities after 3 seconds
+  useEffect(() => {
+    if (isCompleted && onComplete) {
+      const timer = setTimeout(() => {
+        setIsVisible(false)
+        onComplete()
+      }, 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [isCompleted, onComplete])
 
   return (
-    <div className="my-2 max-w-2xl">
-      <div
-        className={`rounded-lg border ${
+    <div className="my-1">
+      <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg transition-all ${
+        isCompleted
+          ? 'bg-green-50 border border-green-200 dark:bg-green-950 dark:border-green-800'
+          : isFailed
+          ? 'bg-red-50 border border-red-200 dark:bg-red-950 dark:border-red-800'
+          : 'bg-blue-50 border border-blue-200 dark:bg-blue-950 dark:border-blue-800'
+      }`}>
+        {/* Status Icon */}
+        {isCompleted ? (
+          <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400 flex-shrink-0" />
+        ) : isFailed ? (
+          <XCircle className="h-4 w-4 text-red-600 dark:text-red-400 flex-shrink-0" />
+        ) : (
+          <Loader2 className="h-4 w-4 text-blue-600 dark:text-blue-400 animate-spin flex-shrink-0" />
+        )}
+
+        {/* Agent Name */}
+        <span className={`text-sm font-medium ${
           isCompleted
-            ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950'
+            ? 'text-green-700 dark:text-green-300'
             : isFailed
-            ? 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950'
-            : 'border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950'
-        } p-3 shadow-sm`}
-      >
-        {/* Header */}
-        <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="flex w-full items-center justify-between text-left hover:opacity-80 transition-opacity"
-        >
-          <div className="flex items-center gap-2 flex-1">
-            {/* Icon */}
-            {isCompleted ? (
-              <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0" />
-            ) : isFailed ? (
-              <div className="h-5 w-5 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0">
-                <span className="text-white text-xs font-bold">!</span>
-              </div>
-            ) : (
-              <Loader2 className="h-5 w-5 text-blue-600 dark:text-blue-400 animate-spin flex-shrink-0" />
-            )}
+            ? 'text-red-700 dark:text-red-300'
+            : 'text-blue-700 dark:text-blue-300'
+        }`}>
+          {activityData.agent_name}
+        </span>
 
-            {/* Agent Name */}
-            <span className="font-medium text-sm text-gray-900 dark:text-gray-100">
-              {activityData.agent_name}
-            </span>
+        {/* Separator */}
+        <span className="text-gray-400 dark:text-gray-600">•</span>
 
-            {/* Status */}
-            <span className={`text-sm font-medium ${
-              isCompleted
-                ? 'text-green-700 dark:text-green-300'
-                : isFailed
-                ? 'text-red-700 dark:text-red-300'
-                : 'text-blue-700 dark:text-blue-300'
-            }`}>
-              {isCompleted ? 'Hoàn thành' : isFailed ? 'Lỗi' : 'Đang thực thi'}
-            </span>
+        {/* Current Step Description */}
+        <span className="text-sm text-gray-700 dark:text-gray-300">
+          {currentStepDesc}
+        </span>
 
-            {/* Progress */}
-            <span className="text-xs text-gray-600 dark:text-gray-400 ml-auto mr-2">
-              {activityData.current_step}/{activityData.total_steps}
-            </span>
-          </div>
-
-          {/* Expand/Collapse Icon */}
-          {isExpanded ? (
-            <ChevronDown className="h-4 w-4 text-gray-500 flex-shrink-0" />
-          ) : (
-            <ChevronRight className="h-4 w-4 text-gray-500 flex-shrink-0" />
-          )}
-        </button>
-
-        {/* Expanded Content */}
-        {isExpanded && (
-          <div className="mt-3 space-y-2">
-            {/* Steps List */}
-            <div className="space-y-1.5">
-              {activityData.steps.map((step, idx) => (
+        {/* Progress Indicator */}
+        {isInProgress && (
+          <>
+            <span className="text-gray-400 dark:text-gray-600">•</span>
+            <div className="flex items-center gap-1.5">
+              <div className="w-16 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                 <div
-                  key={idx}
-                  className={`flex items-start gap-2 text-sm pl-7 ${
-                    step.status === 'completed'
-                      ? 'text-gray-600 dark:text-gray-400'
-                      : step.status === 'in_progress'
-                      ? 'text-gray-900 dark:text-gray-100 font-medium'
-                      : 'text-red-600 dark:text-red-400'
-                  }`}
-                >
-                  {/* Step Status Icon */}
-                  <span className="flex-shrink-0 mt-0.5">
-                    {step.status === 'completed' ? (
-                      <span className="text-green-600 dark:text-green-400">✓</span>
-                    ) : step.status === 'in_progress' ? (
-                      <span className="text-blue-600 dark:text-blue-400">⏳</span>
-                    ) : (
-                      <span className="text-red-600 dark:text-red-400">✗</span>
-                    )}
-                  </span>
-
-                  {/* Step Description */}
-                  <div className="flex-1">
-                    <span className="text-xs text-gray-500 dark:text-gray-500 mr-1.5">
-                      Bước {step.step}/{activityData.total_steps}:
-                    </span>
-                    {step.description}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Progress Bar */}
-            <div className="mt-3 pl-7">
-              <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                <div
-                  className={`h-full transition-all duration-300 ${
-                    isCompleted
-                      ? 'bg-green-500'
-                      : isFailed
-                      ? 'bg-red-500'
-                      : 'bg-blue-500'
-                  }`}
+                  className="h-full bg-blue-500 transition-all duration-300"
                   style={{ width: `${progressPercentage}%` }}
                 />
               </div>
-              <div className="flex justify-between mt-1 text-xs text-gray-500 dark:text-gray-400">
-                <span>{Math.round(progressPercentage)}%</span>
-                {activityData.completed_at && (
-                  <span>
-                    Hoàn thành lúc {new Date(activityData.completed_at).toLocaleTimeString('vi-VN')}
-                  </span>
-                )}
-              </div>
+              <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">
+                {activityData.current_step}/{activityData.total_steps}
+              </span>
             </div>
-          </div>
+          </>
         )}
       </div>
     </div>
