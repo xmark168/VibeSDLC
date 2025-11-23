@@ -25,9 +25,9 @@ Usage:
 """
 
 from app.agents.team_leader import TeamLeader
-from app.agents.roles.developer import Developer
-from app.agents.roles.tester import Tester
-from app.agents.roles.business_analyst import BusinessAnalyst
+from app.agents.developer import Developer
+from app.agents.tester import Tester
+from app.agents.business_analyst import BusinessAnalyst
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
 
 

@@ -98,9 +98,9 @@ _manager_registry: Dict[str, AgentPoolManager] = {}
 def get_role_class_map():
     """Get role class mapping with lazy imports."""
     from app.agents.team_leader import TeamLeader
-    from app.agents.roles.developer import Developer
-    from app.agents.roles.tester import Tester
-    from app.agents.roles.business_analyst import BusinessAnalyst
+    from app.agents.developer import Developer
+    from app.agents.tester import Tester
+    from app.agents.business_analyst import BusinessAnalyst
     
     return {
         "team_leader": TeamLeader,
