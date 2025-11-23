@@ -66,21 +66,23 @@ class TerminateAgentRequest(BaseModel):
 
 
 class PoolResponse(BaseModel):
-    """Pool information response."""
+    """Pool information response (flexible for both manager types)."""
     pool_name: str
-    role_class: str
+    manager_type: Optional[str] = None  # "simplified" or "multiprocessing"
+    role_class: Optional[str] = None  # May not exist in simplified manager
     total_agents: int
     active_agents: int
     busy_agents: int
     idle_agents: int
     total_spawned: int
     total_terminated: int
-    total_executions: int
-    successful_executions: int
-    failed_executions: int
-    success_rate: float
-    load: float
+    total_executions: int = 0
+    successful_executions: int = 0
+    failed_executions: int = 0
+    success_rate: float = 0.0
+    load: float = 0.0
     created_at: str
+    manager_uptime_seconds: Optional[float] = None
 
 
 class SystemStatsResponse(BaseModel):
@@ -116,6 +118,14 @@ def get_role_class_map():
     }
 
 ROLE_CLASS_MAP = None  # Will be lazy loaded
+
+
+def ensure_role_class_map():
+    """Ensure ROLE_CLASS_MAP is loaded (lazy init helper)."""
+    global ROLE_CLASS_MAP
+    if ROLE_CLASS_MAP is None:
+        ROLE_CLASS_MAP = get_role_class_map()
+    return ROLE_CLASS_MAP
 
 
 async def initialize_default_pools() -> None:
@@ -382,11 +392,14 @@ async def create_pool(
     Creates and starts a new agent pool manager for the specified role type.
     The manager will automatically spawn worker processes and manage agent lifecycle.
     """
+    # Ensure role class map is loaded
+    role_class_map = ensure_role_class_map()
+    
     # Validate role type
-    if request.role_type not in ROLE_CLASS_MAP:
+    if request.role_type not in role_class_map:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid role_type. Must be one of: {list(ROLE_CLASS_MAP.keys())}"
+            detail=f"Invalid role_type. Must be one of: {list(role_class_map.keys())}"
         )
 
     # Check if pool manager already exists
@@ -399,7 +412,7 @@ async def create_pool(
         max_agents_per_process = request.config.max_agents
 
     # Create pool manager
-    role_class = ROLE_CLASS_MAP[request.role_type]
+    role_class = role_class_map[request.role_type]
     manager = AgentPoolManager(
         pool_name=request.pool_name,
         role_class=role_class,
@@ -471,14 +484,17 @@ async def spawn_agent(
 ) -> Any:
     """Spawn a new agent in the specified pool and persist to database.
 
-    Creates agent in database then sends spawn command to AgentPoolManager.
-    Manager auto-scales workers and routes spawn request to available worker.
+    Works with both simplified and multiprocessing pool managers.
+    The manager type is determined by the USE_SIMPLIFIED_AGENT_POOL setting.
     """
+    # Ensure role class map is loaded
+    role_class_map = ensure_role_class_map()
+    
     # Validate role type
-    if request.role_type not in ROLE_CLASS_MAP:
+    if request.role_type not in role_class_map:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid role_type. Must be one of: {list(ROLE_CLASS_MAP.keys())}"
+            detail=f"Invalid role_type. Must be one of: {list(role_class_map.keys())}"
         )
 
     # Get existing agent names for this project/role to avoid duplicates
@@ -512,9 +528,9 @@ async def spawn_agent(
     manager = get_manager(pool_name)
 
     # Get role_class for this agent
-    role_class = ROLE_CLASS_MAP[request.role_type]
+    role_class = role_class_map[request.role_type]
 
-    # Spawn via universal manager (auto-scales workers)
+    # Spawn via manager (works with both simplified and multiprocessing)
     success = await manager.spawn_agent(
         agent_id=db_agent.id,
         role_class=role_class,
@@ -548,10 +564,11 @@ async def terminate_agent(
 ) -> Any:
     """Terminate an agent in the specified pool and update database.
 
-    Sends terminate command to AgentPoolManager which routes to appropriate worker.
+    Works with both simplified and multiprocessing pool managers.
     """
     manager = get_manager(request.pool_name)
 
+    # Terminate via manager (works with both simplified and multiprocessing)
     success = await manager.terminate_agent(request.agent_id, graceful=request.graceful)
 
     if not success:
