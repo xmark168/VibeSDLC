@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { Loader2, CheckCircle2, Clock, AlertCircle } from "lucide-react";
 
 export type AgentStatus = 'idle' | 'thinking' | 'acting' | 'waiting' | 'error';
 
@@ -6,38 +7,48 @@ interface AgentStatusIndicatorProps {
   status: AgentStatus;
   agentName?: string;
   currentAction?: string;
+  currentStep?: number;
+  totalSteps?: number;
+  executionId?: string;
   className?: string;
 }
 
 const statusConfig = {
   idle: {
-    color: 'bg-gray-400',
-    ringColor: 'bg-gray-400/30',
-    animation: '',
-    label: 'Ready'
+    icon: Clock,
+    color: 'text-gray-500',
+    bgColor: 'bg-gray-50 dark:bg-gray-900',
+    borderColor: 'border-gray-200 dark:border-gray-800',
+    label: 'Idle'
   },
   thinking: {
-    color: 'bg-purple-500',
-    ringColor: 'bg-purple-500/30',
-    animation: 'animate-pulse',
-    label: 'Thinking'
+    icon: Loader2,
+    color: 'text-purple-500',
+    bgColor: 'bg-purple-50 dark:bg-purple-950',
+    borderColor: 'border-purple-200 dark:border-purple-800',
+    label: 'Thinking',
+    animate: true
   },
   acting: {
-    color: 'bg-blue-500',
-    ringColor: 'bg-blue-500/30',
-    animation: '',
-    label: 'Processing'
+    icon: Loader2,
+    color: 'text-blue-500',
+    bgColor: 'bg-blue-50 dark:bg-blue-950',
+    borderColor: 'border-blue-200 dark:border-blue-800',
+    label: 'Processing',
+    animate: true
   },
   waiting: {
-    color: 'bg-yellow-500',
-    ringColor: 'bg-yellow-500/30',
-    animation: 'animate-bounce',
-    label: 'Waiting for input'
+    icon: Clock,
+    color: 'text-yellow-500',
+    bgColor: 'bg-yellow-50 dark:bg-yellow-950',
+    borderColor: 'border-yellow-200 dark:border-yellow-800',
+    label: 'Waiting'
   },
   error: {
-    color: 'bg-red-500',
-    ringColor: 'bg-red-500/30',
-    animation: '',
+    icon: AlertCircle,
+    color: 'text-red-500',
+    bgColor: 'bg-red-50 dark:bg-red-950',
+    borderColor: 'border-red-200 dark:border-red-800',
     label: 'Error'
   }
 };
@@ -46,37 +57,71 @@ export function AgentStatusIndicator({
   status,
   agentName,
   currentAction,
+  currentStep,
+  totalSteps,
+  executionId,
   className
 }: AgentStatusIndicatorProps) {
   const config = statusConfig[status];
+  const Icon = config.icon;
+  
+  // Calculate progress percentage
+  const progressPercentage = currentStep && totalSteps ? (currentStep / totalSteps) * 100 : 0;
+  const hasProgress = currentStep && totalSteps && currentStep > 0;
 
   return (
-    <div className={cn("flex items-center gap-3", className)}>
-      <div className="relative flex items-center justify-center">
-        {/* Outer pulsing ring for thinking state */}
-        {status === 'thinking' && (
-          <div className={cn(
-            "absolute w-5 h-5 rounded-full animate-ping",
-            config.ringColor
-          )} />
-        )}
-        {/* Inner dot */}
-        <div className={cn(
-          "w-3 h-3 rounded-full relative z-10",
+    <div className={cn(
+      "inline-flex items-center gap-2 px-3 py-2 rounded-lg border transition-all",
+      config.bgColor,
+      config.borderColor,
+      className
+    )}>
+      {/* Status Icon */}
+      <Icon 
+        className={cn(
+          "h-4 w-4 flex-shrink-0",
           config.color,
-          config.animation
-        )} />
-      </div>
-      <div className="flex flex-col">
-        <span className="text-sm font-medium text-foreground">
-          {agentName || 'Agent'}: {config.label}
+          config.animate && "animate-spin"
+        )} 
+      />
+
+      {/* Agent Name */}
+      <span className={cn("text-sm font-medium", config.color)}>
+        {agentName || 'Agent'}
+      </span>
+
+      {/* Separator */}
+      {currentAction && <span className="text-gray-400 dark:text-gray-600">•</span>}
+
+      {/* Current Action */}
+      {currentAction && (
+        <span className="text-sm text-gray-700 dark:text-gray-300">
+          {currentAction}
         </span>
-        {currentAction && (
-          <span className="text-xs text-muted-foreground">
-            {currentAction}
-          </span>
-        )}
-      </div>
+      )}
+
+      {/* Progress Indicator */}
+      {hasProgress && (
+        <>
+          <span className="text-gray-400 dark:text-gray-600">•</span>
+          <div className="flex items-center gap-1.5">
+            {/* Mini Progress Bar */}
+            <div className="w-16 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+              <div
+                className={cn(
+                  "h-full transition-all duration-300",
+                  config.color.replace('text-', 'bg-')
+                )}
+                style={{ width: `${progressPercentage}%` }}
+              />
+            </div>
+            {/* Step Counter */}
+            <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">
+              {currentStep}/{totalSteps}
+            </span>
+          </div>
+        </>
+      )}
     </div>
   );
 }

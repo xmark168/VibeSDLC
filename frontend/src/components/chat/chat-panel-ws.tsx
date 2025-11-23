@@ -724,7 +724,10 @@ export function ChatPanelWS({
               <AgentStatusIndicator
                 status={agentStatus.status}
                 agentName={agentStatus.agentName || undefined}
-                currentAction={agentStatus.currentAction}
+                currentAction={agentStatus.currentAction || undefined}
+                currentStep={agentStatus.currentStep || undefined}
+                totalSteps={agentStatus.totalSteps || undefined}
+                executionId={agentStatus.executionId || undefined}
               />
             </div>
           </div>

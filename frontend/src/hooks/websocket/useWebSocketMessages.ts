@@ -262,6 +262,28 @@ export function useWebSocketMessages(options: UseWebSocketMessagesOptions): UseW
         case 'activity_update': {
           if (!data.message_id) break
 
+          // Also update agent status indicator with progress
+          if (onAgentStatus && data.structured_data?.data) {
+            const activityData = data.structured_data.data
+            const currentStep = activityData.current_step || 0
+            const totalSteps = activityData.total_steps || 0
+            const status = activityData.status
+            
+            // Get current step description
+            const currentStepData = activityData.steps?.find((s: any) => s.status === 'in_progress')
+            const currentAction = currentStepData?.description || 
+              (status === 'completed' ? 'Complete' : status === 'failed' ? 'Failed' : 'Processing...')
+
+            onAgentStatus({
+              status: status === 'in_progress' ? 'acting' : status === 'completed' ? 'idle' : 'error',
+              agentName: data.agent_name || null,
+              currentAction,
+              currentStep: status === 'in_progress' ? currentStep : null,
+              totalSteps: status === 'in_progress' ? totalSteps : null,
+              executionId: activityData.execution_id || null,
+            })
+          }
+
           setMessages(prev => {
             const existingIndex = prev.findIndex(m => m.id === data.message_id)
 
