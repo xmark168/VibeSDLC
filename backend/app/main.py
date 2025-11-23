@@ -1,8 +1,10 @@
 import logging
+import time
 import sentry_sdk
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.routing import APIRoute
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from contextlib import asynccontextmanager
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -18,6 +20,49 @@ from sqlmodel import Session
 # Initialize logging before anything else
 setup_logging()
 logger = logging.getLogger(__name__)
+
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Middleware to log all HTTP requests."""
+
+    def __init__(self, app):
+        super().__init__(app)
+        # Initialize logger in the middleware to ensure it's accessible
+        self.logger = logging.getLogger("app.main.RequestLoggingMiddleware")
+
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.time()
+
+        try:
+            # Log incoming request
+            self.logger.info(f"→ {request.method} {request.url.path}")
+            # Fallback to print if logging fails
+            print(f"→ {request.method} {request.url.path}", flush=True)
+        except Exception as e:
+            print(f"Error logging request: {e}", flush=True)
+
+        # Process request
+        response = await call_next(request)
+
+        try:
+            # Calculate duration
+            duration_ms = (time.time() - start_time) * 1000
+
+            # Log response
+            self.logger.info(
+                f"← {request.method} {request.url.path} - "
+                f"{response.status_code} - {duration_ms:.0f}ms"
+            )
+            # Fallback to print if logging fails
+            print(
+                f"← {request.method} {request.url.path} - "
+                f"{response.status_code} - {duration_ms:.0f}ms",
+                flush=True
+            )
+        except Exception as e:
+            print(f"Error logging response: {e}", flush=True)
+
+        return response
 
 
 def custom_generate_unique_id(route: APIRoute) -> str:
@@ -154,14 +199,18 @@ app = FastAPI(
 
 # Add rate limiter to app state
 
-# CORS temporarily disabled for WebSocket debugging
+# Add middlewares in order (they execute in reverse order of addition)
+# 1. Request Logging (executes last, wraps everything)
+app.add_middleware(RequestLoggingMiddleware)
+
+# 2. CORS (executes before logging)
 app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.all_cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    CORSMiddleware,
+    allow_origins=settings.all_cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # SlowAPI middleware temporarily disabled for debugging
 # app.add_middleware(SlowAPIMiddleware)
