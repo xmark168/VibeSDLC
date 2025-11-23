@@ -154,14 +154,13 @@ async def websocket_endpoint(
                                 agent_name=agent_name,  # Include agent name for display
                             )
 
-                            # Publish to project-specific topic instead of global USER_MESSAGES
-                            project_topic = get_project_topic(project_id)
+                            # Publish to global USER_MESSAGES topic (partitioned by project_id)
                             await producer.publish(
-                                topic=project_topic,
+                                topic=KafkaTopics.USER_MESSAGES,
                                 event=user_message_event,
                             )
                             logger.info(
-                                f"Message {message_id} published to topic '{project_topic}'" +
+                                f"Message {message_id} published to USER_MESSAGES topic for project {project_id}" +
                                 (f" with routing to {agent_name}" if agent_name else "")
                             )
                         except Exception as e:

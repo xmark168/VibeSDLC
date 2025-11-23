@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 from uuid import UUID
 
 from app.kafka.consumer import EventHandlerConsumer
-from app.kafka.event_schemas import BaseKafkaEvent, UserMessageEvent, get_project_topic
+from app.kafka.event_schemas import BaseKafkaEvent, UserMessageEvent, KafkaTopics
 from app.models import Agent, AgentConversation
 
 logger = logging.getLogger(__name__)
@@ -32,11 +32,12 @@ class BaseAgentInstanceConsumer(EventHandlerConsumer):
     """Base consumer for individual agent instances.
 
     Each agent instance (not role) gets its own consumer with:
-    - Topic: project_{project_id}_messages (all agents in same project share topic)
+    - Topic: USER_MESSAGES (global topic, partitioned by project_id)
     - Group ID: agent_{agent_id} (each agent has unique group)
 
     This allows:
-    - Agents to receive messages from their project
+    - All agents to receive messages from global topic
+    - Filtering by project_id in the handler
     - Direct message routing via agent_id
     - Multiple agents per role per project
     """
@@ -54,7 +55,8 @@ class BaseAgentInstanceConsumer(EventHandlerConsumer):
         self.human_name = agent.human_name
 
         # Configure topic and group ID
-        topic = get_project_topic(self.project_id)
+        # Use global USER_MESSAGES topic (partitioned by project_id for load balancing)
+        topic = KafkaTopics.USER_MESSAGES.value
         group_id = f"agent_{self.agent_id}"
 
         # Initialize parent EventHandlerConsumer
@@ -66,18 +68,20 @@ class BaseAgentInstanceConsumer(EventHandlerConsumer):
         logger.info(
             f"Initialized consumer for agent {self.human_name} "
             f"({self.role_type}) in project {self.project_id}\n"
-            f"  Topic: {topic}\n"
+            f"  Topic: {topic} (global)\n"
             f"  Group ID: {group_id}\n"
-            f"  Agent ID: {self.agent_id}"
+            f"  Agent ID: {self.agent_id}\n"
+            f"  Will filter by project_id: {self.project_id}"
         )
 
     async def _handle_user_message(self, event: UserMessageEvent | Dict[str, Any]) -> None:
         """Internal handler that routes user messages to agent.
 
         This method:
-        1. Checks if message is targeted to this specific agent
-        2. Checks if message has no target (Team Leader handles these)
-        3. Calls abstract process_user_message() if agent should process
+        1. Filters by project_id (since using global topic now)
+        2. Checks if message is targeted to this specific agent
+        3. Checks if message has no target (Team Leader handles these)
+        4. Calls abstract process_user_message() if agent should process
 
         Args:
             event: UserMessageEvent or dict
@@ -92,11 +96,20 @@ class BaseAgentInstanceConsumer(EventHandlerConsumer):
                 event_data = event
 
             # Extract routing info
+            message_project_id = event_data.get("project_id")
             target_agent_id = event_data.get("agent_id")
             message_id = event_data.get("message_id")
             content = event_data.get("content", "")
             user_id = event_data.get("user_id")
             message_type = event_data.get("message_type", "text")
+
+            # FILTER 1: Check project_id (since we're using global topic)
+            if message_project_id and str(message_project_id) != str(self.project_id):
+                logger.debug(
+                    f"[{self.human_name}] Skipping message {message_id} - "
+                    f"wrong project (message project: {message_project_id}, my project: {self.project_id})"
+                )
+                return
 
             logger.debug(
                 f"[{self.human_name}] Received Kafka event - "
