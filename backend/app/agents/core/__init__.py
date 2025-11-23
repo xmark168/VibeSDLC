@@ -1,13 +1,14 @@
 """Agent core components.
 
 This module exports the core components for agent lifecycle management:
-- BaseAgentRole: Enhanced base class with lifecycle management
 - AgentPool: Pool manager for dynamic agent scaling (single-process)
 - AgentPoolManager: Auto-scaling pool manager (multiprocessing)
 - AgentMonitor: System-wide monitoring
-- AgentConsumer: Kafka consumer pattern
 - Redis Client: Shared state and IPC
 - Registry: Agent and process tracking
+
+NOTE: BaseAgent pattern is now the standard. All agents (TeamLeader, Developer, 
+Tester, BusinessAnalyst) inherit from BaseAgent directly.
 """
 
 from .agent_pool import AgentPool, AgentPoolConfig

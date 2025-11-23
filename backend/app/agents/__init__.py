@@ -8,9 +8,11 @@ Architecture:
                         ↓
                    (via Kafka)
 
-NEW PATTERN:
+NEW PATTERN (ALL MIGRATED):
 - TeamLeader: Merged BaseAgent class (no delegation, provides guidance)
-- BA/Developer/Tester: To be migrated to BaseAgent (currently old architecture)
+- Developer: Merged BaseAgent class (code implementation)
+- Tester: Merged BaseAgent class (QA and testing)
+- BusinessAnalyst: Merged BaseAgent class (requirements analysis)
 - Router: Handles all message routing based on @mentions
 
 Usage:
@@ -22,14 +24,12 @@ Usage:
     await initialize_default_pools()
 """
 
-# NEW ARCHITECTURE exports
 from app.agents.team_leader import TeamLeader
+from app.agents.roles.developer import Developer
+from app.agents.roles.tester import Tester
+from app.agents.roles.business_analyst import BusinessAnalyst
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
 
-# OLD ARCHITECTURE exports (will be deprecated after migration)
-from app.agents.roles.business_analyst import BusinessAnalystRole
-from app.agents.roles.developer import DeveloperRole
-from app.agents.roles.tester import TesterRole
 
 __all__ = [
     # New Architecture
@@ -37,8 +37,7 @@ __all__ = [
     "TaskContext",
     "TaskResult",
     "TeamLeader",
-    # Old Architecture (deprecated, will be removed)
-    "BusinessAnalystRole",
-    "DeveloperRole",
-    "TesterRole",
+    "Developer",
+    "Tester",
+    "BusinessAnalyst",
 ]

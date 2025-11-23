@@ -1,6 +1,10 @@
-"""Business Analyst Crew - Requirements analysis and PRD generation."""
+"""Business Analyst Agent - Requirements analysis and business documentation.
 
-from .crew import BusinessAnalystCrew
-from .role import BusinessAnalystRole, BusinessAnalystConsumer
+NEW ARCHITECTURE:
+- BusinessAnalyst: Merged BaseAgent class for chat/task handling
+- BusinessAnalystCrew: Complex workflow class (used by ba_agents.py API)
+"""
 
-__all__ = ["BusinessAnalystCrew", "BusinessAnalystRole", "BusinessAnalystConsumer"]
+from .business_analyst import BusinessAnalyst
+
+__all__ = ["BusinessAnalyst"]

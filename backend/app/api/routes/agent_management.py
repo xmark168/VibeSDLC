@@ -27,13 +27,7 @@ from app.agents.core.agent_pool_manager import AgentPoolManager
 from app.agents.core.redis_client import init_redis, close_redis, get_redis_client
 from app.agents.core.name_generator import generate_agent_name, get_display_name
 
-# Import role classes
-# NEW ARCHITECTURE: TeamLeader uses BaseAgent (merged role+crew)
-# OLD ARCHITECTURE: BA/Dev/Tester still use old Role classes (will be migrated later)
-from app.agents.team_leader import TeamLeader
-from app.agents.roles.business_analyst import BusinessAnalystRole
-from app.agents.roles.developer import DeveloperRole
-from app.agents.roles.tester import TesterRole
+
 
 router = APIRouter(prefix="/agents", tags=["agent-management"])
 
@@ -106,13 +100,6 @@ _manager_registry: Dict[str, AgentPoolManager] = {}
 
 # Role class mapping
 # NEW: team_leader uses BaseAgent architecture
-# OLD: BA/Dev/Tester use old Role architecture (to be migrated)
-ROLE_CLASS_MAP = {
-    "team_leader": TeamLeader,  # NEW ARCHITECTURE
-    "business_analyst": BusinessAnalystRole,  # OLD (will migrate later)
-    "developer": DeveloperRole,  # OLD (will migrate later)
-    "tester": TesterRole,  # OLD (will migrate later)
-}
 
 
 async def initialize_default_pools() -> None:

@@ -20,7 +20,6 @@ from typing import Dict, Optional, Type
 from uuid import UUID, uuid4
 
 from app.agents.core.agent_pool import AgentPool, AgentPoolConfig
-from app.agents.core.base_role import BaseAgentRole
 from app.agents.core.redis_client import RedisClient, get_redis_client
 from app.agents.core.registry import AgentRegistry, ProcessRegistry
 from app.core.db import engine, get_worker_engine
@@ -39,21 +38,23 @@ def get_role_class_map():
 
     This function is called at runtime instead of module import time.
 
-    NEW ARCHITECTURE:
+    NEW ARCHITECTURE (ALL MIGRATED):
     - TeamLeader uses BaseAgent (merged role+crew)
-    - Others still use old Role classes (to be migrated)
+    - Developer uses BaseAgent (migrated)
+    - Tester uses BaseAgent (migrated)
+    - BusinessAnalyst uses BaseAgent (migrated)
     """
     # Import role classes dynamically (only when needed)
     from app.agents.team_leader import TeamLeader  # NEW ARCHITECTURE
-    from app.agents.roles.business_analyst import BusinessAnalystRole  # OLD
-    from app.agents.roles.developer import DeveloperRole  # OLD
-    from app.agents.roles.tester import TesterRole  # OLD
+    from app.agents.roles.developer import Developer  # NEW ARCHITECTURE
+    from app.agents.roles.tester import Tester  # NEW ARCHITECTURE
+    from app.agents.roles.business_analyst import BusinessAnalyst  # NEW ARCHITECTURE
 
     return {
         "TeamLeader": TeamLeader,  # NEW - uses BaseAgent
-        "BusinessAnalystRole": BusinessAnalystRole,  # OLD
-        "DeveloperRole": DeveloperRole,  # OLD
-        "TesterRole": TesterRole,  # OLD
+        "Developer": Developer,  # NEW - uses BaseAgent
+        "Tester": Tester,  # NEW - uses BaseAgent
+        "BusinessAnalyst": BusinessAnalyst,  # NEW - uses BaseAgent
     }
 
 
@@ -73,7 +74,7 @@ class AgentPoolWorker:
         max_agents: int = 10,
         heartbeat_interval: int = 30,
         redis_url: Optional[str] = None,
-        role_class: Optional[Type[BaseAgentRole]] = None,
+        role_class: Optional[Type] = None,
     ):
         """Initialize worker process.
 
@@ -501,7 +502,7 @@ def run_worker_process(
     max_agents: int = 10,
     heartbeat_interval: int = 30,
     redis_url: Optional[str] = None,
-    role_class: Optional[Type[BaseAgentRole]] = None,
+    role_class: Optional[Type] = None,
 ) -> None:
     """Entry point for worker process.
 

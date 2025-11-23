@@ -16,7 +16,6 @@ from typing import Dict, List, Optional, Type
 from uuid import UUID
 
 from app.agents.core.agent_pool_worker import run_worker_process
-from app.agents.core.base_role import BaseAgentRole
 from app.agents.core.redis_client import RedisClient, get_redis_client
 from app.agents.core.registry import AgentRegistry, ProcessRegistry
 from app.core.config import settings
@@ -268,7 +267,7 @@ class AgentPoolManager:
     async def spawn_agent(
         self,
         agent_id: UUID,
-        role_class: Type[BaseAgentRole],
+        role_class: Type,
         heartbeat_interval: int = 30,
         max_idle_time: int = 300,
     ) -> bool:

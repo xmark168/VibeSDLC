@@ -5,12 +5,11 @@
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type
 from uuid import UUID, uuid4
 
 from sqlmodel import Session
 
-from app.agents.core.base_role import BaseAgentRole
 from app.models import AgentStatus, Agent as AgentModel
 from app.core.db import engine
 
@@ -50,7 +49,7 @@ class AgentPool:
         self,
         pool_name: str,
         config: Optional[AgentPoolConfig] = None,
-        role_class: Optional[Type[BaseAgentRole]] = None,
+        role_class: Optional[Type] = None,
     ):
         """Initialize agent pool.
 
@@ -65,7 +64,7 @@ class AgentPool:
         self.config = config or AgentPoolConfig()
 
         # Agent tracking
-        self.agents: Dict[UUID, BaseAgentRole] = {}
+        self.agents: Dict[UUID, Any] = {}
         self.agent_stats: Dict[UUID, Dict] = {}
 
         # Pool state
@@ -161,10 +160,10 @@ class AgentPool:
     async def spawn_agent(
         self,
         agent_id: UUID,
-        role_class: Optional[Type[BaseAgentRole]] = None,
+        role_class: Optional[Type] = None,
         heartbeat_interval: int = 30,
         max_idle_time: int = 300,
-    ) -> Optional[BaseAgentRole]:
+    ) -> Optional[Any]:
         """Spawn a new agent instance from database.
 
         This method loads the agent from database and creates a runtime instance
@@ -274,7 +273,7 @@ class AgentPool:
             logger.error(f"Failed to terminate agent {agent_id}: {e}", exc_info=True)
             return False
 
-    async def get_agent(self, strategy: str = "round_robin") -> Optional[BaseAgentRole]:
+    async def get_agent(self, strategy: str = "round_robin") -> Optional[Any]:
         """Get an available agent from the pool.
 
         Args:
@@ -366,17 +365,17 @@ class AgentPool:
 
     # ===== Agent Callbacks =====
 
-    async def _on_agent_state_change(self, agent: BaseAgentRole, old_state, new_state) -> None:
+    async def _on_agent_state_change(self, agent: Any, old_state, new_state) -> None:
         """Callback when agent state changes."""
         logger.debug(f"Agent {agent.agent_id} state: {old_state} -> {new_state}")
 
-    async def _on_agent_execution_complete(self, agent: BaseAgentRole, result: Dict) -> None:
+    async def _on_agent_execution_complete(self, agent: Any, result: Dict) -> None:
         """Callback when agent completes execution."""
         if agent.agent_id in self.agent_stats:
             self.agent_stats[agent.agent_id]["executions"] += 1
             self.agent_stats[agent.agent_id]["last_execution"] = datetime.now(timezone.utc)
 
-    async def _on_agent_heartbeat(self, agent: BaseAgentRole) -> None:
+    async def _on_agent_heartbeat(self, agent: Any) -> None:
         """Callback on agent heartbeat."""
         # Can be used for monitoring/metrics
         pass
