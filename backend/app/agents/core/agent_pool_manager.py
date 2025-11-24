@@ -103,11 +103,17 @@ class AgentPoolManager:
             # Stop all agents
             agent_ids = list(self.agents.keys())
             for agent_id in agent_ids:
-                await self.terminate_agent(agent_id, graceful=graceful)
+                try:
+                    await self.terminate_agent(agent_id, graceful=graceful)
+                except (Exception, asyncio.CancelledError) as e:
+                    logger.error(f"Error terminating agent {agent_id}: {e}")
 
             logger.info(f"✓ Pool manager stopped: {self.pool_name}")
             return True
 
+        except asyncio.CancelledError:
+            logger.info(f"Pool manager stop cancelled: {self.pool_name}")
+            return False
         except Exception as e:
             logger.error(f"Error stopping pool manager: {e}", exc_info=True)
             return False

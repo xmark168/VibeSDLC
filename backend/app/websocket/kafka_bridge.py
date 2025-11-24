@@ -4,6 +4,7 @@ WebSocket-Kafka Bridge
 Consumes events from Kafka topics and forwards them to WebSocket clients
 """
 
+import asyncio
 import logging
 from typing import Optional
 
@@ -111,7 +112,10 @@ class WebSocketKafkaBridge:
 
         # Stop consumer
         if self.consumer:
-            await self.consumer.stop()
+            try:
+                await self.consumer.stop()
+            except (Exception, asyncio.CancelledError) as e:
+                logger.error(f"Error stopping consumer: {e}")
 
         logger.info("WebSocket-Kafka bridge stopped")
 

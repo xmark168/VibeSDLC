@@ -195,30 +195,26 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
 
             if (messageData) {
               setMessages((prev) => {
-                // Check if message already exists by ID
+                // Check if message already exists by ID (exact match)
                 const existsById = prev.some(m => m.id === messageData!.id)
                 if (existsById) {
-                    // Message already exists, skip (silently)
                   return prev
                 }
 
-                // Check if this is confirming an optimistic message (match by content for user messages)
-                if (messageData!.author_type === AuthorType.USER || data.type === 'user_message') {
-                  const tempIndex = prev.findIndex(m =>
-                    m.id.startsWith('temp_') &&
-                    m.content === messageData!.content &&
-                    m.author_type === messageData!.author_type
-                  )
+                // Check for duplicate: same content + author within 3 seconds
+                // (this catches local messages that server broadcasts back)
+                const msgTime = new Date(messageData!.created_at).getTime()
+                const isDuplicate = prev.some(m => 
+                  m.content === messageData!.content &&
+                  m.author_type === messageData!.author_type &&
+                  Math.abs(new Date(m.created_at).getTime() - msgTime) < 3000
+                )
 
-                  if (tempIndex !== -1) {
-                    // Replace optimistic message with server-confirmed message (silently)
-                    const newMessages = [...prev]
-                    newMessages[tempIndex] = messageData!
-                    return newMessages
-                  }
+                if (isDuplicate) {
+                  return prev // Skip duplicate (local message already displayed)
                 }
 
-                // Add new message (silently)
+                // Add new message
                 return [...prev, messageData!]
               })
             } else {
@@ -465,30 +461,25 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     }
 
     try {
-      // Generate temporary ID for optimistic update
-      const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-
-      // Create optimistic message
-      const optimisticMessage: Message = {
-        id: tempId,
+      // Add message to local state immediately (instant display)
+      const localMessage: Message = {
+        id: `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         project_id: projectId || '',
         author_type: AuthorType.USER,
         content: params.content,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }
+      
+      setMessages(prev => [...prev, localMessage])
 
-      // Add to local state immediately (optimistic update)
-      setMessages(prev => [...prev, optimisticMessage])
-
-      // Send via WebSocket
-      wsRef.current.send(JSON.stringify({
+      // Send via WebSocket - server will broadcast back
+      wsRef.current!.send(JSON.stringify({
         type: 'message',
         content: params.content,
         author_type: params.author_type || 'user',
-        agent_id: params.agent_id,  // Include agent_id for routing
-        agent_name: params.agent_name,  // Include agent_name for display
-        temp_id: tempId, // Send temp_id for potential deduplication
+        agent_id: params.agent_id,
+        agent_name: params.agent_name,
       }))
 
       return true
@@ -516,25 +507,6 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
     const interval = setInterval(ping, 30000)
     return () => clearInterval(interval)
   }, [isConnected, ping])
-
-  // Clean up stale temp messages (older than 10 seconds without server confirmation)
-  useEffect(() => {
-    const cleanup = setInterval(() => {
-      const now = Date.now()
-      setMessages(prev => {
-        const filtered = prev.filter(m => {
-          if (!m.id.startsWith('temp_')) return true
-          const msgTime = new Date(m.created_at).getTime()
-          const isStale = now - msgTime > 10000 // 10 seconds
-          // Silently remove stale messages
-          return !isStale
-        })
-        return filtered.length === prev.length ? prev : filtered
-      })
-    }, 5000) // Check every 5 seconds
-
-    return () => clearInterval(cleanup)
-  }, [])
 
   return {
     isConnected,

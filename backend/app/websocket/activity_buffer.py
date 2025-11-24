@@ -15,7 +15,7 @@ from uuid import UUID
 from sqlmodel import Session, select
 
 from app.core.db import engine
-from app.models import Message as MessageModel, AuthorType
+from app.models import Message as MessageModel, AuthorType, MessageVisibility
 
 
 logger = logging.getLogger(__name__)
@@ -99,7 +99,10 @@ class ActivityBuffer:
                 pass
         
         # Final flush before shutdown
-        await self.flush_all()
+        try:
+            await self.flush_all()
+        except (Exception, asyncio.CancelledError) as e:
+            logger.error(f"Error during final flush: {e}")
         
         logger.info("Activity buffer stopped")
     
@@ -336,6 +339,7 @@ class ActivityBuffer:
                     agent_id=None,
                     content=f"{activity.agent_name} đang thực thi...",
                     author_type=AuthorType.AGENT,
+                    visibility=MessageVisibility.SYSTEM_LOG,  # Activity updates are system logs
                     message_type="activity",
                     structured_data=structured_data,
                     message_metadata={"agent_name": activity.agent_name}
