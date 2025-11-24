@@ -79,14 +79,23 @@ class ConnectionManager:
             )
             return
 
+        connection_count = len(self.active_connections[project_id])
+        message_type = message.get("type", "unknown")
+        logger.info(f"Broadcasting {message_type} to {connection_count} connections for project {project_id}")
+
         # Broadcast to all active connections
         disconnected = []
+        sent_count = 0
         for connection in self.active_connections[project_id]:
             try:
                 await connection.send_json(message)
+                sent_count += 1
+                logger.debug(f"Sent {message_type} to WebSocket {id(connection)}")
             except Exception as e:
-                logger.error(f"Error broadcasting to WebSocket: {e}")
+                logger.error(f"Error broadcasting to WebSocket {id(connection)}: {e}")
                 disconnected.append(connection)
+
+        logger.info(f"Broadcast complete: sent {sent_count}/{connection_count} messages")
 
         # Cleanup disconnected websockets
         for connection in disconnected:

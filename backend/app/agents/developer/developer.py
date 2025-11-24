@@ -6,6 +6,7 @@ NEW ARCHITECTURE:
 - Integrates CrewAI crew logic directly
 """
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Any, Dict
@@ -151,7 +152,8 @@ class Developer(BaseAgent):
                 verbose=True,
             )
 
-            result = crew.kickoff()
+            # Run CrewAI asynchronously using native async support
+            result = await crew.kickoff_async(inputs={})
 
             # Extract response
             response = str(result)

@@ -153,27 +153,44 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
       try {
         const data: WebSocketMessage = JSON.parse(event.data)
 
+        console.log('🔥 [useChatWebSocket] WebSocket message received:', data.type, data)
+        
         switch (data.type) {
           case 'connected':
+            console.log('✅ [useChatWebSocket] Connected event')
             break
 
           case 'message':
           case 'agent_message':
           case 'agent_response':
           case 'user_message':
-            // Message received (silent)
+            console.log('📨 [useChatWebSocket] Message event received:', {
+              type: data.type,
+              message_id: data.message_id,
+              agent_name: data.agent_name,
+              content_preview: data.content?.substring(0, 50),
+              has_structured_data: !!data.structured_data
+            })
 
             // Handle both formats: with data field or flat structure
             let messageData: Message | null = null
 
             if (data.data) {
               // Format 1: Message wrapped in data field
+              console.log('📦 [useChatWebSocket] Format 1: Wrapped data')
               messageData = data.data
             } else if (data.content && data.message_id) {
               // Format 2: Flat structure from backend
+              console.log('📄 [useChatWebSocket] Format 2: Flat structure - parsing...')
+              
               // Extract message_type from structured_data or default to 'text'
               const messageType = data.structured_data?.message_type || 'text'
               const structuredData = data.structured_data?.data || data.structured_data
+
+              console.log('🔍 [useChatWebSocket] Extracted:', {
+                messageType,
+                has_structured_data: !!structuredData
+              })
 
               messageData = {
                 id: data.message_id,
@@ -191,13 +208,25 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
                   agent_type: data.agent_type,
                 },
               }
+              
+              console.log('✅ [useChatWebSocket] Parsed message:', {
+                id: messageData.id,
+                message_type: messageData.message_type,
+                author_type: messageData.author_type,
+                content_preview: messageData.content.substring(0, 50)
+              })
+            } else {
+              console.warn('⚠️ [useChatWebSocket] Unrecognized message format:', data)
             }
 
             if (messageData) {
+              console.log('➕ [useChatWebSocket] Adding message to state:', messageData.id)
+              
               setMessages((prev) => {
                 // Check if message already exists by ID (exact match)
                 const existsById = prev.some(m => m.id === messageData!.id)
                 if (existsById) {
+                  console.log('⏭️ [useChatWebSocket] Message already exists, skipping:', messageData!.id)
                   return prev
                 }
 
@@ -211,14 +240,16 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
                 )
 
                 if (isDuplicate) {
-                  return prev // Skip duplicate (local message already displayed)
+                  console.log('⏭️ [useChatWebSocket] Duplicate message (within 3s), skipping')
+                  return prev
                 }
 
                 // Add new message
+                console.log('✅ [useChatWebSocket] Message added! Total messages:', prev.length + 1)
                 return [...prev, messageData!]
               })
             } else {
-              console.warn('[WebSocket] Received message without valid data:', data)
+              console.error('❌ [useChatWebSocket] Failed to parse message data:', data)
             }
             break
 
@@ -265,6 +296,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
             // Agent status update (silent)
             // Normalize status: "agent.thinking" -> "thinking"
             const normalizedStatus = (data.status || 'idle').replace('agent.', '') as 'idle' | 'thinking' | 'acting' | 'waiting' | 'error'
+            
             setAgentStatus({
               agentName: data.agent_name || null,
               status: normalizedStatus,
