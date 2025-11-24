@@ -48,6 +48,8 @@ class WebSocketKafkaBridge:
             logger.info("Starting WebSocket-Kafka bridge...")
 
             # Create consumer subscribing to relevant topics
+            # IMPORTANT: Use auto_offset_reset="latest" to skip backlog on restart
+            # WebSocket is real-time only - old messages already in DB
             self.consumer = EventHandlerConsumer(
                 topics=[
                     # Agent events (unified stream)
@@ -62,6 +64,7 @@ class WebSocketKafkaBridge:
                     KafkaTopics.AGENT_TASKS.value,
                 ],
                 group_id="websocket_bridge_group",
+                auto_offset_reset="latest",  # Skip backlog, only consume new messages
             )
 
             # Register agent events handler for all agent events

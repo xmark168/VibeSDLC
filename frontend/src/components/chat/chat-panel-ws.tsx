@@ -116,25 +116,20 @@ export function ChatPanelWS({
     limit: 100,
   });
 
-  // WebSocket connection
+  // WebSocket connection (using react-use-websocket)
   const {
     isConnected,
-    isReady,
     messages: wsMessages,
-    typingAgents,
-    agentProgress,
     agentStatus,
-    agentStatuses, // Extract agentStatuses
-    kanbanData,
-    activeTab,
     sendMessage: wsSendMessage,
   } = useChatWebSocket(projectId, token || undefined);
 
   // Combine existing messages with WebSocket messages
   const apiMessages = messagesData?.data || [];
+  const wsMessagesArray = wsMessages || [];
 
   // Combine API messages with WebSocket messages (no temp messages anymore)
-  const allMessages = [...apiMessages, ...wsMessages]
+  const allMessages = [...apiMessages, ...wsMessagesArray]
 
   // Sort by created_at timestamp
   const sortedMessages = allMessages.sort(
@@ -146,26 +141,7 @@ export function ChatPanelWS({
     (msg, index, self) => index === self.findIndex(m => m.id === msg.id)
   );
 
-  // Notify parent when kanbanData changes
-  useEffect(() => {
-    if (kanbanData && onKanbanDataChange) {
-      onKanbanDataChange(kanbanData);
-    }
-  }, [kanbanData, onKanbanDataChange]);
-
-  // Notify parent when activeTab changes
-  useEffect(() => {
-    if (activeTab && onActiveTabChange) {
-      onActiveTabChange(activeTab);
-    }
-  }, [activeTab, onActiveTabChange]);
-
-  // Notify parent when agentStatuses changes
-  useEffect(() => {
-    if (agentStatuses && onAgentStatusesChange) {
-      onAgentStatusesChange(agentStatuses);
-    }
-  }, [agentStatuses, onAgentStatusesChange]);
+  // Note: Kanban, activeTab, and agentStatuses features removed for simplicity
 
   const toggleExpand = (id: string) => {
     setExpandedMessages((prev) => {
@@ -231,45 +207,39 @@ export function ChatPanelWS({
 
   const handleSend = () => {
     if (!message.trim()) return;
-    if (!isReady) {
-      console.error("WebSocket not ready");
+    if (!isConnected) {
+      console.error("WebSocket not connected");
       return;
     }
 
     let finalMessage = message.trim();
 
     // Send via WebSocket with agent routing info if agent was mentioned
-    const success = wsSendMessage({
-      content: finalMessage,
-      author_type: "user",
-      agent_id: mentionedAgent?.id,
-      agent_name: mentionedAgent?.name,
-    });
+    wsSendMessage(finalMessage, mentionedAgent?.name);
 
-    if (success) {
-      setMessage("");
-      setMentionedAgent(null);  // Clear mentioned agent after sending
-      setTimeout(() => {
-        textareaRef.current?.focus();
-      }, 0);
-    }
+    setMessage("");
+    setMentionedAgent(null);  // Clear mentioned agent after sending
+    setTimeout(() => {
+      textareaRef.current?.focus();
+    }, 0);
   };
 
   // Reset waiting state when we receive agent messages or agent starts typing/processing
   useEffect(() => {
-    if (wsMessages.length > 0) {
-      const lastMessage = wsMessages[wsMessages.length - 1];
+    if (wsMessagesArray && wsMessagesArray.length > 0) {
+      const lastMessage = wsMessagesArray[wsMessagesArray.length - 1];
       if (lastMessage.author_type === AuthorType.AGENT) {
         setIsWaitingForResponse(false);
       }
     }
-  }, [wsMessages]);
+  }, [wsMessagesArray]);
 
+  // Reset waiting state when agent status changes
   useEffect(() => {
-    if (typingAgents.length > 0 || agentProgress.isExecuting) {
+    if (agentStatus.status !== 'idle') {
       setIsWaitingForResponse(false);
     }
-  }, [typingAgents, agentProgress.isExecuting]);
+  }, [agentStatus.status]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (showMentions && filteredAgents.length > 0) {
@@ -296,8 +266,12 @@ export function ChatPanelWS({
     }
   };
 
-  const copyToClipboard = async (content: string, messageId: string) => {
+  const copyToClipboard = async (content: string | undefined, messageId: string) => {
     try {
+      if (!content) {
+        console.warn("No content to copy");
+        return;
+      }
       await navigator.clipboard.writeText(content);
       setCopiedMessageId(messageId);
       setTimeout(() => setCopiedMessageId(null), 2000);
@@ -393,20 +367,13 @@ export function ChatPanelWS({
     }, 0);
   };
 
-  // Notify parent about connection status (use isReady for accurate status)
+  // Notify parent about connection status
   useEffect(() => {
-    console.log("ChatPanelWS: isReady changed to", isReady, "- notifying parent");
+    console.log("ChatPanelWS: connection changed to", isConnected);
     if (onConnectionChange) {
-      onConnectionChange(isReady);
+      onConnectionChange(isConnected);
     }
-  }, [isReady, onConnectionChange]);
-
-  // Notify parent about sendMessage function
-  useEffect(() => {
-    if (onSendMessageReady) {
-      onSendMessageReady(wsSendMessage);
-    }
-  }, [wsSendMessage, onSendMessageReady]);
+  }, [isConnected, onConnectionChange]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -449,7 +416,7 @@ export function ChatPanelWS({
             <PanelRightClose className="w-5 h-5" />
           </Button>
           <div className="flex-1" />
-          {!isReady && (
+          {!isConnected && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="w-3 h-3 animate-spin" />
               Connecting...
@@ -483,13 +450,13 @@ export function ChatPanelWS({
       {!sidebarCollapsed && (
         <div className="flex items-center justify-between gap-2 px-3 py-2">
           <div className="flex items-center gap-2">
-            {!isReady && (
+            {!isConnected && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="w-3 h-3 animate-spin" />
                 Connecting...
               </div>
             )}
-            {isReady && (
+            {isConnected && (
               <div className="flex items-center gap-2 text-xs text-green-600">
                 <div className="w-2 h-2 bg-green-600 rounded-full" />
                 Connected
@@ -530,7 +497,7 @@ export function ChatPanelWS({
         {uniqueMessages.map((msg) => {
           const isUserMessage = msg.author_type === AuthorType.USER;
           const isExpanded = expandedMessages.has(msg.id);
-          const shouldTruncate = msg.content.length > 200;
+          const shouldTruncate = (msg.content?.length || 0) > 200;
 
           if (isUserMessage) {
             return (
@@ -539,7 +506,7 @@ export function ChatPanelWS({
                   <div className="space-y-1.5">
                     <div className="rounded-lg px-3 py-2 bg-muted w-fit ml-auto">
                       <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
-                        {msg.content}
+                        {msg.content || ''}
                       </div>
                     </div>
                     <div className="flex items-center justify-end gap-2 px-1">
@@ -624,8 +591,8 @@ export function ChatPanelWS({
                   <div className="rounded-lg px-3 py-2 bg-muted w-fit">
                     <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
                       {shouldTruncate && !isExpanded
-                        ? msg.content.slice(0, 200) + "..."
-                        : msg.content}
+                        ? (msg.content || '').slice(0, 200) + "..."
+                        : (msg.content || '')}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 px-1">
@@ -663,40 +630,7 @@ export function ChatPanelWS({
           );
         })}
 
-        {/* Waiting for agent response indicator */}
-        {isWaitingForResponse && typingAgents.length === 0 && !agentProgress.isExecuting && (
-          <div className="flex gap-3">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
-              🤖
-            </div>
-            <div className="flex-1 space-y-2">
-              <div className="text-xs font-medium text-muted-foreground">
-                Agent
-              </div>
-              <div className="flex items-center gap-1 text-muted-foreground">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                <span className="text-sm">Đang xử lý...</span>
-              </div>
-            </div>
-          </div>
-        )}
 
-        {typingAgents.length > 0 && (
-          <div className="flex gap-3">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
-              🔧
-            </div>
-            <div className="flex-1 space-y-2">
-              <div className="text-xs font-medium text-muted-foreground">
-                {typingAgents[0]}
-              </div>
-              <div className="flex items-center gap-1 text-muted-foreground">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                <span className="text-sm">typing...</span>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Agent Status Indicator - shows thinking/acting/waiting status */}
         {agentStatus.status !== 'idle' && (
@@ -767,7 +701,7 @@ export function ChatPanelWS({
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
             className="min-h-[40px] resize-none bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground p-1 focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
-            disabled={!isReady}
+            disabled={!isConnected}
           />
           <div className="flex items-center justify-between pt-3">
             <div className="flex gap-2">
@@ -779,7 +713,7 @@ export function ChatPanelWS({
                       size="icon"
                       className="h-8 w-8 hover:bg-accent"
                       onClick={triggerMention}
-                      disabled={!isReady}
+                      disabled={!isConnected}
                     >
                       <AtSign className="w-4 h-4" />
                     </Button>
@@ -806,7 +740,7 @@ export function ChatPanelWS({
               size="icon"
               className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90"
               onClick={handleSend}
-              disabled={!isReady || !message.trim()}
+              disabled={!isConnected || !message.trim()}
             >
               <ArrowUp className="w-4 h-4" />
             </Button>

@@ -11,7 +11,6 @@ import json
 from datetime import datetime
 
 from app.websocket.connection_manager import connection_manager
-from app.websocket.health_monitor import health_monitor
 from app.core.security import decode_access_token
 from app.models import User, Message as MessageModel, Project, AuthorType, MessageVisibility
 from app.kafka import get_kafka_producer, KafkaTopics, UserMessageEvent
@@ -35,10 +34,12 @@ async def websocket_endpoint(
     - project_id: UUID of the project
     - token: JWT access token for authentication
     """
+    logger.info(f"🔵 WebSocket connection attempt - project: {project_id}, token: {token[:20]}...")
+    
     try:
         # IMPORTANT: Accept WebSocket connection FIRST
         await websocket.accept()
-        logger.info(f"WebSocket connection accepted for project {project_id}")
+        logger.info(f"✅ WebSocket connection accepted for project {project_id}")
 
         # Then authenticate user
         from app.core.db import engine
@@ -65,9 +66,6 @@ async def websocket_endpoint(
 
         # Connect to project room
         await connection_manager.connect(websocket, project_id)
-        
-        # Start health monitoring
-        await health_monitor.start_monitoring(websocket, project_id, user.id)
 
         # Send connection confirmation
         await websocket.send_json({
@@ -89,19 +87,8 @@ async def websocket_endpoint(
                     message = json.loads(data)
                     message_type = message.get("type")
 
-                    # Handle ping
-                    if message_type == "ping":
-                        # Record pong in health monitor
-                        health_monitor.record_pong(websocket)
-                        
-                        await websocket.send_json({
-                            "type": "pong",
-                            "timestamp": datetime.utcnow().isoformat()
-                        })
-                        continue
-
                     # Handle user message
-                    elif message_type == "message":
+                    if message_type == "message":
                         content = message.get("content", "").strip()
                         if not content:
                             await websocket.send_json({
@@ -175,8 +162,7 @@ async def websocket_endpoint(
 
                         # Broadcast user message back to all clients (including sender)
                         # for consistency and real-time sync
-                        await connection_manager.broadcast(
-                            project_id,
+                        await connection_manager.broadcast_to_project(
                             {
                                 "type": "user_message",
                                 "message_id": str(message_id),
@@ -188,7 +174,8 @@ async def websocket_endpoint(
                                 "user_id": str(user.id),
                                 "message_type": message.get("message_type", "text"),
                                 "timestamp": db_message.created_at.isoformat(),
-                            }
+                            },
+                            project_id
                         )
                         logger.info(f"Broadcasted user message {message_id} to all clients in project {project_id}")
 
@@ -243,14 +230,10 @@ async def websocket_endpoint(
                     })
 
         except WebSocketDisconnect:
-            # Stop health monitoring
-            health_monitor.stop_monitoring(websocket)
             connection_manager.disconnect(websocket)
             logger.info(f"User {user.id} disconnected from project {project_id}")
         except Exception as e:
             logger.error(f"WebSocket error for user {user.id}: {e}")
-            # Stop health monitoring
-            health_monitor.stop_monitoring(websocket)
             connection_manager.disconnect(websocket)
             await websocket.close(code=1011, reason="Internal server error")
 

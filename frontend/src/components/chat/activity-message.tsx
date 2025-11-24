@@ -17,33 +17,41 @@ interface ActivityStep {
 interface ActivityData {
   execution_id: string
   agent_name: string
-  total_steps: number
-  current_step: number
-  steps: ActivityStep[]
-  status: 'in_progress' | 'completed' | 'failed'
+  total_steps?: number
+  current_step?: number
+  steps?: ActivityStep[]
+  events?: any[]  // Backend may send "events" instead of "steps"
+  status: 'in_progress' | 'completed' | 'failed' | 'running' | 'success'
   started_at: string
-  completed_at: string | null
+  completed_at?: string | null
+  finished_at?: string | null
 }
 
 export function ActivityMessage({ message, onComplete }: ActivityMessageProps) {
-  const activityData = message.structured_data?.data as ActivityData | undefined
+  // Support both structured_data.data and structured_data directly
+  const activityData = (message.structured_data?.data || message.structured_data) as ActivityData | undefined
   const [isVisible, setIsVisible] = useState(true)
 
   if (!activityData || !isVisible) {
     return null
   }
 
-  const progressPercentage = (activityData.total_steps || 0) > 0
-    ? ((activityData.current_step || 0) / activityData.total_steps) * 100
+  // Use events as steps if steps not provided
+  const steps = activityData.steps || activityData.events || []
+  const totalSteps = activityData.total_steps || steps.length || 0
+  const currentStep = activityData.current_step || steps.length || 0
+
+  const progressPercentage = totalSteps > 0
+    ? (currentStep / totalSteps) * 100
     : 0
 
-  const isCompleted = activityData.status === 'completed'
+  const isCompleted = activityData.status === 'completed' || activityData.status === 'success'
   const isFailed = activityData.status === 'failed'
-  const isInProgress = activityData.status === 'in_progress'
+  const isInProgress = activityData.status === 'in_progress' || activityData.status === 'running'
 
   // Get current step description (safely handle undefined steps)
-  const currentStepData = activityData.steps?.find(s => s.status === 'in_progress')
-  const currentStepDesc = currentStepData?.description || 
+  const currentStepData = steps?.find((s: any) => s.status === 'in_progress' || s.status === 'running')
+  const currentStepDesc = currentStepData?.description || currentStepData?.event_type || currentStepData?.type ||
     (isCompleted ? 'Complete' : isFailed ? 'Failed' : 'Processing...')
 
   // Auto-hide completed activities after 3 seconds
@@ -106,7 +114,7 @@ export function ActivityMessage({ message, onComplete }: ActivityMessageProps) {
                 />
               </div>
               <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">
-                {activityData.current_step}/{activityData.total_steps}
+                {currentStep}/{totalSteps}
               </span>
             </div>
           </>

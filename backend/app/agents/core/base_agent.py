@@ -61,15 +61,10 @@ class TaskContext:
 
 @dataclass
 class TaskResult:
-    """Result of task execution.
-
-    Returned by agent's handle_task() method.
-    """
-
     success: bool
-    output: str  # Text response to user
-    structured_data: Optional[Dict[str, Any]] = None  # Structured output (PRD, stories, etc.)
-    requires_approval: bool = False  # Whether result needs user approval
+    output: str  
+    structured_data: Optional[Dict[str, Any]] = None  
+    requires_approval: bool = False  
     error_message: Optional[str] = None
 
 
@@ -78,27 +73,14 @@ class TaskResult:
 class BaseAgent(ABC):
     """Abstract base class for all agents.
 
-    New simplified architecture:
+    Architecture:
     - Kafka consumer/producer logic hidden from subclasses
     - Agents only implement handle_task()
-    - Simple helpers for progress tracking and publishing
-
-    Usage:
-        class TeamLeader(BaseAgent):
-            async def handle_task(self, task: TaskContext) -> TaskResult:
-                await self.message_user("progress", "Analyzing...", {"step": 1, "total": 3})
-                result = await self._analyze(task.content)
-                await self.message_user("progress", "Responding...", {"step": 2, "total": 3})
-                response = await self._respond(result)
-                return TaskResult(success=True, output=response)
+    - Helpers for progress tracking and publishing
     """
 
     def __init__(self, agent_model: AgentModel, **kwargs):
         """Initialize base agent.
-
-        Args:
-            agent_model: Agent database model instance
-            **kwargs: Additional arguments (heartbeat_interval, max_idle_time) for compatibility
         """
         self.agent_id = agent_model.id
         self.project_id = agent_model.project_id
@@ -146,6 +128,7 @@ class BaseAgent(ABC):
 
     @abstractmethod
     async def handle_task(self, task: TaskContext) -> TaskResult:
+      
         """Handle assigned task.
 
         This is the ONLY method agents need to implement.
@@ -546,7 +529,7 @@ class BaseAgent(ABC):
                 message_type=context.get("message_type", "text"),
                 context=context,
             )
-
+           
             # Create execution record in database
             self._current_execution_id = await self._create_execution_record(task)
             self._execution_start_time = datetime.now(timezone.utc)
@@ -561,6 +544,9 @@ class BaseAgent(ABC):
             self.state = AgentStatus.busy
 
             try:
+                # Notify user that agent is thinking/processing
+                await self.message_user("thinking", f"Processing {task.task_type.value} request")
+                
                 # Call agent's implementation
                 result = await self.handle_task(task)
                 

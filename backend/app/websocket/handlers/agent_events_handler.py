@@ -46,9 +46,16 @@ class AgentEventsHandler(BaseEventHandler):
                 logger.warning(f"Agent event missing project_id: {event_type}")
                 return
             
+            # Check for active connections
+            has_connections = self._has_active_connections(project_id)
+            logger.info(
+                f"[AGENT_EVENT] Received {event_type} for project {project_id} - "
+                f"Active connections: {has_connections}"
+            )
+            
             # Skip if no active connections (real-time only)
-            if not self._has_active_connections(project_id):
-                logger.debug(f"Skipping event {event_type} - no active connections for project {project_id}")
+            if not has_connections:
+                logger.info(f"Skipping event {event_type} - no active connections for project {project_id}")
                 return
             
             # Route to appropriate handler
