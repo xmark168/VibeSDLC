@@ -559,7 +559,11 @@ class BaseAgent(ABC):
 
             # Update state to busy
             self.state = AgentStatus.busy
+            
+            # Emit "thinking" status IMMEDIATELY so frontend shows indicator right away
+            await self.message_user("thinking", f"Processing request...")
 
+            task_failed = False
             try:
                 # Call agent's implementation
                 result = await self.handle_task(task)
@@ -575,6 +579,13 @@ class BaseAgent(ABC):
                     self.failed_executions += 1
                 
             except Exception as e:
+                task_failed = True
+                
+                # Emit error status to frontend
+                await self.message_user("error", f"Task failed: {str(e)}", {
+                    "error_type": type(e).__name__
+                })
+                
                 # Update execution record with failure
                 await self._complete_execution_record(
                     error=str(e),
@@ -586,14 +597,19 @@ class BaseAgent(ABC):
             finally:
                 # Return to idle
                 self.state = AgentStatus.idle
+                
+                # Emit "idle" status to clear frontend indicator (only if no error)
+                if not task_failed:
+                    await self.message_user("idle", "Task completed")
 
-            # Log completion
-            if result.success:
-                logger.info(f"[{self.name}] Task {task_id} completed successfully")
-            else:
-                logger.error(
-                    f"[{self.name}] Task {task_id} failed: {result.error_message}"
-                )
+            # Log completion (only if task didn't raise exception)
+            if not task_failed:
+                if result.success:
+                    logger.info(f"[{self.name}] Task {task_id} completed successfully")
+                else:
+                    logger.error(
+                        f"[{self.name}] Task {task_id} failed: {result.error_message}"
+                    )
 
         except Exception as e:
             logger.error(

@@ -265,6 +265,7 @@ export function useChatWebSocket(projectId: string | undefined, token: string | 
             // Agent status update (silent)
             // Normalize status: "agent.thinking" -> "thinking"
             const normalizedStatus = (data.status || 'idle').replace('agent.', '') as 'idle' | 'thinking' | 'acting' | 'waiting' | 'error'
+            
             setAgentStatus({
               agentName: data.agent_name || null,
               status: normalizedStatus,

@@ -698,20 +698,20 @@ export function ChatPanelWS({
           </div>
         )}
 
-        {/* Agent Status Indicator - shows thinking/acting/waiting status */}
-        {agentStatus.status !== 'idle' && (
+        {/* Agent Status Indicator - show when agent is active */}
+        {(agentStatus.status !== 'idle' || agentProgress.isExecuting) && (
           <div className="flex gap-3 p-4 bg-muted/50 rounded-lg border">
             <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
               🤖
             </div>
             <div className="flex-1">
               <AgentStatusIndicator
-                status={agentStatus.status}
-                agentName={agentStatus.agentName || undefined}
-                currentAction={agentStatus.currentAction || undefined}
-                currentStep={agentStatus.currentStep || undefined}
-                totalSteps={agentStatus.totalSteps || undefined}
-                executionId={agentStatus.executionId || undefined}
+                status={agentStatus.status !== 'idle' ? agentStatus.status : 'acting'}
+                agentName={agentStatus.agentName || agentProgress.currentAgent || undefined}
+                currentAction={agentStatus.currentAction || agentProgress.currentStep || undefined}
+                currentStep={agentProgress.stepNumber}
+                totalSteps={agentProgress.totalSteps}
+                executionId={agentStatus.executionId}
               />
             </div>
           </div>

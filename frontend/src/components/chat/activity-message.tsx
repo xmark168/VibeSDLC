@@ -14,16 +14,36 @@ interface ActivityStep {
   timestamp: string
 }
 
+interface ActivityEvent {
+  description: string
+  details?: {
+    milestone?: string
+    [key: string]: any
+  }
+  timestamp: string
+}
+
 interface ActivityData {
   execution_id: string
   agent_name: string
-  total_steps: number
-  current_step: number
-  steps: ActivityStep[]
+  total_steps?: number
+  current_step?: number
+  steps?: ActivityStep[]
+  events?: ActivityEvent[]
   status: 'in_progress' | 'completed' | 'failed'
   started_at: string
   completed_at: string | null
 }
+
+// Important milestones that should not auto-hide
+const IMPORTANT_MILESTONES = new Set([
+  'analysis_complete',
+  'documentation_complete',
+  'implementation_complete',
+  'test_cases_complete',
+  'scenarios_identified',
+  'completed',
+])
 
 export function ActivityMessage({ message, onComplete }: ActivityMessageProps) {
   const activityData = message.structured_data?.data as ActivityData | undefined
@@ -33,29 +53,50 @@ export function ActivityMessage({ message, onComplete }: ActivityMessageProps) {
     return null
   }
 
-  const progressPercentage = (activityData.total_steps || 0) > 0
-    ? ((activityData.current_step || 0) / activityData.total_steps) * 100
-    : 0
-
   const isCompleted = activityData.status === 'completed'
   const isFailed = activityData.status === 'failed'
   const isInProgress = activityData.status === 'in_progress'
 
-  // Get current step description (safely handle undefined steps)
-  const currentStepData = activityData.steps?.find(s => s.status === 'in_progress')
-  const currentStepDesc = currentStepData?.description || 
-    (isCompleted ? 'Complete' : isFailed ? 'Failed' : 'Processing...')
+  // Check if this activity has important milestones
+  const hasImportantMilestone = activityData.events?.some(
+    event => event.details?.milestone && IMPORTANT_MILESTONES.has(event.details.milestone)
+  ) || false
 
-  // Auto-hide completed activities after 3 seconds
+  // Support both old step-based and new event-based format
+  const events = activityData.events || []
+  const steps = activityData.steps || []
+  
+  // Get current description
+  let currentStepDesc = 'Processing...'
+  if (events.length > 0) {
+    // Event-based: use last event
+    currentStepDesc = events[events.length - 1].description
+  } else if (steps.length > 0) {
+    // Step-based: use current step
+    const currentStepData = steps.find(s => s.status === 'in_progress')
+    currentStepDesc = currentStepData?.description || currentStepDesc
+  }
+  
+  if (isCompleted) currentStepDesc = 'Complete'
+  if (isFailed) currentStepDesc = 'Failed'
+
+  // Calculate progress
+  const progressPercentage = events.length > 0
+    ? Math.min((events.length / 5) * 100, 100) // Assume ~5 events for 100%
+    : (activityData.total_steps || 0) > 0
+    ? ((activityData.current_step || 0) / (activityData.total_steps || 1)) * 100
+    : 0
+
+  // Auto-hide only if completed AND no important milestone
   useEffect(() => {
-    if (isCompleted && onComplete) {
+    if (isCompleted && !hasImportantMilestone && onComplete) {
       const timer = setTimeout(() => {
         setIsVisible(false)
         onComplete()
       }, 3000)
       return () => clearTimeout(timer)
     }
-  }, [isCompleted, onComplete])
+  }, [isCompleted, hasImportantMilestone, onComplete])
 
   return (
     <div className="my-1">
@@ -106,12 +147,32 @@ export function ActivityMessage({ message, onComplete }: ActivityMessageProps) {
                 />
               </div>
               <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">
-                {activityData.current_step}/{activityData.total_steps}
+                {events.length > 0 ? `${events.length} events` : `${activityData.current_step}/${activityData.total_steps}`}
               </span>
             </div>
           </>
         )}
       </div>
+
+      {/* Event Timeline - show all events */}
+      {events.length > 0 && (
+        <div className="mt-2 ml-8 space-y-1">
+          {events.map((event, idx) => (
+            <div 
+              key={idx} 
+              className="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-400"
+            >
+              <span className="text-gray-400 mt-0.5">→</span>
+              <span className="flex-1">{event.description}</span>
+              {event.details?.milestone && (
+                <span className="text-blue-500 font-medium">
+                  {event.details.milestone}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

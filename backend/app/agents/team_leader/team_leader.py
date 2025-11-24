@@ -77,7 +77,8 @@ class TeamLeader(BaseAgent):
                     "milestone": "status_check_started"
                 })
                 
-                response = self.crew.track_progress(project_context)
+                # Run CrewAI asynchronously using native async support
+                response = await self.crew.track_progress(project_context)
                 
                 await self.message_user("progress", "Status check complete", {
                     "milestone": "completed"
@@ -91,14 +92,23 @@ class TeamLeader(BaseAgent):
                     "milestone": "analysis_started"
                 })
                 
-                # Use crew to analyze and provide guidance
-                response = self.crew.analyze_request(user_message)
+                # Run CrewAI asynchronously using native async support
+                response = await self.crew.analyze_request(user_message)
                 
                 await self.message_user("progress", "Analysis complete", {
                     "milestone": "completed"
                 })
 
             logger.info(f"[{self.name}] Generated response: {len(response)} chars")
+            
+            # Send response back to user
+            await self.message_user("response", response, {
+                "message_type": "analysis",
+                "data": {
+                    "analysis": response,
+                    "task_type": task_type
+                }
+            })
 
             return TaskResult(
                 success=True,
