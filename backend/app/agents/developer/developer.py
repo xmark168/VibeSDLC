@@ -7,16 +7,10 @@ NEW ARCHITECTURE:
 """
 
 import logging
-from pathlib import Path
-from typing import Any, Dict
-from uuid import UUID
-
-import yaml
-from crewai import Agent, Crew, Task
 
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
+from app.agents.developer.crew import DeveloperCrew
 from app.models import Agent as AgentModel
-
 
 logger = logging.getLogger(__name__)
 
@@ -39,64 +33,10 @@ class Developer(BaseAgent):
         """
         super().__init__(agent_model, **kwargs)
 
-        # Load configuration
-        self.config = self._load_config()
-
         # Create CrewAI agent
-        self.crew_agent = self._create_crew_agent()
+        self.crew = DeveloperCrew(project_id="demo", root_dir="../demo")
 
         logger.info(f"Developer initialized: {self.name}")
-
-    def _load_config(self) -> Dict[str, Any]:
-        """Load configuration from YAML file.
-
-        Returns:
-            Configuration dictionary
-        """
-        config_path = Path(__file__).parent / "config.yaml"
-        try:
-            if config_path.exists():
-                with open(config_path, "r", encoding="utf-8") as f:
-                    return yaml.safe_load(f) or {}
-        except Exception as e:
-            logger.warning(f"Failed to load config: {e}")
-
-        # Default configuration
-        return {
-            "agent": {
-                "role": "Software Developer",
-                "goal": "Implement software features and fixes according to specifications",
-                "backstory": "You are an experienced software developer who writes clean, maintainable code.",
-                "verbose": True,
-                "allow_delegation": False,
-                "model": "openai/gpt-4",
-            }
-        }
-
-    def _create_crew_agent(self) -> Agent:
-        """Create CrewAI agent for Developer.
-
-        Returns:
-            Configured CrewAI Agent
-        """
-        agent_config = self.config.get("agent", {})
-
-        agent = Agent(
-            role=agent_config.get("role", "Software Developer"),
-            goal=agent_config.get(
-                "goal",
-                "Implement software features and fixes according to specifications"
-            ),
-            backstory=agent_config.get(
-                "backstory",
-                "You are an experienced software developer who writes clean, maintainable code."
-            ),
-            verbose=agent_config.get("verbose", True),
-            allow_delegation=agent_config.get("allow_delegation", False),
-            llm=agent_config.get("model", "openai/gpt-4"),
-        )
-
-        return agent
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
         """Handle task assigned by Router.
@@ -108,66 +48,28 @@ class Developer(BaseAgent):
             TaskResult with implementation response
         """
         try:
-            user_message = task.content
+            user_story = task.content
 
-            logger.info(f"[{self.name}] Processing development task: {user_message[:50]}...")
+            logger.info(
+                f"[{self.name}] Processing development task: {user_story[:50]}..."
+            )
 
             # Status update
-            await self.message_user("thinking", "Analyzing technical requirements")
+            await self.message_user("thinking", "Analyzing User Story")
 
             # Create CrewAI task for implementation
-            crew_task = Task(
-                description=f"""
-                Implement the following development task:
-
-                {user_message}
-
-                Follow these guidelines:
-                1. Write clean, readable, and maintainable code
-                2. Follow established coding standards and patterns
-                3. Include appropriate error handling
-                4. Add comments for complex logic
-                5. Ensure code is properly tested
-
-                Return your implementation with:
-                - File paths and code changes
-                - Explanation of your implementation
-                - Any notes or considerations
-                """,
-                expected_output="Implementation details with code changes and explanations",
-                agent=self.crew_agent,
-            )
-
-            await self.message_user("progress", "Requirements analyzed", {
-                "milestone": "analysis_complete"
-            })
-
-            # Execute crew
-            await self.message_user("thinking", "Designing and implementing solution")
-
-            crew = Crew(
-                agents=[self.crew_agent],
-                tasks=[crew_task],
-                verbose=True,
-            )
-
-            result = crew.kickoff()
-
-            # Extract response
-            response = str(result)
-
-            await self.message_user("progress", "Implementation plan created", {
-                "milestone": "implementation_complete"
-            })
+            response = await self.crew.implement_task(user_story=user_story)
 
             await self.message_user("thinking", "Reviewing implementation")
 
             # Final milestone
-            await self.message_user("progress", "Development task complete", {
-                "milestone": "completed"
-            })
+            await self.message_user(
+                "progress", "Development task complete", {"milestone": "completed"}
+            )
 
-            logger.info(f"[{self.name}] Implementation completed: {len(response)} chars")
+            logger.info(
+                f"[{self.name}] Implementation completed: {len(response)} chars"
+            )
 
             return TaskResult(
                 success=True,
