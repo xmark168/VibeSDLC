@@ -5,7 +5,6 @@ import sentry_sdk
 from fastapi import FastAPI, Request
 from fastapi.routing import APIRoute
 from starlette.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
 from contextlib import asynccontextmanager
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -23,47 +22,7 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 
-class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """Middleware to log all HTTP requests."""
 
-    def __init__(self, app):
-        super().__init__(app)
-        # Initialize logger in the middleware to ensure it's accessible
-        self.logger = logging.getLogger("app.main.RequestLoggingMiddleware")
-
-    async def dispatch(self, request: Request, call_next):
-        start_time = time.time()
-
-        try:
-            # Log incoming request
-            self.logger.info(f"→ {request.method} {request.url.path}")
-            # Fallback to print if logging fails
-            print(f"→ {request.method} {request.url.path}", flush=True)
-        except Exception as e:
-            print(f"Error logging request: {e}", flush=True)
-
-        # Process request
-        response = await call_next(request)
-
-        try:
-            # Calculate duration
-            duration_ms = (time.time() - start_time) * 1000
-
-            # Log response
-            self.logger.info(
-                f"← {request.method} {request.url.path} - "
-                f"{response.status_code} - {duration_ms:.0f}ms"
-            )
-            # Fallback to print if logging fails
-            print(
-                f"← {request.method} {request.url.path} - "
-                f"{response.status_code} - {duration_ms:.0f}ms",
-                flush=True
-            )
-        except Exception as e:
-            print(f"Error logging response: {e}", flush=True)
-
-        return response
 
 
 def custom_generate_unique_id(route: APIRoute) -> str:
@@ -82,19 +41,15 @@ async def lifespan(app: FastAPI):
     from app.kafka import ensure_kafka_topics
     try:
         topics_ok = await ensure_kafka_topics()
-        if topics_ok:
-            logger.info("✅ All Kafka topics verified/created")
-        else:
+        if not topics_ok:
             logger.warning("⚠️  Some Kafka topics failed to create")
     except Exception as e:
         logger.warning(f"Failed to ensure Kafka topics: {e}")
-        logger.warning("Continuing anyway - topics may auto-create...")
 
     # Start Kafka producer
     from app.kafka import get_kafka_producer, shutdown_kafka_producer
     try:
         producer = await get_kafka_producer()
-        logger.info("✅ Kafka producer started")
     except Exception as e:
         logger.warning(f"⚠️ Failed to start Kafka producer: {e}")
 
@@ -102,7 +57,6 @@ async def lifespan(app: FastAPI):
     from app.agents.core.router import start_router_service, stop_router_service
     try:
         await start_router_service()
-        logger.info("✅ Message Router started")
     except Exception as e:
         logger.warning(f"⚠️ Failed to start Message Router: {e}")
 
@@ -110,7 +64,6 @@ async def lifespan(app: FastAPI):
     from app.kafka.consumer_registry import start_all_consumers, shutdown_all_consumers
     try:
         await start_all_consumers()
-        logger.info("✅ Kafka consumers started")
     except Exception as e:
         logger.warning(f"⚠️ Failed to start Kafka consumers: {e}")
 
@@ -118,7 +71,6 @@ async def lifespan(app: FastAPI):
     from app.api.routes.agent_management import initialize_default_pools
     try:
         await initialize_default_pools()
-        logger.info("✅ Agent pools initialized")
     except Exception as e:
         logger.warning(f"⚠️ Failed to initialize agent pools: {e}")
 
@@ -127,24 +79,27 @@ async def lifespan(app: FastAPI):
     try:
         monitor = get_agent_monitor()
         await monitor.start(monitor_interval=30)
-        logger.info("✅ Agent monitoring started")
     except Exception as e:
         logger.warning(f"⚠️ Failed to start monitoring: {e}")
 
+    # Start optimized WebSocket manager
+    from app.websocket.manager import websocket_manager
+    try:
+        await websocket_manager.start()
+    except Exception as e:
+        logger.warning(f"Failed to start WebSocket manager: {e}")
+    
     # Start activity buffer for batched DB writes
     from app.websocket.activity_buffer import activity_buffer
     try:
         await activity_buffer.start()
-        logger.info("Activity buffer started (5s batch writes)")
     except Exception as e:
         logger.warning(f"Failed to start activity buffer: {e}")
-        logger.warning("Continuing without activity buffering...")
 
-    # Start WebSocket-Kafka bridge
+    # Start WebSocket-Kafka bridge (for backward compatibility)
     from app.websocket.kafka_bridge import websocket_kafka_bridge
     try:
         await websocket_kafka_bridge.start()
-        logger.info("✅ WebSocket bridge started")
     except Exception as e:
         logger.warning(f"⚠️ Failed to start WebSocket bridge: {e}")
 
@@ -152,16 +107,20 @@ async def lifespan(app: FastAPI):
     from app.tasks import start_metrics_collector
     try:
         await start_metrics_collector(interval_seconds=300, retention_days=30)
-        logger.info("✅ Metrics collector started")
     except Exception as e:
         logger.warning(f"⚠️ Failed to start metrics collector: {e}")
 
     yield
 
     # Shutdown
-    logger.info("⏹️  Shutting down...")
 
     try:
+        # Shutdown optimized WebSocket manager
+        try:
+            await websocket_manager.stop()
+        except (Exception, asyncio.CancelledError) as e:
+            logger.error(f"Error stopping WebSocket manager: {e}")
+        
         try:
             await websocket_kafka_bridge.stop()
         except (Exception, asyncio.CancelledError) as e:
@@ -184,7 +143,6 @@ async def lifespan(app: FastAPI):
         try:
             monitor = get_agent_monitor()
             await monitor.stop()
-            logger.info("Agent monitoring system shut down")
         except (Exception, asyncio.CancelledError) as e:
             logger.error(f"Error shutting down monitoring system: {e}")
 
@@ -194,38 +152,31 @@ async def lifespan(app: FastAPI):
             for pool_name, manager in list(_manager_registry.items()):
                 try:
                     await manager.stop(graceful=True)
-                    logger.info(f"Pool manager '{pool_name}' shut down")
                 except (Exception, asyncio.CancelledError) as e:
                     logger.error(f"Error stopping pool '{pool_name}': {e}")
             _manager_registry.clear()
-            logger.info("All agent pool managers shut down")
         except (Exception, asyncio.CancelledError) as e:
             logger.error(f"Error shutting down agent pools: {e}")
 
         try:
             await shutdown_all_consumers()
-            logger.info("Kafka consumers shut down")
         except (Exception, asyncio.CancelledError) as e:
             logger.error(f"Error shutting down consumers: {e}")
 
         # Shutdown Central Message Router
         try:
             await stop_router_service()
-            logger.info("Central Message Router shut down")
         except (Exception, asyncio.CancelledError) as e:
             logger.error(f"Error shutting down Message Router: {e}")
 
         try:
             await shutdown_kafka_producer()
-            logger.info("Kafka producer shut down")
         except (Exception, asyncio.CancelledError) as e:
             logger.error(f"Error shutting down producer: {e}")
-
-        logger.info("Application shutdown complete")
     
     except (KeyboardInterrupt, asyncio.CancelledError):
         # Gracefully handle interruption during shutdown
-        logger.info("Shutdown interrupted - cleaning up...")
+        pass
     except Exception as e:
         logger.error(f"Unexpected error during shutdown: {e}")
 
@@ -245,10 +196,7 @@ app = FastAPI(
 # Add rate limiter to app state
 
 # Add middlewares in order (they execute in reverse order of addition)
-# 1. Request Logging (executes last, wraps everything)
-app.add_middleware(RequestLoggingMiddleware)
-
-# 2. CORS (executes before logging)
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.all_cors_origins,
