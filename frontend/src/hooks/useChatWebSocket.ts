@@ -189,24 +189,7 @@ export function useChatWebSocket(
   
   const handleUserMessage = (msg: any) => {
     console.log('[WS] 📤 User message confirmed:', msg.message_id)
-    // Replace optimistic message with real one
-    // setMessages(prev => {
-    //   const tempIndex = prev.findIndex(m => m.id.startsWith('temp_'))
-    //   if (tempIndex !== -1) {
-    //     const newMessages = [...prev]
-    //     newMessages[tempIndex] = {
-    //       id: msg.message_id,
-    //       project_id: msg.project_id,
-    //       author_type: AuthorType.USER,
-    //       content: msg.content,
-    //       created_at: msg.created_at || msg.timestamp,
-    //       updated_at: msg.updated_at || msg.timestamp,
-    //       status: 'delivered',
-    //     }
-        // return newMessages
-      // }
-    //   // return prev
-    // })
+     
   }
   
   const handleStart = (msg: any) => {
