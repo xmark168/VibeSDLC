@@ -30,6 +30,11 @@ export type {
   WebSocketState 
 } from './useWebSocket'
 
+export { useWebSocketEvents } from './useWebSocketEvents'
+export type {
+  UseWebSocketEventsOptions
+} from './useWebSocketEvents'
+
 export { useWebSocketMessages } from './useWebSocketMessages'
 export type {
   UseWebSocketMessagesOptions,

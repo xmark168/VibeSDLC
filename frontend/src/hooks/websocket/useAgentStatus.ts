@@ -5,12 +5,11 @@
  * - Track typing indicators
  * - Monitor current agent status (thinking, acting, etc.)
  * - Track all agent statuses (for avatars)
- * - Handle agent status events
  * 
- * Depends on: WebSocket message events
+ * Now uses event emitter pattern
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 
 export type AgentStatusType = 
   | 'idle' 
@@ -41,8 +40,10 @@ export interface AgentStatusMap {
 }
 
 export interface UseAgentStatusOptions {
-  /** Callback when message received */
-  onMessage?: (event: MessageEvent) => void
+  /** Event emitter from useWebSocketEvents */
+  eventEmitter?: {
+    on: (eventType: string, handler: (data: any) => void) => () => void
+  }
 }
 
 export interface UseAgentStatusReturn {
@@ -66,7 +67,7 @@ function normalizeStatus(status: string): AgentStatusType {
 }
 
 export function useAgentStatus(options: UseAgentStatusOptions = {}): UseAgentStatusReturn {
-  const { onMessage } = options
+  const { eventEmitter } = options
 
   const [currentAgent, setCurrentAgent] = useState<AgentStatus>({
     agentName: null,
@@ -76,62 +77,60 @@ export function useAgentStatus(options: UseAgentStatusOptions = {}): UseAgentSta
   const [typingAgents, setTypingAgents] = useState<Set<string>>(new Set())
   const [agentStatuses, setAgentStatuses] = useState<AgentStatusMap>({})
 
-  // Handle incoming WebSocket message
-  const handleMessage = useCallback((event: MessageEvent) => {
-    try {
-      const data = JSON.parse(event.data)
+  // Subscribe to events
+  useEffect(() => {
+    if (!eventEmitter) return
 
-      switch (data.type) {
-        case 'typing': {
-          if (data.agent_name) {
-            setTypingAgents(prev => {
-              const newSet = new Set(prev)
-              if (data.is_typing) {
-                newSet.add(data.agent_name)
-              } else {
-                newSet.delete(data.agent_name)
-              }
-              return newSet
-            })
+    const unsubscribers: Array<() => void> = []
+
+    // Handle typing events
+    const handleTyping = (data: any) => {
+      if (data.agent_name) {
+        setTypingAgents(prev => {
+          const newSet = new Set(prev)
+          if (data.is_typing) {
+            newSet.add(data.agent_name)
+          } else {
+            newSet.delete(data.agent_name)
           }
-          break
-        }
-
-        case 'agent_status': {
-          const normalizedStatus = normalizeStatus(data.status || 'idle')
-          
-          // Update current agent
-          setCurrentAgent({
-            agentName: data.agent_name || null,
-            status: normalizedStatus,
-            currentAction: data.current_action,
-            executionId: data.execution_id,
-          })
-
-          // Update global agent statuses map
-          if (data.agent_name) {
-            setAgentStatuses(prev => ({
-              ...prev,
-              [data.agent_name]: {
-                status: normalizedStatus,
-                lastUpdate: new Date().toISOString()
-              }
-            }))
-          }
-          break
-        }
-
-        default:
-          // Not a status type we handle
-          break
+          return newSet
+        })
       }
-
-      // Forward to parent callback
-      onMessage?.(event)
-    } catch (error) {
-      console.error('[useAgentStatus] Failed to parse message:', error)
     }
-  }, [onMessage])
+
+    // Handle agent status events
+    const handleAgentStatus = (data: any) => {
+      const normalizedStatus = normalizeStatus(data.status || 'idle')
+      
+      // Update current agent
+      setCurrentAgent({
+        agentName: data.agent_name || null,
+        status: normalizedStatus,
+        currentAction: data.current_action,
+        executionId: data.execution_id,
+      })
+
+      // Update global agent statuses map
+      if (data.agent_name) {
+        setAgentStatuses(prev => ({
+          ...prev,
+          [data.agent_name]: {
+            status: normalizedStatus,
+            lastUpdate: new Date().toISOString()
+          }
+        }))
+      }
+    }
+
+    // Subscribe to events
+    unsubscribers.push(eventEmitter.on('typing', handleTyping))
+    unsubscribers.push(eventEmitter.on('agent_status', handleAgentStatus))
+
+    // Cleanup
+    return () => {
+      unsubscribers.forEach(unsubscribe => unsubscribe())
+    }
+  }, [eventEmitter])
 
   // Clear all statuses
   const clearStatuses = useCallback(() => {

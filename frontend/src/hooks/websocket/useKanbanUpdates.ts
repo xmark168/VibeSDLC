@@ -5,12 +5,11 @@
  * - Track kanban board state
  * - Monitor story events (created, updated, status changed)
  * - Handle tab switching
- * - Update kanban data
  * 
- * Depends on: WebSocket message events
+ * Now uses event emitter pattern
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 
 export interface KanbanBoard {
   Backlog: any[]
@@ -27,8 +26,10 @@ export interface KanbanData {
 }
 
 export interface UseKanbanUpdatesOptions {
-  /** Callback when message received */
-  onMessage?: (event: MessageEvent) => void
+  /** Event emitter from useWebSocketEvents */
+  eventEmitter?: {
+    on: (eventType: string, handler: (data: any) => void) => () => void
+  }
   /** Callback when kanban data changes */
   onKanbanChange?: (data: KanbanData | null) => void
   /** Callback when active tab changes */
@@ -45,53 +46,50 @@ export interface UseKanbanUpdatesReturn {
 }
 
 export function useKanbanUpdates(options: UseKanbanUpdatesOptions = {}): UseKanbanUpdatesReturn {
-  const { onMessage, onKanbanChange, onTabChange } = options
+  const { eventEmitter, onKanbanChange, onTabChange } = options
 
   const [kanbanData, setKanbanData] = useState<KanbanData | null>(null)
   const [activeTab, setActiveTab] = useState<string | null>(null)
 
-  // Handle incoming WebSocket message
-  const handleMessage = useCallback((event: MessageEvent) => {
-    try {
-      const data = JSON.parse(event.data)
+  // Subscribe to events
+  useEffect(() => {
+    if (!eventEmitter) return
 
-      switch (data.type) {
-        case 'kanban_update': {
-          if (data.data) {
-            setKanbanData(data.data)
-            onKanbanChange?.(data.data)
-          }
-          break
-        }
+    const unsubscribers: Array<() => void> = []
 
-        case 'switch_tab': {
-          if (data.tab) {
-            setActiveTab(data.tab)
-            onTabChange?.(data.tab)
-          }
-          break
-        }
-
-        case 'story_created':
-        case 'story_updated':
-        case 'story_status_changed': {
-          // Story events trigger kanban refresh
-          // Kanban will auto-refresh via kanban_update event
-          console.log('[useKanbanUpdates] Story event:', data.type, data.story_id)
-          break
-        }
-
-        default:
-          // Not a kanban type we handle
-          break
+    // Handle kanban update events
+    const handleKanbanUpdate = (data: any) => {
+      if (data.data) {
+        setKanbanData(data.data)
+        onKanbanChange?.(data.data)
       }
-
-      // Forward to parent callback
-      onMessage?.(event)
-    } catch (error) {
-      console.error('[useKanbanUpdates] Failed to parse message:', error)
     }
-  }, [onMessage, onKanbanChange, onTabChange])
+
+    // Handle tab switch events
+    const handleSwitchTab = (data: any) => {
+      if (data.tab) {
+        setActiveTab(data.tab)
+        onTabChange?.(data.tab)
+      }
+    }
+
+    // Handle story events (just log, kanban will auto-refresh)
+    const handleStoryEvent = (data: any) => {
+      console.log('[useKanbanUpdates] Story event:', data.type, data.story_id)
+    }
+
+    // Subscribe to events
+    unsubscribers.push(eventEmitter.on('kanban_update', handleKanbanUpdate))
+    unsubscribers.push(eventEmitter.on('switch_tab', handleSwitchTab))
+    unsubscribers.push(eventEmitter.on('story_created', handleStoryEvent))
+    unsubscribers.push(eventEmitter.on('story_updated', handleStoryEvent))
+    unsubscribers.push(eventEmitter.on('story_status_changed', handleStoryEvent))
+
+    // Cleanup
+    return () => {
+      unsubscribers.forEach(unsubscribe => unsubscribe())
+    }
+  }, [eventEmitter, onKanbanChange, onTabChange])
 
   // Clear kanban data
   const clearKanban = useCallback(() => {

@@ -7,42 +7,19 @@
  * - Message deduplication
  * - Manage message list state
  * 
- * Depends on: useWebSocket for connection
+ * Now uses event emitter pattern for better separation
  */
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { AuthorType, type Message } from '@/types/message'
-
-export interface WebSocketMessageData {
-  type: string
-  data?: Message | any
-  content?: string
-  message_id?: string
-  project_id?: string
-  agent_name?: string
-  agent_type?: string
-  timestamp?: string
-  created_at?: string
-  metadata?: any
-  message_metadata?: any
-  structured_data?: any
-  // Routing/delegation
-  from_agent?: string
-  to_agent?: string
-  reason?: string
-  context?: any
-  // Activity updates
-  is_new?: boolean
-  updated_at?: string
-}
 
 export interface UseWebSocketMessagesOptions {
   /** Project ID */
   projectId?: string
-  /** Callback when message received */
-  onMessage?: (event: MessageEvent) => void
-  /** WebSocket ref for sending pong responses */
-  wsRef?: { current: WebSocket | null }
+  /** Event emitter from useWebSocketEvents */
+  eventEmitter?: {
+    on: (eventType: string, handler: (data: any) => void) => () => void
+  }
 }
 
 export interface UseWebSocketMessagesReturn {
@@ -80,10 +57,9 @@ function formatDelegationMessage(data: WebSocketMessageData): string {
 }
 
 export function useWebSocketMessages(options: UseWebSocketMessagesOptions): UseWebSocketMessagesReturn {
-  const { projectId, onMessage, wsRef } = options
+  const { projectId, eventEmitter } = options
 
   const [messages, setMessages] = useState<Message[]>([])
-  const processedIdsRef = useRef(new Set<string>())
 
   // Add optimistic message
   const addOptimisticMessage = useCallback((content: string): string => {
@@ -148,18 +124,15 @@ export function useWebSocketMessages(options: UseWebSocketMessagesOptions): UseW
     processedIdsRef.current.clear()
   }, [])
 
-  // Handle incoming WebSocket message
-  const handleMessage = useCallback((event: MessageEvent) => {
-    try {
-      const data: WebSocketMessageData = JSON.parse(event.data)
+  // Subscribe to WebSocket events
+  useEffect(() => {
+    if (!eventEmitter) return
 
-      // Handle different message types
-      switch (data.type) {
-        case 'message':
-        case 'agent_message':
-        case 'agent_response':
-        case 'user_message': {
-          let messageData: Message | null = null
+    const unsubscribers: Array<() => void> = []
+
+    // Handle message events
+    const handleMessageEvent = (data: any) => {
+      let messageData: Message | null = null
 
           if (data.data) {
             // Format 1: Wrapped in data field
@@ -218,14 +191,13 @@ export function useWebSocketMessages(options: UseWebSocketMessagesOptions): UseW
               // Add new message
               return [...prev, messageData!]
             })
-          }
-          break
         }
+    }
 
-        case 'routing':
-        case 'agent_routing': {
-          // Create delegation message
-          const delegationMessage: Message = {
+    // Handle routing events
+    const handleRoutingEvent = (data: any) => {
+      // Create delegation message
+      const delegationMessage: Message = {
             id: `delegation_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             project_id: projectId || '',
             author_type: AuthorType.AGENT,
@@ -242,48 +214,12 @@ export function useWebSocketMessages(options: UseWebSocketMessagesOptions): UseW
             }
           }
 
-          setMessages(prev => [...prev, delegationMessage])
-          break
-        }
+      setMessages(prev => [...prev, delegationMessage])
+    }
 
-        case 'ping': {
-          // Respond to ping with pong to keep connection alive
-          if (wsRef?.current?.readyState === WebSocket.OPEN) {
-            wsRef.current.send(JSON.stringify({ type: 'pong' }))
-          }
-          break
-        }
-
-        case 'pong': {
-          // Pong received (if we send ping)
-          break
-        }
-
-        case 'activity_update': {
-          if (!data.message_id) break
-
-          // Also update agent status indicator with progress
-          if (onAgentStatus && data.structured_data?.data) {
-            const activityData = data.structured_data.data
-            const currentStep = activityData.current_step || 0
-            const totalSteps = activityData.total_steps || 0
-            const status = activityData.status
-            
-            // Get current step description
-            const currentStepData = activityData.steps?.find((s: any) => s.status === 'in_progress')
-            const currentAction = currentStepData?.description || 
-              (status === 'completed' ? 'Complete' : status === 'failed' ? 'Failed' : 'Processing...')
-
-            onAgentStatus({
-              status: status === 'in_progress' ? 'acting' : status === 'completed' ? 'idle' : 'error',
-              agentName: data.agent_name || null,
-              currentAction,
-              currentStep: status === 'in_progress' ? currentStep : null,
-              totalSteps: status === 'in_progress' ? totalSteps : null,
-              executionId: activityData.execution_id || null,
-            })
-          }
-
+    // Handle activity updates
+    const handleActivityUpdate = (data: any) => {
+      if (!data.message_id) return
           setMessages(prev => {
             const existingIndex = prev.findIndex(m => m.id === data.message_id)
 
@@ -315,21 +251,23 @@ export function useWebSocketMessages(options: UseWebSocketMessagesOptions): UseW
               }
               return [...prev, newMessage]
             }
-          })
-          break
-        }
-
-        default:
-          // Not a message type we handle
-          break
-      }
-
-      // Forward to parent callback
-      onMessage?.(event)
-    } catch (error) {
-      console.error('[useWebSocketMessages] Failed to parse message:', error)
+        })
     }
-  }, [projectId, onMessage])
+
+    // Subscribe to events
+    unsubscribers.push(eventEmitter.on('message', handleMessageEvent))
+    unsubscribers.push(eventEmitter.on('agent_message', handleMessageEvent))
+    unsubscribers.push(eventEmitter.on('agent_response', handleMessageEvent))
+    unsubscribers.push(eventEmitter.on('user_message', handleMessageEvent))
+    unsubscribers.push(eventEmitter.on('routing', handleRoutingEvent))
+    unsubscribers.push(eventEmitter.on('agent_routing', handleRoutingEvent))
+    unsubscribers.push(eventEmitter.on('activity_update', handleActivityUpdate))
+
+    // Cleanup
+    return () => {
+      unsubscribers.forEach(unsubscribe => unsubscribe())
+    }
+  }, [eventEmitter, projectId])
 
   // Auto-cleanup stale messages every 5 seconds
   useEffect(() => {

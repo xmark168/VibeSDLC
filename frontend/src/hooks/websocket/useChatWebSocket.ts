@@ -2,20 +2,20 @@
  * useChatWebSocket - Facade hook combining all WebSocket functionality
  * 
  * This is the main hook that provides a complete interface for chat features.
- * It combines all specialized hooks into a single, convenient API.
+ * It combines all specialized hooks using event emitter pattern.
  * 
- * Maintains backward compatibility with old useChatWebSocket hook.
- * 
- * Architecture:
+ * Architecture (Refactored):
  * - useWebSocket: Base connection
- * - useWebSocketMessages: Message handling
- * - useAgentStatus: Agent status tracking
- * - useActivityUpdates: Progress tracking
- * - useKanbanUpdates: Kanban board updates
+ * - useWebSocketEvents: Event distribution (NEW!)
+ * - useWebSocketMessages: Message handling (subscribes to events)
+ * - useAgentStatus: Agent status tracking (subscribes to events)
+ * - useActivityUpdates: Progress tracking (subscribes to events)
+ * - useKanbanUpdates: Kanban board updates (subscribes to events)
  */
 
 import { useEffect, useCallback } from 'react'
 import { useWebSocket, type WebSocketState } from './useWebSocket'
+import { useWebSocketEvents } from './useWebSocketEvents'
 import { useWebSocketMessages } from './useWebSocketMessages'
 import { useAgentStatus, type AgentStatusMap } from './useAgentStatus'
 import { useActivityUpdates } from './useActivityUpdates'
@@ -107,38 +107,35 @@ export function useChatWebSocket(
     onStateChange: (state: WebSocketState) => {
       onConnectionChange?.(state === 'connected')
     },
-    onMessage: (event) => {
-      // Distribute message to all specialized hooks
-      messagesHook.handleMessage?.(event)
-      statusHook.handleMessage?.(event)
-      activityHook.handleMessage?.(event)
-      kanbanHook.handleMessage?.(event)
-    },
   })
 
-  // Message handling (pass ws ref for pong replies)
-  const messagesHook = useWebSocketMessages({
+  // Event emitter (distributes messages to all hooks)
+  const eventEmitter = useWebSocketEvents({
+    ws: ws.ws,
+  })
+
+  // Message handling
+  const messages = useWebSocketMessages({
     projectId,
-    wsRef: { current: ws.ws },
+    eventEmitter,
   })
 
   // Agent status tracking
-  const status = useAgentStatus({})
+  const status = useAgentStatus({
+    eventEmitter,
+  })
 
   // Activity tracking
-  const activity = useActivityUpdates({})
+  const activity = useActivityUpdates({
+    eventEmitter,
+  })
 
   // Kanban updates
   const kanban = useKanbanUpdates({
+    eventEmitter,
     onKanbanChange: onKanbanDataChange,
     onTabChange: onActiveTabChange,
   })
-
-  // Store hook instances for message distribution
-  const messagesHook = messages as any
-  const statusHook = status as any
-  const activityHook = activity as any
-  const kanbanHook = kanban as any
 
   // Notify agent statuses changes
   useEffect(() => {
@@ -168,12 +165,12 @@ export function useChatWebSocket(
     // Update to 'sent' status after successful send
     if (success) {
       setTimeout(() => {
-        messages.updateMessageStatus(tempId, 'sent')
+        messages.updateMessageStatus?.(tempId, 'sent')
       }, 100)
     }
 
     return success
-  }, [ws, messages])
+  }, [ws.isReady, ws.send, messages])
 
   return {
     // Connection

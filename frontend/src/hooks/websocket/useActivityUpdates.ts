@@ -5,12 +5,11 @@
  * - Track agent execution progress
  * - Monitor tool calls
  * - Handle approval requests
- * - Track agent progress events
  * 
- * Depends on: WebSocket message events
+ * Now uses event emitter pattern
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 
 export interface AgentProgress {
   isExecuting: boolean
@@ -43,8 +42,10 @@ export interface ApprovalRequest {
 }
 
 export interface UseActivityUpdatesOptions {
-  /** Callback when message received */
-  onMessage?: (event: MessageEvent) => void
+  /** Event emitter from useWebSocketEvents */
+  eventEmitter?: {
+    on: (eventType: string, handler: (data: any) => void) => () => void
+  }
 }
 
 export interface UseActivityUpdatesReturn {
@@ -59,7 +60,7 @@ export interface UseActivityUpdatesReturn {
 }
 
 export function useActivityUpdates(options: UseActivityUpdatesOptions = {}): UseActivityUpdatesReturn {
-  const { onMessage } = options
+  const { eventEmitter } = options
 
   const [agentProgress, setAgentProgress] = useState<AgentProgress>({
     isExecuting: false,
@@ -68,73 +69,72 @@ export function useActivityUpdates(options: UseActivityUpdatesOptions = {}): Use
   const [toolCalls, setToolCalls] = useState<ToolCall[]>([])
   const [approvalRequests, setApprovalRequests] = useState<ApprovalRequest[]>([])
 
-  // Handle incoming WebSocket message
-  const handleMessage = useCallback((event: MessageEvent) => {
-    try {
-      const data = JSON.parse(event.data)
+  // Subscribe to events
+  useEffect(() => {
+    if (!eventEmitter) return
 
-      switch (data.type) {
-        case 'agent_progress': {
-          setAgentProgress({
-            isExecuting: data.status === 'in_progress',
-            currentStep: data.description || data.step_description,
-            currentAgent: data.agent_name,
-            stepNumber: data.step_number,
-            totalSteps: data.total_steps,
-          })
-          break
-        }
+    const unsubscribers: Array<() => void> = []
 
-        case 'tool_call': {
-          const toolCall: ToolCall = {
-            agent_name: data.agent_name,
-            tool_name: data.tool_name,
-            display_name: data.display_name,
-            status: data.status,
-            timestamp: data.timestamp,
-            parameters: data.parameters,
-            result: data.result,
-            error_message: data.error_message,
-          }
+    // Handle agent progress events
+    const handleAgentProgress = (data: any) => {
+      setAgentProgress({
+        isExecuting: data.status === 'in_progress',
+        currentStep: data.description || data.step_description,
+        currentAgent: data.agent_name,
+        stepNumber: data.step_number,
+        totalSteps: data.total_steps,
+      })
+    }
 
-          setToolCalls(prev => [...prev, toolCall])
-
-          // Update progress to show tool being used
-          if (data.status === 'started') {
-            setAgentProgress(prev => ({
-              ...prev,
-              currentTool: data.display_name || data.tool_name,
-            }))
-          }
-          break
-        }
-
-        case 'approval_request': {
-          const request: ApprovalRequest = {
-            id: data.approval_request_id,
-            request_type: data.request_type,
-            agent_name: data.agent_name,
-            proposed_data: data.proposed_data,
-            preview_data: data.preview_data,
-            explanation: data.explanation,
-            timestamp: data.timestamp,
-          }
-
-          setApprovalRequests(prev => [...prev, request])
-          break
-        }
-
-        default:
-          // Not an activity type we handle
-          break
+    // Handle tool call events
+    const handleToolCall = (data: any) => {
+      const toolCall: ToolCall = {
+        agent_name: data.agent_name,
+        tool_name: data.tool_name,
+        display_name: data.display_name,
+        status: data.status,
+        timestamp: data.timestamp,
+        parameters: data.parameters,
+        result: data.result,
+        error_message: data.error_message,
       }
 
-      // Forward to parent callback
-      onMessage?.(event)
-    } catch (error) {
-      console.error('[useActivityUpdates] Failed to parse message:', error)
+      setToolCalls(prev => [...prev, toolCall])
+
+      // Update progress to show tool being used
+      if (data.status === 'started') {
+        setAgentProgress(prev => ({
+          ...prev,
+          currentTool: data.display_name || data.tool_name,
+        }))
+      }
     }
-  }, [onMessage])
+
+    // Handle approval request events
+    const handleApprovalRequest = (data: any) => {
+      const request: ApprovalRequest = {
+        id: data.approval_request_id,
+        request_type: data.request_type,
+        agent_name: data.agent_name,
+        proposed_data: data.proposed_data,
+        preview_data: data.preview_data,
+        explanation: data.explanation,
+        timestamp: data.timestamp,
+      }
+
+      setApprovalRequests(prev => [...prev, request])
+    }
+
+    // Subscribe to events
+    unsubscribers.push(eventEmitter.on('agent_progress', handleAgentProgress))
+    unsubscribers.push(eventEmitter.on('tool_call', handleToolCall))
+    unsubscribers.push(eventEmitter.on('approval_request', handleApprovalRequest))
+
+    // Cleanup
+    return () => {
+      unsubscribers.forEach(unsubscribe => unsubscribe())
+    }
+  }, [eventEmitter])
 
   // Clear all activities
   const clearActivities = useCallback(() => {

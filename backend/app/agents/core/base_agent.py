@@ -7,11 +7,12 @@ This is the new simplified agent architecture where:
 - Simple API: update_progress(), publish_response()
 """
 
+import asyncio
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from app.kafka.producer import KafkaProducer, get_kafka_producer
 from app.kafka.event_schemas import (
@@ -121,12 +122,18 @@ class BaseAgent(ABC):
 
         # Current task being processed (for progress tracking)
         self._current_task_id: Optional[UUID] = None
+        self._current_execution_id: Optional[UUID] = None
 
         # Kafka producer (lazy init)
         self._producer: Optional[KafkaProducer] = None
 
         # Consumer will be created by start()
         self._consumer = None
+
+        # Task queue for sequential processing
+        self._task_queue: asyncio.Queue = asyncio.Queue(maxsize=10)
+        self._queue_running: bool = False
+        self._queue_worker_task: Optional[asyncio.Task] = None
 
         logger.info(f"Initialized {self.role_type} agent: {self.name} ({self.agent_id})")
 
