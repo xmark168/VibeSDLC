@@ -2,8 +2,7 @@
  * Agent Execution Dialog
  * 
  * Shows real-time agent execution progress in a floating dialog:
- * - Progress steps
- * - Tool calls
+ * - Tool calls only
  * - Auto-closes after completion
  */
 
@@ -22,30 +21,12 @@ export function AgentExecutionDialog({ execution }: AgentExecutionDialogProps) {
       <div className="flex items-center gap-2 mb-3">
         <span className="text-lg">🤖</span>
         <span className="font-medium text-sm">{execution.agent_name}</span>
+        <span className="text-xs text-muted-foreground">is working...</span>
       </div>
-      
-      {/* Steps */}
-      {execution.steps.length > 0 && (
-        <div className="space-y-1 mb-3">
-          {execution.steps.map((step, i) => {
-            const isLast = i === execution.steps.length - 1
-            return (
-              <div key={i} className="flex items-start gap-2 text-sm">
-                <span className="mt-0.5 flex-shrink-0">
-                  {isLast ? '→' : '✓'}
-                </span>
-                <span className={isLast ? 'text-foreground' : 'text-muted-foreground'}>
-                  {step}
-                </span>
-              </div>
-            )
-          })}
-        </div>
-      )}
       
       {/* Tool Calls */}
       {execution.tools.length > 0 && (
-        <div className="space-y-1 border-t pt-2 mt-2">
+        <div className="space-y-1">
           {execution.tools.map(tool => (
             <div key={tool.id} className="flex items-center gap-2 text-xs text-muted-foreground">
               <span>🔧</span>
@@ -63,9 +44,9 @@ export function AgentExecutionDialog({ execution }: AgentExecutionDialogProps) {
       )}
       
       {/* Empty state */}
-      {execution.steps.length === 0 && execution.tools.length === 0 && (
+      {execution.tools.length === 0 && (
         <div className="text-xs text-muted-foreground">
-          Initializing...
+          Processing request...
         </div>
       )}
     </div>

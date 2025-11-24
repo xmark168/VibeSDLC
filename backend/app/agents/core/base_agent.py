@@ -201,10 +201,6 @@ class BaseAgent(ABC):
         """Emit: agent.messaging.start - Notify that agent began execution"""
         await self.message_user("thinking", f"{self.name} is starting...")
     
-    async def emit_step(self, step: str) -> None:
-        """Emit: agent.messaging.analyzing - Send progress step"""
-        await self.message_user("progress", step)
-    
     async def emit_tool(self, tool: str, action: str, state: str = "started", **details) -> None:
         """Emit: agent.messaging.tool_call - Track tool execution
         

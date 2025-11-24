@@ -1,12 +1,11 @@
 """
 Agent Events Handler
 
-Simplified handler with 5 event types only:
-- agent.messaging.start
-- agent.messaging.analyzing
+Simplified handler with 4 event types only:
+- agent.messaging.start (thinking)
 - agent.messaging.tool_call
 - agent.messaging.response
-- agent.messaging.finish
+- agent.messaging.finish (completed)
 """
 
 import logging
@@ -25,12 +24,11 @@ class AgentEventsHandler(BaseEventHandler):
     """
     Simplified handler for agent events using agent.messaging.* pattern.
     
-    Only 5 event types:
-    1. start - Agent begins execution
-    2. analyzing - Progress/steps
-    3. tool_call - Tool execution
-    4. response - Agent message (saved to DB)
-    5. finish - Execution complete
+    Only 4 event types:
+    1. start (thinking) - Agent is working
+    2. tool_call - Tool execution
+    3. response - Agent message (saved to DB)
+    4. finish (completed) - Execution complete
     """
     
     async def handle_agent_event(self, event):
@@ -57,10 +55,9 @@ class AgentEventsHandler(BaseEventHandler):
                 logger.info(f"Skipping event {event_type} - no active connections for project {project_id}")
                 return
             
-            # Map old event types to new handlers
+            # Map event types to handlers
             type_map = {
                 "agent.thinking": "start",
-                "agent.progress": "analyzing",
                 "agent.tool_call": "tool_call",
                 "agent.response": "response",
                 "agent.completed": "finish",
@@ -83,31 +80,18 @@ class AgentEventsHandler(BaseEventHandler):
             logger.error(f"Error handling agent event: {e}", exc_info=True)
     
     async def _handle_start(self, data, project_id):
-        """agent.messaging.start - Agent begins execution"""
+        """agent.messaging.start - Agent begins execution (thinking status)"""
         try:
             ws_message = {
                 "type": "agent.messaging.start",
                 "id": str(data.get("execution_id") or uuid4()),
                 "agent_name": data.get("agent_name", "Agent"),
+                "content": data.get("content", "Processing..."),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
             await self._broadcast(project_id, ws_message)
         except Exception as e:
             logger.error(f"Error in _handle_start: {e}")
-    
-    async def _handle_analyzing(self, data, project_id):
-        """agent.messaging.analyzing - Progress step"""
-        try:
-            ws_message = {
-                "type": "agent.messaging.analyzing",
-                "id": str(data.get("execution_id") or uuid4()),
-                "agent_name": data.get("agent_name", "Agent"),
-                "step": data.get("content", "Processing..."),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-            await self._broadcast(project_id, ws_message)
-        except Exception as e:
-            logger.error(f"Error in _handle_analyzing: {e}")
     
     async def _handle_tool_call(self, data, project_id):
         """agent.messaging.tool_call - Tool execution"""
