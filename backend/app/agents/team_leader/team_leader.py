@@ -77,7 +77,11 @@ class TeamLeader(BaseAgent):
                     "milestone": "status_check_started"
                 })
                 
-                response = self.crew.track_progress(project_context)
+                # Run CrewAI asynchronously using native async support
+                crew_output = await self.crew.track_progress(project_context)
+                
+                # Convert CrewAI output to string
+                response = str(crew_output) if crew_output else ""
                 
                 await self.message_user("progress", "Status check complete", {
                     "milestone": "completed"
@@ -91,14 +95,39 @@ class TeamLeader(BaseAgent):
                     "milestone": "analysis_started"
                 })
                 
-                # Use crew to analyze and provide guidance
-                response = self.crew.analyze_request(user_message)
+                # Run CrewAI asynchronously using native async support
+                crew_output = await self.crew.analyze_request(user_message)
+                
+                # Convert CrewAI output to string (it might be CrewOutput object)
+                response = str(crew_output) if crew_output else ""
                 
                 await self.message_user("progress", "Analysis complete", {
                     "milestone": "completed"
                 })
 
-            logger.info(f"[{self.name}] Generated response: {len(response)} chars")
+            logger.info(f"[{self.name}] Generated response: {len(response)} chars, type={type(response).__name__}")
+            
+            # Validate and sanitize response
+            if not response or not response.strip():
+                logger.warning(f"[{self.name}] Empty response from crew, using fallback")
+                response = "Xin lỗi, tôi không thể xử lý yêu cầu này. Vui lòng thử lại hoặc tag một specialist cụ thể."
+            
+            # Truncate if too long (max 5000 chars to prevent Kafka message size issues)
+            if len(response) > 5000:
+                logger.warning(f"[{self.name}] Response too long ({len(response)} chars), truncating to 5000")
+                response = response[:5000] + "\n\n... (message truncated)"
+            
+            # Send response back to user
+            logger.info(f"[{self.name}] About to send response to user...")
+            try:
+                await self.message_user("response", response, {
+                    "message_type": "text",  # Use 'text' so frontend renders as normal message
+                })
+                logger.info(f"[{self.name}] Response sent successfully")
+            except Exception as response_error:
+                logger.error(f"[{self.name}] CRITICAL: Failed to send response: {response_error}", exc_info=True)
+                # Re-raise to ensure it's caught by outer handler
+                raise
 
             return TaskResult(
                 success=True,

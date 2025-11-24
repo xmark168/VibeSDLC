@@ -137,6 +137,7 @@ class AgentEventsHandler(BaseEventHandler):
     async def _handle_response(self, data, project_id):
         """agent.messaging.response - Save agent message to DB and broadcast"""
         try:
+            logger.info(f"_handle_response called: project_id={project_id}")
             content = data.get("content", "")
             details = data.get("details", {})
             agent_name = data.get("agent_name", "Agent")
@@ -174,6 +175,7 @@ class AgentEventsHandler(BaseEventHandler):
                 "timestamp": db_message.created_at.isoformat(),  # Use DB timestamp
             }
             
+            logger.info(f"Broadcasting agent response to WebSocket: message_id={message_id}, project={project_id}")
             await self._broadcast(project_id, ws_message)
         
         except Exception as e:

@@ -232,6 +232,7 @@ class BaseAgent(ABC):
             producer = await self._get_producer()
 
             # Build unified event
+            logger.debug(f"[{self.name}] Building AgentEvent: type={event_type}, content_len={len(content)}")
             event = AgentEvent(
                 event_type=f"agent.{event_type}",
                 agent_name=self.name,
@@ -249,12 +250,13 @@ class BaseAgent(ABC):
             )
 
             # Publish to SINGLE unified topic
+            logger.debug(f"[{self.name}] Publishing to Kafka topic: {KafkaTopics.AGENT_EVENTS}")
             await producer.publish(
                 topic=KafkaTopics.AGENT_EVENTS,
                 event=event,
             )
 
-            logger.info(f"[{self.name}] {event_type}: {content}")
+            logger.info(f"[{self.name}] {event_type}: {content[:100]}")
 
         except Exception as e:
             logger.error(f"[{self.name}] Failed to send message: {e}")
@@ -557,7 +559,11 @@ class BaseAgent(ABC):
 
             # Update state to busy
             self.state = AgentStatus.busy
+            
+            # Emit "thinking" status IMMEDIATELY so frontend shows indicator right away
+            await self.message_user("thinking", f"Processing request...")
 
+            task_failed = False
             try:
                 # Notify user that agent is thinking/processing
                 await self.message_user("thinking", f"Processing {task.task_type.value} request")
@@ -592,6 +598,13 @@ class BaseAgent(ABC):
                     await self.finish_execution(f"Task completed with issues: {result.error_message or 'Unknown'}")
                 
             except Exception as e:
+                task_failed = True
+                
+                # Emit error status to frontend
+                await self.message_user("error", f"Task failed: {str(e)}", {
+                    "error_type": type(e).__name__
+                })
+                
                 # Update execution record with failure
                 await self._complete_execution_record(
                     error=str(e),
@@ -608,14 +621,19 @@ class BaseAgent(ABC):
             finally:
                 # Return to idle
                 self.state = AgentStatus.idle
+                
+                # Emit "idle" status to clear frontend indicator (only if no error)
+                if not task_failed:
+                    await self.message_user("idle", "Task completed")
 
-            # Log completion
-            if result.success:
-                logger.info(f"[{self.name}] Task {task_id} completed successfully")
-            else:
-                logger.error(
-                    f"[{self.name}] Task {task_id} failed: {result.error_message}"
-                )
+            # Log completion (only if task didn't raise exception)
+            if not task_failed:
+                if result.success:
+                    logger.info(f"[{self.name}] Task {task_id} completed successfully")
+                else:
+                    logger.error(
+                        f"[{self.name}] Task {task_id} failed: {result.error_message}"
+                    )
 
         except Exception as e:
             logger.error(

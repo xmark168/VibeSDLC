@@ -21,6 +21,17 @@ from app.models import Message as MessageModel, AuthorType, MessageVisibility
 logger = logging.getLogger(__name__)
 
 
+# Milestones that should persist in chat history (visible to users)
+IMPORTANT_MILESTONES = {
+    "analysis_complete",
+    "documentation_complete",
+    "implementation_complete",
+    "test_cases_complete",
+    "scenarios_identified",
+    "completed",
+}
+
+
 @dataclass
 class ActivityData:
     """Buffered activity data for an execution (event-based, no step numbers)."""
@@ -288,6 +299,16 @@ class ActivityBuffer:
                 db_message = db_session.get(MessageModel, activity.message_id)
                 
                 if db_message:
+                    # Determine visibility based on milestones
+                    has_important_milestone = any(
+                        event.get("details", {}).get("milestone", "") in IMPORTANT_MILESTONES
+                        for event in activity.events
+                    )
+                    
+                    # Update visibility if milestone reached
+                    if has_important_milestone:
+                        db_message.visibility = MessageVisibility.USER_MESSAGE
+                    
                     # Update structured data
                     structured_data = {
                         "message_type": "activity",
@@ -311,7 +332,7 @@ class ActivityBuffer:
                     db_session.add(db_message)
                     db_session.commit()
                     
-                    logger.debug(f"Updated activity message {activity.message_id}")
+                    logger.debug(f"Updated activity message {activity.message_id} (visibility={'USER' if has_important_milestone else 'SYSTEM'})")
             
             else:
                 # Create new message
@@ -332,6 +353,17 @@ class ActivityBuffer:
                     }
                 }
                 
+                # Determine visibility based on milestones
+                has_important_milestone = any(
+                    event.get("details", {}).get("milestone", "") in IMPORTANT_MILESTONES
+                    for event in activity.events
+                )
+                
+                visibility = (
+                    MessageVisibility.USER_MESSAGE if has_important_milestone
+                    else MessageVisibility.SYSTEM_LOG
+                )
+                
                 db_message = MessageModel(
                     id=message_id,
                     project_id=activity.project_id,
@@ -339,7 +371,7 @@ class ActivityBuffer:
                     agent_id=None,
                     content=f"{activity.agent_name} đang thực thi...",
                     author_type=AuthorType.AGENT,
-                    visibility=MessageVisibility.SYSTEM_LOG,  # Activity updates are system logs
+                    visibility=visibility,  # USER_MESSAGE if has milestones, else SYSTEM_LOG
                     message_type="activity",
                     structured_data=structured_data,
                     message_metadata={"agent_name": activity.agent_name}

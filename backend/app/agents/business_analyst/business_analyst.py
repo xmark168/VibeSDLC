@@ -7,6 +7,7 @@ NEW ARCHITECTURE:
 - Provides PRD generation and requirements gathering
 """
 
+import asyncio
 import logging
 from typing import Any, Dict
 from uuid import UUID
@@ -122,7 +123,8 @@ comprehensive documentation that helps the development team understand what to b
                 verbose=True,
             )
 
-            result = crew.kickoff()
+            # Run CrewAI asynchronously using native async support
+            result = await crew.kickoff_async(inputs={})
 
             # Extract response
             response = str(result)
@@ -139,6 +141,15 @@ comprehensive documentation that helps the development team understand what to b
             })
 
             logger.info(f"[{self.name}] Requirements analysis completed: {len(response)} chars")
+            
+            # Send response back to user
+            await self.message_user("response", response, {
+                "message_type": "requirements_analysis",
+                "data": {
+                    "analysis": response,
+                    "analysis_type": "requirements_analysis"
+                }
+            })
 
             return TaskResult(
                 success=True,
