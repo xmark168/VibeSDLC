@@ -94,9 +94,11 @@ class BaseKafkaConsumer(ABC):
             logger.info(
                 f"Kafka consumer started for topics {self.topics} with group {self.group_id}"
             )
+            logger.info(f"Consumer config: bootstrap.servers={config.get('bootstrap.servers')}")
 
             # Start consume loop in background
             self._consume_task = asyncio.create_task(self._consume_loop())
+            logger.info(f"Consume loop task created for topics {self.topics}")
 
         except Exception as e:
             logger.error(f"Failed to start Kafka consumer: {e}")
@@ -157,6 +159,7 @@ class BaseKafkaConsumer(ABC):
 
     async def _consume_loop(self):
         """Main consume loop running in background."""
+        logger.info(f"[CONSUMER] Starting consume loop for topics {self.topics}")
         while self.running:
             try:
                 # Poll with timeout (non-blocking)
@@ -226,10 +229,6 @@ class BaseKafkaConsumer(ABC):
                     msg_project_id_str = str(msg_project_id)
                     if msg_project_id_str not in self.project_id_filter:
                         # Skip this message - not in our project filter
-                        logger.debug(
-                            f"Skipping message from project {msg_project_id_str} "
-                            f"(filter: {self.project_id_filter})"
-                        )
                         return
 
             # Get event type
@@ -350,7 +349,6 @@ class EventHandlerConsumer(BaseKafkaConsumer):
 
         handlers = self.handlers.get(event_type, [])
         if not handlers:
-            logger.debug(f"No handlers registered for event type: {event_type}")
             return
 
         # Call all registered handlers

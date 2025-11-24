@@ -6,6 +6,5 @@ NEW ARCHITECTURE:
 """
 
 from .developer import Developer
-from .crew import DeveloperCrew
 
-__all__ = ["Developer", "DeveloperCrew"]
+__all__ = ["Developer"]

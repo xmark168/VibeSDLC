@@ -93,84 +93,90 @@ async def lifespan(app: FastAPI):
     from app.kafka import get_kafka_producer, shutdown_kafka_producer
     try:
         producer = await get_kafka_producer()
-        logger.info("Kafka producer started")
+        logger.info("✅ Kafka producer started")
     except Exception as e:
-        logger.warning(f"Failed to start Kafka producer: {e}")
-        logger.warning("Continuing without Kafka support...")
+        logger.warning(f"⚠️ Failed to start Kafka producer: {e}")
 
     # Start Central Message Router (dispatches tasks to agents)
     from app.kafka.router_service import start_router_service, stop_router_service
     try:
         await start_router_service()
-        logger.info("Central Message Router started")
+        logger.info("✅ Message Router started")
     except Exception as e:
-        logger.warning(f"Failed to start Message Router: {e}")
-        logger.warning("Continuing without router support...")
+        logger.warning(f"⚠️ Failed to start Message Router: {e}")
 
     # Start all Kafka consumers (legacy consumer registry)
     from app.kafka.consumer_registry import start_all_consumers, shutdown_all_consumers
     try:
         await start_all_consumers()
-        logger.info("All Kafka consumers started")
+        logger.info("✅ Kafka consumers started")
     except Exception as e:
-        logger.warning(f"Failed to start Kafka consumers: {e}")
-        logger.warning("Continuing without consumer support...")
+        logger.warning(f"⚠️ Failed to start Kafka consumers: {e}")
 
     # Initialize default agent pools (using AgentPoolManager)
     from app.api.routes.agent_management import initialize_default_pools
     try:
         await initialize_default_pools()
-        logger.info("Default agent pools initialized with AgentPoolManager")
+        logger.info("✅ Agent pools initialized")
     except Exception as e:
-        logger.warning(f"Failed to initialize agent pools: {e}")
-        logger.warning("Continuing without agent pools...")
+        logger.warning(f"⚠️ Failed to initialize agent pools: {e}")
 
     # Start agent monitoring system
     from app.agents.core import get_agent_monitor
     try:
         monitor = get_agent_monitor()
         await monitor.start(monitor_interval=30)
-        logger.info("Agent monitoring system started")
+        logger.info("✅ Agent monitoring started")
     except Exception as e:
-        logger.warning(f"Failed to start monitoring system: {e}")
-        logger.warning("Continuing without monitoring system...")
+        logger.warning(f"⚠️ Failed to start monitoring: {e}")
+
+    # Start activity buffer for batched DB writes
+    from app.websocket.activity_buffer import activity_buffer
+    try:
+        await activity_buffer.start()
+        logger.info("Activity buffer started (5s batch writes)")
+    except Exception as e:
+        logger.warning(f"Failed to start activity buffer: {e}")
+        logger.warning("Continuing without activity buffering...")
 
     # Start WebSocket-Kafka bridge
     from app.websocket.kafka_bridge import websocket_kafka_bridge
     try:
         await websocket_kafka_bridge.start()
-        logger.info("WebSocket-Kafka bridge started")
+        logger.info("✅ WebSocket bridge started")
     except Exception as e:
-        logger.warning(f"Failed to start WebSocket-Kafka bridge: {e}")
-        logger.warning("Continuing without WebSocket bridge...")
+        logger.warning(f"⚠️ Failed to start WebSocket bridge: {e}")
 
     # Start metrics collector for analytics
     from app.tasks import start_metrics_collector
     try:
         await start_metrics_collector(interval_seconds=300, retention_days=30)
-        logger.info("Metrics collector started (5-minute intervals, 30-day retention)")
+        logger.info("✅ Metrics collector started")
     except Exception as e:
-        logger.warning(f"Failed to start metrics collector: {e}")
-        logger.warning("Continuing without metrics collection...")
+        logger.warning(f"⚠️ Failed to start metrics collector: {e}")
 
     yield
 
-    # Shutdown: cleanup consumers and producer
-    logger.info("Shutting down...")
+    # Shutdown
+    logger.info("⏹️  Shutting down...")
 
     try:
         await websocket_kafka_bridge.stop()
-        logger.info("WebSocket-Kafka bridge shut down")
     except Exception as e:
-        logger.error(f"Error shutting down WebSocket-Kafka bridge: {e}")
+        logger.error(f"Error stopping WebSocket bridge: {e}")
+    
+    # Shutdown activity buffer
+    try:
+        await activity_buffer.stop()
+    except Exception as e:
+        logger.error(f"Error stopping activity buffer: {e}")
 
     # Shutdown metrics collector
     from app.tasks import stop_metrics_collector
     try:
         await stop_metrics_collector()
-        logger.info("Metrics collector shut down")
     except Exception as e:
-        logger.error(f"Error shutting down metrics collector: {e}")
+        logger.error(f"Error stopping metrics collector: {e}")
 
     # Shutdown agent monitoring system
     try:

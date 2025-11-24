@@ -32,6 +32,7 @@ import { AuthorType, type Message } from "@/types/message";
 import { MessagePreviewCard } from "./MessagePreviewCard";
 import { ActivityMessage } from "./activity-message";
 import { AgentStatusIndicator } from "./agent-status-indicator";
+import { MessageStatusIndicator } from "./message-status-indicator";
 import { useProjectAgents } from "@/queries/agents";
 
 interface ChatPanelProps {
@@ -561,6 +562,8 @@ export function ChatPanelWS({
                       <span className="text-xs text-muted-foreground">
                         {formatTimestamp(msg.created_at)}
                       </span>
+                      {/* Message status indicator for user messages */}
+                      {msg.status && <MessageStatusIndicator status={msg.status} />}
                       <button
                         onClick={() => copyToClipboard(msg.content, msg.id)}
                         className="p-1 rounded hover:bg-accent transition-colors"
@@ -721,7 +724,10 @@ export function ChatPanelWS({
               <AgentStatusIndicator
                 status={agentStatus.status}
                 agentName={agentStatus.agentName || undefined}
-                currentAction={agentStatus.currentAction}
+                currentAction={agentStatus.currentAction || undefined}
+                currentStep={agentStatus.currentStep || undefined}
+                totalSteps={agentStatus.totalSteps || undefined}
+                executionId={agentStatus.executionId || undefined}
               />
             </div>
           </div>

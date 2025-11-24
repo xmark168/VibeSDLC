@@ -1,5 +1,8 @@
 """
 WebSocket Connection Manager
+
+Manages WebSocket connections for real-time communication.
+Messages are saved to DB, so frontend can query missed messages on reconnect.
 """
 
 from typing import Dict, List, Set
@@ -7,11 +10,12 @@ from uuid import UUID
 from fastapi import WebSocket
 import logging
 
+
 logger = logging.getLogger(__name__)
 
 
 class ConnectionManager:
-    """Manages WebSocket connections for projects"""
+    """Manages WebSocket connections for projects."""
 
     def __init__(self):
         # project_id -> set of WebSocket connections
@@ -22,6 +26,8 @@ class ConnectionManager:
     async def connect(self, websocket: WebSocket, project_id: UUID):
         """
         Connect a WebSocket to a project room.
+        
+        Frontend should query DB for missed messages on reconnect.
         """
         if project_id not in self.active_connections:
             self.active_connections[project_id] = set()
@@ -59,10 +65,21 @@ class ConnectionManager:
             self.disconnect(websocket)
 
     async def broadcast_to_project(self, message: dict, project_id: UUID):
-        """Broadcast a message to all connections in a project"""
-        if project_id not in self.active_connections:
+        """
+        Broadcast a message to all active connections in a project.
+        
+        If no active connections, message is skipped (saved in DB already).
+        Frontend will query DB for missed messages on reconnect.
+        """
+        # Skip if no active connections - message already in DB
+        if project_id not in self.active_connections or not self.active_connections[project_id]:
+            logger.debug(
+                f"No active connections for project {project_id}, "
+                f"skipping broadcast (message in DB)"
+            )
             return
 
+        # Broadcast to all active connections
         disconnected = []
         for connection in self.active_connections[project_id]:
             try:

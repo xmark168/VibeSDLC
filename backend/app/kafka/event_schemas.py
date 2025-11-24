@@ -57,6 +57,8 @@ class AgentResponseEvent(BaseKafkaEvent):
 
     event_type: str = "agent.response.created"
     message_id: UUID
+    task_id: Optional[UUID] = None  # Task ID that was completed
+    execution_id: Optional[UUID] = None  # Execution ID for linking to activity timeline
     agent_name: str
     agent_type: str
     content: str

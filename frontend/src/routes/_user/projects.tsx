@@ -13,7 +13,6 @@ import { CreateProjectContent } from "@/components/projects/create-project-conte
 import { HeaderProject } from "@/components/projects/header"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ApiError, ProjectsListProjectsResponse, ProjectsService } from "@/client"
-import toast from "react-hot-toast"
 import { handleError } from "@/utils"
 import { requireRole } from "@/utils/auth"
 import { useAppStore } from "@/stores/auth-store"
@@ -62,10 +61,6 @@ function ProjectsPage() {
 
   return (
     <>
-     
-      
-
-       (
             <div className="min-h-screen">
               <HeaderProject />
               <div className="container mx-auto px-6 py-8">
@@ -128,9 +123,6 @@ function ProjectsPage() {
                 )}
               </AnimatePresence>
             </div>
-          )
-
-
     </>
   )
 }

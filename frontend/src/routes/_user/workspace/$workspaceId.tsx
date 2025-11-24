@@ -3,9 +3,8 @@ import { useRef, useState } from "react"
 import { ChatPanelWS } from "@/components/chat/chat-panel-ws"
 import { ResizableHandle } from "@/components/chat/resizable-handle"
 import { Sidebar } from "@/components/chat/sidebar"
-import { WelcomeDialog } from "@/components/chat/welcome-dialog"
+
 import { WorkspacePanel } from "@/components/chat/workspace-panel"
-import { useMessages } from "@/queries/messages"
 import { requireRole } from "@/utils/auth"
 
 export const Route = createFileRoute("/_user/workspace/$workspaceId")({
@@ -21,7 +20,6 @@ function WorkspacePage() {
   const [chatWidth, setChatWidth] = useState(40) // percentage
   const [chatCollapsed, setChatCollapsed] = useState(false)
   const [sidebarHovered, setSidebarHovered] = useState(false)
-  const [welcomeDismissed, setWelcomeDismissed] = useState(false)
   const [isWebSocketConnected, setIsWebSocketConnected] = useState(false)
   const sendMessageRef = useRef<((params: { content: string; author_type?: 'user' | 'agent' }) => boolean) | null>(null)
   const [kanbanData, setKanbanData] = useState<any>(null)
@@ -29,39 +27,8 @@ function WorkspacePage() {
   // Track agent statuses from WebSocket for avatar display
   const [agentStatuses, setAgentStatuses] = useState<Map<string, { status: string; lastUpdate: string }>>(new Map())
 
-  // Fetch messages to check if project is new
-  const { data: messagesData, isLoading } = useMessages({
-    project_id: workspaceId,
-    skip: 0,
-    limit: 1,
-  })
-
-  // Show welcome dialog only once when project has no messages
-  const hasMessages = messagesData && messagesData.count > 0
-  const showWelcome = !isLoading && !hasMessages && !welcomeDismissed
-
   return (
-    <>
-      <WelcomeDialog
-        open={showWelcome}
-        onOpenChange={(open) => {
-          if (!open) {
-            setWelcomeDismissed(true)
-          }
-        }}
-        onSendMessage={(content) => {
-          if (sendMessageRef.current) {
-            return sendMessageRef.current({
-              content,
-              author_type: "user",
-            })
-          }
-          return false
-        }}
-        isConnected={isWebSocketConnected}
-      />
-
-      <div className="flex h-screen overflow-hidden bg-white relative">
+    <div className="flex h-screen overflow-hidden bg-white relative">
         <Sidebar
           collapsed={sidebarCollapsed}
           onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -113,6 +80,5 @@ function WorkspacePage() {
           </div>
         </div>
       </div>
-    </>
   )
 }

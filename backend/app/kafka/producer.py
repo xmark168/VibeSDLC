@@ -136,9 +136,6 @@ class KafkaProducer:
             logger.error(f"Message delivery failed: {err}")
             self._delivery_reports[msg.key()] = {"status": "failed", "error": str(err)}
         else:
-            logger.debug(
-                f"Message delivered to {msg.topic()} [{msg.partition()}] at offset {msg.offset()}"
-            )
             self._delivery_reports[msg.key()] = {
                 "status": "success",
                 "partition": msg.partition(),
@@ -191,7 +188,6 @@ class KafkaProducer:
                     agent_id = event_data.get("agent_id")
                     if agent_id:
                         key = str(agent_id) if isinstance(agent_id, UUID) else agent_id
-                        logger.debug(f"AGENT_TASKS: Using agent_id as partition key: {key}")
 
                 # For all other topics or if agent_id not available, use project_id
                 if not key:
@@ -207,10 +203,6 @@ class KafkaProducer:
             # Serialize to JSON with UUID handling
             message_value = json.dumps(event_data, cls=UUIDEncoder).encode("utf-8")
             message_key = key.encode("utf-8") if key else None
-
-            # Log partition key usage for monitoring
-            if message_key:
-                logger.debug(f"Publishing to {topic_str} with partition key: {key}")
 
             # Ensure topic exists before publishing
             try:
