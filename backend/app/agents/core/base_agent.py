@@ -175,103 +175,188 @@ class BaseAgent(ABC):
 
     # ===== Public API for Agents =====
 
-    async def update_progress(
+    async def message_user(
         self,
-        current_step: int,
-        total_steps: int,
-        message: str
+        event_type: str,
+        content: str,
+        details: Optional[Dict[str, Any]] = None,
+        **kwargs
     ) -> None:
-        """Update task progress (publishes to Kafka automatically).
-
+        """
+        Send message/event to user through unified event stream.
+        
+        This replaces update_progress(), publish_response(), etc.
+        All agent communications now go through this single method.
+        
         Args:
-            current_step: Current step number (1-based)
-            total_steps: Total number of steps
-            message: Progress message describing current step
-
-        Example:
-            await self.update_progress(1, 3, "Analyzing requirements")
-            await self.update_progress(2, 3, "Generating stories")
-            await self.update_progress(3, 3, "Complete")
+            event_type: Type of event (thinking, tool_call, progress, response, etc.)
+            content: Human-readable content/message
+            details: Additional structured data
+            **kwargs: Extra metadata
+        
+        Examples:
+            # Thinking/status updates
+            await self.message_user("thinking", "Analyzing requirements")
+            await self.message_user("idle", "Waiting for input")
+            
+            # Tool usage
+            await self.message_user("tool_call", "Searching web", {
+                "tool": "web_search",
+                "query": "Python async best practices",
+                "results": 10
+            })
+            
+            # Progress tracking (no step numbers needed!)
+            await self.message_user("progress", "Requirements analyzed", {
+                "milestone": "analysis_complete",
+                "confidence": 0.95
+            })
+            await self.message_user("progress", "Generated 5 stories", {
+                "milestone": "stories_generated",
+                "count": 5
+            })
+            
+            # Final response
+            await self.message_user("response", "Here's your PRD", {
+                "message_type": "prd",
+                "data": prd_dict,
+                "requires_approval": True
+            })
+            
+            # Delegation
+            await self.message_user("delegation", "Assigning to Developer", {
+                "to_agent": "Developer",
+                "reason": "Implementation needed",
+                "context": {...}
+            })
+            
+            # Errors
+            await self.message_user("error", "API rate limit exceeded", {
+                "error_type": "RateLimitError",
+                "retry_after": 60
+            })
         """
         if not self._current_task_id:
-            logger.warning(f"[{self.name}] Cannot update progress: no active task")
+            logger.warning(f"[{self.name}] Cannot send message: no active task")
             return
 
         try:
             producer = await self._get_producer()
 
-            progress_event = AgentProgressEvent(
+            # Build unified event
+            event = AgentEvent(
+                event_type=f"agent.{event_type}",
                 agent_name=self.name,
                 agent_id=str(self.agent_id),
-                execution_id=self._current_task_id,
-                step_number=current_step,
-                total_steps=total_steps,
-                step_description=message,
-                status="in_progress" if current_step < total_steps else "completed",
                 project_id=self.project_id,
-            )
-
-            await producer.publish(
-                topic=KafkaTopics.AGENT_PROGRESS,
-                event=progress_event,
-            )
-
-            logger.info(
-                f"[{self.name}] Progress: {current_step}/{total_steps} - {message}"
-            )
-        except Exception as e:
-            logger.error(f"[{self.name}] Failed to publish progress: {e}")
-
-    async def publish_response(
-        self,
-        content: str,
-        structured_data: Optional[Dict[str, Any]] = None,
-        requires_approval: bool = False,
-        message_id: Optional[UUID] = None,
-    ) -> None:
-        """Publish response to user (via Kafka, abstracted).
-
-        Args:
-            content: Response text content
-            structured_data: Optional structured data (PRD, stories, etc.)
-            requires_approval: Whether response needs user approval
-            message_id: Original message ID (if responding to message)
-
-        Example:
-            await self.publish_response(
-                content="I've analyzed your requirements...",
-                structured_data={"stories": [...]},
-                requires_approval=True
-            )
-        """
-        try:
-            producer = await self._get_producer()
-
-            response_event = AgentResponseEvent(
-                message_id=message_id or self._current_task_id,
-                task_id=self._current_task_id,  # Include task ID for tracking
-                execution_id=self._current_execution_id,  # Link to activity timeline
-                agent_name=self.name,
-                agent_type=self.role_type,
+                execution_id=self._current_execution_id,
+                task_id=self._current_task_id,
                 content=content,
-                structured_data=structured_data,
-                requires_approval=requires_approval,
-                project_id=self.project_id,
-                user_id=None,  # Will be set from context if available
+                details=details or {},
+                metadata={
+                    "agent_type": self.role_type,
+                    "agent_execution_id": str(self._current_execution_id) if self._current_execution_id else None,
+                    **kwargs
+                }
             )
 
+            # Publish to SINGLE unified topic
             await producer.publish(
-                topic=KafkaTopics.AGENT_RESPONSES,
-                event=response_event,
+                topic=KafkaTopics.AGENT_EVENTS,
+                event=event,
             )
 
-            logger.info(
-                f"[{self.name}] Published response: {len(content)} chars, "
-                f"task_id={self._current_task_id}, execution_id={self._current_execution_id}, "
-                f"approval_required={requires_approval}"
-            )
+            logger.info(f"[{self.name}] {event_type}: {content}")
+
         except Exception as e:
-            logger.error(f"[{self.name}] Failed to publish response: {e}")
+            logger.error(f"[{self.name}] Failed to send message: {e}")
+
+
+
+    # ===== Execution Tracking (Internal) =====
+    
+    async def _create_execution_record(self, task: "TaskContext") -> UUID:
+        """Create AgentExecution record in database"""
+        from app.models import AgentExecution, AgentExecutionStatus
+        from sqlmodel import Session
+        from app.core.db import engine
+        
+        execution = AgentExecution(
+            project_id=self.project_id,
+            agent_name=self.name,
+            agent_type=self.role_type,
+            status=AgentExecutionStatus.RUNNING,
+            started_at=datetime.now(timezone.utc),
+            trigger_message_id=task.message_id if hasattr(task, 'message_id') else None,
+            user_id=task.user_id if hasattr(task, 'user_id') else None,
+            extra_metadata={
+                "task_type": task.task_type.value if hasattr(task, 'task_type') and task.task_type else "unknown",
+                "task_content_preview": task.content[:200] if task.content else "",
+            }
+        )
+        
+        with Session(engine) as db:
+            db.add(execution)
+            db.commit()
+            db.refresh(execution)
+            
+        logger.info(f"[{self.name}] Created execution {execution.id}")
+        return execution.id
+    
+    async def _complete_execution_record(
+        self, 
+        result: Optional["TaskResult"] = None, 
+        error: Optional[str] = None,
+        error_traceback: Optional[str] = None,
+        success: bool = True
+    ):
+        """Update execution record with completion data"""
+        if not self._current_execution_id:
+            return
+        
+        from app.models import AgentExecution, AgentExecutionStatus
+        from sqlmodel import Session
+        from app.core.db import engine
+        
+        duration_ms = None
+        if self._execution_start_time:
+            duration_ms = int(
+                (datetime.now(timezone.utc) - self._execution_start_time).total_seconds() * 1000
+            )
+        
+        with Session(engine) as db:
+            execution = db.get(AgentExecution, self._current_execution_id)
+            if execution:
+                execution.status = (
+                    AgentExecutionStatus.COMPLETED if success 
+                    else AgentExecutionStatus.FAILED
+                )
+                execution.completed_at = datetime.now(timezone.utc)
+                execution.duration_ms = duration_ms
+                
+                # Store events and result
+                execution.extra_metadata = execution.extra_metadata or {}
+                execution.extra_metadata["events"] = self._execution_events
+                execution.extra_metadata["total_events"] = len(self._execution_events)
+                
+                if result:
+                    execution.result = {
+                        "success": result.success,
+                        "output": result.output[:1000] if result.output else "",  # Truncate for storage
+                        "structured_data": result.structured_data,
+                    }
+                
+                if error:
+                    execution.error_message = error[:1000]  # Truncate
+                    execution.error_traceback = error_traceback[:2000] if error_traceback else None  # Truncate
+                
+                db.add(execution)
+                db.commit()
+                
+                logger.info(
+                    f"[{self.name}] Execution {self._current_execution_id} "
+                    f"{execution.status.value} in {duration_ms}ms with {len(self._execution_events)} events"
+                )
 
     # ===== Consumer Management (Internal) =====
 
@@ -423,12 +508,14 @@ class BaseAgent(ABC):
             # TODO: Publish task rejection event back to router
 
     async def _execute_task(self, task_data: Dict[str, Any]) -> None:
-        """Execute a single task (called by worker loop).
+        """Execute a single task (called by worker loop) with execution tracking.
 
         This is the actual task execution logic. It:
         1. Converts RouterTaskEvent → TaskContext
-        2. Calls agent's handle_task()
-        3. Publishes response
+        2. Creates AgentExecution record
+        3. Calls agent's handle_task()
+        4. Updates execution record with result
+        5. Publishes response
 
         Args:
             task_data: RouterTaskEvent as dict
@@ -437,8 +524,7 @@ class BaseAgent(ABC):
             # Extract task info
             task_id = task_data.get("task_id")
             self._current_task_id = task_id
-            self._current_execution_id = uuid4()  # Generate execution ID for linking response to activity
-
+            
             # Extract context
             context = task_data.get("context", {})
 
@@ -456,26 +542,45 @@ class BaseAgent(ABC):
                 context=context,
             )
 
+            # Create execution record in database
+            self._current_execution_id = await self._create_execution_record(task)
+            self._execution_start_time = datetime.now(timezone.utc)
+            self._execution_events.clear()
+
             logger.info(
-                f"[{self.name}] Processing task {task_id}: "
+                f"[{self.name}] Processing task {task_id} (execution={self._current_execution_id}): "
                 f"type={task.task_type}, reason={task.routing_reason}"
             )
 
             # Update state to busy
             self.state = AgentStatus.busy
 
-            # Call agent's implementation
-            result = await self.handle_task(task)
+            try:
+                # Call agent's implementation
+                result = await self.handle_task(task)
+                
+                # Update execution record with success
+                await self._complete_execution_record(result=result, success=True)
+                
+                # Update statistics
+                self.total_executions += 1
+                if result.success:
+                    self.successful_executions += 1
+                else:
+                    self.failed_executions += 1
+                
+            except Exception as e:
+                # Update execution record with failure
+                await self._complete_execution_record(
+                    error=str(e),
+                    error_traceback=traceback.format_exc(),
+                    success=False
+                )
+                raise  # Re-raise to let outer handler deal with it
             
-            # Update statistics
-            self.total_executions += 1
-            if result.success:
-                self.successful_executions += 1
-            else:
-                self.failed_executions += 1
-            
-            # Return to idle
-            self.state = AgentStatus.idle
+            finally:
+                # Return to idle
+                self.state = AgentStatus.idle
 
             # Publish response if successful
             if result.success:

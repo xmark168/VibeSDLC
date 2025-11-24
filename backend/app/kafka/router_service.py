@@ -6,9 +6,9 @@ to appropriate routers for handling.
 Architecture:
     Router Service (consumer)
         ↓ subscribes to topics
-    USER_MESSAGES, AGENT_RESPONSES, APPROVAL_RESPONSES, AGENT_STATUS
+    USER_MESSAGES, APPROVAL_RESPONSES
         ↓ dispatches to routers
-    UserMessageRouter, AgentResponseRouter, etc.
+    UserMessageRouter, ApprovalResponseRouter
         ↓ publishes tasks
     AGENT_TASKS topic
 """
@@ -20,8 +20,6 @@ from typing import Any, Dict, List, Optional
 from app.kafka.consumer import BaseKafkaConsumer
 from app.kafka.event_schemas import KafkaTopics
 from app.kafka.message_router import (
-    AgentResponseRouter,
-    AgentStatusRouter,
     ApprovalResponseRouter,
     BaseEventRouter,
     UserMessageRouter,
@@ -44,13 +42,10 @@ class MessageRouterService(BaseKafkaConsumer):
 
     def __init__(self):
         """Initialize the router service."""
-        # Subscribe to all source topics that need routing
-        # Convert enum values to strings
+        # Subscribe to topics that need routing
         topics = [
             KafkaTopics.USER_MESSAGES.value,
-            KafkaTopics.AGENT_RESPONSES.value,
             KafkaTopics.APPROVAL_RESPONSES.value,
-            KafkaTopics.AGENT_STATUS.value,
         ]
 
         # Use a dedicated consumer group for the router
@@ -75,9 +70,7 @@ class MessageRouterService(BaseKafkaConsumer):
 
         self.routers = [
             UserMessageRouter(producer),
-            AgentResponseRouter(producer),
             ApprovalResponseRouter(producer),
-            AgentStatusRouter(producer),
         ]
 
         self.logger.info(f"Initialized {len(self.routers)} routers")

@@ -68,23 +68,35 @@ class TeamLeader(BaseAgent):
             # Determine task type and route to appropriate crew workflow
             if task_type == "progress_query" or "status" in user_message.lower():
                 # Progress tracking request
-                await self.update_progress(1, 2, "Checking project status")
+                await self.message_user("thinking", "Checking project status")
                 
                 # Get project context (could be enhanced with database queries)
                 project_context = f"User asking about: {user_message}"
                 
+                await self.message_user("progress", "Querying project status", {
+                    "milestone": "status_check_started"
+                })
+                
                 response = self.crew.track_progress(project_context)
                 
-                await self.update_progress(2, 2, "Complete")
+                await self.message_user("progress", "Status check complete", {
+                    "milestone": "completed"
+                })
                 
             else:
                 # General request analysis
-                await self.update_progress(1, 3, "Analyzing request")
+                await self.message_user("thinking", "Analyzing request")
+                
+                await self.message_user("progress", "Understanding user requirements", {
+                    "milestone": "analysis_started"
+                })
                 
                 # Use crew to analyze and provide guidance
                 response = self.crew.analyze_request(user_message)
                 
-                await self.update_progress(3, 3, "Complete")
+                await self.message_user("progress", "Analysis complete", {
+                    "milestone": "completed"
+                })
 
             logger.info(f"[{self.name}] Generated response: {len(response)} chars")
 

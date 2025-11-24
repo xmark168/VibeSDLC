@@ -11,6 +11,7 @@ from .flow_handler import FlowHandler
 from .approval_handler import ApprovalHandler
 from .status_handler import StatusHandler
 from .task_handler import TaskHandler
+from .agent_events_handler import AgentEventsHandler
 
 __all__ = [
     "BaseEventHandler",
@@ -20,4 +21,5 @@ __all__ = [
     "ApprovalHandler",
     "StatusHandler",
     "TaskHandler",
+    "AgentEventsHandler",
 ]

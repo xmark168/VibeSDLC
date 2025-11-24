@@ -21,9 +21,7 @@ class TopicConfig:
     
     # High-traffic topics that need more partitions for better load distribution
     HIGH_TRAFFIC_TOPICS = {
-        KafkaTopics.AGENT_RESPONSES,
-        KafkaTopics.AGENT_STATUS,
-        KafkaTopics.AGENT_PROGRESS,
+        KafkaTopics.AGENT_EVENTS,      # Unified agent events stream
         KafkaTopics.AGENT_TASKS,
         KafkaTopics.USER_MESSAGES,
     }

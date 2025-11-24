@@ -13,17 +13,22 @@ from pydantic import BaseModel, Field
 class KafkaTopics(str, Enum):
     """Kafka topic names for different event types."""
 
+    # Input: User → System
     USER_MESSAGES = "user_messages"
-    AGENT_RESPONSES = "agent_responses"
-    AGENT_ROUTING = "agent_routing"
+    
+    # Processing: Unified agent events
+    AGENT_EVENTS = "agent_events"
+    
+    # Task Management: Router → Agents
+    AGENT_TASKS = "agent_tasks"
+    
+    # Domain Events: System state changes
+    DOMAIN_EVENTS = "domain_events"
     STORY_EVENTS = "story_events"
     FLOW_STATUS = "flow_status"
-    AGENT_STATUS = "agent_status"
-    AGENT_PROGRESS = "agent_progress"
-    TOOL_CALLS = "tool_calls"
-    APPROVAL_REQUESTS = "approval_requests"
+    
+    # Other
     APPROVAL_RESPONSES = "approval_responses"
-    AGENT_TASKS = "agent_tasks"
     
 
 # BASE EVENT SCHEMA
@@ -375,6 +380,60 @@ class RouterTaskEvent(BaseKafkaEvent):
     context: Dict[str, Any] = Field(default_factory=dict)  # Contains source event data + additional context
 
 
+# ===== UNIFIED AGENT EVENT SCHEMA (NEW) =====
+
+class AgentEventType:
+    """Standard agent event types (extensible)"""
+    
+    # Status events
+    THINKING = "thinking"
+    IDLE = "idle"
+    WAITING = "waiting"
+    ERROR = "error"
+    
+    # Activity events
+    TOOL_CALL = "tool_call"
+    PROGRESS = "progress"
+    
+    # Communication events
+    RESPONSE = "response"
+    DELEGATION = "delegation"
+    QUESTION = "question"
+    
+    # Approval events
+    APPROVAL_REQUEST = "approval_request"
+
+
+class AgentEvent(BaseKafkaEvent):
+    """
+    Unified event schema for all agent communications.
+    
+    Replaces:
+    - AgentProgressEvent
+    - AgentResponseEvent
+    - AgentStatusEvent
+    - ToolCallEvent
+    - AgentRoutingEvent
+    - ApprovalRequestEvent
+    
+    This single schema handles all agent events with a flexible structure.
+    """
+    
+    event_type: str  # "agent.thinking", "agent.tool_call", "agent.response", etc.
+    
+    # Agent identification
+    agent_name: str
+    agent_id: str
+    
+    # Execution context
+    execution_id: Optional[UUID] = None  # Links events in same execution
+    task_id: Optional[UUID] = None
+    
+    # Event payload
+    content: str  # Human-readable message
+    details: Dict[str, Any] = Field(default_factory=dict)  # Structured data
+
+
 # EVENT REGISTRY
 EVENT_TYPE_TO_SCHEMA = {
     "user.message.sent": UserMessageEvent,
@@ -405,6 +464,17 @@ EVENT_TYPE_TO_SCHEMA = {
     "agent.task.failed": AgentTaskFailedEvent,
     "agent.task.cancelled": AgentTaskCancelledEvent,
     "router.task.dispatched": RouterTaskEvent,
+    # Unified agent events
+    "agent.thinking": AgentEvent,
+    "agent.idle": AgentEvent,
+    "agent.waiting": AgentEvent,
+    "agent.error": AgentEvent,
+    "agent.tool_call": AgentEvent,
+    "agent.progress": AgentEvent,
+    "agent.response": AgentEvent,
+    "agent.delegation": AgentEvent,
+    "agent.question": AgentEvent,
+    "agent.approval_request": AgentEvent,
 }
 
 
