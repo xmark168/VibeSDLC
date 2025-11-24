@@ -18,8 +18,6 @@ class AgentService:
     def __init__(self, session: Session):
         self.session = session
 
-    # ===== Status Management =====
-
     def update_status(
         self, 
         agent_id: UUID, 
@@ -184,8 +182,6 @@ class AgentService:
         )
         return self.session.exec(statement).all()
 
-    # ===== Agent CRUD =====
-
     def create(
         self,
         project_id: UUID,
@@ -239,8 +235,6 @@ class AgentService:
             self.session.commit()
             return True
         return False
-
-    # ===== Statistics =====
 
     def count_by_status(self, role_type: Optional[str] = None) -> dict[str, int]:
         """Count agents by status.

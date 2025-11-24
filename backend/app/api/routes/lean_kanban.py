@@ -19,8 +19,6 @@ from app.schemas import (
 router = APIRouter(tags=["lean-kanban"])
 
 
-# ===== WIP Limits Endpoints =====
-
 @router.get("/projects/{project_id}/wip-limits", response_model=WIPLimitsPublic)
 def get_wip_limits(
     project_id: UUID,

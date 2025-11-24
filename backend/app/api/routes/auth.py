@@ -734,14 +734,14 @@ def logout(
         # user_service = UserService(session)
         # user_service.revoke_all_user_tokens(current_user.id)
 
-        logger.info(f"User {current_user.email} logged out successfully")
+
 
         return LogoutResponse(
             message="Đăng xuất thành công"
         )
 
     except Exception as e:
-        logger.error(f"Error during logout for user {current_user.id}: {e}")
+        logger.error(f"Logout error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Lỗi khi đăng xuất"
