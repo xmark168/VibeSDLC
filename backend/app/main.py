@@ -82,13 +82,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️ Failed to start monitoring: {e}")
 
-    # Start optimized WebSocket manager
-    from app.websocket.manager import websocket_manager
-    try:
-        await websocket_manager.start()
-    except Exception as e:
-        logger.warning(f"Failed to start WebSocket manager: {e}")
-    
     # Start activity buffer for batched DB writes
     from app.websocket.activity_buffer import activity_buffer
     try:
@@ -115,12 +108,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
 
     try:
-        # Shutdown optimized WebSocket manager
-        try:
-            await websocket_manager.stop()
-        except (Exception, asyncio.CancelledError) as e:
-            logger.error(f"Error stopping WebSocket manager: {e}")
-        
+        # Shutdown WebSocket Kafka Bridge
         try:
             await websocket_kafka_bridge.stop()
         except (Exception, asyncio.CancelledError) as e:
