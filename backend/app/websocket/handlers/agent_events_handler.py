@@ -176,6 +176,18 @@ class AgentEventsHandler(BaseEventHandler):
             content = data.get("content", "")
             details = data.get("details", {})
             
+            # Extract agent_execution_id from metadata if available
+            metadata = data.get("metadata", {})
+            agent_execution_id = metadata.get("agent_execution_id")
+            
+            # Convert to UUID if present
+            if agent_execution_id and isinstance(agent_execution_id, str):
+                try:
+                    from uuid import UUID
+                    agent_execution_id = UUID(agent_execution_id)
+                except:
+                    agent_execution_id = None
+            
             # Add event to activity buffer (no step numbers!)
             activity_buffer.add_event(
                 execution_id=execution_id_str,
@@ -183,6 +195,7 @@ class AgentEventsHandler(BaseEventHandler):
                 agent_name=agent_name,
                 event_description=content,
                 event_details=details,
+                agent_execution_id=agent_execution_id,
             )
             
             # Get activity data for broadcast

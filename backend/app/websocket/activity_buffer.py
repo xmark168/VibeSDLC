@@ -26,6 +26,7 @@ class ActivityData:
     """Buffered activity data for an execution (event-based, no step numbers)."""
     
     message_id: Optional[UUID] = None
+    agent_execution_id: Optional[UUID] = None  # Link to AgentExecution record
     project_id: Optional[UUID] = None
     agent_name: str = ""
     events: List[dict] = field(default_factory=list)  # List of progress events
@@ -124,16 +125,18 @@ class ActivityBuffer:
         agent_name: str,
         event_description: str,
         event_details: Optional[dict] = None,
+        agent_execution_id: Optional[UUID] = None,
     ) -> Optional[UUID]:
         """
         Add event to activity buffer (event-based, no step numbers).
         
         Args:
-            execution_id: Execution ID for the activity
+            execution_id: Execution ID for the activity (used as buffer key)
             project_id: Project ID
             agent_name: Agent name
             event_description: Description of the event
             event_details: Additional event details (milestone, confidence, etc.)
+            agent_execution_id: AgentExecution record ID for linking
             
         Returns:
             Message ID if this is a new activity, None if updating existing
@@ -144,6 +147,7 @@ class ActivityBuffer:
                 # New activity
                 activity = ActivityData(
                     message_id=None,  # Will be created on first flush
+                    agent_execution_id=agent_execution_id,
                     project_id=project_id,
                     agent_name=agent_name,
                     status="in_progress",
@@ -196,7 +200,8 @@ class ActivityBuffer:
         step_number: int,
         total_steps: int,
         step_description: str,
-        step_status: str = "in_progress"
+        step_status: str = "in_progress",
+        agent_execution_id: Optional[UUID] = None,
     ) -> Optional[UUID]:
         """Legacy method - converts to event-based format."""
         event_details = {
@@ -214,6 +219,7 @@ class ActivityBuffer:
             agent_name=agent_name,
             event_description=step_description,
             event_details=event_details,
+            agent_execution_id=agent_execution_id,
         )
     
     def get_activity(self, execution_id: str) -> Optional[ActivityData]:
@@ -284,6 +290,7 @@ class ActivityBuffer:
                         "message_type": "activity",
                         "data": {
                             "execution_id": execution_id,
+                            "agent_execution_id": str(activity.agent_execution_id) if activity.agent_execution_id else None,
                             "agent_name": activity.agent_name,
                             "events": activity.events,
                             "status": activity.status,
@@ -313,6 +320,7 @@ class ActivityBuffer:
                     "message_type": "activity",
                     "data": {
                         "execution_id": execution_id,
+                        "agent_execution_id": str(activity.agent_execution_id) if activity.agent_execution_id else None,
                         "agent_name": activity.agent_name,
                         "events": activity.events,
                         "status": activity.status,
