@@ -249,6 +249,7 @@ class BaseAgent(ABC):
             producer = await self._get_producer()
 
             # Build unified event
+            logger.debug(f"[{self.name}] Building AgentEvent: type={event_type}, content_len={len(content)}")
             event = AgentEvent(
                 event_type=f"agent.{event_type}",
                 agent_name=self.name,
@@ -266,15 +267,16 @@ class BaseAgent(ABC):
             )
 
             # Publish to SINGLE unified topic
+            logger.debug(f"[{self.name}] Publishing to Kafka topic: {KafkaTopics.AGENT_EVENTS}")
             await producer.publish(
                 topic=KafkaTopics.AGENT_EVENTS,
                 event=event,
             )
 
-            logger.info(f"[{self.name}] {event_type}: {content}")
+            logger.info(f"[{self.name}] {event_type}: {content[:100]}")
 
         except Exception as e:
-            logger.error(f"[{self.name}] Failed to send message: {e}")
+            logger.error(f"[{self.name}] Failed to send message: {e}", exc_info=True)
 
 
 

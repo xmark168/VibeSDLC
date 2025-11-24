@@ -46,16 +46,23 @@ class AgentEventsHandler(BaseEventHandler):
                 logger.warning(f"Agent event missing project_id: {event_type}")
                 return
             
-            # Skip if no active connections (real-time only)
-            if not self._has_active_connections(project_id):
+            # Check for active connections
+            has_connections = self._has_active_connections(project_id)
+            
+            # For response events, ALWAYS save to DB (even if no active connections)
+            # User can query messages later when they reconnect
+            if event_category == "response":
+                logger.info(f"Handling response event: has_connections={has_connections}")
+                await self._handle_response(event_data, project_id)
+                return  # Always process responses regardless of connections
+            
+            # For other events (status, progress, etc.), skip if no connections
+            if not has_connections:
                 logger.debug(f"Skipping event {event_type} - no active connections for project {project_id}")
                 return
             
-            # Route to appropriate handler
-            if event_category == "response":
-                await self._handle_response(event_data, project_id)
-            
-            elif event_category in ["thinking", "idle", "waiting", "error"]:
+            # Route to appropriate handler for real-time events
+            if event_category in ["thinking", "idle", "waiting", "error"]:
                 await self._handle_status(event_data, project_id)
             
             elif event_category == "progress":
@@ -81,11 +88,14 @@ class AgentEventsHandler(BaseEventHandler):
     async def _handle_response(self, data, project_id):
         """Handle response events - save to DB and broadcast"""
         try:
+            logger.info(f"_handle_response called: project_id={project_id}")
             content = data.get("content", "")
             details = data.get("details", {})
             agent_name = data.get("agent_name", "")
             execution_id = data.get("execution_id")
             task_id = data.get("task_id")
+            
+            logger.info(f"Response data: agent={agent_name}, content_len={len(content)}, details={list(details.keys()) if details else None}")
             
             # Extract structured data from details
             message_type = details.get("message_type", "text")
@@ -126,6 +136,7 @@ class AgentEventsHandler(BaseEventHandler):
             ws_message = {
                 "type": "agent_message",
                 "message_id": str(message_id),
+                "project_id": str(project_id),  # ADD project_id for frontend
                 "agent_name": agent_name,
                 "content": content,
                 "structured_data": details,
@@ -133,6 +144,7 @@ class AgentEventsHandler(BaseEventHandler):
                 "timestamp": self._get_timestamp(data),
             }
             
+            logger.info(f"Broadcasting agent response to WebSocket: message_id={message_id}, project={project_id}")
             await self._broadcast(project_id, ws_message)
         
         except Exception as e:

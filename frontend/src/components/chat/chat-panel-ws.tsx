@@ -132,9 +132,17 @@ export function ChatPanelWS({
 
   // Combine existing messages with WebSocket messages
   const apiMessages = messagesData?.data || [];
+  
+  console.log('🔍 [ChatPanelWS] Messages:', {
+    wsMessages: wsMessages.length,
+    apiMessages: apiMessages.length,
+    ws_sample: wsMessages[wsMessages.length - 1],
+  });
 
   // Combine API messages with WebSocket messages (no temp messages anymore)
   const allMessages = [...apiMessages, ...wsMessages]
+  
+  console.log('🔗 [ChatPanelWS] Combined messages:', allMessages.length);
 
   // Sort by created_at timestamp
   const sortedMessages = allMessages.sort(
@@ -145,6 +153,8 @@ export function ChatPanelWS({
   const uniqueMessages = sortedMessages.filter(
     (msg, index, self) => index === self.findIndex(m => m.id === msg.id)
   );
+  
+  console.log('✅ [ChatPanelWS] Final uniqueMessages to render:', uniqueMessages.length, uniqueMessages);
 
   // Notify parent when kanbanData changes
   useEffect(() => {
