@@ -23,7 +23,7 @@ from app.kafka.event_schemas import (
     RouterTaskEvent,
 )
 from app.models import Agent as AgentModel, AgentStatus
-
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
