@@ -18,8 +18,6 @@ class MessageService:
     def __init__(self, session: Session):
         self.session = session
 
-    # ===== Message CRUD =====
-
     def create(
         self,
         project_id: UUID,

@@ -1,12 +1,11 @@
 /**
- * Chat WebSocket Hook - Simplified with 5 message types only
+ * Chat WebSocket Hook - Simplified with 4 message types only
  * 
  * Only handles:
- * 1. agent.messaging.start
- * 2. agent.messaging.analyzing
- * 3. agent.messaging.tool_call
- * 4. agent.messaging.response
- * 5. agent.messaging.finish
+ * 1. agent.messaging.start (thinking)
+ * 2. agent.messaging.tool_call
+ * 3. agent.messaging.response
+ * 4. agent.messaging.finish (completed)
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -20,7 +19,6 @@ import { AuthorType, Message } from '@/types/message'
 export interface Execution {
   id: string
   agent_name: string
-  steps: string[]
   tools: ToolCall[]
   startedAt: string
 }
@@ -162,10 +160,6 @@ export function useChatWebSocket(
         handleStart(msg)
         break
       
-      case 'agent.messaging.analyzing':
-        handleAnalyzing(msg)
-        break
-      
       case 'agent.messaging.tool_call':
         handleToolCall(msg)
         break
@@ -189,45 +183,18 @@ export function useChatWebSocket(
   
   const handleUserMessage = (msg: any) => {
     console.log('[WS] 📤 User message confirmed:', msg.message_id)
-    // Replace optimistic message with real one
-    // setMessages(prev => {
-    //   const tempIndex = prev.findIndex(m => m.id.startsWith('temp_'))
-    //   if (tempIndex !== -1) {
-    //     const newMessages = [...prev]
-    //     newMessages[tempIndex] = {
-    //       id: msg.message_id,
-    //       project_id: msg.project_id,
-    //       author_type: AuthorType.USER,
-    //       content: msg.content,
-    //       created_at: msg.created_at || msg.timestamp,
-    //       updated_at: msg.updated_at || msg.timestamp,
-    //       status: 'delivered',
-    //     }
-        // return newMessages
-      // }
-    //   // return prev
-    // })
+     
   }
   
   const handleStart = (msg: any) => {
-    console.log('[WS] 🚀 Start:', msg.agent_name)
+    console.log('[WS] 🚀 Start:', msg.agent_name, msg.content)
     setAgentStatus('thinking')
     setActiveExecution({
       id: msg.id,
       agent_name: msg.agent_name,
-      steps: [],
       tools: [],
       startedAt: msg.timestamp,
     })
-  }
-  
-  const handleAnalyzing = (msg: any) => {
-    console.log('[WS] 🔄 Analyzing:', msg.step)
-    setAgentStatus('acting')
-    setActiveExecution(prev => prev ? {
-      ...prev,
-      steps: [...prev.steps, msg.step]
-    } : null)
   }
   
   const handleToolCall = (msg: any) => {

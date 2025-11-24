@@ -20,8 +20,6 @@ class UserService:
     def __init__(self, session: Session):
         self.session = session
 
-    # ===== User CRUD =====
-
     def create(self, user_create: UserCreate) -> User:
         """Create a new user."""
         db_obj = User.model_validate(
@@ -62,8 +60,6 @@ class UserService:
             (User.email == email_or_username) | (User.username == email_or_username)
         )
         return self.session.exec(statement).first()
-
-    # ===== Authentication =====
 
     def authenticate(self, email_or_username: str, password: str) -> User | None:
         """
@@ -124,8 +120,6 @@ class UserService:
             self.session.commit()
 
         return db_user
-
-    # ===== Refresh Token Management =====
 
     def create_refresh_token(
         self,

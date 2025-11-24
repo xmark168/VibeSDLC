@@ -18,8 +18,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/projects/{project_id}/files", tags=["files"])
 
 
-# ============= Endpoints =============
-
 @router.get("/", response_model=FileTreeResponse)
 def list_project_files(
     project_id: UUID,

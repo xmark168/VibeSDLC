@@ -8,8 +8,6 @@ from typing import Optional
 from app.models import AgentStatus
 
 
-# ===== Agent CRUD Schemas =====
-
 class AgentBase(SQLModel):
     name: str
     human_name: str
@@ -44,8 +42,6 @@ class AgentsPublic(SQLModel):
     data: list[AgentPublic]
     count: int
 
-
-# ===== Pool Management Schemas (from agent_management.py) =====
 
 class PoolConfigSchema(BaseModel):
     """Pool configuration schema."""

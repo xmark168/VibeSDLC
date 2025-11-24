@@ -69,7 +69,9 @@ from .agent import (
 # Story schemas
 from .story import (
     StoryBase,
+    StoryCreate,
     StoryUpdate,
+    StoryPublic,
     StoriesPublic,
 )
 
@@ -92,6 +94,21 @@ from .project_rules import (
 from .common import (
     Message,
     NewPassword,
+)
+
+# Lean Kanban schemas
+from .lean_kanban import (
+    WIPLimitCreate,
+    WIPLimitUpdate,
+    WIPLimitPublic,
+    WIPLimitsPublic,
+    WorkflowPolicyCreate,
+    WorkflowPolicyUpdate,
+    WorkflowPolicyPublic,
+    WorkflowPoliciesPublic,
+    StoryFlowMetrics,
+    ProjectFlowMetrics,
+    WIPViolation,
 )
 
 __all__ = [
@@ -153,7 +170,9 @@ __all__ = [
     
     # Story
     "StoryBase",
+    "StoryCreate",
     "StoryUpdate",
+    "StoryPublic",
     "StoriesPublic",
     
     # File
@@ -170,4 +189,17 @@ __all__ = [
     # Common
     "Message",
     "NewPassword",
+    
+    # Lean Kanban
+    "WIPLimitCreate",
+    "WIPLimitUpdate",
+    "WIPLimitPublic",
+    "WIPLimitsPublic",
+    "WorkflowPolicyCreate",
+    "WorkflowPolicyUpdate",
+    "WorkflowPolicyPublic",
+    "WorkflowPoliciesPublic",
+    "StoryFlowMetrics",
+    "ProjectFlowMetrics",
+    "WIPViolation",
 ]

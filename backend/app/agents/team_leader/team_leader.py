@@ -68,14 +68,10 @@ class TeamLeader(BaseAgent):
             # Determine task type and route to appropriate crew workflow
             if task_type == "progress_query" or "status" in user_message.lower():
                 # Progress tracking request
-                await self.message_user("thinking", "Checking project status")
+                await self.message_user("thinking", "Checking project status...")
                 
                 # Get project context (could be enhanced with database queries)
                 project_context = f"User asking about: {user_message}"
-                
-                await self.message_user("progress", "Querying project status", {
-                    "milestone": "status_check_started"
-                })
                 
                 # Run CrewAI asynchronously using native async support
                 crew_output = await self.crew.track_progress(project_context)
@@ -83,27 +79,15 @@ class TeamLeader(BaseAgent):
                 # Convert CrewAI output to string
                 response = str(crew_output) if crew_output else ""
                 
-                await self.message_user("progress", "Status check complete", {
-                    "milestone": "completed"
-                })
-                
             else:
                 # General request analysis
-                await self.message_user("thinking", "Analyzing request")
-                
-                await self.message_user("progress", "Understanding user requirements", {
-                    "milestone": "analysis_started"
-                })
+                await self.message_user("thinking", "Analyzing request...")
                 
                 # Run CrewAI asynchronously using native async support
                 crew_output = await self.crew.analyze_request(user_message)
                 
                 # Convert CrewAI output to string (it might be CrewOutput object)
                 response = str(crew_output) if crew_output else ""
-                
-                await self.message_user("progress", "Analysis complete", {
-                    "milestone": "completed"
-                })
 
             logger.info(f"[{self.name}] Generated response: {len(response)} chars, type={type(response).__name__}")
             

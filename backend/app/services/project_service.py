@@ -54,8 +54,6 @@ class ProjectService:
         # Format as PRJ-XXX
         return f"PRJ-{next_number:03d}"
 
-    # ===== CRUD Operations =====
-
     def create(self, project_in: ProjectCreate, owner_id: UUID) -> Project:
         """
         Create a new project with auto-generated code.

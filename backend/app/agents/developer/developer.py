@@ -114,7 +114,7 @@ class Developer(BaseAgent):
             logger.info(f"[{self.name}] Processing development task: {user_message[:50]}...")
 
             # Status update
-            await self.message_user("thinking", "Analyzing technical requirements")
+            await self.message_user("thinking", "Analyzing and implementing solution...")
 
             # Create CrewAI task for implementation
             crew_task = Task(
@@ -139,13 +139,7 @@ class Developer(BaseAgent):
                 agent=self.crew_agent,
             )
 
-            await self.message_user("progress", "Requirements analyzed", {
-                "milestone": "analysis_complete"
-            })
-
             # Execute crew
-            await self.message_user("thinking", "Designing and implementing solution")
-
             crew = Crew(
                 agents=[self.crew_agent],
                 tasks=[crew_task],
@@ -157,17 +151,6 @@ class Developer(BaseAgent):
 
             # Extract response
             response = str(result)
-
-            await self.message_user("progress", "Implementation plan created", {
-                "milestone": "implementation_complete"
-            })
-
-            await self.message_user("thinking", "Reviewing implementation")
-
-            # Final milestone
-            await self.message_user("progress", "Development task complete", {
-                "milestone": "completed"
-            })
 
             logger.info(f"[{self.name}] Implementation completed: {len(response)} chars")
 

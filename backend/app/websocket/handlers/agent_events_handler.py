@@ -1,12 +1,11 @@
 """
 Agent Events Handler
 
-Simplified handler with 5 event types only:
-- agent.messaging.start
-- agent.messaging.analyzing
+Simplified handler with 4 event types only:
+- agent.messaging.start (thinking)
 - agent.messaging.tool_call
 - agent.messaging.response
-- agent.messaging.finish
+- agent.messaging.finish (completed)
 """
 
 import logging
@@ -25,12 +24,11 @@ class AgentEventsHandler(BaseEventHandler):
     """
     Simplified handler for agent events using agent.messaging.* pattern.
     
-    Only 5 event types:
-    1. start - Agent begins execution
-    2. analyzing - Progress/steps
-    3. tool_call - Tool execution
-    4. response - Agent message (saved to DB)
-    5. finish - Execution complete
+    Only 4 event types:
+    1. start (thinking) - Agent is working
+    2. tool_call - Tool execution
+    3. response - Agent message (saved to DB)
+    4. finish (completed) - Execution complete
     """
     
     async def handle_agent_event(self, event):
@@ -57,10 +55,9 @@ class AgentEventsHandler(BaseEventHandler):
                 logger.info(f"Skipping event {event_type} - no active connections for project {project_id}")
                 return
             
-            # Map old event types to new handlers
+            # Map event types to handlers
             type_map = {
                 "agent.thinking": "start",
-                "agent.progress": "analyzing",
                 "agent.tool_call": "tool_call",
                 "agent.response": "response",
                 "agent.completed": "finish",
@@ -82,38 +79,19 @@ class AgentEventsHandler(BaseEventHandler):
         except Exception as e:
             logger.error(f"Error handling agent event: {e}", exc_info=True)
     
-    # ========================================================================
-    # 5 Handler Methods
-    # ========================================================================
-    
     async def _handle_start(self, data, project_id):
-        """agent.messaging.start - Agent begins execution"""
+        """agent.messaging.start - Agent begins execution (thinking status)"""
         try:
             ws_message = {
                 "type": "agent.messaging.start",
                 "id": str(data.get("execution_id") or uuid4()),
                 "agent_name": data.get("agent_name", "Agent"),
+                "content": data.get("content", "Processing..."),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
             await self._broadcast(project_id, ws_message)
-            logger.info(f"[START] {data.get('agent_name')} execution {ws_message['id']}")
         except Exception as e:
-            logger.error(f"Error in _handle_start: {e}", exc_info=True)
-    
-    async def _handle_analyzing(self, data, project_id):
-        """agent.messaging.analyzing - Progress step"""
-        try:
-            ws_message = {
-                "type": "agent.messaging.analyzing",
-                "id": str(data.get("execution_id") or uuid4()),
-                "agent_name": data.get("agent_name", "Agent"),
-                "step": data.get("content", "Processing..."),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-            await self._broadcast(project_id, ws_message)
-            logger.info(f"[ANALYZING] {data.get('agent_name')}: {ws_message['step']}")
-        except Exception as e:
-            logger.error(f"Error in _handle_analyzing: {e}", exc_info=True)
+            logger.error(f"Error in _handle_start: {e}")
     
     async def _handle_tool_call(self, data, project_id):
         """agent.messaging.tool_call - Tool execution"""
@@ -130,20 +108,16 @@ class AgentEventsHandler(BaseEventHandler):
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
             await self._broadcast(project_id, ws_message)
-            logger.info(f"[TOOL] {data.get('agent_name')}: {ws_message['action']} ({ws_message['state']})")
         except Exception as e:
-            logger.error(f"Error in _handle_tool_call: {e}", exc_info=True)
+            logger.error(f"Error in _handle_tool_call: {e}")
     
     async def _handle_response(self, data, project_id):
         """agent.messaging.response - Save agent message to DB and broadcast"""
         try:
-            logger.info(f"_handle_response called: project_id={project_id}")
             content = data.get("content", "")
             details = data.get("details", {})
             agent_name = data.get("agent_name", "Agent")
             execution_id = data.get("execution_id")
-            
-            # Extract structured data from details
             message_type = details.get("message_type", "text")
             structured_data_payload = details.get("data")
             
@@ -161,9 +135,7 @@ class AgentEventsHandler(BaseEventHandler):
                 )
                 message_id = db_message.id
             
-            logger.info(f"[RESPONSE] Saved message {message_id} from {agent_name}")
-            
-            # Broadcast to WebSocket with NEW format
+            # Broadcast to WebSocket
             ws_message = {
                 "type": "agent.messaging.response",
                 "id": str(message_id),
@@ -172,19 +144,16 @@ class AgentEventsHandler(BaseEventHandler):
                 "content": content,
                 "message_type": message_type,
                 "structured_data": structured_data_payload,
-                "timestamp": db_message.created_at.isoformat(),  # Use DB timestamp
+                "timestamp": db_message.created_at.isoformat(),
             }
-            
-            logger.info(f"Broadcasting agent response to WebSocket: message_id={message_id}, project={project_id}")
             await self._broadcast(project_id, ws_message)
         
         except Exception as e:
-            logger.error(f"Error in _handle_response: {e}", exc_info=True)
+            logger.error(f"Error in _handle_response: {e}")
     
     async def _handle_finish(self, data, project_id):
         """agent.messaging.finish - Execution complete"""
         try:
-            logger.info(f"🏁 [_handle_finish] Called with data: {data}")
             ws_message = {
                 "type": "agent.messaging.finish",
                 "id": str(data.get("execution_id") or uuid4()),
@@ -192,10 +161,8 @@ class AgentEventsHandler(BaseEventHandler):
                 "summary": data.get("content", "Completed"),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
-            logger.info(f"🏁 [_handle_finish] Broadcasting message: {ws_message}")
             await self._broadcast(project_id, ws_message)
-            logger.info(f"🏁 [FINISH] {data.get('agent_name')} execution {ws_message['id']}")
         except Exception as e:
-            logger.error(f"❌ Error in _handle_finish: {e}", exc_info=True)
+            logger.error(f"Error in _handle_finish: {e}")
     
 

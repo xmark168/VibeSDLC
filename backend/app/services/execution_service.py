@@ -20,8 +20,6 @@ class ExecutionService:
     def __init__(self, session: Session):
         self.session = session
 
-    # ===== Async-Safe Execution Management =====
-
     async def create_execution(
         self,
         project_id: UUID,
@@ -131,8 +129,6 @@ class ExecutionService:
             return None
         
         await asyncio.to_thread(_update)
-
-    # ===== Synchronous Methods =====
 
     def get_by_id(self, execution_id: UUID) -> Optional[AgentExecution]:
         """Get execution by ID.

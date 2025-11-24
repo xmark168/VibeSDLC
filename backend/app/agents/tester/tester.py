@@ -140,7 +140,7 @@ class Tester(BaseAgent):
             logger.info(f"[{self.name}] Processing QA task: {user_message[:50]}...")
 
             # Status update
-            await self.message_user("thinking", "Analyzing test requirements")
+            await self.message_user("thinking", "Creating test plan...")
 
             # Determine task type
             task_type = self._determine_task_type(user_message)
@@ -152,14 +152,7 @@ class Tester(BaseAgent):
                 "task_description": user_message,
             }
 
-            await self.message_user("progress", "Requirements analyzed", {
-                "milestone": "analysis_complete",
-                "task_type": task_type
-            })
-
             # Create appropriate task based on type
-            await self.message_user("thinking", "Identifying test scenarios")
-
             if task_type == "validate":
                 crew_task = create_validate_requirements_task(self.crew_agent, context)
             elif task_type == "test_cases":
@@ -167,13 +160,7 @@ class Tester(BaseAgent):
             else:
                 crew_task = create_test_plan_task(self.crew_agent, context)
 
-            await self.message_user("progress", "Test scenarios identified", {
-                "milestone": "scenarios_identified"
-            })
-
             # Execute crew
-            await self.message_user("thinking", "Creating test cases")
-
             crew = Crew(
                 agents=[self.crew_agent],
                 tasks=[crew_task],
@@ -185,17 +172,6 @@ class Tester(BaseAgent):
 
             # Extract response
             response = str(result)
-
-            await self.message_user("progress", "Test cases created", {
-                "milestone": "test_cases_complete"
-            })
-
-            await self.message_user("thinking", "Preparing final test plan")
-
-            # Final milestone
-            await self.message_user("progress", "QA task complete", {
-                "milestone": "completed"
-            })
 
             logger.info(f"[{self.name}] Test plan completed: {len(response)} chars")
 

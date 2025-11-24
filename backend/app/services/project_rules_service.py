@@ -15,8 +15,6 @@ class ProjectRulesService:
     def __init__(self, session: Session):
         self.session = session
 
-    # ===== CRUD Operations =====
-
     def create(self, rules_in: ProjectRulesCreate) -> ProjectRules:
         """Create project rules."""
         db_rules = ProjectRules.model_validate(rules_in)

@@ -17,13 +17,8 @@ from app.core.db import init_db, engine
 from app.core.logging_config import setup_logging
 from sqlmodel import Session
 
-# Initialize logging before anything else
 setup_logging()
 logger = logging.getLogger(__name__)
-
-
-
-
 
 def custom_generate_unique_id(route: APIRoute) -> str:
     if route.tags:

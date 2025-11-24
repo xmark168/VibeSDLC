@@ -29,8 +29,6 @@ from datetime import datetime, timezone
 logger = logging.getLogger(__name__)
 
 
-# ===== Data Classes =====
-
 @dataclass
 class TaskContext:
     """Context for a task assigned to an agent.
@@ -67,8 +65,6 @@ class TaskResult:
     requires_approval: bool = False  
     error_message: Optional[str] = None
 
-
-# ===== Base Agent Class =====
 
 class BaseAgent(ABC):
     """Abstract base class for all agents.
@@ -124,8 +120,6 @@ class BaseAgent(ABC):
 
         logger.info(f"Initialized {self.role_type} agent: {self.name} ({self.agent_id})")
 
-    # ===== Abstract Method: Subclasses Must Implement =====
-
     @abstractmethod
     async def handle_task(self, task: TaskContext) -> TaskResult:
       
@@ -141,18 +135,10 @@ class BaseAgent(ABC):
 
         Example:
             async def handle_task(self, task: TaskContext) -> TaskResult:
-                # Extract message
-                message = task.content
-
-                # Send progress updates
                 await self.message_user("progress", "Processing...", {"step": 1, "total": 2})
-
-                # Do work
-                result = await self._process(message)
-
+                result = await self._process(task.content)
                 await self.message_user("progress", "Complete", {"step": 2, "total": 2})
-
-                # Return result
+                
                 return TaskResult(
                     success=True,
                     output=result,
@@ -161,8 +147,6 @@ class BaseAgent(ABC):
         """
         pass
 
-    # ===== Public API for Agents =====
-
     async def message_user(
         self,
         event_type: str,
@@ -170,59 +154,13 @@ class BaseAgent(ABC):
         details: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> None:
-        """
-        Send message/event to user through unified event stream.
-        
-        This is the ONLY method agents should use to communicate with users.
-        All agent communications go through this single unified API.
+        """Send message/event to user.
         
         Args:
-            event_type: Type of event (thinking, tool_call, progress, response, etc.)
-            content: Human-readable content/message
+            event_type: Event type (thinking, tool_call, progress, response)
+            content: Message content
             details: Additional structured data
             **kwargs: Extra metadata
-        
-        Examples:
-            # Thinking/status updates
-            await self.message_user("thinking", "Analyzing requirements")
-            await self.message_user("idle", "Waiting for input")
-            
-            # Tool usage
-            await self.message_user("tool_call", "Searching web", {
-                "tool": "web_search",
-                "query": "Python async best practices",
-                "results": 10
-            })
-            
-            # Progress tracking (no step numbers needed!)
-            await self.message_user("progress", "Requirements analyzed", {
-                "milestone": "analysis_complete",
-                "confidence": 0.95
-            })
-            await self.message_user("progress", "Generated 5 stories", {
-                "milestone": "stories_generated",
-                "count": 5
-            })
-            
-            # Final response
-            await self.message_user("response", "Here's your PRD", {
-                "message_type": "prd",
-                "data": prd_dict,
-                "requires_approval": True
-            })
-            
-            # Delegation
-            await self.message_user("delegation", "Assigning to Developer", {
-                "to_agent": "Developer",
-                "reason": "Implementation needed",
-                "context": {...}
-            })
-            
-            # Errors
-            await self.message_user("error", "API rate limit exceeded", {
-                "error_type": "RateLimitError",
-                "retry_after": 60
-            })
         """
         if not self._current_task_id:
             logger.warning(f"[{self.name}] Cannot send message: no active task")
@@ -231,8 +169,7 @@ class BaseAgent(ABC):
         try:
             producer = await self._get_producer()
 
-            # Build unified event
-            logger.debug(f"[{self.name}] Building AgentEvent: type={event_type}, content_len={len(content)}")
+
             event = AgentEvent(
                 event_type=f"agent.{event_type}",
                 agent_name=self.name,
@@ -249,8 +186,7 @@ class BaseAgent(ABC):
                 }
             )
 
-            # Publish to SINGLE unified topic
-            logger.debug(f"[{self.name}] Publishing to Kafka topic: {KafkaTopics.AGENT_EVENTS}")
+
             await producer.publish(
                 topic=KafkaTopics.AGENT_EVENTS,
                 event=event,
@@ -261,15 +197,9 @@ class BaseAgent(ABC):
         except Exception as e:
             logger.error(f"[{self.name}] Failed to send message: {e}")
     
-    # ===== Simplified Event Emission API (5 methods) =====
-    
     async def start_execution(self) -> None:
         """Emit: agent.messaging.start - Notify that agent began execution"""
         await self.message_user("thinking", f"{self.name} is starting...")
-    
-    async def emit_step(self, step: str) -> None:
-        """Emit: agent.messaging.analyzing - Send progress step"""
-        await self.message_user("progress", step)
     
     async def emit_tool(self, tool: str, action: str, state: str = "started", **details) -> None:
         """Emit: agent.messaging.tool_call - Track tool execution
@@ -294,13 +224,11 @@ class BaseAgent(ABC):
     
     async def finish_execution(self, summary: str = "Task completed") -> None:
         """Emit: agent.messaging.finish - Notify execution is complete"""
-        logger.info(f"[{self.name}] 🏁 FINISH EXECUTION: {summary}")
+
         await self.message_user("completed", summary)
 
 
 
-    # ===== Execution Tracking (Internal) =====
-    
     async def _create_execution_record(self, task: "TaskContext") -> UUID:
         """Create AgentExecution record in database"""
         from app.services import ExecutionService
@@ -320,7 +248,7 @@ class BaseAgent(ABC):
                 task_content_preview=task.content[:200] if task.content else None,
             )
         
-        logger.info(f"[{self.name}] Created execution {execution_id}")
+
         return execution_id
     
     async def _complete_execution_record(
@@ -363,8 +291,6 @@ class BaseAgent(ABC):
             f"{'completed' if success else 'failed'} in {duration_ms}ms with {len(self._execution_events)} events"
         )
 
-    # ===== Consumer Management (Internal) =====
-
     async def start(self) -> bool:
         """Start the agent's Kafka consumer and task queue worker.
 
@@ -384,7 +310,7 @@ class BaseAgent(ABC):
             self._consumer = AgentTaskConsumer(self)
             await self._consumer.start()
 
-            logger.info(f"[{self.name}] Agent consumer and task queue started")
+
             return True
         except Exception as e:
             logger.error(f"[{self.name}] Failed to start consumer: {e}")
@@ -407,7 +333,7 @@ class BaseAgent(ABC):
         # Stop consumer
         if self._consumer:
             await self._consumer.stop()
-            logger.info(f"[{self.name}] Agent consumer and task queue stopped")
+
 
     async def health_check(self) -> dict:
         """Check if agent is healthy.
@@ -455,7 +381,7 @@ class BaseAgent(ABC):
         - No state overwrite (task_id, execution_id)
         - Proper busy status management
         """
-        logger.info(f"[{self.name}] Task queue worker started")
+
         
         while self._queue_running:
             try:
@@ -480,7 +406,7 @@ class BaseAgent(ABC):
             except Exception as e:
                 logger.error(f"[{self.name}] Task queue worker error: {e}", exc_info=True)
         
-        logger.info(f"[{self.name}] Task queue worker stopped")
+
 
     async def _process_router_task(self, task_data: Dict[str, Any]) -> None:
         """Enqueue task from router for processing.
@@ -573,7 +499,7 @@ class BaseAgent(ABC):
                 
                 # Auto-send response message if agent returned output
                 if result.success and result.output:
-                    logger.info(f"[{self.name}] Auto-sending response message ({len(result.output)} chars)")
+
                     await self.emit_message(
                         content=result.output,
                         message_type=result.structured_data.get("message_type", "text") if result.structured_data else "text",
@@ -591,7 +517,7 @@ class BaseAgent(ABC):
                     self.failed_executions += 1
                 
                 # Emit finish signal
-                logger.info(f"[{self.name}] Task result: success={result.success}")
+
                 if result.success:
                     await self.finish_execution("Task completed successfully")
                 else:
@@ -613,7 +539,7 @@ class BaseAgent(ABC):
                 )
                 
                 # Emit finish signal with error
-                logger.info(f"[{self.name}] Exception caught, emitting finish signal...")
+
                 await self.finish_execution(f"Task failed: {str(e)[:100]}")
                 
                 raise  # Re-raise to let outer handler deal with it
@@ -628,8 +554,8 @@ class BaseAgent(ABC):
 
             # Log completion (only if task didn't raise exception)
             if not task_failed:
-                if result.success:
-                    logger.info(f"[{self.name}] Task {task_id} completed successfully")
+                if result   .success:
+                    pass
                 else:
                     logger.error(
                         f"[{self.name}] Task {task_id} failed: {result.error_message}"
@@ -644,8 +570,6 @@ class BaseAgent(ABC):
             self._current_task_id = None
             self._current_execution_id = None
 
-
-# ===== Internal Consumer Wrapper =====
 
 class AgentTaskConsumer:
     """Internal consumer wrapper that connects BaseAgent to Kafka.
