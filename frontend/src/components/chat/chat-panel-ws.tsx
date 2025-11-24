@@ -26,12 +26,11 @@ import {
 import { TechStackDialog } from "./tech-stack-dialog";
 import { useTheme } from "@/components/provider/theme-provider";
 import { useChatWebSocket } from "@/hooks/useChatWebSocket";
+import { AgentExecutionDialog } from "./AgentExecutionDialog";
 import { useAuth } from "@/hooks/useAuth";
 import { useMessages } from "@/queries/messages";
 import { AuthorType, type Message } from "@/types/message";
 import { MessagePreviewCard } from "./MessagePreviewCard";
-import { ActivityMessage } from "./activity-message";
-import { AgentStatusIndicator } from "./agent-status-indicator";
 import { MessageStatusIndicator } from "./message-status-indicator";
 import { useProjectAgents } from "@/queries/agents";
 
@@ -116,13 +115,14 @@ export function ChatPanelWS({
     limit: 100,
   });
 
-  // WebSocket connection (using react-use-websocket)
+  // WebSocket connection (simplified with 5 message types)
   const {
     isConnected,
     messages: wsMessages,
     agentStatus,
+    activeExecution,
     sendMessage: wsSendMessage,
-  } = useChatWebSocket(projectId, token || undefined);
+  } = useChatWebSocket(projectId, token || '');
 
   // Combine existing messages with WebSocket messages
   const apiMessages = messagesData?.data || [];
@@ -236,10 +236,10 @@ export function ChatPanelWS({
 
   // Reset waiting state when agent status changes
   useEffect(() => {
-    if (agentStatus.status !== 'idle') {
+    if (agentStatus !== 'idle') {
       setIsWaitingForResponse(false);
     }
-  }, [agentStatus.status]);
+  }, [agentStatus]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (showMentions && filteredAgents.length > 0) {
@@ -533,18 +533,10 @@ export function ChatPanelWS({
             );
           }
 
-          // Activity message (progress tracking)
+          // Activity messages are now shown in the execution dialog
+          // Skip rendering them here
           if (msg.message_type === 'activity') {
-            return (
-              <div key={msg.id} className="flex gap-3">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
-                  {getAgentAvatar(msg.author_type)}
-                </div>
-                <div className="flex-1">
-                  <ActivityMessage message={msg} />
-                </div>
-              </div>
-            );
+            return null;
           }
 
           // Agent/System message
@@ -632,22 +624,14 @@ export function ChatPanelWS({
 
 
 
-        {/* Agent Status Indicator - shows thinking/acting/waiting status */}
-        {agentStatus.status !== 'idle' && (
-          <div className="flex gap-3 p-4 bg-muted/50 rounded-lg border">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
-              🤖
-            </div>
-            <div className="flex-1">
-              <AgentStatusIndicator
-                status={agentStatus.status}
-                agentName={agentStatus.agentName || undefined}
-                currentAction={agentStatus.currentAction || undefined}
-                currentStep={agentStatus.currentStep || undefined}
-                totalSteps={agentStatus.totalSteps || undefined}
-                executionId={agentStatus.executionId || undefined}
-              />
-            </div>
+        {/* Simple Status Indicator - replaced complex component */}
+        {agentStatus !== 'idle' && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground p-3 bg-muted/30 rounded-lg">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>
+              {agentStatus === 'thinking' && 'Thinking...'}
+              {agentStatus === 'acting' && 'Working...'}
+            </span>
           </div>
         )}
       </div>
@@ -747,6 +731,9 @@ export function ChatPanelWS({
           </div>
         </div>
       </div>
+
+      {/* Agent Execution Dialog (floating) */}
+      <AgentExecutionDialog execution={activeExecution} />
 
     </div>
   );

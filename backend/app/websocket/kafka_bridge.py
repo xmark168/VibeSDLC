@@ -75,6 +75,7 @@ class WebSocketKafkaBridge:
             self.consumer.register_handler("agent.tool_call", self.agent_events_handler.handle_agent_event)
             self.consumer.register_handler("agent.progress", self.agent_events_handler.handle_agent_event)
             self.consumer.register_handler("agent.response", self.agent_events_handler.handle_agent_event)
+            self.consumer.register_handler("agent.completed", self.agent_events_handler.handle_agent_event)  # Finish signal
             self.consumer.register_handler("agent.delegation", self.agent_events_handler.handle_agent_event)
             self.consumer.register_handler("agent.question", self.agent_events_handler.handle_agent_event)
             self.consumer.register_handler("agent.approval_request", self.agent_events_handler.handle_agent_event)

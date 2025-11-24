@@ -1,7 +1,12 @@
 /**
- * Chat WebSocket Hook using react-use-websocket
+ * Chat WebSocket Hook - Simplified with 5 message types only
  * 
- * Simple, stable WebSocket connection for chat using battle-tested library
+ * Only handles:
+ * 1. agent.messaging.start
+ * 2. agent.messaging.analyzing
+ * 3. agent.messaging.tool_call
+ * 4. agent.messaging.response
+ * 5. agent.messaging.finish
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -12,13 +17,22 @@ import { AuthorType, Message } from '@/types/message'
 // Types
 // ============================================================================
 
-export type AgentStatusType = 'idle' | 'thinking' | 'acting' | 'waiting' | 'error'
-
-export interface AgentStatus {
-  status: AgentStatusType
-  agentName?: string
-  currentAction?: string
+export interface Execution {
+  id: string
+  agent_name: string
+  steps: string[]
+  tools: ToolCall[]
+  startedAt: string
 }
+
+export interface ToolCall {
+  id: string
+  tool: string
+  action: string
+  state: 'started' | 'completed' | 'failed'
+}
+
+export type AgentStatusType = 'idle' | 'thinking' | 'acting'
 
 export interface UseChatWebSocketReturn {
   // Connection state
@@ -28,8 +42,11 @@ export interface UseChatWebSocketReturn {
   // Messages
   messages: Message[]
   
+  // Active execution (for dialog)
+  activeExecution: Execution | null
+  
   // Agent status
-  agentStatus: AgentStatus
+  agentStatus: AgentStatusType
   
   // Actions
   sendMessage: (content: string, agentName?: string) => void
@@ -45,7 +62,6 @@ function getWebSocketUrl(projectId: string, token: string): string {
   const port = import.meta.env.DEV ? '8000' : window.location.port
   const portStr = port ? `:${port}` : ''
   
-  // Backend route: /api/v1/chat/ws (API prefix + router prefix + websocket path)
   return `${wsProtocol}//${host}${portStr}/api/v1/chat/ws?project_id=${projectId}&token=${token}`
 }
 
@@ -72,7 +88,8 @@ export function useChatWebSocket(
 ): UseChatWebSocketReturn {
   // State
   const [messages, setMessages] = useState<Message[]>([])
-  const [agentStatus, setAgentStatus] = useState<AgentStatus>({ status: 'idle' })
+  const [activeExecution, setActiveExecution] = useState<Execution | null>(null)
+  const [agentStatus, setAgentStatus] = useState<AgentStatusType>('idle')
   
   // Refs
   const projectIdRef = useRef(projectId)
@@ -90,7 +107,7 @@ export function useChatWebSocket(
     {
       // Reconnection configuration
       shouldReconnect: (closeEvent) => {
-        // Don't reconnect if explicitly closed (code 1000) or auth failed (1008)
+        // Don't reconnect if explicitly closed or auth failed
         if (closeEvent.code === 1000 || closeEvent.code === 1008) {
           console.log('[WebSocket] Clean close or auth failed - not reconnecting')
           return false
@@ -101,283 +118,179 @@ export function useChatWebSocket(
       reconnectInterval: (attemptNumber) => 
         Math.min(1000 * Math.pow(2, attemptNumber), 30000),
       
-      // Connection options
-      share: false, // Don't share connection across components
+      share: false,
       retryOnError: true,
       
-      // Callbacks
       onOpen: () => {
-        console.log('[WebSocket] ✅ Connected successfully')
+        console.log('[WebSocket] ✅ Connected')
       },
       onClose: (event) => {
-        console.log('[WebSocket] ❌ Disconnected - Code:', event.code, 'Reason:', event.reason)
+        console.log('[WebSocket] ❌ Disconnected - Code:', event.code)
       },
       onError: (event) => {
         console.error('[WebSocket] ⚠️ Error:', event)
       },
-      onReconnectStop: (numAttempts) => {
-        console.error('[WebSocket] ⛔ Failed to reconnect after', numAttempts, 'attempts')
-      },
     },
-    !!socketUrl // Only connect when URL is available
+    !!socketUrl
   )
 
-  // Handle incoming messages
+  // Handle messages - ONLY 5 types
   useEffect(() => {
     if (!lastJsonMessage) return
-
-    const data = lastJsonMessage as any
     
-    // Validate message structure
-    if (!data || typeof data !== 'object') {
-      console.warn('[WebSocket] Invalid message format:', data)
+    const msg = lastJsonMessage as any
+    
+    // Validate message
+    if (!msg || typeof msg !== 'object' || !msg.type) {
+      console.warn('[WebSocket] Invalid message:', msg)
       return
     }
-
-    const messageType = data.type
-    if (!messageType) {
-      console.warn('[WebSocket] Message missing type field:', data)
-      return
-    }
-
-    console.log('[WebSocket] 📨 Received:', messageType, data)
-
-    switch (messageType) {
+    
+    console.log('[WebSocket] 📨', msg.type, msg)
+    
+    switch (msg.type) {
       case 'connected':
-        console.log('[WebSocket] Connection confirmed by server')
+        console.log('[WS] ✅ Server confirmed connection')
         break
-
+      
       case 'user_message':
-      case 'agent_message': {
-        const message: Message = {
-          id: data.message_id,
-          project_id: data.project_id || projectIdRef.current || '',
-          author_type: data.author_type === 'user' ? AuthorType.USER : AuthorType.AGENT,
-          content: data.content,
-          created_at: data.created_at || data.timestamp || new Date().toISOString(),
-          updated_at: data.updated_at || data.timestamp || new Date().toISOString(),
-          agent_name: data.agent_name,
-          message_type: data.message_type || 'text',
-          structured_data: data.structured_data,
-          message_metadata: data.message_metadata,
-        }
-
-        setMessages((prev) => {
-          // Check if already exists
-          if (prev.some((m) => m.id === message.id)) {
-            return prev
-          }
-
-          // Check if confirming optimistic message
-          if (message.author_type === AuthorType.USER) {
-            const tempIndex = prev.findIndex(
-              (m) =>
-                m.id.startsWith('temp_') &&
-                m.content === message.content &&
-                m.author_type === message.author_type
-            )
-
-            if (tempIndex !== -1) {
-              // Replace temp message with real one
-              const newMessages = [...prev]
-              newMessages[tempIndex] = { ...message, status: 'delivered' }
-              return newMessages
-            }
-          }
-
-          // Add new message
-          return [...prev, message]
-        })
+        // Backend confirms user message was saved
+        handleUserMessage(msg)
         break
-      }
-
-      case 'agent_status': {
-        // Map backend status to frontend status types
-        const statusMap: Record<string, AgentStatusType> = {
-          'idle': 'idle',
-          'thinking': 'thinking',
-          'working': 'acting',
-          'completed': 'idle',
-          'error': 'error',
-        }
-        
-        const mappedStatus = statusMap[data.status] || 'idle'
-        
-        setAgentStatus({
-          status: mappedStatus,
-          agentName: data.agent_name,
-          currentAction: data.current_action,
-        })
+      
+      case 'agent.messaging.start':
+        handleStart(msg)
         break
-      }
-
-      case 'agent_progress': {
-        // Agent progress updates (e.g., "Understanding user requirements")
-        // These are intermediate status updates, not full messages
-        console.log('[WebSocket] 🔄 Agent progress:', data.agent_name, '-', data.content)
-        
-        // Update agent status with progress info
-        setAgentStatus({
-          status: 'acting',
-          agentName: data.agent_name,
-          currentAction: data.content,
-        })
+      
+      case 'agent.messaging.analyzing':
+        handleAnalyzing(msg)
         break
-      }
-
-      case 'activity_update': {
-        // Activity updates can have or not have message_id
-        // If no message_id, it's a summary/status update
-        if (!data.message_id) {
-          console.log('[WebSocket] 📊 Activity:', data.agent_name, '-', data.content)
-          
-          // If has structured_data with events, create a summary message
-          if (data.structured_data?.events && Array.isArray(data.structured_data.events)) {
-            const summaryMessage: Message = {
-              id: `activity_${data.execution_id || Date.now()}`,
-              project_id: data.project_id || projectIdRef.current || '',
-              author_type: AuthorType.AGENT,
-              content: data.content || 'Activity completed',
-              created_at: data.timestamp || new Date().toISOString(),
-              updated_at: data.timestamp || new Date().toISOString(),
-              agent_name: data.agent_name,
-              message_type: 'activity',
-              structured_data: data.structured_data,
-              message_metadata: { 
-                agent_name: data.agent_name,
-                execution_id: data.execution_id,
-              },
-            }
-            
-            // Add as new message (avoid duplicates)
-            setMessages((prev) => {
-              if (prev.some(m => m.id === summaryMessage.id)) {
-                return prev
-              }
-              return [...prev, summaryMessage]
-            })
-          }
-          
-          // Update agent status from structured_data if available
-          if (data.structured_data?.status) {
-            const statusMap: Record<string, AgentStatusType> = {
-              'idle': 'idle',
-              'thinking': 'thinking',
-              'working': 'acting',
-              'running': 'acting',
-              'completed': 'idle',
-              'success': 'idle',
-              'failed': 'error',
-              'error': 'error',
-            }
-            
-            const mappedStatus = statusMap[data.structured_data.status] || 'acting'
-            
-            setAgentStatus({
-              status: mappedStatus,
-              agentName: data.agent_name,
-              currentAction: data.content,
-            })
-          } else {
-            // Just update current action
-            setAgentStatus((prev) => ({
-              ...prev,
-              agentName: data.agent_name,
-              currentAction: data.content,
-            }))
-          }
-          
-          break
-        }
-
-        // If has message_id, create or update message
-        setMessages((prev) => {
-          const existingIndex = prev.findIndex((m) => m.id === data.message_id)
-
-          if (existingIndex !== -1) {
-            // Update existing
-            return prev.map((msg, idx) =>
-              idx === existingIndex
-                ? {
-                    ...msg,
-                    structured_data: data.structured_data,
-                    content: data.content || msg.content,
-                    updated_at: new Date().toISOString(),
-                  }
-                : msg
-            )
-          } else {
-            // Create new activity message
-            const newMessage: Message = {
-              id: data.message_id,
-              project_id: data.project_id || projectIdRef.current || '',
-              author_type: AuthorType.AGENT,
-              content: data.content || '',
-              created_at: data.created_at || new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              agent_name: data.agent_name,
-              message_type: 'activity',
-              structured_data: data.structured_data,
-              message_metadata: { agent_name: data.agent_name },
-            }
-            return [...prev, newMessage]
-          }
-        })
+      
+      case 'agent.messaging.tool_call':
+        handleToolCall(msg)
         break
-      }
-
-      case 'execution_started': {
-        // Agent execution has started
-        console.log('[WebSocket] 🚀 Execution started:', data.agent_name, 'ID:', data.execution_id)
-        setAgentStatus({
-          status: 'acting',
-          agentName: data.agent_name,
-          currentAction: 'Starting execution',
-        })
+      
+      case 'agent.messaging.response':
+        handleResponse(msg)
         break
-      }
-
-      case 'execution_completed': {
-        // Agent execution completed
-        console.log('[WebSocket] ✅ Execution completed:', data.agent_name)
-        setAgentStatus({
-          status: 'idle',
-          agentName: data.agent_name,
-          currentAction: 'Completed',
-        })
+      
+      case 'agent.messaging.finish':
+        handleFinish(msg)
         break
-      }
-
-      case 'execution_failed': {
-        // Agent execution failed
-        console.error('[WebSocket] ❌ Execution failed:', data.agent_name, data.error)
-        setAgentStatus({
-          status: 'error',
-          agentName: data.agent_name,
-          currentAction: `Failed: ${data.error || 'Unknown error'}`,
-        })
-        break
-      }
-
-      case 'error':
-        console.error('[WebSocket] ⚠️ Server error:', data.message)
-        break
-
+      
       default:
-        console.log('[WebSocket] ⚡ Unhandled message type:', messageType, data)
+        console.warn('[WebSocket] ⚠️ Unknown message type:', msg.type)
     }
   }, [lastJsonMessage])
-
-  // Send message function
+  
+  // ========================================================================
+  // Message Handlers
+  // ========================================================================
+  
+  const handleUserMessage = (msg: any) => {
+    console.log('[WS] 📤 User message confirmed:', msg.message_id)
+    // Replace optimistic message with real one
+    // setMessages(prev => {
+    //   const tempIndex = prev.findIndex(m => m.id.startsWith('temp_'))
+    //   if (tempIndex !== -1) {
+    //     const newMessages = [...prev]
+    //     newMessages[tempIndex] = {
+    //       id: msg.message_id,
+    //       project_id: msg.project_id,
+    //       author_type: AuthorType.USER,
+    //       content: msg.content,
+    //       created_at: msg.created_at || msg.timestamp,
+    //       updated_at: msg.updated_at || msg.timestamp,
+    //       status: 'delivered',
+    //     }
+        // return newMessages
+      // }
+    //   // return prev
+    // })
+  }
+  
+  const handleStart = (msg: any) => {
+    console.log('[WS] 🚀 Start:', msg.agent_name)
+    setAgentStatus('thinking')
+    setActiveExecution({
+      id: msg.id,
+      agent_name: msg.agent_name,
+      steps: [],
+      tools: [],
+      startedAt: msg.timestamp,
+    })
+  }
+  
+  const handleAnalyzing = (msg: any) => {
+    console.log('[WS] 🔄 Analyzing:', msg.step)
+    setAgentStatus('acting')
+    setActiveExecution(prev => prev ? {
+      ...prev,
+      steps: [...prev.steps, msg.step]
+    } : null)
+  }
+  
+  const handleToolCall = (msg: any) => {
+    console.log('[WS] 🔧 Tool:', msg.action, msg.state)
+    setActiveExecution(prev => prev ? {
+      ...prev,
+      tools: [
+        ...prev.tools.filter(t => t.id !== msg.id),
+        { 
+          id: msg.id, 
+          tool: msg.tool, 
+          action: msg.action, 
+          state: msg.state 
+        }
+      ]
+    } : null)
+  }
+  
+  const handleResponse = (msg: any) => {
+    console.log('[WS] 💬 Response:', msg.agent_name)
+    const message: Message = {
+      id: msg.id,
+      project_id: projectIdRef.current!,
+      agent_name: msg.agent_name,
+      author_type: AuthorType.AGENT,
+      content: msg.content,
+      message_type: msg.message_type,
+      structured_data: msg.structured_data,
+      created_at: msg.timestamp,
+      updated_at: msg.timestamp,
+    }
+    
+    setMessages(prev => {
+      // Avoid duplicates
+      if (prev.some(m => m.id === message.id)) {
+        return prev
+      }
+      return [...prev, message]
+    })
+  }
+  
+  const handleFinish = (msg: any) => {
+    console.log('[WS] ✅ Finish:', msg.summary)
+    setAgentStatus('idle')
+    
+    // Auto-close execution after 3s
+    setTimeout(() => {
+      setActiveExecution(null)
+    }, 3000)
+  }
+  
+  // ========================================================================
+  // Send Message
+  // ========================================================================
+  
   const sendMessage = (content: string, agentName?: string) => {
     if (!projectId) {
-      console.error('[WebSocket] ❌ Cannot send message: no project ID')
+      console.error('[WebSocket] ❌ Cannot send: no project ID')
       return
     }
 
     if (readyState !== ReadyState.OPEN) {
-      console.warn('[WebSocket] ⚠️ Cannot send message: connection state =', 
-        ReadyState[readyState])
+      console.warn('[WebSocket] ⚠️ Cannot send: not connected')
       return
     }
 
@@ -389,9 +302,9 @@ export function useChatWebSocket(
     try {
       // Add optimistic message
       const optimisticMsg = createOptimisticMessage(content, projectId)
-      setMessages((prev) => [...prev, optimisticMsg])
+      setMessages(prev => [...prev, optimisticMsg])
 
-      // Send to server (backend expects "message" type, not "chat_message")
+      // Send to server
       sendJsonMessage({
         type: 'message',
         content: content.trim(),
@@ -399,9 +312,9 @@ export function useChatWebSocket(
         project_id: projectId,
       })
       
-      console.log('[WebSocket] 📤 Sent message:', content.substring(0, 50) + '...')
+      console.log('[WebSocket] 📤 Sent:', content.substring(0, 50))
     } catch (error) {
-      console.error('[WebSocket] ❌ Failed to send message:', error)
+      console.error('[WebSocket] ❌ Failed to send:', error)
     }
   }
 
@@ -412,6 +325,7 @@ export function useChatWebSocket(
     isConnected,
     readyState,
     messages,
+    activeExecution,
     agentStatus,
     sendMessage,
   }

@@ -258,6 +258,42 @@ class BaseAgent(ABC):
 
         except Exception as e:
             logger.error(f"[{self.name}] Failed to send message: {e}")
+    
+    # ===== Simplified Event Emission API (5 methods) =====
+    
+    async def start_execution(self) -> None:
+        """Emit: agent.messaging.start - Notify that agent began execution"""
+        await self.message_user("thinking", f"{self.name} is starting...")
+    
+    async def emit_step(self, step: str) -> None:
+        """Emit: agent.messaging.analyzing - Send progress step"""
+        await self.message_user("progress", step)
+    
+    async def emit_tool(self, tool: str, action: str, state: str = "started", **details) -> None:
+        """Emit: agent.messaging.tool_call - Track tool execution
+        
+        Args:
+            tool: Tool name (e.g., "read_file", "web_search")
+            action: Human-readable action (e.g., "Reading main.py")
+            state: "started", "completed", or "failed"
+            **details: Additional tool details (input, output, error)
+        """
+        await self.message_user("tool_call", action, {"tool": tool, "state": state, **details})
+    
+    async def emit_message(self, content: str, message_type: str = "text", data: Any = None) -> None:
+        """Emit: agent.messaging.response - Send agent message (saves to DB)
+        
+        Args:
+            content: Message content
+            message_type: "text", "prd", "backlog", "code", etc.
+            data: Structured data for rich messages
+        """
+        await self.message_user("response", content, {"message_type": message_type, "data": data})
+    
+    async def finish_execution(self, summary: str = "Task completed") -> None:
+        """Emit: agent.messaging.finish - Notify execution is complete"""
+        logger.info(f"[{self.name}] 🏁 FINISH EXECUTION: {summary}")
+        await self.message_user("completed", summary)
 
 
 
@@ -283,13 +319,17 @@ class BaseAgent(ABC):
             }
         )
         
-        with Session(engine) as db:
-            db.add(execution)
-            db.commit()
-            db.refresh(execution)
-            
-        logger.info(f"[{self.name}] Created execution {execution.id}")
-        return execution.id
+        # Run blocking DB operation in thread pool to avoid blocking event loop
+        def _save_execution():
+            with Session(engine) as db:
+                db.add(execution)
+                db.commit()
+                db.refresh(execution)
+            return execution.id
+        
+        execution_id = await asyncio.to_thread(_save_execution)
+        logger.info(f"[{self.name}] Created execution {execution_id}")
+        return execution_id
     
     async def _complete_execution_record(
         self, 
@@ -312,39 +352,46 @@ class BaseAgent(ABC):
                 (datetime.now(timezone.utc) - self._execution_start_time).total_seconds() * 1000
             )
         
-        with Session(engine) as db:
-            execution = db.get(AgentExecution, self._current_execution_id)
-            if execution:
-                execution.status = (
-                    AgentExecutionStatus.COMPLETED if success 
-                    else AgentExecutionStatus.FAILED
-                )
-                execution.completed_at = datetime.now(timezone.utc)
-                execution.duration_ms = duration_ms
-                
-                # Store events and result
-                execution.extra_metadata = execution.extra_metadata or {}
-                execution.extra_metadata["events"] = self._execution_events
-                execution.extra_metadata["total_events"] = len(self._execution_events)
-                
-                if result:
-                    execution.result = {
-                        "success": result.success,
-                        "output": result.output[:1000] if result.output else "",  # Truncate for storage
-                        "structured_data": result.structured_data,
-                    }
-                
-                if error:
-                    execution.error_message = error[:1000]  # Truncate
-                    execution.error_traceback = error_traceback[:2000] if error_traceback else None  # Truncate
-                
-                db.add(execution)
-                db.commit()
-                
-                logger.info(
-                    f"[{self.name}] Execution {self._current_execution_id} "
-                    f"{execution.status.value} in {duration_ms}ms with {len(self._execution_events)} events"
-                )
+        # Run blocking DB operation in thread pool to avoid blocking event loop
+        def _update_execution():
+            with Session(engine) as db:
+                execution = db.get(AgentExecution, self._current_execution_id)
+                if execution:
+                    execution.status = (
+                        AgentExecutionStatus.COMPLETED if success 
+                        else AgentExecutionStatus.FAILED
+                    )
+                    execution.completed_at = datetime.now(timezone.utc)
+                    execution.duration_ms = duration_ms
+                    
+                    # Store events and result
+                    execution.extra_metadata = execution.extra_metadata or {}
+                    execution.extra_metadata["events"] = self._execution_events
+                    execution.extra_metadata["total_events"] = len(self._execution_events)
+                    
+                    if result:
+                        execution.result = {
+                            "success": result.success,
+                            "output": result.output[:1000] if result.output else "",  # Truncate for storage
+                            "structured_data": result.structured_data,
+                        }
+                    
+                    if error:
+                        execution.error_message = error[:1000]  # Truncate
+                        execution.error_traceback = error_traceback[:2000] if error_traceback else None  # Truncate
+                    
+                    db.add(execution)
+                    db.commit()
+                    
+                    return execution.status.value
+            return None
+        
+        status = await asyncio.to_thread(_update_execution)
+        if status:
+            logger.info(
+                f"[{self.name}] Execution {self._current_execution_id} "
+                f"{status} in {duration_ms}ms with {len(self._execution_events)} events"
+            )
 
     # ===== Consumer Management (Internal) =====
 
@@ -550,6 +597,15 @@ class BaseAgent(ABC):
                 # Call agent's implementation
                 result = await self.handle_task(task)
                 
+                # Auto-send response message if agent returned output
+                if result.success and result.output:
+                    logger.info(f"[{self.name}] Auto-sending response message ({len(result.output)} chars)")
+                    await self.emit_message(
+                        content=result.output,
+                        message_type=result.structured_data.get("message_type", "text") if result.structured_data else "text",
+                        data=result.structured_data
+                    )
+                
                 # Update execution record with success
                 await self._complete_execution_record(result=result, success=True)
                 
@@ -560,6 +616,13 @@ class BaseAgent(ABC):
                 else:
                     self.failed_executions += 1
                 
+                # Emit finish signal
+                logger.info(f"[{self.name}] Task result: success={result.success}")
+                if result.success:
+                    await self.finish_execution("Task completed successfully")
+                else:
+                    await self.finish_execution(f"Task completed with issues: {result.error_message or 'Unknown'}")
+                
             except Exception as e:
                 # Update execution record with failure
                 await self._complete_execution_record(
@@ -567,6 +630,11 @@ class BaseAgent(ABC):
                     error_traceback=traceback.format_exc(),
                     success=False
                 )
+                
+                # Emit finish signal with error
+                logger.info(f"[{self.name}] Exception caught, emitting finish signal...")
+                await self.finish_execution(f"Task failed: {str(e)[:100]}")
+                
                 raise  # Re-raise to let outer handler deal with it
             
             finally:
