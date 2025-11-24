@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 import sentry_sdk
@@ -98,7 +99,7 @@ async def lifespan(app: FastAPI):
         logger.warning(f"⚠️ Failed to start Kafka producer: {e}")
 
     # Start Central Message Router (dispatches tasks to agents)
-    from app.kafka.router_service import start_router_service, stop_router_service
+    from app.agents.core.router import start_router_service, stop_router_service
     try:
         await start_router_service()
         logger.info("✅ Message Router started")
@@ -161,62 +162,72 @@ async def lifespan(app: FastAPI):
     logger.info("⏹️  Shutting down...")
 
     try:
-        await websocket_kafka_bridge.stop()
-    except Exception as e:
-        logger.error(f"Error stopping WebSocket bridge: {e}")
+        try:
+            await websocket_kafka_bridge.stop()
+        except (Exception, asyncio.CancelledError) as e:
+            logger.error(f"Error stopping WebSocket bridge: {e}")
+        
+        # Shutdown activity buffer
+        try:
+            await activity_buffer.stop()
+        except (Exception, asyncio.CancelledError) as e:
+            logger.error(f"Error stopping activity buffer: {e}")
+
+        # Shutdown metrics collector
+        from app.tasks import stop_metrics_collector
+        try:
+            await stop_metrics_collector()
+        except (Exception, asyncio.CancelledError) as e:
+            logger.error(f"Error stopping metrics collector: {e}")
+
+        # Shutdown agent monitoring system
+        try:
+            monitor = get_agent_monitor()
+            await monitor.stop()
+            logger.info("Agent monitoring system shut down")
+        except (Exception, asyncio.CancelledError) as e:
+            logger.error(f"Error shutting down monitoring system: {e}")
+
+        # Shutdown agent pools (in-memory managers)
+        from app.api.routes.agent_management import _manager_registry
+        try:
+            for pool_name, manager in list(_manager_registry.items()):
+                try:
+                    await manager.stop(graceful=True)
+                    logger.info(f"Pool manager '{pool_name}' shut down")
+                except (Exception, asyncio.CancelledError) as e:
+                    logger.error(f"Error stopping pool '{pool_name}': {e}")
+            _manager_registry.clear()
+            logger.info("All agent pool managers shut down")
+        except (Exception, asyncio.CancelledError) as e:
+            logger.error(f"Error shutting down agent pools: {e}")
+
+        try:
+            await shutdown_all_consumers()
+            logger.info("Kafka consumers shut down")
+        except (Exception, asyncio.CancelledError) as e:
+            logger.error(f"Error shutting down consumers: {e}")
+
+        # Shutdown Central Message Router
+        try:
+            await stop_router_service()
+            logger.info("Central Message Router shut down")
+        except (Exception, asyncio.CancelledError) as e:
+            logger.error(f"Error shutting down Message Router: {e}")
+
+        try:
+            await shutdown_kafka_producer()
+            logger.info("Kafka producer shut down")
+        except (Exception, asyncio.CancelledError) as e:
+            logger.error(f"Error shutting down producer: {e}")
+
+        logger.info("Application shutdown complete")
     
-    # Shutdown activity buffer
-    try:
-        await activity_buffer.stop()
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        # Gracefully handle interruption during shutdown
+        logger.info("Shutdown interrupted - cleaning up...")
     except Exception as e:
-        logger.error(f"Error stopping activity buffer: {e}")
-
-    # Shutdown metrics collector
-    from app.tasks import stop_metrics_collector
-    try:
-        await stop_metrics_collector()
-    except Exception as e:
-        logger.error(f"Error stopping metrics collector: {e}")
-
-    # Shutdown agent monitoring system
-    try:
-        monitor = get_agent_monitor()
-        await monitor.stop()
-        logger.info("Agent monitoring system shut down")
-    except Exception as e:
-        logger.error(f"Error shutting down monitoring system: {e}")
-
-    # Shutdown agent pools (in-memory managers)
-    from app.api.routes.agent_management import _manager_registry
-    try:
-        for pool_name, manager in list(_manager_registry.items()):
-            await manager.stop(graceful=True)
-            logger.info(f"Pool manager '{pool_name}' shut down")
-        _manager_registry.clear()
-        logger.info("All agent pool managers shut down")
-    except Exception as e:
-        logger.error(f"Error shutting down agent pools: {e}")
-
-    try:
-        await shutdown_all_consumers()
-        logger.info("Kafka consumers shut down")
-    except Exception as e:
-        logger.error(f"Error shutting down consumers: {e}")
-
-    # Shutdown Central Message Router
-    try:
-        await stop_router_service()
-        logger.info("Central Message Router shut down")
-    except Exception as e:
-        logger.error(f"Error shutting down Message Router: {e}")
-
-    try:
-        await shutdown_kafka_producer()
-        logger.info("Kafka producer shut down")
-    except Exception as e:
-        logger.error(f"Error shutting down producer: {e}")
-
-    logger.info("Application shutdown complete")
+        logger.error(f"Unexpected error during shutdown: {e}")
 
 
 if settings.SENTRY_DSN and settings.ENVIRONMENT != "local":

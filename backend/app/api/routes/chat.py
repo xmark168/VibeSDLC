@@ -13,7 +13,7 @@ from datetime import datetime
 from app.websocket.connection_manager import connection_manager
 from app.websocket.health_monitor import health_monitor
 from app.core.security import decode_access_token
-from app.models import User, Message as MessageModel, Project, AuthorType
+from app.models import User, Message as MessageModel, Project, AuthorType, MessageVisibility
 from app.kafka import get_kafka_producer, KafkaTopics, UserMessageEvent
 from sqlmodel import select
 
@@ -136,6 +136,7 @@ async def websocket_endpoint(
                                 agent_id=agent_id,  # Save mentioned agent ID for routing
                                 content=content,
                                 author_type=AuthorType.USER,
+                                visibility=MessageVisibility.USER_MESSAGE,  # User messages are always user-facing
                                 message_type=message.get("message_type", "text"),
                             )
                             db_session.add(db_message)
@@ -172,8 +173,24 @@ async def websocket_endpoint(
                         except Exception as e:
                             logger.error(f"Failed to publish message to Kafka: {e}")
 
-                        # User message appears immediately via optimistic update on frontend
-                        # No need to send it back from server
+                        # Broadcast user message back to all clients (including sender)
+                        # for consistency and real-time sync
+                        await connection_manager.broadcast(
+                            project_id,
+                            {
+                                "type": "user_message",
+                                "message_id": str(message_id),
+                                "project_id": str(project_id),
+                                "content": content,
+                                "author_type": "user",
+                                "created_at": db_message.created_at.isoformat(),
+                                "updated_at": db_message.updated_at.isoformat(),
+                                "user_id": str(user.id),
+                                "message_type": message.get("message_type", "text"),
+                                "timestamp": db_message.created_at.isoformat(),
+                            }
+                        )
+                        logger.info(f"Broadcasted user message {message_id} to all clients in project {project_id}")
 
                     # Handle user answer (for agent questions/approvals)
                     elif message_type == "user_answer":

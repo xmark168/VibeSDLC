@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from sqlmodel import Session
 
-from app.models import Message as MessageModel, AuthorType
+from app.models import Message as MessageModel, AuthorType, MessageVisibility
 from .base import BaseEventHandler
 from app.websocket.activity_buffer import activity_buffer
 
@@ -107,6 +107,7 @@ class AgentEventsHandler(BaseEventHandler):
                     agent_id=None,
                     content=content,
                     author_type=AuthorType.AGENT,
+                    visibility=MessageVisibility.USER_MESSAGE,  # Agent responses are user-facing messages
                     message_type=message_type,
                     structured_data=structured_data_payload,
                     message_metadata=metadata,

@@ -133,33 +133,17 @@ export function ChatPanelWS({
   // Combine existing messages with WebSocket messages
   const apiMessages = messagesData?.data || [];
 
-  // Filter WebSocket messages:
-  // 1. Keep all non-temp messages (agent responses via WebSocket)
-  // 2. For temp messages, keep them unless API has the exact same message (by checking timestamp proximity)
-  const filteredWsMessages = wsMessages.filter(wsMsg => {
-    // Keep non-temp messages
-    if (!wsMsg.id.startsWith('temp-')) return true;
+  // Combine API messages with WebSocket messages (no temp messages anymore)
+  const allMessages = [...apiMessages, ...wsMessages]
 
-    // For temp messages, check if API has a real message with same content AND close timestamp
-    // This prevents filtering out new messages when user sends same content multiple times
-    const tempTimestamp = new Date(wsMsg.created_at).getTime();
-    const hasRealMessage = apiMessages.some(
-      apiMsg => apiMsg.content === wsMsg.content &&
-                apiMsg.author_type === wsMsg.author_type &&
-                Math.abs(new Date(apiMsg.created_at).getTime() - tempTimestamp) < 5000 // Within 5 seconds
-    );
-    return !hasRealMessage;
-  });
+  // Sort by created_at timestamp
+  const sortedMessages = allMessages.sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  )
 
-  // Combine and sort by timestamp
-  const allMessages = [...apiMessages, ...filteredWsMessages].sort(
-    (a, b) =>
-      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-  );
-
-  // Remove duplicates by id (keep first occurrence)
-  const uniqueMessages = allMessages.filter(
-    (msg, index, self) => index === self.findIndex((m) => m.id === msg.id)
+  // Remove duplicates by ID (simple de-duplication)
+  const uniqueMessages = sortedMessages.filter(
+    (msg, index, self) => index === self.findIndex(m => m.id === msg.id)
   );
 
   // Notify parent when kanbanData changes

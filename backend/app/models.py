@@ -3,7 +3,7 @@ from uuid import UUID, uuid4
 from enum import Enum
 from pydantic import EmailStr
 from sqlmodel import Field, SQLModel, Relationship, Column
-from sqlalchemy import JSON, Text
+from sqlalchemy import JSON, Text, Enum as SQLEnum
 from typing import Optional
 
 class Role(str, Enum):
@@ -307,6 +307,12 @@ class AuthorType(str, Enum):
     AGENT = "agent"
 
 
+class MessageVisibility(str, Enum):
+    """Message visibility type - for filtering user-facing messages vs system logs"""
+    USER_MESSAGE = "user_message"  # Actual messages to display in chat UI
+    SYSTEM_LOG = "system_log"  # Internal logs, progress updates (not shown in chat)
+
+
 class AgentStatus(str, Enum):
     """Runtime status of an agent (unified for runtime and database)"""
     created = "created"  # Initial state when agent is instantiated
@@ -353,6 +359,15 @@ class Message(BaseModel, table=True):
 
     # Message payload
     content: str
+
+    # Message visibility: user-facing message vs system log
+    visibility: MessageVisibility = Field(
+        default=MessageVisibility.USER_MESSAGE,
+        sa_column=Column(
+            SQLEnum(MessageVisibility, name='messagevisibility', native_enum=True, values_callable=lambda x: [e.value for e in x]),
+            nullable=False
+        )
+    )
 
     # Structured data fields for agent previews
     message_type: str = Field(default="text", nullable=True)  # "text" | "product_brief" | "product_vision" | "product_backlog"

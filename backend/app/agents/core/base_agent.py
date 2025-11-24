@@ -4,7 +4,7 @@ This is the new simplified agent architecture where:
 - Agents inherit from BaseAgent
 - Implement handle_task() method
 - Kafka consumer/producer logic is hidden
-- Simple API: update_progress(), publish_response()
+- Simple API: message_user() for all communications
 """
 
 import asyncio
@@ -16,6 +16,7 @@ from uuid import UUID, uuid4
 
 from app.kafka.producer import KafkaProducer, get_kafka_producer
 from app.kafka.event_schemas import (
+    AgentEvent,
     AgentResponseEvent,
     AgentProgressEvent,
     AgentTaskType,
@@ -23,7 +24,7 @@ from app.kafka.event_schemas import (
     RouterTaskEvent,
 )
 from app.models import Agent as AgentModel, AgentStatus
-
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -85,9 +86,9 @@ class BaseAgent(ABC):
     Usage:
         class TeamLeader(BaseAgent):
             async def handle_task(self, task: TaskContext) -> TaskResult:
-                await self.update_progress(1, 3, "Analyzing...")
+                await self.message_user("progress", "Analyzing...", {"step": 1, "total": 3})
                 result = await self._analyze(task.content)
-                await self.update_progress(2, 3, "Responding...")
+                await self.message_user("progress", "Responding...", {"step": 2, "total": 3})
                 response = await self._respond(result)
                 return TaskResult(success=True, output=response)
     """
@@ -123,6 +124,10 @@ class BaseAgent(ABC):
         # Current task being processed (for progress tracking)
         self._current_task_id: Optional[UUID] = None
         self._current_execution_id: Optional[UUID] = None
+        
+        # Execution tracking
+        self._execution_start_time: Optional[Any] = None  # datetime object
+        self._execution_events: list = []  # List of events for current execution
 
         # Kafka producer (lazy init)
         self._producer: Optional[KafkaProducer] = None
@@ -156,13 +161,13 @@ class BaseAgent(ABC):
                 # Extract message
                 message = task.content
 
-                # Update progress
-                await self.update_progress(1, 2, "Processing...")
+                # Send progress updates
+                await self.message_user("progress", "Processing...", {"step": 1, "total": 2})
 
                 # Do work
                 result = await self._process(message)
 
-                await self.update_progress(2, 2, "Complete")
+                await self.message_user("progress", "Complete", {"step": 2, "total": 2})
 
                 # Return result
                 return TaskResult(
@@ -185,8 +190,8 @@ class BaseAgent(ABC):
         """
         Send message/event to user through unified event stream.
         
-        This replaces update_progress(), publish_response(), etc.
-        All agent communications now go through this single method.
+        This is the ONLY method agents should use to communicate with users.
+        All agent communications go through this single unified API.
         
         Args:
             event_type: Type of event (thinking, tool_call, progress, response, etc.)
@@ -582,14 +587,8 @@ class BaseAgent(ABC):
                 # Return to idle
                 self.state = AgentStatus.idle
 
-            # Publish response if successful
+            # Log completion
             if result.success:
-                await self.publish_response(
-                    content=result.output,
-                    structured_data=result.structured_data,
-                    requires_approval=result.requires_approval,
-                    message_id=task.message_id,
-                )
                 logger.info(f"[{self.name}] Task {task_id} completed successfully")
             else:
                 logger.error(

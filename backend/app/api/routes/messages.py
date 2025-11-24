@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlmodel import select, func, delete
 
 from app.api.deps import CurrentUser, SessionDep
-from app.models import Message as MessageModel, Project, Agent as AgentModel, AuthorType
+from app.models import Message as MessageModel, Project, Agent as AgentModel, AuthorType, MessageVisibility
 from app.schemas import (
     ChatMessageCreate,
     ChatMessageUpdate,
@@ -33,9 +33,15 @@ def list_messages(
     stmt = (
         select(MessageModel)
         .where(MessageModel.project_id == project_id)
+        .where(MessageModel.visibility == MessageVisibility.USER_MESSAGE)  # Only return user-facing messages
         .order_by(MessageModel.created_at.asc())
     )
-    count_stmt = select(func.count()).select_from(MessageModel).where(MessageModel.project_id == project_id)
+    count_stmt = (
+        select(func.count())
+        .select_from(MessageModel)
+        .where(MessageModel.project_id == project_id)
+        .where(MessageModel.visibility == MessageVisibility.USER_MESSAGE)  # Only count user-facing messages
+    )
 
     count = session.exec(count_stmt).one()
     rows = session.exec(stmt.offset(skip).limit(limit)).all()
@@ -71,6 +77,9 @@ async def create_message(
         # If you later add SYSTEM/TOOL, set both IDs to None
         data["user_id"] = None
         data["agent_id"] = None
+    
+    # Set visibility - all messages created via API are user-facing
+    data["visibility"] = MessageVisibility.USER_MESSAGE
 
     obj = MessageModel(**data)
     session.add(obj)

@@ -33,16 +33,16 @@ export function ActivityMessage({ message, onComplete }: ActivityMessageProps) {
     return null
   }
 
-  const progressPercentage = activityData.total_steps > 0
-    ? (activityData.current_step / activityData.total_steps) * 100
+  const progressPercentage = (activityData.total_steps || 0) > 0
+    ? ((activityData.current_step || 0) / activityData.total_steps) * 100
     : 0
 
   const isCompleted = activityData.status === 'completed'
   const isFailed = activityData.status === 'failed'
   const isInProgress = activityData.status === 'in_progress'
 
-  // Get current step description
-  const currentStepData = activityData.steps.find(s => s.status === 'in_progress')
+  // Get current step description (safely handle undefined steps)
+  const currentStepData = activityData.steps?.find(s => s.status === 'in_progress')
   const currentStepDesc = currentStepData?.description || 
     (isCompleted ? 'Complete' : isFailed ? 'Failed' : 'Processing...')
 
