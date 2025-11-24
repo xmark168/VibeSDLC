@@ -31,6 +31,7 @@ class BaseKafkaConsumer(ABC):
         base_backoff_seconds: float = 1.0,
         max_backoff_seconds: float = 60.0,
         project_id_filter: Optional[List[str]] = None,
+        auto_offset_reset: Optional[str] = None,
     ):
         """Initialize Kafka consumer.
 
@@ -42,10 +43,12 @@ class BaseKafkaConsumer(ABC):
             base_backoff_seconds: Base backoff time for exponential backoff
             max_backoff_seconds: Maximum backoff time cap
             project_id_filter: Optional list of project IDs to filter (only process these projects)
+            auto_offset_reset: Override auto.offset.reset config ("earliest" or "latest")
         """
         self.topics = topics
         self.group_id = group_id or settings.KAFKA_GROUP_ID
         self.auto_commit = auto_commit
+        self.auto_offset_reset = auto_offset_reset
         self.consumer: Optional[Consumer] = None
         self.running = False
         self._consume_task: Optional[asyncio.Task] = None
@@ -65,7 +68,7 @@ class BaseKafkaConsumer(ABC):
         config = {
             "bootstrap.servers": settings.KAFKA_BOOTSTRAP_SERVERS,
             "group.id": self.group_id,
-            "auto.offset.reset": settings.KAFKA_AUTO_OFFSET_RESET,
+            "auto.offset.reset": self.auto_offset_reset or settings.KAFKA_AUTO_OFFSET_RESET,
             "enable.auto.commit": self.auto_commit,
             "session.timeout.ms": 30000,
             "max.poll.interval.ms": 300000,
@@ -314,8 +317,14 @@ class EventHandlerConsumer(BaseKafkaConsumer):
         topics: List[str],
         group_id: Optional[str] = None,
         project_id_filter: Optional[List[str]] = None,
+        auto_offset_reset: Optional[str] = None,
     ):
-        super().__init__(topics, group_id, project_id_filter=project_id_filter)
+        super().__init__(
+            topics,
+            group_id,
+            project_id_filter=project_id_filter,
+            auto_offset_reset=auto_offset_reset,
+        )
         self.handlers: Dict[str, List[Callable]] = {}
 
     def register_handler(
@@ -348,18 +357,27 @@ class EventHandlerConsumer(BaseKafkaConsumer):
             return
 
         handlers = self.handlers.get(event_type, [])
+        
+        logger.info(
+            f"[CONSUMER] Received event {event_type} from topic {topic} - "
+            f"Handlers registered: {len(handlers)}"
+        )
+        
         if not handlers:
+            logger.warning(f"No handlers registered for event_type: {event_type}")
             return
 
         # Call all registered handlers
         for handler in handlers:
             try:
+                logger.debug(f"Calling handler {handler.__name__} for {event_type}")
                 if asyncio.iscoroutinefunction(handler):
                     await handler(event)
                 else:
                     handler(event)
+                logger.debug(f"Handler {handler.__name__} completed for {event_type}")
             except Exception as e:
                 logger.error(
-                    f"Error in handler for {event_type}: {e}",
+                    f"Error in handler {handler.__name__} for {event_type}: {e}",
                     exc_info=True,
                 )

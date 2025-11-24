@@ -59,9 +59,15 @@ class ConnectionManager:
     async def send_personal_message(self, message: dict, websocket: WebSocket):
         """Send a message to a specific WebSocket"""
         try:
+            # Check if WebSocket is still open before sending
+            if websocket.client_state.name != "CONNECTED":
+                logger.debug(f"WebSocket not connected (state: {websocket.client_state.name}), skipping send")
+                self.disconnect(websocket)
+                return
+            
             await websocket.send_json(message)
         except Exception as e:
-            logger.error(f"Error sending personal message: {e}")
+            logger.warning(f"Error sending personal message (will cleanup): {e}")
             self.disconnect(websocket)
 
     async def broadcast_to_project(self, message: dict, project_id: UUID):
@@ -79,27 +85,49 @@ class ConnectionManager:
             )
             return
 
-        connection_count = len(self.active_connections[project_id])
-        message_type = message.get("type", "unknown")
-        logger.info(f"Broadcasting {message_type} to {connection_count} connections for project {project_id}")
-
+        # Create snapshot of connections to avoid modification during iteration
+        connections_snapshot = list(self.active_connections[project_id])
+        
         # Broadcast to all active connections
         disconnected = []
-        sent_count = 0
-        for connection in self.active_connections[project_id]:
+        success_count = 0
+        
+        for connection in connections_snapshot:
             try:
+                # Check if WebSocket is still open before sending
+                if connection.client_state.name != "CONNECTED":
+                    logger.debug(
+                        f"WebSocket not connected (state: {connection.client_state.name}), "
+                        f"marking for cleanup"
+                    )
+                    disconnected.append(connection)
+                    continue
+                
                 await connection.send_json(message)
-                sent_count += 1
-                logger.debug(f"Sent {message_type} to WebSocket {id(connection)}")
+                success_count += 1
+                
+            except RuntimeError as e:
+                # Specific handling for "close message already sent" error
+                if "close message" in str(e).lower():
+                    logger.debug(f"WebSocket already closing, marking for cleanup: {e}")
+                else:
+                    logger.warning(f"Runtime error broadcasting to WebSocket: {e}")
+                disconnected.append(connection)
+                
             except Exception as e:
-                logger.error(f"Error broadcasting to WebSocket {id(connection)}: {e}")
+                logger.warning(f"Error broadcasting to WebSocket: {e}")
                 disconnected.append(connection)
 
         logger.info(f"Broadcast complete: sent {sent_count}/{connection_count} messages")
 
         # Cleanup disconnected websockets
-        for connection in disconnected:
-            self.disconnect(connection)
+        if disconnected:
+            logger.info(
+                f"Cleaning up {len(disconnected)} disconnected WebSocket(s) "
+                f"for project {project_id} (broadcast success: {success_count})"
+            )
+            for connection in disconnected:
+                self.disconnect(connection)
 
     def get_project_connection_count(self, project_id: UUID) -> int:
         """Get the number of active connections for a project"""

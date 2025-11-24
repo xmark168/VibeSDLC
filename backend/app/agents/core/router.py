@@ -190,14 +190,14 @@ class UserMessageRouter(BaseEventRouter):
     ) -> None:
         """Route message to mentioned agent."""
         with Session(engine) as session:
-            # Look up agent by name in project
-            # Try case-insensitive match
-            statement = (
-                select(Agent)
-                .where(Agent.project_id == project_id)
-                .where(Agent.name.ilike(f"%{mentioned_name}%"))
+            # Look up agent by name in project using AgentService
+            from app.services import AgentService
+            agent_service = AgentService(session)
+            agent = agent_service.get_by_project_and_name(
+                project_id=project_id,
+                name=mentioned_name,
+                case_sensitive=False
             )
-            agent = session.exec(statement).first()
 
             if agent:
                 # Found mentioned agent - infer task type
@@ -227,13 +227,13 @@ class UserMessageRouter(BaseEventRouter):
     ) -> None:
         """Route message to Team Leader (default behavior)."""
         with Session(engine) as session:
-            # Find Team Leader in project
-            statement = (
-                select(Agent)
-                .where(Agent.project_id == project_id)
-                .where(Agent.role_type == "team_leader")
+            # Find Team Leader in project using AgentService
+            from app.services import AgentService
+            agent_service = AgentService(session)
+            team_leader = agent_service.get_by_project_and_role(
+                project_id=project_id,
+                role_type="team_leader"
             )
-            team_leader = session.exec(statement).first()
 
             if team_leader:
                 # Team Leader gets MESSAGE task type
