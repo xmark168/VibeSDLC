@@ -301,33 +301,23 @@ class BaseAgent(ABC):
     
     async def _create_execution_record(self, task: "TaskContext") -> UUID:
         """Create AgentExecution record in database"""
-        from app.models import AgentExecution, AgentExecutionStatus
+        from app.services import ExecutionService
         from sqlmodel import Session
         from app.core.db import engine
         
-        execution = AgentExecution(
-            project_id=self.project_id,
-            agent_name=self.name,
-            agent_type=self.role_type,
-            status=AgentExecutionStatus.RUNNING,
-            started_at=datetime.now(timezone.utc),
-            trigger_message_id=task.message_id if hasattr(task, 'message_id') else None,
-            user_id=task.user_id if hasattr(task, 'user_id') else None,
-            extra_metadata={
-                "task_type": task.task_type.value if hasattr(task, 'task_type') and task.task_type else "unknown",
-                "task_content_preview": task.content[:200] if task.content else "",
-            }
-        )
+        # Use ExecutionService for async-safe execution creation
+        with Session(engine) as db:
+            execution_service = ExecutionService(db)
+            execution_id = await execution_service.create_execution(
+                project_id=self.project_id,
+                agent_name=self.name,
+                agent_type=self.role_type,
+                trigger_message_id=task.message_id if hasattr(task, 'message_id') else None,
+                user_id=task.user_id if hasattr(task, 'user_id') else None,
+                task_type=task.task_type.value if hasattr(task, 'task_type') and task.task_type else None,
+                task_content_preview=task.content[:200] if task.content else None,
+            )
         
-        # Run blocking DB operation in thread pool to avoid blocking event loop
-        def _save_execution():
-            with Session(engine) as db:
-                db.add(execution)
-                db.commit()
-                db.refresh(execution)
-            return execution.id
-        
-        execution_id = await asyncio.to_thread(_save_execution)
         logger.info(f"[{self.name}] Created execution {execution_id}")
         return execution_id
     
@@ -342,7 +332,7 @@ class BaseAgent(ABC):
         if not self._current_execution_id:
             return
         
-        from app.models import AgentExecution, AgentExecutionStatus
+        from app.services import ExecutionService
         from sqlmodel import Session
         from app.core.db import engine
         
@@ -352,46 +342,24 @@ class BaseAgent(ABC):
                 (datetime.now(timezone.utc) - self._execution_start_time).total_seconds() * 1000
             )
         
-        # Run blocking DB operation in thread pool to avoid blocking event loop
-        def _update_execution():
-            with Session(engine) as db:
-                execution = db.get(AgentExecution, self._current_execution_id)
-                if execution:
-                    execution.status = (
-                        AgentExecutionStatus.COMPLETED if success 
-                        else AgentExecutionStatus.FAILED
-                    )
-                    execution.completed_at = datetime.now(timezone.utc)
-                    execution.duration_ms = duration_ms
-                    
-                    # Store events and result
-                    execution.extra_metadata = execution.extra_metadata or {}
-                    execution.extra_metadata["events"] = self._execution_events
-                    execution.extra_metadata["total_events"] = len(self._execution_events)
-                    
-                    if result:
-                        execution.result = {
-                            "success": result.success,
-                            "output": result.output[:1000] if result.output else "",  # Truncate for storage
-                            "structured_data": result.structured_data,
-                        }
-                    
-                    if error:
-                        execution.error_message = error[:1000]  # Truncate
-                        execution.error_traceback = error_traceback[:2000] if error_traceback else None  # Truncate
-                    
-                    db.add(execution)
-                    db.commit()
-                    
-                    return execution.status.value
-            return None
-        
-        status = await asyncio.to_thread(_update_execution)
-        if status:
-            logger.info(
-                f"[{self.name}] Execution {self._current_execution_id} "
-                f"{status} in {duration_ms}ms with {len(self._execution_events)} events"
+        # Use ExecutionService for async-safe execution completion
+        with Session(engine) as db:
+            execution_service = ExecutionService(db)
+            await execution_service.complete_execution(
+                execution_id=self._current_execution_id,
+                success=success,
+                output=result.output if result else None,
+                structured_data=result.structured_data if result else None,
+                error=error,
+                error_traceback=error_traceback,
+                events=self._execution_events,
+                duration_ms=duration_ms
             )
+        
+        logger.info(
+            f"[{self.name}] Execution {self._current_execution_id} "
+            f"{'completed' if success else 'failed'} in {duration_ms}ms with {len(self._execution_events)} events"
+        )
 
     # ===== Consumer Management (Internal) =====
 

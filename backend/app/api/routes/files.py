@@ -9,8 +9,8 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 
-from app import crud
 from app.api.deps import CurrentUser, SessionDep
+from app.services import ProjectService
 from app.models import Role
 
 logger = logging.getLogger(__name__)
@@ -81,7 +81,8 @@ def list_project_files(
         FileTreeResponse: File tree structure
     """
     # Get project and verify access
-    project = crud.project.get_project(session=session, project_id=project_id)
+    project_service = ProjectService(session)
+    project = project_service.get_by_id(project_id)
 
     if not project:
         raise HTTPException(
@@ -139,7 +140,8 @@ def get_file_content(
         FileContentResponse: File content and metadata
     """
     # Get project and verify access
-    project = crud.project.get_project(session=session, project_id=project_id)
+    project_service = ProjectService(session)
+    project = project_service.get_by_id(project_id)
 
     if not project:
         raise HTTPException(
@@ -234,7 +236,8 @@ def get_git_status(
     from git import Repo, InvalidGitRepositoryError
 
     # Get project and verify access
-    project = crud.project.get_project(session=session, project_id=project_id)
+    project_service = ProjectService(session)
+    project = project_service.get_by_id(project_id)
 
     if not project:
         raise HTTPException(

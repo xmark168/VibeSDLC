@@ -146,27 +146,18 @@ class AgentEventsHandler(BaseEventHandler):
             message_type = details.get("message_type", "text")
             structured_data_payload = details.get("data")
             
-            # Build metadata
-            metadata = {"agent_name": agent_name}
-            if execution_id:
-                metadata["execution_id"] = str(execution_id)
-            
-            # Save message to database
+            # Save message to database using MessageService
             with Session(self.engine) as db_session:
-                db_message = MessageModel(
+                from app.services import MessageService
+                message_service = MessageService(db_session)
+                db_message = message_service.create_agent_message(
                     project_id=project_id,
-                    user_id=None,
-                    agent_id=None,
+                    agent_name=agent_name,
                     content=content,
-                    author_type=AuthorType.AGENT,
-                    visibility=MessageVisibility.USER_MESSAGE,
+                    execution_id=execution_id,
                     message_type=message_type,
                     structured_data=structured_data_payload,
-                    message_metadata=metadata,
                 )
-                db_session.add(db_message)
-                db_session.commit()
-                db_session.refresh(db_message)
                 message_id = db_message.id
             
             logger.info(f"[RESPONSE] Saved message {message_id} from {agent_name}")
