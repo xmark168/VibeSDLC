@@ -23,14 +23,12 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ActivityData:
-    """Buffered activity data for an execution."""
+    """Buffered activity data for an execution (event-based, no step numbers)."""
     
     message_id: Optional[UUID] = None
     project_id: Optional[UUID] = None
     agent_name: str = ""
-    total_steps: int = 0
-    current_step: int = 0
-    steps: List[dict] = field(default_factory=list)
+    events: List[dict] = field(default_factory=list)  # List of progress events
     status: str = "in_progress"
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
@@ -119,6 +117,77 @@ class ActivityBuffer:
         except Exception as e:
             logger.error(f"Error in activity buffer flush loop: {e}")
     
+    def add_event(
+        self,
+        execution_id: str,
+        project_id: UUID,
+        agent_name: str,
+        event_description: str,
+        event_details: Optional[dict] = None,
+    ) -> Optional[UUID]:
+        """
+        Add event to activity buffer (event-based, no step numbers).
+        
+        Args:
+            execution_id: Execution ID for the activity
+            project_id: Project ID
+            agent_name: Agent name
+            event_description: Description of the event
+            event_details: Additional event details (milestone, confidence, etc.)
+            
+        Returns:
+            Message ID if this is a new activity, None if updating existing
+        """
+        try:
+            # Get or create activity data
+            if execution_id not in self.buffers:
+                # New activity
+                activity = ActivityData(
+                    message_id=None,  # Will be created on first flush
+                    project_id=project_id,
+                    agent_name=agent_name,
+                    status="in_progress",
+                    started_at=datetime.now(timezone.utc),
+                    needs_flush=True
+                )
+                
+                self.buffers[execution_id] = activity
+                logger.debug(f"Created new activity buffer for execution {execution_id}")
+            
+            else:
+                # Update existing activity
+                activity = self.buffers[execution_id]
+            
+            # Add event to activity
+            activity.events.append({
+                "description": event_description,
+                "details": event_details or {},
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+            
+            activity.last_update = datetime.now(timezone.utc)
+            activity.needs_flush = True
+            
+            # Check if completed (based on event details)
+            if event_details:
+                milestone = event_details.get("milestone", "")
+                if milestone == "completed" or "complete" in event_description.lower():
+                    activity.status = "completed"
+                    activity.completed_at = datetime.now(timezone.utc)
+                    self.total_completed += 1
+                elif milestone == "failed" or "error" in event_description.lower():
+                    activity.status = "failed"
+                    activity.completed_at = datetime.now(timezone.utc)
+            
+            self.total_updates += 1
+            
+            return activity.message_id
+        
+        except Exception as e:
+            logger.error(f"Error adding event to activity buffer for {execution_id}: {e}")
+            return None
+    
+    # Legacy method for backward compatibility
     def update_activity(
         self,
         execution_id: str,
@@ -129,71 +198,23 @@ class ActivityBuffer:
         step_description: str,
         step_status: str = "in_progress"
     ) -> Optional[UUID]:
-        """
-        Update activity in memory buffer.
+        """Legacy method - converts to event-based format."""
+        event_details = {
+            "step_number": step_number,
+            "total_steps": total_steps,
+            "step_status": step_status,
+        }
         
-        Args:
-            execution_id: Execution ID for the activity
-            project_id: Project ID
-            agent_name: Agent name
-            step_number: Current step number
-            total_steps: Total number of steps
-            step_description: Description of current step
-            step_status: Status of step (in_progress, completed, failed)
-            
-        Returns:
-            Message ID if this is a new activity, None if updating existing
-        """
-        try:
-            # Get or create activity data
-            if execution_id not in self.buffers:
-                # New activity - create message ID
-                message_id = None  # Will be created on first flush
-                
-                activity = ActivityData(
-                    message_id=message_id,
-                    project_id=project_id,
-                    agent_name=agent_name,
-                    total_steps=total_steps,
-                    current_step=step_number,
-                    status="in_progress",
-                    started_at=datetime.now(timezone.utc),
-                    needs_flush=True
-                )
-                
-                self.buffers[execution_id] = activity
-                
-                logger.debug(f"Created new activity buffer for execution {execution_id}")
-            
-            else:
-                # Update existing activity
-                activity = self.buffers[execution_id]
-            
-            # Add step to activity
-            activity.steps.append({
-                "step": step_number,
-                "description": step_description,
-                "status": step_status,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
-            
-            activity.current_step = step_number
-            activity.last_update = datetime.now(timezone.utc)
-            activity.needs_flush = True
-            
-            # Update status if completed
-            if step_status == "completed" and step_number >= total_steps:
-                activity.status = "completed"
-                activity.completed_at = datetime.now(timezone.utc)
-                self.total_completed += 1
-            
-            self.total_updates += 1
-            
-            return activity.message_id
+        if step_status == "completed" and step_number >= total_steps:
+            event_details["milestone"] = "completed"
         
-        except Exception as e:
-            logger.error(f"Error updating activity buffer for {execution_id}: {e}")
-            return None
+        return self.add_event(
+            execution_id=execution_id,
+            project_id=project_id,
+            agent_name=agent_name,
+            event_description=step_description,
+            event_details=event_details,
+        )
     
     def get_activity(self, execution_id: str) -> Optional[ActivityData]:
         """
@@ -264,9 +285,7 @@ class ActivityBuffer:
                         "data": {
                             "execution_id": execution_id,
                             "agent_name": activity.agent_name,
-                            "total_steps": activity.total_steps,
-                            "current_step": activity.current_step,
-                            "steps": activity.steps,
+                            "events": activity.events,
                             "status": activity.status,
                             "started_at": activity.started_at.isoformat() if activity.started_at else None,
                             "completed_at": activity.completed_at.isoformat() if activity.completed_at else None,
@@ -295,9 +314,7 @@ class ActivityBuffer:
                     "data": {
                         "execution_id": execution_id,
                         "agent_name": activity.agent_name,
-                        "total_steps": activity.total_steps,
-                        "current_step": activity.current_step,
-                        "steps": activity.steps,
+                        "events": activity.events,
                         "status": activity.status,
                         "started_at": activity.started_at.isoformat() if activity.started_at else None,
                         "completed_at": None,

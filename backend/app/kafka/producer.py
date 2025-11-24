@@ -90,9 +90,7 @@ class KafkaProducer:
             # Define topics to create with optimized partition counts
             # High-traffic topics get 6 partitions for better load distribution
             high_traffic_topics = {
-                KafkaTopics.AGENT_RESPONSES,
-                KafkaTopics.AGENT_STATUS,
-                KafkaTopics.AGENT_PROGRESS,
+                KafkaTopics.AGENT_EVENTS,      # Unified agent events stream
                 KafkaTopics.AGENT_TASKS,
                 KafkaTopics.USER_MESSAGES,
             }

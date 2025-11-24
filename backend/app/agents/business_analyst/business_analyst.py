@@ -83,8 +83,8 @@ comprehensive documentation that helps the development team understand what to b
 
             logger.info(f"[{self.name}] Processing BA task: {user_message[:50]}...")
 
-            # Update progress
-            await self.update_progress(1, 4, "Analyzing business requirements")
+            # Status update
+            await self.message_user("thinking", "Analyzing business requirements")
 
             # Create CrewAI task for requirements analysis
             crew_task = Task(
@@ -109,8 +109,12 @@ comprehensive documentation that helps the development team understand what to b
                 agent=self.crew_agent,
             )
 
+            await self.message_user("progress", "Requirements identified", {
+                "milestone": "analysis_started"
+            })
+
             # Execute crew
-            await self.update_progress(2, 4, "Creating requirements documentation")
+            await self.message_user("thinking", "Creating requirements documentation")
 
             crew = Crew(
                 agents=[self.crew_agent],
@@ -123,10 +127,16 @@ comprehensive documentation that helps the development team understand what to b
             # Extract response
             response = str(result)
 
-            await self.update_progress(3, 4, "Reviewing requirements")
+            await self.message_user("progress", "Documentation complete", {
+                "milestone": "documentation_complete"
+            })
 
-            # Update progress to complete
-            await self.update_progress(4, 4, "Complete")
+            await self.message_user("thinking", "Reviewing requirements")
+
+            # Final milestone
+            await self.message_user("progress", "Requirements analysis complete", {
+                "milestone": "completed"
+            })
 
             logger.info(f"[{self.name}] Requirements analysis completed: {len(response)} chars")
 

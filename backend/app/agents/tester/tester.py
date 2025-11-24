@@ -138,8 +138,8 @@ class Tester(BaseAgent):
 
             logger.info(f"[{self.name}] Processing QA task: {user_message[:50]}...")
 
-            # Update progress
-            await self.update_progress(1, 5, "Analyzing requirements")
+            # Status update
+            await self.message_user("thinking", "Analyzing test requirements")
 
             # Determine task type
             task_type = self._determine_task_type(user_message)
@@ -151,8 +151,13 @@ class Tester(BaseAgent):
                 "task_description": user_message,
             }
 
+            await self.message_user("progress", "Requirements analyzed", {
+                "milestone": "analysis_complete",
+                "task_type": task_type
+            })
+
             # Create appropriate task based on type
-            await self.update_progress(2, 5, "Identifying test scenarios")
+            await self.message_user("thinking", "Identifying test scenarios")
 
             if task_type == "validate":
                 crew_task = create_validate_requirements_task(self.crew_agent, context)
@@ -161,8 +166,12 @@ class Tester(BaseAgent):
             else:
                 crew_task = create_test_plan_task(self.crew_agent, context)
 
+            await self.message_user("progress", "Test scenarios identified", {
+                "milestone": "scenarios_identified"
+            })
+
             # Execute crew
-            await self.update_progress(3, 5, "Creating test cases")
+            await self.message_user("thinking", "Creating test cases")
 
             crew = Crew(
                 agents=[self.crew_agent],
@@ -175,10 +184,16 @@ class Tester(BaseAgent):
             # Extract response
             response = str(result)
 
-            await self.update_progress(4, 5, "Preparing test plan")
+            await self.message_user("progress", "Test cases created", {
+                "milestone": "test_cases_complete"
+            })
 
-            # Update progress to complete
-            await self.update_progress(5, 5, "Complete")
+            await self.message_user("thinking", "Preparing final test plan")
+
+            # Final milestone
+            await self.message_user("progress", "QA task complete", {
+                "milestone": "completed"
+            })
 
             logger.info(f"[{self.name}] Test plan completed: {len(response)} chars")
 

@@ -12,12 +12,10 @@ from sqlmodel import create_engine
 from app.kafka import EventHandlerConsumer, KafkaTopics
 from app.websocket.connection_manager import connection_manager
 from app.websocket.handlers import (
-    MessageHandler,
     StoryHandler,
     FlowHandler,
-    ApprovalHandler,
-    StatusHandler,
     TaskHandler,
+    AgentEventsHandler,
 )
 from app.core.config import settings
 
@@ -35,11 +33,12 @@ class WebSocketKafkaBridge:
         self.engine = create_engine(str(settings.SQLALCHEMY_DATABASE_URI))
         
         # Initialize handlers
-        self.message_handler = MessageHandler(connection_manager, self.engine)
+        # Agent events handler for all agent events
+        self.agent_events_handler = AgentEventsHandler(connection_manager, self.engine)
+        
+        # Domain event handlers
         self.story_handler = StoryHandler(connection_manager, self.engine)
         self.flow_handler = FlowHandler(connection_manager, self.engine)
-        self.approval_handler = ApprovalHandler(connection_manager, self.engine)
-        self.status_handler = StatusHandler(connection_manager, self.engine)
         self.task_handler = TaskHandler(connection_manager, self.engine)
 
     async def start(self):
@@ -50,22 +49,31 @@ class WebSocketKafkaBridge:
             # Create consumer subscribing to relevant topics
             self.consumer = EventHandlerConsumer(
                 topics=[
-                    KafkaTopics.AGENT_RESPONSES.value,
-                    KafkaTopics.AGENT_ROUTING.value,
+                    # Agent events (unified stream)
+                    KafkaTopics.AGENT_EVENTS.value,
+                    
+                    # Domain events
+                    KafkaTopics.DOMAIN_EVENTS.value,
                     KafkaTopics.STORY_EVENTS.value,
                     KafkaTopics.FLOW_STATUS.value,
-                    KafkaTopics.AGENT_STATUS.value,
-                    KafkaTopics.AGENT_PROGRESS.value,
-                    KafkaTopics.TOOL_CALLS.value,
-                    KafkaTopics.APPROVAL_REQUESTS.value,
+                    
+                    # Task management
                     KafkaTopics.AGENT_TASKS.value,
                 ],
                 group_id="websocket_bridge_group",
             )
 
-            # Register message handlers
-            self.consumer.register_handler("agent.response.created", self.message_handler.handle_agent_response)
-            self.consumer.register_handler("agent.routing.delegated", self.message_handler.handle_agent_routing)
+            # Register agent events handler for all agent events
+            self.consumer.register_handler("agent.thinking", self.agent_events_handler.handle_agent_event)
+            self.consumer.register_handler("agent.idle", self.agent_events_handler.handle_agent_event)
+            self.consumer.register_handler("agent.waiting", self.agent_events_handler.handle_agent_event)
+            self.consumer.register_handler("agent.error", self.agent_events_handler.handle_agent_event)
+            self.consumer.register_handler("agent.tool_call", self.agent_events_handler.handle_agent_event)
+            self.consumer.register_handler("agent.progress", self.agent_events_handler.handle_agent_event)
+            self.consumer.register_handler("agent.response", self.agent_events_handler.handle_agent_event)
+            self.consumer.register_handler("agent.delegation", self.agent_events_handler.handle_agent_event)
+            self.consumer.register_handler("agent.question", self.agent_events_handler.handle_agent_event)
+            self.consumer.register_handler("agent.approval_request", self.agent_events_handler.handle_agent_event)
 
             # Register story handlers
             self.consumer.register_handler("story.created", self.story_handler.handle_story_created)
@@ -77,18 +85,6 @@ class WebSocketKafkaBridge:
             self.consumer.register_handler("flow.in_progress", self.flow_handler.handle_flow_event)
             self.consumer.register_handler("flow.completed", self.flow_handler.handle_flow_event)
             self.consumer.register_handler("flow.failed", self.flow_handler.handle_flow_event)
-
-            # Register approval handler
-            self.consumer.register_handler("approval.request.created", self.approval_handler.handle_approval_request)
-
-            # Register status handlers
-            self.consumer.register_handler("agent.idle", self.status_handler.handle_agent_status)
-            self.consumer.register_handler("agent.thinking", self.status_handler.handle_agent_status)
-            self.consumer.register_handler("agent.acting", self.status_handler.handle_agent_status)
-            self.consumer.register_handler("agent.waiting", self.status_handler.handle_agent_status)
-            self.consumer.register_handler("agent.error", self.status_handler.handle_agent_status)
-            self.consumer.register_handler("agent.progress", self.status_handler.handle_agent_progress)
-            self.consumer.register_handler("agent.tool_call", self.status_handler.handle_tool_call)
 
             # Register task handlers
             self.consumer.register_handler("agent.task.assigned", self.task_handler.handle_task_assigned)
