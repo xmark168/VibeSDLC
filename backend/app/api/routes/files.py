@@ -7,56 +7,15 @@ from typing import Any, Optional, Dict
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
-from pydantic import BaseModel
 
 from app.api.deps import CurrentUser, SessionDep
 from app.services import ProjectService
 from app.models import Role
+from app.schemas import FileNode, FileTreeResponse, FileContentResponse, GitStatusResponse
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects/{project_id}/files", tags=["files"])
-
-
-# ============= Schemas =============
-
-class FileNode(BaseModel):
-    """Single file or folder node"""
-    name: str
-    type: str  # "file" or "folder"
-    path: str  # Relative path from project root
-    size: Optional[int] = None  # Size in bytes (for files)
-    modified: Optional[str] = None  # Last modified timestamp
-    children: Optional[list["FileNode"]] = None  # Only for folders
-    change_type: Optional[str] = None  # Git change type: M, A, D, R, U
-
-
-class FileTreeResponse(BaseModel):
-    """Response containing the file tree"""
-    project_id: UUID
-    project_path: str
-    root: FileNode
-
-
-class FileContentResponse(BaseModel):
-    """Response containing file content"""
-    path: str
-    name: str
-    content: str
-    size: int
-    modified: str
-
-
-class GitStatusResponse(BaseModel):
-    """Response containing git status of files"""
-    project_id: UUID
-    is_git_repo: bool
-    files: Dict[str, str]  # {path: change_type}
-    # Change types: M=Modified, A=Added, D=Deleted, R=Renamed, U=Untracked
-
-
-# Rebuild for forward reference
-FileNode.model_rebuild()
 
 
 # ============= Endpoints =============

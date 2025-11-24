@@ -12,7 +12,6 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Depends, Query
-from pydantic import BaseModel, Field
 from sqlmodel import Session, select, update
 
 from app.api.deps import get_current_user, get_db, SessionDep
@@ -20,73 +19,17 @@ from app.models import User, Agent, AgentStatus, AgentExecution, AgentExecutionS
 from app.agents.core import AgentPoolManager
 from app.utils.name_generator import generate_agent_name, get_display_name
 from app.core.config import settings
-
+from app.schemas import (
+    PoolConfigSchema,
+    CreatePoolRequest,
+    SpawnAgentRequest,
+    TerminateAgentRequest,
+    PoolResponse,
+    SystemStatsResponse,
+)
 
 
 router = APIRouter(prefix="/agents", tags=["agent-management"])
-
-
-# ===== Schemas =====
-
-class PoolConfigSchema(BaseModel):
-    """Pool configuration schema."""
-    max_agents: int = Field(default=10, ge=1)
-    health_check_interval: int = Field(default=60, ge=10)
-
-
-class CreatePoolRequest(BaseModel):
-    """Request to create agent pool."""
-    role_type: str = Field(..., description="Role type: team_leader, business_analyst, developer, tester")
-    pool_name: str = Field(..., description="Unique pool name")
-    config: Optional[PoolConfigSchema] = None
-
-
-class SpawnAgentRequest(BaseModel):
-    """Request to spawn agent."""
-    project_id: UUID = Field(..., description="Project ID to assign agent to")
-    role_type: str = Field(..., description="Role type: team_leader, business_analyst, developer, tester")
-    pool_name: str = Field(..., description="Pool name")
-    heartbeat_interval: int = Field(default=30, ge=10)
-    max_idle_time: int = Field(default=300, ge=60)
-
-
-class TerminateAgentRequest(BaseModel):
-    """Request to terminate agent."""
-    pool_name: str = Field(..., description="Pool name")
-    agent_id: UUID = Field(..., description="Agent ID to terminate")
-    graceful: bool = Field(default=True, description="Graceful shutdown")
-
-
-class PoolResponse(BaseModel):
-    """Pool information response."""
-    pool_name: str
-    manager_type: Optional[str] = None  # "in-memory" manager type
-    role_class: Optional[str] = None  # Not used in current manager
-    total_agents: int
-    active_agents: int
-    busy_agents: int
-    idle_agents: int
-    total_spawned: int
-    total_terminated: int
-    total_executions: int = 0
-    successful_executions: int = 0
-    failed_executions: int = 0
-    success_rate: float = 0.0
-    load: float = 0.0
-    created_at: str
-    manager_uptime_seconds: Optional[float] = None
-
-
-class SystemStatsResponse(BaseModel):
-    """System statistics response."""
-    uptime_seconds: float
-    total_pools: int
-    total_agents: int
-    total_executions: int
-    successful_executions: int
-    failed_executions: int
-    success_rate: float
-    recent_alerts: int
 
 
 # ===== Global Manager Registry =====
