@@ -33,6 +33,7 @@ import { useMessages } from "@/queries/messages";
 import { AuthorType, type Message } from "@/types/message";
 import { MessageStatusIndicator } from "./message-status-indicator";
 import { AgentQuestionCard } from "./AgentQuestionCard";
+import { ArtifactCard } from "./ArtifactCard";
 import { useProjectAgents } from "@/queries/agents";
 
 interface ChatPanelProps {
@@ -603,6 +604,25 @@ export function ChatPanelWS({
                       )}
                     </button>
                   </div>
+                  
+                  {/* Show artifact card if message type is artifact_created */}
+                  {msg.message_type === 'artifact_created' && msg.structured_data && (
+                    <ArtifactCard
+                      artifact={{
+                        artifact_id: msg.structured_data.artifact_id || msg.id,
+                        artifact_type: msg.structured_data.artifact_type || 'analysis',
+                        title: msg.structured_data.title || 'Artifact',
+                        description: msg.structured_data.description,
+                        version: msg.structured_data.version || 1,
+                        status: msg.structured_data.status || 'draft',
+                        agent_name: msg.agent_name || getAgentName(msg),
+                      }}
+                      onClick={() => {
+                        console.log('[Chat] Opening artifact:', msg.structured_data.artifact_id)
+                        // TODO: Open artifact in workspace panel
+                      }}
+                    />
+                  )}
                 </div>
               </div>
             </div>

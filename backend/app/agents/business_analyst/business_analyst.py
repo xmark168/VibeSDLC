@@ -306,27 +306,22 @@ comprehensive documentation that helps the development team understand what to b
             
             logger.info(f"[{self.name}] Created artifact {artifact_id}")
             
-            # Send response with artifact reference
+            # Send concise response (Claude-style)
             artifact_message = (
-                f"📄 **Phân tích yêu cầu hoàn tất**\n\n"
-                f"Tôi đã tạo tài liệu phân tích chi tiết với các khía cạnh: {', '.join(selected_options)}\n\n"
-                f"**Tài liệu:** {prd_content['title']}\n"
-                f"**Artifact ID:** `{artifact_id}`\n\n"
-                f"Bạn có thể xem chi tiết trong phần Artifacts.\n\n"
-                f"---\n\n"
-                f"**Tóm tắt:**\n{response[:300]}..."
+                f"📄 Tôi đã tạo tài liệu phân tích yêu cầu với các khía cạnh: "
+                f"{', '.join(selected_options)}. "
+                f"Click vào artifact card bên dưới để xem chi tiết."
             )
             
             await self.message_user("response", artifact_message, {
                 "message_type": "artifact_created",
                 "artifact_id": str(artifact_id),
                 "artifact_type": "analysis",
+                "title": prd_content['title'],
+                "description": f"Requirements analysis focused on: {', '.join(selected_options)}",
+                "version": 1,
+                "status": "draft",
                 "task_completed": True,
-                "data": {
-                    "analysis": response,
-                    "aspects": selected_options,
-                    "resumed": True
-                }
             })
             
         except Exception as e:
