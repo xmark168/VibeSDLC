@@ -1,5 +1,6 @@
 import type React from "react";
 import { useState, useRef, useEffect } from "react";
+import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -301,14 +302,15 @@ export function ChatPanelWS({
   }
 
   const formatTimestamp = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const hours = date.getHours();
-    const minutes = date.getMinutes().toString().padStart(2, "0");
-    const ampm = hours >= 12 ? "PM" : "AM";
-    const displayHours = hours % 12 || 12;
-    const month = date.toLocaleString("en-US", { month: "short" });
-    const day = date.getDate().toString().padStart(2, "0");
-    return `${displayHours}:${minutes} ${ampm} on ${month} ${day}`;
+    try {
+      const date = new Date(dateStr);
+      // Automatically converts UTC to local time and formats
+      return format(date, 'h:mm a \'on\' MMM dd');
+      // Output example: "10:30 AM on Nov 25"
+    } catch (error) {
+      console.error('Error formatting timestamp:', error);
+      return dateStr;
+    }
   };
 
   const getAgentAvatar = (authorType: AuthorType) => {
