@@ -115,7 +115,7 @@ def login(
     """
     Login API - supports both credential and OAuth provider login
     """
-    if not login_data.login_provider:
+    if not login_data.loginProvider:
         # Credential Login
         if not login_data.email or not login_data.password:
             raise HTTPException(
@@ -238,6 +238,9 @@ def register(
     """
     Register API - create new account with credential
     """
+    # Debug: Log received data
+    logger.info(f"Register request received: email={register_data.email}, fullname={register_data.fullname}, has_password={bool(register_data.password)}, has_confirmPassword={bool(register_data.confirmPassword)}")
+
     # Validation
     if not validate_email(str(register_data.email)):
         raise HTTPException(
@@ -245,7 +248,7 @@ def register(
             detail="Định dạng email không hợp lệ"
         )
 
-    if len(register_data.fullname) > 50 or not register_data.fullname.strip():
+    if register_data.fullname and (len(register_data.fullname) > 50 or not register_data.fullname.strip()):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Họ tên không được rỗng và tối đa 50 ký tự"
@@ -257,7 +260,7 @@ def register(
             detail="Mật khẩu phải có ít nhất 8 ký tự, chứa ít nhất 1 chữ cái và 1 chữ số"
         )
 
-    if register_data.password != register_data.confirm_password:
+    if register_data.password != register_data.confirmPassword:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Mật khẩu xác nhận không khớp"
