@@ -33,7 +33,6 @@ class Developer(BaseAgent):
         """
         super().__init__(agent_model, **kwargs)
 
-        # Create CrewAI agent
         self.crew = DeveloperCrew(project_id="demo", root_dir="../demo")
 
         logger.info(f"Developer initialized: {self.name}")
@@ -54,15 +53,12 @@ class Developer(BaseAgent):
                 f"[{self.name}] Processing development task: {user_story[:50]}..."
             )
 
-            # Status update
             await self.message_user("thinking", "Analyzing User Story")
 
-            # Create CrewAI task for implementation
-            response = await self.crew.implement_task(user_story=user_story)
+            response = await self.crew.implement_task(user_story=user_story, task_id=str(task.task_id))
 
             await self.message_user("thinking", "Reviewing implementation")
 
-            # Final milestone
             await self.message_user(
                 "progress", "Development task complete", {"milestone": "completed"}
             )

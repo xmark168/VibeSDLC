@@ -4,14 +4,16 @@ from crewai.tools import BaseTool
 from git import Repo, InvalidGitRepositoryError
 import os
 from datetime import datetime
+from pathlib import Path
 
 
 class GitPythonToolInput(BaseModel):
     """Input for git operations using GitPython"""
-    operation: str = Field(..., description="Git operation: 'init', 'create_branch', 'checkout_branch', 'commit', 'push', 'status', 'diff'")
+    operation: str = Field(..., description="Git operation: 'init', 'create_branch', 'create_worktree', 'remove_worktree', 'checkout_branch', 'commit', 'push', 'status', 'diff'")
     branch_name: str = Field(default=None, description="Branch name for operations")
     message: str = Field(default="Auto-commit by AI agent", description="Commit message")
     files: List[str] = Field(default=["."], description="List of files to commit, default to all changed files")
+    worktree_path: str = Field(default=None, description="Path for worktree operations")
 
 
 class GitPythonTool(BaseTool):
@@ -19,6 +21,9 @@ class GitPythonTool(BaseTool):
     description: str = """Git operations using GitPython library:
     - 'init': Initialize git repository
     - 'create_branch': Create and switch to a new branch with format 'ai-task-<timestamp>' if branch_name not provided
+    - 'create_worktree': Create an isolated worktree for a branch
+    - 'remove_worktree': Remove a worktree
+    - 'list_worktrees': List all worktrees
     - 'checkout_branch': Switch to an existing branch
     - 'commit': Commit current changes with message
     - 'push': Push current branch to remote
@@ -32,11 +37,10 @@ class GitPythonTool(BaseTool):
         super().__init__(**kwargs)
         self.root_dir = root_dir or os.getcwd()
 
-    def _run(self, operation: str, branch_name: str = None, message: str = "Auto-commit by AI agent", files: List[str] = ["."]) -> str:
+    def _run(self, operation: str, branch_name: str = None, message: str = "Auto-commit by AI agent", files: List[str] = ["."], worktree_path: str = None) -> str:
         """Execute git operations using GitPython"""
-        
+
         try:
-            # Change to the project directory
             original_dir = os.getcwd()
             os.chdir(self.root_dir)
 
@@ -46,10 +50,17 @@ class GitPythonTool(BaseTool):
                 result = self._init_repo()
             elif operation == "create_branch":
                 if not branch_name:
-                    # Generate a unique branch name based on timestamp if not provided
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     branch_name = f"ai-task-{timestamp}"
                 result = self._create_branch(branch_name)
+            elif operation == "create_worktree":
+                if not branch_name:
+                    return "Error: branch_name is required for create_worktree operation"
+                result = self._create_worktree(branch_name)
+            elif operation == "remove_worktree":
+                if not worktree_path:
+                    return "Error: worktree_path is required for remove_worktree operation"
+                result = self._remove_worktree(worktree_path)
             elif operation == "checkout_branch":
                 if not branch_name:
                     return "Error: branch_name is required for checkout_branch operation"
@@ -62,13 +73,14 @@ class GitPythonTool(BaseTool):
                 result = self._get_status()
             elif operation == "diff":
                 result = self._get_diff()
+            elif operation == "list_worktrees":
+                result = self._list_worktrees()
             else:
-                result = f"Error: Unknown operation '{operation}'. Supported operations: init, create_branch, checkout_branch, commit, push, status, diff"
+                result = f"Error: Unknown operation '{operation}'. Supported operations: init, create_branch, create_worktree, remove_worktree, list_worktrees, checkout_branch, commit, push, status, diff"
 
         except Exception as e:
             result = f"Error during git operation: {str(e)}"
         finally:
-            # Restore original directory
             os.chdir(original_dir)
 
         return str(result)
@@ -76,33 +88,26 @@ class GitPythonTool(BaseTool):
     def _init_repo(self) -> str:
         """Initialize a git repository using GitPython"""
         try:
-            # Check if repo already exists
             try:
                 repo = Repo(self.root_dir)
                 return f"Git repository already exists at: {self.root_dir}"
             except InvalidGitRepositoryError:
-                # Repository doesn't exist, initialize it
                 repo = Repo.init(self.root_dir)
                 
-                # Configure git user
                 with repo.config_writer() as git_config:
                     git_config.set_value("user", "name", "AI-Agent")
                     git_config.set_value("user", "email", "ai-agent@vibesdlc.com")
                     git_config.release()
 
-                # Check if there are any commits
                 try:
-                    # If there are commits, return success
                     repo.head.commit
                     return f"Git repository initialized successfully at: {self.root_dir}"
                 except ValueError:
-                    # No commits exist, create an initial commit
                     gitkeep_path = os.path.join(self.root_dir, ".gitkeep")
                     if not os.path.exists(gitkeep_path):
                         with open(gitkeep_path, "w") as f:
                             f.write("# Initial commit to create main branch\n")
                     
-                    # Add and commit the file
                     repo.index.add([".gitkeep"])
                     commit = repo.index.commit("Initial commit")
                     
@@ -112,11 +117,10 @@ class GitPythonTool(BaseTool):
             return f"Git init failed: {str(e)}"
 
     def _create_branch(self, branch_name: str) -> str:
-        """Create and switch to a new branch"""
+        """Create and switch to a new branch, or create worktree for multi-agent isolation"""
         try:
             repo = Repo(self.root_dir)
 
-            # Check if branch already exists
             existing_branch = None
             for ref in repo.branches:
                 if ref.name == branch_name:
@@ -124,11 +128,8 @@ class GitPythonTool(BaseTool):
                     break
 
             if existing_branch:
-                # Checkout existing branch
-                repo.heads[branch_name].checkout()
-                return f"Switched to existing branch '{branch_name}'"
+                return f"Branch '{branch_name}' already exists. Use worktree for isolated workspace."
             else:
-                # Create and checkout new branch
                 new_branch = repo.create_head(branch_name)
                 new_branch.checkout()
                 return f"Created and switched to new branch '{branch_name}'"
@@ -136,12 +137,58 @@ class GitPythonTool(BaseTool):
         except Exception as e:
             return f"Failed to create branch '{branch_name}': {str(e)}"
 
+    def _create_worktree(self, branch_name: str) -> str:
+        """Create a worktree for isolated development"""
+        try:
+            repo = Repo(self.root_dir)
+
+            worktree_path = Path(self.root_dir).parent / f"workspace-{branch_name}"
+
+            if worktree_path.exists() and any(worktree_path.iterdir()):
+                return f"Worktree directory '{worktree_path}' already exists and is not empty. Use a different branch name or remove the existing directory."
+
+            if branch_name not in repo.heads:
+                current_branch = repo.active_branch
+                new_branch = repo.create_head(branch_name, current_branch.commit)
+            else:
+                new_branch = repo.heads[branch_name]
+
+            repo.git.worktree('add', str(worktree_path), str(new_branch))
+
+            return f"Created worktree at '{worktree_path}' for branch '{branch_name}'"
+
+        except Exception as e:
+            return f"Failed to create worktree for '{branch_name}': {str(e)}"
+
+    def _remove_worktree(self, worktree_path: str) -> str:
+        """Remove a worktree"""
+        try:
+            repo = Repo(self.root_dir)
+
+            repo.git.worktree('remove', worktree_path)
+
+            return f"Removed worktree at '{worktree_path}'"
+
+        except Exception as e:
+            return f"Failed to remove worktree at '{worktree_path}': {str(e)}"
+
+    def _list_worktrees(self) -> str:
+        """List all worktrees"""
+        try:
+            repo = Repo(self.root_dir)
+
+            worktrees_output = repo.git.worktree('list')
+
+            return f"Worktrees:\n{worktrees_output}"
+
+        except Exception as e:
+            return f"Failed to list worktrees: {str(e)}"
+
     def _checkout_branch(self, branch_name: str) -> str:
         """Checkout an existing branch"""
         try:
             repo = Repo(self.root_dir)
             
-            # Check if branch exists
             branch_exists = False
             for ref in repo.branches:
                 if ref.name == branch_name:
@@ -151,7 +198,6 @@ class GitPythonTool(BaseTool):
             if not branch_exists:
                 return f"Error: Branch '{branch_name}' does not exist"
             
-            # Checkout the branch
             repo.heads[branch_name].checkout()
             return f"Switched to branch '{branch_name}'"
         
@@ -163,17 +209,12 @@ class GitPythonTool(BaseTool):
         try:
             repo = Repo(self.root_dir)
             
-            # If files list contains just ["."] (meaning all), add all changes
             if files == ["."]:
-                # Add all changes
-                repo.git.add(A=True)  # equivalent to git add .
+                repo.git.add(A=True)  
             else:
-                # Add specific files
                 repo.index.add(files)
             
-            # Check if there are any changes to commit
             if repo.is_dirty(untracked_files=True) or repo.index.diff("HEAD"):
-                # Create commit
                 commit = repo.index.commit(message)
                 return f"Committed changes: {message}"
             else:
@@ -187,18 +228,15 @@ class GitPythonTool(BaseTool):
         try:
             repo = Repo(self.root_dir)
             
-            # Get current branch
             if repo.head.is_detached:
                 return "Error: Cannot push in detached HEAD state"
             
             current_branch = repo.active_branch
             branch_name = current_branch.name
             
-            # Check if remote exists
             if len(repo.remotes) == 0:
                 return f"No remote configured for branch '{branch_name}'"
             
-            # Push the current branch
             origin = repo.remotes.origin
             push_info = origin.push(refspec=f"{branch_name}:{branch_name}")
             
@@ -215,7 +253,6 @@ class GitPythonTool(BaseTool):
         try:
             repo = Repo(self.root_dir)
             
-            # Get status using GitPython
             untracked_files = repo.untracked_files
             changed_files = [item.a_path for item in repo.index.diff(None)]
             staged_files = [item.a_path for item in repo.index.diff("HEAD")]
@@ -246,7 +283,6 @@ class GitPythonTool(BaseTool):
         try:
             repo = Repo(self.root_dir)
             
-            # Get list of changed files
             changed_files = [item.a_path for item in repo.index.diff(None)]
             untracked_files = repo.untracked_files
             

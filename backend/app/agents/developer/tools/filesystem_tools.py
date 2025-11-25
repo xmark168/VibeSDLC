@@ -7,7 +7,7 @@ File System Tools cho CrewAI sử dụng LangChain FileManagementToolkit
 from langchain_community.agent_toolkits import FileManagementToolkit
 from crewai.tools import BaseTool
 from typing import Type, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 import os
 
 
@@ -54,12 +54,98 @@ class FileReadInput(BaseModel):
     """Input for reading files"""
     file_path: str = Field(..., description="Path to file to read")
 
+    @field_validator("file_path", mode="before")
+    @classmethod
+    def clean_file_path(cls, v):
+        """Cleans the file_path input by extracting the string from a dict or other formats if necessary."""
+        if isinstance(v, str):
+            return v
+        elif isinstance(v, dict):
+            # If the input is a dict like {'file_path': 'path', ...}, extract the file_path value
+            if "file_path" in v:
+                return v["file_path"]
+            # If it has 'path' instead
+            elif "path" in v:
+                return v["path"]
+            # If it has 'description' field (old format)
+            elif "description" in v:
+                return v.get("description", "")
+            else:
+                # If dict doesn't have expected keys, return empty string to trigger error
+                return ""
+        else:
+            # For any other type, convert to string
+            return str(v) if v is not None else ""
+
 
 class FileWriteInput(BaseModel):
     """Input for writing files"""
     file_path: str = Field(..., description="Path to file to write")
     content: str = Field(..., description="Content to write to file")
     mode: str = Field(default="w", description="Write mode: 'w' (overwrite) or 'a' (append)")
+
+    @field_validator("file_path", mode="before")
+    @classmethod
+    def clean_file_path(cls, v):
+        """Cleans the file_path input by extracting the string from a dict or other formats if necessary."""
+        if isinstance(v, str):
+            return v
+        elif isinstance(v, dict):
+            # If the input is a dict like {'file_path': 'path', ...}, extract the file_path value
+            if "file_path" in v:
+                return v["file_path"]
+            # If it has 'path' instead
+            elif "path" in v:
+                return v["path"]
+            # If it has 'description' field (old format)
+            elif "description" in v:
+                return v.get("description", "")
+            else:
+                # If dict doesn't have expected keys, return empty string to trigger error
+                return ""
+        else:
+            # For any other type, convert to string
+            return str(v) if v is not None else ""
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def clean_content(cls, v):
+        """Cleans the content input by extracting the string from a dict or other formats if necessary."""
+        if isinstance(v, str):
+            return v
+        elif isinstance(v, dict):
+            # If the input is a dict like {'content': '...', ...}, extract the content value
+            if "content" in v:
+                return v["content"]
+            # If it has 'description' field (old format)
+            elif "description" in v:
+                return v.get("description", "")
+            # If it has 'data' field
+            elif "data" in v:
+                return v["data"]
+            else:
+                # If no expected keys, return empty string to trigger error
+                return ""
+        else:
+            # For any other type, convert to string
+            return str(v) if v is not None else ""
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def clean_mode(cls, v):
+        """Cleans the mode input by extracting the string from a dict or other formats if necessary."""
+        if isinstance(v, str):
+            return v
+        elif isinstance(v, dict):
+            # If the input is a dict like {'mode': 'w', ...}, extract the mode value
+            if "mode" in v:
+                return v["mode"]
+            else:
+                # If no expected keys, return default mode
+                return "w"
+        else:
+            # For any other type, convert to string
+            return str(v) if v is not None else "w"
 
 
 class FileCopyInput(BaseModel):
@@ -83,6 +169,29 @@ class DirectoryListInput(BaseModel):
     """Input for listing directory"""
     dir_path: str = Field(default=".", description="Directory path to list")
 
+    @field_validator("dir_path", mode="before")
+    @classmethod
+    def clean_dir_path(cls, v):
+        """Cleans the dir_path input by extracting the string from a dict or other formats if necessary."""
+        if isinstance(v, str):
+            return v
+        elif isinstance(v, dict):
+            # If the input is a dict like {'dir_path': 'path', ...}, extract the dir_path value
+            if "dir_path" in v:
+                return v["dir_path"]
+            # If it has 'path' instead
+            elif "path" in v:
+                return v["path"]
+            # If it has 'description' field (old format)
+            elif "description" in v:
+                return v.get("description", ".")
+            else:
+                # If dict doesn't have expected keys, return default
+                return "."
+        else:
+            # For any other type, convert to string or return default
+            return str(v) if v is not None else "."
+
 
 class FileSearchInput(BaseModel):
     """Input for searching files"""
@@ -96,6 +205,77 @@ class FileEditInput(BaseModel):
     old_str: str = Field(..., description="Exact string to find and replace in the file")
     new_str: str = Field(..., description="New string to replace the old string with")
     replace_all: bool = Field(default=False, description="Replace all occurrences (True) or just the first one (False)")
+
+    @field_validator("file_path", mode="before")
+    @classmethod
+    def clean_file_path(cls, v):
+        """Cleans the file_path input by extracting the string from a dict or other formats if necessary."""
+        if isinstance(v, str):
+            return v
+        elif isinstance(v, dict):
+            # If the input is a dict like {'file_path': 'path', ...}, extract the file_path value
+            if "file_path" in v:
+                return v["file_path"]
+            # If it has 'path' instead
+            elif "path" in v:
+                return v["path"]
+            # If it has 'description' field (old format)
+            elif "description" in v:
+                return v.get("description", "")
+            else:
+                # If dict doesn't have expected keys, return empty string to trigger error
+                return ""
+        else:
+            # For any other type, convert to string
+            return str(v) if v is not None else ""
+
+    @field_validator("old_str", mode="before")
+    @classmethod
+    def clean_old_str(cls, v):
+        """Cleans the old_str input by extracting the string from a dict or other formats if necessary."""
+        if isinstance(v, str):
+            return v
+        elif isinstance(v, dict):
+            # If the input is a dict, look for common field names
+            if "old_str" in v:
+                return v["old_str"]
+            elif "old_string" in v:
+                return v["old_string"]
+            elif "old" in v:
+                return v["old"]
+            elif "description" in v:
+                return v.get("description", "")
+            else:
+                # If no expected keys, return empty string to trigger error
+                return ""
+        else:
+            # For any other type, convert to string
+            return str(v) if v is not None else ""
+
+    @field_validator("new_str", mode="before")
+    @classmethod
+    def clean_new_str(cls, v):
+        """Cleans the new_str input by extracting the string from a dict or other formats if necessary."""
+        if isinstance(v, str):
+            return v
+        elif isinstance(v, dict):
+            # If the input is a dict, look for common field names
+            if "new_str" in v:
+                return v["new_str"]
+            elif "new_string" in v:
+                return v["new_string"]
+            elif "new" in v:
+                return v["new"]
+            elif "replacement" in v:
+                return v["replacement"]
+            elif "description" in v:
+                return v.get("description", "")
+            else:
+                # If no expected keys, return empty string to trigger error
+                return ""
+        else:
+            # For any other type, convert to string
+            return str(v) if v is not None else ""
 
 
 # Custom CrewAI-compatible File Tools
@@ -114,16 +294,16 @@ class SafeFileReadTool(BaseTool):
     def _run(self, file_path: str) -> str:
         try:
             full_path = os.path.join(self.root_dir, file_path)
-            
+
             # Security check
             real_path = os.path.realpath(full_path)
             real_root = os.path.realpath(self.root_dir)
             if not real_path.startswith(real_root):
                 return f"Error: Access denied. Path outside root directory: {file_path}"
-            
+
             with open(full_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            
+
             return f"Content of {file_path}:\n\n{content}"
         except FileNotFoundError:
             return f"Error: File not found: {file_path}"
@@ -145,19 +325,19 @@ class SafeFileWriteTool(BaseTool):
     def _run(self, file_path: str, content: str, mode: str = "w") -> str:
         try:
             full_path = os.path.join(self.root_dir, file_path)
-            
+
             # Security check
             real_path = os.path.realpath(full_path)
             real_root = os.path.realpath(self.root_dir)
             if not real_path.startswith(real_root):
                 return f"Error: Access denied. Path outside root directory: {file_path}"
-            
+
             # Create directory if needed
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
-            
+
             with open(full_path, mode, encoding='utf-8') as f:
                 f.write(content)
-            
+
             action = "Appended to" if mode == "a" else "Written to"
             return f"{action} file: {file_path} ({len(content)} characters)"
         except Exception as e:
@@ -374,31 +554,31 @@ class SafeFileEditTool(BaseTool):
     def _run(self, file_path: str, old_str: str, new_str: str, replace_all: bool = False) -> str:
         try:
             full_path = os.path.join(self.root_dir, file_path)
-            
+
             # Security check
             real_path = os.path.realpath(full_path)
             real_root = os.path.realpath(self.root_dir)
             if not real_path.startswith(real_root):
                 return f"Error: Access denied. Path outside root directory: {file_path}"
-            
+
             # Check file exists
             if not os.path.exists(full_path):
                 return f"Error: File not found: {file_path}"
-            
+
             # Read current content
             with open(full_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            
+
             # Check if old_str exists
             if old_str not in content:
                 return f"Error: String not found in file: '{old_str[:100]}...'"
-            
+
             # Check for multiple occurrences if not replace_all
             occurrences = content.count(old_str)
             if not replace_all and occurrences > 1:
                 return (f"Error: String appears {occurrences} times in file. "
                        f"Use replace_all=True to replace all instances, or provide a more specific string.")
-            
+
             # Perform replacement
             if replace_all:
                 new_content = content.replace(old_str, new_str)
@@ -406,13 +586,13 @@ class SafeFileEditTool(BaseTool):
             else:
                 new_content = content.replace(old_str, new_str, 1)
                 result_msg = f"Successfully replaced 1 occurrence in '{file_path}'"
-            
+
             # Write back
             with open(full_path, 'w', encoding='utf-8') as f:
                 f.write(new_content)
-            
+
             return result_msg
-            
+
         except PermissionError:
             return f"Error: Permission denied editing '{file_path}'"
         except Exception as e:

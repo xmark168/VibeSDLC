@@ -1,5 +1,7 @@
 import asyncio
+import os
 from uuid import UUID, uuid4
+from pathlib import Path
 
 from sqlmodel import Session
 
@@ -16,12 +18,27 @@ class CustomDeveloper(Developer):
 
     def __init__(self, agent_model, **kwargs):
         super().__init__(agent_model, **kwargs)
-        # Cập nhật lại crew với đường dẫn mới
+        # Cập nhật lại crew với đường dẫn mới được tạo dựa trên project_id
         from app.agents.developer.crew import DeveloperCrew
+
+        # Tạo thư mục dự án dựa trên project_id (dùng phần đầu của UUID để ngắn gọn)
+        project_id_short = str(self.project_id).split('-')[0]  # Lấy phần đầu tiên trước dấu gạch ngang
+        project_base_path = Path(__file__).parent / "app" / "agents" / "developer" / f"proj_{project_id_short}"
+        project_base_path.mkdir(exist_ok=True)
+
+        # Đường dẫn đến workspace chính cho dự án này
+        main_workspace = project_base_path / "ws_main"
+
+        # Nếu thư mục chưa tồn tại, sao chép từ thư mục mẫu
+        if not main_workspace.exists():
+            source_workspace = Path(__file__).parent / "app" / "agents" / "developer" / "project_test_id" / "workspace_main"
+            if source_workspace.exists():
+                import shutil
+                shutil.copytree(source_workspace, main_workspace)
 
         self.crew = DeveloperCrew(
             project_id=str(self.project_id),
-            root_dir=r"Z:\Z_Download\Dev_Agent_25_11\VibeSDLC\backend\app\agents\developer\demo",
+            root_dir=str(main_workspace),
         )
 
 

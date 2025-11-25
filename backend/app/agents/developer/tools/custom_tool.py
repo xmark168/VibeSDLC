@@ -335,13 +335,18 @@ class CodebaseSearchTool(BaseTool):
         "\n\n**Effective Queries:**"
         "\n- Be specific. Instead of `'user'`, try `'user model schema'` or `'user authentication API'`."
         "\n- Combine concepts: `'React component for user profile page'`."
+        "\n\n**Search Context:**"
+        "\n- By default searches in project context."
+        "\n- When task_id is provided, searches in task-specific context."
     )
     args_schema: type[BaseModel] = CodebaseSearchInput
     project_id: str = None
+    task_id: str = None
 
-    def __init__(self, project_id: str, **kwargs):
+    def __init__(self, project_id: str, task_id: str = None, **kwargs):
         super().__init__(**kwargs)
         self.project_id = project_id
+        self.task_id = task_id
 
     def _run(self, query: str, top_k: int = 5) -> str:
         """
@@ -358,14 +363,20 @@ class CodebaseSearchTool(BaseTool):
             return "Error: project_id was not provided to CodebaseSearchTool."
 
         try:
-            results = project_manager.search(self.project_id, query, top_k=top_k)
+            # Use task-level search if task_id is provided, otherwise use project-level search
+            if self.task_id:
+                results = project_manager.search_task(self.project_id, self.task_id, query, top_k=top_k)
+                context = f"task '{self.task_id}' in project '{self.project_id}'"
+            else:
+                results = project_manager.search(self.project_id, query, top_k=top_k)
+                context = f"project '{self.project_id}'"
 
             if not results:
-                return f"No results found in project '{self.project_id}' for query: '{query}'"
+                return f"No results found in {context} for query: '{query}'"
 
             # Format results
             formatted_output = [
-                f"Code search results for '{query}' in project '{self.project_id}':\n"
+                f"Code search results for '{query}' in {context}:\n"
             ]
             for i, result in enumerate(results, 1):
                 score_pct = int(result.get("score", 0) * 100)
@@ -376,7 +387,8 @@ class CodebaseSearchTool(BaseTool):
             return "\n".join(formatted_output)
 
         except Exception as e:
-            return f"Error performing semantic search in project '{self.project_id}': {str(e)}"
+            context = f"task '{self.task_id}' in project '{self.project_id}'" if self.task_id else f"project '{self.project_id}'"
+            return f"Error performing semantic search in {context}: {str(e)}"
 
 
 class CocoIndexSearchInput(BaseModel):
