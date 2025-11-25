@@ -195,7 +195,7 @@ class AdvancedProjectManager:
                     for row in cur.fetchall()
                 ]
 
-    def update_project(self, project_id: str):
+    async def update_project(self, project_id: str):
         """Re-index a specific project."""
         # Sanitize the project_id to match the stored flow name
         sanitized_project_id = "".join(c if c.isalnum() else "_" for c in project_id)
@@ -203,8 +203,20 @@ class AdvancedProjectManager:
         if sanitized_project_id not in self.flows:
             raise ValueError(f"Project {project_id} not registered")
 
-        stats = self.flows[sanitized_project_id].update()
-        print(f"Updated {project_id}: {stats}")
+        import concurrent.futures
+        import asyncio
+
+        # Run the synchronous update in a separate thread to avoid blocking the event loop
+        def run_update():
+            return self.flows[sanitized_project_id].update()
+
+        # Use run_in_executor to run the blocking operation in a thread pool
+        loop = asyncio.get_event_loop()
+        future = loop.run_in_executor(None, run_update)
+        result = await future  # Use await instead of asyncio.run
+
+        print(f"Updated {project_id}: {result}")
+        return result
 
     def delete_project(self, project_id: str):
         """Remove a project and its index table."""

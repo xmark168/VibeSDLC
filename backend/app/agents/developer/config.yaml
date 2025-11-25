@@ -105,6 +105,7 @@ tasks:
       **CRITICAL RULES**:
       - NEVER guess component names, hook usage, function names, exports, or imports
       - Do not implement code
+      - Do not plan for testing, just need to implement code, testing is separated task
     expected_output: >
       Output Format:
       - Tech Stack (from AGENTS.md)

@@ -4,14 +4,17 @@ import logging
 from pathlib import Path
 from typing import Any
 import os
+import glob
 import yaml
 from crewai import LLM, Agent, Crew, Process, Task
 from crewai_tools import TavilyExtractorTool, TavilySearchTool
-
+from crewai.knowledge.source.text_file_knowledge_source import TextFileKnowledgeSource
+        
 from app.agents.developer.tools.custom_tool import (
     CodebaseSearchTool,
     ShellCommandTool,
 )
+from app.agents.developer.tools.git_python_tool import GitPythonTool
 from app.agents.developer.tools.filesystem_tools import (
     FileSearchTool,
     SafeFileDeleteTool,
@@ -168,6 +171,48 @@ class DeveloperCrew:
             expected_output=code_task_cfg["expected_output"],
         )
 
+        # Git operations for this task
+        git_tool = GitPythonTool(root_dir=self.root_dir)
+        # Create a new branch for this task
+        branch_result = git_tool._run("create_branch", message=f"AI task implementation: {user_story[:50]}...")
+        print(f"Git branch operation result: {branch_result}")
+
+        
+
+        # Create knowledge source from knowledge directory
+        # IMPORTANT: TextFileKnowledgeSource requires ABSOLUTE paths, not relative paths!
+        # Use the correct absolute path for knowledge directory
+        # Get the absolute path of the developer directory, then add knowledge
+        developer_dir = Path(__file__).parent  # This is the directory containing this crew.py file
+        knowledge_dir = developer_dir / "knowledge"
+
+        knowledge_files = []
+        if knowledge_dir.exists():
+            # Get all .md and .txt files in knowledge directory and subdirectories
+            for ext in ["**/*.md", "**/*.txt", "**/*.mdx"]:
+                for file_path in knowledge_dir.glob(ext):
+                    # Use ABSOLUTE path, not relative path
+                    # TextFileKnowledgeSource needs full paths like 'Z:\...\knowledge\themes\arctic-frost.md'
+                    if file_path.exists() and file_path.is_file():
+                        abs_path = file_path.resolve()  # Use resolve() instead of absolute() to get canonical path
+                        knowledge_files.append(str(abs_path))
+
+        knowledge_sources = []
+        if knowledge_files:
+            try:
+                if knowledge_files:
+                    # Create knowledge source from ABSOLUTE file paths
+                    text_knowledge = TextFileKnowledgeSource(file_paths=knowledge_files)
+                    knowledge_sources = [text_knowledge]
+                    logger.info(f"Loaded {len(knowledge_files)} knowledge files from {knowledge_dir}")
+                    logger.info(f"Knowledge files: {knowledge_files}")
+                else:
+                    logger.info("No existing knowledge files found to load")
+            except Exception as e:
+                logger.error(f"Error loading knowledge sources: {e}")
+                logger.error(f"Attempted to load these files: {knowledge_files}")
+                logger.error(f"Knowledge directory: {knowledge_dir}, exists: {knowledge_dir.exists()}")
+
         # Execute crew
         crew = Crew(
             agents=[
@@ -177,6 +222,7 @@ class DeveloperCrew:
             tasks=[plan_task, code_task],
             process=Process.sequential,
             verbose=True,
+            knowledge_sources=knowledge_sources,  # Add knowledge sources
             embedder={
                 "provider": "openai",
                 "config": {"model": "text-embedding-3-large"},
@@ -186,11 +232,15 @@ class DeveloperCrew:
 
         result = await crew.kickoff_async()
 
-        # logic update 
+        # Commit the changes after task completion (only changed files)
+        commit_result = git_tool._run("commit", message=f"Auto-commit: Implementing task - {user_story[:50]}...", files=["."])
+        print(f"Git commit result: {commit_result}")
+        
+        # Update project index
         print(f"--- [After Kickoff] Crew run finished for project '{self.project_id}'. Updating index... ---")
         try:
-            project_manager.update_project(self.project_id)
+            await project_manager.update_project(self.project_id)
         except Exception as e:
             print(f"An unexpected error occurred during index update for project '{self.project_id}': {e}")
-        
+
         return str(result)

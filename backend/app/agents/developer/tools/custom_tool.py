@@ -4,8 +4,8 @@ import re
 import subprocess
 import time
 from pathlib import Path
-from typing import ClassVar
-
+from typing import ClassVar, List, Type
+from datetime import datetime
 from crewai.tools import BaseTool
 from langfuse import observe
 from pydantic import BaseModel, Field
@@ -430,3 +430,186 @@ class CocoIndexSearchTool(BaseTool):
 
         except Exception as e:
             return f"Error: {str(e)}"
+
+
+# ============================================================================
+# Git Branch Management Tool
+# ============================================================================
+
+from typing import List
+
+class GitBranchToolInput(BaseModel):
+    """Input for git branch operations"""
+    operation: str = Field(..., description="Git operation: 'init', 'create_branch', 'checkout_branch', 'commit', 'push', 'status', 'diff'")
+    branch_name: str = Field(default=None, description="Branch name for operations")
+    message: str = Field(default="Auto-commit by AI agent", description="Commit message")
+    files: List[str] = Field(default=["."], description="List of files to commit, default to all changed files")
+
+
+class GitBranchTool(BaseTool):
+    name: str = "git_branch_tool"
+    description: str = """Git operations for branch management:
+    - 'init': Initialize git repository
+    - 'create_branch': Create and switch to a new branch with format 'ai-task-<timestamp>' if branch_name not provided
+    - 'checkout_branch': Switch to an existing branch
+    - 'commit': Commit current changes with message
+    - 'push': Push current branch to remote
+    - 'status': Get git status
+    - 'diff': Get git diff
+    Usage: {'operation': 'create_branch', 'branch_name': 'feature/new-feature', 'message': 'Initial commit'}"""
+    args_schema: Type[BaseModel] = GitBranchToolInput
+    root_dir: str = Field(default_factory=os.getcwd, description="Root directory for git operations")
+
+    def __init__(self, root_dir: str = None, **kwargs):
+        super().__init__(**kwargs)
+        self.root_dir = root_dir or os.getcwd()
+
+    def _run(self, operation: str, branch_name: str = None, message: str = "Auto-commit by AI agent", files: List[str] = ["."]) -> str:
+        
+
+        try:
+            # Change to the project directory
+            original_dir = os.getcwd()
+            os.chdir(self.root_dir)
+
+            result = ""
+
+            if operation == "create_branch":
+                if not branch_name:
+                    # Generate a unique branch name based on timestamp if not provided
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    branch_name = f"ai-task-{timestamp}"
+
+                # Check if branch exists
+                check_cmd = ["git", "branch", "--list", branch_name]
+                check_result = subprocess.run(check_cmd, capture_output=True, text=True)
+                if branch_name in check_result.stdout:
+                    # Branch already exists, switch to it
+                    cmd = ["git", "checkout", branch_name]
+                    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                    result = f"Switched to existing branch '{branch_name}':\n{result.stdout}"
+                else:
+                    # Create and switch to new branch
+                    cmd = ["git", "checkout", "-b", branch_name]
+                    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                    result = f"Created and switched to new branch '{branch_name}':\n{result.stdout}"
+
+            elif operation == "checkout_branch":
+                if not branch_name:
+                    return "Error: branch_name is required for checkout_branch operation"
+                # Switch to existing branch
+                cmd = ["git", "checkout", branch_name]
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                result = f"Switched to branch '{branch_name}':\n{result.stdout}"
+
+            elif operation == "commit":
+                # If files list contains just ["."] (meaning all), replace with actual changed files
+                if files == ["."]:
+                    # Get list of changed files only
+                    diff_cmd = ["git", "diff", "--name-only"]
+                    diff_result = subprocess.run(diff_cmd, capture_output=True, text=True)
+                    if diff_result.returncode == 0:
+                        changed_files = diff_result.stdout.strip().split('\n')
+                        changed_files = [f for f in changed_files if f.strip()]  # Remove empty strings
+                        files = changed_files or ["."]  # Use changed files or ["."] if none found
+
+                # Add files
+                add_cmd = ["git", "add"] + files
+                add_result = subprocess.run(add_cmd, capture_output=True, text=True)
+
+                if add_result.returncode != 0:
+                    result = f"Add failed: {add_result.stderr}"
+                else:
+                    # Commit changes
+                    commit_cmd = ["git", "commit", "-m", message]
+                    commit_result = subprocess.run(commit_cmd, capture_output=True, text=True)
+
+                    if commit_result.returncode == 0:
+                        result = f"Committed {len(files)} file(s): {message}\n{commit_result.stdout}"
+                    else:
+                        # If no changes to commit, that's OK
+                        if "nothing to commit" in commit_result.stdout.lower() or "no changes added to commit" in commit_result.stdout.lower():
+                            result = f"No changes to commit: {commit_result.stdout}"
+                        else:
+                            result = f"Commit failed: {commit_result.stderr}"
+
+            elif operation == "push":
+                # Get current branch name
+                branch_result = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True)
+                current_branch = branch_result.stdout.strip()
+
+                if current_branch == "HEAD":
+                    # Detached HEAD state
+                    result = "Error: Cannot push in detached HEAD state"
+                else:
+                    # Push current branch to remote
+                    cmd = ["git", "push", "--set-upstream", "origin", current_branch]
+                    push_result = subprocess.run(cmd, capture_output=True, text=True)
+                    if push_result.returncode == 0:
+                        result = f"Pushed branch '{current_branch}' to remote:\n{push_result.stdout}"
+                    else:
+                        result = f"Push failed:\n{push_result.stderr}"
+
+            elif operation == "status":
+                # Get git status
+                cmd = ["git", "status", "--short"]
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                result = f"Git status:\n{result.stdout}"
+
+            elif operation == "init":
+                # Initialize git repository
+                init_cmd = ["git", "init"]
+                init_result = subprocess.run(init_cmd, capture_output=True, text=True)
+                if init_result.returncode == 0:
+                    # Also set up initial configuration
+                    subprocess.run(["git", "config", "user.name", "AI-Agent"], capture_output=True)
+                    subprocess.run(["git", "config", "user.email", "ai-agent@vibesdlc.com"], capture_output=True)
+
+                    # Check if there are any commits (repository is empty)
+                    # Use symbolic-ref to check current branch - this will fail if no commits exist
+                    rev_parse_cmd = ["git", "rev-parse", "--verify", "HEAD"]
+                    rev_result = subprocess.run(rev_parse_cmd, capture_output=True, text=True)
+
+                    if rev_result.returncode != 0:  # No commits exist (HEAD doesn't exist)
+                        # Create an initial commit
+                        # First, make sure we have at least one file to commit
+                        gitkeep_path = os.path.join(self.root_dir, ".gitkeep")
+                        if not os.path.exists(gitkeep_path):
+                            with open(gitkeep_path, "w") as f:
+                                f.write("# Initial commit to create main branch\n")
+
+                        # Add files and commit
+                        subprocess.run(["git", "add", "."], capture_output=True)
+                        init_commit_result = subprocess.run(["git", "commit", "-m", "Initial commit"], capture_output=True, text=True)
+
+                        if init_commit_result.returncode == 0:
+                            result = f"Git repository initialized successfully with initial commit:\n{init_result.stdout}\n{init_commit_result.stdout}"
+                        else:
+                            result = f"Git repository initialized but initial commit failed:\n{init_result.stdout}\n{init_commit_result.stderr}"
+                    else:
+                        result = f"Git repository initialized successfully:\n{init_result.stdout}"
+                else:
+                    # If repo already exists, that's OK
+                    if "reinitialized existing" in init_result.stdout:
+                        result = f"Git repository reinitialized (already existed):\n{init_result.stdout}"
+                    else:
+                        result = f"Git init failed:\n{init_result.stderr}"
+
+            elif operation == "diff":
+                # Get git diff
+                cmd = ["git", "diff", "--name-only"]
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                result = f"Changed files:\n{result.stdout}"
+
+            else:
+                result = f"Error: Unknown operation '{operation}'. Supported operations: init, create_branch, checkout_branch, commit, push, status, diff"
+
+        except subprocess.CalledProcessError as e:
+            result = f"Git operation failed: {e.stderr if e.stderr else str(e)}"
+        except Exception as e:
+            result = f"Error during git operation: {str(e)}"
+        finally:
+            # Restore original directory
+            os.chdir(original_dir)
+
+        return str(result)
