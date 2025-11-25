@@ -1,22 +1,13 @@
 import { OpenAPI } from "@client"
 import { request as __request } from "@client/core/request"
+import type {
+  ExecuteAgentRequest,
+  ExecuteAgentResponse,
+  ExecuteAgentSyncResponse,
+} from "@/types"
 
-export type ExecuteAgentRequest = {
-  project_id: string
-  user_input: string
-  agent_type?: "po_agent"
-}
-
-export type ExecuteAgentResponse = {
-  execution_id: string
-  status: string
-  message: string
-}
-
-export type ExecuteAgentSyncResponse = {
-  status: string
-  result: any
-}
+// Re-export types for convenience
+export type { ExecuteAgentRequest, ExecuteAgentResponse, ExecuteAgentSyncResponse }
 
 export const agentApi = {
   /**

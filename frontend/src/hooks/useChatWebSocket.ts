@@ -10,38 +10,13 @@
 
 import { useEffect, useRef, useState } from 'react'
 import useWebSocket, { ReadyState } from 'react-use-websocket'
-import { AuthorType, Message } from '@/types/message'
-
-// ============================================================================
-// Types
-// ============================================================================
-
-export interface TypingState {
-  id: string
-  agent_name: string
-  started_at: string
-  message?: string
-}
-
-export type AgentStatusType = 'idle' | 'thinking' | 'acting'
-
-export interface UseChatWebSocketReturn {
-  // Connection state
-  isConnected: boolean
-  readyState: ReadyState
-  
-  // Messages
-  messages: Message[]
-  
-  // Agent status
-  agentStatus: AgentStatusType
-  
-  // Typing indicators
-  typingAgents: Map<string, TypingState>
-  
-  // Actions
-  sendMessage: (content: string, agentName?: string) => void
-}
+import type {
+  Message,
+  TypingState,
+  AgentStatusType,
+  UseChatWebSocketReturn,
+} from '@/types'
+import { AuthorType } from '@/types'
 
 // ============================================================================
 // Helper Functions
