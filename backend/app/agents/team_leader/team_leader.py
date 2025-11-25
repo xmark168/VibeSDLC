@@ -66,10 +66,10 @@ class TeamLeader(BaseAgent):
             logger.info(f"[{self.name}] Processing {task_type}: {user_message[:50]}...")
 
             # Determine task type and route to appropriate crew workflow
+            # NOTE: Base agent already sent "thinking" event, no need to duplicate
+            
             if task_type == "progress_query" or "status" in user_message.lower():
                 # Progress tracking request
-                await self.message_user("thinking", "Checking project status...")
-                
                 # Get project context (could be enhanced with database queries)
                 project_context = f"User asking about: {user_message}"
                 
@@ -81,8 +81,6 @@ class TeamLeader(BaseAgent):
                 
             else:
                 # General request analysis
-                await self.message_user("thinking", "Analyzing request...")
-                
                 # Run CrewAI asynchronously using native async support
                 crew_output = await self.crew.analyze_request(user_message)
                 

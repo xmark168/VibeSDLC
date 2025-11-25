@@ -139,8 +139,7 @@ class Tester(BaseAgent):
 
             logger.info(f"[{self.name}] Processing QA task: {user_message[:50]}...")
 
-            # Status update
-            await self.message_user("thinking", "Creating test plan...")
+            # NOTE: Base agent already sent "thinking" event, no need to duplicate
 
             # Determine task type
             task_type = self._determine_task_type(user_message)

@@ -118,7 +118,6 @@ class ConnectionManager:
                 logger.warning(f"Error broadcasting to WebSocket: {e}")
                 disconnected.append(connection)
 
-        logger.info(f"Broadcast complete: sent {sent_count}/{connection_count} messages")
 
         # Cleanup disconnected websockets
         if disconnected:

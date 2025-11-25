@@ -3,7 +3,6 @@ import { useNavigate } from "@tanstack/react-router"
 import { useState } from "react"
 
 import {
-  // type Body_login_login_access_token as AccessToken,
   type ApiError,
   type AuthenticationLoginData,
   type AuthenticationRegisterData,

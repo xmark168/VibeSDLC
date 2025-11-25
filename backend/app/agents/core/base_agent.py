@@ -486,25 +486,16 @@ class BaseAgent(ABC):
             # Update state to busy
             self.state = AgentStatus.busy
             
-            # Emit "thinking" status IMMEDIATELY so frontend shows indicator right away
+            # Emit "thinking" status ONCE - agents can send custom thinking messages in handle_task
             await self.message_user("thinking", f"Processing request...")
 
             task_failed = False
             try:
-                # Notify user that agent is thinking/processing
-                await self.message_user("thinking", f"Processing {task.task_type.value} request")
-                
                 # Call agent's implementation
                 result = await self.handle_task(task)
                 
-                # Auto-send response message if agent returned output
-                if result.success and result.output:
-
-                    await self.emit_message(
-                        content=result.output,
-                        message_type=result.structured_data.get("message_type", "text") if result.structured_data else "text",
-                        data=result.structured_data
-                    )
+                # NOTE: Agents should send their own response via message_user("response", ...)
+                # inside handle_task(). Don't auto-send here to avoid duplicates.
                 
                 # Update execution record with success
                 await self._complete_execution_record(result=result, success=True)

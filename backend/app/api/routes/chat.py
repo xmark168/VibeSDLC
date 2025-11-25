@@ -8,7 +8,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, HTTPExcept
 from uuid import UUID
 import logging
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.websocket.connection_manager import connection_manager
 from app.core.security import decode_access_token
@@ -72,7 +72,7 @@ async def websocket_endpoint(
             "type": "connected",
             "project_id": str(project_id),
             "user_id": str(user.id),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         })
 
         logger.info(f"User {user.id} connected to project {project_id} via WebSocket")
@@ -216,7 +216,7 @@ async def websocket_endpoint(
                             "type": "answer_ack",
                             "approval_request_id": approval_request_id,
                             "status": "received",
-                            "timestamp": datetime.utcnow().isoformat()
+                            "timestamp": datetime.now(timezone.utc).isoformat()
                         })
 
                     else:

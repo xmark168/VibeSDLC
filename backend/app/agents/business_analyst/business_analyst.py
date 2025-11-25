@@ -84,8 +84,7 @@ comprehensive documentation that helps the development team understand what to b
 
             logger.info(f"[{self.name}] Processing BA task: {user_message[:50]}...")
 
-            # Status update
-            await self.message_user("thinking", "Analyzing business requirements...")
+            # NOTE: Base agent already sent "thinking" event, no need to duplicate
 
             # Create CrewAI task for requirements analysis
             crew_task = Task(

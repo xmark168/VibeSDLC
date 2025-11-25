@@ -1,5 +1,6 @@
 import type React from "react";
 import { useState, useRef, useEffect } from "react";
+import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -26,7 +27,7 @@ import {
 import { TechStackDialog } from "./tech-stack-dialog";
 import { useTheme } from "@/components/provider/theme-provider";
 import { useChatWebSocket } from "@/hooks/useChatWebSocket";
-import { AgentExecutionDialog } from "./AgentExecutionDialog";
+import { TypingIndicator } from "./TypingIndicator";
 import { useAuth } from "@/hooks/useAuth";
 import { useMessages } from "@/queries/messages";
 import { AuthorType, type Message } from "@/types/message";
@@ -67,9 +68,6 @@ export function ChatPanelWS({
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [mentionedAgent, setMentionedAgent] = useState<{ id: string; name: string } | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-  const [expandedMessages, setExpandedMessages] = useState<Set<string>>(
-    new Set()
-  );
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
@@ -120,7 +118,7 @@ export function ChatPanelWS({
     isConnected,
     messages: wsMessages,
     agentStatus,
-    activeExecution,
+    typingAgents,
     sendMessage: wsSendMessage,
   } = useChatWebSocket(projectId, token || '');
 
@@ -141,21 +139,7 @@ export function ChatPanelWS({
     (msg, index, self) => index === self.findIndex(m => m.id === msg.id)
   );
   
-  console.log('✅ [ChatPanelWS] Final uniqueMessages to render:', uniqueMessages.length, uniqueMessages);
-
   // Note: Kanban, activeTab, and agentStatuses features removed for simplicity
-
-  const toggleExpand = (id: string) => {
-    setExpandedMessages((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(id)) {
-        newSet.delete(id);
-      } else {
-        newSet.add(id);
-      }
-      return newSet;
-    });
-  };
 
   const filteredAgents = AGENTS.filter((agent) =>
     agent.name.toLowerCase().includes(mentionSearch.toLowerCase())
@@ -316,14 +300,15 @@ export function ChatPanelWS({
   }
 
   const formatTimestamp = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const hours = date.getHours();
-    const minutes = date.getMinutes().toString().padStart(2, "0");
-    const ampm = hours >= 12 ? "PM" : "AM";
-    const displayHours = hours % 12 || 12;
-    const month = date.toLocaleString("en-US", { month: "short" });
-    const day = date.getDate().toString().padStart(2, "0");
-    return `${displayHours}:${minutes} ${ampm} on ${month} ${day}`;
+    try {
+      const date = new Date(dateStr);
+      // Automatically converts UTC to local time and formats
+      return format(date, 'h:mm a \'on\' MMM dd');
+      // Output example: "10:30 AM on Nov 25"
+    } catch (error) {
+      console.error('Error formatting timestamp:', error);
+      return dateStr;
+    }
   };
 
   const getAgentAvatar = (authorType: AuthorType) => {
@@ -498,8 +483,6 @@ export function ChatPanelWS({
       >
         {uniqueMessages.map((msg) => {
           const isUserMessage = msg.author_type === AuthorType.USER;
-          const isExpanded = expandedMessages.has(msg.id);
-          const shouldTruncate = (msg.content?.length || 0) > 200;
 
           if (isUserMessage) {
             return (
@@ -541,7 +524,6 @@ export function ChatPanelWS({
             return null;
           }
 
-          // Agent/System message
           // Check if this is a structured message (preview)
           if (msg.message_type && msg.message_type !== 'text' && msg.structured_data) {
             return (
@@ -584,9 +566,7 @@ export function ChatPanelWS({
                 <div className="space-y-1.5">
                   <div className="rounded-lg px-3 py-2 bg-muted w-fit">
                     <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
-                      {shouldTruncate && !isExpanded
-                        ? (msg.content || '').slice(0, 200) + "..."
-                        : (msg.content || '')}
+                      {msg.content || ''}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 px-1">
@@ -604,19 +584,6 @@ export function ChatPanelWS({
                         <Copy className="w-3.5 h-3.5 text-muted-foreground" />
                       )}
                     </button>
-                    {shouldTruncate && (
-                      <button
-                        onClick={() => toggleExpand(msg.id)}
-                        className="p-1 hover:bg-accent rounded transition-colors"
-                        title={isExpanded ? "Collapse" : "Expand"}
-                      >
-                        {isExpanded ? (
-                          <ChevronUp className="w-3.5 h-3.5 text-foreground" />
-                        ) : (
-                          <ChevronDown className="w-3.5 h-3.5 text-foreground" />
-                        )}
-                      </button>
-                    )}
                   </div>
                 </div>
               </div>
@@ -624,18 +591,14 @@ export function ChatPanelWS({
           );
         })}
 
-
-
-        {/* Simple Status Indicator - replaced complex component */}
-        {agentStatus !== 'idle' && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground p-3 bg-muted/30 rounded-lg">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span>
-              {agentStatus === 'thinking' && 'Thinking...'}
-              {agentStatus === 'acting' && 'Working...'}
-            </span>
-          </div>
-        )}
+        {/* Typing Indicators - ChatGPT style inline indicators */}
+        {Array.from(typingAgents.values()).map((typing) => (
+          <TypingIndicator 
+            key={typing.id}
+            agentName={typing.agent_name}
+            message={typing.message}
+          />
+        ))}
       </div>
 
       <div className="p-2 m-4 rounded-4xl relative bg-muted">
@@ -733,9 +696,6 @@ export function ChatPanelWS({
           </div>
         </div>
       </div>
-
-      {/* Agent Execution Dialog (floating) */}
-      <AgentExecutionDialog execution={activeExecution} />
 
     </div>
   );

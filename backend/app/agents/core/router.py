@@ -18,6 +18,7 @@ import asyncio
 import logging
 import re
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
@@ -140,6 +141,43 @@ class BaseEventRouter(ABC):
             f"Published task {task.task_id} to agent {agent_id} "
             f"(reason: {routing_reason})"
         )
+
+        # Broadcast message_delivered to frontend via WebSocket
+        await self._mark_message_delivered(event_dict)
+
+    async def _mark_message_delivered(self, event_dict: Dict[str, Any]) -> None:
+        """Mark message as delivered and broadcast to frontend.
+        
+        Called after successfully routing message to agent.
+        
+        Args:
+            event_dict: Source event dictionary containing message_id and project_id
+        """
+        message_id = event_dict.get("message_id")
+        project_id = event_dict.get("project_id")
+        
+        if not message_id or not project_id:
+            self.logger.debug("No message_id or project_id in event, skipping delivered broadcast")
+            return
+        
+        try:
+            # Broadcast to all WebSocket clients in project
+            from app.websocket.connection_manager import connection_manager
+            
+            await connection_manager.broadcast_to_project(
+                {
+                    "type": "message_delivered",
+                    "message_id": str(message_id),
+                    "project_id": str(project_id),
+                    "status": "delivered",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+                UUID(project_id) if isinstance(project_id, str) else project_id
+            )
+            
+            self.logger.info(f"Broadcasted message_delivered for {message_id}")
+        except Exception as e:
+            self.logger.error(f"Failed to broadcast message_delivered: {e}", exc_info=True)
 
 
 class UserMessageRouter(BaseEventRouter):

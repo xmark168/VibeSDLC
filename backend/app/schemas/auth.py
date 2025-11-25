@@ -25,8 +25,8 @@ class RefreshTokenRequest(SQLModel):
 class LoginRequest(SQLModel):
     email: str
     password: str
-    fullname: Optional[str] = None
-    loginProvider: bool = False
+    full_name: Optional[str] = None
+    login_provider: bool = False
 
 
 class LoginResponse(SQLModel):
@@ -38,8 +38,8 @@ class LoginResponse(SQLModel):
 class RegisterRequest(SQLModel):
     email: str
     password: str
-    confirmPassword: str
-    fullname: Optional[str] = None
+    confirm_password: str
+    full_name: Optional[str] = None
 
 
 class RegisterResponse(SQLModel):
@@ -85,8 +85,8 @@ class ForgotPasswordResponse(SQLModel):
 
 class ResetPasswordRequest(SQLModel):
     token: str
-    newPassword: str
-    confirmPassword: str
+    new_password: str
+    confirm_password: str
 
 
 class ResetPasswordResponse(SQLModel):

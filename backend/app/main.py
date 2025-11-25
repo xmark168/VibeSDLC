@@ -41,14 +41,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to ensure Kafka topics: {e}")
 
-    # Start Kafka producer
-    from app.kafka import get_kafka_producer, shutdown_kafka_producer
-    try:
-        producer = await get_kafka_producer()
-    except Exception as e:
-        logger.warning(f"⚠️ Failed to start Kafka producer: {e}")
 
-    # Start Central Message Router (dispatches tasks to agents)
     from app.agents.core.router import start_router_service, stop_router_service
     try:
         await start_router_service()
@@ -151,14 +144,8 @@ async def lifespan(app: FastAPI):
             await stop_router_service()
         except (Exception, asyncio.CancelledError) as e:
             logger.error(f"Error shutting down Message Router: {e}")
-
-        try:
-            await shutdown_kafka_producer()
-        except (Exception, asyncio.CancelledError) as e:
-            logger.error(f"Error shutting down producer: {e}")
     
     except (KeyboardInterrupt, asyncio.CancelledError):
-        # Gracefully handle interruption during shutdown
         pass
     except Exception as e:
         logger.error(f"Unexpected error during shutdown: {e}")
