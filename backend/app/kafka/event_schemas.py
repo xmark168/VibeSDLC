@@ -149,7 +149,6 @@ class ApprovalRequestEvent(BaseKafkaEvent):
     request_type: str  # story_creation, story_update, epic_creation
     agent_name: str
     proposed_data: Dict[str, Any]
-    preview_data: Optional[Dict[str, Any]] = None
     explanation: Optional[str] = None
 
 

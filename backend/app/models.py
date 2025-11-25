@@ -562,7 +562,6 @@ class ApprovalRequest(BaseModel, table=True):
 
     # Proposed changes
     proposed_data: dict = Field(sa_column=Column(JSON))  # What the agent wants to do
-    preview_data: dict | None = Field(default=None, sa_column=Column(JSON))  # Preview for UI
     explanation: str | None = Field(default=None, sa_column=Column(Text))  # Why the agent proposes this
 
     # Approval tracking
