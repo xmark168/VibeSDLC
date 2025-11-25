@@ -26,7 +26,6 @@ import {
 import { TechStackDialog } from "./tech-stack-dialog";
 import { useTheme } from "@/components/provider/theme-provider";
 import { useChatWebSocket } from "@/hooks/useChatWebSocket";
-import { AgentExecutionDialog } from "./AgentExecutionDialog";
 import { TypingIndicator } from "./TypingIndicator";
 import { useAuth } from "@/hooks/useAuth";
 import { useMessages } from "@/queries/messages";
@@ -121,7 +120,6 @@ export function ChatPanelWS({
     isConnected,
     messages: wsMessages,
     agentStatus,
-    activeExecution,
     typingAgents,
     sendMessage: wsSendMessage,
   } = useChatWebSocket(projectId, token || '');
@@ -731,9 +729,6 @@ export function ChatPanelWS({
           </div>
         </div>
       </div>
-
-      {/* Agent Execution Dialog (floating) */}
-      <AgentExecutionDialog execution={activeExecution} />
 
     </div>
   );

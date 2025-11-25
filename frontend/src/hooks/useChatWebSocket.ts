@@ -16,20 +16,6 @@ import { AuthorType, Message } from '@/types/message'
 // Types
 // ============================================================================
 
-export interface Execution {
-  id: string
-  agent_name: string
-  tools: ToolCall[]
-  startedAt: string
-}
-
-export interface ToolCall {
-  id: string
-  tool: string
-  action: string
-  state: 'started' | 'completed' | 'failed'
-}
-
 export interface TypingState {
   id: string
   agent_name: string
@@ -46,9 +32,6 @@ export interface UseChatWebSocketReturn {
   
   // Messages
   messages: Message[]
-  
-  // Active execution (for dialog)
-  activeExecution: Execution | null
   
   // Agent status
   agentStatus: AgentStatusType
@@ -96,7 +79,6 @@ export function useChatWebSocket(
 ): UseChatWebSocketReturn {
   // State
   const [messages, setMessages] = useState<Message[]>([])
-  const [activeExecution, setActiveExecution] = useState<Execution | null>(null)
   const [agentStatus, setAgentStatus] = useState<AgentStatusType>('idle')
   const [typingAgents, setTypingAgents] = useState<Map<string, TypingState>>(new Map())
   
@@ -172,7 +154,8 @@ export function useChatWebSocket(
         break
       
       case 'agent.messaging.tool_call':
-        handleToolCall(msg)
+        // Tool calls ignored - no dialog anymore
+        console.log('[WS] 🔧 Tool call (ignored):', msg.action, msg.state)
         break
       
       case 'agent.messaging.response':
@@ -214,30 +197,6 @@ export function useChatWebSocket(
       updated.set(msg.id, typingState)
       return updated
     })
-    
-    // Track execution for tools
-    setActiveExecution({
-      id: msg.id,
-      agent_name: msg.agent_name,
-      tools: [],
-      startedAt: msg.timestamp,
-    })
-  }
-  
-  const handleToolCall = (msg: any) => {
-    console.log('[WS] 🔧 Tool:', msg.action, msg.state)
-    setActiveExecution(prev => prev ? {
-      ...prev,
-      tools: [
-        ...prev.tools.filter(t => t.id !== msg.id),
-        { 
-          id: msg.id, 
-          tool: msg.tool, 
-          action: msg.action, 
-          state: msg.state 
-        }
-      ]
-    } : null)
   }
   
   const handleResponse = (msg: any) => {
@@ -286,11 +245,6 @@ export function useChatWebSocket(
       }
       return updated
     })
-    
-    // Auto-close execution after 3s
-    setTimeout(() => {
-      setActiveExecution(null)
-    }, 3000)
   }
   
   // ========================================================================
@@ -346,7 +300,6 @@ export function useChatWebSocket(
     isConnected,
     readyState,
     messages,
-    activeExecution,
     agentStatus,
     typingAgents,
     sendMessage,
