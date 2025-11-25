@@ -11,7 +11,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session
 
-from app.api.deps import get_current_active_user, get_session
+from app.api.deps import get_current_user, SessionDep
 from app.models import User, Artifact, ArtifactType, ArtifactStatus
 from app.services.artifact_service import ArtifactService
 from pydantic import BaseModel
@@ -67,11 +67,11 @@ class UpdateArtifactStatusRequest(BaseModel):
 @router.get("/projects/{project_id}/artifacts", response_model=ArtifactListResponse)
 async def list_project_artifacts(
     project_id: UUID,
+    session: SessionDep,
+    current_user: User = Depends(get_current_user),
     artifact_type: Optional[ArtifactType] = Query(None, description="Filter by artifact type"),
     status: Optional[ArtifactStatus] = Query(None, description="Filter by status"),
     limit: int = Query(100, ge=1, le=500, description="Max results"),
-    session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_active_user),
 ):
     """List all artifacts for a project.
     
@@ -108,8 +108,8 @@ async def list_project_artifacts(
 @router.get("/artifacts/{artifact_id}", response_model=ArtifactResponse)
 async def get_artifact(
     artifact_id: UUID,
-    session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_active_user),
+    session: SessionDep,
+    current_user: User = Depends(get_current_user),
 ):
     """Get artifact details.
     
@@ -141,8 +141,8 @@ async def get_artifact(
 async def update_artifact_status(
     artifact_id: UUID,
     request: UpdateArtifactStatusRequest,
-    session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_active_user),
+    session: SessionDep,
+    current_user: User = Depends(get_current_user),
 ):
     """Update artifact status (approve/reject).
     
@@ -182,9 +182,9 @@ async def update_artifact_status(
 async def create_artifact_version(
     artifact_id: UUID,
     new_content: dict,
+    session: SessionDep,
+    current_user: User = Depends(get_current_user),
     description: Optional[str] = None,
-    session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_active_user),
 ):
     """Create a new version of an artifact.
     
@@ -224,9 +224,9 @@ async def create_artifact_version(
 async def get_latest_artifact(
     project_id: UUID,
     artifact_type: ArtifactType,
+    session: SessionDep,
+    current_user: User = Depends(get_current_user),
     title: Optional[str] = Query(None, description="Filter by title"),
-    session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_active_user),
 ):
     """Get the latest version of an artifact.
     
