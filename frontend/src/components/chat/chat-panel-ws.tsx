@@ -27,6 +27,7 @@ import { TechStackDialog } from "./tech-stack-dialog";
 import { useTheme } from "@/components/provider/theme-provider";
 import { useChatWebSocket } from "@/hooks/useChatWebSocket";
 import { AgentExecutionDialog } from "./AgentExecutionDialog";
+import { TypingIndicator } from "./TypingIndicator";
 import { useAuth } from "@/hooks/useAuth";
 import { useMessages } from "@/queries/messages";
 import { AuthorType, type Message } from "@/types/message";
@@ -121,6 +122,7 @@ export function ChatPanelWS({
     messages: wsMessages,
     agentStatus,
     activeExecution,
+    typingAgents,
     sendMessage: wsSendMessage,
   } = useChatWebSocket(projectId, token || '');
 
@@ -624,18 +626,14 @@ export function ChatPanelWS({
           );
         })}
 
-
-
-        {/* Simple Status Indicator - replaced complex component */}
-        {agentStatus !== 'idle' && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground p-3 bg-muted/30 rounded-lg">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span>
-              {agentStatus === 'thinking' && 'Thinking...'}
-              {agentStatus === 'acting' && 'Working...'}
-            </span>
-          </div>
-        )}
+        {/* Typing Indicators - ChatGPT style inline indicators */}
+        {Array.from(typingAgents.values()).map((typing) => (
+          <TypingIndicator 
+            key={typing.id}
+            agentName={typing.agent_name}
+            message={typing.message}
+          />
+        ))}
       </div>
 
       <div className="p-2 m-4 rounded-4xl relative bg-muted">

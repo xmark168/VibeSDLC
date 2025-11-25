@@ -30,6 +30,13 @@ export interface ToolCall {
   state: 'started' | 'completed' | 'failed'
 }
 
+export interface TypingState {
+  id: string
+  agent_name: string
+  started_at: string
+  message?: string
+}
+
 export type AgentStatusType = 'idle' | 'thinking' | 'acting'
 
 export interface UseChatWebSocketReturn {
@@ -45,6 +52,9 @@ export interface UseChatWebSocketReturn {
   
   // Agent status
   agentStatus: AgentStatusType
+  
+  // Typing indicators
+  typingAgents: Map<string, TypingState>
   
   // Actions
   sendMessage: (content: string, agentName?: string) => void
@@ -88,6 +98,7 @@ export function useChatWebSocket(
   const [messages, setMessages] = useState<Message[]>([])
   const [activeExecution, setActiveExecution] = useState<Execution | null>(null)
   const [agentStatus, setAgentStatus] = useState<AgentStatusType>('idle')
+  const [typingAgents, setTypingAgents] = useState<Map<string, TypingState>>(new Map())
   
   // Refs
   const projectIdRef = useRef(projectId)
@@ -189,6 +200,22 @@ export function useChatWebSocket(
   const handleStart = (msg: any) => {
     console.log('[WS] 🚀 Start:', msg.agent_name, msg.content)
     setAgentStatus('thinking')
+    
+    // Add typing indicator
+    const typingState: TypingState = {
+      id: msg.id,
+      agent_name: msg.agent_name,
+      started_at: msg.timestamp,
+      message: msg.content || undefined
+    }
+    
+    setTypingAgents(prev => {
+      const updated = new Map(prev)
+      updated.set(msg.id, typingState)
+      return updated
+    })
+    
+    // Track execution for tools
     setActiveExecution({
       id: msg.id,
       agent_name: msg.agent_name,
@@ -215,6 +242,15 @@ export function useChatWebSocket(
   
   const handleResponse = (msg: any) => {
     console.log('[WS] 💬 Response:', msg.agent_name)
+    
+    // Remove typing indicator for this execution
+    setTypingAgents(prev => {
+      const updated = new Map(prev)
+      const executionId = msg.execution_id || msg.id
+      updated.delete(executionId)
+      return updated
+    })
+    
     const message: Message = {
       id: msg.id,
       project_id: projectIdRef.current!,
@@ -239,6 +275,17 @@ export function useChatWebSocket(
   const handleFinish = (msg: any) => {
     console.log('[WS] ✅ Finish:', msg.summary)
     setAgentStatus('idle')
+    
+    // Remove typing indicators for this agent
+    setTypingAgents(prev => {
+      const updated = new Map(prev)
+      for (const [id, state] of prev) {
+        if (state.agent_name === msg.agent_name) {
+          updated.delete(id)
+        }
+      }
+      return updated
+    })
     
     // Auto-close execution after 3s
     setTimeout(() => {
@@ -287,6 +334,13 @@ export function useChatWebSocket(
 
   // Connection status
   const isConnected = readyState === ReadyState.OPEN
+  
+  // Cleanup typing indicators on disconnect
+  useEffect(() => {
+    if (readyState !== ReadyState.OPEN) {
+      setTypingAgents(new Map())
+    }
+  }, [readyState])
 
   return {
     isConnected,
@@ -294,6 +348,7 @@ export function useChatWebSocket(
     messages,
     activeExecution,
     agentStatus,
+    typingAgents,
     sendMessage,
   }
 }
