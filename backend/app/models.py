@@ -557,3 +557,59 @@ class ApprovalRequest(BaseModel, table=True):
     applied: bool = Field(default=False)  # Whether the approval was actually applied
     applied_at: datetime | None = Field(default=None)
     created_entity_id: UUID | None = Field(default=None)  # ID of created Story/Epic if applicable
+
+
+# ==================== AGENT CLARIFICATION QUESTIONS ====================
+
+class QuestionType(str, Enum):
+    """Question types for agent clarification"""
+    OPEN = "open"
+    MULTICHOICE = "multichoice"
+
+
+class QuestionStatus(str, Enum):
+    """Status of clarification questions"""
+    WAITING_ANSWER = "waiting_answer"
+    ANSWERED = "answered"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+
+
+class AgentQuestion(BaseModel, table=True):
+    """Agent clarification questions for user"""
+    __tablename__ = "agent_questions"
+    
+    # Relationships
+    project_id: UUID = Field(foreign_key="projects.id", ondelete="CASCADE")
+    agent_id: UUID = Field(foreign_key="agents.id", ondelete="CASCADE")
+    user_id: UUID = Field(foreign_key="users.id")
+    
+    # Question details
+    question_type: QuestionType = Field(sa_column=Column(SQLEnum(QuestionType)))
+    question_text: str = Field(sa_column=Column(Text))
+    
+    # For multichoice questions
+    options: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    allow_multiple: bool = Field(default=False)
+    
+    # Answer
+    answer: str | None = Field(default=None, sa_column=Column(Text))
+    selected_options: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    
+    # Status
+    status: QuestionStatus = Field(
+        default=QuestionStatus.WAITING_ANSWER,
+        sa_column=Column(SQLEnum(QuestionStatus))
+    )
+    
+    # Task context for resume
+    task_id: UUID
+    execution_id: UUID | None = None
+    task_context: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    
+    # Timestamps
+    expires_at: datetime
+    answered_at: datetime | None = None
+    
+    # Extra metadata
+    extra_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
