@@ -603,6 +603,21 @@ class Plan(BaseModel, table=True):
     available_project: int | None = Field(default=None)
     is_active: bool = Field(default=True, nullable=True)
 
+    tier: str | None = Field(
+        default="standard",
+        sa_column=Column(Text)
+    )
+    # 'free' | 'pro' | 'custom' | 'standard' | 'enterprise' ...
+
+    sort_index: int | None = Field(default=0)
+    # số thứ tự để sắp xếp trên UI
+    
+    is_featured: bool = Field(default=False)  # gói nổi bật (đặt ở giữa + badge "Popular")
+
+    is_custom_price: bool = Field(default=False)  # true -> hiển thị "Custom" / "Liên hệ"
+
+    features_text: str | None = Field(default=None, sa_column=Column(Text))
+
     plan_subscriptions: list["Subscription"] = Relationship(
         back_populates="plan", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )

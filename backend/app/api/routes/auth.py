@@ -91,7 +91,7 @@ def login_access_token(
     session: SessionDep
 ) -> LoginResponse:
     """
-    OAuth2 compatible token login, get an access token for future requests
+    OAuth2 compatible token login, get an access token for future requesloginProviderts
     """
     # Convert OAuth2 form to LoginRequest format
     login_data = LoginRequest(
@@ -115,7 +115,7 @@ def login(
     """
     Login API - supports both credential and OAuth provider login
     """
-    if not login_data.loginProvider:
+    if not login_data.login_provider:
         # Credential Login
         if not login_data.email or not login_data.password:
             raise HTTPException(
@@ -176,7 +176,7 @@ def login(
             from app.models import User
             user = User(
                 email=login_data.email,
-                full_name=login_data.full_name,
+                full_name=login_data.fullname,
                 login_provider=True,
                 is_active=True,
                 is_locked=False
