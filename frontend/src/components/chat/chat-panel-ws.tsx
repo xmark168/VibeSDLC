@@ -173,6 +173,44 @@ export function ChatPanelWS({
       }, 100)
     }
   }, [uniqueMessages])
+
+  // Initial scroll to bottom on mount
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    // Scroll to bottom immediately on first load (no animation)
+    if (prevMessagesLengthRef.current === 0 && uniqueMessages.length > 0) {
+      setTimeout(() => {
+        container.scrollTop = container.scrollHeight
+      }, 100)
+    }
+  }, [uniqueMessages.length])
+
+  // Auto-scroll to bottom on new messages (smooth)
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    // Check if user is near bottom (within 100px)
+    const isNearBottom = 
+      container.scrollHeight - container.scrollTop - container.clientHeight < 100
+
+    // Auto-scroll only if:
+    // 1. New message arrived (length changed)
+    // 2. User is near bottom (not actively scrolling up to read old messages)
+    if (uniqueMessages.length > prevMessagesLengthRef.current && isNearBottom) {
+      setTimeout(() => {
+        container.scrollTo({
+          top: container.scrollHeight,
+          behavior: 'smooth'
+        })
+      }, 100)
+    }
+
+    // Update previous length
+    prevMessagesLengthRef.current = uniqueMessages.length
+  }, [uniqueMessages])
   
   // Determine if chat should be blocked
   const isMultichoiceQuestion = pendingQuestion?.structured_data?.question_type === 'multichoice'
