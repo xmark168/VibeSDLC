@@ -139,8 +139,6 @@ export function ChatPanelWS({
     (msg, index, self) => index === self.findIndex(m => m.id === msg.id)
   );
   
-  console.log('✅ [ChatPanelWS] Final uniqueMessages to render:', uniqueMessages.length, uniqueMessages);
-
   // Note: Kanban, activeTab, and agentStatuses features removed for simplicity
 
   const filteredAgents = AGENTS.filter((agent) =>
