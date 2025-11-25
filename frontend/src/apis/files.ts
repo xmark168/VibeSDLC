@@ -1,37 +1,14 @@
 import { request as __request } from "@client/core/request"
 import { OpenAPI } from "@/client"
+import type {
+  FileNode,
+  FileTreeResponse,
+  FileContentResponse,
+  GitStatusResponse,
+} from "@/types"
 
-// ============= Types =============
-
-export interface FileNode {
-  name: string
-  type: "file" | "folder"
-  path: string
-  size?: number
-  modified?: string
-  children?: FileNode[]
-  change_type?: string  // Git change type: M, A, D, R, U
-}
-
-export interface FileTreeResponse {
-  project_id: string
-  project_path: string
-  root: FileNode
-}
-
-export interface FileContentResponse {
-  path: string
-  name: string
-  content: string
-  size: number
-  modified: string
-}
-
-export interface GitStatusResponse {
-  project_id: string
-  is_git_repo: boolean
-  files: Record<string, string>  // {path: change_type}
-}
+// Re-export types for convenience
+export type { FileNode, FileTreeResponse, FileContentResponse, GitStatusResponse }
 
 // ============= API =============
 

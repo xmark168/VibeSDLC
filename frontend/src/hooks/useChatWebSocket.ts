@@ -10,45 +10,14 @@
 
 import { useEffect, useRef, useState } from 'react'
 import useWebSocket, { ReadyState } from 'react-use-websocket'
-import { AuthorType, Message } from '@/types/message'
-
-// ============================================================================
-// Types
-// ============================================================================
-
-export interface Execution {
-  id: string
-  agent_name: string
-  tools: ToolCall[]
-  startedAt: string
-}
-
-export interface ToolCall {
-  id: string
-  tool: string
-  action: string
-  state: 'started' | 'completed' | 'failed'
-}
-
-export type AgentStatusType = 'idle' | 'thinking' | 'acting'
-
-export interface UseChatWebSocketReturn {
-  // Connection state
-  isConnected: boolean
-  readyState: ReadyState
-  
-  // Messages
-  messages: Message[]
-  
-  // Active execution (for dialog)
-  activeExecution: Execution | null
-  
-  // Agent status
-  agentStatus: AgentStatusType
-  
-  // Actions
-  sendMessage: (content: string, agentName?: string) => void
-}
+import type {
+  Message,
+  MessageStatus,
+  TypingState,
+  AgentStatusType,
+  UseChatWebSocketReturn,
+} from '@/types'
+import { AuthorType } from '@/types'
 
 // ============================================================================
 // Helper Functions
@@ -86,11 +55,12 @@ export function useChatWebSocket(
 ): UseChatWebSocketReturn {
   // State
   const [messages, setMessages] = useState<Message[]>([])
-  const [activeExecution, setActiveExecution] = useState<Execution | null>(null)
   const [agentStatus, setAgentStatus] = useState<AgentStatusType>('idle')
+  const [typingAgents, setTypingAgents] = useState<Map<string, TypingState>>(new Map())
   
   // Refs
   const projectIdRef = useRef(projectId)
+  const tempMessageTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
   
   useEffect(() => {
     projectIdRef.current = projectId
@@ -156,12 +126,18 @@ export function useChatWebSocket(
         handleUserMessage(msg)
         break
       
+      case 'message_delivered':
+        // Router confirms message was routed to agent
+        handleMessageDelivered(msg)
+        break
+      
       case 'agent.messaging.start':
         handleStart(msg)
         break
       
       case 'agent.messaging.tool_call':
-        handleToolCall(msg)
+        // Tool calls ignored - no dialog anymore
+        console.log('[WS] 🔧 Tool call (ignored):', msg.action, msg.state)
         break
       
       case 'agent.messaging.response':
@@ -183,38 +159,97 @@ export function useChatWebSocket(
   
   const handleUserMessage = (msg: any) => {
     console.log('[WS] 📤 User message confirmed:', msg.message_id)
-     
+    
+    // Replace optimistic (temp_xxx) message with real message from backend
+    setMessages(prev => {
+      // Find optimistic message by content match
+      const optimisticIndex = prev.findIndex(m => 
+        m.id.startsWith('temp_') && 
+        m.content === msg.content &&
+        m.author_type === AuthorType.USER
+      )
+      
+      if (optimisticIndex >= 0) {
+        // Clear timeout for this temp message
+        const tempId = prev[optimisticIndex].id
+        const timeoutId = tempMessageTimeoutsRef.current.get(tempId)
+        if (timeoutId) {
+          clearTimeout(timeoutId)
+          tempMessageTimeoutsRef.current.delete(tempId)
+        }
+        
+        // Replace optimistic with real message
+        const newMessages = [...prev]
+        newMessages[optimisticIndex] = {
+          id: msg.message_id,
+          project_id: msg.project_id,
+          author_type: AuthorType.USER,
+          user_id: msg.user_id,
+          content: msg.content,
+          message_type: msg.message_type || 'text',
+          created_at: msg.created_at || msg.timestamp,
+          updated_at: msg.updated_at || msg.timestamp,
+          status: 'sent', // Update status to 'sent'
+        }
+        return newMessages
+      }
+      
+      // Fallback: add as new message if optimistic not found
+      return [...prev, {
+        id: msg.message_id,
+        project_id: msg.project_id,
+        author_type: AuthorType.USER,
+        user_id: msg.user_id,
+        content: msg.content,
+        message_type: msg.message_type || 'text',
+        created_at: msg.created_at || msg.timestamp,
+        updated_at: msg.updated_at || msg.timestamp,
+        status: 'sent',
+      }]
+    })
+  }
+  
+  const handleMessageDelivered = (msg: any) => {
+    console.log('[WS] ✓✓ Message delivered to agent:', msg.message_id)
+    
+    // Update message status to 'delivered'
+    setMessages(prev => prev.map(m => 
+      m.id === msg.message_id 
+        ? { ...m, status: 'delivered' as MessageStatus }
+        : m
+    ))
   }
   
   const handleStart = (msg: any) => {
     console.log('[WS] 🚀 Start:', msg.agent_name, msg.content)
     setAgentStatus('thinking')
-    setActiveExecution({
+    
+    // Add typing indicator
+    const typingState: TypingState = {
       id: msg.id,
       agent_name: msg.agent_name,
-      tools: [],
-      startedAt: msg.timestamp,
+      started_at: msg.timestamp,
+      message: msg.content || undefined
+    }
+    
+    setTypingAgents(prev => {
+      const updated = new Map(prev)
+      updated.set(msg.id, typingState)
+      return updated
     })
-  }
-  
-  const handleToolCall = (msg: any) => {
-    console.log('[WS] 🔧 Tool:', msg.action, msg.state)
-    setActiveExecution(prev => prev ? {
-      ...prev,
-      tools: [
-        ...prev.tools.filter(t => t.id !== msg.id),
-        { 
-          id: msg.id, 
-          tool: msg.tool, 
-          action: msg.action, 
-          state: msg.state 
-        }
-      ]
-    } : null)
   }
   
   const handleResponse = (msg: any) => {
     console.log('[WS] 💬 Response:', msg.agent_name)
+    
+    // Remove typing indicator for this execution
+    setTypingAgents(prev => {
+      const updated = new Map(prev)
+      const executionId = msg.execution_id || msg.id
+      updated.delete(executionId)
+      return updated
+    })
+    
     const message: Message = {
       id: msg.id,
       project_id: projectIdRef.current!,
@@ -240,10 +275,16 @@ export function useChatWebSocket(
     console.log('[WS] ✅ Finish:', msg.summary)
     setAgentStatus('idle')
     
-    // Auto-close execution after 3s
-    setTimeout(() => {
-      setActiveExecution(null)
-    }, 3000)
+    // Remove typing indicators for this agent
+    setTypingAgents(prev => {
+      const updated = new Map(prev)
+      for (const [id, state] of prev) {
+        if (state.agent_name === msg.agent_name) {
+          updated.delete(id)
+        }
+      }
+      return updated
+    })
   }
   
   // ========================================================================
@@ -251,7 +292,7 @@ export function useChatWebSocket(
   // ========================================================================
   
   const sendMessage = (content: string, agentName?: string) => {
-    if (!projectId) {
+    if (!projectIdRef.current) {
       console.error('[WebSocket] ❌ Cannot send: no project ID')
       return
     }
@@ -268,15 +309,28 @@ export function useChatWebSocket(
 
     try {
       // Add optimistic message
-      const optimisticMsg = createOptimisticMessage(content, projectId)
+      const optimisticMsg = createOptimisticMessage(content, projectIdRef.current)
       setMessages(prev => [...prev, optimisticMsg])
+
+      // Set timeout to mark as failed if no confirmation within 10s
+      const timeoutId = setTimeout(() => {
+        setMessages(prev => prev.map(m => 
+          m.id === optimisticMsg.id 
+            ? { ...m, status: 'failed' as MessageStatus }
+            : m
+        ))
+        tempMessageTimeoutsRef.current.delete(optimisticMsg.id)
+        console.warn(`[WebSocket] ⚠️ Message timeout: ${optimisticMsg.id}`)
+      }, 10000) // 10 seconds timeout
+      
+      tempMessageTimeoutsRef.current.set(optimisticMsg.id, timeoutId)
 
       // Send to server
       sendJsonMessage({
         type: 'message',
         content: content.trim(),
         agent_name: agentName,
-        project_id: projectId,
+        project_id: projectIdRef.current,
       })
       
       console.log('[WebSocket] 📤 Sent:', content.substring(0, 50))
@@ -287,13 +341,29 @@ export function useChatWebSocket(
 
   // Connection status
   const isConnected = readyState === ReadyState.OPEN
+  
+  // Cleanup typing indicators on disconnect
+  useEffect(() => {
+    if (readyState !== ReadyState.OPEN) {
+      setTypingAgents(new Map())
+    }
+  }, [readyState])
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      // Clear all timeouts on unmount
+      tempMessageTimeoutsRef.current.forEach(timeoutId => clearTimeout(timeoutId))
+      tempMessageTimeoutsRef.current.clear()
+    }
+  }, [])
 
   return {
     isConnected,
     readyState,
     messages,
-    activeExecution,
     agentStatus,
+    typingAgents,
     sendMessage,
   }
 }

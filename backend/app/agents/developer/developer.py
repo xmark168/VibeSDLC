@@ -113,8 +113,7 @@ class Developer(BaseAgent):
 
             logger.info(f"[{self.name}] Processing development task: {user_message[:50]}...")
 
-            # Status update
-            await self.message_user("thinking", "Analyzing and implementing solution...")
+            # NOTE: Base agent already sent "thinking" event, no need to duplicate
 
             # Create CrewAI task for implementation
             crew_task = Task(

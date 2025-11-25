@@ -162,7 +162,7 @@ def login(
 
     else:
         # Provider Login
-        # if not login_data.email or not login_data.fullname or login_data.password is not None:
+        # if not login_data.email or not login_data.full_name or login_data.password is not None:
         #     raise HTTPException(
         #         status_code=status.HTTP_400_BAD_REQUEST,
         #         detail="Email và fullname không được để trống, password phải null với provider login"
@@ -176,7 +176,7 @@ def login(
             from app.models import User
             user = User(
                 email=login_data.email,
-                full_name=login_data.fullname,
+                full_name=login_data.full_name,
                 login_provider=True,
                 is_active=True,
                 is_locked=False
@@ -281,7 +281,7 @@ def register(
     # Store registration data in Redis (separate keys with different TTLs)
     registration_data = {
         "email": str(register_data.email),
-        "fullname": register_data.fullname,
+        "full_name": register_data.full_name,
         "hashed_password": get_password_hash(register_data.password)
     }
 
@@ -394,7 +394,7 @@ def confirm_code(
     from app.models import User
     user = User(
         email=registration_data["email"],
-        full_name=registration_data["fullname"],
+        full_name=registration_data["full_name"],
         hashed_password=registration_data["hashed_password"],
         is_active=True,
         is_locked=False,
