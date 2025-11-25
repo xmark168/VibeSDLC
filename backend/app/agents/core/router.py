@@ -742,6 +742,183 @@ class QuestionAnswerRouter(BaseEventRouter):
         )
 
 
+class DelegationRouter(BaseEventRouter):
+    """Router for delegation requests - finds best agent by role."""
+    
+    def should_handle(self, event: BaseKafkaEvent | Dict[str, Any]) -> bool:
+        event_dict = event if isinstance(event, dict) else event.model_dump()
+        return event_dict.get("event_type") == "delegation.request"
+    
+    async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
+        """Handle delegation request - find best agent and dispatch."""
+        event_dict = event if isinstance(event, dict) else event.model_dump()
+        
+        project_id = event_dict.get("project_id")
+        target_role = event_dict.get("target_role")
+        
+        if not project_id or not target_role:
+            self.logger.error("Delegation request missing project_id or target_role")
+            return
+        
+        # Convert project_id to UUID if needed
+        if isinstance(project_id, str):
+            project_id = UUID(project_id)
+        
+        # Find best agent for role
+        agent = await self._find_best_agent(project_id, target_role)
+        
+        if not agent:
+            self.logger.error(f"No agent found for role {target_role} in project {project_id}")
+            # Send error message back to user via delegating agent
+            await self._handle_delegation_failure(
+                event_dict=event_dict,
+                project_id=project_id,
+                target_role=target_role,
+                reason="agent_not_found"
+            )
+            return
+        
+        # Create task for selected agent
+        producer = await get_kafka_producer()
+        
+        task_event = RouterTaskEvent(
+            event_type="router.task.dispatched",
+            task_id=uuid4(),
+            task_type=event_dict.get("task_type", AgentTaskType.MESSAGE),
+            agent_id=agent.id,
+            agent_role=target_role,
+            source_event_type=event_dict.get("source_event_type"),
+            source_event_id=event_dict.get("source_event_id"),
+            routing_reason=f"delegation_from_{event_dict.get('delegating_agent_name')}",
+            priority=event_dict.get("priority", "high"),
+            project_id=project_id,
+            user_id=event_dict.get("user_id"),
+            context=event_dict.get("context", {})
+        )
+        
+        await producer.publish(
+            topic=KafkaTopics.AGENT_TASKS,
+            event=task_event
+        )
+        
+        # Update conversation context
+        await self._update_active_agent(project_id, agent.id)
+        
+        self.logger.info(
+            f"[DelegationRouter] Delegated to {agent.human_name} "
+            f"(role={target_role}) for project {project_id}"
+        )
+    
+    async def _find_best_agent(self, project_id: UUID, role_type: str) -> Optional[Agent]:
+        """Find best agent for role - prefers idle agents."""
+        with Session(engine) as session:
+            # Get all agents with target role in project
+            agents = session.exec(
+                select(Agent).where(
+                    Agent.project_id == project_id,
+                    Agent.role_type == role_type,
+                    Agent.status != "inactive"
+                )
+            ).all()
+            
+            if not agents:
+                return None
+            
+            # Strategy: Prefer idle > busy > any
+            idle_agents = [a for a in agents if a.status == "idle"]
+            if idle_agents:
+                return idle_agents[0]
+            
+            # Return first agent (simple strategy)
+            return agents[0]
+    
+    async def _update_active_agent(self, project_id: UUID, agent_id: UUID) -> None:
+        """Update project's active agent context."""
+        with Session(engine) as session:
+            project = session.get(Project, project_id)
+            if project:
+                project.active_agent_id = agent_id
+                project.active_agent_updated_at = datetime.now(timezone.utc)
+                session.add(project)
+                session.commit()
+    
+    async def _handle_delegation_failure(
+        self,
+        event_dict: Dict[str, Any],
+        project_id: UUID,
+        target_role: str,
+        reason: str
+    ) -> None:
+        """Handle delegation failure - send error back to delegating agent.
+        
+        The delegating agent will receive a DELEGATION_FAILED task and can:
+        1. Notify user about the error
+        2. Handle the task itself as fallback
+        3. Try delegating to another role
+        """
+        delegating_agent_id = event_dict.get("delegating_agent_id")
+        delegating_agent_name = event_dict.get("delegating_agent_name")
+        
+        if not delegating_agent_id:
+            self.logger.error("Cannot handle delegation failure: delegating_agent_id missing")
+            return
+        
+        # Convert to UUID if needed
+        if isinstance(delegating_agent_id, str):
+            delegating_agent_id = UUID(delegating_agent_id)
+        
+        # Create error message for user
+        role_names = {
+            "business_analyst": "Business Analyst",
+            "developer": "Developer",
+            "tester": "Tester",
+            "architect": "Architect"
+        }
+        role_display = role_names.get(target_role, target_role)
+        
+        error_message = (
+            f"Xin lỗi, hiện tại không có {role_display} nào available trong dự án này. "
+            f"Tôi sẽ cố gắng giúp bạn trực tiếp! 💪"
+        )
+        
+        # Send task back to delegating agent to handle the error
+        producer = await get_kafka_producer()
+        
+        # Create a DELEGATION_FAILED task for the delegating agent
+        error_task = RouterTaskEvent(
+            event_type="router.task.dispatched",
+            task_id=uuid4(),
+            task_type=AgentTaskType.MESSAGE,
+            agent_id=delegating_agent_id,
+            agent_role=event_dict.get("delegating_agent_role", "team_leader"),
+            source_event_type=event_dict.get("source_event_type"),
+            source_event_id=event_dict.get("source_event_id"),
+            routing_reason=f"delegation_failed:{target_role}:{reason}",
+            priority="high",
+            project_id=project_id,
+            user_id=event_dict.get("user_id"),
+            context={
+                **event_dict.get("context", {}),
+                "delegation_failed": True,
+                "target_role": target_role,
+                "failure_reason": reason,
+                "error_message": error_message,
+                # Preserve original content so agent can handle it
+                "original_content": event_dict.get("content"),
+            }
+        )
+        
+        await producer.publish(
+            topic=KafkaTopics.AGENT_TASKS,
+            event=error_task
+        )
+        
+        self.logger.info(
+            f"[DelegationRouter] Delegation failed (no {target_role} found), "
+            f"sent error task back to {delegating_agent_name}"
+        )
+
+
 # ============================================================================
 # ROUTER SERVICE
 # ============================================================================
@@ -765,6 +942,7 @@ class MessageRouterService(BaseKafkaConsumer):
             KafkaTopics.AGENT_EVENTS.value,  # For agent responses to update context
             KafkaTopics.APPROVAL_RESPONSES.value,
             KafkaTopics.QUESTION_ANSWERS.value,
+            KafkaTopics.DELEGATION_REQUESTS.value,  # For delegation by role
         ]
 
         # Use a dedicated consumer group for the router
@@ -793,6 +971,7 @@ class MessageRouterService(BaseKafkaConsumer):
             TaskCompletionRouter(producer),
             ApprovalResponseRouter(producer),
             QuestionAnswerRouter(producer),
+            DelegationRouter(producer),
         ]
 
         self.logger.info(f"Initialized {len(self.routers)} routers")

@@ -71,29 +71,18 @@ comprehensive documentation that helps the development team understand what to b
         return agent
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
-        """Handle task assigned by Router.
-
-        Args:
-            task: TaskContext with user message and metadata
-
-        Returns:
-            TaskResult with requirements analysis response
-        """
+        """Handle task assigned by Router."""
         try:
-            # Check if this is a RESUME task (after user answered question)
             from app.kafka.event_schemas import AgentTaskType
             if task.task_type == AgentTaskType.RESUME_WITH_ANSWER:
                 return await self._handle_resume(task)
             
             user_message = task.content
-
             logger.info(f"[{self.name}] Processing BA task: {user_message[:50]}...")
             
-            # Check if message is vague and needs clarification
             if self._needs_clarification(user_message):
                 logger.info(f"[{self.name}] Message is vague, asking clarification...")
                 
-                # Ask clarification question
                 await self.ask_clarification_question(
                     question="Bạn muốn phân tích khía cạnh nào của dự án?",
                     question_type="multichoice",
@@ -101,16 +90,12 @@ comprehensive documentation that helps the development team understand what to b
                     allow_multiple=True
                 )
                 
-                # Return early - task is now PAUSED
                 return TaskResult(
                     success=True,
                     output="⏸️ Đang chờ bạn trả lời câu hỏi...",
                     structured_data={"status": "waiting_clarification"}
                 )
 
-            # NOTE: Base agent already sent "thinking" event, no need to duplicate
-
-            # Create CrewAI task for requirements analysis
             crew_task = Task(
                 description=f"""
                 Analyze the following business request and provide requirements analysis:

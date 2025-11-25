@@ -21,6 +21,7 @@ class KafkaTopics(str, Enum):
     FLOW_STATUS = "flow_status"
     APPROVAL_RESPONSES = "approval_responses"
     QUESTION_ANSWERS = "question_answers"
+    DELEGATION_REQUESTS = "delegation_requests"
     
 
 class BaseKafkaEvent(BaseModel):
@@ -69,6 +70,23 @@ class AgentRoutingEvent(BaseKafkaEvent):
     to_agent: str
     delegation_reason: str
     context: Dict[str, Any] = Field(default_factory=dict)
+
+
+class DelegationRequestEvent(BaseKafkaEvent):
+    """Request to delegate task to agent by role (Router selects specific agent)."""
+    
+    event_type: str = "delegation.request"
+    original_task_id: UUID
+    delegating_agent_id: UUID
+    delegating_agent_name: str
+    target_role: str
+    priority: str = "high"
+    task_type: AgentTaskType
+    content: str
+    context: Dict[str, Any] = Field(default_factory=dict)
+    delegation_message: Optional[str] = None
+    source_event_type: str
+    source_event_id: str
 
 
 # STORY EVENTS
@@ -295,6 +313,7 @@ EVENT_TYPE_TO_SCHEMA = {
     "user.message.sent": UserMessageEvent,
     "agent.response.created": AgentResponseEvent,
     "agent.routing.delegated": AgentRoutingEvent,
+    "delegation.request": DelegationRequestEvent,
     StoryEventType.CREATED.value: StoryEvent,
     StoryEventType.UPDATED.value: StoryEvent,
     StoryEventType.STATUS_CHANGED.value: StoryEvent,

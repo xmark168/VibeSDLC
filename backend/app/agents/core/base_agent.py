@@ -19,6 +19,7 @@ from app.kafka.event_schemas import (
     AgentEvent,
     AgentResponseEvent,
     AgentTaskType,
+    DelegationRequestEvent,
     KafkaTopics,
     RouterTaskEvent,
 )
@@ -30,25 +31,17 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TaskContext:
-    """Context for a task assigned to an agent.
-
-    This is a simplified view of RouterTaskEvent for agent consumption.
-    Agents don't need to know about Kafka event structure.
-    """
+    """Simplified task context for agent consumption."""
 
     task_id: UUID
     task_type: AgentTaskType
     priority: str
     routing_reason: str
-
-    # Original event data (for user messages)
     message_id: Optional[UUID] = None
     user_id: Optional[UUID] = None
     project_id: Optional[UUID] = None
     content: str = ""
     message_type: str = "text"
-
-    # Full context for advanced use
     context: Dict[str, Any] = None
 
     def __post_init__(self):
@@ -472,6 +465,86 @@ class BaseAgent(ABC):
             },
             self.project_id
         )
+
+    async def delegate_to_role(
+        self,
+        task: "TaskContext",
+        target_role: str,
+        delegation_message: str,
+        priority: str = "high"
+    ) -> "TaskResult":
+        """Delegate task to an agent by role (Router will select specific agent).
+        
+        This is the simplified delegation API - agents just specify the target role,
+        and Router handles finding the best available agent, updating context, etc.
+        
+        Args:
+            task: Original task context to delegate
+            target_role: Target agent role (business_analyst, developer, tester, architect)
+            delegation_message: Message to show user about delegation
+            priority: Task priority (default: "high")
+            
+        Returns:
+            TaskResult indicating delegation initiated
+            
+        Example:
+            # Delegate to Business Analyst
+            return await self.delegate_to_role(
+                task=task,
+                target_role="business_analyst",
+                delegation_message="Tôi đã chuyển cho @BusinessAnalyst để phân tích! 📊"
+            )
+        """
+        try:
+            producer = await self._get_producer()
+            
+            # Publish delegation request - Router will handle agent selection
+            delegation_event = DelegationRequestEvent(
+                event_type="delegation.request",
+                project_id=self.project_id,
+                user_id=task.user_id,
+                original_task_id=task.task_id,
+                delegating_agent_id=self.agent_id,
+                delegating_agent_name=self.name,
+                target_role=target_role,
+                priority=priority,
+                task_type=AgentTaskType.MESSAGE,
+                content=task.content,
+                context=task.context,
+                delegation_message=delegation_message,
+                source_event_type=task.context.get("source_event_type", "user.message.sent"),
+                source_event_id=task.context.get("source_event_id", str(task.task_id)),
+            )
+            
+            await producer.publish(
+                topic=KafkaTopics.DELEGATION_REQUESTS,
+                event=delegation_event
+            )
+            
+            logger.info(f"[{self.name}] Published delegation request to role: {target_role}")
+            
+            # Send notification to user
+            await self.message_user("response", delegation_message, {
+                "message_type": "text",
+                "delegation_to_role": target_role,
+            })
+            
+            return TaskResult(
+                success=True,
+                output=delegation_message,
+                structured_data={
+                    "delegation_to_role": target_role,
+                    "delegation_status": "pending"
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"[{self.name}] Error delegating to role {target_role}: {e}", exc_info=True)
+            return TaskResult(
+                success=False,
+                output="",
+                error_message=f"Failed to delegate: {str(e)}"
+            )
 
 
     async def _create_execution_record(self, task: "TaskContext") -> UUID:
