@@ -26,6 +26,14 @@ function WorkspacePage() {
   const [activeTab, setActiveTab] = useState<string | null>(null)
   // Track agent statuses from WebSocket for avatar display
   const [agentStatuses, setAgentStatuses] = useState<Map<string, { status: string; lastUpdate: string }>>(new Map())
+  // Track selected artifact for viewing
+  const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null)
+
+  const handleOpenArtifact = (artifactId: string) => {
+    console.log('[Workspace] Opening artifact:', artifactId)
+    setSelectedArtifactId(artifactId)
+    setActiveTab('file') // Switch to file tab to show artifact viewer
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-white relative">
@@ -56,6 +64,7 @@ function WorkspacePage() {
                   onKanbanDataChange={setKanbanData}
                   onActiveTabChange={setActiveTab}
                   onAgentStatusesChange={setAgentStatuses}
+                  onOpenArtifact={handleOpenArtifact}
                 />
               </div>
 
@@ -76,6 +85,7 @@ function WorkspacePage() {
               projectId={workspaceId}
               activeTab={activeTab}
               agentStatuses={agentStatuses}
+              selectedArtifactId={selectedArtifactId}
             />
           </div>
         </div>

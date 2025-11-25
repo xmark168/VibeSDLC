@@ -49,6 +49,7 @@ interface ChatPanelProps {
   onKanbanDataChange?: (data: any) => void;
   onActiveTabChange?: (tab: string | null) => void;
   onAgentStatusesChange?: (statuses: Map<string, { status: string; lastUpdate: string }>) => void; // NEW
+  onOpenArtifact?: (artifactId: string) => void;
 }
 
 export function ChatPanelWS({
@@ -62,6 +63,7 @@ export function ChatPanelWS({
   onKanbanDataChange,
   onActiveTabChange,
   onAgentStatusesChange, // NEW
+  onOpenArtifact,
 }: ChatPanelProps) {
   const [message, setMessage] = useState("");
   const [showMentions, setShowMentions] = useState(false);
@@ -618,8 +620,9 @@ export function ChatPanelWS({
                         agent_name: msg.agent_name || getAgentName(msg),
                       }}
                       onClick={() => {
-                        console.log('[Chat] Opening artifact:', msg.structured_data.artifact_id)
-                        // TODO: Open artifact in workspace panel
+                        if (onOpenArtifact && msg.structured_data?.artifact_id) {
+                          onOpenArtifact(msg.structured_data.artifact_id)
+                        }
                       }}
                     />
                   )}
