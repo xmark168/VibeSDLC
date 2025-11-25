@@ -1,10 +1,12 @@
 import os
-import datetime
+
 import cocoindex
 from cocoindex import FlowBuilder
 from cocoindex.functions import DetectProgrammingLanguage, SplitRecursively
-from dev.flows import code_to_embedding, connection_pool
 from pgvector.psycopg import register_vector
+
+from app.agents.developer.flows import code_to_embedding, connection_pool
+
 
 def create_structure_document(project_root):
     """Generate a markdown string representing the project's folder structure."""
@@ -12,20 +14,31 @@ def create_structure_document(project_root):
 
     for root, dirs, files in os.walk(project_root):
         # Exclude common unnecessary directories
-        dirs[:] = [d for d in dirs if not d.startswith('.') and d != 'node_modules' and d != '__pycache__']
+        dirs[:] = [
+            d
+            for d in dirs
+            if not d.startswith(".") and d != "node_modules" and d != "__pycache__"
+        ]
 
-        level = root.replace(project_root, '').count(os.sep)
-        indent = '  ' * level
-        folder_name = os.path.basename(root) if root != project_root else os.path.basename(project_root)
+        level = root.replace(project_root, "").count(os.sep)
+        indent = "  " * level
+        folder_name = (
+            os.path.basename(root)
+            if root != project_root
+            else os.path.basename(project_root)
+        )
         structure_content += f"{indent}📁 {folder_name}/\n"
 
-        sub_indent = '  ' * (level + 1)
+        sub_indent = "  " * (level + 1)
         for file in files:
             # Include relevant file types
-            if not file.startswith('.') and file.endswith(('.py', '.ts', '.tsx', '.js', '.jsx', '.json', '.md', '.prisma')):
+            if not file.startswith(".") and file.endswith(
+                (".py", ".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".prisma")
+            ):
                 structure_content += f"{sub_indent}📄 {file}\n"
 
     return structure_content
+
 
 def create_project_flow(project_id: str, project_path: str):
     """Dynamically create a cocoindex flow for a specific project."""
@@ -38,19 +51,36 @@ def create_project_flow(project_id: str, project_path: str):
             f.write(structure_content)
 
     @cocoindex.flow_def(name=f"code_embeddings_{project_id}")
-    def project_flow(flow_builder: FlowBuilder, data_scope: cocoindex.DataScope) -> None:
+    def project_flow(
+        flow_builder: FlowBuilder, data_scope: cocoindex.DataScope
+    ) -> None:
         data_scope["files"] = flow_builder.add_source(
             cocoindex.sources.LocalFile(
                 path=project_path,
                 included_patterns=[
-                "*.py", "*.ts", "*.tsx", "*.js", "*.jsx", 
-                "*.json", "*.md", "*.prisma", "PROJECT_STRUCTURE.md",
-            ],
-            excluded_patterns=[
-                "**/.*", "**/node_modules", "__pycache__", "*.pyc",
-                "dist", "build", ".next", "coverage", "*.lock",
-                "pnpm-lock.yaml", "package-lock.json",
-            ],
+                    "*.py",
+                    "*.ts",
+                    "*.tsx",
+                    "*.js",
+                    "*.jsx",
+                    "*.json",
+                    "*.md",
+                    "*.prisma",
+                    "PROJECT_STRUCTURE.md",
+                ],
+                excluded_patterns=[
+                    "**/.*",
+                    "**/node_modules",
+                    "__pycache__",
+                    "*.pyc",
+                    "dist",
+                    "build",
+                    ".next",
+                    "coverage",
+                    "*.lock",
+                    "pnpm-lock.yaml",
+                    "package-lock.json",
+                ],
             )
         )
 
@@ -77,7 +107,7 @@ def create_project_flow(project_id: str, project_path: str):
                 )
 
         code_embeddings.export(
-            f"code_embedding",  # Correctly use the dynamic project_id
+            "code_embedding",  # Correctly use the dynamic project_id
             cocoindex.targets.Postgres(),
             primary_key_fields=["filename", "location"],
             vector_indexes=[
@@ -89,6 +119,7 @@ def create_project_flow(project_id: str, project_path: str):
         )
 
     return project_flow
+
 
 class AdvancedProjectManager:
     def __init__(self):
@@ -108,7 +139,9 @@ class AdvancedProjectManager:
             print(f"✅ Indexing completed for '{project_id}': {stats}")
         except Exception as e:
             if "not up-to-date" in str(e):
-                print(f"🔄 Database setup required for flow '{project_id}'. Running setup...")
+                print(
+                    f"🔄 Database setup required for flow '{project_id}'. Running setup..."
+                )
                 flow.setup()
                 print("✅ Setup complete. Retrying indexing...")
                 stats = flow.update()
@@ -120,11 +153,15 @@ class AdvancedProjectManager:
     def search(self, project_id: str, query: str, top_k: int = 5):
         """Search in a specific project using the correct table name."""
         if project_id not in self.flows:
-            project_path = f"services/ai-agent-service/app/agents/dev/workspaces/{project_id}"
+            project_path = (
+                f"services/ai-agent-service/app/agents/dev/workspaces/{project_id}"
+            )
             if os.path.exists(project_path):
                 self.register_project(project_id, project_path)
             else:
-                raise ValueError(f"Project {project_id} not registered and path not found.")
+                raise ValueError(
+                    f"Project {project_id} not registered and path not found."
+                )
 
         flow = self.flows[project_id]
         # Use the official utility to get the correct, mangled table name
@@ -160,11 +197,15 @@ class AdvancedProjectManager:
     def delete_project(self, project_id: str):
         """Remove a project and its index table."""
         if project_id not in self.flows:
-            print(f"Project {project_id} not in memory, cannot determine table name for deletion.")
+            print(
+                f"Project {project_id} not in memory, cannot determine table name for deletion."
+            )
             return
 
         flow = self.flows[project_id]
-        table_name = cocoindex.utils.get_target_default_name(flow, f"code_embeddings_{project_id}")
+        table_name = cocoindex.utils.get_target_default_name(
+            flow, f"code_embeddings_{project_id}"
+        )
 
         with connection_pool().connection() as conn:
             with conn.cursor() as cur:
@@ -173,6 +214,6 @@ class AdvancedProjectManager:
         del self.flows[project_id]
         print(f"Deleted project {project_id} and its index table '{table_name}'.")
 
+
 # Create a singleton instance of the manager to be used across the application
 project_manager = AdvancedProjectManager()
-
