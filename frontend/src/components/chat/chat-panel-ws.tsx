@@ -524,7 +524,6 @@ export function ChatPanelWS({
             return null;
           }
 
-          // Agent/System message
           // Check if this is a structured message (preview)
           if (msg.message_type && msg.message_type !== 'text' && msg.structured_data) {
             return (
