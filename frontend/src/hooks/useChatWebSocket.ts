@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from 'react'
 import useWebSocket, { ReadyState } from 'react-use-websocket'
 import type {
   Message,
+  MessageStatus,
   TypingState,
   AgentStatusType,
   UseChatWebSocketReturn,
@@ -59,6 +60,7 @@ export function useChatWebSocket(
   
   // Refs
   const projectIdRef = useRef(projectId)
+  const tempMessageTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
   
   useEffect(() => {
     projectIdRef.current = projectId
@@ -124,6 +126,11 @@ export function useChatWebSocket(
         handleUserMessage(msg)
         break
       
+      case 'message_delivered':
+        // Router confirms message was routed to agent
+        handleMessageDelivered(msg)
+        break
+      
       case 'agent.messaging.start':
         handleStart(msg)
         break
@@ -152,7 +159,65 @@ export function useChatWebSocket(
   
   const handleUserMessage = (msg: any) => {
     console.log('[WS] 📤 User message confirmed:', msg.message_id)
-     
+    
+    // Replace optimistic (temp_xxx) message with real message from backend
+    setMessages(prev => {
+      // Find optimistic message by content match
+      const optimisticIndex = prev.findIndex(m => 
+        m.id.startsWith('temp_') && 
+        m.content === msg.content &&
+        m.author_type === AuthorType.USER
+      )
+      
+      if (optimisticIndex >= 0) {
+        // Clear timeout for this temp message
+        const tempId = prev[optimisticIndex].id
+        const timeoutId = tempMessageTimeoutsRef.current.get(tempId)
+        if (timeoutId) {
+          clearTimeout(timeoutId)
+          tempMessageTimeoutsRef.current.delete(tempId)
+        }
+        
+        // Replace optimistic with real message
+        const newMessages = [...prev]
+        newMessages[optimisticIndex] = {
+          id: msg.message_id,
+          project_id: msg.project_id,
+          author_type: AuthorType.USER,
+          user_id: msg.user_id,
+          content: msg.content,
+          message_type: msg.message_type || 'text',
+          created_at: msg.created_at || msg.timestamp,
+          updated_at: msg.updated_at || msg.timestamp,
+          status: 'sent', // Update status to 'sent'
+        }
+        return newMessages
+      }
+      
+      // Fallback: add as new message if optimistic not found
+      return [...prev, {
+        id: msg.message_id,
+        project_id: msg.project_id,
+        author_type: AuthorType.USER,
+        user_id: msg.user_id,
+        content: msg.content,
+        message_type: msg.message_type || 'text',
+        created_at: msg.created_at || msg.timestamp,
+        updated_at: msg.updated_at || msg.timestamp,
+        status: 'sent',
+      }]
+    })
+  }
+  
+  const handleMessageDelivered = (msg: any) => {
+    console.log('[WS] ✓✓ Message delivered to agent:', msg.message_id)
+    
+    // Update message status to 'delivered'
+    setMessages(prev => prev.map(m => 
+      m.id === msg.message_id 
+        ? { ...m, status: 'delivered' as MessageStatus }
+        : m
+    ))
   }
   
   const handleStart = (msg: any) => {
@@ -227,7 +292,7 @@ export function useChatWebSocket(
   // ========================================================================
   
   const sendMessage = (content: string, agentName?: string) => {
-    if (!projectId) {
+    if (!projectIdRef.current) {
       console.error('[WebSocket] ❌ Cannot send: no project ID')
       return
     }
@@ -244,15 +309,28 @@ export function useChatWebSocket(
 
     try {
       // Add optimistic message
-      const optimisticMsg = createOptimisticMessage(content, projectId)
+      const optimisticMsg = createOptimisticMessage(content, projectIdRef.current)
       setMessages(prev => [...prev, optimisticMsg])
+
+      // Set timeout to mark as failed if no confirmation within 10s
+      const timeoutId = setTimeout(() => {
+        setMessages(prev => prev.map(m => 
+          m.id === optimisticMsg.id 
+            ? { ...m, status: 'failed' as MessageStatus }
+            : m
+        ))
+        tempMessageTimeoutsRef.current.delete(optimisticMsg.id)
+        console.warn(`[WebSocket] ⚠️ Message timeout: ${optimisticMsg.id}`)
+      }, 10000) // 10 seconds timeout
+      
+      tempMessageTimeoutsRef.current.set(optimisticMsg.id, timeoutId)
 
       // Send to server
       sendJsonMessage({
         type: 'message',
         content: content.trim(),
         agent_name: agentName,
-        project_id: projectId,
+        project_id: projectIdRef.current,
       })
       
       console.log('[WebSocket] 📤 Sent:', content.substring(0, 50))
@@ -270,6 +348,15 @@ export function useChatWebSocket(
       setTypingAgents(new Map())
     }
   }, [readyState])
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      // Clear all timeouts on unmount
+      tempMessageTimeoutsRef.current.forEach(timeoutId => clearTimeout(timeoutId))
+      tempMessageTimeoutsRef.current.clear()
+    }
+  }, [])
 
   return {
     isConnected,
