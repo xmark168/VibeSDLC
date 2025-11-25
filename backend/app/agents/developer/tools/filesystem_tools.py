@@ -166,7 +166,7 @@ class SafeFileWriteTool(BaseTool):
 
 class SafeFileListTool(BaseTool):
     name: str = "safe_file_list_tool"
-    description: str = "List all files and directories in a given path"
+    description: str = "List all files and directories in a given directory path. Only accepts a single directory path, not multiple file paths. Usage: {'dir_path': 'relative/path/to/directory'} or {'dir_path': '.'} for current directory"
     args_schema: Type[BaseModel] = DirectoryListInput
     root_dir: str = Field(default_factory=os.getcwd, description="Root directory for file operations")
 

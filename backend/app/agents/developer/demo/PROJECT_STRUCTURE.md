@@ -3,6 +3,7 @@
 📁 demo/
   📄 AGENTS.md
   📄 components.json
+  📄 hello_world.py
   📄 jest.config.ts
   📄 jest.setup.ts
   📄 next-env.d.ts
@@ -18,6 +19,13 @@
     📁 app/
       📄 layout.tsx
       📄 page.tsx
+      📁 (auth)/
+        📁 login/
+      📁 (dashboard)/
+        📁 dashboard/
+      📁 api/
+        📁 auth/
+          📁 [...nextauth]/
       📁 categories/
         📁 [id]/
           📄 page.tsx
@@ -27,6 +35,7 @@
       📄 HighlightedSection.tsx
       📄 HomepageContent.tsx
       📄 Navigation.tsx
+      📁 forms/
       📁 ui/
         📄 accordion.tsx
         📄 alert-dialog.tsx

@@ -3,7 +3,7 @@
 import logging
 from pathlib import Path
 from typing import Any
-
+import os
 import yaml
 from crewai import LLM, Agent, Crew, Process, Task
 from crewai_tools import TavilyExtractorTool, TavilySearchTool
@@ -20,6 +20,7 @@ from app.agents.developer.tools.filesystem_tools import (
     SafeFileReadTool,
     SafeFileWriteTool,
 )
+from app.agents.developer.project_manager import project_manager
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ class DeveloperCrew:
         """Initialize Team Leader crew."""
         self.root_dir = root_dir
         self.project_id = project_id
+
         self.config = self._load_config()
         self.agents = self._create_agents()
 
@@ -130,6 +132,19 @@ class DeveloperCrew:
         Returns:
             Working Code Result
         """
+        # Register and index the project if it exists, or update if already registered
+        if os.path.exists(self.root_dir):
+            try:
+                logger.info(f"Checking project registration for '{self.project_id}' at '{self.root_dir}'...")
+
+                # Try to register the project if not already registered (this handles new projects)
+                project_manager.register_project(self.project_id, self.root_dir)
+
+                logger.info(f"Project index updated successfully for project '{self.project_id}'")
+            except Exception as e:
+                logger.error(f"Failed to register or update project index for project '{self.project_id}': {e}")
+        else:
+            logger.warning(f"Project directory does not exist: {self.root_dir}. Skipping indexing.")
 
         tasks_config = self.config.get("tasks", {})
 
@@ -171,4 +186,11 @@ class DeveloperCrew:
 
         result = await crew.kickoff_async()
 
+        # logic update 
+        print(f"--- [After Kickoff] Crew run finished for project '{self.project_id}'. Updating index... ---")
+        try:
+            project_manager.update_project(self.project_id)
+        except Exception as e:
+            print(f"An unexpected error occurred during index update for project '{self.project_id}': {e}")
+        
         return str(result)

@@ -21,13 +21,13 @@ class CustomDeveloper(Developer):
 
         self.crew = DeveloperCrew(
             project_id=str(self.project_id),
-            root_dir=r"D:\capstone project\VibeSDLC3\VibeSDLC\backend\app\agents\developer\demo",
+            root_dir=r"Z:\Z_Download\Dev_Agent_25_11\VibeSDLC\backend\app\agents\developer\demo",
         )
 
 
 async def main():
     # Sử dụng project ID bạn vừa tạo
-    project_id = UUID("f4de5ed8-2b08-4ec7-80f9-5d501b563ef9")
+    project_id = UUID("2d7d5f2e-bae4-49d6-9df6-4a4c92a4c8fb")
 
     # Tạo agent model với project_id bạn đã tạo
     agent_model = AgentModel(

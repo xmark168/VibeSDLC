@@ -43,6 +43,9 @@ def create_structure_document(project_root):
 def create_project_flow(project_id: str, project_path: str):
     """Dynamically create a cocoindex flow for a specific project."""
 
+    # Sanitize the project_id to create a valid flow name (alphanumeric and underscores only)
+    sanitized_project_id = "".join(c if c.isalnum() else "_" for c in project_id)
+
     # Create and write the project structure file before defining the flow
     structure_file_path = os.path.join(project_path, "PROJECT_STRUCTURE.md")
     if os.path.exists(project_path):
@@ -50,7 +53,7 @@ def create_project_flow(project_id: str, project_path: str):
         with open(structure_file_path, "w", encoding="utf-8") as f:
             f.write(structure_content)
 
-    @cocoindex.flow_def(name=f"code_embeddings_{project_id}")
+    @cocoindex.flow_def(name=f"code_embeddings_{sanitized_project_id}")
     def project_flow(
         flow_builder: FlowBuilder, data_scope: cocoindex.DataScope
     ) -> None:
@@ -127,13 +130,16 @@ class AdvancedProjectManager:
 
     def register_project(self, project_id: str, project_path: str):
         """Register and index a new project."""
-        if project_id in self.flows:
+        # Sanitize the project_id to create a valid flow name
+        sanitized_project_id = "".join(c if c.isalnum() else "_" for c in project_id)
+
+        if sanitized_project_id in self.flows:
             return
 
         flow = create_project_flow(project_id, project_path)
-        self.flows[project_id] = flow
+        self.flows[sanitized_project_id] = flow
 
-        print(f"Attempting to index project '{project_id}'...")
+        print(f"Attempting to index project '{project_id}' (sanitized as '{sanitized_project_id}')...")
         try:
             stats = flow.update()
             print(f"✅ Indexing completed for '{project_id}': {stats}")
@@ -152,7 +158,10 @@ class AdvancedProjectManager:
 
     def search(self, project_id: str, query: str, top_k: int = 5):
         """Search in a specific project using the correct table name."""
-        if project_id not in self.flows:
+        # Sanitize the project_id to match the stored flow name
+        sanitized_project_id = "".join(c if c.isalnum() else "_" for c in project_id)
+
+        if sanitized_project_id not in self.flows:
             project_path = (
                 f"services/ai-agent-service/app/agents/dev/workspaces/{project_id}"
             )
@@ -163,7 +172,7 @@ class AdvancedProjectManager:
                     f"Project {project_id} not registered and path not found."
                 )
 
-        flow = self.flows[project_id]
+        flow = self.flows[sanitized_project_id]
         # Use the official utility to get the correct, mangled table name
         table_name = cocoindex.utils.get_target_default_name(flow, "code_embedding")
 
@@ -188,30 +197,38 @@ class AdvancedProjectManager:
 
     def update_project(self, project_id: str):
         """Re-index a specific project."""
-        if project_id not in self.flows:
+        # Sanitize the project_id to match the stored flow name
+        sanitized_project_id = "".join(c if c.isalnum() else "_" for c in project_id)
+
+        if sanitized_project_id not in self.flows:
             raise ValueError(f"Project {project_id} not registered")
 
-        stats = self.flows[project_id].update()
+        stats = self.flows[sanitized_project_id].update()
         print(f"Updated {project_id}: {stats}")
 
     def delete_project(self, project_id: str):
         """Remove a project and its index table."""
-        if project_id not in self.flows:
+        # Sanitize the project_id to match the stored flow name
+        sanitized_project_id = "".join(c if c.isalnum() else "_" for c in project_id)
+
+        if sanitized_project_id not in self.flows:
             print(
                 f"Project {project_id} not in memory, cannot determine table name for deletion."
             )
             return
 
-        flow = self.flows[project_id]
+        flow = self.flows[sanitized_project_id]
+        # Use the sanitized project_id for flow name
+        sanitized_flow_name = f"code_embeddings_{sanitized_project_id}"
         table_name = cocoindex.utils.get_target_default_name(
-            flow, f"code_embeddings_{project_id}"
+            flow, sanitized_flow_name
         )
 
         with connection_pool().connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(f'DROP TABLE IF EXISTS "{table_name}"')
 
-        del self.flows[project_id]
+        del self.flows[sanitized_project_id]
         print(f"Deleted project {project_id} and its index table '{table_name}'.")
 
 
