@@ -18,7 +18,6 @@ from app.kafka.producer import KafkaProducer, get_kafka_producer
 from app.kafka.event_schemas import (
     AgentEvent,
     AgentResponseEvent,
-    AgentProgressEvent,
     AgentTaskType,
     KafkaTopics,
     RouterTaskEvent,

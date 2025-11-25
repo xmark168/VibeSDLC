@@ -26,7 +26,6 @@ from sqlmodel import Session, select
 
 from app.kafka.event_schemas import (
     AgentResponseEvent,
-    AgentStatusEvent,
     AgentTaskType,
     ApprovalResponseEvent,
     BaseKafkaEvent,
