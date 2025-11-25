@@ -67,9 +67,6 @@ export function ChatPanelWS({
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [mentionedAgent, setMentionedAgent] = useState<{ id: string; name: string } | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-  const [expandedMessages, setExpandedMessages] = useState<Set<string>>(
-    new Set()
-  );
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
@@ -144,18 +141,6 @@ export function ChatPanelWS({
   console.log('✅ [ChatPanelWS] Final uniqueMessages to render:', uniqueMessages.length, uniqueMessages);
 
   // Note: Kanban, activeTab, and agentStatuses features removed for simplicity
-
-  const toggleExpand = (id: string) => {
-    setExpandedMessages((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(id)) {
-        newSet.delete(id);
-      } else {
-        newSet.add(id);
-      }
-      return newSet;
-    });
-  };
 
   const filteredAgents = AGENTS.filter((agent) =>
     agent.name.toLowerCase().includes(mentionSearch.toLowerCase())
@@ -498,8 +483,6 @@ export function ChatPanelWS({
       >
         {uniqueMessages.map((msg) => {
           const isUserMessage = msg.author_type === AuthorType.USER;
-          const isExpanded = expandedMessages.has(msg.id);
-          const shouldTruncate = (msg.content?.length || 0) > 200;
 
           if (isUserMessage) {
             return (
@@ -584,9 +567,7 @@ export function ChatPanelWS({
                 <div className="space-y-1.5">
                   <div className="rounded-lg px-3 py-2 bg-muted w-fit">
                     <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
-                      {shouldTruncate && !isExpanded
-                        ? (msg.content || '').slice(0, 200) + "..."
-                        : (msg.content || '')}
+                      {msg.content || ''}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 px-1">
@@ -604,19 +585,6 @@ export function ChatPanelWS({
                         <Copy className="w-3.5 h-3.5 text-muted-foreground" />
                       )}
                     </button>
-                    {shouldTruncate && (
-                      <button
-                        onClick={() => toggleExpand(msg.id)}
-                        className="p-1 hover:bg-accent rounded transition-colors"
-                        title={isExpanded ? "Collapse" : "Expand"}
-                      >
-                        {isExpanded ? (
-                          <ChevronUp className="w-3.5 h-3.5 text-foreground" />
-                        ) : (
-                          <ChevronDown className="w-3.5 h-3.5 text-foreground" />
-                        )}
-                      </button>
-                    )}
                   </div>
                 </div>
               </div>
