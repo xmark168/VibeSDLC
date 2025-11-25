@@ -103,6 +103,12 @@ class BaseAgent(ABC):
         self._current_task_id: Optional[UUID] = None
         self._current_execution_id: Optional[UUID] = None
         
+        # Task context tracking (for clarification questions)
+        self._current_task_type: Optional[str] = None
+        self._current_task_content: Optional[str] = None
+        self._current_routing_reason: Optional[str] = None
+        self._current_user_id: Optional[UUID] = None
+        
         # Execution tracking
         self._execution_start_time: Optional[Any] = None  # datetime object
         self._execution_events: list = []  # List of events for current execution
@@ -226,6 +232,131 @@ class BaseAgent(ABC):
         """Emit: agent.messaging.finish - Notify execution is complete"""
 
         await self.message_user("completed", summary)
+    
+    async def ask_clarification_question(
+        self,
+        question: str,
+        question_type: str = "open",
+        options: Optional[list[str]] = None,
+        allow_multiple: bool = False,
+    ) -> UUID:
+        """Tool: Ask user a clarification question.
+        
+        This method will:
+        1. Save question to DB (agent_questions table)
+        2. Publish QuestionAskedEvent to broadcast to frontend
+        3. Return question_id for tracking
+        
+        The current task will be PAUSED until user answers.
+        When user answers, router will resume the task with the answer.
+        
+        Args:
+            question: Question text to ask user
+            question_type: "open" or "multichoice"
+            options: List of options for multichoice
+            allow_multiple: Allow multiple selections (multichoice only)
+            
+        Returns:
+            question_id: UUID of created question
+            
+        Example:
+            # Open question
+            q_id = await self.ask_clarification_question(
+                "Which aspect do you want to analyze?",
+                question_type="open"
+            )
+            
+            # Multichoice question
+            q_id = await self.ask_clarification_question(
+                "Select analysis types:",
+                question_type="multichoice",
+                options=["Requirements", "Architecture", "Risks"],
+                allow_multiple=True
+            )
+        """
+        if not self._current_task_id:
+            raise RuntimeError("Cannot ask question: no active task")
+        
+        from sqlmodel import Session
+        from app.core.db import engine
+        from app.models import AgentQuestion, QuestionType, QuestionStatus
+        from app.kafka.event_schemas import QuestionAskedEvent
+        from datetime import timedelta
+        
+        question_id = uuid4()
+        
+        # Get current task context
+        task_context_data = {
+            "task_id": str(self._current_task_id),
+            "task_type": self._current_task_type,
+            "execution_id": str(self._current_execution_id) if self._current_execution_id else None,
+            "original_message": self._current_task_content,
+            "routing_reason": self._current_routing_reason,
+        }
+        
+        # Save to database
+        with Session(engine) as session:
+            db_question = AgentQuestion(
+                id=question_id,
+                project_id=self.project_id,
+                agent_id=self.agent_id,
+                user_id=self._current_user_id,
+                question_type=QuestionType(question_type),
+                question_text=question,
+                options=options,
+                allow_multiple=allow_multiple,
+                status=QuestionStatus.WAITING_ANSWER,
+                task_id=self._current_task_id,
+                execution_id=self._current_execution_id,
+                task_context=task_context_data,
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            )
+            session.add(db_question)
+            session.commit()
+            session.refresh(db_question)
+        
+        # Publish event to Kafka
+        producer = await self._get_producer()
+        event = QuestionAskedEvent(
+            question_id=question_id,
+            agent_id=self.agent_id,
+            agent_name=self.name,
+            project_id=self.project_id,
+            user_id=self._current_user_id,
+            question_type=question_type,
+            question_text=question,
+            options=options,
+            allow_multiple=allow_multiple,
+            task_id=self._current_task_id,
+            execution_id=self._current_execution_id,
+        )
+        
+        await producer.publish(
+            topic=KafkaTopics.AGENT_EVENTS,
+            event=event
+        )
+        
+        # Also broadcast to WebSocket immediately
+        from app.websocket.connection_manager import connection_manager
+        await connection_manager.broadcast_to_project(
+            {
+                "type": "agent.question",
+                "question_id": str(question_id),
+                "agent_name": self.name,
+                "question": question,
+                "question_type": question_type,
+                "options": options,
+                "allow_multiple": allow_multiple,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            self.project_id
+        )
+        
+        logger.info(
+            f"[{self.name}] Asked clarification question: {question[:50]}"
+        )
+        
+        return question_id
 
 
 
@@ -458,6 +589,12 @@ class BaseAgent(ABC):
             
             # Extract context
             context = task_data.get("context", {})
+            
+            # Track task context for clarification questions
+            self._current_task_type = task_data.get("task_type", "message")
+            self._current_task_content = context.get("content", "")
+            self._current_routing_reason = task_data.get("routing_reason", "")
+            self._current_user_id = context.get("user_id")
 
             # Create TaskContext
             task = TaskContext(

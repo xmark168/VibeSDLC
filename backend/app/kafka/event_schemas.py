@@ -2,9 +2,9 @@
 Kafka event schemas and topic definitions.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -29,6 +29,7 @@ class KafkaTopics(str, Enum):
     
     # Other
     APPROVAL_RESPONSES = "approval_responses"
+    QUESTION_ANSWERS = "question_answers"
     
 
 # BASE EVENT SCHEMA
@@ -37,7 +38,7 @@ class BaseKafkaEvent(BaseModel):
 
     event_id: str = Field(default_factory=lambda: str(uuid4()))  # FIX: Call uuid4() to generate UUID instance
     event_type: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     project_id: Optional[UUID] = None
     user_id: Optional[UUID] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -162,6 +163,36 @@ class ApprovalResponseEvent(BaseKafkaEvent):
     modified_data: Optional[Dict[str, Any]] = None
 
 
+# CLARIFICATION QUESTION EVENTS
+class QuestionAskedEvent(BaseKafkaEvent):
+    """Event when agent asks a clarification question"""
+    event_type: str = "agent.question_asked"
+    
+    question_id: UUID
+    agent_id: UUID
+    agent_name: str
+    
+    question_type: str
+    question_text: str
+    options: Optional[List[str]] = None
+    allow_multiple: bool = False
+    
+    task_id: UUID
+    execution_id: Optional[UUID] = None
+
+
+class QuestionAnswerEvent(BaseKafkaEvent):
+    """Event when user answers a question"""
+    event_type: str = "user.question_answer"
+    
+    question_id: UUID
+    answer: str
+    selected_options: Optional[List[str]] = None
+    
+    agent_id: UUID
+    task_id: UUID
+
+
 # FLOW STATUS EVENTS
 class FlowStatusType(str, Enum):
     """Flow execution status types."""
@@ -257,6 +288,9 @@ class AgentTaskType(str, Enum):
     # Abstraction task types (high-level)
     USER_STORY = "user_story"  # BA: Analyze requirements → create user stories
     MESSAGE = "message"  # Any agent: Handle/respond to user message
+    
+    # Clarification questions
+    RESUME_WITH_ANSWER = "resume_with_answer"  # Resume task with clarification answer
 
     # Generic
     CUSTOM = "custom"
@@ -300,7 +334,7 @@ class AgentTaskStartedEvent(BaseKafkaEvent):
     agent_id: UUID
     agent_name: str
     execution_id: UUID
-    started_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class AgentTaskProgressEvent(BaseKafkaEvent):
@@ -326,7 +360,7 @@ class AgentTaskCompletedEvent(BaseKafkaEvent):
     agent_id: UUID
     agent_name: str
     execution_id: UUID
-    completed_at: datetime = Field(default_factory=datetime.utcnow)
+    completed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     duration_seconds: int
     result: Optional[Dict[str, Any]] = None
     artifacts: Optional[Dict[str, Any]] = None  # Files created, PRs, etc.
@@ -340,7 +374,7 @@ class AgentTaskFailedEvent(BaseKafkaEvent):
     agent_id: UUID
     agent_name: str
     execution_id: UUID
-    failed_at: datetime = Field(default_factory=datetime.utcnow)
+    failed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     error_message: str
     error_type: Optional[str] = None
     retry_count: int = 0
@@ -355,7 +389,7 @@ class AgentTaskCancelledEvent(BaseKafkaEvent):
     agent_id: UUID
     agent_name: str
     cancelled_by: str  # user_id or agent_name
-    cancelled_at: datetime = Field(default_factory=datetime.utcnow)
+    cancelled_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     reason: Optional[str] = None
 
 
@@ -445,6 +479,8 @@ EVENT_TYPE_TO_SCHEMA = {
     StoryEventType.ASSIGNED.value: StoryAssignedEvent,
     "approval.request.created": ApprovalRequestEvent,
     "approval.response.submitted": ApprovalResponseEvent,
+    "agent.question_asked": QuestionAskedEvent,
+    "user.question_answer": QuestionAnswerEvent,
     FlowStatusType.STARTED.value: FlowStatusEvent,
     FlowStatusType.IN_PROGRESS.value: FlowStatusEvent,
     FlowStatusType.COMPLETED.value: FlowStatusEvent,

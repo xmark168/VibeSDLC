@@ -116,6 +116,19 @@ class Project(BaseModel, table=True):
 
     # File system path for project files (auto-generated: projects/{project_id})
     project_path: str | None = Field(default=None, max_length=500)
+    
+    # Conversation context tracking - routes follow-up messages to active agent
+    active_agent_id: UUID | None = Field(
+        default=None,
+        foreign_key="agents.id",
+        ondelete="SET NULL"
+    )
+    active_agent_updated_at: datetime | None = Field(default=None)
+    
+    # WebSocket session tracking - for smart timeouts
+    websocket_connected: bool = Field(default=False)
+    websocket_last_seen: datetime | None = Field(default=None)
+    
     owner: User = Relationship(back_populates="owned_projects")
     stories: list["Story"] = Relationship(
         back_populates="project",
@@ -127,7 +140,10 @@ class Project(BaseModel, table=True):
     )
     agents: list["Agent"] = Relationship(
         back_populates="project",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan",
+            "foreign_keys": "[Agent.project_id]"  # Use Agent.project_id, not Project.active_agent_id
+        },
     )
     # TraDS ============= Project Rules
 
@@ -342,7 +358,12 @@ class Agent(BaseModel, table=True):
     status: AgentStatus = Field(default=AgentStatus.idle)
 
     # Relationships
-    project: "Project" = Relationship(back_populates="agents")
+    project: "Project" = Relationship(
+        back_populates="agents",
+        sa_relationship_kwargs={
+            "foreign_keys": "[Agent.project_id]"  # Use Agent.project_id, not Project.active_agent_id
+        }
+    )
     messages: list["Message"] = Relationship(back_populates="agent")
 
 

@@ -8,10 +8,12 @@ Architecture:
 
 import logging
 from typing import Any, Dict
+from uuid import uuid4
 
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
 from app.agents.team_leader.crew import TeamLeaderCrew
 from app.models import Agent as AgentModel
+from app.kafka.event_schemas import RouterTaskEvent, AgentTaskType, KafkaTopics
 
 
 logger = logging.getLogger(__name__)
@@ -50,6 +52,142 @@ class TeamLeader(BaseAgent):
 
         logger.info(f"Team Leader initialized: {self.name} with {len(self.crew.agents)} crew members")
 
+    def _should_delegate_to_analyst(self, message: str) -> bool:
+        """Check if message should be delegated to Business Analyst.
+        
+        Args:
+            message: User message to analyze
+            
+        Returns:
+            True if message is about project analysis
+        """
+        # Keywords that indicate analysis tasks
+        analysis_keywords = [
+            # Vietnamese
+            "phân tích", "analysis", "analyze", "đánh giá", "requirements", 
+            "yêu cầu", "tài liệu", "document", "prd", "specification",
+            "user story", "use case", "functional", "non-functional",
+            "kiến trúc", "architecture", "thiết kế", "design",
+            "rủi ro", "risk", "ước lượng", "estimate", "feasibility",
+            # English
+            "requirement", "spec", "documentation", "business", "process",
+            "workflow", "stakeholder", "user need", "feature request"
+        ]
+        
+        message_lower = message.lower()
+        
+        # Check for keywords
+        for keyword in analysis_keywords:
+            if keyword in message_lower:
+                return True
+                
+        return False
+    
+    async def _delegate_to_business_analyst(self, task: TaskContext) -> TaskResult:
+        """Delegate task to Business Analyst.
+        
+        Args:
+            task: Original task context
+            
+        Returns:
+            TaskResult indicating delegation
+        """
+        try:
+            # Get Business Analyst from database
+            from app.services import AgentService
+            from sqlmodel import Session
+            from app.core.db import engine
+            
+            with Session(engine) as session:
+                agent_service = AgentService(session)
+                ba = agent_service.get_by_project_and_role(
+                    project_id=self.project_id,
+                    role_type="business_analyst"
+                )
+                
+                if not ba:
+                    logger.warning(f"[{self.name}] Business Analyst not found in project")
+                    return TaskResult(
+                        success=False,
+                        output="",
+                        error_message="Business Analyst not available in this project"
+                    )
+                
+                # Publish delegation task to BA
+                producer = await self._get_producer()
+                
+                delegation_event = RouterTaskEvent(
+                    event_type="router.task.dispatched",
+                    task_id=uuid4(),
+                    task_type=AgentTaskType.MESSAGE,
+                    agent_id=ba.id,
+                    agent_role="business_analyst",
+                    source_event_type=task.context.get("source_event_type", "user.message.sent"),
+                    source_event_id=task.context.get("source_event_id", str(task.task_id)),
+                    routing_reason=f"delegated_by_team_leader:{self.name}",
+                    priority="high",
+                    context={
+                        "message_id": task.message_id,
+                        "user_id": task.user_id,
+                        "content": task.content,
+                        "project_id": str(self.project_id),
+                        "delegated_from": self.name,
+                        **task.context,
+                    }
+                )
+                
+                await producer.publish(
+                    topic=KafkaTopics.AGENT_TASKS,
+                    event=delegation_event
+                )
+                
+                logger.info(f"[{self.name}] Delegated analysis task to Business Analyst: {ba.name}")
+                
+                # Update conversation context to BA
+                from app.models import Project
+                from datetime import datetime, timezone
+                
+                project = session.get(Project, self.project_id)
+                if project:
+                    project.active_agent_id = ba.id
+                    project.active_agent_updated_at = datetime.now(timezone.utc)
+                    session.add(project)
+                    session.commit()
+                    
+                    logger.info(
+                        f"[{self.name}] Updated active agent context to: {ba.human_name}"
+                    )
+                
+                # Notify user about delegation
+                delegation_message = (
+                    f"Tôi nhận thấy đây là câu hỏi về phân tích dự án. "
+                    f"Tôi đã chuyển yêu cầu này cho @{ba.human_name} - chuyên gia phân tích của chúng ta. "
+                    f"Họ sẽ giúp bạn chi tiết hơn! 📊"
+                )
+                
+                await self.message_user("response", delegation_message, {
+                    "message_type": "text",
+                    "delegated_to": ba.human_name,
+                    "delegation_reason": "analysis_request"
+                })
+                
+                return TaskResult(
+                    success=True,
+                    output=delegation_message,
+                    structured_data={
+                        "delegated_to": ba.human_name,
+                        "delegation_reason": "analysis_request"
+                    }
+                )
+                
+        except Exception as e:
+            logger.error(f"[{self.name}] Error delegating to BA: {e}", exc_info=True)
+            return TaskResult(
+                success=False,
+                output="",
+                error_message=f"Failed to delegate: {str(e)}"
+            )
+
     async def handle_task(self, task: TaskContext) -> TaskResult:
         """Handle task assigned by Router.
 
@@ -64,6 +202,11 @@ class TeamLeader(BaseAgent):
             task_type = task.task_type.value
 
             logger.info(f"[{self.name}] Processing {task_type}: {user_message[:50]}...")
+
+            # Check if this should be delegated to Business Analyst
+            if self._should_delegate_to_analyst(user_message):
+                logger.info(f"[{self.name}] Detected analysis request, delegating to Business Analyst")
+                return await self._delegate_to_business_analyst(task)
 
             # Determine task type and route to appropriate crew workflow
             # NOTE: Base agent already sent "thinking" event, no need to duplicate

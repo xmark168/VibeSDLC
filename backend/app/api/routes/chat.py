@@ -21,6 +21,22 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
+async def update_websocket_activity(project_id: UUID):
+    """Update WebSocket last_seen timestamp on user activity."""
+    try:
+        from app.core.db import engine
+        from sqlmodel import Session as DBSession
+        
+        with DBSession(engine) as session:
+            project = session.get(Project, project_id)
+            if project:
+                project.websocket_last_seen = datetime.now(timezone.utc)
+                session.add(project)
+                session.commit()
+    except Exception as e:
+        logger.debug(f"Failed to update WebSocket activity: {e}")
+
+
 @router.websocket("/ws")
 async def websocket_endpoint(
     websocket: WebSocket,
@@ -86,6 +102,9 @@ async def websocket_endpoint(
                 try:
                     message = json.loads(data)
                     message_type = message.get("type")
+                    
+                    # Update WebSocket activity timestamp
+                    await update_websocket_activity(project_id)
 
                     # Handle user message
                     if message_type == "message":
@@ -106,34 +125,71 @@ async def websocket_endpoint(
                         from app.core.db import engine
                         from sqlmodel import Session as DBSession
 
-                        with DBSession(engine) as db_session:
-                            # Verify project exists
-                            project = db_session.get(Project, project_id)
-                            if not project:
-                                await websocket.send_json({
-                                    "type": "error",
-                                    "message": "Project not found"
-                                })
-                                continue
+                        message_id = None
+                        db_message = None
+                        
+                        try:
+                            with DBSession(engine) as db_session:
+                                # Verify project exists
+                                project = db_session.get(Project, project_id)
+                                if not project:
+                                    logger.warning(f"Project {project_id} not found")
+                                    await websocket.send_json({
+                                        "type": "error",
+                                        "message": "Project not found"
+                                    })
+                                    continue
 
-                            # Create message with agent routing info
-                            db_message = MessageModel(
-                                project_id=project_id,
-                                user_id=user.id,
-                                agent_id=agent_id,  # Save mentioned agent ID for routing
-                                content=content,
-                                author_type=AuthorType.USER,
-                                visibility=MessageVisibility.USER_MESSAGE,  # User messages are always user-facing
-                                message_type=message.get("message_type", "text"),
-                            )
-                            db_session.add(db_message)
-                            db_session.commit()
-                            db_session.refresh(db_message)
+                                # Create message with agent routing info
+                                db_message = MessageModel(
+                                    project_id=project_id,
+                                    user_id=user.id,
+                                    agent_id=agent_id,  # Save mentioned agent ID for routing
+                                    content=content,
+                                    author_type=AuthorType.USER,
+                                    visibility=MessageVisibility.USER_MESSAGE,  # User messages are always user-facing
+                                    message_type=message.get("message_type", "text"),
+                                )
+                                
+                                logger.debug(f"Creating message (user={user.id}, content_len={len(content)})")
+                                db_session.add(db_message)
+                                
+                                try:
+                                    db_session.commit()
+                                    logger.info(f"✅ Message committed to DB")
+                                except Exception as commit_error:
+                                    logger.error(f"❌ DB commit failed: {commit_error}", exc_info=True)
+                                    db_session.rollback()
+                                    await websocket.send_json({
+                                        "type": "error",
+                                        "message": f"Failed to save message: {str(commit_error)}"
+                                    })
+                                    continue
+                                
+                                db_session.refresh(db_message)
+                                message_id = db_message.id
+                                
+                                # Verify message was actually saved
+                                verify_message = db_session.get(MessageModel, message_id)
+                                if not verify_message:
+                                    logger.error(f"❌ Message {message_id} not found after commit!")
+                                    raise Exception("Message verification failed")
+                                
+                                logger.info(f"✅ Message saved & verified: {message_id} (user={user.id}, content_len={len(content)})" +
+                                          (f" targeting agent {agent_name} ({agent_id})" if agent_id else ""))
 
-                            message_id = db_message.id
+                        except Exception as db_error:
+                            logger.error(f"❌ Database error while saving message: {db_error}", exc_info=True)
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": "Database error occurred"
+                            })
+                            continue
 
-                        logger.info(f"Message saved: {message_id} from user {user.id}" +
-                                  (f" targeting agent {agent_name} ({agent_id})" if agent_id else ""))
+                        # Only proceed if message was saved successfully
+                        if not message_id or not db_message:
+                            logger.error("❌ Message ID is None after DB operation")
+                            continue
 
                         # Publish to Kafka for agent processing
                         try:
@@ -218,6 +274,78 @@ async def websocket_endpoint(
                             "status": "received",
                             "timestamp": datetime.now(timezone.utc).isoformat()
                         })
+
+                    # Handle clarification question answer
+                    elif message_type == "question_answer":
+                        question_id_str = message.get("question_id")
+                        answer = message.get("answer")
+                        selected_options = message.get("selected_options")
+                        
+                        if not question_id_str:
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": "question_id is required"
+                            })
+                            continue
+                        
+                        logger.info(f"[WS] User {user.id} answered question {question_id_str}")
+                        
+                        # Load question to get agent info
+                        from app.core.db import engine
+                        from sqlmodel import Session as DBSession
+                        from app.models import AgentQuestion, QuestionStatus
+                        
+                        with DBSession(engine) as db_session:
+                            question = db_session.get(AgentQuestion, UUID(question_id_str))
+                            
+                            if not question:
+                                await websocket.send_json({
+                                    "type": "error",
+                                    "message": "Question not found"
+                                })
+                                continue
+                            
+                            if question.status != QuestionStatus.WAITING_ANSWER:
+                                await websocket.send_json({
+                                    "type": "error",
+                                    "message": "Question already answered or expired"
+                                })
+                                continue
+                            
+                            # Publish answer event to Kafka
+                            try:
+                                from app.kafka.event_schemas import QuestionAnswerEvent
+                                
+                                producer = await get_kafka_producer()
+                                answer_event = QuestionAnswerEvent(
+                                    question_id=UUID(question_id_str),
+                                    answer=answer or "",
+                                    selected_options=selected_options,
+                                    agent_id=question.agent_id,
+                                    task_id=question.task_id,
+                                    project_id=project_id,
+                                    user_id=user.id,
+                                )
+                                
+                                await producer.publish(
+                                    topic=KafkaTopics.QUESTION_ANSWERS,
+                                    event=answer_event
+                                )
+                                
+                                logger.info(f"Question answer published for {question_id_str}")
+                                
+                                # Ack to user
+                                await websocket.send_json({
+                                    "type": "question_answer_received",
+                                    "question_id": question_id_str,
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                })
+                            except Exception as e:
+                                logger.error(f"Failed to publish question answer: {e}")
+                                await websocket.send_json({
+                                    "type": "error",
+                                    "message": f"Failed to process answer: {str(e)}"
+                                })
 
                     else:
                         logger.debug(f"Received unhandled WebSocket message type: {message_type}")

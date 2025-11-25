@@ -131,6 +131,11 @@ export function useChatWebSocket(
         handleMessageDelivered(msg)
         break
       
+      case 'error':
+        // Backend error occurred
+        handleError(msg)
+        break
+      
       case 'agent.messaging.start':
         handleStart(msg)
         break
@@ -146,6 +151,14 @@ export function useChatWebSocket(
       
       case 'agent.messaging.finish':
         handleFinish(msg)
+        break
+      
+      case 'agent.question':
+        handleAgentQuestion(msg)
+        break
+      
+      case 'question_answer_received':
+        handleQuestionAnswerReceived(msg)
         break
       
       default:
@@ -220,6 +233,23 @@ export function useChatWebSocket(
     ))
   }
   
+  const handleError = (msg: any) => {
+    console.error('[WS] ❌ Server error:', msg.message)
+    
+    // Mark last pending message as failed
+    setMessages(prev => {
+      const lastPending = [...prev].reverse().find(m => m.status === 'pending')
+      if (lastPending) {
+        return prev.map(m => 
+          m.id === lastPending.id 
+            ? { ...m, status: 'failed' as MessageStatus }
+            : m
+        )
+      }
+      return prev
+    })
+  }
+  
   const handleStart = (msg: any) => {
     console.log('[WS] 🚀 Start:', msg.agent_name, msg.content)
     setAgentStatus('thinking')
@@ -287,6 +317,48 @@ export function useChatWebSocket(
     })
   }
   
+  const handleAgentQuestion = (msg: any) => {
+    console.log('[WS] ❓ Agent question:', msg.agent_name, msg.question)
+    
+    const questionMessage: Message = {
+      id: msg.question_id,
+      project_id: projectIdRef.current!,
+      author_type: AuthorType.AGENT,
+      agent_name: msg.agent_name,
+      content: msg.question,
+      message_type: 'agent_question',
+      structured_data: {
+        question_id: msg.question_id,
+        question_type: msg.question_type,
+        options: msg.options || [],
+        allow_multiple: msg.allow_multiple || false,
+      },
+      created_at: msg.timestamp,
+      updated_at: msg.timestamp,
+    }
+    
+    setMessages(prev => [...prev, questionMessage])
+  }
+  
+  const handleQuestionAnswerReceived = (msg: any) => {
+    console.log('[WS] ✓ Answer received:', msg.question_id)
+    
+    // Mark question as answered
+    setMessages(prev => prev.map(m => {
+      if (m.structured_data?.question_id === msg.question_id) {
+        return {
+          ...m,
+          structured_data: {
+            ...m.structured_data,
+            answered: true,
+            answered_at: msg.timestamp,
+          }
+        }
+      }
+      return m
+    }))
+  }
+  
   // ========================================================================
   // Send Message
   // ========================================================================
@@ -338,6 +410,32 @@ export function useChatWebSocket(
       console.error('[WebSocket] ❌ Failed to send:', error)
     }
   }
+  
+  const sendQuestionAnswer = (
+    question_id: string,
+    answer: string,
+    selected_options?: string[]
+  ) => {
+    if (readyState !== ReadyState.OPEN) {
+      console.error('[WS] Cannot send answer: not connected')
+      return false
+    }
+    
+    try {
+      sendJsonMessage({
+        type: 'question_answer',
+        question_id,
+        answer: answer || '',
+        selected_options: selected_options || [],
+      })
+      
+      console.log('[WS] 📨 Sent answer:', { question_id, answer, selected_options })
+      return true
+    } catch (error) {
+      console.error('[WS] Failed to send answer:', error)
+      return false
+    }
+  }
 
   // Connection status
   const isConnected = readyState === ReadyState.OPEN
@@ -365,5 +463,6 @@ export function useChatWebSocket(
     agentStatus,
     typingAgents,
     sendMessage,
+    sendQuestionAnswer,
   }
 }

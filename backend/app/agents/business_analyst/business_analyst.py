@@ -80,9 +80,33 @@ comprehensive documentation that helps the development team understand what to b
             TaskResult with requirements analysis response
         """
         try:
+            # Check if this is a RESUME task (after user answered question)
+            from app.kafka.event_schemas import AgentTaskType
+            if task.task_type == AgentTaskType.RESUME_WITH_ANSWER:
+                return await self._handle_resume(task)
+            
             user_message = task.content
 
             logger.info(f"[{self.name}] Processing BA task: {user_message[:50]}...")
+            
+            # Check if message is vague and needs clarification
+            if self._needs_clarification(user_message):
+                logger.info(f"[{self.name}] Message is vague, asking clarification...")
+                
+                # Ask clarification question
+                await self.ask_clarification_question(
+                    question="Bạn muốn phân tích khía cạnh nào của dự án?",
+                    question_type="multichoice",
+                    options=["Requirements", "Architecture", "Risks", "User Stories"],
+                    allow_multiple=True
+                )
+                
+                # Return early - task is now PAUSED
+                return TaskResult(
+                    success=True,
+                    output="⏸️ Đang chờ bạn trả lời câu hỏi...",
+                    structured_data={"status": "waiting_clarification"}
+                )
 
             # NOTE: Base agent already sent "thinking" event, no need to duplicate
 
@@ -151,3 +175,119 @@ comprehensive documentation that helps the development team understand what to b
                 output="",
                 error_message=str(e),
             )
+    
+    def _needs_clarification(self, message: str) -> bool:
+        """Check if message is vague and needs clarification.
+        
+        Simple heuristic: Check for vague keywords without specific details.
+        """
+        message_lower = message.lower()
+        
+        # Vague keywords that suggest need for clarification
+        vague_patterns = [
+            "phân tích",
+            "analyze", 
+            "help",
+            "dự án",
+            "project",
+            "requirements",
+            "yêu cầu"
+        ]
+        
+        # Check if message is short and contains vague keywords
+        if len(message.split()) < 10:  # Short message
+            if any(pattern in message_lower for pattern in vague_patterns):
+                # Additional check: if message has specific details, don't ask
+                specific_indicators = [
+                    "api",
+                    "database",
+                    "user login",
+                    "payment",
+                    "authentication",
+                    "crud",
+                    "dashboard"
+                ]
+                has_specific = any(ind in message_lower for ind in specific_indicators)
+                return not has_specific
+        
+        return False
+    
+    async def _handle_resume(self, task: TaskContext) -> TaskResult:
+        """Handle resume after user answered clarification question.
+        
+        Args:
+            task: TaskContext with RESUME_WITH_ANSWER type
+            
+        Returns:
+            TaskResult with analysis based on clarified intent
+        """
+        # Extract answer from context
+        answer = task.context.get("answer", "")
+        selected_options = task.context.get("selected_options", [])
+        original_context = task.context.get("original_context", {})
+        original_message = original_context.get("original_message", "")
+        
+        logger.info(
+            f"[{self.name}] Resuming with answer: {answer}, "
+            f"selected: {selected_options}, original: {original_message}"
+        )
+        
+        # Build focused analysis based on selected aspects
+        analysis_prompt = f"""
+        Original request: {original_message}
+        
+        User wants analysis focused on: {', '.join(selected_options)}
+        
+        Provide detailed analysis for the selected aspects:
+        """
+        
+        for aspect in selected_options:
+            if aspect == "Requirements":
+                analysis_prompt += "\n- Functional and non-functional requirements"
+            elif aspect == "Architecture":
+                analysis_prompt += "\n- System architecture and design patterns"
+            elif aspect == "Risks":
+                analysis_prompt += "\n- Technical and business risks"
+            elif aspect == "User Stories":
+                analysis_prompt += "\n- User stories and acceptance criteria"
+        
+        # Create focused CrewAI task
+        crew_task = Task(
+            description=analysis_prompt,
+            expected_output="Detailed analysis of selected aspects",
+            agent=self.crew_agent,
+        )
+        
+        crew = Crew(
+            agents=[self.crew_agent],
+            tasks=[crew_task],
+            verbose=True,
+        )
+        
+        # Execute analysis
+        result = await crew.kickoff_async(inputs={})
+        response = str(result)
+        
+        logger.info(f"[{self.name}] Resume analysis completed: {len(response)} chars")
+        
+        # Send response with task completion flag
+        await self.message_user("response", response, {
+            "message_type": "requirements_analysis",
+            "task_completed": True,  # Signal task is complete
+            "data": {
+                "analysis": response,
+                "aspects": selected_options,
+                "resumed": True
+            }
+        })
+        
+        return TaskResult(
+            success=True,
+            output=response,
+            structured_data={
+                "resumed": True,
+                "selected_aspects": selected_options,
+                "original_message": original_message,
+                "task_completed": True  # Mark task as complete for context clearing
+            }
+        )

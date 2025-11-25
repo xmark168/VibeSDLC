@@ -33,6 +33,7 @@ import { useMessages } from "@/queries/messages";
 import { AuthorType, type Message } from "@/types/message";
 import { MessagePreviewCard } from "./MessagePreviewCard";
 import { MessageStatusIndicator } from "./message-status-indicator";
+import { AgentQuestionCard } from "./AgentQuestionCard";
 import { useProjectAgents } from "@/queries/agents";
 
 interface ChatPanelProps {
@@ -69,6 +70,7 @@ export function ChatPanelWS({
   const [mentionedAgent, setMentionedAgent] = useState<{ id: string; name: string } | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+  const [pendingQuestion, setPendingQuestion] = useState<Message | null>(null);
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -110,8 +112,21 @@ export function ChatPanelWS({
   const { data: messagesData } = useMessages({
     project_id: projectId || "",
     skip: 0,
-    limit: 100,
+    limit: 500,  // Increased from 100 to handle more messages
   });
+
+  // Debug log for API messages
+  useEffect(() => {
+    if (messagesData) {
+      console.log('[ChatPanel] 📊 API messages loaded:', {
+        count: messagesData.count,
+        actual: messagesData.data.length,
+        projectId,
+        firstMessage: messagesData.data[0]?.id,
+        lastMessage: messagesData.data[messagesData.data.length - 1]?.id
+      })
+    }
+  }, [messagesData, projectId])
 
   // WebSocket connection (simplified with 5 message types)
   const {
@@ -120,6 +135,7 @@ export function ChatPanelWS({
     agentStatus,
     typingAgents,
     sendMessage: wsSendMessage,
+    sendQuestionAnswer,
   } = useChatWebSocket(projectId, token || '');
 
   // Combine existing messages with WebSocket messages
@@ -138,6 +154,27 @@ export function ChatPanelWS({
   const uniqueMessages = sortedMessages.filter(
     (msg, index, self) => index === self.findIndex(m => m.id === msg.id)
   );
+  
+  // Detect unanswered questions
+  useEffect(() => {
+    const unansweredQuestion = uniqueMessages.find(
+      msg => msg.message_type === 'agent_question' && !msg.structured_data?.answered
+    )
+    
+    setPendingQuestion(unansweredQuestion || null)
+    
+    // Auto-scroll to question if it appears
+    if (unansweredQuestion && !pendingQuestion) {
+      setTimeout(() => {
+        const element = document.getElementById(`question-${unansweredQuestion.id}`)
+        element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 100)
+    }
+  }, [uniqueMessages])
+  
+  // Determine if chat should be blocked
+  const isMultichoiceQuestion = pendingQuestion?.structured_data?.question_type === 'multichoice'
+  const shouldBlockChat = pendingQuestion && isMultichoiceQuestion
   
   // Note: Kanban, activeTab, and agentStatuses features removed for simplicity
 
@@ -199,6 +236,18 @@ export function ChatPanelWS({
     }
 
     let finalMessage = message.trim();
+
+    // Check if this is answering an open question
+    if (pendingQuestion && pendingQuestion.structured_data?.question_type === 'open') {
+      // Send as question answer instead of regular message
+      sendQuestionAnswer(
+        pendingQuestion.structured_data.question_id!,
+        finalMessage,
+        undefined
+      )
+      setMessage("");
+      return;
+    }
 
     // Send via WebSocket with agent routing info if agent was mentioned
     wsSendMessage(finalMessage, mentionedAgent?.name);
@@ -524,6 +573,37 @@ export function ChatPanelWS({
             return null;
           }
 
+          // Agent Question Handling
+          if (msg.message_type === 'agent_question') {
+            return (
+              <div key={msg.id} id={`question-${msg.id}`} className="flex gap-3">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
+                  ❓
+                </div>
+                <div className="flex-1">
+                  <div className="text-xs font-medium text-muted-foreground mb-2">
+                    {msg.agent_name || 'Agent'}
+                  </div>
+                  <AgentQuestionCard
+                    question={msg.content}
+                    questionType={msg.structured_data?.question_type || 'open'}
+                    options={msg.structured_data?.options || []}
+                    allowMultiple={msg.structured_data?.allow_multiple || false}
+                    answered={msg.structured_data?.answered || false}
+                    agentName={msg.agent_name}
+                    onSubmit={(answer, selectedOptions) => {
+                      sendQuestionAnswer(
+                        msg.structured_data!.question_id!,
+                        answer,
+                        selectedOptions
+                      )
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          }
+
           // Check if this is a structured message (preview)
           if (msg.message_type && msg.message_type !== 'text' && msg.structured_data) {
             return (
@@ -601,6 +681,65 @@ export function ChatPanelWS({
         ))}
       </div>
 
+      {/* Sticky Question Bar */}
+      {pendingQuestion && (
+        <div className="mx-4 mb-2 sticky bottom-20 z-10">
+          <div className="p-4 rounded-lg bg-blue-600 text-white shadow-lg border border-blue-700">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-lg">❓</span>
+                  <p className="text-sm font-semibold">
+                    {pendingQuestion.agent_name || 'Agent'} is waiting for your answer
+                  </p>
+                </div>
+                <p className="text-xs opacity-90 line-clamp-2">
+                  {pendingQuestion.content}
+                </p>
+                {isMultichoiceQuestion && (
+                  <p className="text-xs opacity-75 mt-1">
+                    📍 Please select options in the question card above
+                  </p>
+                )}
+                {!isMultichoiceQuestion && (
+                  <p className="text-xs opacity-75 mt-1">
+                    💬 Type your answer in the chat below
+                  </p>
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    const element = document.getElementById(`question-${pendingQuestion.id}`)
+                    element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                  }}
+                  className="text-xs whitespace-nowrap"
+                >
+                  View Question
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    // Skip question by marking it as answered
+                    sendQuestionAnswer(
+                      pendingQuestion.structured_data!.question_id!,
+                      "[SKIPPED]",
+                      []
+                    )
+                  }}
+                  className="text-xs text-white hover:bg-blue-700 hover:text-white whitespace-nowrap"
+                >
+                  Skip
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="p-2 m-4 rounded-4xl relative bg-muted">
         {showMentions && filteredAgents.length > 0 && (
           <div
@@ -650,7 +789,14 @@ export function ChatPanelWS({
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
             className="min-h-[40px] resize-none bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground p-1 focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
-            disabled={!isConnected}
+            disabled={!isConnected || shouldBlockChat}
+            placeholder={
+              shouldBlockChat
+                ? "⏸️ Please select options in the question above..."
+                : pendingQuestion && !isMultichoiceQuestion
+                ? "💬 Type your answer here..."
+                : "Type a message..."
+            }
           />
           <div className="flex items-center justify-between pt-3">
             <div className="flex gap-2">
@@ -662,7 +808,7 @@ export function ChatPanelWS({
                       size="icon"
                       className="h-8 w-8 hover:bg-accent"
                       onClick={triggerMention}
-                      disabled={!isConnected}
+                      disabled={!isConnected || shouldBlockChat}
                     >
                       <AtSign className="w-4 h-4" />
                     </Button>
@@ -689,7 +835,7 @@ export function ChatPanelWS({
               size="icon"
               className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90"
               onClick={handleSend}
-              disabled={!isConnected || !message.trim()}
+              disabled={!isConnected || !message.trim() || shouldBlockChat}
             >
               <ArrowUp className="w-4 h-4" />
             </Button>
