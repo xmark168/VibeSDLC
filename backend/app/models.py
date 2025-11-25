@@ -634,3 +634,73 @@ class AgentQuestion(BaseModel, table=True):
     
     # Extra metadata
     extra_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
+
+
+# ==================== ARTIFACT SYSTEM ====================
+
+class ArtifactType(str, Enum):
+    """Types of artifacts agents can produce"""
+    PRD = "prd"                          # Product Requirements Document
+    ARCHITECTURE = "architecture"        # System architecture design
+    API_SPEC = "api_spec"               # API specification
+    DATABASE_SCHEMA = "database_schema"  # Database design
+    USER_STORIES = "user_stories"        # User stories collection
+    CODE = "code"                        # Code files
+    TEST_PLAN = "test_plan"             # Test plan document
+    REVIEW = "review"                    # Code review document
+    ANALYSIS = "analysis"                # General analysis document
+
+
+class ArtifactStatus(str, Enum):
+    """Status of an artifact"""
+    DRAFT = "draft"                      # Initial version
+    PENDING_REVIEW = "pending_review"    # Waiting for review
+    APPROVED = "approved"                # Approved by user
+    REJECTED = "rejected"                # Rejected by user
+    ARCHIVED = "archived"                # Old version
+
+
+class Artifact(BaseModel, table=True):
+    """Agent-produced artifacts (documents, designs, code, etc.)"""
+    __tablename__ = "artifacts"
+    
+    # Identity
+    project_id: UUID = Field(foreign_key="projects.id", ondelete="CASCADE", index=True)
+    agent_id: UUID | None = Field(default=None, foreign_key="agents.id", ondelete="SET NULL")
+    agent_name: str = Field(nullable=False)
+    
+    # Artifact metadata
+    artifact_type: ArtifactType = Field(sa_column=Column(SQLEnum(ArtifactType)))
+    title: str = Field(max_length=255)
+    description: str | None = Field(default=None, sa_column=Column(Text))
+    
+    # Content
+    content: dict = Field(sa_column=Column(JSON))  # Structured content (schema depends on type)
+    file_path: str | None = Field(default=None)    # Path in workspace if saved to file
+    
+    # Versioning
+    version: int = Field(default=1)
+    parent_artifact_id: UUID | None = Field(default=None, foreign_key="artifacts.id", ondelete="SET NULL")
+    
+    # Status
+    status: ArtifactStatus = Field(default=ArtifactStatus.DRAFT, sa_column=Column(SQLEnum(ArtifactStatus)))
+    
+    # Review tracking
+    reviewed_by_user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
+    reviewed_at: datetime | None = Field(default=None)
+    review_feedback: str | None = Field(default=None, sa_column=Column(Text))
+    
+    # Metadata
+    tags: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    extra_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
+    
+    # Relationships
+    project: "Project" = Relationship()
+    agent: Optional["Agent"] = Relationship()
+    reviewed_by: Optional["User"] = Relationship()
+    parent: Optional["Artifact"] = Relationship(
+        sa_relationship_kwargs={
+            "remote_side": "[Artifact.id]",
+            "foreign_keys": "[Artifact.parent_artifact_id]"
+        }
+    )

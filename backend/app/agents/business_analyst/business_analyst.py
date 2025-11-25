@@ -270,16 +270,77 @@ comprehensive documentation that helps the development team understand what to b
         
         logger.info(f"[{self.name}] Resume analysis completed: {len(response)} chars")
         
-        # Send response with task completion flag
-        await self.message_user("response", response, {
-            "message_type": "requirements_analysis",
-            "task_completed": True,  # Signal task is complete
-            "data": {
-                "analysis": response,
-                "aspects": selected_options,
-                "resumed": True
-            }
-        })
+        # Parse response into structured PRD content
+        # TODO: Use LLM to extract structured data from response
+        prd_content = {
+            "title": f"Requirements Analysis: {original_message[:50]}",
+            "overview": response[:500] if len(response) > 500 else response,
+            "goals": [f"Analyze {aspect}" for aspect in selected_options],
+            "target_users": ["Development Team", "Product Owner"],
+            "requirements": [
+                {
+                    "id": f"REQ-{i+1}",
+                    "title": aspect,
+                    "description": f"Requirements for {aspect}",
+                    "priority": "high",
+                    "type": "functional"
+                }
+                for i, aspect in enumerate(selected_options)
+            ],
+            "acceptance_criteria": ["Analysis covers all selected aspects"],
+            "constraints": [],
+            "risks": [],
+            "next_steps": ["Review requirements", "Create user stories", "Design architecture"],
+            "full_analysis": response  # Include full analysis text
+        }
+        
+        # Create PRD artifact
+        try:
+            artifact_id = await self.create_artifact(
+                artifact_type="analysis",
+                title=f"Requirements Analysis - {original_message[:30]}",
+                content=prd_content,
+                description=f"Requirements analysis focused on: {', '.join(selected_options)}",
+                tags=["requirements", "analysis"] + [asp.lower() for asp in selected_options]
+            )
+            
+            logger.info(f"[{self.name}] Created artifact {artifact_id}")
+            
+            # Send response with artifact reference
+            artifact_message = (
+                f"📄 **Phân tích yêu cầu hoàn tất**\n\n"
+                f"Tôi đã tạo tài liệu phân tích chi tiết với các khía cạnh: {', '.join(selected_options)}\n\n"
+                f"**Tài liệu:** {prd_content['title']}\n"
+                f"**Artifact ID:** `{artifact_id}`\n\n"
+                f"Bạn có thể xem chi tiết trong phần Artifacts.\n\n"
+                f"---\n\n"
+                f"**Tóm tắt:**\n{response[:300]}..."
+            )
+            
+            await self.message_user("response", artifact_message, {
+                "message_type": "artifact_created",
+                "artifact_id": str(artifact_id),
+                "artifact_type": "analysis",
+                "task_completed": True,
+                "data": {
+                    "analysis": response,
+                    "aspects": selected_options,
+                    "resumed": True
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"[{self.name}] Failed to create artifact: {e}", exc_info=True)
+            # Fallback to regular message if artifact creation fails
+            await self.message_user("response", response, {
+                "message_type": "requirements_analysis",
+                "task_completed": True,
+                "data": {
+                    "analysis": response,
+                    "aspects": selected_options,
+                    "resumed": True
+                }
+            })
         
         return TaskResult(
             success=True,
@@ -288,6 +349,7 @@ comprehensive documentation that helps the development team understand what to b
                 "resumed": True,
                 "selected_aspects": selected_options,
                 "original_message": original_message,
-                "task_completed": True  # Mark task as complete for context clearing
+                "task_completed": True,
+                "artifact_id": str(artifact_id) if 'artifact_id' in locals() else None
             }
         )

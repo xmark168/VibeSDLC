@@ -359,6 +359,121 @@ class BaseAgent(ABC):
         return question_id
 
 
+    async def create_artifact(
+        self,
+        artifact_type: str,
+        title: str,
+        content: dict,
+        description: str = None,
+        save_to_file: bool = True,
+        tags: List[str] = None
+    ) -> UUID:
+        """Create an artifact from agent output.
+        
+        Artifacts are structured documents produced by agents (PRD, architecture, code, etc.)
+        They are saved to the database and optionally to the file system.
+        
+        Args:
+            artifact_type: Type of artifact (prd, architecture, code, test_plan, etc.)
+            title: Human-readable title
+            content: Structured content dict (validated against artifact schema)
+            description: Optional description
+            save_to_file: Whether to save to file system (default: True)
+            tags: Optional tags for categorization
+        
+        Returns:
+            Artifact ID
+            
+        Raises:
+            ValueError: If artifact_type is invalid
+            Exception: If artifact creation fails
+            
+        Example:
+            # Create PRD artifact
+            artifact_id = await self.create_artifact(
+                artifact_type="prd",
+                title="Product Requirements Document",
+                content={
+                    "title": "My Project",
+                    "overview": "Project overview...",
+                    "requirements": [...],
+                    "goals": [...],
+                    "risks": [...]
+                },
+                description="Initial PRD based on user requirements",
+                tags=["requirements", "v1"]
+            )
+        """
+        try:
+            from app.services.artifact_service import ArtifactService
+            from app.models import ArtifactType
+            from sqlmodel import Session
+            from app.core.db import engine
+            
+            # Validate artifact type
+            try:
+                artifact_type_enum = ArtifactType(artifact_type)
+            except ValueError:
+                raise ValueError(
+                    f"Invalid artifact type: {artifact_type}. "
+                    f"Valid types: {[t.value for t in ArtifactType]}"
+                )
+            
+            with Session(engine) as session:
+                service = ArtifactService(session)
+                
+                artifact = service.create_artifact(
+                    project_id=self.project_id,
+                    agent_id=self.agent_id,
+                    agent_name=self.name,
+                    artifact_type=artifact_type_enum,
+                    title=title,
+                    content=content,
+                    description=description,
+                    save_to_file=save_to_file,
+                    tags=tags
+                )
+                
+                logger.info(
+                    f"[{self.name}] Created artifact: {artifact.artifact_type.value} "
+                    f"'{title}' (id={artifact.id}, version={artifact.version})"
+                )
+                
+                # Broadcast artifact creation to WebSocket
+                await self._broadcast_artifact(artifact)
+                
+                return artifact.id
+        
+        except Exception as e:
+            logger.error(f"[{self.name}] Failed to create artifact: {e}", exc_info=True)
+            raise
+
+
+    async def _broadcast_artifact(self, artifact):
+        """Broadcast artifact creation to WebSocket clients.
+        
+        Args:
+            artifact: Artifact instance to broadcast
+        """
+        from app.websocket.connection_manager import connection_manager
+        
+        await connection_manager.broadcast_to_project(
+            {
+                "type": "artifact_created",
+                "artifact_id": str(artifact.id),
+                "artifact_type": artifact.artifact_type.value,
+                "title": artifact.title,
+                "description": artifact.description,
+                "agent_name": artifact.agent_name,
+                "version": artifact.version,
+                "status": artifact.status.value,
+                "file_path": artifact.file_path,
+                "tags": artifact.tags,
+                "timestamp": artifact.created_at.isoformat()
+            },
+            self.project_id
+        )
+
 
     async def _create_execution_record(self, task: "TaskContext") -> UUID:
         """Create AgentExecution record in database"""
