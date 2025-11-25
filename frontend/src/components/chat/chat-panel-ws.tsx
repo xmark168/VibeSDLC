@@ -31,7 +31,6 @@ import { TypingIndicator } from "./TypingIndicator";
 import { useAuth } from "@/hooks/useAuth";
 import { useMessages } from "@/queries/messages";
 import { AuthorType, type Message } from "@/types/message";
-import { MessagePreviewCard } from "./MessagePreviewCard";
 import { MessageStatusIndicator } from "./message-status-indicator";
 import { AgentQuestionCard } from "./AgentQuestionCard";
 import { useProjectAgents } from "@/queries/agents";
@@ -566,34 +565,6 @@ export function ChatPanelWS({
                       )
                     }}
                   />
-                </div>
-              </div>
-            );
-          }
-
-          // Check if this is a structured message (preview)
-          if (msg.message_type && msg.message_type !== 'text' && msg.structured_data) {
-            return (
-              <div key={msg.id} className="flex gap-3">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
-                  {getAgentAvatar(msg.author_type)}
-                </div>
-                <div className="flex-1 space-y-2">
-                  <div className="text-xs font-medium text-muted-foreground">
-                    {getAgentName(msg)}
-                  </div>
-                  {/* Show text content if available */}
-                  {msg.content && (
-                    <div className="space-y-1.5">
-                      <div className="rounded-lg px-3 py-2 bg-muted w-fit">
-                        <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
-                          {msg.content}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  {/* Show preview card */}
-                  <MessagePreviewCard message={msg} />
                 </div>
               </div>
             );
