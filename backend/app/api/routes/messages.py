@@ -23,7 +23,7 @@ def list_messages(
     current_user: CurrentUser,
     project_id: UUID = Query(...),
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 500,  # Increased default from 100 to handle more messages
 ) -> Any:
     # Validate project
     project = session.get(Project, project_id)
