@@ -161,6 +161,10 @@ export function useChatWebSocket(
         handleQuestionAnswerReceived(msg)
         break
       
+      case 'agent.resumed':
+        handleAgentResumed(msg)
+        break
+      
       default:
         console.warn('[WebSocket] ⚠️ Unknown message type:', msg.type)
     }
@@ -343,7 +347,7 @@ export function useChatWebSocket(
   const handleQuestionAnswerReceived = (msg: any) => {
     console.log('[WS] ✓ Answer received:', msg.question_id)
     
-    // Mark question as answered
+    // Mark question as answered and store user's answer
     setMessages(prev => prev.map(m => {
       if (m.structured_data?.question_id === msg.question_id) {
         return {
@@ -352,10 +356,39 @@ export function useChatWebSocket(
             ...m.structured_data,
             answered: true,
             answered_at: msg.timestamp,
+            user_answer: msg.answer || '',
+            user_selected_options: msg.selected_options || [],
           }
         }
       }
       return m
+    }))
+  }
+  
+  const handleAgentResumed = (msg: any) => {
+    console.log('[WS] ▶️ Agent resumed:', msg.agent_name, 'for question:', msg.question_id)
+    
+    // Mark question as processing
+    setMessages(prev => prev.map(m => {
+      if (m.structured_data?.question_id === msg.question_id) {
+        return {
+          ...m,
+          structured_data: {
+            ...m.structured_data,
+            answered: true,
+            processing: true,
+          }
+        }
+      }
+      return m
+    }))
+    
+    // Show agent thinking indicator
+    setTypingAgents(prev => new Map(prev).set(msg.agent_id, {
+      id: msg.agent_id,
+      agent_name: msg.agent_name,
+      started_at: new Date().toISOString(),
+      message: 'Processing your answer...'
     }))
   }
   

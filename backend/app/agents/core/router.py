@@ -740,6 +740,19 @@ class QuestionAnswerRouter(BaseEventRouter):
         self.logger.info(
             f"Published RESUME_WITH_ANSWER task to agent {agent_id}"
         )
+        
+        # Broadcast agent resumed event to WebSocket
+        from app.websocket.connection_manager import connection_manager
+        await connection_manager.broadcast_to_project(
+            {
+                "type": "agent.resumed",
+                "question_id": str(question_id),
+                "agent_id": str(agent_id),
+                "agent_name": question.agent.human_name if question.agent else "Agent",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            project_id
+        )
 
 
 class DelegationRouter(BaseEventRouter):

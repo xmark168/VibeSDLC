@@ -13,6 +13,9 @@ interface AgentQuestionCardProps {
   options: string[]
   allowMultiple: boolean
   answered?: boolean
+  processing?: boolean
+  userAnswer?: string
+  userSelectedOptions?: string[]
   onSubmit: (answer: string, selectedOptions?: string[]) => void
   agentName?: string
 }
@@ -23,6 +26,9 @@ export function AgentQuestionCard({
   options,
   allowMultiple,
   answered = false,
+  processing = false,
+  userAnswer,
+  userSelectedOptions,
   onSubmit,
   agentName,
 }: AgentQuestionCardProps) {
@@ -48,14 +54,49 @@ export function AgentQuestionCard({
     ? textAnswer.trim().length > 0 
     : selectedOptions.size > 0
   
+  // Processing state (after answer, agent is working on it)
+  if (answered && processing) {
+    return (
+      <Card className="border-yellow-200 bg-yellow-50 dark:bg-yellow-950/20">
+        <CardContent className="pt-6 space-y-2">
+          <div className="flex items-center gap-2 text-yellow-600 dark:text-yellow-400">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span className="text-sm font-medium">Processing your answer...</span>
+          </div>
+          {userSelectedOptions && userSelectedOptions.length > 0 && (
+            <div className="text-sm text-gray-700 dark:text-gray-300">
+              <strong>You selected:</strong> {userSelectedOptions.join(', ')}
+            </div>
+          )}
+          {userAnswer && userAnswer.trim() && (
+            <div className="text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 rounded p-2 border">
+              <strong>Your answer:</strong> {userAnswer}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    )
+  }
+  
+  // Answered state (agent has processed the answer)
   if (answered) {
     return (
       <Card className="border-green-200 bg-green-50 dark:bg-green-950/20">
-        <CardContent className="pt-6">
+        <CardContent className="pt-6 space-y-2">
           <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
             <CheckCircle2 className="w-5 h-5" />
             <span className="text-sm font-medium">Answered</span>
           </div>
+          {userSelectedOptions && userSelectedOptions.length > 0 && (
+            <div className="text-sm text-gray-700 dark:text-gray-300">
+              <strong>You selected:</strong> {userSelectedOptions.join(', ')}
+            </div>
+          )}
+          {userAnswer && userAnswer.trim() && (
+            <div className="text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 rounded p-2 border">
+              {userAnswer}
+            </div>
+          )}
         </CardContent>
       </Card>
     )

@@ -157,18 +157,24 @@ export function ChatPanelWS({
     (msg, index, self) => index === self.findIndex(m => m.id === msg.id)
   );
   
-  // Detect unanswered questions
+  // Detect unanswered questions - show only the LATEST one
   useEffect(() => {
-    const unansweredQuestion = uniqueMessages.find(
+    // Find ALL unanswered questions
+    const unansweredQuestions = uniqueMessages.filter(
       msg => msg.message_type === 'agent_question' && !msg.structured_data?.answered
     )
     
-    setPendingQuestion(unansweredQuestion || null)
+    // Get LATEST by timestamp (most recent)
+    const latestUnanswered = unansweredQuestions.sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0]
     
-    // Auto-scroll to question if it appears
-    if (unansweredQuestion && !pendingQuestion) {
+    setPendingQuestion(latestUnanswered || null)
+    
+    // Auto-scroll to question if it appears (only if it's a NEW question)
+    if (latestUnanswered && latestUnanswered.id !== pendingQuestion?.id) {
       setTimeout(() => {
-        const element = document.getElementById(`question-${unansweredQuestion.id}`)
+        const element = document.getElementById(`question-${latestUnanswered.id}`)
         element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }, 100)
     }
@@ -194,7 +200,7 @@ export function ChatPanelWS({
 
     // Check if user is near bottom (within 100px)
     const isNearBottom = 
-      container.scrollHeight - container.scrollTop - container.clientHeight < 100
+      container.scrollHeight - container.scrollTop - container.clientHeight < 200
 
     // Auto-scroll only if:
     // 1. New message arrived (length changed)
@@ -597,6 +603,9 @@ export function ChatPanelWS({
                     options={msg.structured_data?.options || []}
                     allowMultiple={msg.structured_data?.allow_multiple || false}
                     answered={msg.structured_data?.answered || false}
+                    processing={msg.structured_data?.processing || false}
+                    userAnswer={msg.structured_data?.user_answer}
+                    userSelectedOptions={msg.structured_data?.user_selected_options}
                     agentName={msg.agent_name}
                     onSubmit={(answer, selectedOptions) => {
                       sendQuestionAnswer(

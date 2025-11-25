@@ -19,4 +19,5 @@ export interface UseChatWebSocketReturn {
   agentStatus: AgentStatusType
   typingAgents: Map<string, TypingState>
   sendMessage: (content: string, agentName?: string) => void
+  sendQuestionAnswer: (question_id: string, answer: string, selected_options?: string[]) => boolean
 }
