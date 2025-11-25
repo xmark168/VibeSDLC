@@ -1,0 +1,62 @@
+analyze_requirements:
+  description: >
+    Analyze the following business request and provide requirements analysis:
+
+    {user_message}
+
+    Your analysis should include:
+    1. Clear understanding of the business problem or need
+    2. Key requirements identified
+    3. Potential user stories or use cases
+    4. Questions for clarification (if needed)
+    5. Suggested next steps
+
+    If this is a complex analysis requiring multi-phase workflow (detailed PRD, 
+    user stories, epics), suggest using the dedicated BA workflow API.
+
+    Provide structured, actionable output that can guide development.
+  expected_output: >
+    Structured requirements analysis with clear next steps
+  agent: business_analyst
+
+check_clarification_needed:
+  description: >
+    Analyze this user message and decide if it's too vague and needs clarification.
+
+    User Message: {message}
+
+    A message needs clarification if it's:
+    - Very short and generic (e.g., "phân tích dự án", "analyze project", "help")
+    - Lacks specific details about what to analyze
+    - Too broad without clear scope
+
+    A message does NOT need clarification if it:
+    - Has specific details (API, database, features, user stories)
+    - Is a clear request even if short
+    - Contains enough context to understand intent
+
+    Answer in this format:
+    DECISION: [YES if needs clarification, NO if clear enough]
+    REASON: [one sentence why]
+  expected_output: >
+    DECISION: YES/NO with brief reason
+  agent: business_analyst
+
+analyze_with_context:
+  description: >
+    Original request: {original_message}
+    User selected to analyze: {selected_aspects}
+    
+    Provide focused analysis on the selected aspects:
+    {aspects_list}
+    
+    For each aspect, provide detailed breakdown with:
+    - Key considerations
+    - Specific requirements
+    - Potential challenges
+    - Recommended approach
+    
+    Create a comprehensive PRD-style document.
+  expected_output: >
+    Detailed analysis document covering all selected aspects with actionable insights
+  agent: business_analyst

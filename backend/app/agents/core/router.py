@@ -781,6 +781,14 @@ class DelegationRouter(BaseEventRouter):
         # Create task for selected agent
         producer = await get_kafka_producer()
         
+        # Extract context and ensure content is included
+        delegation_context = event_dict.get("context", {})
+        delegation_content = event_dict.get("content", "")
+        
+        # Add content to context if not already there
+        if "content" not in delegation_context:
+            delegation_context["content"] = delegation_content
+        
         task_event = RouterTaskEvent(
             event_type="router.task.dispatched",
             task_id=uuid4(),
@@ -791,9 +799,9 @@ class DelegationRouter(BaseEventRouter):
             source_event_id=event_dict.get("source_event_id"),
             routing_reason=f"delegation_from_{event_dict.get('delegating_agent_name')}",
             priority=event_dict.get("priority", "high"),
-            project_id=project_id,
+            project_id=str(project_id),
             user_id=event_dict.get("user_id"),
-            context=event_dict.get("context", {})
+            context=delegation_context
         )
         
         await producer.publish(
@@ -812,25 +820,35 @@ class DelegationRouter(BaseEventRouter):
     async def _find_best_agent(self, project_id: UUID, role_type: str) -> Optional[Agent]:
         """Find best agent for role - prefers idle agents."""
         with Session(engine) as session:
-            # Get all agents with target role in project
+            # Get all agents with target role in project (exclude terminated/stopped)
             agents = session.exec(
                 select(Agent).where(
                     Agent.project_id == project_id,
                     Agent.role_type == role_type,
-                    Agent.status != "inactive"
+                    Agent.status.not_in(["terminated", "stopped", "error"])
                 )
             ).all()
             
             if not agents:
+                self.logger.warning(f"[DelegationRouter] No agents found for role '{role_type}' in project {project_id}")
                 return None
+            
+            self.logger.info(
+                f"[DelegationRouter] Found {len(agents)} agents for role '{role_type}': "
+                f"{[(str(a.id), a.human_name, a.status) for a in agents]}"
+            )
             
             # Strategy: Prefer idle > busy > any
             idle_agents = [a for a in agents if a.status == "idle"]
             if idle_agents:
-                return idle_agents[0]
+                selected = idle_agents[0]
+                self.logger.info(f"[DelegationRouter] Selected idle agent: {selected.human_name} (id={selected.id})")
+                return selected
             
             # Return first agent (simple strategy)
-            return agents[0]
+            selected = agents[0]
+            self.logger.info(f"[DelegationRouter] Selected busy agent: {selected.human_name} (id={selected.id})")
+            return selected
     
     async def _update_active_agent(self, project_id: UUID, agent_id: UUID) -> None:
         """Update project's active agent context."""

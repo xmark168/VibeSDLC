@@ -1,9 +1,5 @@
-"""Team Leader Agent - Crew-based project coordination.
-
-Architecture:
-- Inherits from BaseAgent (Kafka integration, task handling)
-- Uses TeamLeaderCrew (multi-agent crew for analysis and coordination)
-- Analyzes user requests and suggests appropriate specialists
+"""
+Team Leader Agent
 """
 
 import logging
@@ -47,73 +43,17 @@ class TeamLeader(BaseAgent):
         # Initialize crew
         self.crew = TeamLeaderCrew()
 
-        logger.info(f"Team Leader initialized: {self.name} with {len(self.crew.agents)} crew members")
+        logger.info(f"Team Leader initialized: {self.name}")
 
     async def _should_delegate_to_analyst_smart(self, message: str) -> tuple[bool, str]:
         """Use CrewAI to decide if message should be delegated to BA."""
         try:
-            from crewai import Crew, Task, Process
-            
-            decision_task = Task(
-                description=f"""Analyze this user message and decide if it should be handled by a Business Analyst.
-
-User Message: "{message}"
-
-A Business Analyst should handle:
-- New project ideas (e.g., "I want to build a website", "tôi muốn làm website")
-- Feature requests that need requirements analysis
-- Vague inquiries about "what can we build"
-- Questions about project scope, requirements, specifications
-- Project ideas that need clarification
-
-Business Analyst should NOT handle:
-- Project status queries (that's for Team Leader)
-- Simple greetings (that's for Team Leader)
-- Technical implementation questions (that's for Developer)
-- Bug reports or testing (that's for Tester)
-
-Answer in this format:
-DECISION: [YES or NO]
-REASON: [one sentence why]
-""",
-                agent=self.crew.agents["project_coordinator"],
-                expected_output="DECISION: YES/NO with brief reason"
-            )
-            
-            crew = Crew(
-                agents=[self.crew.agents["project_coordinator"]],
-                tasks=[decision_task],
-                process=Process.sequential,
-                verbose=False,
-            )
-            
-            result = await crew.kickoff_async(inputs={})
-            result_str = str(result).upper()
-            
-            should_delegate = "DECISION: YES" in result_str or "YES" in result_str[:100]
-            reason = str(result).split("REASON:")[-1].strip() if "REASON:" in str(result) else "AI decision"
-            
+            should_delegate, reason = await self.crew.check_should_delegate(message)
             logger.info(f"[{self.name}] Delegation decision: {should_delegate}, reason: {reason[:100]}")
-            
             return should_delegate, reason
-            
         except Exception as e:
-            logger.error(f"[{self.name}] Error in smart delegation check: {e}", exc_info=True)
-            return self._should_delegate_to_analyst_fallback(message), "fallback"
-    
-    def _should_delegate_to_analyst_fallback(self, message: str) -> bool:
-        """Fallback keyword-based delegation check if CrewAI fails."""
-        keywords = [
-            "phân tích", "analysis", "requirements", "yêu cầu",
-            "tài liệu", "document", "prd", "specification",
-            "muốn làm", "muốn tạo", "muốn xây dựng", "muốn phát triển",
-            "ý tưởng", "dự án mới", "project idea",
-            "want to build", "want to create", "want to make",
-            "website", "app", "ứng dụng", "hệ thống", "phần mềm",
-        ]
-        
-        message_lower = message.lower()
-        return any(kw in message_lower for kw in keywords)
+            logger.error(f"[{self.name}] Error in delegation check: {e}", exc_info=True)
+            return False, f"delegation_check_failed: {str(e)}"
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
         """Handle task assigned by Router."""
@@ -192,45 +132,3 @@ REASON: [one sentence why]
                 output="",
                 error_message=str(e),
             )
-
-
-# ===== ARCHITECTURE NOTES =====
-
-"""
-OLD ARCHITECTURE (Deprecated):
-- Team Leader delegated tasks to specialists directly
-- Used AGENT_ROUTING events
-- Complex coordination logic in agent code
-
-NEW ARCHITECTURE (Current):
-- Router handles all task routing based on @mentions
-- Team Leader provides guidance and suggestions
-- User controls routing by tagging specialists
-- Cleaner separation of concerns
-
-CREW COMPOSITION:
-- Requirements Analyst: Understands user needs, identifies requirements
-- Project Coordinator: Maps needs to specialists, provides tagging suggestions
-- Progress Tracker: Monitors project status, provides updates
-
-WORKFLOW EXAMPLE:
-
-1. User: "I need a new feature for user authentication"
-   → Router: No @mention → sends to Team Leader
-   
-2. Team Leader Crew:
-   - Requirements Analyst: "User wants authentication feature"
-   - Project Coordinator: "This needs requirements + development"
-   - Response: "I understand you need authentication. Let's start by defining requirements. 
-               Please tag @BusinessAnalyst to create a PRD for this feature."
-   
-3. User: "@BusinessAnalyst create PRD for user auth"
-   → Router: @BusinessAnalyst mentioned → sends to Business Analyst
-   
-4. BA creates PRD → publishes response
-   
-5. User: "@Developer implement the auth system from the PRD"
-   → Router: @Developer mentioned → sends to Developer
-
-This gives users full control while Team Leader provides expert guidance.
-"""

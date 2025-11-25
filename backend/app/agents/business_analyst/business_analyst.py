@@ -12,9 +12,8 @@ import logging
 from typing import Any, Dict
 from uuid import UUID
 
-from crewai import Agent, Crew, Task
-
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
+from app.agents.business_analyst.crew import BusinessAnalystCrew
 from app.models import Agent as AgentModel
 
 
@@ -32,43 +31,12 @@ class BusinessAnalyst(BaseAgent):
     """
 
     def __init__(self, agent_model: AgentModel, **kwargs):
-        """Initialize Business Analyst.
-
-        Args:
-            agent_model: Agent database model
-            **kwargs: Additional arguments (heartbeat_interval, max_idle_time)
-        """
+        """Initialize Business Analyst."""
         super().__init__(agent_model, **kwargs)
 
-        # Create CrewAI agent with inline config
-        self.crew_agent = self._create_crew_agent()
+        self.crew = BusinessAnalystCrew()
 
         logger.info(f"Business Analyst initialized: {self.name}")
-
-    def _create_crew_agent(self) -> Agent:
-        """Create CrewAI agent for Business Analyst.
-
-        Returns:
-            Configured CrewAI Agent
-        """
-        agent = Agent(
-            role="Business Analyst",
-            goal="Analyze business requirements, clarify user needs, and create clear specifications",
-            backstory="""You are an experienced Business Analyst who excels at:
-- Understanding business problems and user needs
-- Asking clarifying questions to gather complete requirements
-- Creating clear, structured specifications and documentation
-- Identifying edge cases and potential issues early
-- Translating business needs into actionable requirements
-
-When users ask for requirements analysis or PRDs, you provide structured, 
-comprehensive documentation that helps the development team understand what to build.""",
-            verbose=True,
-            allow_delegation=False,
-            llm="openai/gpt-4",
-        )
-
-        return agent
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
         """Handle task assigned by Router."""
@@ -80,8 +48,9 @@ comprehensive documentation that helps the development team understand what to b
             user_message = task.content
             logger.info(f"[{self.name}] Processing BA task: {user_message[:50]}...")
             
-            if self._needs_clarification(user_message):
-                logger.info(f"[{self.name}] Message is vague, asking clarification...")
+            needs_clarification = await self.crew.check_needs_clarification(user_message)
+            if needs_clarification:
+                logger.info(f"[{self.name}] Message needs clarification, asking user...")
                 
                 await self.ask_clarification_question(
                     question="Bạn muốn phân tích khía cạnh nào của dự án?",
@@ -96,44 +65,10 @@ comprehensive documentation that helps the development team understand what to b
                     structured_data={"status": "waiting_clarification"}
                 )
 
-            crew_task = Task(
-                description=f"""
-                Analyze the following business request and provide requirements analysis:
-
-                {user_message}
-
-                Your analysis should include:
-                1. Clear understanding of the business problem or need
-                2. Key requirements identified
-                3. Potential user stories or use cases
-                4. Questions for clarification (if needed)
-                5. Suggested next steps
-
-                If this is a complex analysis requiring multi-phase workflow (detailed PRD, 
-                user stories, epics), suggest using the dedicated BA workflow API.
-
-                Provide structured, actionable output that can guide development.
-                """,
-                expected_output="Structured requirements analysis with clear next steps",
-                agent=self.crew_agent,
-            )
-
-            # Execute crew
-            crew = Crew(
-                agents=[self.crew_agent],
-                tasks=[crew_task],
-                verbose=True,
-            )
-
-            # Run CrewAI asynchronously using native async support
-            result = await crew.kickoff_async(inputs={})
-
-            # Extract response
-            response = str(result)
+            response = await self.crew.analyze_requirements(user_message)
 
             logger.info(f"[{self.name}] Requirements analysis completed: {len(response)} chars")
             
-            # Send response back to user
             await self.message_user("response", response, {
                 "message_type": "requirements_analysis",
                 "data": {
@@ -161,52 +96,8 @@ comprehensive documentation that helps the development team understand what to b
                 error_message=str(e),
             )
     
-    def _needs_clarification(self, message: str) -> bool:
-        """Check if message is vague and needs clarification.
-        
-        Simple heuristic: Check for vague keywords without specific details.
-        """
-        message_lower = message.lower()
-        
-        # Vague keywords that suggest need for clarification
-        vague_patterns = [
-            "phân tích",
-            "analyze", 
-            "help",
-            "dự án",
-            "project",
-            "requirements",
-            "yêu cầu"
-        ]
-        
-        # Check if message is short and contains vague keywords
-        if len(message.split()) < 10:  # Short message
-            if any(pattern in message_lower for pattern in vague_patterns):
-                # Additional check: if message has specific details, don't ask
-                specific_indicators = [
-                    "api",
-                    "database",
-                    "user login",
-                    "payment",
-                    "authentication",
-                    "crud",
-                    "dashboard"
-                ]
-                has_specific = any(ind in message_lower for ind in specific_indicators)
-                return not has_specific
-        
-        return False
-    
     async def _handle_resume(self, task: TaskContext) -> TaskResult:
-        """Handle resume after user answered clarification question.
-        
-        Args:
-            task: TaskContext with RESUME_WITH_ANSWER type
-            
-        Returns:
-            TaskResult with analysis based on clarified intent
-        """
-        # Extract answer from context
+        """Handle resume after user answered clarification question."""
         answer = task.context.get("answer", "")
         selected_options = task.context.get("selected_options", [])
         original_context = task.context.get("original_context", {})
@@ -216,42 +107,22 @@ comprehensive documentation that helps the development team understand what to b
             f"[{self.name}] Resuming with answer: {answer}, "
             f"selected: {selected_options}, original: {original_message}"
         )
-        
-        # Build focused analysis based on selected aspects
-        analysis_prompt = f"""
-        Original request: {original_message}
-        
-        User wants analysis focused on: {', '.join(selected_options)}
-        
-        Provide detailed analysis for the selected aspects:
-        """
-        
+        aspects_details = []
         for aspect in selected_options:
             if aspect == "Requirements":
-                analysis_prompt += "\n- Functional and non-functional requirements"
+                aspects_details.append("- Functional and non-functional requirements")
             elif aspect == "Architecture":
-                analysis_prompt += "\n- System architecture and design patterns"
+                aspects_details.append("- System architecture and design patterns")
             elif aspect == "Risks":
-                analysis_prompt += "\n- Technical and business risks"
+                aspects_details.append("- Technical and business risks")
             elif aspect == "User Stories":
-                analysis_prompt += "\n- User stories and acceptance criteria"
+                aspects_details.append("- User stories and acceptance criteria")
         
-        # Create focused CrewAI task
-        crew_task = Task(
-            description=analysis_prompt,
-            expected_output="Detailed analysis of selected aspects",
-            agent=self.crew_agent,
+        response = await self.crew.analyze_with_context(
+            original_message=original_message,
+            selected_aspects=', '.join(selected_options),
+            aspects_list='\n'.join(aspects_details)
         )
-        
-        crew = Crew(
-            agents=[self.crew_agent],
-            tasks=[crew_task],
-            verbose=True,
-        )
-        
-        # Execute analysis
-        result = await crew.kickoff_async(inputs={})
-        response = str(result)
         
         logger.info(f"[{self.name}] Resume analysis completed: {len(response)} chars")
         

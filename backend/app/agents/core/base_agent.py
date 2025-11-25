@@ -172,9 +172,9 @@ class BaseAgent(ABC):
                 event_type=f"agent.{event_type}",
                 agent_name=self.name,
                 agent_id=str(self.agent_id),
-                project_id=self.project_id,
-                execution_id=self._current_execution_id,
-                task_id=self._current_task_id,
+                project_id=str(self.project_id) if self.project_id else None,
+                execution_id=str(self._current_execution_id) if self._current_execution_id else None,
+                task_id=str(self._current_task_id) if self._current_task_id else None,
                 content=content,
                 details=details or {},
                 metadata={
@@ -310,17 +310,17 @@ class BaseAgent(ABC):
         # Publish event to Kafka
         producer = await self._get_producer()
         event = QuestionAskedEvent(
-            question_id=question_id,
-            agent_id=self.agent_id,
+            question_id=str(question_id),
+            agent_id=str(self.agent_id),
             agent_name=self.name,
-            project_id=self.project_id,
-            user_id=self._current_user_id,
+            project_id=str(self.project_id) if self.project_id else None,
+            user_id=str(self._current_user_id) if self._current_user_id else None,
             question_type=question_type,
             question_text=question,
             options=options,
             allow_multiple=allow_multiple,
-            task_id=self._current_task_id,
-            execution_id=self._current_execution_id,
+            task_id=str(self._current_task_id) if self._current_task_id else None,
+            execution_id=str(self._current_execution_id) if self._current_execution_id else None,
         )
         
         await producer.publish(
@@ -501,10 +501,10 @@ class BaseAgent(ABC):
             # Publish delegation request - Router will handle agent selection
             delegation_event = DelegationRequestEvent(
                 event_type="delegation.request",
-                project_id=self.project_id,
-                user_id=task.user_id,
-                original_task_id=task.task_id,
-                delegating_agent_id=self.agent_id,
+                project_id=str(self.project_id) if self.project_id else None,
+                user_id=str(task.user_id) if task.user_id else None,
+                original_task_id=str(task.task_id),
+                delegating_agent_id=str(self.agent_id),
                 delegating_agent_name=self.name,
                 target_role=target_role,
                 priority=priority,

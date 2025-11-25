@@ -30,8 +30,8 @@ class BaseKafkaEvent(BaseModel):
     event_id: str = Field(default_factory=lambda: str(uuid4()))
     event_type: str
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    project_id: Optional[UUID] = None
-    user_id: Optional[UUID] = None
+    project_id: Optional[str] = None
+    user_id: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -72,12 +72,35 @@ class AgentRoutingEvent(BaseKafkaEvent):
     context: Dict[str, Any] = Field(default_factory=dict)
 
 
+class AgentTaskType(str, Enum):
+    """Types of tasks that can be assigned to agents."""
+
+    # Specific task types
+    CODE_REVIEW = "code_review"
+    IMPLEMENT_STORY = "implement_story"
+    WRITE_TESTS = "write_tests"
+    FIX_BUG = "fix_bug"
+    REFACTOR = "refactor"
+    ANALYZE_REQUIREMENTS = "analyze_requirements"
+    CREATE_STORIES = "create_stories"
+
+    # Abstraction task types (high-level)
+    USER_STORY = "user_story"  # BA: Analyze requirements → create user stories
+    MESSAGE = "message"  # Any agent: Handle/respond to user message
+    
+    # Clarification questions
+    RESUME_WITH_ANSWER = "resume_with_answer"  # Resume task with clarification answer
+
+    # Generic
+    CUSTOM = "custom"
+
+
 class DelegationRequestEvent(BaseKafkaEvent):
     """Request to delegate task to agent by role (Router selects specific agent)."""
     
     event_type: str = "delegation.request"
-    original_task_id: UUID
-    delegating_agent_id: UUID
+    original_task_id: str
+    delegating_agent_id: str
     delegating_agent_name: str
     target_role: str
     priority: str = "high"
@@ -147,15 +170,15 @@ class QuestionAskedEvent(BaseKafkaEvent):
     """Agent clarification question."""
     
     event_type: str = "agent.question_asked"
-    question_id: UUID
-    agent_id: UUID
+    question_id: str
+    agent_id: str
     agent_name: str
     question_type: str
     question_text: str
     options: Optional[List[str]] = None
     allow_multiple: bool = False
-    task_id: UUID
-    execution_id: Optional[UUID] = None
+    task_id: str
+    execution_id: Optional[str] = None
 
 
 class QuestionAnswerEvent(BaseKafkaEvent):
@@ -191,29 +214,6 @@ class FlowStatusEvent(BaseKafkaEvent):
     completed_steps: Optional[int] = None
     error_message: Optional[str] = None
     result: Optional[Dict[str, Any]] = None
-
-
-class AgentTaskType(str, Enum):
-    """Types of tasks that can be assigned to agents."""
-
-    # Specific task types
-    CODE_REVIEW = "code_review"
-    IMPLEMENT_STORY = "implement_story"
-    WRITE_TESTS = "write_tests"
-    FIX_BUG = "fix_bug"
-    REFACTOR = "refactor"
-    ANALYZE_REQUIREMENTS = "analyze_requirements"
-    CREATE_STORIES = "create_stories"
-
-    # Abstraction task types (high-level)
-    USER_STORY = "user_story"  # BA: Analyze requirements → create user stories
-    MESSAGE = "message"  # Any agent: Handle/respond to user message
-    
-    # Clarification questions
-    RESUME_WITH_ANSWER = "resume_with_answer"  # Resume task with clarification answer
-
-    # Generic
-    CUSTOM = "custom"
 
 
 class AgentTaskStatus(str, Enum):
@@ -302,8 +302,8 @@ class AgentEvent(BaseKafkaEvent):
     event_type: str
     agent_name: str
     agent_id: str
-    execution_id: Optional[UUID] = None
-    task_id: Optional[UUID] = None
+    execution_id: Optional[str] = None
+    task_id: Optional[str] = None
     content: str
     details: Dict[str, Any] = Field(default_factory=dict)
 

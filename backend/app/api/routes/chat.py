@@ -196,8 +196,8 @@ async def websocket_endpoint(
                             producer = await get_kafka_producer()
                             user_message_event = UserMessageEvent(
                                 message_id=message_id,
-                                project_id=project_id,
-                                user_id=user.id,
+                                project_id=str(project_id),
+                                user_id=str(user.id),
                                 content=content,
                                 message_type=message.get("message_type", "text"),
                                 agent_id=agent_id,  # Include agent ID for routing
@@ -323,8 +323,8 @@ async def websocket_endpoint(
                                     selected_options=selected_options,
                                     agent_id=question.agent_id,
                                     task_id=question.task_id,
-                                    project_id=project_id,
-                                    user_id=user.id,
+                                    project_id=str(project_id),
+                                    user_id=str(user.id),
                                 )
                                 
                                 await producer.publish(
