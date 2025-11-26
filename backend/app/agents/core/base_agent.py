@@ -286,8 +286,9 @@ class BaseAgent(ABC):
             "routing_reason": self._current_routing_reason,
         }
         
-        # Save to database
+        # Save to database (dual storage: agent_questions + messages)
         with Session(engine) as session:
+            # 1. Save to agent_questions table (for workflow)
             db_question = AgentQuestion(
                 id=question_id,
                 project_id=self.project_id,
@@ -304,6 +305,31 @@ class BaseAgent(ABC):
                 expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
             )
             session.add(db_question)
+            
+            # 2. ALSO save to messages table (for chat history persistence)
+            from app.models import Message, AuthorType
+            
+            question_message = Message(
+                id=question_id,  # Same ID as AgentQuestion for linking
+                project_id=self.project_id,
+                author_type=AuthorType.AGENT,
+                agent_id=self.agent_id,
+                content=question,
+                message_type="agent_question",
+                structured_data={
+                    "question_id": str(question_id),
+                    "question_type": question_type,
+                    "options": options,
+                    "allow_multiple": allow_multiple,
+                    "status": "waiting_answer"
+                },
+                message_metadata={
+                    "agent_name": self.name,
+                    "task_id": str(self._current_task_id),
+                    "execution_id": str(self._current_execution_id) if self._current_execution_id else None,
+                }
+            )
+            session.add(question_message)
             session.commit()
             session.refresh(db_question)
         
@@ -350,6 +376,168 @@ class BaseAgent(ABC):
         
         return question_id
 
+    async def ask_multiple_clarification_questions(
+        self,
+        questions: list[dict]
+    ) -> list[UUID]:
+        """Tool: Ask multiple clarification questions at once (batch mode).
+        
+        This method will:
+        1. Save all questions to DB (agent_questions + messages tables)
+        2. Publish BatchQuestionsAskedEvent to broadcast to frontend
+        3. Return list of question_ids for tracking
+        
+        The current task will be PAUSED until user answers ALL questions.
+        When user answers all, router will resume the task with all answers.
+        
+        Args:
+            questions: List of question dicts, each with:
+                - question_text: str
+                - question_type: "open" | "multichoice"
+                - options: list[str] (optional)
+                - allow_multiple: bool (optional)
+                - context: str (optional, e.g., "domain", "user_roles", "priority")
+        
+        Returns:
+            List of question IDs (UUIDs)
+            
+        Example:
+            question_ids = await self.ask_multiple_clarification_questions([
+                {
+                    "question_text": "Loại website nào?",
+                    "question_type": "multichoice",
+                    "options": ["Type A", "Type B", "Other"],
+                    "allow_multiple": False,
+                    "context": "domain"
+                },
+                {
+                    "question_text": "Người dùng nào?",
+                    "question_type": "multichoice",
+                    "options": ["User A", "User B", "Other"],
+                    "allow_multiple": True,
+                    "context": "user_roles"
+                }
+            ])
+        """
+        if not self._current_task_id:
+            raise RuntimeError("Cannot ask questions: no active task")
+        
+        from sqlmodel import Session
+        from app.core.db import engine
+        from app.models import AgentQuestion, Message, AuthorType, QuestionType, QuestionStatus
+        from datetime import timedelta
+        
+        question_ids = []
+        batch_id = str(uuid4())  # Unique batch ID
+        
+        # Get current task context
+        task_context_data = {
+            "task_id": str(self._current_task_id),
+            "task_type": self._current_task_type,
+            "execution_id": str(self._current_execution_id) if self._current_execution_id else None,
+            "original_message": self._current_task_content,
+            "routing_reason": self._current_routing_reason,
+        }
+        
+        # Save all questions to database
+        with Session(engine) as session:
+            for idx, q_data in enumerate(questions):
+                question_id = uuid4()
+                question_ids.append(question_id)
+                
+                # 1. Save to agent_questions table (for workflow)
+                db_question = AgentQuestion(
+                    id=question_id,
+                    project_id=self.project_id,
+                    agent_id=self.agent_id,
+                    user_id=self._current_user_id,
+                    question_type=QuestionType(q_data["question_type"]),
+                    question_text=q_data["question_text"],
+                    options=q_data.get("options"),
+                    allow_multiple=q_data.get("allow_multiple", False),
+                    status=QuestionStatus.WAITING_ANSWER,
+                    task_id=self._current_task_id,
+                    execution_id=self._current_execution_id,
+                    task_context={
+                        **task_context_data,
+                        "batch_id": batch_id,
+                        "batch_index": idx,
+                        "batch_total": len(questions),
+                        "question_context": q_data.get("context"),
+                    },
+                    expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+                )
+                session.add(db_question)
+                
+                # 2. Save to messages table (for chat history persistence)
+                question_message = Message(
+                    id=question_id,
+                    project_id=self.project_id,
+                    author_type=AuthorType.AGENT,
+                    agent_id=self.agent_id,
+                    content=q_data["question_text"],
+                    message_type="agent_question_batch",  # NEW type
+                    structured_data={
+                        "question_id": str(question_id),
+                        "question_type": q_data["question_type"],
+                        "options": q_data.get("options"),
+                        "allow_multiple": q_data.get("allow_multiple", False),
+                        "context": q_data.get("context"),
+                        "batch_id": batch_id,
+                        "batch_index": idx,
+                        "batch_total": len(questions),
+                        "status": "waiting_answer"
+                    },
+                    message_metadata={
+                        "agent_name": self.name,
+                        "task_id": str(self._current_task_id),
+                        "execution_id": str(self._current_execution_id) if self._current_execution_id else None,
+                    }
+                )
+                session.add(question_message)
+            
+            session.commit()
+        
+        # Publish batch event to Kafka (will add event schema next)
+        producer = await self._get_producer()
+        
+        # Import will be added after we create the event schema
+        from app.kafka.event_schemas import BatchQuestionsAskedEvent
+        
+        event = BatchQuestionsAskedEvent(
+            batch_id=batch_id,
+            question_ids=[str(qid) for qid in question_ids],
+            questions=questions,
+            agent_id=str(self.agent_id),
+            agent_name=self.name,
+            project_id=str(self.project_id) if self.project_id else None,
+            user_id=str(self._current_user_id) if self._current_user_id else None,
+            task_id=str(self._current_task_id),
+            execution_id=str(self._current_execution_id) if self._current_execution_id else None,
+        )
+        
+        await producer.publish(
+            topic=KafkaTopics.AGENT_EVENTS,
+            event=event
+        )
+        
+        # Broadcast to WebSocket
+        from app.websocket.connection_manager import connection_manager
+        await connection_manager.broadcast_to_project(
+            {
+                "type": "agent.question_batch",
+                "batch_id": batch_id,
+                "question_ids": [str(qid) for qid in question_ids],
+                "questions": questions,
+                "agent_name": self.name,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            self.project_id
+        )
+        
+        logger.info(f"[{self.name}] Asked {len(questions)} questions in batch (batch_id={batch_id})")
+        
+        return question_ids
 
     async def create_artifact(
         self,

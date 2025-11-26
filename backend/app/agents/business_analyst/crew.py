@@ -72,6 +72,18 @@ class BusinessAnalystCrew:
             config=self.tasks_config['update_existing_prd']
         )
     
+    @task
+    def generate_first_clarification_question_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['generate_first_clarification_question']
+        )
+    
+    @task
+    def generate_next_interview_question_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['generate_next_interview_question']
+        )
+    
     @crew
     def crew(self) -> Crew:
         """Creates the Business Analyst crew."""
@@ -319,3 +331,101 @@ class BusinessAnalystCrew:
             # Return original with change note
             existing_prd["change_summary"] = f"Failed to update: {edit_request}"
             return existing_prd
+    
+    async def generate_first_clarification_question(
+        self,
+        user_message: str,
+        missing_info: list
+    ) -> dict:
+        """Generate first clarification question with multichoice.
+        
+        Returns:
+            Question dict with text, type, options (including "Other"), context
+        """
+        crew_instance = Crew(
+            agents=[self.business_analyst()],
+            tasks=[self.generate_first_clarification_question_task()],
+            verbose=False,
+        )
+        
+        result = await crew_instance.kickoff_async(inputs={
+            "user_message": user_message,
+            "missing_info": json.dumps(missing_info, ensure_ascii=False)
+        })
+        
+        # Parse JSON response
+        try:
+            result_str = str(result).strip()
+            if "```json" in result_str:
+                result_str = result_str.split("```json")[1].split("```")[0].strip()
+            elif "```" in result_str:
+                result_str = result_str.split("```")[1].split("```")[0].strip()
+            
+            question_data = json.loads(result_str)
+            
+            # Ensure "Other" option exists
+            if "options" in question_data:
+                if "Other (Khác - vui lòng mô tả)" not in question_data["options"]:
+                    question_data["options"].append("Other (Khác - vui lòng mô tả)")
+            
+            return question_data
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse clarification question JSON: {e}, result: {result}")
+            # Fallback question
+            return {
+                "question_text": "Bạn có thể mô tả chi tiết hơn về yêu cầu của mình không?",
+                "question_type": "open",
+                "options": [],
+                "allow_multiple": False,
+                "context": "general"
+            }
+    
+    async def generate_next_interview_question(
+        self,
+        user_message: str,
+        collected_info: dict,
+        previous_questions: list
+    ) -> dict:
+        """Generate next interview question based on collected info.
+        
+        Returns:
+            Question dict with text, type, options (including "Other"), context
+        """
+        crew_instance = Crew(
+            agents=[self.business_analyst()],
+            tasks=[self.generate_next_interview_question_task()],
+            verbose=False,
+        )
+        
+        result = await crew_instance.kickoff_async(inputs={
+            "user_message": user_message,
+            "collected_info": json.dumps(collected_info, ensure_ascii=False, indent=2),
+            "previous_questions": json.dumps(previous_questions, ensure_ascii=False, indent=2)
+        })
+        
+        # Parse JSON response
+        try:
+            result_str = str(result).strip()
+            if "```json" in result_str:
+                result_str = result_str.split("```json")[1].split("```")[0].strip()
+            elif "```" in result_str:
+                result_str = result_str.split("```")[1].split("```")[0].strip()
+            
+            question_data = json.loads(result_str)
+            
+            # Ensure "Other" option exists
+            if "options" in question_data:
+                if "Other (Khác - vui lòng mô tả)" not in question_data["options"]:
+                    question_data["options"].append("Other (Khác - vui lòng mô tả)")
+            
+            return question_data
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse next question JSON: {e}, result: {result}")
+            # Fallback question
+            return {
+                "question_text": "Còn thông tin nào khác bạn muốn bổ sung?",
+                "question_type": "open",
+                "options": [],
+                "allow_multiple": False,
+                "context": "general"
+            }

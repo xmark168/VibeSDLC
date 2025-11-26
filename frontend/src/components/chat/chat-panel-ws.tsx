@@ -23,6 +23,7 @@ import {
   PanelLeftClose,
   ChevronsLeft,
   Loader2,
+  Crown,
 } from "lucide-react";
 import { TechStackDialog } from "./tech-stack-dialog";
 import { useTheme } from "@/components/provider/theme-provider";
@@ -33,6 +34,9 @@ import { useMessages } from "@/queries/messages";
 import { AuthorType, type Message } from "@/types/message";
 import { MessageStatusIndicator } from "./message-status-indicator";
 import { AgentQuestionCard } from "./AgentQuestionCard";
+import { BatchQuestionsCard } from "./BatchQuestionsCard";
+import { ConversationOwnerBadge } from "./ConversationOwnerBadge";
+import { AgentHandoffNotification } from "./AgentHandoffNotification";
 import { ArtifactCard } from "./ArtifactCard";
 import { StoriesCreatedCard } from "./StoriesCreatedCard";
 import { useProjectAgents } from "@/queries/agents";
@@ -137,8 +141,10 @@ export function ChatPanelWS({
     messages: wsMessages,
     agentStatus,
     typingAgents,
+    conversationOwner,
     sendMessage: wsSendMessage,
     sendQuestionAnswer,
+    sendBatchAnswers,
   } = useChatWebSocket(projectId, token || '');
 
   // Combine existing messages with WebSocket messages
@@ -465,6 +471,17 @@ export function ChatPanelWS({
           >
             <PanelRightClose className="w-5 h-5" />
           </Button>
+          
+          {/* Conversation Owner Display (collapsed sidebar) */}
+          {conversationOwner && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/20">
+              <Crown className="w-3.5 h-3.5 text-yellow-600 dark:text-yellow-400" />
+              <span className="text-xs font-medium text-yellow-700 dark:text-yellow-300">
+                {conversationOwner.agentName} đang tiếp nhận câu hỏi
+              </span>
+            </div>
+          )}
+          
           <div className="flex-1" />
           {!isConnected && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -510,6 +527,16 @@ export function ChatPanelWS({
               <div className="flex items-center gap-2 text-xs text-green-600">
                 <div className="w-2 h-2 bg-green-600 rounded-full" />
                 Connected
+              </div>
+            )}
+            
+            {/* Conversation Owner Display */}
+            {conversationOwner && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/20">
+                <Crown className="w-3.5 h-3.5 text-yellow-600 dark:text-yellow-400" />
+                <span className="text-xs font-medium text-yellow-700 dark:text-yellow-300">
+                  {conversationOwner.agentName} đang tiếp nhận câu hỏi
+                </span>
               </div>
             )}
           </div>
@@ -586,6 +613,19 @@ export function ChatPanelWS({
           if (msg.message_type === 'activity') {
             return null;
           }
+          
+          // Agent Handoff Notification
+          if (msg.message_type === 'agent_handoff') {
+            return (
+              <AgentHandoffNotification
+                key={msg.id}
+                previousAgent={msg.structured_data?.previous_agent_name}
+                newAgent={msg.structured_data?.new_agent_name || ''}
+                reason={msg.structured_data?.reason || ''}
+                timestamp={msg.created_at}
+              />
+            );
+          }
 
           // Agent Question Handling
           if (msg.message_type === 'agent_question') {
@@ -620,6 +660,35 @@ export function ChatPanelWS({
               </div>
             );
           }
+          
+          // Batch Question Handling
+          if (msg.message_type === 'agent_question_batch') {
+            return (
+              <div key={msg.id} id={`batch-${msg.id}`} className="flex gap-3">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
+                  ❓
+                </div>
+                <div className="flex-1">
+                  <div className="text-xs font-medium text-muted-foreground mb-2">
+                    {msg.agent_name || 'Agent'}
+                  </div>
+                  <BatchQuestionsCard
+                    batchId={msg.structured_data?.batch_id || ''}
+                    questions={msg.structured_data?.questions || []}
+                    questionIds={msg.structured_data?.question_ids || []}
+                    agentName={msg.agent_name}
+                    answered={msg.structured_data?.answered || false}
+                    onSubmit={(answers) => {
+                      sendBatchAnswers(
+                        msg.structured_data!.batch_id!,
+                        answers
+                      )
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          }
 
           return (
             <div key={msg.id} className="flex gap-3">
@@ -628,8 +697,19 @@ export function ChatPanelWS({
               </div>
 
               <div className="flex-1 space-y-2">
-                <div className="text-xs font-medium text-muted-foreground">
-                  {getAgentName(msg)}
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {getAgentName(msg)}
+                  </span>
+                  
+                  {/* Conversation Owner Badge */}
+                  {msg.author_type === AuthorType.AGENT && conversationOwner && conversationOwner.agentName === msg.agent_name && conversationOwner.status && (
+                    <ConversationOwnerBadge
+                      agentName={msg.agent_name || ''}
+                      isOwner={true}
+                      status={conversationOwner.status}
+                    />
+                  )}
                 </div>
 
                 <div className="space-y-1.5">

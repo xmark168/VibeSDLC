@@ -346,6 +346,70 @@ async def websocket_endpoint(
                                     "type": "error",
                                     "message": f"Failed to process answer: {str(e)}"
                                 })
+                    
+                    # Handle batch clarification question answers
+                    elif message_type == "question_batch_answer":
+                        batch_id = message.get("batch_id")
+                        answers = message.get("answers", [])
+                        
+                        if not batch_id or not answers:
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": "batch_id and answers are required"
+                            })
+                            continue
+                        
+                        logger.info(f"[WS] User {user.id} answered batch {batch_id} with {len(answers)} answers")
+                        
+                        # Get first question to extract agent_id and task_id
+                        from app.core.db import engine
+                        from sqlmodel import Session as DBSession
+                        from app.models import AgentQuestion
+                        
+                        try:
+                            with DBSession(engine) as db_session:
+                                first_question = db_session.get(AgentQuestion, UUID(answers[0]["question_id"]))
+                                
+                                if not first_question:
+                                    await websocket.send_json({
+                                        "type": "error",
+                                        "message": "First question not found"
+                                    })
+                                    continue
+                                
+                                # Publish batch answer event to Kafka
+                                from app.kafka.event_schemas import BatchAnswersEvent
+                                
+                                producer = await get_kafka_producer()
+                                batch_answer_event = BatchAnswersEvent(
+                                    batch_id=batch_id,
+                                    answers=answers,
+                                    agent_id=first_question.agent_id,
+                                    task_id=first_question.task_id,
+                                    project_id=str(project_id),
+                                    user_id=str(user.id),
+                                )
+                                
+                                await producer.publish(
+                                    topic=KafkaTopics.QUESTION_ANSWERS,
+                                    event=batch_answer_event
+                                )
+                                
+                                logger.info(f"Batch answers published for {batch_id} ({len(answers)} questions)")
+                                
+                                # Ack to user
+                                await websocket.send_json({
+                                    "type": "batch_answers_received",
+                                    "batch_id": batch_id,
+                                    "answer_count": len(answers),
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                })
+                        except Exception as e:
+                            logger.error(f"Failed to publish batch answers: {e}")
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": f"Failed to process batch answers: {str(e)}"
+                            })
 
                     else:
                         logger.debug(f"Received unhandled WebSocket message type: {message_type}")

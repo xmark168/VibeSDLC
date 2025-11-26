@@ -210,3 +210,84 @@ update_existing_prd:
   expected_output: >
     Updated PRD JSON với change_summary
   agent: business_analyst
+
+generate_first_clarification_question:
+  description: >
+    Tạo câu hỏi clarification ĐẦU TIÊN dựa vào thông tin còn thiếu.
+    
+    Original Message: {user_message}
+    Missing Info: {missing_info}
+    
+    ƯU TIÊN MULTICHOICE với quy tắc:
+    
+    1. **HỎI VỀ DOMAIN/TYPE đầu tiên** (nếu thiếu):
+       Ví dụ: "Bạn muốn xây dựng loại website học tập nào?"
+       Options:
+       - Video Learning Platform (học qua video)
+       - Quiz & Test System (làm bài tập trắc nghiệm)
+       - Live Teaching Platform (dạy học trực tuyến)
+       - Course Management System (quản lý khóa học)
+       - Self-Learning Portal (tự học)
+       - Other (Khác - vui lòng mô tả)
+    
+    2. **HỎI VỀ USER ROLES** (nếu thiếu):
+       Ví dụ: "Hệ thống sẽ có những người dùng nào?"
+       Options:
+       - Học sinh/Sinh viên
+       - Giáo viên/Giảng viên
+       - Phụ huynh
+       - Quản trị viên
+       - Other (Khác - vui lòng mô tả)
+       Allow Multiple: true
+    
+    3. **HỎI VỀ CORE FEATURES** (nếu thiếu):
+       Ví dụ: "Bạn muốn website có những tính năng chính nào?"
+       Options: (generate dựa vào domain)
+    
+    QUY TẮC QUAN TRỌNG:
+    - LUÔN thêm "Other (Khác - vui lòng mô tả)" ở option cuối
+    - Mỗi option phải CỤ THỂ và DỄ HIỂU
+    - Options phải LIÊN QUAN đến domain
+    - Hỏi bằng TIẾNG VIỆT thân thiện
+    
+    Return JSON:
+    {{
+      "question_text": "Câu hỏi bằng tiếng Việt",
+      "question_type": "multichoice",
+      "options": ["Option 1", "Option 2", "...", "Other (Khác - vui lòng mô tả)"],
+      "allow_multiple": false,
+      "context": "domain" | "user_roles" | "features"
+    }}
+  expected_output: >
+    JSON with multichoice question including "Other" option
+  agent: business_analyst
+
+generate_next_interview_question:
+  description: >
+    Tạo câu hỏi tiếp theo trong interview flow.
+    
+    Original Message: {user_message}
+    Collected Info: {collected_info}
+    Previous Questions: {previous_questions}
+    
+    Xác định thông tin còn thiếu:
+    - Đã có domain_type? → Hỏi về user_roles
+    - Đã có user_roles? → Hỏi về core_features
+    - Đã có features? → Hỏi về constraints/priorities
+    
+    Format giống generate_first_clarification_question:
+    - LUÔN là multichoice
+    - LUÔN có "Other (Khác - vui lòng mô tả)"
+    - Options cụ thể dựa vào collected_info
+    
+    Return JSON:
+    {{
+      "question_text": "Câu hỏi bằng tiếng Việt",
+      "question_type": "multichoice",
+      "options": ["...", "Other (Khác - vui lòng mô tả)"],
+      "allow_multiple": true/false,
+      "context": "domain" | "user_roles" | "features" | "constraints"
+    }}
+  expected_output: >
+    JSON with next interview question
+  agent: business_analyst

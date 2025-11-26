@@ -34,6 +34,7 @@ export function AgentQuestionCard({
 }: AgentQuestionCardProps) {
   const [textAnswer, setTextAnswer] = useState('')
   const [selectedOptions, setSelectedOptions] = useState<Set<string>>(new Set())
+  const [customInput, setCustomInput] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   
   const handleSubmit = async () => {
@@ -43,16 +44,29 @@ export function AgentQuestionCard({
       if (questionType === 'open') {
         await onSubmit(textAnswer, undefined)
       } else {
-        await onSubmit('', Array.from(selectedOptions))
+        // If "Other" is selected, replace with custom input
+        let finalOptions = Array.from(selectedOptions)
+        if (selectedOptions.has("Other (Khác - vui lòng mô tả)")) {
+          if (!customInput.trim()) {
+            // Show error or just return
+            setIsSubmitting(false)
+            return
+          }
+          finalOptions = finalOptions.map(opt => 
+            opt === "Other (Khác - vui lòng mô tả)" ? customInput.trim() : opt
+          )
+        }
+        await onSubmit('', finalOptions)
       }
     } finally {
       setIsSubmitting(false)
     }
   }
   
+  const hasOtherSelected = selectedOptions.has("Other (Khác - vui lòng mô tả)")
   const canSubmit = questionType === 'open' 
     ? textAnswer.trim().length > 0 
-    : selectedOptions.size > 0
+    : selectedOptions.size > 0 && (!hasOtherSelected || customInput.trim().length > 0)
   
   // Processing state (after answer, agent is working on it)
   if (answered && processing) {
@@ -197,6 +211,23 @@ export function AgentQuestionCard({
                   </div>
                 ))}
               </RadioGroup>
+            )}
+            
+            {/* Custom input for "Other" option */}
+            {hasOtherSelected && (
+              <div className="mt-3 p-3 border border-blue-200 dark:border-blue-700 rounded-lg bg-blue-50/50 dark:bg-blue-950/30">
+                <label className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2 block">
+                  📝 Vui lòng mô tả chi tiết:
+                </label>
+                <textarea
+                  className="w-full px-3 py-2 text-sm border border-blue-300 dark:border-blue-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  rows={3}
+                  placeholder="Nhập mô tả của bạn..."
+                  value={customInput}
+                  onChange={(e) => setCustomInput(e.target.value)}
+                  disabled={isSubmitting}
+                />
+              </div>
             )}
           </div>
         )}

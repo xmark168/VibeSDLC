@@ -192,6 +192,51 @@ class QuestionAnswerEvent(BaseKafkaEvent):
     task_id: UUID
 
 
+class BatchQuestionsAskedEvent(BaseKafkaEvent):
+    """Agent asks multiple questions at once (batch mode)."""
+    
+    event_type: str = "agent.question_batch_asked"
+    batch_id: str
+    question_ids: List[str]
+    questions: List[dict]  # List of question dicts with question_text, question_type, options, etc.
+    agent_id: str
+    agent_name: str
+    task_id: str
+    execution_id: Optional[str] = None
+
+
+class BatchAnswersEvent(BaseKafkaEvent):
+    """User answers multiple questions at once (batch mode)."""
+    
+    event_type: str = "user.question_batch_answer"
+    batch_id: str
+    answers: List[dict]  # List of { question_id, answer, selected_options }
+    agent_id: UUID
+    task_id: UUID
+
+
+class ConversationOwnershipChangedEvent(BaseKafkaEvent):
+    """Conversation ownership transferred to new agent (MetaGPT-style)."""
+    
+    event_type: str = "conversation.ownership_changed"
+    project_id: str
+    previous_agent_id: Optional[UUID] = None
+    previous_agent_name: Optional[str] = None
+    new_agent_id: UUID
+    new_agent_name: str
+    reason: str  # "task_started", "delegated", "completed_handoff"
+
+
+class ConversationOwnershipReleasedEvent(BaseKafkaEvent):
+    """Agent releases conversation ownership."""
+    
+    event_type: str = "conversation.ownership_released"
+    project_id: str
+    agent_id: UUID
+    agent_name: str
+    reason: str  # "task_completed", "error", "timeout"
+
+
 class FlowStatusType(str, Enum):
     """Flow execution status types."""
 
@@ -323,6 +368,10 @@ EVENT_TYPE_TO_SCHEMA = {
     "approval.response.submitted": ApprovalResponseEvent,
     "agent.question_asked": QuestionAskedEvent,
     "user.question_answer": QuestionAnswerEvent,
+    "agent.question_batch_asked": BatchQuestionsAskedEvent,
+    "user.question_batch_answer": BatchAnswersEvent,
+    "conversation.ownership_changed": ConversationOwnershipChangedEvent,
+    "conversation.ownership_released": ConversationOwnershipReleasedEvent,
     FlowStatusType.STARTED.value: FlowStatusEvent,
     FlowStatusType.IN_PROGRESS.value: FlowStatusEvent,
     FlowStatusType.COMPLETED.value: FlowStatusEvent,

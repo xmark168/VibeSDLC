@@ -393,6 +393,69 @@ class UserMessageRouter(BaseEventRouter):
         except Exception as e:
             self.logger.error(f"Failed to clear conversation context: {e}", exc_info=True)
             session.rollback()
+    
+    async def _broadcast_ownership_change(
+        self,
+        project_id: UUID,
+        new_agent: Agent,
+        previous_agent_id: Optional[UUID],
+        reason: str
+    ) -> None:
+        """Broadcast conversation ownership change to all clients (MetaGPT-style)."""
+        from app.websocket.connection_manager import connection_manager
+        
+        previous_agent = None
+        previous_agent_name = None
+        
+        if previous_agent_id:
+            try:
+                with Session(engine) as session:
+                    previous_agent = session.get(Agent, previous_agent_id)
+                    if previous_agent:
+                        previous_agent_name = previous_agent.human_name
+            except Exception as e:
+                self.logger.error(f"Failed to get previous agent: {e}")
+        
+        await connection_manager.broadcast_to_project(
+            {
+                "type": "conversation.ownership_changed",
+                "project_id": str(project_id),
+                "previous_agent_id": str(previous_agent_id) if previous_agent_id else None,
+                "previous_agent_name": previous_agent_name,
+                "new_agent_id": str(new_agent.id),
+                "new_agent_name": new_agent.human_name,
+                "reason": reason,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            project_id
+        )
+        
+        self.logger.info(
+            f"[OWNERSHIP] {previous_agent_name or 'None'} → {new_agent.human_name} ({reason})"
+        )
+    
+    async def _broadcast_ownership_released(
+        self,
+        project_id: UUID,
+        agent: Agent,
+        reason: str
+    ) -> None:
+        """Broadcast conversation ownership release to all clients."""
+        from app.websocket.connection_manager import connection_manager
+        
+        await connection_manager.broadcast_to_project(
+            {
+                "type": "conversation.ownership_released",
+                "project_id": str(project_id),
+                "agent_id": str(agent.id),
+                "agent_name": agent.human_name,
+                "reason": reason,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            project_id
+        )
+        
+        self.logger.info(f"[OWNERSHIP] Released by {agent.human_name} ({reason})")
 
     async def _route_to_team_leader(
         self, event_dict: Dict[str, Any], project_id: UUID
@@ -509,6 +572,7 @@ class AgentMessageRouter(BaseEventRouter):
                 # Update active agent context
                 project = session.get(Project, agent.project_id)
                 if project:
+                    previous_agent_id = project.active_agent_id
                     project.active_agent_id = agent.id
                     project.active_agent_updated_at = datetime.now(timezone.utc)
                     session.add(project)
@@ -517,6 +581,14 @@ class AgentMessageRouter(BaseEventRouter):
                     self.logger.info(
                         f"[CONTEXT_UPDATE] Agent {agent.human_name} responded, "
                         f"set as active for project {project_id}"
+                    )
+                    
+                    # Broadcast ownership change (MetaGPT-style)
+                    await self._broadcast_ownership_change(
+                        project_id=agent.project_id,
+                        new_agent=agent,
+                        previous_agent_id=previous_agent_id,
+                        reason="task_started"
                     )
 
 
@@ -551,6 +623,9 @@ class TaskCompletionRouter(BaseEventRouter):
             )
             
             if project and project.active_agent_id:
+                # Get agent before clearing
+                agent = session.get(Agent, project.active_agent_id)
+                
                 # Clear context after task completion
                 project.active_agent_id = None
                 project.active_agent_updated_at = None
@@ -561,6 +636,14 @@ class TaskCompletionRouter(BaseEventRouter):
                     f"[TASK_COMPLETION] Cleared conversation context for project {project_id} "
                     f"after {agent_name} completed task"
                 )
+                
+                # Broadcast ownership released (MetaGPT-style)
+                if agent:
+                    await self._broadcast_ownership_released(
+                        project_id=UUID(project_id) if isinstance(project_id, str) else project_id,
+                        agent=agent,
+                        reason="task_completed"
+                    )
 
 
 class AgentResponseRouter(BaseEventRouter):
@@ -716,6 +799,22 @@ class QuestionAnswerRouter(BaseEventRouter):
             question.selected_options = selected_options
             question.answered_at = datetime.now(timezone.utc)
             session.add(question)
+            
+            # ALSO update messages table for chat history persistence
+            from app.models import Message
+            message = session.get(Message, question_id)
+            if message:
+                # Update structured_data to mark as answered
+                message.structured_data = {
+                    **(message.structured_data or {}),
+                    "answered": True,
+                    "answered_at": datetime.now(timezone.utc).isoformat(),
+                    "user_answer": answer or "",
+                    "user_selected_options": selected_options or [],
+                    "status": "answered"
+                }
+                session.add(message)
+            
             session.commit()
             
             # Load original task context
@@ -749,6 +848,121 @@ class QuestionAnswerRouter(BaseEventRouter):
                 "question_id": str(question_id),
                 "agent_id": str(agent_id),
                 "agent_name": question.agent.human_name if question.agent else "Agent",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            project_id
+        )
+
+
+class BatchAnswersRouter(BaseEventRouter):
+    """Router for QUESTION_ANSWERS events (batch mode).
+    
+    Routes user answers for multiple questions back to the agent that asked them,
+    resuming the paused task with all answers at once.
+    """
+    
+    def should_handle(self, event: BaseKafkaEvent | Dict[str, Any]) -> bool:
+        event_dict = event if isinstance(event, dict) else event.model_dump()
+        return event_dict.get("event_type") == "user.question_batch_answer"
+    
+    async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
+        """Route batch answers back to agent and resume task"""
+        event_dict = event if isinstance(event, dict) else event.model_dump()
+        
+        batch_id = event_dict.get("batch_id")
+        answers = event_dict.get("answers", [])  # List of { question_id, answer, selected_options }
+        agent_id_raw = event_dict.get("agent_id")
+        task_id = event_dict.get("task_id")
+        
+        if not batch_id or not answers:
+            self.logger.error("Batch answer event missing batch_id or answers")
+            return
+        
+        # Convert IDs to UUID
+        try:
+            if isinstance(agent_id_raw, str):
+                agent_id = UUID(agent_id_raw)
+            else:
+                agent_id = agent_id_raw
+            
+            if isinstance(task_id, str):
+                task_id = UUID(task_id)
+        except Exception as e:
+            self.logger.error(f"Invalid UUID in batch answer event: {e}")
+            return
+        
+        project_id = event_dict.get("project_id")
+        if isinstance(project_id, str):
+            project_id = UUID(project_id)
+        
+        # Update all questions in database
+        from app.models import AgentQuestion, Message, QuestionStatus
+        
+        with Session(engine) as session:
+            first_question = None
+            
+            for ans_data in answers:
+                question_id = UUID(ans_data["question_id"])
+                
+                # Update agent_questions table
+                question = session.get(AgentQuestion, question_id)
+                if question:
+                    if not first_question:
+                        first_question = question
+                    
+                    question.status = QuestionStatus.ANSWERED
+                    question.answer = ans_data.get("answer", "")
+                    question.selected_options = ans_data.get("selected_options")
+                    question.answered_at = datetime.now(timezone.utc)
+                    session.add(question)
+                
+                # Update messages table (for chat history)
+                message = session.get(Message, question_id)
+                if message:
+                    message.structured_data = {
+                        **(message.structured_data or {}),
+                        "answered": True,
+                        "answered_at": datetime.now(timezone.utc).isoformat(),
+                        "user_answer": ans_data.get("answer", ""),
+                        "user_selected_options": ans_data.get("selected_options", []),
+                        "status": "answered"
+                    }
+                    session.add(message)
+            
+            session.commit()
+            
+            # Get original task context from first question
+            original_task_context = first_question.task_context if first_question else {}
+        
+        # Resume agent with all answers at once
+        await self.publish_task(
+            agent_id=agent_id,
+            task_type=AgentTaskType.RESUME_WITH_ANSWER,
+            source_event=event_dict,
+            routing_reason=f"batch_answers:{batch_id}",
+            priority="high",
+            additional_context={
+                "batch_id": batch_id,
+                "batch_answers": answers,  # All answers at once
+                "answer_count": len(answers),
+                "original_context": original_task_context,
+                "is_batch": True,
+            }
+        )
+        
+        self.logger.info(
+            f"Published RESUME_WITH_ANSWER task to agent {agent_id} with {len(answers)} batch answers"
+        )
+        
+        # Broadcast agent resumed event to WebSocket
+        from app.websocket.connection_manager import connection_manager
+        await connection_manager.broadcast_to_project(
+            {
+                "type": "agent.resumed_batch",
+                "batch_id": batch_id,
+                "agent_id": str(agent_id),
+                "agent_name": first_question.agent.human_name if first_question and first_question.agent else "Agent",
+                "answer_count": len(answers),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
             project_id
@@ -1002,6 +1216,7 @@ class MessageRouterService(BaseKafkaConsumer):
             TaskCompletionRouter(producer),
             ApprovalResponseRouter(producer),
             QuestionAnswerRouter(producer),
+            BatchAnswersRouter(producer),
             DelegationRouter(producer),
         ]
 
