@@ -15,11 +15,13 @@ export type AgentStatus = "idle" | "busy" | "stopped" | "error"
 
 export interface PoolResponse {
   pool_name: string
-  role_class: string
+  role_type: string
   total_agents: number
   active_agents: number
   busy_agents: number
   idle_agents: number
+  max_agents: number
+  is_running: boolean
   total_spawned: number
   total_terminated: number
   total_executions: number
@@ -28,6 +30,12 @@ export interface PoolResponse {
   success_rate: number
   load: number
   created_at: string
+  agents: Array<{
+    agent_id: string
+    name: string
+    role: string
+    state: string
+  }>
 }
 
 export interface AgentHealth {
@@ -136,4 +144,90 @@ export interface ExecuteAgentSyncResponse {
   status: string
   result: any
   execution_time: number
+}
+
+// ===== Pool DB Types =====
+
+export type PoolType = "free" | "paid"
+
+export interface AgentPoolDB {
+  id: string
+  pool_name: string
+  role_type: string | null
+  pool_type: PoolType
+  max_agents: number
+  health_check_interval: number
+  llm_model_config: Record<string, string> | null
+  allowed_template_ids: string[] | null
+  is_active: boolean
+  last_started_at: string | null
+  last_stopped_at: string | null
+  total_spawned: number
+  total_terminated: number
+  current_agent_count: number
+  created_by: string | null
+  updated_by: string | null
+  auto_created: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface AgentPoolMetrics {
+  id: string
+  pool_id: string
+  period_start: string
+  period_end: string
+  total_tokens_used: number
+  tokens_per_model: Record<string, number>
+  total_requests: number
+  requests_per_model: Record<string, number>
+  peak_agent_count: number
+  avg_agent_count: number
+  total_executions: number
+  successful_executions: number
+  failed_executions: number
+  avg_execution_duration_ms: number | null
+  snapshot_metadata: Record<string, any> | null
+  created_at: string
+}
+
+export interface PoolResponseExtended extends PoolResponse {
+  // DB info
+  pool_id: string
+  pool_type: PoolType
+  llm_model_config: Record<string, string> | null
+  allowed_template_ids: string[] | null
+  is_active: boolean
+  auto_created: boolean
+  uptime_seconds: number
+}
+
+export interface CreatePoolRequestExtended {
+  pool_name: string
+  role_type?: string | null
+  pool_type?: PoolType
+  max_agents?: number
+  health_check_interval?: number
+  llm_model_config?: Record<string, string>
+  allowed_template_ids?: string[]
+}
+
+export interface UpdatePoolConfigRequest {
+  pool_id: string
+  max_agents?: number
+  health_check_interval?: number
+  llm_model_config?: Record<string, string>
+  allowed_template_ids?: string[]
+  updated_by?: string
+}
+
+export interface ScalePoolRequest {
+  target_agents: number
+}
+
+export interface PoolSuggestion {
+  reason: string
+  recommended_pool_name: string
+  role_type: string | null
+  estimated_agents: number
 }

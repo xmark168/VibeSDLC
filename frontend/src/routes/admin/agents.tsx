@@ -429,7 +429,7 @@ function PoolsTab({
                     </Button>
                     <div>
                       <CardTitle className="text-base">{pool.pool_name}</CardTitle>
-                      <CardDescription>{pool.role_class}</CardDescription>
+                      <CardDescription>{pool.role_type}</CardDescription>
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
@@ -844,7 +844,7 @@ function HealthTab({
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle>{pool.pool_name}</CardTitle>
-                  <CardDescription>{pool.role_class}</CardDescription>
+                  <CardDescription>{pool.role_type}</CardDescription>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-1">

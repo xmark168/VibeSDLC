@@ -34,7 +34,15 @@ export type {
   CreatePoolRequest,
   ExecuteAgentRequest,
   ExecuteAgentResponse,
-  ExecuteAgentSyncResponse
+  ExecuteAgentSyncResponse,
+  PoolType,
+  AgentPoolDB,
+  AgentPoolMetrics,
+  PoolResponseExtended,
+  CreatePoolRequestExtended,
+  UpdatePoolConfigRequest,
+  ScalePoolRequest,
+  PoolSuggestion
 } from './agent'
 
 // Backlog types

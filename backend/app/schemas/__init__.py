@@ -64,6 +64,12 @@ from .agent import (
     TerminateAgentRequest,
     PoolResponse,
     SystemStatsResponse,
+    AgentPoolPublic,
+    UpdatePoolConfigRequest,
+    AgentPoolMetricsPublic,
+    CreatePoolRequestExtended,
+    ScalePoolRequest,
+    PoolSuggestion,
 )
 
 # Story schemas
@@ -193,6 +199,12 @@ __all__ = [
     "TerminateAgentRequest",
     "PoolResponse",
     "SystemStatsResponse",
+    "AgentPoolPublic",
+    "UpdatePoolConfigRequest",
+    "AgentPoolMetricsPublic",
+    "CreatePoolRequestExtended",
+    "ScalePoolRequest",
+    "PoolSuggestion",
     
     # Story
     "StoryBase",
