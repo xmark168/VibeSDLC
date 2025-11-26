@@ -12,17 +12,54 @@ logger = logging.getLogger(__name__)
 
 @CrewBase
 class BusinessAnalystCrew:
-    """Business Analyst crew for requirements analysis."""
+    """Multi-agent BA crew with specialized sub-agents."""
     
     agents_config = 'config/agents.yaml'
     tasks_config = 'config/tasks.yaml'
     
+    # === SPECIALIZED AGENTS ===
+    
     @agent
-    def business_analyst(self) -> Agent:
+    def requirements_engineer(self) -> Agent:
+        """Interview & clarification specialist."""
         return Agent(
-            config=self.agents_config['business_analyst'],
+            config=self.agents_config['requirements_engineer'],
             verbose=True
         )
+    
+    @agent
+    def domain_expert(self) -> Agent:
+        """Business domain & analysis specialist."""
+        return Agent(
+            config=self.agents_config['domain_expert'],
+            verbose=True
+        )
+    
+    @agent
+    def prd_specialist(self) -> Agent:
+        """PRD documentation specialist."""
+        return Agent(
+            config=self.agents_config['prd_specialist'],
+            verbose=True
+        )
+    
+    @agent
+    def story_writer(self) -> Agent:
+        """User story extraction specialist."""
+        return Agent(
+            config=self.agents_config['story_writer'],
+            verbose=True
+        )
+    
+    @agent
+    def workflow_orchestrator(self) -> Agent:
+        """Workflow orchestrator & coordinator - decides next action."""
+        return Agent(
+            config=self.agents_config['workflow_orchestrator'],
+            verbose=True
+        )
+    
+    # === TASKS ===
     
     @task
     def analyze_requirements_task(self) -> Task:
@@ -84,6 +121,14 @@ class BusinessAnalystCrew:
             config=self.tasks_config['generate_next_interview_question']
         )
     
+    @task
+    def decide_next_action_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['decide_next_action']
+        )
+    
+    # === CREW ===
+    
     @crew
     def crew(self) -> Crew:
         """Creates the Business Analyst crew."""
@@ -95,9 +140,9 @@ class BusinessAnalystCrew:
         )
     
     async def analyze_requirements(self, user_message: str) -> str:
-        """Analyze requirements for a user message."""
+        """Analyze requirements for a user message - uses domain_expert."""
         crew_instance = Crew(
-            agents=[self.business_analyst()],
+            agents=[self.domain_expert()],
             tasks=[self.analyze_requirements_task()],
             verbose=True,
         )
@@ -106,9 +151,9 @@ class BusinessAnalystCrew:
         return str(result)
     
     async def check_needs_clarification(self, message: str) -> bool:
-        """Check if message needs clarification."""
+        """Check if message needs clarification - uses requirements_engineer."""
         crew_instance = Crew(
-            agents=[self.business_analyst()],
+            agents=[self.requirements_engineer()],
             tasks=[self.check_clarification_task()],
             verbose=False,
         )
@@ -128,9 +173,9 @@ class BusinessAnalystCrew:
         selected_aspects: str,
         aspects_list: str
     ) -> str:
-        """Analyze with user-selected context."""
+        """Analyze with user-selected context - uses domain_expert."""
         crew_instance = Crew(
-            agents=[self.business_analyst()],
+            agents=[self.domain_expert()],
             tasks=[self.analyze_with_context_task()],
             verbose=True,
         )
@@ -143,13 +188,13 @@ class BusinessAnalystCrew:
         return str(result)
     
     async def detect_intent(self, user_message: str) -> str:
-        """Detect user intent from message.
+        """Detect user intent from message - uses requirements_engineer.
         
         Returns:
             Intent name: create_feature, edit_prd, edit_story, or general_discussion
         """
         crew_instance = Crew(
-            agents=[self.business_analyst()],
+            agents=[self.requirements_engineer()],
             tasks=[self.detect_intent_task()],
             verbose=False,
         )
@@ -173,13 +218,13 @@ class BusinessAnalystCrew:
         collected_info: dict,
         previous_questions: list
     ) -> dict:
-        """Generate next interview question.
+        """Generate next interview question - uses requirements_engineer.
         
         Returns:
             Question dict with text, type, options, allow_multiple
         """
         crew_instance = Crew(
-            agents=[self.business_analyst()],
+            agents=[self.requirements_engineer()],
             tasks=[self.generate_interview_question_task()],
             verbose=False,
         )
@@ -216,13 +261,13 @@ class BusinessAnalystCrew:
         original_request: str,
         interview_data: dict
     ) -> dict:
-        """Generate PRD from interview data.
+        """Generate PRD from interview data - uses prd_specialist.
         
         Returns:
             PRD dict with project_name, version, overview, features, etc.
         """
         crew_instance = Crew(
-            agents=[self.business_analyst()],
+            agents=[self.prd_specialist()],
             tasks=[self.generate_prd_from_interview_task()],
             verbose=True,
         )
@@ -260,13 +305,13 @@ class BusinessAnalystCrew:
             }
     
     async def extract_user_stories_from_prd(self, prd_data: dict) -> list[dict]:
-        """Extract user stories from PRD.
+        """Extract user stories from PRD - uses story_writer.
         
         Returns:
             List of story dicts with title, description, acceptance_criteria, etc.
         """
         crew_instance = Crew(
-            agents=[self.business_analyst()],
+            agents=[self.story_writer()],
             tasks=[self.extract_user_stories_task()],
             verbose=True,
         )
@@ -299,13 +344,13 @@ class BusinessAnalystCrew:
         edit_request: str,
         existing_prd: dict
     ) -> dict:
-        """Update existing PRD based on edit request.
+        """Update existing PRD based on edit request - uses prd_specialist.
         
         Returns:
             Updated PRD dict with change_summary field
         """
         crew_instance = Crew(
-            agents=[self.business_analyst()],
+            agents=[self.prd_specialist()],
             tasks=[self.update_existing_prd_task()],
             verbose=True,
         )
@@ -337,13 +382,13 @@ class BusinessAnalystCrew:
         user_message: str,
         missing_info: list
     ) -> dict:
-        """Generate first clarification question with multichoice.
+        """Generate first clarification question with multichoice - uses requirements_engineer.
         
         Returns:
             Question dict with text, type, options (including "Other"), context
         """
         crew_instance = Crew(
-            agents=[self.business_analyst()],
+            agents=[self.requirements_engineer()],
             tasks=[self.generate_first_clarification_question_task()],
             verbose=False,
         )
@@ -386,13 +431,13 @@ class BusinessAnalystCrew:
         collected_info: dict,
         previous_questions: list
     ) -> dict:
-        """Generate next interview question based on collected info.
+        """Generate next interview question based on collected info - uses requirements_engineer.
         
         Returns:
             Question dict with text, type, options (including "Other"), context
         """
         crew_instance = Crew(
-            agents=[self.business_analyst()],
+            agents=[self.requirements_engineer()],
             tasks=[self.generate_next_interview_question_task()],
             verbose=False,
         )
@@ -429,3 +474,75 @@ class BusinessAnalystCrew:
                 "allow_multiple": False,
                 "context": "general"
             }
+    
+    async def decide_next_action(
+        self,
+        current_phase: str,
+        collected_info: dict,
+        last_message: str,
+        questions_asked: list,
+        prd_status: dict | None
+    ) -> dict:
+        """Use orchestrator to decide next action - LLM-based intelligent routing.
+        
+        Returns:
+            {
+                "action": str,  # ASK_CLARIFICATION, ANALYZE_DOMAIN, GENERATE_PRD, UPDATE_PRD, EXTRACT_STORIES, COMPLETE
+                "agent_to_use": str,  # requirements_engineer, domain_expert, prd_specialist, story_writer, none
+                "reason": str,  # Brief explanation
+                "estimated_missing_info": list  # Optional, only for ASK_CLARIFICATION
+            }
+        """
+        crew_instance = Crew(
+            agents=[self.workflow_orchestrator()],
+            tasks=[self.decide_next_action_task()],
+            process=Process.sequential,
+            verbose=False,
+        )
+        
+        result = await crew_instance.kickoff_async(inputs={
+            "current_phase": current_phase,
+            "collected_info": json.dumps(collected_info, ensure_ascii=False, indent=2),
+            "last_message": last_message,
+            "questions_asked": json.dumps(questions_asked, ensure_ascii=False),
+            "prd_status": json.dumps(prd_status, ensure_ascii=False, indent=2) if prd_status else "None"
+        })
+        
+        # Parse JSON response
+        try:
+            result_str = str(result).strip()
+            # Extract JSON from markdown code blocks
+            if "```json" in result_str:
+                result_str = result_str.split("```json")[1].split("```")[0].strip()
+            elif "```" in result_str:
+                result_str = result_str.split("```")[1].split("```")[0].strip()
+            
+            action_data = json.loads(result_str)
+            
+            # Validate required fields
+            if "action" not in action_data or "agent_to_use" not in action_data:
+                raise ValueError("Missing required fields in orchestrator response")
+            
+            logger.info(f"[Orchestrator] Decision: {action_data['action']} "
+                       f"(agent: {action_data['agent_to_use']}, reason: {action_data.get('reason', 'N/A')})")
+            
+            return action_data
+            
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.error(f"Failed to parse orchestrator decision: {e}, result: {result}")
+            # Fallback: continue with interview if we don't have much info
+            if len(questions_asked) < 2:
+                return {
+                    "action": "ASK_CLARIFICATION",
+                    "agent_to_use": "requirements_engineer",
+                    "reason": "Fallback to interview mode (orchestrator parse failed)",
+                    "estimated_missing_info": []
+                }
+            else:
+                # If we already asked questions, proceed to PRD
+                return {
+                    "action": "GENERATE_PRD",
+                    "agent_to_use": "prd_specialist",
+                    "reason": "Fallback to PRD generation (orchestrator parse failed, have some info)",
+                    "estimated_missing_info": []
+                }

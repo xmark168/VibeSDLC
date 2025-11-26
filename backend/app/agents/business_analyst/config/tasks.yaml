@@ -17,7 +17,7 @@ analyze_requirements:
     Provide structured, actionable output that can guide development.
   expected_output: >
     Structured requirements analysis with clear next steps
-  agent: business_analyst
+  agent: domain_expert
 
 check_clarification_needed:
   description: >
@@ -55,7 +55,7 @@ check_clarification_needed:
     DECISION: YES/NO
     REASON: brief explanation
     MISSING: [optional list if YES]
-  agent: business_analyst
+  agent: requirements_engineer
 
 analyze_with_context:
   description: >
@@ -74,7 +74,7 @@ analyze_with_context:
     Create a comprehensive PRD-style document.
   expected_output: >
     Detailed analysis document covering all selected aspects with actionable insights
-  agent: business_analyst
+  agent: domain_expert
 
 detect_intent:
   description: >
@@ -91,7 +91,7 @@ detect_intent:
     Trả về CHỈ tên ý định, không giải thích.
   expected_output: >
     Intent name: create_feature, edit_prd, edit_story, hoặc general_discussion
-  agent: business_analyst
+  agent: requirements_engineer
 
 generate_interview_question:
   description: >
@@ -120,7 +120,7 @@ generate_interview_question:
     }}
   expected_output: >
     JSON với câu hỏi tiếp theo
-  agent: business_analyst
+  agent: requirements_engineer
 
 generate_prd_from_interview:
   description: >
@@ -152,7 +152,7 @@ generate_prd_from_interview:
     Viết bằng tiếng Việt, chi tiết, chuyên nghiệp.
   expected_output: >
     PRD JSON object đầy đủ
-  agent: business_analyst
+  agent: prd_specialist
 
 extract_user_stories_from_prd:
   description: >
@@ -187,7 +187,7 @@ extract_user_stories_from_prd:
     Viết bằng tiếng Việt.
   expected_output: >
     JSON array of user stories
-  agent: business_analyst
+  agent: story_writer
 
 update_existing_prd:
   description: >
@@ -209,7 +209,7 @@ update_existing_prd:
     Trả về PRD JSON đã cập nhật (format giống generate_prd_from_interview).
   expected_output: >
     Updated PRD JSON với change_summary
-  agent: business_analyst
+  agent: prd_specialist
 
 generate_first_clarification_question:
   description: >
@@ -260,7 +260,7 @@ generate_first_clarification_question:
     }}
   expected_output: >
     JSON with multichoice question including "Other" option
-  agent: business_analyst
+  agent: requirements_engineer
 
 generate_next_interview_question:
   description: >
@@ -290,4 +290,69 @@ generate_next_interview_question:
     }}
   expected_output: >
     JSON with next interview question
-  agent: business_analyst
+  agent: requirements_engineer
+
+decide_next_action:
+  description: >
+    Analyze the current conversation state and decide the next action.
+    
+    Current State:
+    - Current Phase: {current_phase}
+    - Collected Info: {collected_info}
+    - Last User Message: {last_message}
+    - Questions Asked: {questions_asked}
+    - PRD Status: {prd_status}
+    
+    Your task: Decide what action to take next and which specialist agent should handle it.
+    
+    Available Actions:
+    
+    1. ASK_CLARIFICATION
+       - Use when: Requirements are vague, missing critical information
+       - Agent: requirements_engineer
+       - Example: User says "tạo website học tập" → Missing target users, features
+    
+    2. ANALYZE_DOMAIN
+       - Use when: Have basic requirements, need deeper business context
+       - Agent: domain_expert
+       - Example: User provided features, need to analyze e-commerce/education domain patterns
+    
+    3. GENERATE_PRD
+       - Use when: Requirements are complete, ready to create PRD document
+       - Agent: prd_specialist
+       - Example: Interview complete with all necessary info
+    
+    4. UPDATE_PRD
+       - Use when: PRD exists and user requests modifications
+       - Agent: prd_specialist
+       - Example: "Thêm feature thanh toán vào PRD"
+    
+    5. EXTRACT_STORIES
+       - Use when: PRD is complete and ready to generate user stories
+       - Agent: story_writer
+       - Example: PRD delivered, now extract INVEST stories
+    
+    6. COMPLETE
+       - Use when: All deliverables done (PRD + stories)
+       - Agent: none
+       - Example: Workflow finished
+    
+    Decision Guidelines:
+    - If last message has detailed requirements (>50 words with features/users) → Consider skipping INTERVIEW
+    - If collected_info has domain, user_roles, core_features → Move to GENERATE_PRD
+    - If PRD exists in prd_status → EXTRACT_STORIES or UPDATE_PRD
+    - If questions_asked >= 3 → Proceed with available info (don't over-interview)
+    - Be adaptive: skip unnecessary phases when info is complete
+    
+    Return JSON:
+    {{
+      "action": "ASK_CLARIFICATION" | "ANALYZE_DOMAIN" | "GENERATE_PRD" | "UPDATE_PRD" | "EXTRACT_STORIES" | "COMPLETE",
+      "agent_to_use": "requirements_engineer" | "domain_expert" | "prd_specialist" | "story_writer" | "none",
+      "reason": "Brief 1-sentence explanation of why this action",
+      "estimated_missing_info": ["list", "of", "missing", "items"] (only if action is ASK_CLARIFICATION)
+    }}
+    
+    IMPORTANT: Return ONLY valid JSON, no additional text.
+  expected_output: >
+    JSON object with action, agent_to_use, reason, and optional estimated_missing_info
+  agent: workflow_orchestrator
