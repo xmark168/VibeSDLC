@@ -3,7 +3,7 @@ from uuid import UUID, uuid4
 from enum import Enum
 from pydantic import EmailStr
 from sqlmodel import Field, SQLModel, Relationship, Column
-from sqlalchemy import JSON, Text, Enum as SQLEnum
+from sqlalchemy import JSON, Text, BigInteger, Enum as SQLEnum
 from typing import Optional
 
 class Role(str, Enum):
@@ -76,6 +76,10 @@ class User(BaseModel, table=True):
         back_populates="commenter",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+    user_subscriptions: list["Subscription"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
 
 
 class EpicStatus(str, Enum):
@@ -116,6 +120,19 @@ class Project(BaseModel, table=True):
 
     # File system path for project files (auto-generated: projects/{project_id})
     project_path: str | None = Field(default=None, max_length=500)
+    
+    # Conversation context tracking - routes follow-up messages to active agent
+    active_agent_id: UUID | None = Field(
+        default=None,
+        foreign_key="agents.id",
+        ondelete="SET NULL"
+    )
+    active_agent_updated_at: datetime | None = Field(default=None)
+    
+    # WebSocket session tracking - for smart timeouts
+    websocket_connected: bool = Field(default=False)
+    websocket_last_seen: datetime | None = Field(default=None)
+    
     owner: User = Relationship(back_populates="owned_projects")
     stories: list["Story"] = Relationship(
         back_populates="project",
@@ -127,7 +144,10 @@ class Project(BaseModel, table=True):
     )
     agents: list["Agent"] = Relationship(
         back_populates="project",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan",
+            "foreign_keys": "[Agent.project_id]"  # Use Agent.project_id, not Project.active_agent_id
+        },
     )
     # TraDS ============= Project Rules
 
@@ -342,7 +362,12 @@ class Agent(BaseModel, table=True):
     status: AgentStatus = Field(default=AgentStatus.idle)
 
     # Relationships
-    project: "Project" = Relationship(back_populates="agents")
+    project: "Project" = Relationship(
+        back_populates="agents",
+        sa_relationship_kwargs={
+            "foreign_keys": "[Agent.project_id]"  # Use Agent.project_id, not Project.active_agent_id
+        }
+    )
     messages: list["Message"] = Relationship(back_populates="agent")
 
 
@@ -541,7 +566,6 @@ class ApprovalRequest(BaseModel, table=True):
 
     # Proposed changes
     proposed_data: dict = Field(sa_column=Column(JSON))  # What the agent wants to do
-    preview_data: dict | None = Field(default=None, sa_column=Column(JSON))  # Preview for UI
     explanation: str | None = Field(default=None, sa_column=Column(Text))  # Why the agent proposes this
 
     # Approval tracking
@@ -557,3 +581,305 @@ class ApprovalRequest(BaseModel, table=True):
     applied: bool = Field(default=False)  # Whether the approval was actually applied
     applied_at: datetime | None = Field(default=None)
     created_entity_id: UUID | None = Field(default=None)  # ID of created Story/Epic if applicable
+
+
+# ==================== AGENT CLARIFICATION QUESTIONS ====================
+
+class QuestionType(str, Enum):
+    """Question types for agent clarification"""
+    OPEN = "open"
+    MULTICHOICE = "multichoice"
+
+
+class QuestionStatus(str, Enum):
+    """Status of clarification questions"""
+    WAITING_ANSWER = "waiting_answer"
+    ANSWERED = "answered"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+
+
+class AgentQuestion(BaseModel, table=True):
+    """Agent clarification questions for user"""
+    __tablename__ = "agent_questions"
+    
+    # Relationships
+    project_id: UUID = Field(foreign_key="projects.id", ondelete="CASCADE")
+    agent_id: UUID = Field(foreign_key="agents.id", ondelete="CASCADE")
+    user_id: UUID = Field(foreign_key="users.id")
+    
+    # Question details
+    question_type: QuestionType = Field(sa_column=Column(SQLEnum(QuestionType)))
+    question_text: str = Field(sa_column=Column(Text))
+    
+    # For multichoice questions
+    options: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    allow_multiple: bool = Field(default=False)
+    
+    # Answer
+    answer: str | None = Field(default=None, sa_column=Column(Text))
+    selected_options: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    
+    # Status
+    status: QuestionStatus = Field(
+        default=QuestionStatus.WAITING_ANSWER,
+        sa_column=Column(SQLEnum(QuestionStatus))
+    )
+    
+    # Task context for resume
+    task_id: UUID
+    execution_id: UUID | None = None
+    task_context: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    
+    # Timestamps
+    expires_at: datetime
+    answered_at: datetime | None = None
+    
+    # Extra metadata
+    extra_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
+
+
+# ==================== ARTIFACT SYSTEM ====================
+
+class ArtifactType(str, Enum):
+    """Types of artifacts agents can produce"""
+    PRD = "prd"                          # Product Requirements Document
+    ARCHITECTURE = "architecture"        # System architecture design
+    API_SPEC = "api_spec"               # API specification
+    DATABASE_SCHEMA = "database_schema"  # Database design
+    USER_STORIES = "user_stories"        # User stories collection
+    CODE = "code"                        # Code files
+    TEST_PLAN = "test_plan"             # Test plan document
+    REVIEW = "review"                    # Code review document
+    ANALYSIS = "analysis"                # General analysis document
+
+
+class ArtifactStatus(str, Enum):
+    """Status of an artifact"""
+    DRAFT = "draft"                      # Initial version
+    PENDING_REVIEW = "pending_review"    # Waiting for review
+    APPROVED = "approved"                # Approved by user
+    REJECTED = "rejected"                # Rejected by user
+    ARCHIVED = "archived"                # Old version
+
+
+class Artifact(BaseModel, table=True):
+    """Agent-produced artifacts (documents, designs, code, etc.)"""
+    __tablename__ = "artifacts"
+    
+    # Identity
+    project_id: UUID = Field(foreign_key="projects.id", ondelete="CASCADE", index=True)
+    agent_id: UUID | None = Field(default=None, foreign_key="agents.id", ondelete="SET NULL")
+    agent_name: str = Field(nullable=False)
+    
+    # Artifact metadata
+    artifact_type: ArtifactType = Field(sa_column=Column(SQLEnum(ArtifactType)))
+    title: str = Field(max_length=255)
+    description: str | None = Field(default=None, sa_column=Column(Text))
+    
+    # Content
+    content: dict = Field(sa_column=Column(JSON))  # Structured content (schema depends on type)
+    file_path: str | None = Field(default=None)    # Path in workspace if saved to file
+    
+    # Versioning
+    version: int = Field(default=1)
+    parent_artifact_id: UUID | None = Field(default=None, foreign_key="artifacts.id", ondelete="SET NULL")
+    
+    # Status
+    status: ArtifactStatus = Field(default=ArtifactStatus.DRAFT, sa_column=Column(SQLEnum(ArtifactStatus)))
+    
+    # Review tracking
+    reviewed_by_user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
+    reviewed_at: datetime | None = Field(default=None)
+    review_feedback: str | None = Field(default=None, sa_column=Column(Text))
+    
+    # Metadata
+    tags: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    extra_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
+    
+    # Relationships
+    project: "Project" = Relationship()
+    agent: Optional["Agent"] = Relationship()
+    reviewed_by: Optional["User"] = Relationship()
+    parent: Optional["Artifact"] = Relationship(
+        sa_relationship_kwargs={
+            "remote_side": "[Artifact.id]",
+            "foreign_keys": "[Artifact.parent_artifact_id]"
+        }
+    )
+
+
+# ==================== BILLING & PAYMENT MODELS ====================
+
+class OrderType(str, Enum):
+    """Type of order"""
+    SUBSCRIPTION = "subscription"
+    ADDON = "addon"
+
+
+class OrderStatus(str, Enum):
+    """Status of an order"""
+    PENDING = "pending"
+    PAID = "paid"
+    FAILED = "failed"
+    CANCELED = "canceled"
+
+
+class InvoiceStatus(str, Enum):
+    """Status of an invoice"""
+    DRAFT = "draft"
+    ISSUED = "issued"
+    PAID = "paid"
+    VOID = "void"
+
+
+# ==================== Plans ====================
+class Plan(BaseModel, table=True):
+    __tablename__ = "plans"
+
+    code: str | None = Field(default=None, sa_column=Column(Text)) # 'FREE', 'PLUS', 'PRO'
+    name: str | None = Field(default=None, sa_column=Column(Text))
+    description: str | None = Field(default=None, sa_column=Column(Text))
+
+    monthly_price: int | None = Field(default=None)
+    yearly_discount_percentage: float | None = Field(default=None)  # Discount % for yearly billing (0-100)
+    currency: str | None = Field(default=None, sa_column=Column(Text)) # VND
+    monthly_credits: int | None = Field(default=None)
+    additional_credit_price: int | None = Field(default=None)  # Price to buy 100 additional credits
+    available_project: int | None = Field(default=None)
+    is_active: bool = Field(default=True, nullable=True)
+
+    tier: str | None = Field(
+        default="pay",
+        sa_column=Column(Text)
+    )
+    # 'free' | 'pay'
+
+    sort_index: int | None = Field(default=0)
+    # số thứ tự để sắp xếp trên UI
+
+    is_featured: bool = Field(default=False)  # gói nổi bật (đặt ở giữa + badge "Popular")
+
+    is_custom_price: bool = Field(default=False)  # true -> hiển thị "Custom" / "Liên hệ"
+
+    features_text: str | None = Field(default=None, sa_column=Column(Text))
+
+    plan_subscriptions: list["Subscription"] = Relationship(
+        back_populates="plan", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+
+    @property
+    def yearly_price(self) -> int | None:
+        """Calculate yearly price from monthly price and discount percentage"""
+        if self.monthly_price is not None and self.yearly_discount_percentage is not None:
+            annual_monthly_cost = self.monthly_price * 12
+            yearly_price = annual_monthly_cost * (1 - self.yearly_discount_percentage / 100)
+            return round(yearly_price)
+        return None
+
+class Subscription(BaseModel, table=True):
+    __tablename__ = "subscriptions"
+
+    user_id: UUID  | None = Field(foreign_key="users.id", nullable=True, ondelete="CASCADE")
+    plan_id: UUID = Field(foreign_key="plans.id", nullable=True, ondelete="CASCADE")
+
+    status: str | None = Field(default=None, sa_column=Column(Text)) # 'pending', 'active', 'expired', 'canceled'
+    start_at: datetime | None = Field(default=None)
+    end_at: datetime | None = Field(default=None)
+    auto_renew: bool = Field(default=True, nullable=True)
+
+    user: User = Relationship(back_populates="user_subscriptions")
+    plan: Plan = Relationship(back_populates="plan_subscriptions")
+
+    subscription_wallets: list["CreditWallet"] = Relationship(
+        back_populates="subscription", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+
+class CreditWallet(BaseModel, table=True):
+    __tablename__ = "credit_wallets"
+
+    user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
+    wallet_type: str | None = Field(default=None, sa_column=Column(Text)) # subscription, addon
+
+    subscription_id: UUID | None = Field(default=None, foreign_key="subscriptions.id", ondelete="CASCADE")
+    period_start: datetime | None = Field(default=None)
+    period_end: datetime | None = Field(default=None)
+
+    total_credits: int | None = Field(default=None)
+    used_credits: int | None = Field(default=None)
+
+    # Relationships
+    user: User | None = Relationship()
+    subscription: Optional["Subscription"] = Relationship(back_populates="subscription_wallets")
+    credit_activities: list["CreditActivity"] = Relationship(
+        back_populates="wallet", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+
+class CreditActivity(BaseModel, table=True):
+    __tablename__ = "credit_activities"
+
+    user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="CASCADE")
+    agent_id: UUID | None = Field(default=None, foreign_key="agents.id", ondelete="CASCADE")
+    wallet_id: UUID | None = Field(default=None, foreign_key="credit_wallets.id", ondelete="CASCADE")
+
+    amount: int | None = Field(default=None)
+    reason: str | None = Field(default=None, sa_column=Column(Text))
+    activity_type: str | None = Field(default=None, sa_column=Column(Text)) # cộng, trừ
+
+    # Relationships
+    user: User | None = Relationship()
+    agent: Agent | None = Relationship()
+    wallet: CreditWallet | None = Relationship(back_populates="credit_activities")
+
+
+class Order(BaseModel, table=True):
+    __tablename__ = "orders"
+
+    user_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")
+    order_type: OrderType = Field(nullable=False)  # subscription or addon
+    subscription_id: UUID | None = Field(default=None, foreign_key="subscriptions.id", ondelete="SET NULL")
+
+    amount: float = Field(nullable=False)
+    status: OrderStatus = Field(default=OrderStatus.PENDING, nullable=False)
+    paid_at: datetime | None = Field(default=None)
+    is_active: bool = Field(default=True, nullable=False)
+
+    # PayOS Integration fields
+    payos_order_code: int | None = Field(default=None, sa_column=Column(BigInteger, unique=True, index=True))
+    payos_transaction_id: str | None = Field(default=None, sa_column=Column(Text))
+    payment_link_id: str | None = Field(default=None, sa_column=Column(Text))
+    qr_code: str | None = Field(default=None, sa_column=Column(Text))  # Base64 QR code
+    checkout_url: str | None = Field(default=None, sa_column=Column(Text))
+
+    # Payment details
+    billing_cycle: str | None = Field(default="monthly", sa_column=Column(Text))  # monthly, yearly
+    plan_code: str | None = Field(default=None, sa_column=Column(Text))  # Store plan code for reference
+
+    # Relationships
+    user: User = Relationship()
+    subscription: Optional["Subscription"] = Relationship()
+    invoices: list["Invoice"] = Relationship(
+        back_populates="order", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+
+
+class Invoice(BaseModel, table=True):
+    __tablename__ = "invoices"
+
+    order_id: UUID = Field(foreign_key="orders.id", nullable=False, ondelete="CASCADE")
+    invoice_number: str = Field(unique=True, index=True, nullable=False)
+
+    billing_name: str = Field(nullable=False)
+    billing_address: str | None = Field(default=None, sa_column=Column(Text))
+
+    amount: float = Field(nullable=False)
+    currency: str = Field(default="VND", nullable=False)
+
+    issue_date: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    status: InvoiceStatus = Field(default=InvoiceStatus.DRAFT, nullable=False)
+
+    # Relationships
+    order: Order = Relationship(back_populates="invoices")
+

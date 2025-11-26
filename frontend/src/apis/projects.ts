@@ -1,12 +1,15 @@
 import { request as __request } from "@client/core/request"
 import { OpenAPI } from "@/client"
-import type { Project, ProjectsPage } from "@/types/project"
+import type {
+  Project,
+  ProjectsPage,
+  FetchProjectsParams,
+  CreateProjectBody,
+  UpdateProjectBody,
+} from "@/types"
 
-export type FetchProjectsParams = {
-  search?: string
-  page?: number
-  pageSize?: number
-}
+// Re-export types for convenience
+export type { FetchProjectsParams, CreateProjectBody, UpdateProjectBody }
 
 export function buildProjectsQuery(params: FetchProjectsParams) {
   const page = params.page ?? 1
@@ -17,19 +20,6 @@ export function buildProjectsQuery(params: FetchProjectsParams) {
     skip,
     limit: pageSize,
   }
-}
-
-export type CreateProjectBody = {
-  code: string
-  name: string
-  owner_id: string
-  is_init?: boolean
-}
-
-export type UpdateProjectBody = {
-  code?: string
-  name?: string
-  is_init?: boolean
 }
 
 export const projectsApi = {

@@ -2,68 +2,58 @@
 Kafka event schemas and topic definitions.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
 
 class KafkaTopics(str, Enum):
-    """Kafka topic names for different event types."""
+    """Kafka topic names."""
 
-    # Input: User → System
     USER_MESSAGES = "user_messages"
-    
-    # Processing: Unified agent events
     AGENT_EVENTS = "agent_events"
-    
-    # Task Management: Router → Agents
     AGENT_TASKS = "agent_tasks"
-    
-    # Domain Events: System state changes
     DOMAIN_EVENTS = "domain_events"
     STORY_EVENTS = "story_events"
     FLOW_STATUS = "flow_status"
-    
-    # Other
     APPROVAL_RESPONSES = "approval_responses"
+    QUESTION_ANSWERS = "question_answers"
+    DELEGATION_REQUESTS = "delegation_requests"
     
 
-# BASE EVENT SCHEMA
 class BaseKafkaEvent(BaseModel):
     """Base schema for all Kafka events."""
 
-    event_id: str = Field(default_factory=lambda: str(uuid4()))  # FIX: Call uuid4() to generate UUID instance
+    event_id: str = Field(default_factory=lambda: str(uuid4()))
     event_type: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-    project_id: Optional[UUID] = None
-    user_id: Optional[UUID] = None
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    project_id: Optional[str] = None
+    user_id: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
-# USER MESSAGE EVENTS
 class UserMessageEvent(BaseKafkaEvent):
-    """Event emitted when user sends a message to agents."""
+    """User message to agents."""
 
     event_type: str = "user.message.sent"
     message_id: UUID
     content: str
     author_type: str = "USER"
-    message_type: str = "text"  # text, prd, product_vision, etc.
-    agent_id: Optional[UUID] = None  # ID of mentioned/targeted agent for routing
-    agent_name: Optional[str] = None  # Name of mentioned/targeted agent for display
+    message_type: str = "text"
+    agent_id: Optional[UUID] = None
+    agent_name: Optional[str] = None
 
 
-# AGENT RESPONSE EVENTS
 class AgentResponseEvent(BaseKafkaEvent):
-    """Event emitted when agent produces a response."""
+    """Agent response."""
 
     event_type: str = "agent.response.created"
     message_id: UUID
-    task_id: Optional[UUID] = None  # Task ID that was completed
-    execution_id: Optional[UUID] = None  # Execution ID for linking to activity timeline
+    task_id: Optional[UUID] = None
+    execution_id: Optional[UUID] = None
     agent_name: str
     agent_type: str
     content: str
@@ -72,15 +62,54 @@ class AgentResponseEvent(BaseKafkaEvent):
     approval_request_id: Optional[UUID] = None
 
 
-# AGENT ROUTING EVENTS
 class AgentRoutingEvent(BaseKafkaEvent):
-    """Event emitted when TeamLeader delegates to specialist agents."""
+    """TeamLeader delegation."""
 
     event_type: str = "agent.routing.delegated"
     from_agent: str
     to_agent: str
     delegation_reason: str
     context: Dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentTaskType(str, Enum):
+    """Types of tasks that can be assigned to agents."""
+
+    # Specific task types
+    CODE_REVIEW = "code_review"
+    IMPLEMENT_STORY = "implement_story"
+    WRITE_TESTS = "write_tests"
+    FIX_BUG = "fix_bug"
+    REFACTOR = "refactor"
+    ANALYZE_REQUIREMENTS = "analyze_requirements"
+    CREATE_STORIES = "create_stories"
+
+    # Abstraction task types (high-level)
+    USER_STORY = "user_story"  # BA: Analyze requirements → create user stories
+    MESSAGE = "message"  # Any agent: Handle/respond to user message
+    
+    # Clarification questions
+    RESUME_WITH_ANSWER = "resume_with_answer"  # Resume task with clarification answer
+
+    # Generic
+    CUSTOM = "custom"
+
+
+class DelegationRequestEvent(BaseKafkaEvent):
+    """Request to delegate task to agent by role (Router selects specific agent)."""
+    
+    event_type: str = "delegation.request"
+    original_task_id: str
+    delegating_agent_id: str
+    delegating_agent_name: str
+    target_role: str
+    priority: str = "high"
+    task_type: AgentTaskType
+    content: str
+    context: Dict[str, Any] = Field(default_factory=dict)
+    delegation_message: Optional[str] = None
+    source_event_type: str
+    source_event_id: str
 
 
 # STORY EVENTS
@@ -94,66 +123,41 @@ class StoryEventType(str, Enum):
     DELETED = "story.deleted"
 
 
-class StoryCreatedEvent(BaseKafkaEvent):
-    """Event emitted when a story is created."""
-
-    event_type: str = StoryEventType.CREATED.value
+class StoryEvent(BaseKafkaEvent):
+    """Unified story lifecycle event (created/updated/status.changed/assigned/deleted)."""
+    
+    event_type: str
     story_id: UUID
-    title: str
+    title: Optional[str] = None
     description: Optional[str] = None
-    story_type: str  # UserStory, EnablerStory
-    status: str  # Todo, InProgress, Review, Done
-    epic_id: Optional[UUID] = None
-    assignee_id: Optional[UUID] = None
-    reviewer_id: Optional[UUID] = None
-    created_by_agent: Optional[str] = None
-
-
-class StoryUpdatedEvent(BaseKafkaEvent):
-    """Event emitted when a story is updated."""
-
-    event_type: str = StoryEventType.UPDATED.value
-    story_id: UUID
-    updated_fields: Dict[str, Any]
-    updated_by: Optional[str] = None  # user_id or agent_name
-
-
-class StoryStatusChangedEvent(BaseKafkaEvent):
-    """Event emitted when story status transitions."""
-
-    event_type: str = StoryEventType.STATUS_CHANGED.value
-    story_id: UUID
-    old_status: str
-    new_status: str
-    changed_by: str  # user_id or agent_name
+    story_type: Optional[str] = None
+    status: Optional[str] = None
+    old_status: Optional[str] = None
+    new_status: Optional[str] = None
     transition_reason: Optional[str] = None
-
-
-class StoryAssignedEvent(BaseKafkaEvent):
-    """Event emitted when story is assigned."""
-
-    event_type: str = StoryEventType.ASSIGNED.value
-    story_id: UUID
+    updated_fields: Optional[Dict[str, Any]] = None
     assignee_id: Optional[UUID] = None
     reviewer_id: Optional[UUID] = None
-    assigned_by: str  # agent_name or user_id
+    epic_id: Optional[UUID] = None
+    created_by_agent: Optional[str] = None
+    updated_by: Optional[str] = None
+    changed_by: Optional[str] = None
+    assigned_by: Optional[str] = None
 
 
-# APPROVAL EVENTS
 class ApprovalRequestEvent(BaseKafkaEvent):
-    """Event emitted when agent requests human approval."""
+    """Approval request."""
 
     event_type: str = "approval.request.created"
     approval_request_id: UUID
-    request_type: str  # story_creation, story_update, epic_creation
+    request_type: str
     agent_name: str
     proposed_data: Dict[str, Any]
-    preview_data: Optional[Dict[str, Any]] = None
     explanation: Optional[str] = None
 
 
 class ApprovalResponseEvent(BaseKafkaEvent):
-    """Event emitted when user responds to approval request."""
+    """Approval response."""
 
     event_type: str = "approval.response.submitted"
     approval_request_id: UUID
@@ -162,7 +166,77 @@ class ApprovalResponseEvent(BaseKafkaEvent):
     modified_data: Optional[Dict[str, Any]] = None
 
 
-# FLOW STATUS EVENTS
+class QuestionAskedEvent(BaseKafkaEvent):
+    """Agent clarification question."""
+    
+    event_type: str = "agent.question_asked"
+    question_id: str
+    agent_id: str
+    agent_name: str
+    question_type: str
+    question_text: str
+    options: Optional[List[str]] = None
+    allow_multiple: bool = False
+    task_id: str
+    execution_id: Optional[str] = None
+
+
+class QuestionAnswerEvent(BaseKafkaEvent):
+    """User answer to question."""
+    
+    event_type: str = "user.question_answer"
+    question_id: UUID
+    answer: str
+    selected_options: Optional[List[str]] = None
+    agent_id: UUID
+    task_id: UUID
+
+
+class BatchQuestionsAskedEvent(BaseKafkaEvent):
+    """Agent asks multiple questions at once (batch mode)."""
+    
+    event_type: str = "agent.question_batch_asked"
+    batch_id: str
+    question_ids: List[str]
+    questions: List[dict]  # List of question dicts with question_text, question_type, options, etc.
+    agent_id: str
+    agent_name: str
+    task_id: str
+    execution_id: Optional[str] = None
+
+
+class BatchAnswersEvent(BaseKafkaEvent):
+    """User answers multiple questions at once (batch mode)."""
+    
+    event_type: str = "user.question_batch_answer"
+    batch_id: str
+    answers: List[dict]  # List of { question_id, answer, selected_options }
+    agent_id: UUID
+    task_id: UUID
+
+
+class ConversationOwnershipChangedEvent(BaseKafkaEvent):
+    """Conversation ownership transferred to new agent (MetaGPT-style)."""
+    
+    event_type: str = "conversation.ownership_changed"
+    project_id: str
+    previous_agent_id: Optional[UUID] = None
+    previous_agent_name: Optional[str] = None
+    new_agent_id: UUID
+    new_agent_name: str
+    reason: str  # "task_started", "delegated", "completed_handoff"
+
+
+class ConversationOwnershipReleasedEvent(BaseKafkaEvent):
+    """Agent releases conversation ownership."""
+    
+    event_type: str = "conversation.ownership_released"
+    project_id: str
+    agent_id: UUID
+    agent_name: str
+    reason: str  # "task_completed", "error", "timeout"
+
+
 class FlowStatusType(str, Enum):
     """Flow execution status types."""
 
@@ -187,81 +261,6 @@ class FlowStatusEvent(BaseKafkaEvent):
     result: Optional[Dict[str, Any]] = None
 
 
-# AGENT STATUS EVENTS
-class AgentStatusType(str, Enum):
-    """Agent execution status types."""
-
-    IDLE = "agent.idle"
-    THINKING = "agent.thinking"
-    ACTING = "agent.acting"
-    WAITING = "agent.waiting"
-    ERROR = "agent.error"
-
-
-class AgentStatusEvent(BaseKafkaEvent):
-    """Event emitted for agent status updates."""
-
-    event_type: str
-    agent_name: str
-    agent_id: Optional[str] = None
-    status: AgentStatusType
-    current_action: Optional[str] = None
-    execution_id: Optional[UUID] = None
-    error_message: Optional[str] = None
-
-
-# AGENT PROGRESS EVENTS
-class AgentProgressEvent(BaseKafkaEvent):
-    """Event emitted for agent progress tracking during execution."""
-
-    event_type: str = "agent.progress"
-    agent_name: str
-    agent_id: Optional[str] = None
-    execution_id: Optional[UUID] = None
-    step_number: int
-    total_steps: int
-    step_description: str
-    status: str  # "in_progress", "completed", "failed"
-    step_result: Optional[Dict[str, Any]] = None
-
-
-# TOOL CALL EVENTS
-class ToolCallEvent(BaseKafkaEvent):
-    """Event emitted when agent uses a tool."""
-
-    event_type: str = "agent.tool_call"
-    agent_name: str
-    agent_id: Optional[str] = None
-    execution_id: Optional[UUID] = None
-    tool_name: str  # "database_query", "file_write", "api_call", "create_story"
-    display_name: str  # Human-readable: "Querying stories from database"
-    parameters: Optional[Dict[str, Any]] = None
-    status: str  # "started", "completed", "failed"
-    result: Optional[Dict[str, Any]] = None
-    error_message: Optional[str] = None
-
-
-# AGENT TASK EVENTS
-class AgentTaskType(str, Enum):
-    """Types of tasks that can be assigned to agents."""
-
-    # Specific task types
-    CODE_REVIEW = "code_review"
-    IMPLEMENT_STORY = "implement_story"
-    WRITE_TESTS = "write_tests"
-    FIX_BUG = "fix_bug"
-    REFACTOR = "refactor"
-    ANALYZE_REQUIREMENTS = "analyze_requirements"
-    CREATE_STORIES = "create_stories"
-
-    # Abstraction task types (high-level)
-    USER_STORY = "user_story"  # BA: Analyze requirements → create user stories
-    MESSAGE = "message"  # Any agent: Handle/respond to user message
-
-    # Generic
-    CUSTOM = "custom"
-
-
 class AgentTaskStatus(str, Enum):
     """Status of agent tasks."""
 
@@ -273,165 +272,85 @@ class AgentTaskStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class AgentTaskAssignedEvent(BaseKafkaEvent):
-    """Event emitted when a task is assigned to an agent."""
-
-    event_type: str = "agent.task.assigned"
+class AgentTaskEvent(BaseKafkaEvent):
+    """Unified task lifecycle event (assigned/started/progress/completed/failed/cancelled)."""
+    
+    event_type: str
     task_id: UUID
-    task_type: AgentTaskType
     agent_id: UUID
     agent_name: str
-    assigned_by: str  # user_id or agent_name
-    title: str
+    task_type: AgentTaskType
+    status: AgentTaskStatus
+    context: Dict[str, Any] = Field(default_factory=dict)
+    assigned_by: Optional[str] = None
+    title: Optional[str] = None
     description: Optional[str] = None
-    priority: str = "medium"  # low, medium, high, critical
+    priority: Optional[str] = None
     story_id: Optional[UUID] = None
     epic_id: Optional[UUID] = None
-    estimated_duration: Optional[int] = None  # minutes
+    estimated_duration: Optional[int] = None
     due_date: Optional[datetime] = None
-    context: Dict[str, Any] = Field(default_factory=dict)
-
-
-class AgentTaskStartedEvent(BaseKafkaEvent):
-    """Event emitted when agent starts working on a task."""
-
-    event_type: str = "agent.task.started"
-    task_id: UUID
-    agent_id: UUID
-    agent_name: str
-    execution_id: UUID
-    started_at: datetime = Field(default_factory=datetime.utcnow)
-
-
-class AgentTaskProgressEvent(BaseKafkaEvent):
-    """Event emitted for task progress updates."""
-
-    event_type: str = "agent.task.progress"
-    task_id: UUID
-    agent_id: UUID
-    agent_name: str
-    execution_id: UUID
-    progress_percentage: int  # 0-100
-    current_step: str
-    steps_completed: int
-    total_steps: int
+    execution_id: Optional[UUID] = None
+    started_at: Optional[datetime] = None
+    progress_percentage: Optional[int] = None
+    current_step: Optional[str] = None
+    steps_completed: Optional[int] = None
+    total_steps: Optional[int] = None
     estimated_completion: Optional[datetime] = None
-
-
-class AgentTaskCompletedEvent(BaseKafkaEvent):
-    """Event emitted when task is completed successfully."""
-
-    event_type: str = "agent.task.completed"
-    task_id: UUID
-    agent_id: UUID
-    agent_name: str
-    execution_id: UUID
-    completed_at: datetime = Field(default_factory=datetime.utcnow)
-    duration_seconds: int
+    completed_at: Optional[datetime] = None
+    duration_seconds: Optional[int] = None
     result: Optional[Dict[str, Any]] = None
-    artifacts: Optional[Dict[str, Any]] = None  # Files created, PRs, etc.
-
-
-class AgentTaskFailedEvent(BaseKafkaEvent):
-    """Event emitted when task fails."""
-
-    event_type: str = "agent.task.failed"
-    task_id: UUID
-    agent_id: UUID
-    agent_name: str
-    execution_id: UUID
-    failed_at: datetime = Field(default_factory=datetime.utcnow)
-    error_message: str
+    artifacts: Optional[Dict[str, Any]] = None
+    failed_at: Optional[datetime] = None
+    error_message: Optional[str] = None
     error_type: Optional[str] = None
-    retry_count: int = 0
-    can_retry: bool = True
-
-
-class AgentTaskCancelledEvent(BaseKafkaEvent):
-    """Event emitted when task is cancelled."""
-
-    event_type: str = "agent.task.cancelled"
-    task_id: UUID
-    agent_id: UUID
-    agent_name: str
-    cancelled_by: str  # user_id or agent_name
-    cancelled_at: datetime = Field(default_factory=datetime.utcnow)
+    retry_count: Optional[int] = None
+    can_retry: Optional[bool] = None
+    cancelled_by: Optional[str] = None
+    cancelled_at: Optional[datetime] = None
     reason: Optional[str] = None
 
 
-# ROUTER TASK EVENT (for Central Message Router)
 class RouterTaskEvent(BaseKafkaEvent):
-    """Event emitted by Central Message Router to dispatch tasks to agents.
-
-    This is the primary event type used by the routing system to assign work to agents.
-    The Router subscribes to various source events (USER_MESSAGES, AGENT_RESPONSES, etc.)
-    and publishes RouterTaskEvent to AGENT_TASKS topic for agents to consume.
-    """
+    """Router task dispatch to agents."""
 
     event_type: str = "router.task.dispatched"
     task_id: UUID = Field(default_factory=uuid4)
-    task_type: AgentTaskType  # NEW: Type of task for agent to perform
-    agent_id: UUID  # Target agent to handle this task
-    agent_role: Optional[str] = None  # team_leader, business_analyst, developer, tester
-    source_event_type: str  # Original event type: user.message.sent, agent.response.created, etc.
-    source_event_id: str  # Original event ID for tracing
-    routing_reason: str  # How routing decision was made
-    priority: str = "medium"  # low, medium, high, critical
-    context: Dict[str, Any] = Field(default_factory=dict)  # Contains source event data + additional context
+    task_type: AgentTaskType
+    agent_id: UUID
+    agent_role: Optional[str] = None
+    source_event_type: str
+    source_event_id: str
+    routing_reason: str
+    priority: str = "medium"
+    context: Dict[str, Any] = Field(default_factory=dict)
 
-
-# ===== UNIFIED AGENT EVENT SCHEMA (NEW) =====
 
 class AgentEventType:
-    """Standard agent event types (extensible)"""
+    """Agent event types."""
     
-    # Status events
     THINKING = "thinking"
     IDLE = "idle"
     WAITING = "waiting"
     ERROR = "error"
-    
-    # Activity events
     TOOL_CALL = "tool_call"
     PROGRESS = "progress"
-    
-    # Communication events
     RESPONSE = "response"
     DELEGATION = "delegation"
     QUESTION = "question"
-    
-    # Approval events
     APPROVAL_REQUEST = "approval_request"
 
 
 class AgentEvent(BaseKafkaEvent):
-    """
-    Unified event schema for all agent communications.
+    """Unified agent event (status/progress/tool_call/response/delegation)."""
     
-    Replaces:
-    - AgentProgressEvent
-    - AgentResponseEvent
-    - AgentStatusEvent
-    - ToolCallEvent
-    - AgentRoutingEvent
-    - ApprovalRequestEvent
-    
-    This single schema handles all agent events with a flexible structure.
-    """
-    
-    event_type: str  # "agent.thinking", "agent.tool_call", "agent.response", etc.
-    
-    # Agent identification
+    event_type: str
     agent_name: str
     agent_id: str
-    
-    # Execution context
-    execution_id: Optional[UUID] = None  # Links events in same execution
-    task_id: Optional[UUID] = None
-    
-    # Event payload
-    content: str  # Human-readable message
-    details: Dict[str, Any] = Field(default_factory=dict)  # Structured data
+    execution_id: Optional[str] = None
+    task_id: Optional[str] = None
+    content: str
+    details: Dict[str, Any] = Field(default_factory=dict)
 
 
 # EVENT REGISTRY
@@ -439,32 +358,39 @@ EVENT_TYPE_TO_SCHEMA = {
     "user.message.sent": UserMessageEvent,
     "agent.response.created": AgentResponseEvent,
     "agent.routing.delegated": AgentRoutingEvent,
-    StoryEventType.CREATED.value: StoryCreatedEvent,
-    StoryEventType.UPDATED.value: StoryUpdatedEvent,
-    StoryEventType.STATUS_CHANGED.value: StoryStatusChangedEvent,
-    StoryEventType.ASSIGNED.value: StoryAssignedEvent,
+    "delegation.request": DelegationRequestEvent,
+    StoryEventType.CREATED.value: StoryEvent,
+    StoryEventType.UPDATED.value: StoryEvent,
+    StoryEventType.STATUS_CHANGED.value: StoryEvent,
+    StoryEventType.ASSIGNED.value: StoryEvent,
+    StoryEventType.DELETED.value: StoryEvent,
     "approval.request.created": ApprovalRequestEvent,
     "approval.response.submitted": ApprovalResponseEvent,
+    "agent.question_asked": QuestionAskedEvent,
+    "user.question_answer": QuestionAnswerEvent,
+    "agent.question_batch_asked": BatchQuestionsAskedEvent,
+    "user.question_batch_answer": BatchAnswersEvent,
+    "conversation.ownership_changed": ConversationOwnershipChangedEvent,
+    "conversation.ownership_released": ConversationOwnershipReleasedEvent,
     FlowStatusType.STARTED.value: FlowStatusEvent,
     FlowStatusType.IN_PROGRESS.value: FlowStatusEvent,
     FlowStatusType.COMPLETED.value: FlowStatusEvent,
     FlowStatusType.FAILED.value: FlowStatusEvent,
     FlowStatusType.CANCELLED.value: FlowStatusEvent,
-    "agent.idle": AgentStatusEvent,
-    "agent.thinking": AgentStatusEvent,
-    "agent.acting": AgentStatusEvent,
-    "agent.waiting": AgentStatusEvent,
-    "agent.error": AgentStatusEvent,
-    "agent.progress": AgentProgressEvent,
-    "agent.tool_call": ToolCallEvent,
-    "agent.task.assigned": AgentTaskAssignedEvent,
-    "agent.task.started": AgentTaskStartedEvent,
-    "agent.task.progress": AgentTaskProgressEvent,
-    "agent.task.completed": AgentTaskCompletedEvent,
-    "agent.task.failed": AgentTaskFailedEvent,
-    "agent.task.cancelled": AgentTaskCancelledEvent,
+    "agent.idle": AgentEvent,
+    "agent.thinking": AgentEvent,
+    "agent.acting": AgentEvent,
+    "agent.waiting": AgentEvent,
+    "agent.error": AgentEvent,
+    "agent.progress": AgentEvent,
+    "agent.tool_call": AgentEvent,
+    "agent.task.assigned": AgentTaskEvent,
+    "agent.task.started": AgentTaskEvent,
+    "agent.task.progress": AgentTaskEvent,
+    "agent.task.completed": AgentTaskEvent,
+    "agent.task.failed": AgentTaskEvent,
+    "agent.task.cancelled": AgentTaskEvent,
     "router.task.dispatched": RouterTaskEvent,
-    # Unified agent events
     "agent.thinking": AgentEvent,
     "agent.idle": AgentEvent,
     "agent.waiting": AgentEvent,

@@ -68,6 +68,13 @@ class ProjectService:
         # Generate unique project code
         project_code = self.generate_code()
 
+        # Convert ProjectCreate to dict and handle tech_stack conversion
+        project_dict = project_in.model_dump()
+        
+        # Convert tech_stack from list to string for database compatibility
+        if project_dict.get('tech_stack') and isinstance(project_dict['tech_stack'], list):
+            project_dict['tech_stack'] = project_dict['tech_stack'][0] if project_dict['tech_stack'] else "nodejs-react"
+
         # Prepare update dict with required fields
         update_dict = {
             "code": project_code,
@@ -77,7 +84,7 @@ class ProjectService:
 
         # Create project with auto-generated code
         db_project = Project.model_validate(
-            project_in,
+            project_dict,
             update=update_dict,
         )
 
@@ -102,6 +109,13 @@ class ProjectService:
         # Generate unique project code
         project_code = self.generate_code()
 
+        # Convert ProjectCreate to dict and handle tech_stack conversion
+        project_dict = project_in.model_dump()
+        
+        # Convert tech_stack from list to string for database compatibility
+        if project_dict.get('tech_stack') and isinstance(project_dict['tech_stack'], list):
+            project_dict['tech_stack'] = project_dict['tech_stack'][0] if project_dict['tech_stack'] else "nodejs-react"
+
         # Prepare update dict with required fields
         update_dict = {
             "code": project_code,
@@ -111,7 +125,7 @@ class ProjectService:
 
         # Create project with auto-generated code
         db_project = Project.model_validate(
-            project_in,
+            project_dict,
             update=update_dict,
         )
 
@@ -205,6 +219,11 @@ class ProjectService:
             Project: Updated project instance
         """
         project_data = project_in.model_dump(exclude_unset=True)
+        
+        # Convert tech_stack from list to string for database compatibility
+        if 'tech_stack' in project_data and isinstance(project_data['tech_stack'], list):
+            project_data['tech_stack'] = project_data['tech_stack'][0] if project_data['tech_stack'] else None
+        
         db_project.sqlmodel_update(project_data)
 
         self.session.add(db_project)

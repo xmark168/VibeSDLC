@@ -8,20 +8,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import { Zap, Flag, X } from "lucide-react"
+import type { StoryFormData } from "@/types"
+
+export type { StoryFormData }
 
 interface CreateStoryDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCreateStory: (story: StoryFormData) => void
-}
-
-export interface StoryFormData {
-  title: string
-  description: string
-  type: "UserStory" | "EnablerStory"
-  story_point?: number
-  priority?: "High" | "Medium" | "Low"
-  acceptance_criteria: string[]
 }
 
 export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateStoryDialogProps) {

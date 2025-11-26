@@ -1,23 +1,16 @@
 import { OpenAPI } from "@client"
 import { request as __request } from "@client/core/request"
-import type { AuthorType, Message, MessagesPage } from "@/types/message"
+import type {
+  AuthorType,
+  Message,
+  MessagesPage,
+  FetchMessagesParams,
+  CreateMessageBody,
+  UpdateMessageBody,
+} from "@/types"
 
-export type FetchMessagesParams = {
-  project_id: string
-  skip?: number
-  limit?: number
-}
-
-export type CreateMessageBody = {
-  project_id: string
-  content: string
-  author_type: AuthorType
-  agent_id?: string
-}
-
-export type UpdateMessageBody = {
-  content?: string
-}
+// Re-export types for convenience
+export type { FetchMessagesParams, CreateMessageBody, UpdateMessageBody }
 
 export const messagesApi = {
   list: async (params: FetchMessagesParams): Promise<MessagesPage> => {

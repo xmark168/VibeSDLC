@@ -1,5 +1,6 @@
 import type React from "react";
 import { useState, useRef, useEffect } from "react";
+import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -22,16 +23,22 @@ import {
   PanelLeftClose,
   ChevronsLeft,
   Loader2,
+  Crown,
 } from "lucide-react";
 import { TechStackDialog } from "./tech-stack-dialog";
 import { useTheme } from "@/components/provider/theme-provider";
 import { useChatWebSocket } from "@/hooks/useChatWebSocket";
-import { AgentExecutionDialog } from "./AgentExecutionDialog";
+import { TypingIndicator } from "./TypingIndicator";
 import { useAuth } from "@/hooks/useAuth";
 import { useMessages } from "@/queries/messages";
 import { AuthorType, type Message } from "@/types/message";
-import { MessagePreviewCard } from "./MessagePreviewCard";
 import { MessageStatusIndicator } from "./message-status-indicator";
+import { AgentQuestionCard } from "./AgentQuestionCard";
+import { BatchQuestionsCard } from "./BatchQuestionsCard";
+import { ConversationOwnerBadge } from "./ConversationOwnerBadge";
+import { AgentHandoffNotification } from "./AgentHandoffNotification";
+import { ArtifactCard } from "./ArtifactCard";
+import { StoriesCreatedCard } from "./StoriesCreatedCard";
 import { useProjectAgents } from "@/queries/agents";
 
 interface ChatPanelProps {
@@ -47,6 +54,7 @@ interface ChatPanelProps {
   onKanbanDataChange?: (data: any) => void;
   onActiveTabChange?: (tab: string | null) => void;
   onAgentStatusesChange?: (statuses: Map<string, { status: string; lastUpdate: string }>) => void; // NEW
+  onOpenArtifact?: (artifactId: string) => void;
 }
 
 export function ChatPanelWS({
@@ -60,6 +68,7 @@ export function ChatPanelWS({
   onKanbanDataChange,
   onActiveTabChange,
   onAgentStatusesChange, // NEW
+  onOpenArtifact,
 }: ChatPanelProps) {
   const [message, setMessage] = useState("");
   const [showMentions, setShowMentions] = useState(false);
@@ -67,10 +76,8 @@ export function ChatPanelWS({
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [mentionedAgent, setMentionedAgent] = useState<{ id: string; name: string } | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-  const [expandedMessages, setExpandedMessages] = useState<Set<string>>(
-    new Set()
-  );
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+  const [pendingQuestion, setPendingQuestion] = useState<Message | null>(null);
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -112,16 +119,32 @@ export function ChatPanelWS({
   const { data: messagesData } = useMessages({
     project_id: projectId || "",
     skip: 0,
-    limit: 100,
+    limit: 500,  // Increased from 100 to handle more messages
   });
+
+  // Debug log for API messages
+  useEffect(() => {
+    if (messagesData) {
+      console.log('[ChatPanel] 📊 API messages loaded:', {
+        count: messagesData.count,
+        actual: messagesData.data.length,
+        projectId,
+        firstMessage: messagesData.data[0]?.id,
+        lastMessage: messagesData.data[messagesData.data.length - 1]?.id
+      })
+    }
+  }, [messagesData, projectId])
 
   // WebSocket connection (simplified with 5 message types)
   const {
     isConnected,
     messages: wsMessages,
     agentStatus,
-    activeExecution,
+    typingAgents,
+    conversationOwner,
     sendMessage: wsSendMessage,
+    sendQuestionAnswer,
+    sendBatchAnswers,
   } = useChatWebSocket(projectId, token || '');
 
   // Combine existing messages with WebSocket messages
@@ -141,21 +164,72 @@ export function ChatPanelWS({
     (msg, index, self) => index === self.findIndex(m => m.id === msg.id)
   );
   
-  console.log('✅ [ChatPanelWS] Final uniqueMessages to render:', uniqueMessages.length, uniqueMessages);
+  // Detect unanswered questions - show only the LATEST one
+  useEffect(() => {
+    // Find ALL unanswered questions
+    const unansweredQuestions = uniqueMessages.filter(
+      msg => msg.message_type === 'agent_question' && !msg.structured_data?.answered
+    )
+    
+    // Get LATEST by timestamp (most recent)
+    const latestUnanswered = unansweredQuestions.sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0]
+    
+    setPendingQuestion(latestUnanswered || null)
+    
+    // Auto-scroll to question if it appears (only if it's a NEW question)
+    if (latestUnanswered && latestUnanswered.id !== pendingQuestion?.id) {
+      setTimeout(() => {
+        const element = document.getElementById(`question-${latestUnanswered.id}`)
+        element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 100)
+    }
+  }, [uniqueMessages])
 
+  // Initial scroll to bottom on mount
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    // Scroll to bottom immediately on first load (no animation)
+    if (prevMessagesLengthRef.current === 0 && uniqueMessages.length > 0) {
+      setTimeout(() => {
+        container.scrollTop = container.scrollHeight
+      }, 100)
+    }
+  }, [uniqueMessages.length])
+
+  // Auto-scroll to bottom on new messages (smooth)
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    // Check if user is near bottom (within 100px)
+    const isNearBottom = 
+      container.scrollHeight - container.scrollTop - container.clientHeight < 200
+
+    // Auto-scroll only if:
+    // 1. New message arrived (length changed)
+    // 2. User is near bottom (not actively scrolling up to read old messages)
+    if (uniqueMessages.length > prevMessagesLengthRef.current && isNearBottom) {
+      setTimeout(() => {
+        container.scrollTo({
+          top: container.scrollHeight,
+          behavior: 'smooth'
+        })
+      }, 100)
+    }
+
+    // Update previous length
+    prevMessagesLengthRef.current = uniqueMessages.length
+  }, [uniqueMessages])
+  
+  // Determine if chat should be blocked
+  const isMultichoiceQuestion = pendingQuestion?.structured_data?.question_type === 'multichoice'
+  const shouldBlockChat = pendingQuestion && isMultichoiceQuestion
+  
   // Note: Kanban, activeTab, and agentStatuses features removed for simplicity
-
-  const toggleExpand = (id: string) => {
-    setExpandedMessages((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(id)) {
-        newSet.delete(id);
-      } else {
-        newSet.add(id);
-      }
-      return newSet;
-    });
-  };
 
   const filteredAgents = AGENTS.filter((agent) =>
     agent.name.toLowerCase().includes(mentionSearch.toLowerCase())
@@ -215,6 +289,18 @@ export function ChatPanelWS({
     }
 
     let finalMessage = message.trim();
+
+    // Check if this is answering an open question
+    if (pendingQuestion && pendingQuestion.structured_data?.question_type === 'open') {
+      // Send as question answer instead of regular message
+      sendQuestionAnswer(
+        pendingQuestion.structured_data.question_id!,
+        finalMessage,
+        undefined
+      )
+      setMessage("");
+      return;
+    }
 
     // Send via WebSocket with agent routing info if agent was mentioned
     wsSendMessage(finalMessage, mentionedAgent?.name);
@@ -282,48 +368,16 @@ export function ChatPanelWS({
     }
   };
 
-  // Handle edit message - reopen preview modal with existing data
-  const handleEditMessage = (message: Message) => {
-    if (!message.message_type || !message.structured_data) return
-
-    // Convert Message to AgentPreview format
-    const preview: any = {
-      preview_id: `edit_${message.id}_${Date.now()}`, // New preview ID for edit
-      preview_type: message.message_type,
-      title: `Edit ${message.message_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}`,
-      prompt: 'You can edit or regenerate this preview',
-      options: ['approve', 'edit', 'regenerate'],
-    }
-
-    // Add structured data based on type
-    switch (message.message_type) {
-      case 'product_brief':
-        preview.brief = message.structured_data
-        preview.incomplete_flag = message.metadata?.incomplete_flag
-        break
-      case 'product_vision':
-        preview.vision = message.structured_data
-        preview.quality_score = message.metadata?.quality_score
-        preview.validation_result = message.metadata?.validation_result
-        break
-      case 'product_backlog':
-        preview.backlog = message.structured_data
-        break
-    }
-
-    // Reopen modal
-    reopenPreview(preview)
-  }
-
   const formatTimestamp = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const hours = date.getHours();
-    const minutes = date.getMinutes().toString().padStart(2, "0");
-    const ampm = hours >= 12 ? "PM" : "AM";
-    const displayHours = hours % 12 || 12;
-    const month = date.toLocaleString("en-US", { month: "short" });
-    const day = date.getDate().toString().padStart(2, "0");
-    return `${displayHours}:${minutes} ${ampm} on ${month} ${day}`;
+    try {
+      const date = new Date(dateStr);
+      // Automatically converts UTC to local time and formats
+      return format(date, 'h:mm a \'on\' MMM dd');
+      // Output example: "10:30 AM on Nov 25"
+    } catch (error) {
+      console.error('Error formatting timestamp:', error);
+      return dateStr;
+    }
   };
 
   const getAgentAvatar = (authorType: AuthorType) => {
@@ -417,6 +471,17 @@ export function ChatPanelWS({
           >
             <PanelRightClose className="w-5 h-5" />
           </Button>
+          
+          {/* Conversation Owner Display (collapsed sidebar) */}
+          {conversationOwner && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/20">
+              <Crown className="w-3.5 h-3.5 text-yellow-600 dark:text-yellow-400" />
+              <span className="text-xs font-medium text-yellow-700 dark:text-yellow-300">
+                {conversationOwner.agentName} đang tiếp nhận câu hỏi
+              </span>
+            </div>
+          )}
+          
           <div className="flex-1" />
           {!isConnected && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -464,6 +529,16 @@ export function ChatPanelWS({
                 Connected
               </div>
             )}
+            
+            {/* Conversation Owner Display */}
+            {conversationOwner && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/20">
+                <Crown className="w-3.5 h-3.5 text-yellow-600 dark:text-yellow-400" />
+                <span className="text-xs font-medium text-yellow-700 dark:text-yellow-300">
+                  {conversationOwner.agentName} đang tiếp nhận câu hỏi
+                </span>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -498,8 +573,6 @@ export function ChatPanelWS({
       >
         {uniqueMessages.map((msg) => {
           const isUserMessage = msg.author_type === AuthorType.USER;
-          const isExpanded = expandedMessages.has(msg.id);
-          const shouldTruncate = (msg.content?.length || 0) > 200;
 
           if (isUserMessage) {
             return (
@@ -540,31 +613,78 @@ export function ChatPanelWS({
           if (msg.message_type === 'activity') {
             return null;
           }
-
-          // Agent/System message
-          // Check if this is a structured message (preview)
-          if (msg.message_type && msg.message_type !== 'text' && msg.structured_data) {
+          
+          // Agent Handoff Notification
+          if (msg.message_type === 'agent_handoff') {
             return (
-              <div key={msg.id} className="flex gap-3">
+              <AgentHandoffNotification
+                key={msg.id}
+                previousAgent={msg.structured_data?.previous_agent_name}
+                newAgent={msg.structured_data?.new_agent_name || ''}
+                reason={msg.structured_data?.reason || ''}
+                timestamp={msg.created_at}
+              />
+            );
+          }
+
+          // Agent Question Handling
+          if (msg.message_type === 'agent_question') {
+            return (
+              <div key={msg.id} id={`question-${msg.id}`} className="flex gap-3">
                 <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
-                  {getAgentAvatar(msg.author_type)}
+                  ❓
                 </div>
-                <div className="flex-1 space-y-2">
-                  <div className="text-xs font-medium text-muted-foreground">
-                    {getAgentName(msg)}
+                <div className="flex-1">
+                  <div className="text-xs font-medium text-muted-foreground mb-2">
+                    {msg.agent_name || 'Agent'}
                   </div>
-                  {/* Show text content if available */}
-                  {msg.content && (
-                    <div className="space-y-1.5">
-                      <div className="rounded-lg px-3 py-2 bg-muted w-fit">
-                        <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
-                          {msg.content}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  {/* Show preview card */}
-                  <MessagePreviewCard message={msg} />
+                  <AgentQuestionCard
+                    question={msg.content}
+                    questionType={msg.structured_data?.question_type || 'open'}
+                    options={msg.structured_data?.options || []}
+                    allowMultiple={msg.structured_data?.allow_multiple || false}
+                    answered={msg.structured_data?.answered || false}
+                    processing={msg.structured_data?.processing || false}
+                    userAnswer={msg.structured_data?.user_answer}
+                    userSelectedOptions={msg.structured_data?.user_selected_options}
+                    agentName={msg.agent_name}
+                    onSubmit={(answer, selectedOptions) => {
+                      sendQuestionAnswer(
+                        msg.structured_data!.question_id!,
+                        answer,
+                        selectedOptions
+                      )
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          }
+          
+          // Batch Question Handling
+          if (msg.message_type === 'agent_question_batch') {
+            return (
+              <div key={msg.id} id={`batch-${msg.id}`} className="flex gap-3">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
+                  ❓
+                </div>
+                <div className="flex-1">
+                  <div className="text-xs font-medium text-muted-foreground mb-2">
+                    {msg.agent_name || 'Agent'}
+                  </div>
+                  <BatchQuestionsCard
+                    batchId={msg.structured_data?.batch_id || ''}
+                    questions={msg.structured_data?.questions || []}
+                    questionIds={msg.structured_data?.question_ids || []}
+                    agentName={msg.agent_name}
+                    answered={msg.structured_data?.answered || false}
+                    onSubmit={(answers) => {
+                      sendBatchAnswers(
+                        msg.structured_data!.batch_id!,
+                        answers
+                      )
+                    }}
+                  />
                 </div>
               </div>
             );
@@ -577,16 +697,25 @@ export function ChatPanelWS({
               </div>
 
               <div className="flex-1 space-y-2">
-                <div className="text-xs font-medium text-muted-foreground">
-                  {getAgentName(msg)}
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {getAgentName(msg)}
+                  </span>
+                  
+                  {/* Conversation Owner Badge */}
+                  {msg.author_type === AuthorType.AGENT && conversationOwner && conversationOwner.agentName === msg.agent_name && conversationOwner.status && (
+                    <ConversationOwnerBadge
+                      agentName={msg.agent_name || ''}
+                      isOwner={true}
+                      status={conversationOwner.status}
+                    />
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
                   <div className="rounded-lg px-3 py-2 bg-muted w-fit">
                     <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
-                      {shouldTruncate && !isExpanded
-                        ? (msg.content || '').slice(0, 200) + "..."
-                        : (msg.content || '')}
+                      {msg.content || ''}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 px-1">
@@ -604,39 +733,113 @@ export function ChatPanelWS({
                         <Copy className="w-3.5 h-3.5 text-muted-foreground" />
                       )}
                     </button>
-                    {shouldTruncate && (
-                      <button
-                        onClick={() => toggleExpand(msg.id)}
-                        className="p-1 hover:bg-accent rounded transition-colors"
-                        title={isExpanded ? "Collapse" : "Expand"}
-                      >
-                        {isExpanded ? (
-                          <ChevronUp className="w-3.5 h-3.5 text-foreground" />
-                        ) : (
-                          <ChevronDown className="w-3.5 h-3.5 text-foreground" />
-                        )}
-                      </button>
-                    )}
                   </div>
+                  
+                  {/* Show artifact card if message type is artifact_created */}
+                  {msg.message_type === 'artifact_created' && msg.structured_data?.artifact_id && (
+                    <ArtifactCard
+                      artifact={{
+                        artifact_id: msg.structured_data.artifact_id,
+                        artifact_type: msg.structured_data.artifact_type || 'analysis',
+                        title: msg.structured_data.title || 'Artifact',
+                        description: msg.structured_data.description,
+                        version: msg.structured_data.version || 1,
+                        status: msg.structured_data.status || 'draft',
+                        agent_name: msg.structured_data.agent_name || msg.agent_name || getAgentName(msg),
+                      }}
+                      onClick={() => {
+                        if (onOpenArtifact && msg.structured_data?.artifact_id) {
+                          onOpenArtifact(msg.structured_data.artifact_id)
+                        }
+                      }}
+                    />
+                  )}
+                  
+                  {/* Show stories created card if message type is stories_created */}
+                  {msg.message_type === 'stories_created' && msg.structured_data?.story_ids && (
+                    <StoriesCreatedCard
+                      stories={{
+                        count: msg.structured_data.count || 0,
+                        story_ids: msg.structured_data.story_ids || [],
+                        prd_artifact_id: msg.structured_data.prd_artifact_id,
+                      }}
+                      projectId={projectId || ''}
+                    />
+                  )}
                 </div>
               </div>
             </div>
           );
         })}
 
-
-
-        {/* Simple Status Indicator - replaced complex component */}
-        {agentStatus !== 'idle' && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground p-3 bg-muted/30 rounded-lg">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span>
-              {agentStatus === 'thinking' && 'Thinking...'}
-              {agentStatus === 'acting' && 'Working...'}
-            </span>
-          </div>
-        )}
+        {/* Typing Indicators - ChatGPT style inline indicators */}
+        {Array.from(typingAgents.values()).map((typing) => (
+          <TypingIndicator 
+            key={typing.id}
+            agentName={typing.agent_name}
+            message={typing.message}
+          />
+        ))}
       </div>
+
+      {/* Sticky Question Bar */}
+      {pendingQuestion && (
+        <div className="mx-4 mb-2 sticky bottom-20 z-10">
+          <div className="p-4 rounded-lg bg-blue-600 text-white shadow-lg border border-blue-700">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-lg">❓</span>
+                  <p className="text-sm font-semibold">
+                    {pendingQuestion.agent_name || 'Agent'} is waiting for your answer
+                  </p>
+                </div>
+                <p className="text-xs opacity-90 line-clamp-2">
+                  {pendingQuestion.content}
+                </p>
+                {isMultichoiceQuestion && (
+                  <p className="text-xs opacity-75 mt-1">
+                    📍 Please select options in the question card above
+                  </p>
+                )}
+                {!isMultichoiceQuestion && (
+                  <p className="text-xs opacity-75 mt-1">
+                    💬 Type your answer in the chat below
+                  </p>
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    const element = document.getElementById(`question-${pendingQuestion.id}`)
+                    element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                  }}
+                  className="text-xs whitespace-nowrap"
+                >
+                  View Question
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    // Skip question by marking it as answered
+                    sendQuestionAnswer(
+                      pendingQuestion.structured_data!.question_id!,
+                      "[SKIPPED]",
+                      []
+                    )
+                  }}
+                  className="text-xs text-white hover:bg-blue-700 hover:text-white whitespace-nowrap"
+                >
+                  Skip
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="p-2 m-4 rounded-4xl relative bg-muted">
         {showMentions && filteredAgents.length > 0 && (
@@ -687,7 +890,14 @@ export function ChatPanelWS({
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
             className="min-h-[40px] resize-none bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground p-1 focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
-            disabled={!isConnected}
+            disabled={!isConnected || shouldBlockChat}
+            placeholder={
+              shouldBlockChat
+                ? "⏸️ Please select options in the question above..."
+                : pendingQuestion && !isMultichoiceQuestion
+                ? "💬 Type your answer here..."
+                : "Type a message..."
+            }
           />
           <div className="flex items-center justify-between pt-3">
             <div className="flex gap-2">
@@ -699,7 +909,7 @@ export function ChatPanelWS({
                       size="icon"
                       className="h-8 w-8 hover:bg-accent"
                       onClick={triggerMention}
-                      disabled={!isConnected}
+                      disabled={!isConnected || shouldBlockChat}
                     >
                       <AtSign className="w-4 h-4" />
                     </Button>
@@ -726,16 +936,13 @@ export function ChatPanelWS({
               size="icon"
               className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90"
               onClick={handleSend}
-              disabled={!isConnected || !message.trim()}
+              disabled={!isConnected || !message.trim() || shouldBlockChat}
             >
               <ArrowUp className="w-4 h-4" />
             </Button>
           </div>
         </div>
       </div>
-
-      {/* Agent Execution Dialog (floating) */}
-      <AgentExecutionDialog execution={activeExecution} />
 
     </div>
   );

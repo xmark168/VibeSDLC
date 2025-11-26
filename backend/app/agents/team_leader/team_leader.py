@@ -1,13 +1,8 @@
-"""Team Leader Agent - Crew-based project coordination.
-
-Architecture:
-- Inherits from BaseAgent (Kafka integration, task handling)
-- Uses TeamLeaderCrew (multi-agent crew for analysis and coordination)
-- Analyzes user requests and suggests appropriate specialists
+"""
+Team Leader Agent
 """
 
 import logging
-from typing import Any, Dict
 
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
 from app.agents.team_leader.crew import TeamLeaderCrew
@@ -48,70 +43,76 @@ class TeamLeader(BaseAgent):
         # Initialize crew
         self.crew = TeamLeaderCrew()
 
-        logger.info(f"Team Leader initialized: {self.name} with {len(self.crew.agents)} crew members")
+        logger.info(f"Team Leader initialized: {self.name}")
+
+    async def _should_delegate_to_analyst_smart(self, message: str) -> tuple[bool, str]:
+        """Use CrewAI to decide if message should be delegated to BA."""
+        try:
+            should_delegate, reason = await self.crew.check_should_delegate(message)
+            logger.info(f"[{self.name}] Delegation decision: {should_delegate}, reason: {reason[:100]}")
+            return should_delegate, reason
+        except Exception as e:
+            logger.error(f"[{self.name}] Error in delegation check: {e}", exc_info=True)
+            return False, f"delegation_check_failed: {str(e)}"
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
-        """Handle task assigned by Router.
-
-        Args:
-            task: TaskContext with user message and metadata
-
-        Returns:
-            TaskResult with guidance response
-        """
+        """Handle task assigned by Router."""
         try:
             user_message = task.content
             task_type = task.task_type.value
 
             logger.info(f"[{self.name}] Processing {task_type}: {user_message[:50]}...")
 
-            # Determine task type and route to appropriate crew workflow
+            if task.context.get("delegation_failed"):
+                target_role = task.context.get("target_role")
+                error_message = task.context.get("error_message")
+                original_content = task.context.get("original_content", user_message)
+                
+                logger.warning(f"[{self.name}] Delegation to {target_role} failed, handling as fallback")
+                
+                await self.message_user("response", error_message, {
+                    "message_type": "text",
+                    "delegation_failed": True,
+                    "target_role": target_role
+                })
+                
+                user_message = original_content
+            
+            should_delegate = False
+            if not task.context.get("delegation_failed"):
+                should_delegate, reason = await self._should_delegate_to_analyst_smart(user_message)
+                
+                if should_delegate:
+                    logger.info(f"[{self.name}] Delegating to BA (reason: {reason[:100]})")
+                    return await self.delegate_to_role(
+                        task=task,
+                        target_role="business_analyst",
+                        delegation_message=(
+                            f"Tôi nhận thấy đây là câu hỏi về phân tích dự án. "
+                            f"Tôi đã chuyển yêu cầu này cho Business Analyst - chuyên gia phân tích của chúng ta. "
+                            f"Họ sẽ giúp bạn chi tiết hơn! 📊"
+                        )
+                    )
+
             if task_type == "progress_query" or "status" in user_message.lower():
-                # Progress tracking request
-                await self.message_user("thinking", "Checking project status...")
-                
-                # Get project context (could be enhanced with database queries)
                 project_context = f"User asking about: {user_message}"
-                
-                # Run CrewAI asynchronously using native async support
                 crew_output = await self.crew.track_progress(project_context)
-                
-                # Convert CrewAI output to string
                 response = str(crew_output) if crew_output else ""
-                
             else:
-                # General request analysis
-                await self.message_user("thinking", "Analyzing request...")
-                
-                # Run CrewAI asynchronously using native async support
                 crew_output = await self.crew.analyze_request(user_message)
-                
-                # Convert CrewAI output to string (it might be CrewOutput object)
                 response = str(crew_output) if crew_output else ""
 
-            logger.info(f"[{self.name}] Generated response: {len(response)} chars, type={type(response).__name__}")
+            logger.info(f"[{self.name}] Generated response: {len(response)} chars")
             
-            # Validate and sanitize response
             if not response or not response.strip():
                 logger.warning(f"[{self.name}] Empty response from crew, using fallback")
                 response = "Xin lỗi, tôi không thể xử lý yêu cầu này. Vui lòng thử lại hoặc tag một specialist cụ thể."
             
-            # Truncate if too long (max 5000 chars to prevent Kafka message size issues)
             if len(response) > 5000:
-                logger.warning(f"[{self.name}] Response too long ({len(response)} chars), truncating to 5000")
+                logger.warning(f"[{self.name}] Response too long, truncating")
                 response = response[:5000] + "\n\n... (message truncated)"
             
-            # Send response back to user
-            logger.info(f"[{self.name}] About to send response to user...")
-            try:
-                await self.message_user("response", response, {
-                    "message_type": "text",  # Use 'text' so frontend renders as normal message
-                })
-                logger.info(f"[{self.name}] Response sent successfully")
-            except Exception as response_error:
-                logger.error(f"[{self.name}] CRITICAL: Failed to send response: {response_error}", exc_info=True)
-                # Re-raise to ensure it's caught by outer handler
-                raise
+            await self.message_user("response", response, {"message_type": "text"})
 
             return TaskResult(
                 success=True,
@@ -131,45 +132,3 @@ class TeamLeader(BaseAgent):
                 output="",
                 error_message=str(e),
             )
-
-
-# ===== ARCHITECTURE NOTES =====
-
-"""
-OLD ARCHITECTURE (Deprecated):
-- Team Leader delegated tasks to specialists directly
-- Used AGENT_ROUTING events
-- Complex coordination logic in agent code
-
-NEW ARCHITECTURE (Current):
-- Router handles all task routing based on @mentions
-- Team Leader provides guidance and suggestions
-- User controls routing by tagging specialists
-- Cleaner separation of concerns
-
-CREW COMPOSITION:
-- Requirements Analyst: Understands user needs, identifies requirements
-- Project Coordinator: Maps needs to specialists, provides tagging suggestions
-- Progress Tracker: Monitors project status, provides updates
-
-WORKFLOW EXAMPLE:
-
-1. User: "I need a new feature for user authentication"
-   → Router: No @mention → sends to Team Leader
-   
-2. Team Leader Crew:
-   - Requirements Analyst: "User wants authentication feature"
-   - Project Coordinator: "This needs requirements + development"
-   - Response: "I understand you need authentication. Let's start by defining requirements. 
-               Please tag @BusinessAnalyst to create a PRD for this feature."
-   
-3. User: "@BusinessAnalyst create PRD for user auth"
-   → Router: @BusinessAnalyst mentioned → sends to Business Analyst
-   
-4. BA creates PRD → publishes response
-   
-5. User: "@Developer implement the auth system from the PRD"
-   → Router: @Developer mentioned → sends to Developer
-
-This gives users full control while Team Leader provides expert guidance.
-"""

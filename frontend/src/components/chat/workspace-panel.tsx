@@ -30,6 +30,7 @@ interface WorkspacePanelProps {
   projectId?: string
   activeTab?: string | null
   agentStatuses?: Map<string, { status: string; lastUpdate: string }> // Real-time agent statuses from WebSocket
+  selectedArtifactId?: string | null
 }
 
 // Generate avatar URL from agent human_name using DiceBear API
@@ -55,7 +56,7 @@ const getRoleDesignation = (roleType: string): string => {
   return roleMap[roleType] || roleType
 }
 
-export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projectId, activeTab: wsActiveTab, agentStatuses }: WorkspacePanelProps) {
+export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projectId, activeTab: wsActiveTab, agentStatuses, selectedArtifactId }: WorkspacePanelProps) {
   const queryClient = useQueryClient()
 
   // Fetch project agents from database
@@ -136,6 +137,37 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
   const [fileContent, setFileContent] = useState<string>("")
   const [isLoadingFile, setIsLoadingFile] = useState(false)
   const [fileError, setFileError] = useState<string | null>(null)
+
+  // Artifact state
+  const [selectedArtifact, setSelectedArtifact] = useState<any | null>(null)
+  const [isLoadingArtifact, setIsLoadingArtifact] = useState(false)
+
+  // Fetch artifact when selectedArtifactId changes
+  useEffect(() => {
+    if (selectedArtifactId && projectId) {
+      fetchArtifact(selectedArtifactId)
+    } else {
+      setSelectedArtifact(null)
+    }
+  }, [selectedArtifactId, projectId])
+
+  const fetchArtifact = async (artifactId: string) => {
+    if (!projectId) return
+
+    setIsLoadingArtifact(true)
+
+    try {
+      const { artifactsApi } = await import('@/apis/artifacts')
+      const artifact = await artifactsApi.getArtifact(artifactId)
+      setSelectedArtifact(artifact)
+      console.log('[WorkspacePanel] Loaded artifact:', artifact)
+    } catch (err: any) {
+      console.error('Failed to fetch artifact:', err)
+      setSelectedArtifact(null)
+    } finally {
+      setIsLoadingArtifact(false)
+    }
+  }
 
   // Fetch file content when selectedFile changes
   useEffect(() => {
@@ -228,7 +260,24 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
               />
             </div>
             <div className="flex-1">
-              {selectedFile ? (
+              {selectedArtifact ? (
+                isLoadingArtifact ? (
+                  <div className="flex items-center justify-center h-full text-muted-foreground">
+                    <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                    Loading artifact...
+                  </div>
+                ) : (
+                  (() => {
+                    const { ArtifactViewer } = require('./ArtifactViewer')
+                    return (
+                      <ArtifactViewer 
+                        artifact={selectedArtifact}
+                        onClose={() => setSelectedArtifact(null)}
+                      />
+                    )
+                  })()
+                )
+              ) : selectedFile ? (
                 isLoadingFile ? (
                   <div className="flex items-center justify-center h-full text-muted-foreground">
                     <Loader2 className="w-6 h-6 animate-spin mr-2" />
@@ -243,7 +292,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
                 )
               ) : (
                 <div className="flex items-center justify-center h-full text-muted-foreground">
-                  Select a file to view
+                  {selectedArtifactId ? 'Loading artifact...' : 'Select a file or artifact to view'}
                 </div>
               )}
             </div>
