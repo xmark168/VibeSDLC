@@ -162,50 +162,359 @@ class BaseAgent(ABC):
         event_type: str,
         content: str,
         details: Optional[Dict[str, Any]] = None,
+        *,
+        artifact_config: Optional[Dict[str, Any]] = None,
+        question_config: Optional[Dict[str, Any]] = None,
+        save_to_db: bool = True,
+        broadcast_ws: bool = True,
         **kwargs
-    ) -> None:
-        """Send message/event to user.
+    ) -> Optional[UUID]:
+        """Send message/event to user with support for artifacts and questions.
+        
+        This is the unified messaging API for all agent-to-user communication:
+        - Simple messages/events (thinking, progress, response)
+        - Clarification questions (with DB persistence and pause handling)
+        - Artifacts (with DB persistence and file storage)
         
         Args:
-            event_type: Event type (thinking, tool_call, progress, response)
-            content: Message content
-            details: Additional structured data
+            event_type: Event type - determines behavior:
+                - "thinking", "tool_call", "progress", "response": Simple events
+                - "artifact": Creates artifact with persistence
+                - "question": Asks clarification question with pause
+                - "completed": Marks task complete
+            content: Message content (human-readable text)
+            details: Additional structured data for event payload
+            artifact_config: Configuration for artifact creation (when event_type="artifact")
+            question_config: Configuration for questions (when event_type="question")
+            save_to_db: Whether to persist to messages table (default: True)
+            broadcast_ws: Whether to broadcast to WebSocket (default: True)
             **kwargs: Extra metadata
+        
+        Returns:
+            UUID: For artifacts/questions, returns the created ID
+            None: For simple messages
+        
+        Examples:
+            # Simple message
+            await self.message_user("response", "Analysis complete")
+            
+            # Create artifact
+            artifact_id = await self.message_user(
+                "artifact",
+                "Created PRD for login feature",
+                artifact_config={
+                    "artifact_type": "prd",
+                    "title": "Login Feature PRD",
+                    "content": prd_data,
+                    "description": "Comprehensive requirements",
+                    "tags": ["prd", "login"]
+                }
+            )
+            
+            # Ask question
+            question_id = await self.message_user(
+                "question",
+                "Which authentication method?",
+                question_config={
+                    "question_type": "multichoice",
+                    "options": ["OAuth", "JWT", "Session"],
+                    "allow_multiple": False
+                }
+            )
         """
         if not self._current_task_id:
             logger.warning(f"[{self.name}] Cannot send message: no active task")
-            return
+            return None
 
         try:
-            producer = await self._get_producer()
-
-
-            event = AgentEvent(
-                event_type=f"agent.{event_type}",
-                agent_name=self.name,
-                agent_id=str(self.agent_id),
-                project_id=str(self.project_id) if self.project_id else None,
-                execution_id=str(self._current_execution_id) if self._current_execution_id else None,
-                task_id=str(self._current_task_id) if self._current_task_id else None,
-                content=content,
-                details=details or {},
-                metadata={
-                    "agent_type": self.role_type,
-                    "agent_execution_id": str(self._current_execution_id) if self._current_execution_id else None,
-                    **kwargs
-                }
-            )
-
-
-            await producer.publish(
-                topic=KafkaTopics.AGENT_EVENTS,
-                event=event,
-            )
-
-            logger.info(f"[{self.name}] {event_type}: {content[:100]}")
+            # Handle artifact creation
+            if event_type == "artifact":
+                return await self._handle_artifact_message(content, artifact_config, details, **kwargs)
+            
+            # Handle clarification questions
+            if event_type == "question":
+                return await self._handle_question_message(content, question_config, details, **kwargs)
+            
+            # Handle simple messages/events
+            return await self._handle_simple_message(event_type, content, details, save_to_db, broadcast_ws, **kwargs)
 
         except Exception as e:
-            logger.error(f"[{self.name}] Failed to send message: {e}")
+            logger.error(f"[{self.name}] Failed to send message: {e}", exc_info=True)
+            return None
+    
+    async def _handle_simple_message(
+        self,
+        event_type: str,
+        content: str,
+        details: Optional[Dict[str, Any]],
+        save_to_db: bool,
+        broadcast_ws: bool,
+        **kwargs
+    ) -> None:
+        """Handle simple message/event (existing logic)."""
+        producer = await self._get_producer()
+        
+        event = AgentEvent(
+            event_type=f"agent.{event_type}",
+            agent_name=self.name,
+            agent_id=str(self.agent_id),
+            project_id=str(self.project_id) if self.project_id else None,
+            execution_id=str(self._current_execution_id) if self._current_execution_id else None,
+            task_id=str(self._current_task_id) if self._current_task_id else None,
+            content=content,
+            details=details or {},
+            metadata={
+                "agent_type": self.role_type,
+                "agent_execution_id": str(self._current_execution_id) if self._current_execution_id else None,
+                **kwargs
+            }
+        )
+        
+        await producer.publish(topic=KafkaTopics.AGENT_EVENTS, event=event)
+        
+        # Optionally save to messages table
+        if save_to_db and event_type in ["response", "completed"]:
+            await self._save_message_to_db(content, "text", details, **kwargs)
+        
+        logger.info(f"[{self.name}] {event_type}: {content[:100]}")
+    
+    async def _handle_artifact_message(
+        self,
+        content: str,
+        artifact_config: Optional[Dict[str, Any]],
+        details: Optional[Dict[str, Any]],
+        **kwargs
+    ) -> UUID:
+        """Handle artifact creation message."""
+        if not artifact_config:
+            raise ValueError("artifact_config required for event_type='artifact'")
+        
+        from app.services.artifact_service import ArtifactService
+        from app.models import ArtifactType
+        from sqlmodel import Session
+        from app.core.db import engine
+        
+        # Extract config
+        artifact_type = artifact_config.get("artifact_type")
+        title = artifact_config.get("title", "Untitled Artifact")
+        artifact_content = artifact_config.get("content", {})
+        description = artifact_config.get("description")
+        tags = artifact_config.get("tags", [])
+        save_to_file = artifact_config.get("save_to_file", True)
+        
+        # Validate artifact type
+        try:
+            artifact_type_enum = ArtifactType(artifact_type)
+        except ValueError:
+            raise ValueError(
+                f"Invalid artifact type: {artifact_type}. "
+                f"Valid types: {[t.value for t in ArtifactType]}"
+            )
+        
+        # Create artifact
+        with Session(engine) as session:
+            service = ArtifactService(session)
+            artifact = service.create_artifact(
+                project_id=self.project_id,
+                agent_id=self.agent_id,
+                agent_name=self.name,
+                artifact_type=artifact_type_enum,
+                title=title,
+                content=artifact_content,
+                description=description,
+                save_to_file=save_to_file,
+                tags=tags
+            )
+            
+            artifact_id = artifact.id
+            
+            logger.info(
+                f"[{self.name}] Created artifact: {artifact.artifact_type.value} "
+                f"'{title}' (id={artifact_id}, version={artifact.version})"
+            )
+        
+        # Send agent event with artifact info
+        await self._handle_simple_message(
+            "response",
+            content,
+            {
+                **(details or {}),
+                "message_type": "artifact_created",
+                "artifact_id": str(artifact_id),
+                "artifact_type": artifact_type,
+                "artifact_title": title,
+            },
+            save_to_db=True,
+            broadcast_ws=False,
+            **kwargs
+        )
+        
+        # Broadcast artifact creation to WebSocket
+        from app.websocket.connection_manager import connection_manager
+        await connection_manager.broadcast_to_project(
+            {
+                "type": "artifact_created",
+                "artifact_id": str(artifact_id),
+                "artifact_type": artifact_type,
+                "title": title,
+                "description": description,
+                "agent_name": self.name,
+                "version": artifact.version,
+                "status": artifact.status.value,
+                "file_path": artifact.file_path,
+                "tags": tags,
+                "timestamp": artifact.created_at.isoformat()
+            },
+            self.project_id
+        )
+        
+        return artifact_id
+    
+    async def _handle_question_message(
+        self,
+        content: str,
+        question_config: Optional[Dict[str, Any]],
+        details: Optional[Dict[str, Any]],
+        **kwargs
+    ) -> UUID:
+        """Handle clarification question message."""
+        if not question_config:
+            raise ValueError("question_config required for event_type='question'")
+        
+        from sqlmodel import Session
+        from app.core.db import engine
+        from app.models import AgentQuestion, QuestionType, QuestionStatus, Message, AuthorType
+        from app.kafka.event_schemas import QuestionAskedEvent
+        from datetime import timedelta
+        
+        # Extract config
+        question_type = question_config.get("question_type", "open")
+        options = question_config.get("options")
+        allow_multiple = question_config.get("allow_multiple", False)
+        
+        question_id = uuid4()
+        
+        # Get current task context
+        task_context_data = {
+            "task_id": str(self._current_task_id),
+            "task_type": self._current_task_type,
+            "execution_id": str(self._current_execution_id) if self._current_execution_id else None,
+            "original_message": self._current_task_content,
+            "routing_reason": self._current_routing_reason,
+        }
+        
+        # Save to database (dual storage: agent_questions + messages)
+        with Session(engine) as session:
+            # 1. Save to agent_questions table (for workflow)
+            db_question = AgentQuestion(
+                id=question_id,
+                project_id=self.project_id,
+                agent_id=self.agent_id,
+                user_id=self._current_user_id,
+                question_type=QuestionType(question_type),
+                question_text=content,
+                options=options,
+                allow_multiple=allow_multiple,
+                status=QuestionStatus.WAITING_ANSWER,
+                task_id=self._current_task_id,
+                execution_id=self._current_execution_id,
+                task_context=task_context_data,
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            )
+            session.add(db_question)
+            
+            # 2. Also save to messages table (for chat history)
+            question_message = Message(
+                id=question_id,
+                project_id=self.project_id,
+                author_type=AuthorType.AGENT,
+                agent_id=self.agent_id,
+                content=content,
+                message_type="agent_question",
+                structured_data={
+                    "question_id": str(question_id),
+                    "question_type": question_type,
+                    "options": options,
+                    "allow_multiple": allow_multiple,
+                    "status": "waiting_answer"
+                },
+                message_metadata={
+                    "agent_name": self.name,
+                    "task_id": str(self._current_task_id),
+                    "execution_id": str(self._current_execution_id) if self._current_execution_id else None,
+                }
+            )
+            session.add(question_message)
+            session.commit()
+        
+        # Publish event to Kafka
+        producer = await self._get_producer()
+        event = QuestionAskedEvent(
+            question_id=str(question_id),
+            agent_id=str(self.agent_id),
+            agent_name=self.name,
+            project_id=str(self.project_id) if self.project_id else None,
+            user_id=str(self._current_user_id) if self._current_user_id else None,
+            question_type=question_type,
+            question_text=content,
+            options=options,
+            allow_multiple=allow_multiple,
+            task_id=str(self._current_task_id),
+            execution_id=str(self._current_execution_id) if self._current_execution_id else None,
+        )
+        
+        await producer.publish(topic=KafkaTopics.AGENT_EVENTS, event=event)
+        
+        # Broadcast to WebSocket
+        from app.websocket.connection_manager import connection_manager
+        await connection_manager.broadcast_to_project(
+            {
+                "type": "agent.question",
+                "question_id": str(question_id),
+                "agent_name": self.name,
+                "question": content,
+                "question_type": question_type,
+                "options": options,
+                "allow_multiple": allow_multiple,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            self.project_id
+        )
+        
+        logger.info(f"[{self.name}] Asked question (id={question_id}): {content[:100]}")
+        
+        return question_id
+    
+    async def _save_message_to_db(
+        self,
+        content: str,
+        message_type: str,
+        structured_data: Optional[Dict[str, Any]] = None,
+        **metadata
+    ) -> None:
+        """Save message to messages table for persistence."""
+        from sqlmodel import Session
+        from app.core.db import engine
+        from app.models import Message, AuthorType
+        
+        with Session(engine) as session:
+            message = Message(
+                id=uuid4(),
+                project_id=self.project_id,
+                author_type=AuthorType.AGENT,
+                agent_id=self.agent_id,
+                content=content,
+                message_type=message_type,
+                structured_data=structured_data or {},
+                message_metadata={
+                    "agent_name": self.name,
+                    "task_id": str(self._current_task_id),
+                    "execution_id": str(self._current_execution_id) if self._current_execution_id else None,
+                    **metadata
+                }
+            )
+            session.add(message)
+            session.commit()
     
     async def start_execution(self) -> None:
         """Emit: agent.messaging.start - Notify that agent began execution"""
@@ -244,15 +553,10 @@ class BaseAgent(ABC):
         options: Optional[list[str]] = None,
         allow_multiple: bool = False,
     ) -> UUID:
-        """Tool: Ask user a clarification question.
+        """DEPRECATED: Use message_user(event_type="question") instead.
         
-        This method will:
-        1. Save question to DB (agent_questions table)
-        2. Publish QuestionAskedEvent to broadcast to frontend
-        3. Return question_id for tracking
-        
-        The current task will be PAUSED until user answers.
-        When user answers, router will resume the task with the answer.
+        This method is kept for backward compatibility and will delegate
+        to the unified message_user() API.
         
         Args:
             question: Question text to ask user
@@ -262,131 +566,21 @@ class BaseAgent(ABC):
             
         Returns:
             question_id: UUID of created question
-            
-        Example:
-            # Open question
-            q_id = await self.ask_clarification_question(
-                "Which aspect do you want to analyze?",
-                question_type="open"
-            )
-            
-            # Multichoice question
-            q_id = await self.ask_clarification_question(
-                "Select analysis types:",
-                question_type="multichoice",
-                options=["Requirements", "Architecture", "Risks"],
-                allow_multiple=True
-            )
         """
-        if not self._current_task_id:
-            raise RuntimeError("Cannot ask question: no active task")
-        
-        from sqlmodel import Session
-        from app.core.db import engine
-        from app.models import AgentQuestion, QuestionType, QuestionStatus
-        from app.kafka.event_schemas import QuestionAskedEvent
-        from datetime import timedelta
-        
-        question_id = uuid4()
-        
-        # Get current task context
-        task_context_data = {
-            "task_id": str(self._current_task_id),
-            "task_type": self._current_task_type,
-            "execution_id": str(self._current_execution_id) if self._current_execution_id else None,
-            "original_message": self._current_task_content,
-            "routing_reason": self._current_routing_reason,
-        }
-        
-        # Save to database (dual storage: agent_questions + messages)
-        with Session(engine) as session:
-            # 1. Save to agent_questions table (for workflow)
-            db_question = AgentQuestion(
-                id=question_id,
-                project_id=self.project_id,
-                agent_id=self.agent_id,
-                user_id=self._current_user_id,
-                question_type=QuestionType(question_type),
-                question_text=question,
-                options=options,
-                allow_multiple=allow_multiple,
-                status=QuestionStatus.WAITING_ANSWER,
-                task_id=self._current_task_id,
-                execution_id=self._current_execution_id,
-                task_context=task_context_data,
-                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
-            )
-            session.add(db_question)
-            
-            # 2. ALSO save to messages table (for chat history persistence)
-            from app.models import Message, AuthorType
-            
-            question_message = Message(
-                id=question_id,  # Same ID as AgentQuestion for linking
-                project_id=self.project_id,
-                author_type=AuthorType.AGENT,
-                agent_id=self.agent_id,
-                content=question,
-                message_type="agent_question",
-                structured_data={
-                    "question_id": str(question_id),
-                    "question_type": question_type,
-                    "options": options,
-                    "allow_multiple": allow_multiple,
-                    "status": "waiting_answer"
-                },
-                message_metadata={
-                    "agent_name": self.name,
-                    "task_id": str(self._current_task_id),
-                    "execution_id": str(self._current_execution_id) if self._current_execution_id else None,
-                }
-            )
-            session.add(question_message)
-            session.commit()
-            session.refresh(db_question)
-        
-        # Publish event to Kafka
-        producer = await self._get_producer()
-        event = QuestionAskedEvent(
-            question_id=str(question_id),
-            agent_id=str(self.agent_id),
-            agent_name=self.name,
-            project_id=str(self.project_id) if self.project_id else None,
-            user_id=str(self._current_user_id) if self._current_user_id else None,
-            question_type=question_type,
-            question_text=question,
-            options=options,
-            allow_multiple=allow_multiple,
-            task_id=str(self._current_task_id) if self._current_task_id else None,
-            execution_id=str(self._current_execution_id) if self._current_execution_id else None,
+        logger.warning(
+            f"[{self.name}] ask_clarification_question() is deprecated. "
+            "Use message_user(event_type='question') instead."
         )
         
-        await producer.publish(
-            topic=KafkaTopics.AGENT_EVENTS,
-            event=event
-        )
-        
-        # Also broadcast to WebSocket immediately
-        from app.websocket.connection_manager import connection_manager
-        await connection_manager.broadcast_to_project(
-            {
-                "type": "agent.question",
-                "question_id": str(question_id),
-                "agent_name": self.name,
-                "question": question,
+        return await self.message_user(
+            "question",
+            question,
+            question_config={
                 "question_type": question_type,
                 "options": options,
-                "allow_multiple": allow_multiple,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            },
-            self.project_id
+                "allow_multiple": allow_multiple
+            }
         )
-        
-        logger.info(
-            f"[{self.name}] Asked clarification question: {question[:50]}"
-        )
-        
-        return question_id
 
     async def ask_multiple_clarification_questions(
         self,
@@ -560,86 +754,39 @@ class BaseAgent(ABC):
         save_to_file: bool = True,
         tags: List[str] = None
     ) -> UUID:
-        """Create an artifact from agent output.
+        """DEPRECATED: Use message_user(event_type="artifact") instead.
         
-        Artifacts are structured documents produced by agents (PRD, architecture, code, etc.)
-        They are saved to the database and optionally to the file system.
+        This method is kept for backward compatibility and will delegate
+        to the unified message_user() API.
         
         Args:
             artifact_type: Type of artifact (prd, architecture, code, test_plan, etc.)
             title: Human-readable title
-            content: Structured content dict (validated against artifact schema)
+            content: Structured content dict
             description: Optional description
             save_to_file: Whether to save to file system (default: True)
             tags: Optional tags for categorization
         
         Returns:
             Artifact ID
-            
-        Raises:
-            ValueError: If artifact_type is invalid
-            Exception: If artifact creation fails
-            
-        Example:
-            # Create PRD artifact
-            artifact_id = await self.create_artifact(
-                artifact_type="prd",
-                title="Product Requirements Document",
-                content={
-                    "title": "My Project",
-                    "overview": "Project overview...",
-                    "requirements": [...],
-                    "goals": [...],
-                    "risks": [...]
-                },
-                description="Initial PRD based on user requirements",
-                tags=["requirements", "v1"]
-            )
         """
-        try:
-            from app.services.artifact_service import ArtifactService
-            from app.models import ArtifactType
-            from sqlmodel import Session
-            from app.core.db import engine
-            
-            # Validate artifact type
-            try:
-                artifact_type_enum = ArtifactType(artifact_type)
-            except ValueError:
-                raise ValueError(
-                    f"Invalid artifact type: {artifact_type}. "
-                    f"Valid types: {[t.value for t in ArtifactType]}"
-                )
-            
-            with Session(engine) as session:
-                service = ArtifactService(session)
-                
-                artifact = service.create_artifact(
-                    project_id=self.project_id,
-                    agent_id=self.agent_id,
-                    agent_name=self.name,
-                    artifact_type=artifact_type_enum,
-                    title=title,
-                    content=content,
-                    description=description,
-                    save_to_file=save_to_file,
-                    tags=tags
-                )
-                
-                logger.info(
-                    f"[{self.name}] Created artifact: {artifact.artifact_type.value} "
-                    f"'{title}' (id={artifact.id}, version={artifact.version})"
-                )
-                
-                # Broadcast artifact creation to WebSocket
-                await self._broadcast_artifact(artifact)
-                
-                return artifact.id
+        logger.warning(
+            f"[{self.name}] create_artifact() is deprecated. "
+            "Use message_user(event_type='artifact') instead."
+        )
         
-        except Exception as e:
-            logger.error(f"[{self.name}] Failed to create artifact: {e}", exc_info=True)
-            raise
-
+        return await self.message_user(
+            "artifact",
+            f"Created {artifact_type}: {title}",
+            artifact_config={
+                "artifact_type": artifact_type,
+                "title": title,
+                "content": content,
+                "description": description,
+                "save_to_file": save_to_file,
+                "tags": tags or []
+            }
+        )
 
     async def _broadcast_artifact(self, artifact):
         """Broadcast artifact creation to WebSocket clients.
@@ -731,7 +878,7 @@ class BaseAgent(ABC):
             
             return TaskResult(
                 success=True,
-                output=delegation_message,
+                output="",  # Empty output - message already sent above
                 structured_data={
                     "delegation_to_role": target_role,
                     "delegation_status": "pending"
@@ -1031,12 +1178,11 @@ class BaseAgent(ABC):
                 else:
                     self.failed_executions += 1
                 
-                # Emit finish signal
-
-                if result.success:
-                    await self.finish_execution("Task completed successfully")
-                else:
-                    await self.finish_execution(f"Task completed with issues: {result.error_message or 'Unknown'}")
+                # Emit finish signal (commented out to avoid duplicate messages)
+                # if result.success:
+                #     await self.finish_execution("Task completed successfully")
+                # else:
+                #     await self.finish_execution(f"Task completed with issues: {result.error_message or 'Unknown'}")
                 
             except Exception as e:
                 task_failed = True
