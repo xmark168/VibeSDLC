@@ -89,9 +89,11 @@ async def initialize_default_pools() -> None:
 
 
 async def _initialize_pool(logger, role_class_map) -> None:
-    """Initialize in-memory pool manager."""
+    """Initialize in-memory pool manager from DB."""
     from sqlmodel import Session, select
     from app.core.db import engine
+    from app.services.pool_service import PoolService
+    from app.models import AgentPool, PoolType
 
     pool_name = "universal_pool"
 
@@ -101,11 +103,30 @@ async def _initialize_pool(logger, role_class_map) -> None:
         return
 
     try:
-        # Create manager (no Redis, no multiprocessing)
+        # Get or create pool in DB
+        with Session(engine) as db_session:
+            pool_service = PoolService(db_session)
+            db_pool = pool_service.get_pool_by_name(pool_name)
+            
+            if not db_pool:
+                logger.info(f"Creating default pool '{pool_name}' in database")
+                db_pool = pool_service.create_pool(
+                    pool_name=pool_name,
+                    role_type=None,  # Universal pool
+                    pool_type=PoolType.FREE,
+                    max_agents=100,
+                    health_check_interval=60,
+                    auto_created=True,
+                )
+            else:
+                logger.info(f"Found existing pool '{pool_name}' in database (id={db_pool.id})")
+
+        # Create manager with pool_id from DB
         manager = AgentPoolManager(
             pool_name=pool_name,
-            max_agents=100,  # Higher limit since no process overhead
-            health_check_interval=60,
+            max_agents=db_pool.max_agents,
+            health_check_interval=db_pool.health_check_interval,
+            pool_id=db_pool.id,
         )
 
         # Start manager
