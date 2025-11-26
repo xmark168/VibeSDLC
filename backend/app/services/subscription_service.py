@@ -2,7 +2,7 @@
 
 from uuid import UUID
 from datetime import datetime, timezone, timedelta
-from sqlmodel import Session
+from sqlmodel import Session, select
 from app.models import (
     Subscription, CreditWallet, Invoice, Order, Plan, User,
     InvoiceStatus
@@ -22,12 +22,26 @@ class SubscriptionService:
         self,
         user_id: UUID,
         plan: Plan,
-        order: Order
+        order: Order,
+        auto_renew: bool = True
     ) -> tuple[Subscription, CreditWallet, Invoice]:
         """
         Activate subscription after successful payment
         Returns: (Subscription, CreditWallet, Invoice)
         """
+        # Cancel all existing active subscriptions for this user (upgrade/downgrade scenario)
+        existing_subscriptions = self.session.exec(
+            select(Subscription)
+            .where(Subscription.user_id == user_id)
+            .where(Subscription.status == "active")
+        ).all()
+
+        for old_sub in existing_subscriptions:
+            old_sub.status = "canceled"
+            old_sub.auto_renew = False
+            self.session.add(old_sub)
+            logger.info(f"Canceled existing subscription {old_sub.id} for user {user_id} due to new subscription")
+
         # Calculate subscription period
         billing_cycle = order.billing_cycle or "monthly"
         start_at = datetime.now(timezone.utc)
@@ -44,7 +58,7 @@ class SubscriptionService:
             status="active",
             start_at=start_at,
             end_at=end_at,
-            auto_renew=True
+            auto_renew=auto_renew  # Use parameter instead of hardcoded True
         )
         self.session.add(subscription)
         self.session.flush()

@@ -10,4 +10,21 @@ export const subscriptionApi = {
       url: "/api/v1/users/me/subscription",
     })
   },
+
+  // Cancel current subscription
+  cancelSubscription: async (): Promise<{ message: string }> => {
+    return __request<{ message: string }>(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/users/me/subscription/cancel",
+    })
+  },
+
+  // Update auto-renew setting
+  updateAutoRenew: async (autoRenew: boolean): Promise<{ message: string }> => {
+    return __request<{ message: string }>(OpenAPI, {
+      method: "PUT",
+      url: "/api/v1/users/me/subscription/auto-renew",
+      body: { auto_renew: autoRenew },
+    })
+  },
 }

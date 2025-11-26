@@ -854,6 +854,7 @@ class Order(BaseModel, table=True):
     # Payment details
     billing_cycle: str | None = Field(default="monthly", sa_column=Column(Text))  # monthly, yearly
     plan_code: str | None = Field(default=None, sa_column=Column(Text))  # Store plan code for reference
+    auto_renew: bool = Field(default=True, nullable=False)  # Auto-renew subscription preference
 
     # Relationships
     user: User = Relationship()

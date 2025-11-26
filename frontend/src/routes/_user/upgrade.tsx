@@ -217,13 +217,14 @@ function RouteComponent() {
   }
 
   // Handle payment confirmation - create order and redirect to PayOS
-  const handlePaymentConfirm = async () => {
+  const handlePaymentConfirm = async (autoRenew: boolean) => {
     if (!selectedPlan) return
 
     try {
       const paymentData = await createPayment.mutateAsync({
         plan_id: selectedPlan.id,
         billing_cycle: billingCycle,
+        auto_renew: autoRenew,
       })
 
       // Close dialog
@@ -367,8 +368,8 @@ function RouteComponent() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {plans.map((plan, index) => {
-                  // Check if this is user's current plan (for now, assume Free is current)
-                  const isCurrentPlan = plan.code === 'FREE'
+                  // Check if this is user's current plan
+                  const isCurrentPlan = plan.code === currentPlanCode
 
                   return (
                     <div

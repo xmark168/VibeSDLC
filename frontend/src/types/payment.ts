@@ -7,6 +7,7 @@ export interface PaymentItem {
 export interface CreatePaymentRequest {
   plan_id: string
   billing_cycle: 'monthly' | 'yearly'
+  auto_renew?: boolean
   return_url?: string
   cancel_url?: string
 }

@@ -61,6 +61,7 @@ def create_payment_link(
             user_id=current_user.id,
             plan=plan,
             billing_cycle=payment_request.billing_cycle,
+            auto_renew=payment_request.auto_renew,
             return_url=return_url,
             cancel_url=cancel_url
         )
@@ -120,7 +121,8 @@ def get_payment_status(
                     subscription, wallet, invoice = subscription_service.activate_subscription(
                         user_id=order.user_id,
                         plan=plan,
-                        order=order
+                        order=order,
+                        auto_renew=order.auto_renew
                     )
                     logger.info(f"Auto-activated subscription {subscription.id} for order {order.id}")
             except Exception as e:
@@ -223,7 +225,8 @@ def process_payment_webhook(session: SessionDep, webhook_data: dict):
                 subscription, wallet, invoice = subscription_service.activate_subscription(
                     user_id=order.user_id,
                     plan=plan,
-                    order=order
+                    order=order,
+                    auto_renew=order.auto_renew
                 )
                 logger.info(f"Subscription {subscription.id} activated for order {order.id}")
             else:
@@ -288,7 +291,8 @@ async def sync_order_status_by_code(
                     subscription, wallet, invoice = subscription_service.activate_subscription(
                         user_id=order.user_id,
                         plan=plan,
-                        order=order
+                        order=order,
+                        auto_renew=order.auto_renew
                     )
                     logger.info(f"Activated subscription {subscription.id}")
                     return {
