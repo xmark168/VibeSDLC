@@ -26,7 +26,7 @@ class RefreshTokenRequest(SQLModel):
 class LoginRequest(SQLModel):
     email: str
     password: str
-    full_name: Optional[str] = None
+    fullname: Optional[str] = None
     login_provider: bool = False
 
 

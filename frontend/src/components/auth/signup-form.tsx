@@ -14,7 +14,7 @@ export function SignUpForm() {
     fullname: "",
     email: "",
     password: "",
-    confirm_password: "",
+    confirmPassword: "",
   })
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
@@ -59,8 +59,8 @@ export function SignUpForm() {
   ]
 
   const passwordsMatch =
-    formData.password === formData.confirm_password &&
-    formData.confirm_password !== ""
+    formData.password === formData.confirmPassword &&
+    formData.confirmPassword !== ""
 
   return (
     <motion.div
@@ -270,15 +270,15 @@ export function SignUpForm() {
                 id="confirmPassword"
                 type={showConfirmPassword ? "text" : "password"}
                 placeholder="Re-enter your password"
-                value={formData.confirm_password}
+                value={formData.confirmPassword}
                 onChange={(e) =>
-                  setFormData({ ...formData, confirm_password: e.target.value })
+                  setFormData({ ...formData, confirmPassword: e.target.value })
                 }
                 className={`h-12 bg-secondary/50 border-border text-base pr-10 ${
-                  formData.confirm_password && !passwordsMatch
+                  formData.confirmPassword && !passwordsMatch
                     ? "border-red-500"
                     : ""
-                } ${formData.confirm_password && passwordsMatch ? "border-green-500" : ""}`}
+                } ${formData.confirmPassword && passwordsMatch ? "border-green-500" : ""}`}
                 required
               />
               <button
@@ -293,7 +293,7 @@ export function SignUpForm() {
                 )}
               </button>
             </div>
-            {formData.confirm_password && !passwordsMatch && (
+            {formData.confirmPassword && !passwordsMatch && (
               <motion.p
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}

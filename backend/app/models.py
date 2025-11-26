@@ -94,6 +94,10 @@ class User(BaseModel, table=True):
         back_populates="commenter",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+    user_subscriptions: list["Subscription"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
 
 
 class EpicStatus(str, Enum):
@@ -629,3 +633,179 @@ class Artifact(BaseModel, table=True):
             "foreign_keys": "[Artifact.parent_artifact_id]"
         }
     )
+
+
+# ==================== BILLING & PAYMENT MODELS ====================
+
+class OrderType(str, Enum):
+    """Type of order"""
+    SUBSCRIPTION = "subscription"
+    ADDON = "addon"
+
+
+class OrderStatus(str, Enum):
+    """Status of an order"""
+    PENDING = "pending"
+    PAID = "paid"
+    FAILED = "failed"
+    CANCELED = "canceled"
+
+
+class InvoiceStatus(str, Enum):
+    """Status of an invoice"""
+    DRAFT = "draft"
+    ISSUED = "issued"
+    PAID = "paid"
+    VOID = "void"
+
+
+# ==================== Plans ====================
+class Plan(BaseModel, table=True):
+    __tablename__ = "plans"
+
+    code: str | None = Field(default=None, sa_column=Column(Text)) # 'FREE', 'PLUS', 'PRO'
+    name: str | None = Field(default=None, sa_column=Column(Text))
+    description: str | None = Field(default=None, sa_column=Column(Text))
+
+    monthly_price: int | None = Field(default=None)
+    yearly_discount_percentage: float | None = Field(default=None)  # Discount % for yearly billing (0-100)
+    currency: str | None = Field(default=None, sa_column=Column(Text)) # VND
+    monthly_credits: int | None = Field(default=None)
+    additional_credit_price: int | None = Field(default=None)  # Price to buy 100 additional credits
+    available_project: int | None = Field(default=None)
+    is_active: bool = Field(default=True, nullable=True)
+
+    tier: str | None = Field(
+        default="pay",
+        sa_column=Column(Text)
+    )
+    # 'free' | 'pay'
+
+    sort_index: int | None = Field(default=0)
+    # số thứ tự để sắp xếp trên UI
+
+    is_featured: bool = Field(default=False)  # gói nổi bật (đặt ở giữa + badge "Popular")
+
+    is_custom_price: bool = Field(default=False)  # true -> hiển thị "Custom" / "Liên hệ"
+
+    features_text: str | None = Field(default=None, sa_column=Column(Text))
+
+    plan_subscriptions: list["Subscription"] = Relationship(
+        back_populates="plan", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+
+    @property
+    def yearly_price(self) -> int | None:
+        """Calculate yearly price from monthly price and discount percentage"""
+        if self.monthly_price is not None and self.yearly_discount_percentage is not None:
+            annual_monthly_cost = self.monthly_price * 12
+            yearly_price = annual_monthly_cost * (1 - self.yearly_discount_percentage / 100)
+            return round(yearly_price)
+        return None
+
+class Subscription(BaseModel, table=True):
+    __tablename__ = "subscriptions"
+
+    user_id: UUID  | None = Field(foreign_key="users.id", nullable=True, ondelete="CASCADE")
+    plan_id: UUID = Field(foreign_key="plans.id", nullable=True, ondelete="CASCADE")
+
+    status: str | None = Field(default=None, sa_column=Column(Text)) # 'pending', 'active', 'expired', 'canceled'
+    start_at: datetime | None = Field(default=None)
+    end_at: datetime | None = Field(default=None)
+    auto_renew: bool = Field(default=True, nullable=True)
+
+    user: User = Relationship(back_populates="user_subscriptions")
+    plan: Plan = Relationship(back_populates="plan_subscriptions")
+
+    subscription_wallets: list["CreditWallet"] = Relationship(
+        back_populates="subscription", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+
+class CreditWallet(BaseModel, table=True):
+    __tablename__ = "credit_wallets"
+
+    user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
+    wallet_type: str | None = Field(default=None, sa_column=Column(Text)) # subscription, addon
+
+    subscription_id: UUID | None = Field(default=None, foreign_key="subscriptions.id", ondelete="CASCADE")
+    period_start: datetime | None = Field(default=None)
+    period_end: datetime | None = Field(default=None)
+
+    total_credits: int | None = Field(default=None)
+    used_credits: int | None = Field(default=None)
+
+    # Relationships
+    user: User | None = Relationship()
+    subscription: Optional["Subscription"] = Relationship(back_populates="subscription_wallets")
+    credit_activities: list["CreditActivity"] = Relationship(
+        back_populates="wallet", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+
+class CreditActivity(BaseModel, table=True):
+    __tablename__ = "credit_activities"
+
+    user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="CASCADE")
+    agent_id: UUID | None = Field(default=None, foreign_key="agents.id", ondelete="CASCADE")
+    wallet_id: UUID | None = Field(default=None, foreign_key="credit_wallets.id", ondelete="CASCADE")
+
+    amount: int | None = Field(default=None)
+    reason: str | None = Field(default=None, sa_column=Column(Text))
+    activity_type: str | None = Field(default=None, sa_column=Column(Text)) # cộng, trừ
+
+    # Relationships
+    user: User | None = Relationship()
+    agent: Agent | None = Relationship()
+    wallet: CreditWallet | None = Relationship(back_populates="credit_activities")
+
+
+class Order(BaseModel, table=True):
+    __tablename__ = "orders"
+
+    user_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")
+    order_type: OrderType = Field(nullable=False)  # subscription or addon
+    subscription_id: UUID | None = Field(default=None, foreign_key="subscriptions.id", ondelete="SET NULL")
+
+    amount: float = Field(nullable=False)
+    status: OrderStatus = Field(default=OrderStatus.PENDING, nullable=False)
+    paid_at: datetime | None = Field(default=None)
+    is_active: bool = Field(default=True, nullable=False)
+
+    # PayOS Integration fields
+    payos_order_code: int | None = Field(default=None, sa_column=Column(BigInteger, unique=True, index=True))
+    payos_transaction_id: str | None = Field(default=None, sa_column=Column(Text))
+    payment_link_id: str | None = Field(default=None, sa_column=Column(Text))
+    qr_code: str | None = Field(default=None, sa_column=Column(Text))  # Base64 QR code
+    checkout_url: str | None = Field(default=None, sa_column=Column(Text))
+
+    # Payment details
+    billing_cycle: str | None = Field(default="monthly", sa_column=Column(Text))  # monthly, yearly
+    plan_code: str | None = Field(default=None, sa_column=Column(Text))  # Store plan code for reference
+
+    # Relationships
+    user: User = Relationship()
+    subscription: Optional["Subscription"] = Relationship()
+    invoices: list["Invoice"] = Relationship(
+        back_populates="order", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+
+
+class Invoice(BaseModel, table=True):
+    __tablename__ = "invoices"
+
+    order_id: UUID = Field(foreign_key="orders.id", nullable=False, ondelete="CASCADE")
+    invoice_number: str = Field(unique=True, index=True, nullable=False)
+
+    billing_name: str = Field(nullable=False)
+    billing_address: str | None = Field(default=None, sa_column=Column(Text))
+
+    amount: float = Field(nullable=False)
+    currency: str = Field(default="VND", nullable=False)
+
+    issue_date: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    status: InvoiceStatus = Field(default=InvoiceStatus.DRAFT, nullable=False)
+
+    # Relationships
+    order: Order = Relationship(back_populates="invoices")
+
