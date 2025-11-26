@@ -8,6 +8,7 @@ Messages are saved to DB, so frontend can query missed messages on reconnect.
 from typing import Dict, List, Set
 from uuid import UUID
 from fastapi import WebSocket
+from datetime import datetime, timezone
 import logging
 
 
@@ -35,6 +36,9 @@ class ConnectionManager:
         self.active_connections[project_id].add(websocket)
         self.websocket_to_project[websocket] = project_id
 
+        # Update database: Mark project as having active WebSocket
+        await self._update_websocket_status(project_id, connected=True)
+
         logger.info(f"WebSocket connected to project {project_id}.")
 
     def disconnect(self, websocket: WebSocket):
@@ -50,6 +54,17 @@ class ConnectionManager:
             if not self.active_connections[project_id]:
                 del self.active_connections[project_id]
                 logger.info(f"Project {project_id} room closed (no active connections)")
+                
+                # Update database: Mark project as disconnected (async task)
+                import asyncio
+                try:
+                    loop = asyncio.get_event_loop()
+                    loop.create_task(self._update_websocket_status(project_id, connected=False))
+                    # Clear conversation context immediately on disconnect
+                    loop.create_task(self._clear_conversation_context(project_id))
+                except RuntimeError:
+                    # If no event loop, skip DB update (will timeout naturally)
+                    logger.debug("No event loop available for DB update on disconnect")
 
         # Remove from mapping
         del self.websocket_to_project[websocket]
@@ -139,5 +154,56 @@ class ConnectionManager:
     def get_active_projects(self) -> List[UUID]:
         """Get list of projects with active connections"""
         return list(self.active_connections.keys())
+
+    async def _update_websocket_status(self, project_id: UUID, connected: bool):
+        """Update WebSocket connection status in database."""
+        try:
+            from sqlmodel import Session
+            from app.core.db import engine
+            from app.models import Project
+            
+            with Session(engine) as session:
+                project = session.get(Project, project_id)
+                if project:
+                    project.websocket_connected = connected
+                    project.websocket_last_seen = datetime.now(timezone.utc)
+                    session.add(project)
+                    session.commit()
+                    
+                    logger.debug(
+                        f"Updated WebSocket status for project {project_id}: "
+                        f"connected={connected}"
+                    )
+        except Exception as e:
+            logger.error(f"Failed to update WebSocket status: {e}", exc_info=True)
+
+    async def _clear_conversation_context(self, project_id: UUID):
+        """Clear conversation context immediately on disconnect.
+        
+        Clears active_agent context to ensure fresh routing when user returns.
+        
+        Args:
+            project_id: Project ID
+        """
+        try:
+            from sqlmodel import Session
+            from app.core.db import engine
+            from app.models import Project
+            
+            with Session(engine) as session:
+                project = session.get(Project, project_id)
+                if project and project.active_agent_id:
+                    old_agent_id = project.active_agent_id
+                    project.active_agent_id = None
+                    project.active_agent_updated_at = None
+                    session.add(project)
+                    session.commit()
+                    
+                    logger.info(
+                        f"Cleared conversation context for disconnected project {project_id} "
+                        f"(was: agent {old_agent_id})"
+                    )
+        except Exception as e:
+            logger.error(f"Failed to clear context on disconnect: {e}", exc_info=True)
 
 connection_manager = ConnectionManager()

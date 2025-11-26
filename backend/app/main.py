@@ -84,13 +84,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️ Failed to start WebSocket bridge: {e}")
 
-    # Start metrics collector for analytics
-    from app.tasks import start_metrics_collector
-    try:
-        await start_metrics_collector(interval_seconds=300, retention_days=30)
-    except Exception as e:
-        logger.warning(f"⚠️ Failed to start metrics collector: {e}")
-
     yield
 
     # Shutdown
@@ -107,13 +100,6 @@ async def lifespan(app: FastAPI):
             await activity_buffer.stop()
         except (Exception, asyncio.CancelledError) as e:
             logger.error(f"Error stopping activity buffer: {e}")
-
-        # Shutdown metrics collector
-        from app.tasks import stop_metrics_collector
-        try:
-            await stop_metrics_collector()
-        except (Exception, asyncio.CancelledError) as e:
-            logger.error(f"Error stopping metrics collector: {e}")
 
         # Shutdown agent monitoring system
         try:
