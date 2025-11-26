@@ -3,7 +3,7 @@ from uuid import UUID, uuid4
 from enum import Enum
 from pydantic import EmailStr
 from sqlmodel import Field, SQLModel, Relationship, Column
-from sqlalchemy import JSON, Text, Enum as SQLEnum
+from sqlalchemy import JSON, Text, BigInteger, Enum as SQLEnum
 from typing import Optional
 
 class Role(str, Enum):
@@ -594,24 +594,24 @@ class Plan(BaseModel, table=True):
     code: str | None = Field(default=None, sa_column=Column(Text)) # 'FREE', 'PLUS', 'PRO'
     name: str | None = Field(default=None, sa_column=Column(Text))
     description: str | None = Field(default=None, sa_column=Column(Text))
-    
-    price: int | None = Field(default=None)
+
+    monthly_price: int | None = Field(default=None)
+    yearly_discount_percentage: float | None = Field(default=None)  # Discount % for yearly billing (0-100)
     currency: str | None = Field(default=None, sa_column=Column(Text)) # VND
-    billing_cycle: str | None = Field(default=None, sa_column=Column(Text)) # 'monthly', 'yearly'
     monthly_credits: int | None = Field(default=None)
-    addition_credits: int | None = Field(default=None)
+    additional_credit_price: int | None = Field(default=None)  # Price to buy 100 additional credits
     available_project: int | None = Field(default=None)
     is_active: bool = Field(default=True, nullable=True)
 
     tier: str | None = Field(
-        default="standard",
+        default="pay",
         sa_column=Column(Text)
     )
-    # 'free' | 'pro' | 'custom' | 'standard' | 'enterprise' ...
+    # 'free' | 'pay'
 
     sort_index: int | None = Field(default=0)
     # số thứ tự để sắp xếp trên UI
-    
+
     is_featured: bool = Field(default=False)  # gói nổi bật (đặt ở giữa + badge "Popular")
 
     is_custom_price: bool = Field(default=False)  # true -> hiển thị "Custom" / "Liên hệ"
@@ -621,6 +621,15 @@ class Plan(BaseModel, table=True):
     plan_subscriptions: list["Subscription"] = Relationship(
         back_populates="plan", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
+
+    @property
+    def yearly_price(self) -> int | None:
+        """Calculate yearly price from monthly price and discount percentage"""
+        if self.monthly_price is not None and self.yearly_discount_percentage is not None:
+            annual_monthly_cost = self.monthly_price * 12
+            yearly_price = annual_monthly_cost * (1 - self.yearly_discount_percentage / 100)
+            return round(yearly_price)
+        return None
 
 class Subscription(BaseModel, table=True):
     __tablename__ = "subscriptions"
@@ -688,6 +697,17 @@ class Order(BaseModel, table=True):
     status: OrderStatus = Field(default=OrderStatus.PENDING, nullable=False)
     paid_at: datetime | None = Field(default=None)
     is_active: bool = Field(default=True, nullable=False)
+
+    # PayOS Integration fields
+    payos_order_code: int | None = Field(default=None, sa_column=Column(BigInteger, unique=True, index=True))
+    payos_transaction_id: str | None = Field(default=None, sa_column=Column(Text))
+    payment_link_id: str | None = Field(default=None, sa_column=Column(Text))
+    qr_code: str | None = Field(default=None, sa_column=Column(Text))  # Base64 QR code
+    checkout_url: str | None = Field(default=None, sa_column=Column(Text))
+
+    # Payment details
+    billing_cycle: str | None = Field(default="monthly", sa_column=Column(Text))  # monthly, yearly
+    plan_code: str | None = Field(default=None, sa_column=Column(Text))  # Store plan code for reference
 
     # Relationships
     user: User = Relationship()

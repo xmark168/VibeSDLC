@@ -22,6 +22,7 @@ dependencies = [
     { name = "jwt" },
     { name = "litellm" },
     { name = "passlib" },
+    { name = "payos" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -59,6 +60,7 @@ requires-dist = [
     { name = "jwt", specifier = ">=1.4.0" },
     { name = "litellm", specifier = ">=1.80.0" },
     { name = "passlib", specifier = ">=1.7.4" },
+    { name = "payos", specifier = ">=0.1.8" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.10" },
     { name = "pydantic", specifier = ">=2.10.0" },
     { name = "pydantic-settings", specifier = ">=2.6.0" },
@@ -2242,6 +2244,20 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b6/06/9da9ee59a67fae7761aab3ccc84fa4f3f33f125b370f1ccdb915bf967c11/passlib-1.7.4.tar.gz", hash = "sha256:defd50f72b65c5402ab2c573830a6978e5f202ad0d984793c8dde2c4152ebe04", size = 689844, upload-time = "2020-10-08T19:00:52.121Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3b/a4/ab6b7589382ca3df236e03faa71deac88cae040af60c071a78d254a62172/passlib-1.7.4-py2.py3-none-any.whl", hash = "sha256:aa6bca462b8d8bda89c70b382f0c298a20b5560af6cbfa2dce410c0a2fb669f1", size = 525554, upload-time = "2020-10-08T19:00:49.856Z" },
+]
+
+[[package]]
+name = "payos"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/98/f0/329739ef6d1ff3bd3d6b484cc0019833bb2617acefe5849c7e3dd68fe9cd/payos-1.0.0.tar.gz", hash = "sha256:e78e96309e40d2be934e756471627e7806a267fab59eb122139d0154a1e510ce", size = 22194, upload-time = "2025-09-11T04:41:38.514Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c1/39/8e646f2d6fa6611e14f3e8636a9ba49c7807d4b3ceb9ee0e86ccd34806ae/payos-1.0.0-py3-none-any.whl", hash = "sha256:347ac2c3d4f7014c4dc64f9f6b39b0aa53dbb59f8b01f064968dfff1e0e00dfd", size = 42357, upload-time = "2025-09-11T04:41:37.382Z" },
 ]
 
 [[package]]

@@ -8,6 +8,8 @@ from app.api.routes import (
     files,  # Project file management
     lean_kanban,  # Lean Kanban features: WIP limits, policies, flow metrics
     messages,
+    payments,  # Payment and PayOS integration
+    plans,  # Plan management
     project_rules,  # Project-specific rules and configurations
     projects,
     stories,  # Story management (Kanban with Todo/InProgress/Review/Done)
@@ -24,6 +26,8 @@ api_router.include_router(projects.router)
 api_router.include_router(files.router)  # Project file management
 api_router.include_router(lean_kanban.router)  # Lean Kanban: WIP limits, policies, metrics
 api_router.include_router(messages.router)
+api_router.include_router(plans.router)  # Plan management
+api_router.include_router(payments.router)  # Payment and PayOS integration
 api_router.include_router(agent_management.router)  # Agent pools and monitoring - MUST be before agents.router
 api_router.include_router(agents.router)
 api_router.include_router(project_rules.router)  # Project-specific rules and configurations
