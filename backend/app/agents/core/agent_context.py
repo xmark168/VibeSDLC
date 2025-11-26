@@ -8,7 +8,8 @@ Architecture:
 - AgentToolContext: Concrete implementation backed by BaseAgent
 """
 
-from typing import Protocol, Optional, UUID, List, Dict, Any
+from typing import Protocol, Optional, List, Dict, Any
+from uuid import UUID
 import logging
 
 logger = logging.getLogger(__name__)
