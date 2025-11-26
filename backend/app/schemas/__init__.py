@@ -130,6 +130,13 @@ from .payment import (
     WebhookRequest,
 )
 
+# Subscription schemas
+from .subscription import (
+    SubscriptionPublic,
+    CreditWalletPublic,
+    UserSubscriptionResponse,
+)
+
 __all__ = [
     # User
     "UserPublic",
@@ -236,4 +243,9 @@ __all__ = [
     "PaymentStatusResponse",
     "PayOSWebhookData",
     "WebhookRequest",
+
+    # Subscription
+    "SubscriptionPublic",
+    "CreditWalletPublic",
+    "UserSubscriptionResponse",
 ]

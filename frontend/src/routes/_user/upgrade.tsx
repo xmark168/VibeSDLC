@@ -9,8 +9,11 @@ import { InvoiceConfirmDialog } from "@/components/upgrade/InvoiceConfirmDialog"
 import { InvoiceDetailDialog } from "@/components/upgrade/InvoiceDetailDialog"
 import { useCreatePaymentLink, usePaymentHistory } from "@/queries/payments"
 import { paymentsApi } from "@/apis/payments"
+import { useCurrentSubscription } from "@/queries/subscription"
 import type { Plan } from "@/types/plan"
 import toast from "react-hot-toast"
+import { useQueryClient } from "@tanstack/react-query"
+import { format } from "date-fns"
 
 export const Route = createFileRoute('/_user/upgrade')({
   component: RouteComponent,
@@ -27,6 +30,7 @@ type BillingTab = "plan" | "credit" | "history"
 function RouteComponent() {
   const navigate = useNavigate()
   const searchParams = useSearch({ from: '/_user/upgrade' })
+  const queryClient = useQueryClient()
   const [billingTab, setBillingTab] = useState<BillingTab>("plan")
   const [creditAmount, setCreditAmount] = useState<number>(100)
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly')
@@ -39,6 +43,9 @@ function RouteComponent() {
   })
 
   const plans = plansData?.data || []
+
+  // Fetch current user's subscription
+  const { data: subscriptionData, isLoading: subscriptionLoading } = useCurrentSubscription()
 
   // Invoice confirm dialog state
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false)
@@ -138,6 +145,9 @@ function RouteComponent() {
             console.log('Sync response:', response)
 
             if (response.status === 'PAID') {
+              // Invalidate subscription query to refetch user's new subscription
+              queryClient.invalidateQueries({ queryKey: ['subscription', 'current'] })
+
               toast.success('Thanh toán thành công!\nGói dịch vụ của bạn đã được kích hoạt', {
                 duration: 5000,
                 style: {
@@ -252,9 +262,9 @@ function RouteComponent() {
     setInvoiceDetailOpen(true)
   }
 
-  // Get current plan info (assuming FREE for now - TODO: Get from user subscription)
-  const currentPlanCode = "FREE"
-  const currentPlan = plans.find(p => p.code === currentPlanCode)
+  // Get current plan info from subscription data
+  const currentPlanCode = subscriptionData?.subscription?.plan?.code || "FREE"
+  const currentPlan = subscriptionData?.subscription?.plan || plans.find(p => p.code === 'FREE')
 
   const getPricePerCredit = () => {
     if (!currentPlan || !currentPlan.additional_credit_price) return 0
@@ -262,6 +272,15 @@ function RouteComponent() {
   }
 
   const totalPrice = (creditAmount * getPricePerCredit()).toFixed(2)
+
+  // Format date helper
+  const formatDate = (dateString: string) => {
+    try {
+      return format(new Date(dateString), 'dd/MM/yyyy')
+    } catch {
+      return dateString
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background">
