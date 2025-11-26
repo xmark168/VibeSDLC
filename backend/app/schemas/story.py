@@ -31,12 +31,10 @@ class StoryBase(SQLModel):
 
 
 class StoryCreate(StoryBase):
-    """Schema for creating a new story."""
     project_id: UUID
 
 
 class StoryPublic(StoryBase):
-    """Schema for story response."""
     id: UUID
     project_id: UUID
     status: StoryStatus
@@ -70,5 +68,5 @@ class StoryUpdate(SQLModel):
 
 
 class StoriesPublic(SQLModel):
-    data: list[dict]  # List of story dictionaries
+    data: list[dict]
     count: int

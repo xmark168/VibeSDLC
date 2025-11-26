@@ -14,8 +14,8 @@ class TokenData(SQLModel):
 
 
 class TokenPayload(SQLModel):
-    sub: Optional[str] = None  # subject - user ID in JWT standard
-    type: Optional[str] = None  # token type (access/refresh)
+    sub: Optional[str] = None
+    type: Optional[str] = None
 
 
 class RefreshTokenRequest(SQLModel):

@@ -68,13 +68,22 @@ class BaseAgent(ABC):
     """
 
     def __init__(self, agent_model: AgentModel, **kwargs):
-        """Initialize base agent.
+        """Initialize base agent with persona attributes.
         """
         self.agent_id = agent_model.id
         self.project_id = agent_model.project_id
         self.role_type = agent_model.role_type
-        self.name = agent_model.human_name
         self.agent_model = agent_model
+        
+        # Name (short and display)
+        self.name = agent_model.human_name  # "Sarah"
+        self.display_name = agent_model.name  # "Sarah (Business Analyst)"
+        
+        # Persona attributes (simplified - easy access for subclasses)
+        self.persona_template_id = agent_model.persona_template_id
+        self.personality_traits = agent_model.personality_traits or []
+        self.communication_style = agent_model.communication_style
+        self.persona_metadata = agent_model.persona_metadata or {}
 
         # For AgentPool compatibility
         self.heartbeat_interval = kwargs.get("heartbeat_interval", 30)
@@ -116,7 +125,10 @@ class BaseAgent(ABC):
         self._queue_running: bool = False
         self._queue_worker_task: Optional[asyncio.Task] = None
 
-        logger.info(f"Initialized {self.role_type} agent: {self.name} ({self.agent_id})")
+        logger.info(
+            f"Initialized {self.role_type} agent: {self.name} "
+            f"(style: {self.communication_style or 'N/A'}, traits: {', '.join(self.personality_traits[:2]) if self.personality_traits else 'N/A'})"
+        )
 
     @abstractmethod
     async def handle_task(self, task: TaskContext) -> TaskResult:

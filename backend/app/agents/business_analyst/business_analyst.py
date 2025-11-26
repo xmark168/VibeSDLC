@@ -46,10 +46,15 @@ class BusinessAnalyst(BaseAgent):
     INTERVIEW_MODE = "sequential"  # Default: sequential for adaptive interviews
 
     def __init__(self, agent_model: AgentModel, **kwargs):
-        """Initialize Business Analyst."""
+        """Initialize Business Analyst with persona."""
         super().__init__(agent_model, **kwargs)
 
-        self.crew = BusinessAnalystCrew()
+        # Initialize crew with simplified persona context
+        self.crew = BusinessAnalystCrew(
+            agent_name=agent_model.human_name,
+            personality_traits=agent_model.personality_traits or [],
+            communication_style=agent_model.communication_style
+        )
         
         # Initialize project files manager
         self.project_files = None

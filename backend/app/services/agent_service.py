@@ -5,7 +5,8 @@ from typing import Optional
 
 from sqlmodel import Session, select, update
 
-from app.models import Agent, AgentStatus
+from app.models import Agent, AgentStatus, AgentPersonaTemplate
+from app.utils.name_generator import get_display_name
 
 
 class AgentService:
@@ -218,6 +219,51 @@ class AgentService:
         self.session.add(agent)
         self.session.commit()
         self.session.refresh(agent)
+        return agent
+
+    def create_from_template(
+        self,
+        project_id: UUID,
+        persona_template: AgentPersonaTemplate,
+        status: AgentStatus = AgentStatus.idle,
+    ) -> Agent:
+        """Create agent from persona template.
+        
+        Args:
+            project_id: Project UUID
+            persona_template: Persona template to use
+            status: Initial status (defaults to idle)
+            
+        Returns:
+            Created agent with persona attributes
+        """
+        display_name = get_display_name(
+            persona_template.name, 
+            persona_template.role_type
+        )
+        
+        agent = Agent(
+            project_id=project_id,
+            persona_template_id=persona_template.id,
+            
+            # Copy persona data (denormalized for performance)
+            human_name=persona_template.name,
+            name=display_name,
+            role_type=persona_template.role_type,
+            agent_type=persona_template.role_type,
+            
+            # Simplified persona attributes
+            personality_traits=persona_template.personality_traits.copy() if persona_template.personality_traits else [],
+            communication_style=persona_template.communication_style,
+            persona_metadata=persona_template.persona_metadata.copy() if persona_template.persona_metadata else {},
+            
+            status=status,
+        )
+        
+        self.session.add(agent)
+        self.session.commit()
+        self.session.refresh(agent)
+        
         return agent
 
     def delete(self, agent_id: UUID) -> bool:

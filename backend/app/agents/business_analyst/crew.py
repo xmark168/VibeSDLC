@@ -17,45 +17,106 @@ class BusinessAnalystCrew:
     agents_config = 'config/agents.yaml'
     tasks_config = 'config/tasks.yaml'
     
+    def __init__(
+        self,
+        agent_name: str = "BA",
+        personality_traits: list[str] = None,
+        communication_style: str = None
+    ):
+        """Initialize crew with simplified persona context."""
+        # Store persona attributes (before super call)
+        self.agent_name = agent_name
+        self.personality_traits = personality_traits or []
+        self.communication_style = communication_style or "professional and clear"
+        
+        # Build persona description for prompts
+        self.persona_description = self._build_persona_description()
+    
+    def _build_persona_description(self) -> str:
+        """Build concise persona description for CrewAI."""
+        traits_str = ", ".join(self.personality_traits) if self.personality_traits else "professional"
+        
+        return f"""You are {self.agent_name}, a Business Analyst.
+
+Personality Traits: {traits_str}
+Communication Style: {self.communication_style}
+
+Embody this personality in all responses while maintaining professionalism."""
+    
     # === SPECIALIZED AGENTS ===
     
     @agent
     def requirements_engineer(self) -> Agent:
-        """Interview & clarification specialist."""
+        """Interview & clarification specialist with persona."""
+        base_config = self.agents_config['requirements_engineer'].copy()
+        
+        # Inject simplified persona into backstory
+        base_config['backstory'] = f"""{self.persona_description}
+
+As a Requirements Engineer, you excel at asking targeted clarification questions and detecting missing information."""
+        
         return Agent(
-            config=self.agents_config['requirements_engineer'],
+            config=base_config,
             verbose=True
         )
     
     @agent
     def domain_expert(self) -> Agent:
-        """Business domain & analysis specialist."""
+        """Business domain & analysis specialist with persona."""
+        base_config = self.agents_config['domain_expert'].copy()
+        
+        # Inject simplified persona into backstory
+        base_config['backstory'] = f"""{self.persona_description}
+
+As a Domain Expert, you analyze business context and explain complex domain concepts clearly."""
+        
         return Agent(
-            config=self.agents_config['domain_expert'],
+            config=base_config,
             verbose=True
         )
     
     @agent
     def prd_specialist(self) -> Agent:
-        """PRD documentation specialist."""
+        """PRD documentation specialist with persona."""
+        base_config = self.agents_config['prd_specialist'].copy()
+        
+        # Inject simplified persona into backstory
+        base_config['backstory'] = f"""{self.persona_description}
+
+As a PRD Specialist, you create clear and comprehensive documentation."""
+        
         return Agent(
-            config=self.agents_config['prd_specialist'],
+            config=base_config,
             verbose=True
         )
     
     @agent
     def story_writer(self) -> Agent:
-        """User story extraction specialist."""
+        """User story extraction specialist with persona."""
+        base_config = self.agents_config['story_writer'].copy()
+        
+        # Inject simplified persona into backstory
+        base_config['backstory'] = f"""{self.persona_description}
+
+As a Story Writer, you craft clear, actionable user stories."""
+        
         return Agent(
-            config=self.agents_config['story_writer'],
+            config=base_config,
             verbose=True
         )
     
     @agent
     def workflow_orchestrator(self) -> Agent:
-        """Workflow orchestrator & coordinator - decides next action."""
+        """Workflow orchestrator & coordinator with persona."""
+        base_config = self.agents_config['workflow_orchestrator'].copy()
+        
+        # Inject simplified persona into backstory
+        base_config['backstory'] = f"""{self.persona_description}
+
+As the Workflow Orchestrator, you coordinate your team of specialists and make intelligent routing decisions."""
+        
         return Agent(
-            config=self.agents_config['workflow_orchestrator'],
+            config=base_config,
             verbose=True
         )
     

@@ -3,7 +3,7 @@ from uuid import UUID, uuid4
 from enum import Enum
 from pydantic import EmailStr
 from sqlmodel import Field, SQLModel, Relationship, Column
-from sqlalchemy import JSON, Text, Enum as SQLEnum
+from sqlalchemy import JSON, Text, Enum as SQLEnum, UniqueConstraint
 from typing import Optional
 
 class Role(str, Enum):
@@ -44,6 +44,35 @@ class BaseModel(SQLModel):
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc)},
         nullable=False,
+    )
+
+
+# ==================== AGENT PERSONA TEMPLATES ====================
+
+class AgentPersonaTemplate(BaseModel, table=True):
+    """Master persona templates - fixed identities for agents"""
+    __tablename__ = "agent_persona_templates"
+    
+    # Identity
+    name: str = Field(nullable=False, index=True)
+    role_type: str = Field(nullable=False, index=True)
+    
+    # Persona attributes (simplified)
+    personality_traits: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    communication_style: str = Field(nullable=False)
+    
+    # Metadata (for future extensions without schema changes)
+    persona_metadata: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    
+    # Management
+    is_active: bool = Field(default=True)
+    display_order: int = Field(default=0)
+    
+    # Relationships
+    agents: list["Agent"] = Relationship(back_populates="persona_template")
+    
+    __table_args__ = (
+        UniqueConstraint('name', 'role_type', name='uq_persona_name_role'),
     )
 
 
@@ -348,16 +377,29 @@ class Agent(BaseModel, table=True):
     # Project relationship - each agent belongs to a project
     project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
 
+    # Persona template link
+    persona_template_id: UUID | None = Field(
+        default=None,
+        foreign_key="agent_persona_templates.id",
+        ondelete="RESTRICT"
+    )
+
     # Agent identity
     name: str  # Display name (e.g., "Mike (Developer)")
     human_name: str = Field(nullable=False)  # Natural name like "Mike", "Alice"
     role_type: str = Field(nullable=False)  # team_leader, business_analyst, developer, tester
     agent_type: str | None = Field(default=None)  # Legacy field for compatibility
 
+    # Persona attributes (denormalized from template for performance, simplified)
+    personality_traits: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    communication_style: str | None = Field(default=None)
+    persona_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
+
     # Runtime status
     status: AgentStatus = Field(default=AgentStatus.idle)
 
     # Relationships
+    persona_template: Optional["AgentPersonaTemplate"] = Relationship(back_populates="agents")
     project: "Project" = Relationship(
         back_populates="agents",
         sa_relationship_kwargs={

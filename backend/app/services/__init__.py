@@ -7,6 +7,7 @@ from .rule_service import RuleService
 from .agent_service import AgentService
 from .message_service import MessageService
 from .execution_service import ExecutionService
+from .persona_service import PersonaService
 
 __all__ = [
     "UserService",
@@ -16,5 +17,6 @@ __all__ = [
     "AgentService",
     "MessageService",
     "ExecutionService",
+    "PersonaService",
 ]
 
