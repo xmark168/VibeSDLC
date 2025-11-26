@@ -17,6 +17,8 @@ import type { KanbanCardData } from "./kanban-card"
 import { CreateStoryDialog, type StoryFormData } from "./create-story-dialog"
 import { useKanbanBoard } from "@/queries/backlog-items"
 import { backlogItemsApi } from "@/apis/backlog-items"
+import { storiesApi } from "@/apis/stories"
+import { toast } from "sonner"
 
 interface KanbanBoardProps {
   kanbanData?: any
@@ -345,10 +347,64 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     )
   }, [])
 
-  const handleCreateStory = useCallback((storyData: StoryFormData) => {
-    // Always add to Todo column
-    handleAddCard("todo", storyData)
-  }, [handleAddCard])
+  const handleCreateStory = useCallback(async (storyData: StoryFormData) => {
+    console.log("handleCreateStory called with:", storyData, "projectId:", projectId)
+    if (!projectId) {
+      toast.error("Project ID is required to create a story")
+      return
+    }
+
+    const toastId = toast.loading("Creating story...")
+    try {
+      // Call the API to create the story in the database
+      console.log("About to create story via API:", { project_id: projectId, ...storyData })
+
+      const createdStory = await storiesApi.create({
+        project_id: projectId,
+        title: storyData.title,
+        description: storyData.description,
+        story_type: storyData.type,
+        estimated_hours: storyData.story_point,
+        priority: storyData.priority === "High" ? 5 : storyData.priority === "Medium" ? 3 : 1,
+        acceptance_criteria: storyData.acceptance_criteria.join('\n'), // Join criteria into a single string
+        tags: [], // Add any tags if needed
+        labels: [], // Add any labels if needed
+      })
+      console.log("Story created successfully:", createdStory)
+
+      // Add the created story to the frontend UI
+      setColumns((prev) =>
+        prev.map((col) => {
+          if (col.id === "todo") {
+            return {
+              ...col,
+              cards: [
+                ...col.cards,
+                {
+                  id: createdStory.id, // UUID thật của story trong database
+                  content: createdStory.title,
+                  description: createdStory.description || "",
+                  columnId: "todo",
+                  type: createdStory.type,
+                  story_point: createdStory.story_point || undefined,
+                  rank: createdStory.priority,
+                  taskId: `STORY-${createdStory.id.substring(0, 4).toUpperCase()}`, // ID tạm thời để hiển thị
+                },
+              ],
+            }
+          }
+          return col
+        }),
+      )
+
+      toast.success("Story created successfully!")
+    } catch (error) {
+      console.error("Error creating story:", error)
+      toast.error("Failed to create story. Please try again.")
+    } finally {
+      toast.dismiss(toastId) // Dismiss the specific loading toast
+    }
+  }, [projectId])
 
   const handleDeleteCard = useCallback((columnId: string, cardId: string) => {
     setColumns((prev) =>
@@ -456,17 +512,41 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
 
     // ===== Policy Validation =====
     // Validate workflow policies before moving cards if projectId and taskId exist
-    if (projectId && draggedCard.taskId) {
+    console.log("Drag drop event:", {
+      draggedCard,
+      targetColumnId,
+      projectId,
+      oldStatus: draggedCard.columnId,
+      newStatus: targetColumnId
+    });
+
+    if (projectId && draggedCard.id) {
       try {
-        const fromStatus = draggedCard.columnId.charAt(0).toUpperCase() + draggedCard.columnId.slice(1)
-        const toStatus = targetColumnId.charAt(0).toUpperCase() + targetColumnId.slice(1)
+        const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done'> = {
+          'todo': 'Todo',
+          'inprogress': 'InProgress',
+          'review': 'Review',
+          'done': 'Done',
+        };
+
+        const fromStatus = statusMap[draggedCard.columnId.toLowerCase()] || 'Todo';
+        const toStatus = statusMap[targetColumnId.toLowerCase()] || 'Todo';
+
+        console.log("About to validate policy move:", {
+          projectId,
+          storyId: draggedCard.id,
+          fromStatus,
+          toStatus
+        });
 
         const policyValidation = await backlogItemsApi.validatePolicyMove(
           projectId,
-          draggedCard.taskId,
+          draggedCard.id, // Sử dụng UUID thật thay vì taskId tạm thời
           fromStatus,
           toStatus
         )
+
+        console.log("Policy validation result:", policyValidation);
 
         // If policy violations exist, block the move and show dialog
         if (!policyValidation.allowed && policyValidation.violations.length > 0) {
@@ -532,6 +612,42 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         return col
       }),
     )
+
+    // Also update the status on the backend via API
+    try {
+      const backendStatus = {
+        'todo': 'Todo',
+        'inprogress': 'InProgress',
+        'review': 'Review',
+        'done': 'Done',
+      }[targetColumnId.toLowerCase()] || 'Todo';
+
+      console.log("About to update story status via API:", {
+        storyId: draggedCard.id,
+        newStatus: backendStatus,
+        targetColumnId: targetColumnId
+      });
+
+      // Import the stories API here if needed
+      const { storiesApi } = await import('@/apis/stories');
+
+      // Map column IDs to backend status format
+      const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done'> = {
+        'todo': 'Todo',
+        'inprogress': 'InProgress',
+        'review': 'Review',
+        'done': 'Done',
+      };
+
+      await storiesApi.updateStatus(
+        draggedCard.id,
+        statusMap[targetColumnId.toLowerCase()] || 'Todo'
+      );
+
+      console.log("Successfully updated story status via API");
+    } catch (error) {
+      console.error("Failed to update story status via API:", error);
+    }
 
     setDraggedCard(null)
     setDraggedOverColumn(null)

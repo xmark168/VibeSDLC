@@ -255,6 +255,12 @@ class Story(BaseModel, table=True):
             status_start_time = self.completed_at
 
         current_time = datetime.now(timezone.utc)
+
+        # Ensure both datetimes are timezone-aware or timezone-naive for comparison
+        if status_start_time.tzinfo is None:
+            # Make status_start_time timezone-naive to match current_time
+            status_start_time = status_start_time.replace(tzinfo=timezone.utc)
+
         return (current_time - status_start_time).total_seconds() / 3600
 
 

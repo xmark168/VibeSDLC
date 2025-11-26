@@ -1,0 +1,139 @@
+import { OpenAPI } from '@client'
+import { request as __request } from '@client/core/request'
+import type { 
+  Story, 
+  StoryFormData,
+  CreateStoryResponse,
+  UpdateStoryParams,
+  StoryStatus,
+  StoryType
+} from '@/types'
+
+// Re-export types for convenience
+export type { 
+  Story, 
+  StoryFormData,
+  CreateStoryResponse,
+  UpdateStoryParams,
+  StoryStatus,
+  StoryType
+}
+
+export const storiesApi = {
+  /**
+   * Create a new story
+   */
+  create: async (data: {
+    project_id: string
+    title: string
+    description?: string
+    story_type: StoryType
+    estimated_hours?: number
+    priority?: number
+    acceptance_criteria?: string
+    tags?: string[]
+    labels?: string[]
+  }): Promise<Story> => {
+    return __request<Story>(OpenAPI, {
+      method: 'POST',
+      url: '/api/v1/stories/',
+      body: {
+        project_id: data.project_id,
+        title: data.title,
+        description: data.description,
+        story_type: data.story_type,
+        estimated_hours: data.estimated_hours,
+        priority: data.priority || 3, // Default to medium priority (3)
+        acceptance_criteria: data.acceptance_criteria,
+        tags: data.tags || [],
+        labels: data.labels || [],
+      },
+    })
+  },
+
+  /**
+   * Get all stories for a project
+   */
+  list: async (
+    projectId: string,
+    params?: {
+      status?: StoryStatus
+      assignee_id?: string
+      story_type?: StoryType
+      skip?: number
+      limit?: number
+    }
+  ): Promise<{ data: Story[]; count: number }> => {
+    return __request<{ data: Story[]; count: number }>(OpenAPI, {
+      method: 'GET',
+      url: `/api/v1/stories/project/${projectId}`,
+      query: {
+        status: params?.status,
+        assignee_id: params?.assignee_id,
+        type: params?.story_type,
+        skip: params?.skip ?? 0,
+        limit: params?.limit ?? 100,
+      },
+    })
+  },
+
+  /**
+   * Get single story
+   */
+  get: async (storyId: string): Promise<Story> => {
+    return __request<Story>(OpenAPI, {
+      method: 'GET',
+      url: `/api/v1/stories/${storyId}`,
+    })
+  },
+
+  /**
+   * Update story
+   */
+  update: async (storyId: string, data: UpdateStoryParams): Promise<Story> => {
+    return __request<Story>(OpenAPI, {
+      method: 'PATCH',
+      url: `/api/v1/stories/${storyId}`,
+      body: data,
+    })
+  },
+
+  /**
+   * Update story status
+   */
+  updateStatus: async (storyId: string, status: StoryStatus): Promise<Story> => {
+    return __request<Story>(OpenAPI, {
+      method: 'PUT',
+      url: `/api/v1/stories/${storyId}/status`,
+      query: { new_status: status },
+    })
+  },
+
+  /**
+   * Assign story to a user
+   */
+  assign: async (
+    storyId: string, 
+    assigneeId: string, 
+    reviewerId?: string
+  ): Promise<Story> => {
+    return __request<Story>(OpenAPI, {
+      method: 'PUT',
+      url: `/api/v1/stories/${storyId}/assign`,
+      body: {
+        assignee_id: assigneeId,
+        reviewer_id: reviewerId,
+      },
+    })
+  },
+
+  /**
+   * Delete story
+   */
+  delete: async (storyId: string): Promise<void> => {
+    return __request<void>(OpenAPI, {
+      method: 'DELETE',
+      url: `/api/v1/stories/${storyId}`,
+    })
+  }
+}

@@ -34,10 +34,11 @@ async def create_story(
     # Auto-assign rank if not provided
     story_data = story_in.model_dump()
     if story_data.get("rank") is None:
+        # When creating a new story, default status is TODO
         max_rank = session.exec(
             select(func.max(Story.rank)).where(
                 Story.project_id == story_in.project_id,
-                Story.status == (story_in.status or StoryStatus.TODO)
+                Story.status == StoryStatus.TODO
             )
         ).one()
         story_data["rank"] = (max_rank or 0) + 1
