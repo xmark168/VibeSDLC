@@ -1,0 +1,168 @@
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
+import { Loader2, Receipt, Calendar, CreditCard } from "lucide-react"
+import type { Plan } from "@/types/plan"
+
+interface InvoiceConfirmDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  plan: Plan | null
+  billingCycle: 'monthly' | 'yearly'
+  onConfirm: () => void
+  isProcessing: boolean
+}
+
+export function InvoiceConfirmDialog({
+  open,
+  onOpenChange,
+  plan,
+  billingCycle,
+  onConfirm,
+  isProcessing
+}: InvoiceConfirmDialogProps) {
+  if (!plan) return null
+
+  const amount = billingCycle === 'monthly' ? plan.monthly_price : plan.yearly_price
+  const period = billingCycle === 'monthly' ? '1 tháng' : '1 năm'
+  const discount = billingCycle === 'yearly' && plan.yearly_discount_percentage
+    ? plan.yearly_discount_percentage
+    : 0
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md bg-slate-900 border-slate-800 text-white">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Receipt className="h-5 w-5 text-primary" />
+            Xác nhận hóa đơn
+          </DialogTitle>
+          <DialogDescription className="text-slate-400">
+            Vui lòng kiểm tra thông tin trước khi thanh toán
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {/* Plan Info */}
+          <div className="bg-secondary/30 rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-400">Gói dịch vụ</span>
+              <span className="font-semibold text-white">{plan.name}</span>
+            </div>
+
+            {plan.description && (
+              <p className="text-xs text-slate-500">{plan.description}</p>
+            )}
+          </div>
+
+          {/* Billing Details */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-400 flex items-center gap-2">
+                <Calendar className="h-4 w-4" />
+                Chu kỳ thanh toán
+              </span>
+              <span className="font-medium text-white capitalize">
+                {billingCycle === 'monthly' ? 'Hàng tháng' : 'Hàng năm'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-400">Thời hạn sử dụng</span>
+              <span className="font-medium text-white">{period}</span>
+            </div>
+
+            {plan.monthly_credits !== null && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-400">Credits / tháng</span>
+                <span className="font-medium text-white">
+                  {plan.monthly_credits === -1 ? 'Không giới hạn' : plan.monthly_credits.toLocaleString()}
+                </span>
+              </div>
+            )}
+
+            {plan.available_project !== null && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-400">Số dự án</span>
+                <span className="font-medium text-white">
+                  {plan.available_project === -1 ? 'Không giới hạn' : plan.available_project}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Price Summary */}
+          <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 space-y-3">
+            {discount > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-400">Giá gốc</span>
+                <span className="text-slate-400 line-through">
+                  {plan.monthly_price
+                    ? new Intl.NumberFormat('vi-VN', {
+                        style: 'currency',
+                        currency: plan.currency
+                      }).format((plan.monthly_price || 0) * (billingCycle === 'yearly' ? 12 : 1))
+                    : '0'}
+                </span>
+              </div>
+            )}
+
+            {discount > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-green-400">Giảm giá ({discount}%)</span>
+                <span className="text-green-400 font-medium">
+                  -{new Intl.NumberFormat('vi-VN', {
+                    style: 'currency',
+                    currency: plan.currency
+                  }).format(((plan.monthly_price || 0) * 12) - (amount || 0))}
+                </span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-white">Tổng thanh toán</span>
+              <span className="text-2xl font-bold text-primary">
+                {new Intl.NumberFormat('vi-VN', {
+                  style: 'currency',
+                  currency: plan.currency
+                }).format(amount || 0)}
+              </span>
+            </div>
+          </div>
+
+          {/* Notice */}
+          <p className="text-xs text-center text-slate-500">
+            Sau khi thanh toán, gói dịch vụ sẽ được kích hoạt tự động
+          </p>
+        </div>
+
+        <DialogFooter className="flex gap-2 sm:gap-2">
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={isProcessing}
+            className="flex-1 bg-slate-800 border-slate-700 text-white hover:bg-slate-700"
+          >
+            Hủy
+          </Button>
+          <Button
+            onClick={onConfirm}
+            disabled={isProcessing}
+            className="flex-1 bg-primary hover:bg-primary/90"
+          >
+            {isProcessing ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Đang xử lý...
+              </>
+            ) : (
+              <>
+                <CreditCard className="w-4 h-4 mr-2" />
+                Thanh toán
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}

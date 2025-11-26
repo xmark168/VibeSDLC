@@ -177,6 +177,12 @@ class Settings(BaseSettings):
     KAFKA_SASL_PASSWORD: str | None = None
     KAFKA_SECURITY_PROTOCOL: Literal["PLAINTEXT", "SSL", "SASL_PLAINTEXT", "SASL_SSL"] = "PLAINTEXT"
 
+    # PAYOS PAYMENT GATEWAY SETTINGS
+    PAYOS_CLIENT_ID: str = ""
+    PAYOS_API_KEY: str = ""
+    PAYOS_CHECKSUM_KEY: str = ""
+    PAYOS_WEBHOOK_SECRET: str = ""  # Optional: only needed for webhook signature verification
+
     # VALIDATORS
     @model_validator(mode="after")
     def _set_default_emails_from(self) -> Self:

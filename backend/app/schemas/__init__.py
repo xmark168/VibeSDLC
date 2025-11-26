@@ -111,6 +111,32 @@ from .lean_kanban import (
     WIPViolation,
 )
 
+# Plan schemas
+from .plan import (
+    PlanBase,
+    PlanCreate,
+    PlanUpdate,
+    PlanPublic,
+    PlansPublic,
+)
+
+# Payment schemas
+from .payment import (
+    PaymentItemData,
+    CreatePaymentRequest,
+    PaymentLinkResponse,
+    PaymentStatusResponse,
+    PayOSWebhookData,
+    WebhookRequest,
+)
+
+# Subscription schemas
+from .subscription import (
+    SubscriptionPublic,
+    CreditWalletPublic,
+    UserSubscriptionResponse,
+)
+
 __all__ = [
     # User
     "UserPublic",
@@ -202,4 +228,24 @@ __all__ = [
     "StoryFlowMetrics",
     "ProjectFlowMetrics",
     "WIPViolation",
+
+    # Plan
+    "PlanBase",
+    "PlanCreate",
+    "PlanUpdate",
+    "PlanPublic",
+    "PlansPublic",
+
+    # Payment
+    "PaymentItemData",
+    "CreatePaymentRequest",
+    "PaymentLinkResponse",
+    "PaymentStatusResponse",
+    "PayOSWebhookData",
+    "WebhookRequest",
+
+    # Subscription
+    "SubscriptionPublic",
+    "CreditWalletPublic",
+    "UserSubscriptionResponse",
 ]

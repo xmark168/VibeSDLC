@@ -91,7 +91,7 @@ def login_access_token(
     session: SessionDep
 ) -> LoginResponse:
     """
-    OAuth2 compatible token login, get an access token for future requests
+    OAuth2 compatible token login, get an access token for future requesloginProviderts
     """
     # Convert OAuth2 form to LoginRequest format
     login_data = LoginRequest(
@@ -176,7 +176,7 @@ def login(
             from app.models import User
             user = User(
                 email=login_data.email,
-                full_name=login_data.full_name,
+                full_name=login_data.fullname,
                 login_provider=True,
                 is_active=True,
                 is_locked=False
@@ -238,6 +238,9 @@ def register(
     """
     Register API - create new account with credential
     """
+    # Debug: Log received data
+    logger.info(f"Register request received: email={register_data.email}, fullname={register_data.fullname}, has_password={bool(register_data.password)}, has_confirmPassword={bool(register_data.confirmPassword)}")
+
     # Validation
     if not validate_email(str(register_data.email)):
         raise HTTPException(
@@ -245,7 +248,7 @@ def register(
             detail="Định dạng email không hợp lệ"
         )
 
-    if len(register_data.full_name) > 50 or not register_data.full_name.strip():
+    if register_data.fullname and (len(register_data.fullname) > 50 or not register_data.fullname.strip()):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Họ tên không được rỗng và tối đa 50 ký tự"
@@ -257,7 +260,7 @@ def register(
             detail="Mật khẩu phải có ít nhất 8 ký tự, chứa ít nhất 1 chữ cái và 1 chữ số"
         )
 
-    if register_data.password != register_data.confirm_password:
+    if register_data.password != register_data.confirmPassword:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Mật khẩu xác nhận không khớp"

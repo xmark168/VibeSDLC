@@ -12,7 +12,7 @@ from app.api.deps import (
 from app.services import UserService
 from app.core.config import settings
 from app.core.security import get_password_hash, verify_password
-from app.models import User, Role
+from app.models import User, Role, Subscription, CreditWallet, Plan
 from app.schemas import (
     Message,
     UpdatePassword,
@@ -22,7 +22,11 @@ from app.schemas import (
     UsersPublic,
     UserUpdate,
     UserUpdateMe,
+    SubscriptionPublic,
+    CreditWalletPublic,
+    UserSubscriptionResponse,
 )
+from datetime import datetime, timezone
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -257,3 +261,92 @@ def delete_user(
     session.delete(user)
     session.commit()
     return Message(message="User deleted successfully")
+
+
+@router.get("/me/subscription", response_model=UserSubscriptionResponse)
+def get_current_user_subscription(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser
+) -> UserSubscriptionResponse:
+    """
+    Get current user's active subscription with plan details and credit wallet
+    """
+    # Query active subscription for current user
+    now = datetime.now(timezone.utc)
+    subscription_statement = (
+        select(Subscription)
+        .where(Subscription.user_id == current_user.id)
+        .where(Subscription.status == "active")
+        .where(Subscription.end_at > now)
+    )
+    subscription = session.exec(subscription_statement).first()
+
+    if not subscription:
+        # No active subscription - user is on FREE plan
+        return UserSubscriptionResponse(
+            subscription=None,
+            credit_wallet=None
+        )
+
+    # Get plan details
+    plan = session.get(Plan, subscription.plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    # Get credit wallet for this subscription
+    wallet_statement = (
+        select(CreditWallet)
+        .where(CreditWallet.subscription_id == subscription.id)
+        .where(CreditWallet.user_id == current_user.id)
+    )
+    wallet = session.exec(wallet_statement).first()
+
+    # Build subscription response
+    from app.schemas.plan import PlanPublic
+    plan_public = PlanPublic(
+        id=plan.id,
+        name=plan.name,
+        code=plan.code,
+        description=plan.description,
+        monthly_price=plan.monthly_price,
+        yearly_price=plan.yearly_price,
+        currency=plan.currency,
+        monthly_credits=plan.monthly_credits,
+        available_project=plan.available_project,
+        additional_credit_price=plan.additional_credit_price,
+        is_active=plan.is_active,
+        is_featured=plan.is_featured,
+        is_custom_price=plan.is_custom_price,
+        yearly_discount_percentage=plan.yearly_discount_percentage,
+        sort_index=plan.sort_index,
+        created_at=plan.created_at,
+        updated_at=plan.updated_at
+    )
+
+    subscription_public = SubscriptionPublic(
+        id=subscription.id,
+        status=subscription.status,
+        start_at=subscription.start_at,
+        end_at=subscription.end_at,
+        auto_renew=subscription.auto_renew,
+        plan=plan_public
+    )
+
+    # Build wallet response if exists
+    wallet_public = None
+    if wallet:
+        remaining_credits = wallet.total_credits - wallet.used_credits
+        wallet_public = CreditWalletPublic(
+            id=wallet.id,
+            total_credits=wallet.total_credits,
+            used_credits=wallet.used_credits,
+            remaining_credits=remaining_credits,
+            period_start=wallet.period_start,
+            period_end=wallet.period_end
+        )
+
+    return UserSubscriptionResponse(
+        subscription=subscription_public,
+        credit_wallet=wallet_public
+    )
