@@ -79,110 +79,70 @@ class BusinessAnalyst(BaseAgent):
     def _clear_conversation_state(self, user_id: UUID):
         if user_id in self.conversation_states:
             del self.conversation_states[user_id]
-    
-    def _needs_more_clarification(self, state: BAConversationState) -> bool:
-        if len(state.questions_asked) >= 3:
-            return False
-        
-        info = state.collected_info
-        
-        # Check what's missing
-        has_domain = bool(info.get("domain_type"))
-        has_users = bool(info.get("user_roles"))
-        has_features = bool(info.get("core_features"))
-        
-        # Need at least domain or features
-        if not has_domain and not has_features:
-            return True
-        
-        # If we have domain but no users, ask about users
-        if has_domain and not has_users and len(state.questions_asked) < 2:
-            return True
-        
-        # If we have domain and users but no features, ask about features
-        if has_domain and has_users and not has_features and len(state.questions_asked) < 3:
-            return True
-        
-        return False
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
-        """Handle task assigned by Router."""
+        """Handle task assigned by Router using CrewAI Flow."""
         try:
-            
             # Handle resume from clarification question
+            # Note: This is kept outside the flow for now as it requires special handling
             if task.task_type == AgentTaskType.RESUME_WITH_ANSWER:
                 return await self._handle_resume(task)
             
             user_message = task.content
-            logger.info(f"[{self.name}] Processing: {user_message[:80]}...")
+            logger.info(f"[{self.name}] Processing with Flow: {user_message[:80]}...")
             
             # Check if we have project files initialized
             if not self.project_files:
                 logger.warning(f"[{self.name}] No ProjectFiles, using simple analysis")
                 return await self._simple_analysis(user_message)
             
-            # Get conversation state
-            state = self._get_conversation_state(task.user_id)
-            if not state.collected_info.get("original_request"):
-                state.collected_info["original_request"] = user_message
+            # Create and run the BA Flow
+            from .ba_flow import BAFlow
             
-            # Load existing artifacts
-            existing_prd = await self.project_files.load_prd()
-            state.existing_prd = existing_prd
-            has_stories = False  # TODO: Check if stories exist in DB
+            flow = BAFlow(agent=self, user_message=user_message)
+            flow.state.user_id = task.user_id
             
-            # ORCHESTRATOR: Analyze message and route
-            routing = await self.crew.analyze_and_route(
-                user_message=user_message,
-                current_phase=state.phase,
-                collected_info=state.collected_info,
-                questions_asked=state.questions_asked,
-                has_existing_prd=existing_prd is not None,
-                has_stories=has_stories
-            )
+            # Get existing conversation state for continuity
+            old_state = self._get_conversation_state(task.user_id)
+            if old_state.collected_info:
+                flow.state.collected_info = old_state.collected_info
+            if old_state.questions_asked:
+                flow.state.questions_asked = old_state.questions_asked
+            if old_state.phase != "initial":
+                flow.state.phase = old_state.phase
             
-            # Update state with intent
-            state.intent = routing["intent"]
+            # Kickoff the flow (runs entire workflow)
+            logger.info(f"[{self.name}] Kicking off BA Flow...")
+            result = flow.kickoff()
+            
+            # Update conversation state from flow state
+            old_state.intent = flow.state.intent
+            old_state.phase = flow.state.phase
+            old_state.collected_info = flow.state.collected_info
+            old_state.questions_asked = flow.state.questions_asked
+            
+            # Determine success based on flow completion
+            success = flow.state.is_complete and not flow.state.error_message
             
             logger.info(
-                f"[{self.name}] Routing: intent={routing['intent']}, "
-                f"action={routing['action']}, agent={routing['agent_to_use']}"
+                f"[{self.name}] Flow completed: success={success}, "
+                f"phase={flow.state.phase}, action={flow.state.action}"
             )
             
-            # Execute based on orchestrator decision
-            action = routing["action"]
-            
-            if action == "ASK_CLARIFICATION":
-                missing_info = routing.get("estimated_missing_info", [])
-                return await self._start_interview(state, user_message, missing_info)
-            
-            elif action == "ANALYZE_DOMAIN":
-                return await self._analyze_domain(state, user_message)
-            
-            elif action == "GENERATE_PRD":
-                return await self._generate_prd_from_interview(state, task)
-            
-            elif action == "UPDATE_PRD":
-                return await self._update_existing_prd(state, task, user_message)
-            
-            elif action == "EXTRACT_STORIES":
-                return await self._extract_stories_workflow(state, task)
-            
-            elif action == "UPDATE_STORY":
-                return await self._update_story(state, task, user_message)
-            
-            elif action == "ERROR":
-                error_msg = routing.get("error_message", "Unable to process request")
-                await self.message_user("error", error_msg)
-                return TaskResult(success=False, error_message=error_msg)
-            
-            else:
-                # Unknown action - fallback
-                logger.warning(f"[{self.name}] Unknown action: {action}, falling back")
-                return await self._simple_analysis(user_message)
+            return TaskResult(
+                success=success,
+                output=str(result) if result else "",
+                structured_data={
+                    "flow_state": flow.state.dict(),
+                    "intent": flow.state.intent,
+                    "action": flow.state.action,
+                    "phase": flow.state.phase
+                },
+                error_message=flow.state.error_message
+            )
 
         except Exception as e:
-            logger.error(f"[{self.name}] Error handling task: {e}", exc_info=True)
+            logger.error(f"[{self.name}] Flow error: {e}", exc_info=True)
             return TaskResult(
                 success=False,
                 output="",
@@ -203,242 +163,7 @@ class BusinessAnalyst(BaseAgent):
             output=response,
             structured_data={"analysis_type": "simple"}
         )
-    
-    async def _start_interview(self, state: BAConversationState, user_message: str, missing_info: list = None) -> TaskResult:
-        """Start multi-turn interview to gather complete requirements."""
-        from datetime import datetime, timezone
-        
-        # Use missing_info if provided by orchestrator, else determine from state
-        if missing_info is None:
-            missing_info = state.collected_info.get("missing_info", [])
-        
-        # Generate first question using LLM
-        question_data = await self.crew.generate_first_clarification_question(
-            user_message=user_message,
-            missing_info=missing_info
-        )
-        
-        # Ask the question
-        await self.ask_clarification_question(
-            question=question_data["question_text"],
-            question_type=question_data.get("question_type", "multichoice"),
-            options=question_data.get("options", []),
-            allow_multiple=question_data.get("allow_multiple", False)
-        )
-        
-        state.phase = "interview"
-        state.questions_asked.append({
-            "question": question_data["question_text"],
-            "context": question_data.get("context"),
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        })
-        
-        return TaskResult(
-            success=True,
-            output="⏸️ Đang phỏng vấn...",
-            structured_data={"phase": "interview", "waiting": True}
-        )
-    
-    async def _start_interview_batch(self, state: BAConversationState, user_message: str) -> TaskResult:
-        """Start batch interview - ask all questions at once for faster UX."""
-        from datetime import datetime, timezone
-        
-        # Determine what info is missing
-        missing_info = state.collected_info.get("missing_info", [])
-        
-        # Generate first question using LLM
-        question_data = await self.crew.generate_first_clarification_question(
-            user_message=user_message,
-            missing_info=missing_info
-        )
-        
-        # Pre-generate additional questions (batch mode = all questions upfront)
-        questions_to_ask = [question_data]
-        
-        # Question 2: User Roles (pre-generated)
-        questions_to_ask.append({
-            "question_text": "Hệ thống sẽ có những người dùng nào?",
-            "question_type": "multichoice",
-            "options": [
-                "Học sinh/Sinh viên",
-                "Giáo viên/Giảng viên",
-                "Phụ huynh",
-                "Quản trị viên",
-                "Other (Khác - vui lòng mô tả)"
-            ],
-            "allow_multiple": True,
-            "context": "user_roles"
-        })
-        
-        # Question 3: Priority (pre-generated)
-        questions_to_ask.append({
-            "question_text": "Mức độ ưu tiên của dự án này?",
-            "question_type": "multichoice",
-            "options": [
-                "High - Urgent (cần ngay)",
-                "Medium - Important (quan trọng)",
-                "Low - Nice to have (có thì tốt)"
-            ],
-            "allow_multiple": False,
-            "context": "priority"
-        })
-        
-        # Ask all questions at once
-        question_ids = await self.ask_multiple_clarification_questions(questions_to_ask)
-        
-        state.phase = "interview_batch"
-        state.questions_asked = questions_to_ask
-        
-        logger.info(f"[{self.name}] Asked {len(questions_to_ask)} questions in batch mode")
-        
-        return TaskResult(
-            success=True,
-            output=f"⏸️ Đang đợi {len(questions_to_ask)} câu trả lời...",
-            structured_data={"phase": "interview_batch", "waiting": True, "batch": True, "question_count": len(questions_to_ask)}
-        )
-    
-    async def _analyze_domain(self, state: BAConversationState, user_message: str) -> TaskResult:
-        """Use domain_expert for business context analysis."""
-        logger.info(f"[{self.name}] Running domain analysis")
-        
-        analysis = await self.crew.analyze_requirements(user_message)
-        
-        # Store analysis in collected_info
-        state.collected_info["domain_analysis"] = analysis
-        state.phase = "analysis_complete"
-        
-        await self.message_user("response", 
-            f"📊 **Domain Analysis Complete**\n\n{analysis}\n\n"
-            "Bạn muốn tiếp tục tạo PRD không?",
-            {"message_type": "domain_analysis", "analysis": analysis}
-        )
-        
-        return TaskResult(success=True, output=analysis)
-    
-    async def _update_existing_prd(self, state: BAConversationState, task: TaskContext, user_message: str) -> TaskResult:
-        """Update existing PRD based on edit request."""
-        logger.info(f"[{self.name}] Updating existing PRD")
-        
-        if not state.existing_prd:
-            await self.message_user("error", "❌ Không tìm thấy PRD. Bạn muốn tạo PRD mới?")
-            return TaskResult(success=False, error_message="No existing PRD")
-        
-        # Use prd_specialist to update
-        updated_prd = await self.crew.update_existing_prd(
-            edit_request=user_message,
-            existing_prd=state.existing_prd
-        )
-        
-        # Save
-        prd_path = await self.project_files.save_prd(updated_prd)
-        
-        # Create artifact
-        artifact_id = await self.create_artifact(
-            artifact_type="prd",
-            title=f"PRD: {updated_prd['project_name']} v{updated_prd.get('version', '1.0')}",
-            content=updated_prd,
-            description=updated_prd.get('change_summary', 'PRD updated'),
-            tags=["prd", "updated"]
-        )
-        
-        await self.message_user("response",
-            f"✅ Đã cập nhật PRD!\n\n"
-            f"**Changes**: {updated_prd.get('change_summary', 'See artifact')}\n"
-            f"**Version**: {updated_prd.get('version')}",
-            {"message_type": "artifact_updated", "artifact_id": str(artifact_id)}
-        )
-        
-        return TaskResult(success=True, output=f"PRD updated: {prd_path}")
-    
-    async def _extract_stories_workflow(self, state: BAConversationState, task: TaskContext) -> TaskResult:
-        """Extract user stories from existing PRD."""
-        logger.info(f"[{self.name}] Extracting user stories from PRD")
-        
-        if not state.existing_prd:
-            await self.message_user("error", "❌ Cần có PRD trước khi tạo stories. Tạo PRD trước nhé!")
-            return TaskResult(success=False, error_message="No PRD to extract from")
-        
-        # Extract stories (existing method)
-        # Note: Need to get artifact_id for PRD - for now use a placeholder UUID
-        from uuid import uuid4
-        created_story_ids = await self._extract_stories_from_prd(state.existing_prd, uuid4())
-        
-        return TaskResult(
-            success=True,
-            output=f"Created {len(created_story_ids)} stories",
-            structured_data={"story_ids": [str(sid) for sid in created_story_ids]}
-        )
-    
-    async def _update_story(self, state: BAConversationState, task: TaskContext, user_message: str) -> TaskResult:
-        """Update existing user story (TODO: implement)."""
-        logger.info(f"[{self.name}] Story update requested")
-        
-        await self.message_user("info", 
-            "📝 Story editing feature đang được phát triển.\n"
-            "Hiện tại bạn có thể edit trực tiếp trong backlog."
-        )
-        
-        return TaskResult(success=True, output="Story update - planned feature")
-    
-    async def _generate_prd(self, state: BAConversationState, task: TaskContext) -> TaskResult:
-        """Generate PRD from collected information and save to files."""
-        if not self.project_files:
-            logger.warning(f"[{self.name}] No ProjectFiles, skipping PRD generation")
-            return await self._simple_analysis(state.collected_info.get("original_request", ""))
-        
-        # Build PRD data
-        prd_data = {
-            "project_name": f"Project {self.project_id}",  # TODO: Extract from message
-            "version": "1.0",
-            "overview": f"Requirements for: {state.collected_info.get('original_request', '')}",
-            "goals": ["Analyze requirements", "Create user stories"],
-            "target_users": ["Development Team"],
-            "features": [],
-            "acceptance_criteria": [],
-            "constraints": [],
-            "success_metrics": [],
-            "next_steps": ["Review PRD", "Create user stories"]
-        }
-        
-        # Save PRD to files
-        prd_path = await self.project_files.save_prd(prd_data)
-        logger.info(f"[{self.name}] PRD saved to: {prd_path}")
-        
-        # Create artifact in DB
-        artifact_id = await self.create_artifact(
-            artifact_type="prd",
-            title=f"PRD: {prd_data['project_name']}",
-            content=prd_data,
-            description=prd_data['overview'][:200],
-            tags=["prd", "requirements"]
-        )
-        
-        # Send message
-        await self.message_user("response",
-            f"📄 Đã tạo Product Requirements Document!\n"
-            f"**File:** `{prd_path.name}`\n\n"
-            f"Click vào artifact card bên dưới để xem chi tiết.",
-            {
-                "message_type": "artifact_created",
-                "artifact_id": str(artifact_id),
-                "artifact_type": "prd",
-                "title": f"PRD: {prd_data['project_name']}",
-                "description": prd_data['overview'][:200],
-                "version": 1,
-                "status": "draft",
-                "agent_name": self.name
-            }
-        )
-        
-        # Clear conversation state
-        self._clear_conversation_state(task.user_id)
-        
-        return TaskResult(
-            success=True,
-            output=f"PRD created: {prd_path}",
-            structured_data={"phase": "prd_created", "artifact_id": str(artifact_id)}
-        )
-    
+
     async def _extract_stories_from_prd(self, prd_data: dict, prd_artifact_id: UUID) -> list[UUID]:
         """Extract user stories from PRD and create in database + file.
         
