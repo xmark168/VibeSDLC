@@ -640,7 +640,7 @@ class Artifact(BaseModel, table=True):
 class OrderType(str, Enum):
     """Type of order"""
     SUBSCRIPTION = "subscription"
-    ADDON = "addon"
+    CREDIT = "credit"
 
 
 class OrderStatus(str, Enum):
@@ -780,6 +780,8 @@ class Order(BaseModel, table=True):
     # Payment details
     billing_cycle: str | None = Field(default="monthly", sa_column=Column(Text))  # monthly, yearly
     plan_code: str | None = Field(default=None, sa_column=Column(Text))  # Store plan code for reference
+    auto_renew: bool = Field(default=True, nullable=False)  # Auto-renew subscription preference
+    credit_amount: int | None = Field(default=None, nullable=True)  # Number of credits for credit purchase orders
 
     # Relationships
     user: User = Relationship()
