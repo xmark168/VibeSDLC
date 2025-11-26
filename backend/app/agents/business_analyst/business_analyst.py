@@ -101,7 +101,10 @@ class BusinessAnalyst(BaseAgent):
             inputs = {
                 "user_message": user_message,
                 "existing_prd": "None",
-                "collected_info": "{}"
+                "collected_info": "{}",
+                "context": "",
+                "agent_id": str(self.agent_id),  # For ask_user_question tool
+                "agent_name": self.name
             }
             
             # Load existing PRD if available
@@ -231,7 +234,10 @@ class BusinessAnalyst(BaseAgent):
             result = await self.crew.crew().kickoff_async(inputs={
                 "user_message": user_message,
                 "existing_prd": "None",
-                "collected_info": "{}"
+                "collected_info": "{}",
+                "context": "",
+                "agent_id": str(self.agent_id),
+                "agent_name": self.name
             })
             
             result_str = str(result)
@@ -271,7 +277,10 @@ class BusinessAnalyst(BaseAgent):
             inputs = {
                 "user_message": f"User provided answer: {user_answer}. Continue BA workflow based on collected information.",
                 "existing_prd": "None",
-                "collected_info": json.dumps(conv_state.collected_info, ensure_ascii=False, indent=2)
+                "collected_info": json.dumps(conv_state.collected_info, ensure_ascii=False, indent=2),
+                "context": "",
+                "agent_id": str(self.agent_id),
+                "agent_name": self.name
             }
             
             # Load existing PRD if available

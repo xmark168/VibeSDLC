@@ -9,7 +9,8 @@ from crewai.project import CrewBase, agent, crew, task
 from .tools import (
     load_prd_from_file, save_prd_to_file, update_prd_section,
     load_user_stories_from_file, save_user_stories_to_file, add_user_story,
-    validate_prd_completeness, validate_user_story
+    validate_prd_completeness, validate_user_story,
+    ask_user_question  # Tool for agents to ask user clarification questions
 )
 
 logger = logging.getLogger(__name__)
@@ -50,7 +51,7 @@ Embody this personality in all responses while maintaining professionalism."""
         return Agent(
             config=self.agents_config['requirements_engineer'], # type: ignore[index]
             backstory=backstory,
-            tools=[load_prd_from_file],  # Can read existing PRD for context
+            tools=[load_prd_from_file, ask_user_question],  # Can read PRD and ask user questions
             verbose=True
         )
     
@@ -63,6 +64,7 @@ As a Domain Expert, you analyze business context and explain complex domain conc
         return Agent(
             config=self.agents_config['domain_expert'], # type: ignore[index]
             backstory=backstory,
+            tools=[ask_user_question],  # Can ask for domain/business clarification
             verbose=True
         )
     
@@ -79,7 +81,8 @@ As a PRD Specialist, you create clear and comprehensive documentation."""
                 load_prd_from_file,
                 save_prd_to_file,
                 update_prd_section,
-                validate_prd_completeness
+                validate_prd_completeness,
+                ask_user_question  # Can ask for PRD specification details
             ],  # Tools for PRD operations
             verbose=True
         )
@@ -103,37 +106,47 @@ As a Story Writer, you craft clear, actionable user stories."""
             verbose=True
         )
     
-    @agent
-    def workflow_orchestrator(self) -> Agent:
-        backstory = f"""{self.persona_description}
-
-As the Workflow Orchestrator, you are the manager of a specialized BA team.
-You coordinate requirements_engineer, domain_expert, prd_specialist, and story_writer
-to deliver high-quality requirements analysis and documentation."""
-        
-        return Agent(
-            config=self.agents_config['workflow_orchestrator'], # type: ignore[index]
-            backstory=backstory,
-            allow_delegation=True,  # Enable delegation to team members
-            verbose=True
-        )
+    # workflow_orchestrator agent removed - using manager_llm instead
+    # Custom manager_agent has issues with worker agent registration in CrewAI
+    # Using manager_llm allows CrewAI to properly set up delegation tools
     
     @task
     def complete_ba_workflow_task(self) -> Task:
         """Main task for BA workflow - manager will delegate internally."""
         return Task(
             config=self.tasks_config['complete_ba_workflow'],  # type: ignore[index]
-            agent=self.workflow_orchestrator()
+            # No agent specified - CrewAI assigns to auto-generated manager in hierarchical mode
         )
     
     @crew
     def crew(self) -> Crew:
-        """Creates hierarchical BA crew with workflow_orchestrator as manager."""
+        """Creates hierarchical BA crew with auto-generated manager.
+        
+        Uses manager_llm instead of manager_agent to ensure worker agents
+        are properly registered for delegation. CrewAI's automatic manager
+        creation handles DelegateWorkTool setup correctly.
+        
+        In hierarchical mode with manager_llm:
+        - CrewAI creates a default manager agent automatically
+        - Worker agents are properly exposed as delegation targets
+        - Manager can delegate using agent role names from agents.yaml
+        - DelegateWorkTool and AskQuestionTool are set up correctly
+        """
+        from crewai import LLM
+        
+        # Worker agents - manager will be created automatically by CrewAI
+        team_agents = [
+            self.requirements_engineer(),
+            self.domain_expert(),
+            self.prd_specialist(),
+            self.story_writer()
+        ]
+        
         return Crew(
-            agents=self.agents, # type: ignore[index]
+            agents=team_agents,
             tasks=self.tasks, # type: ignore[index]
-            process=Process.hierarchical,  # Hierarchical process with manager
-            manager_agent=self.workflow_orchestrator(),  # Custom manager agent
+            process=Process.hierarchical,  # Hierarchical process
+            manager_llm=LLM(model="gpt-4o", temperature=0.2),  # Let CrewAI create manager
             planning=True,  # Enable planning for better coordination
             verbose=True,
         )
