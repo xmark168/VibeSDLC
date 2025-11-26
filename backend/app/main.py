@@ -54,6 +54,14 @@ async def lifespan(app: FastAPI):
         await start_all_consumers()
     except Exception as e:
         logger.warning(f"⚠️ Failed to start Kafka consumers: {e}")
+    
+    # Start Tester Story Event Consumer (auto-generates integration tests)
+    from app.agents.tester.story_event_consumer import start_tester_story_consumer, stop_tester_story_consumer
+    try:
+        await start_tester_story_consumer()
+        logger.info("✅ TesterStoryEventConsumer started - will auto-generate tests for stories in REVIEW")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to start TesterStoryEventConsumer: {e}")
 
     # Initialize default agent pools (using AgentPoolManager)
     from app.api.routes.agent_management import initialize_default_pools
@@ -120,6 +128,12 @@ async def lifespan(app: FastAPI):
         except (Exception, asyncio.CancelledError) as e:
             logger.error(f"Error shutting down agent pools: {e}")
 
+        # Shutdown Tester Story Event Consumer
+        try:
+            await stop_tester_story_consumer()
+        except (Exception, asyncio.CancelledError) as e:
+            logger.error(f"Error stopping TesterStoryEventConsumer: {e}")
+        
         try:
             await shutdown_all_consumers()
         except (Exception, asyncio.CancelledError) as e:
