@@ -1,439 +1,106 @@
-analyze_requirements:
+# Business Analyst Tasks Configuration
+# Main task for hierarchical process - manager delegates to team
+
+complete_ba_workflow:
   description: >
-    Analyze the following business request and provide requirements analysis:
-
-    {user_message}
-
-    Your analysis should include:
-    1. Clear understanding of the business problem or need
-    2. Key requirements identified
-    3. Potential user stories or use cases
-    4. Questions for clarification (if needed)
-    5. Suggested next steps
-
-    If this is a complex analysis requiring multi-phase workflow (detailed PRD, 
-    user stories, epics), suggest using the dedicated BA workflow API.
-
-    Provide structured, actionable output that can guide development.
+    You are the Business Analyst Workflow Manager. Based on the user's request,
+    coordinate your team to complete the BA workflow.
+    
+    **Your Team:**
+    - requirements_engineer: Conducts interviews, gathers requirements through clarification questions
+      Tools: load_prd_from_file (for context)
+    - domain_expert: Analyzes business domain and context, provides domain knowledge
+    - prd_specialist: Creates and updates Product Requirement Documents (PRDs)
+      Tools: load_prd_from_file, save_prd_to_file, update_prd_section, validate_prd_completeness
+    - story_writer: Extracts and writes user stories from PRDs
+      Tools: load_prd_from_file, load_user_stories_from_file, save_user_stories_to_file, add_user_story, validate_user_story
+    
+    **User Request:** {user_message}
+    
+    **Existing PRD (if any):** {existing_prd}
+    
+    **Collected Information:** {collected_info}
+    
+    **Your Workflow:**
+    
+    1. **Analyze Intent**: Determine what the user wants to accomplish:
+       - Create new feature/product → Need full requirements gathering
+       - Edit existing PRD → Need PRD update delegation
+       - Extract user stories → Need story writing delegation
+       - General discussion → Need domain analysis
+    
+    2. **Assess Information Completeness**:
+       - Check if user request has sufficient detail
+       - Identify missing critical information (target users, goals, constraints, etc.)
+    
+    3. **Delegate to Team** based on needs:
+       - **If information is incomplete**: Delegate to requirements_engineer to conduct interview
+         and gather missing requirements through clarification questions
+       - **If domain analysis needed**: Delegate to domain_expert to analyze business context
+       - **If creating new PRD**: Delegate to prd_specialist to generate comprehensive PRD
+       - **If updating existing PRD**: Delegate to prd_specialist to modify existing document
+       - **If extracting stories**: Delegate to story_writer to create user stories from PRD
+    
+    4. **Coordinate Team Outputs**:
+       - Ensure all delegated tasks are completed
+       - Review outputs for quality and completeness
+       - Combine results into cohesive final output
+    
+    5. **Finalize and Recommend**:
+       - Prepare final deliverable (PRD, stories, analysis, or interview questions)
+       - Suggest logical next steps for the user
+       - Provide summary of work completed
+    
+    **Important Guidelines:**
+    - Break complex requests into logical, manageable steps
+    - Give each team member clear, specific instructions
+    - Always review team outputs before finalizing
+    - Ensure consistency across all outputs
+    - For interview delegation: Request requirements_engineer to ask 1-3 targeted questions
+    - For PRD creation: Ensure prd_specialist includes all standard sections
+    - For story writing: Ensure stories follow INVEST principles
+    
+    **Delegation Examples:**
+    
+    Example 1 - Insufficient info:
+    User: "I want a login feature"
+    → Delegate to requirements_engineer: "Ask about authentication methods, target users, 
+       security requirements (2FA?), social login options"
+    
+    Example 2 - Sufficient info:
+    User: "Create login with Google OAuth, email/password, 2FA for web app targeting consumers"
+    → Delegate to domain_expert: "Analyze authentication domain for web consumer apps"
+    → Then delegate to prd_specialist: "Generate PRD for login feature with specified requirements"
+    
+    Example 3 - PRD exists:
+    User: "Add 2FA to existing login PRD"
+    → Delegate to prd_specialist: "Update PRD to add 2FA authentication requirement"
+    
+    Example 4 - Stories needed:
+    User: "Extract user stories from login PRD"
+    → Delegate to story_writer: "Create user stories from login PRD, following INVEST principles"
+    
   expected_output: >
-    Structured requirements analysis with clear next steps
-  agent: domain_expert
-
-check_clarification_needed:
-  description: >
-    Phân tích message của user và quyết định có cần làm rõ không.
-    
-    User Message: {message}
-    
-    Message CẦN clarification nếu:
-    - Chỉ nói về DOMAIN mà không nói TÍNH NĂNG cụ thể
-      VD: "website học tập", "app bán hàng", "hệ thống quản lý"
-    - Thiếu thông tin về USER ROLE
-      VD: "website học tập" → học sinh? giáo viên? admin?
-    - Thiếu thông tin về CORE FEATURES
-      VD: "website học tập" → học video? làm bài tập? thi online?
-    - Quá chung chung
-      VD: "phân tích dự án", "help me", "tạo app"
-    
-    Message KHÔNG CẦN clarification nếu:
-    - Có cụ thể tính năng
-      VD: "website học tập với video bài giảng và quiz"
-    - Có user roles rõ ràng
-      VD: "app cho học sinh làm bài tập trắc nghiệm"
-    - Có acceptance criteria
-      VD: "trang login với Google OAuth và remember me"
-    
-    QUYẾT ĐỊNH:
-    - Nếu thiếu ≥2 yếu tố (domain specifics, user roles, features) → YES
-    - Nếu đủ context để hiểu intent → NO
-    
-    Format:
-    DECISION: YES/NO
-    REASON: [một câu giải thích]
-    MISSING: [list các thông tin còn thiếu, nếu YES]
-  expected_output: >
-    DECISION: YES/NO
-    REASON: brief explanation
-    MISSING: [optional list if YES]
-  agent: requirements_engineer
-
-analyze_with_context:
-  description: >
-    Original request: {original_message}
-    User selected to analyze: {selected_aspects}
-    
-    Provide focused analysis on the selected aspects:
-    {aspects_list}
-    
-    For each aspect, provide detailed breakdown with:
-    - Key considerations
-    - Specific requirements
-    - Potential challenges
-    - Recommended approach
-    
-    Create a comprehensive PRD-style document.
-  expected_output: >
-    Detailed analysis document covering all selected aspects with actionable insights
-  agent: domain_expert
-
-detect_intent:
-  description: >
-    Phân tích ý định của người dùng từ message này:
-    
-    User Message: {user_message}
-    
-    Các ý định có thể:
-    - create_feature: Tạo feature/tính năng mới (e.g., "tạo login", "thêm thanh toán")
-    - edit_prd: Sửa PRD hiện có (e.g., "sửa PRD", "cập nhật document")
-    - edit_story: Sửa user story (e.g., "sửa story US-5", "update story")
-    - general_discussion: Thảo luận chung về nghiệp vụ (e.g., "giải thích...", "tại sao...")
-    
-    Trả về CHỈ tên ý định, không giải thích.
-  expected_output: >
-    Intent name: create_feature, edit_prd, edit_story, hoặc general_discussion
-  agent: requirements_engineer
-
-generate_interview_question:
-  description: >
-    Tạo câu hỏi phỏng vấn tiếp theo dựa vào context:
-    
-    User Message: {user_message}
-    Collected Info: {collected_info}
-    Previous Questions: {previous_questions}
-    
-    Hỏi về thông tin còn thiếu để tạo User Story hoàn chỉnh:
-    - User role (ai sử dụng?)
-    - Action/Feature (họ muốn làm gì?)
-    - Business value (tại sao quan trọng?)
-    - Acceptance criteria (làm sao biết thành công?)
-    - Priority (mức độ quan trọng?)
-    - Constraints (giới hạn kỹ thuật?)
-    
-    Hỏi bằng tiếng Việt, tự nhiên, từng thông tin một.
-    
-    Trả về JSON:
+    JSON response with this exact structure:
     {{
-      "text": "câu hỏi bằng tiếng Việt",
-      "type": "open" hoặc "multichoice",
-      "options": [...] (nếu multichoice),
-      "allow_multiple": true/false
-    }}
-  expected_output: >
-    JSON với câu hỏi tiếp theo
-  agent: requirements_engineer
-
-generate_prd_from_interview:
-  description: >
-    Tạo Product Requirements Document từ thông tin phỏng vấn:
-    
-    Original Request: {original_request}
-    Interview Q&A: {interview_data}
-    
-    Tạo PRD JSON chi tiết với cấu trúc:
-    {{
-      "project_name": "Tên dự án ngắn gọn",
-      "version": "1.0",
-      "overview": "Tổng quan chi tiết về dự án và mục đích",
-      "goals": ["Mục tiêu 1", "Mục tiêu 2", "Mục tiêu 3"],
-      "target_users": ["User persona 1", "User persona 2"],
-      "features": [
-        {{
-          "name": "Tên feature",
-          "description": "Mô tả chi tiết feature",
-          "priority": "High/Medium/Low"
-        }}
-      ],
-      "acceptance_criteria": ["Tiêu chí 1", "Tiêu chí 2"],
-      "constraints": ["Ràng buộc kỹ thuật"],
-      "success_metrics": ["Metric đo lường thành công"],
-      "next_steps": ["Bước tiếp theo 1", "Bước 2"]
-    }}
-    
-    Viết bằng tiếng Việt, chi tiết, chuyên nghiệp.
-  expected_output: >
-    PRD JSON object đầy đủ
-  agent: prd_specialist
-
-extract_user_stories_from_prd:
-  description: >
-    Trích xuất User Stories từ PRD features:
-    
-    PRD Data: {prd_data}
-    
-    Cho mỗi feature, tạo user story theo format INVEST:
-    - Independent (độc lập)
-    - Negotiable (có thể thương lượng)
-    - Valuable (có giá trị)
-    - Estimable (có thể ước lượng)
-    - Small (nhỏ, làm trong sprint)
-    - Testable (có thể test)
-    
-    Format:
-    "As a [user type], I want [action], so that [benefit]"
-    
-    Trả về JSON array:
-    [
-      {{
-        "title": "Tên story ngắn gọn",
-        "description": "As a... I want... So that...",
-        "acceptance_criteria": "Given...\\nWhen...\\nThen...",
-        "priority": 1-5 (1=lowest, 5=highest),
-        "story_points": 1/2/3/5/8/13 (Fibonacci),
-        "tags": ["tag1", "tag2"]
+      "action_taken": "interviewed | generated_prd | updated_prd | extracted_stories | domain_analysis",
+      "result": {{
+        "For interviewed": {{"questions": ["question1", "question2"], "context": "what info is needed"}},
+        "For generated_prd": {{"project_name": "...", "version": "1.0", "overview": "...", "features": [...], ...}},
+        "For updated_prd": {{"updated PRD object with change_summary field"}},
+        "For extracted_stories": [{{"title": "...", "description": "...", "acceptance_criteria": [...], ...}}, ...],
+        "For domain_analysis": {{"analysis_text": "detailed analysis", "key_insights": [...]}}
+      }},
+      "summary": "Brief 1-2 sentence summary of what was accomplished",
+      "next_steps": ["Suggested next action 1", "Suggested next action 2"],
+      "team_coordination": {{
+        "agents_involved": ["requirements_engineer", "domain_expert"],
+        "delegation_rationale": "Why these specific agents were chosen",
+        "work_completed": "What each agent delivered"
       }}
-    ]
-    
-    Mỗi story phải có acceptance criteria theo format Given/When/Then.
-    Viết bằng tiếng Việt.
-  expected_output: >
-    JSON array of user stories
-  agent: story_writer
-
-update_existing_prd:
-  description: >
-    Cập nhật PRD hiện có theo yêu cầu:
-    
-    Edit Request: {edit_request}
-    Existing PRD: {existing_prd}
-    
-    Phân tích yêu cầu sửa đổi:
-    - Thêm features mới
-    - Sửa features hiện có
-    - Cập nhật acceptance criteria
-    - Thay đổi priority
-    
-    Giữ nguyên các phần không liên quan.
-    Thêm trường "change_summary" mô tả những gì đã thay đổi.
-    Tăng version number (e.g., 1.0 → 1.1)
-    
-    Trả về PRD JSON đã cập nhật (format giống generate_prd_from_interview).
-  expected_output: >
-    Updated PRD JSON với change_summary
-  agent: prd_specialist
-
-generate_first_clarification_question:
-  description: >
-    Tạo câu hỏi clarification ĐẦU TIÊN dựa vào thông tin còn thiếu.
-    
-    Original Message: {user_message}
-    Missing Info: {missing_info}
-    
-    ƯU TIÊN MULTICHOICE với quy tắc:
-    
-    1. **HỎI VỀ DOMAIN/TYPE đầu tiên** (nếu thiếu):
-       Ví dụ: "Bạn muốn xây dựng loại website học tập nào?"
-       Options:
-       - Video Learning Platform (học qua video)
-       - Quiz & Test System (làm bài tập trắc nghiệm)
-       - Live Teaching Platform (dạy học trực tuyến)
-       - Course Management System (quản lý khóa học)
-       - Self-Learning Portal (tự học)
-       - Other (Khác - vui lòng mô tả)
-    
-    2. **HỎI VỀ USER ROLES** (nếu thiếu):
-       Ví dụ: "Hệ thống sẽ có những người dùng nào?"
-       Options:
-       - Học sinh/Sinh viên
-       - Giáo viên/Giảng viên
-       - Phụ huynh
-       - Quản trị viên
-       - Other (Khác - vui lòng mô tả)
-       Allow Multiple: true
-    
-    3. **HỎI VỀ CORE FEATURES** (nếu thiếu):
-       Ví dụ: "Bạn muốn website có những tính năng chính nào?"
-       Options: (generate dựa vào domain)
-    
-    QUY TẮC QUAN TRỌNG:
-    - LUÔN thêm "Other (Khác - vui lòng mô tả)" ở option cuối
-    - Mỗi option phải CỤ THỂ và DỄ HIỂU
-    - Options phải LIÊN QUAN đến domain
-    - Hỏi bằng TIẾNG VIỆT thân thiện
-    
-    Return JSON:
-    {{
-      "question_text": "Câu hỏi bằng tiếng Việt",
-      "question_type": "multichoice",
-      "options": ["Option 1", "Option 2", "...", "Other (Khác - vui lòng mô tả)"],
-      "allow_multiple": false,
-      "context": "domain" | "user_roles" | "features"
-    }}
-  expected_output: >
-    JSON with multichoice question including "Other" option
-  agent: requirements_engineer
-
-generate_next_interview_question:
-  description: >
-    Tạo câu hỏi tiếp theo trong interview flow.
-    
-    Original Message: {user_message}
-    Collected Info: {collected_info}
-    Previous Questions: {previous_questions}
-    
-    Xác định thông tin còn thiếu:
-    - Đã có domain_type? → Hỏi về user_roles
-    - Đã có user_roles? → Hỏi về core_features
-    - Đã có features? → Hỏi về constraints/priorities
-    
-    Format giống generate_first_clarification_question:
-    - LUÔN là multichoice
-    - LUÔN có "Other (Khác - vui lòng mô tả)"
-    - Options cụ thể dựa vào collected_info
-    
-    Return JSON:
-    {{
-      "question_text": "Câu hỏi bằng tiếng Việt",
-      "question_type": "multichoice",
-      "options": ["...", "Other (Khác - vui lòng mô tả)"],
-      "allow_multiple": true/false,
-      "context": "domain" | "user_roles" | "features" | "constraints"
-    }}
-  expected_output: >
-    JSON with next interview question
-  agent: requirements_engineer
-
-decide_next_action:
-  description: >
-    Analyze the current conversation state and decide the next action.
-    
-    Current State:
-    - Current Phase: {current_phase}
-    - Collected Info: {collected_info}
-    - Last User Message: {last_message}
-    - Questions Asked: {questions_asked}
-    - PRD Status: {prd_status}
-    
-    Your task: Decide what action to take next and which specialist agent should handle it.
-    
-    Available Actions:
-    
-    1. ASK_CLARIFICATION
-       - Use when: Requirements are vague, missing critical information
-       - Agent: requirements_engineer
-       - Example: User says "tạo website học tập" → Missing target users, features
-    
-    2. ANALYZE_DOMAIN
-       - Use when: Have basic requirements, need deeper business context
-       - Agent: domain_expert
-       - Example: User provided features, need to analyze e-commerce/education domain patterns
-    
-    3. GENERATE_PRD
-       - Use when: Requirements are complete, ready to create PRD document
-       - Agent: prd_specialist
-       - Example: Interview complete with all necessary info
-    
-    4. UPDATE_PRD
-       - Use when: PRD exists and user requests modifications
-       - Agent: prd_specialist
-       - Example: "Thêm feature thanh toán vào PRD"
-    
-    5. EXTRACT_STORIES
-       - Use when: PRD is complete and ready to generate user stories
-       - Agent: story_writer
-       - Example: PRD delivered, now extract INVEST stories
-    
-    6. COMPLETE
-       - Use when: All deliverables done (PRD + stories)
-       - Agent: none
-       - Example: Workflow finished
-    
-    Decision Guidelines:
-    - If last message has detailed requirements (>50 words with features/users) → Consider skipping INTERVIEW
-    - If collected_info has domain, user_roles, core_features → Move to GENERATE_PRD
-    - If PRD exists in prd_status → EXTRACT_STORIES or UPDATE_PRD
-    - If questions_asked >= 3 → Proceed with available info (don't over-interview)
-    - Be adaptive: skip unnecessary phases when info is complete
-    
-    Return JSON:
-    {{
-      "action": "ASK_CLARIFICATION" | "ANALYZE_DOMAIN" | "GENERATE_PRD" | "UPDATE_PRD" | "EXTRACT_STORIES" | "COMPLETE",
-      "agent_to_use": "requirements_engineer" | "domain_expert" | "prd_specialist" | "story_writer" | "none",
-      "reason": "Brief 1-sentence explanation of why this action",
-      "estimated_missing_info": ["list", "of", "missing", "items"] (only if action is ASK_CLARIFICATION)
     }}
     
-    IMPORTANT: Return ONLY valid JSON, no additional text.
-  expected_output: >
-    JSON object with action, agent_to_use, reason, and optional estimated_missing_info
-  agent: workflow_orchestrator
-
-analyze_and_route:
-  description: >
-    Analyze user message and current state, then decide intent + next action.
+    **Critical**: Ensure the JSON is valid, properly formatted, and contains ALL required fields.
+    Use double quotes for JSON strings. Escape special characters properly.
     
-    User Message: {user_message}
-    Current State:
-      - Phase: {current_phase}
-      - Collected Info: {collected_info}
-      - Questions Asked: {questions_asked}
-      - Existing PRD: {has_existing_prd}
-      - Existing Stories: {has_stories}
-    
-    **Step 1: Detect Intent**
-    
-    Intents:
-    - **create_feature**: User wants to create new feature/system
-      Examples: "tạo login", "website học tập", "thêm payment"
-    
-    - **edit_prd**: User wants to modify existing PRD
-      Examples: "sửa PRD", "cập nhật requirements", "thêm feature vào doc"
-    
-    - **edit_story**: User wants to modify user story
-      Examples: "sửa story US-5", "update acceptance criteria"
-    
-    - **generate_stories**: User wants to extract stories from PRD
-      Examples: "tạo user stories", "extract stories từ PRD"
-    
-    - **general_discussion**: Q&A, explain concepts
-      Examples: "giải thích về...", "tại sao...", "phân tích domain"
-    
-    **Step 2: Decide Next Action**
-    
-    Based on intent + state, choose action:
-    
-    For **create_feature**:
-    - ASK_CLARIFICATION: If requirements vague (missing domain/users/features)
-    - ANALYZE_DOMAIN: If have requirements, need deeper business context
-    - GENERATE_PRD: If info complete (domain + users + features)
-    
-    For **edit_prd**:
-    - UPDATE_PRD: If PRD exists → use prd_specialist to update
-    - ERROR: If no PRD → ask if user wants to create new
-    
-    For **edit_story**:
-    - UPDATE_STORY: If story exists → update it
-    - ERROR: If no story found → ask for story ID
-    
-    For **generate_stories**:
-    - EXTRACT_STORIES: If PRD exists → use story_writer
-    - ERROR: If no PRD → need PRD first
-    
-    For **general_discussion**:
-    - ANALYZE_DOMAIN: Use domain_expert for analysis
-    
-    **Step 3: Assign Agent**
-    
-    - ASK_CLARIFICATION → requirements_engineer
-    - ANALYZE_DOMAIN → domain_expert
-    - GENERATE_PRD → prd_specialist
-    - UPDATE_PRD → prd_specialist
-    - EXTRACT_STORIES → story_writer
-    - UPDATE_STORY → story_writer
-    
-    **Return JSON:**
-    {{
-      "intent": "create_feature|edit_prd|edit_story|generate_stories|general_discussion",
-      "action": "ASK_CLARIFICATION|ANALYZE_DOMAIN|GENERATE_PRD|UPDATE_PRD|EXTRACT_STORIES|UPDATE_STORY|ERROR",
-      "agent_to_use": "requirements_engineer|domain_expert|prd_specialist|story_writer|none",
-      "reason": "Brief explanation why this decision",
-      "estimated_missing_info": ["list if ASK_CLARIFICATION"],
-      "error_message": "Only if action is ERROR"
-    }}
-    
-    Be adaptive:
-    - Skip interview if user provides complete requirements
-    - Don't over-interview (max 3 questions)
-    - Recognize when to move to next phase
-  expected_output: >
-    JSON with intent, action, agent_to_use, reason, and optional fields
   agent: workflow_orchestrator

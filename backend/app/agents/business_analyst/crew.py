@@ -6,6 +6,11 @@ import logging
 from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 
+from .tools import (
+    load_prd_from_file, save_prd_to_file, update_prd_section,
+    load_user_stories_from_file, save_user_stories_to_file, add_user_story,
+    validate_prd_completeness, validate_user_story
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +50,7 @@ Embody this personality in all responses while maintaining professionalism."""
         return Agent(
             config=self.agents_config['requirements_engineer'], # type: ignore[index]
             backstory=backstory,
+            tools=[load_prd_from_file],  # Can read existing PRD for context
             verbose=True
         )
     
@@ -69,6 +75,12 @@ As a PRD Specialist, you create clear and comprehensive documentation."""
         return Agent(
             config=self.agents_config['prd_specialist'], # type: ignore[index]
             backstory=backstory,
+            tools=[
+                load_prd_from_file,
+                save_prd_to_file,
+                update_prd_section,
+                validate_prd_completeness
+            ],  # Tools for PRD operations
             verbose=True
         )
     
@@ -81,6 +93,13 @@ As a Story Writer, you craft clear, actionable user stories."""
         return Agent(
             config=self.agents_config['story_writer'], # type: ignore[index]
             backstory=backstory,
+            tools=[
+                load_prd_from_file,  # Read PRD to extract stories
+                load_user_stories_from_file,
+                save_user_stories_to_file,
+                add_user_story,
+                validate_user_story
+            ],  # Tools for story operations
             verbose=True
         )
     
@@ -88,92 +107,33 @@ As a Story Writer, you craft clear, actionable user stories."""
     def workflow_orchestrator(self) -> Agent:
         backstory = f"""{self.persona_description}
 
-As the Workflow Orchestrator, you coordinate your team of specialists and make intelligent routing decisions."""
+As the Workflow Orchestrator, you are the manager of a specialized BA team.
+You coordinate requirements_engineer, domain_expert, prd_specialist, and story_writer
+to deliver high-quality requirements analysis and documentation."""
         
         return Agent(
             config=self.agents_config['workflow_orchestrator'], # type: ignore[index]
             backstory=backstory,
+            allow_delegation=True,  # Enable delegation to team members
             verbose=True
         )
     
     @task
-    def analyze_requirements_task(self) -> Task:
+    def complete_ba_workflow_task(self) -> Task:
+        """Main task for BA workflow - manager will delegate internally."""
         return Task(
-            config=self.tasks_config['analyze_requirements']  # type: ignore[index]
-        )
-    
-    @task
-    def check_clarification_task(self) -> Task:
-        return Task(
-            config=self.tasks_config['check_clarification_needed']  # type: ignore[index]
-        )
-    
-    @task
-    def analyze_with_context_task(self) -> Task:
-        return Task(
-            config=self.tasks_config['analyze_with_context']  # type: ignore[index]
-        )
-    
-    @task
-    def detect_intent_task(self) -> Task:
-        return Task(
-            config=self.tasks_config['detect_intent']  # type: ignore[index]
-        )
-    
-    @task
-    def generate_interview_question_task(self) -> Task:
-        return Task(
-            config=self.tasks_config['generate_interview_question']  # type: ignore[index]
-        )
-    
-    @task
-    def generate_prd_from_interview_task(self) -> Task:
-        return Task(
-            config=self.tasks_config['generate_prd_from_interview']  # type: ignore[index]
-        )
-    
-    @task
-    def extract_user_stories_task(self) -> Task:
-        return Task(
-            config=self.tasks_config['extract_user_stories_from_prd']  # type: ignore[index]
-        )
-    
-    @task
-    def update_existing_prd_task(self) -> Task:
-        return Task(
-            config=self.tasks_config['update_existing_prd']  # type: ignore[index]
-        )
-    
-    @task
-    def generate_first_clarification_question_task(self) -> Task:
-        return Task(
-            config=self.tasks_config['generate_first_clarification_question']  # type: ignore[index]
-        )
-    
-    @task
-    def generate_next_interview_question_task(self) -> Task:
-        return Task(
-            config=self.tasks_config['generate_next_interview_question']  # type: ignore[index]
-        )
-    
-    @task
-    def decide_next_action_task(self) -> Task:
-        return Task(
-            config=self.tasks_config['decide_next_action']  # type: ignore[index]
-        )
-    
-    @task
-    def analyze_and_route_task(self) -> Task:
-        return Task(
-            config=self.tasks_config['analyze_and_route']  # type: ignore[index]
+            config=self.tasks_config['complete_ba_workflow'],  # type: ignore[index]
+            agent=self.workflow_orchestrator()
         )
     
     @crew
     def crew(self) -> Crew:
-        """Creates the Business Analyst crew."""
+        """Creates hierarchical BA crew with workflow_orchestrator as manager."""
         return Crew(
             agents=self.agents, # type: ignore[index]
             tasks=self.tasks, # type: ignore[index]
-            process=Process.sequential,
+            process=Process.hierarchical,  # Hierarchical process with manager
+            manager_agent=self.workflow_orchestrator(),  # Custom manager agent
+            planning=True,  # Enable planning for better coordination
             verbose=True,
         )
