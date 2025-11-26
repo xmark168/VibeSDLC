@@ -7,7 +7,7 @@ This service provides methods to:
 4. Archive low-performing rules
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import uuid4
 
@@ -51,8 +51,8 @@ class ProjectRule:
         self.source_blocker_id = source_blocker_id
         self.source_type = source_type
         self.created_by = created_by
-        self.created_at = created_at or datetime.now()
-        self.updated_at = updated_at or datetime.now()
+        self.created_at = created_at or datetime.now(timezone.utc)
+        self.updated_at = updated_at or datetime.now(timezone.utc)
         self.applied_count = applied_count
         self.success_count = success_count
         self.effectiveness_score = effectiveness_score
@@ -194,7 +194,7 @@ class RuleService:
                 if rule.applied_count > 0:
                     rule.effectiveness_score = rule.success_count / rule.applied_count
                 
-                rule.updated_at = datetime.now()
+                rule.updated_at = datetime.now(timezone.utc)
                 
                 print(f"   📊 Updated rule usage: {rule.title}")
                 print(f"      Applied: {rule.applied_count} | Success: {rule.success_count} | Score: {rule.effectiveness_score:.2f}")
@@ -219,8 +219,8 @@ class RuleService:
         for rule in all_rules:
             if rule.id == rule_id:
                 rule.is_active = False
-                rule.archived_at = datetime.now()
-                rule.updated_at = datetime.now()
+                rule.archived_at = datetime.now(timezone.utc)
+                rule.updated_at = datetime.now(timezone.utc)
                 
                 print(f"   🗄️  Archived rule: {rule.title}")
                 

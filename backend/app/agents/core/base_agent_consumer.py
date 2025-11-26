@@ -21,16 +21,6 @@ from app.models import Agent, AgentConversation
 
 logger = logging.getLogger(__name__)
 
-
-# ===== Message Logging Helper =====
-
-def _log_message(agent_name: str, event: str, message_id: Optional[str] = None, details: str = "") -> None:
-    """Log a message event with standard format."""
-    msg_str = f" message={message_id}" if message_id else ""
-    detail_str = f" - {details}" if details else ""
-    logger.info(f"[MESSAGE] Agent {agent_name}:{msg_str} {event}{detail_str}")
-
-
 class BaseAgentInstanceConsumer(EventHandlerConsumer):
     """Base consumer for individual agent instances.
 

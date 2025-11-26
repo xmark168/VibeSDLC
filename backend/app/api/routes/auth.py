@@ -13,9 +13,9 @@ from slowapi.util import get_remote_address
 
 logger = logging.getLogger(__name__)
 
-from app import crud
 from app.api.deps import CurrentUser, SessionDep, get_current_active_superuser
 from app.core import security
+from app.services import UserService
 from app.core.config import settings
 from app.core.redis_client import get_redis_client
 from app.core.security import get_password_hash, verify_password
@@ -126,7 +126,8 @@ def login(
         # Admin bypass - if email is "admin" and password is "admin", allow login
         if str(login_data.email).lower() == "admin@gmail.com" and login_data.password == "admin":
             # Find or create admin user
-            user = crud.get_user_by_email(session=session, email="admin@gmail.com")
+            user_service = UserService(session)
+            user = user_service.get_by_email("admin@gmail.com")
             if not user:
                 # Create admin user if doesn't exist
                 from app.models import User, Role
@@ -144,7 +145,8 @@ def login(
                 session.refresh(user)
         else:
             # Find user with credential login
-            user = crud.get_user_by_email(session=session, email=str(login_data.email))
+            user_service = UserService(session)
+            user = user_service.get_by_email(str(login_data.email))
             if not user or user.login_provider:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -160,20 +162,21 @@ def login(
 
     else:
         # Provider Login
-        # if not login_data.email or not login_data.fullname or login_data.password is not None:
+        # if not login_data.email or not login_data.full_name or login_data.password is not None:
         #     raise HTTPException(
         #         status_code=status.HTTP_400_BAD_REQUEST,
         #         detail="Email và fullname không được để trống, password phải null với provider login"
         #     )
 
         # Find or create user with provider login
-        user = crud.get_user_by_email(session=session, email=str(login_data.email))
+        user_service = UserService(session)
+        user = user_service.get_by_email(str(login_data.email))
         if not user:
             # Create new user for provider login
             from app.models import User
             user = User(
                 email=login_data.email,
-                full_name=login_data.fullname,
+                full_name=login_data.full_name,
                 login_provider=True,
                 is_active=True,
                 is_locked=False
@@ -242,7 +245,7 @@ def register(
             detail="Định dạng email không hợp lệ"
         )
 
-    if len(register_data.fullname) > 50 or not register_data.fullname.strip():
+    if len(register_data.full_name) > 50 or not register_data.full_name.strip():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Họ tên không được rỗng và tối đa 50 ký tự"
@@ -261,7 +264,8 @@ def register(
         )
 
     # Check if email already exists with credential login
-    existing_user = crud.get_user_by_email(session=session, email=str(register_data.email))
+    user_service = UserService(session)
+    existing_user = user_service.get_by_email(str(register_data.email))
     if existing_user and not existing_user.login_provider:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -274,7 +278,7 @@ def register(
     # Store registration data in Redis (separate keys with different TTLs)
     registration_data = {
         "email": str(register_data.email),
-        "fullname": register_data.fullname,
+        "full_name": register_data.full_name,
         "hashed_password": get_password_hash(register_data.password)
     }
 
@@ -387,7 +391,7 @@ def confirm_code(
     from app.models import User
     user = User(
         email=registration_data["email"],
-        full_name=registration_data["fullname"],
+        full_name=registration_data["full_name"],
         hashed_password=registration_data["hashed_password"],
         is_active=True,
         is_locked=False,
@@ -591,7 +595,8 @@ def forgot_password(
         )
 
     # Check if email exists in database
-    user = crud.get_user_by_email(session=session, email=str(forgot_data.email))
+    user_service = UserService(session)
+    user = user_service.get_by_email(str(forgot_data.email))
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -672,7 +677,8 @@ def reset_password(
         )
 
     # Find user by email
-    user = crud.get_user_by_email(session=session, email=str(email))
+    user_service = UserService(session)
+    user = user_service.get_by_email(str(email))
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -724,17 +730,18 @@ def logout(
 
         # Optional: Revoke all refresh tokens for this user from database
         # Uncomment if you want to revoke tokens stored in RefreshToken table
-        # from app.crud.user import revoke_all_user_tokens
-        # revoke_all_user_tokens(session=session, user_id=current_user.id)
+        # from app.services import UserService
+        # user_service = UserService(session)
+        # user_service.revoke_all_user_tokens(current_user.id)
 
-        logger.info(f"User {current_user.email} logged out successfully")
+
 
         return LogoutResponse(
             message="Đăng xuất thành công"
         )
 
     except Exception as e:
-        logger.error(f"Error during logout for user {current_user.id}: {e}")
+        logger.error(f"Logout error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Lỗi khi đăng xuất"

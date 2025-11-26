@@ -103,11 +103,17 @@ class AgentPoolManager:
             # Stop all agents
             agent_ids = list(self.agents.keys())
             for agent_id in agent_ids:
-                await self.terminate_agent(agent_id, graceful=graceful)
+                try:
+                    await self.terminate_agent(agent_id, graceful=graceful)
+                except (Exception, asyncio.CancelledError) as e:
+                    logger.error(f"Error terminating agent {agent_id}: {e}")
 
             logger.info(f"✓ Pool manager stopped: {self.pool_name}")
             return True
 
+        except asyncio.CancelledError:
+            logger.info(f"Pool manager stop cancelled: {self.pool_name}")
+            return False
         except Exception as e:
             logger.error(f"Error stopping pool manager: {e}", exc_info=True)
             return False
@@ -174,9 +180,9 @@ class AgentPoolManager:
                     self.total_spawned += 1
 
                     # 7. Update DB status
-                    agent_model.status = AgentStatus.idle
-                    db_session.add(agent_model)
-                    db_session.commit()
+                    from app.services import AgentService
+                    agent_service = AgentService(db_session)
+                    agent_service.update_status(agent_id, AgentStatus.idle, commit=True)
 
                     logger.info(
                         f"✓ Spawned agent: {agent_model.human_name} ({agent_id}) "
@@ -216,11 +222,9 @@ class AgentPoolManager:
 
             # 3. Update DB status
             with Session(engine) as db_session:
-                agent_model = db_session.get(AgentModel, agent_id)
-                if agent_model:
-                    agent_model.status = AgentStatus.stopped
-                    db_session.add(agent_model)
-                    db_session.commit()
+                from app.services import AgentService
+                agent_service = AgentService(db_session)
+                agent_service.update_status(agent_id, AgentStatus.stopped, commit=True)
 
             logger.info(f"✓ Terminated agent {agent.name} ({agent_id}) from pool '{self.pool_name}'")
             return True

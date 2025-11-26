@@ -1,5 +1,6 @@
 import type React from "react";
 import { useState, useRef, useEffect } from "react";
+import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -26,12 +27,11 @@ import {
 import { TechStackDialog } from "./tech-stack-dialog";
 import { useTheme } from "@/components/provider/theme-provider";
 import { useChatWebSocket } from "@/hooks/useChatWebSocket";
+import { TypingIndicator } from "./TypingIndicator";
 import { useAuth } from "@/hooks/useAuth";
 import { useMessages } from "@/queries/messages";
 import { AuthorType, type Message } from "@/types/message";
 import { MessagePreviewCard } from "./MessagePreviewCard";
-import { ActivityMessage } from "./activity-message";
-import { AgentStatusIndicator } from "./agent-status-indicator";
 import { MessageStatusIndicator } from "./message-status-indicator";
 import { useProjectAgents } from "@/queries/agents";
 
@@ -68,9 +68,6 @@ export function ChatPanelWS({
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [mentionedAgent, setMentionedAgent] = useState<{ id: string; name: string } | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-  const [expandedMessages, setExpandedMessages] = useState<Set<string>>(
-    new Set()
-  );
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
@@ -116,84 +113,33 @@ export function ChatPanelWS({
     limit: 100,
   });
 
-  // WebSocket connection
+  // WebSocket connection (simplified with 5 message types)
   const {
     isConnected,
-    isReady,
     messages: wsMessages,
-    typingAgents,
-    agentProgress,
     agentStatus,
-    agentStatuses, // Extract agentStatuses
-    kanbanData,
-    activeTab,
+    typingAgents,
     sendMessage: wsSendMessage,
-  } = useChatWebSocket(projectId, token || undefined);
+  } = useChatWebSocket(projectId, token || '');
 
   // Combine existing messages with WebSocket messages
   const apiMessages = messagesData?.data || [];
+  const wsMessagesArray = wsMessages || [];
 
-  // Filter WebSocket messages:
-  // 1. Keep all non-temp messages (agent responses via WebSocket)
-  // 2. For temp messages, keep them unless API has the exact same message (by checking timestamp proximity)
-  const filteredWsMessages = wsMessages.filter(wsMsg => {
-    // Keep non-temp messages
-    if (!wsMsg.id.startsWith('temp-')) return true;
+  // Combine API messages with WebSocket messages (no temp messages anymore)
+  const allMessages = [...apiMessages, ...wsMessagesArray]
 
-    // For temp messages, check if API has a real message with same content AND close timestamp
-    // This prevents filtering out new messages when user sends same content multiple times
-    const tempTimestamp = new Date(wsMsg.created_at).getTime();
-    const hasRealMessage = apiMessages.some(
-      apiMsg => apiMsg.content === wsMsg.content &&
-                apiMsg.author_type === wsMsg.author_type &&
-                Math.abs(new Date(apiMsg.created_at).getTime() - tempTimestamp) < 5000 // Within 5 seconds
-    );
-    return !hasRealMessage;
-  });
+  // Sort by created_at timestamp
+  const sortedMessages = allMessages.sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  )
 
-  // Combine and sort by timestamp
-  const allMessages = [...apiMessages, ...filteredWsMessages].sort(
-    (a, b) =>
-      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  // Remove duplicates by ID (simple de-duplication)
+  const uniqueMessages = sortedMessages.filter(
+    (msg, index, self) => index === self.findIndex(m => m.id === msg.id)
   );
-
-  // Remove duplicates by id (keep first occurrence)
-  const uniqueMessages = allMessages.filter(
-    (msg, index, self) => index === self.findIndex((m) => m.id === msg.id)
-  );
-
-  // Notify parent when kanbanData changes
-  useEffect(() => {
-    if (kanbanData && onKanbanDataChange) {
-      onKanbanDataChange(kanbanData);
-    }
-  }, [kanbanData, onKanbanDataChange]);
-
-  // Notify parent when activeTab changes
-  useEffect(() => {
-    if (activeTab && onActiveTabChange) {
-      onActiveTabChange(activeTab);
-    }
-  }, [activeTab, onActiveTabChange]);
-
-  // Notify parent when agentStatuses changes
-  useEffect(() => {
-    if (agentStatuses && onAgentStatusesChange) {
-      onAgentStatusesChange(agentStatuses);
-    }
-  }, [agentStatuses, onAgentStatusesChange]);
-
-  const toggleExpand = (id: string) => {
-    setExpandedMessages((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(id)) {
-        newSet.delete(id);
-      } else {
-        newSet.add(id);
-      }
-      return newSet;
-    });
-  };
+  
+  // Note: Kanban, activeTab, and agentStatuses features removed for simplicity
 
   const filteredAgents = AGENTS.filter((agent) =>
     agent.name.toLowerCase().includes(mentionSearch.toLowerCase())
@@ -247,45 +193,39 @@ export function ChatPanelWS({
 
   const handleSend = () => {
     if (!message.trim()) return;
-    if (!isReady) {
-      console.error("WebSocket not ready");
+    if (!isConnected) {
+      console.error("WebSocket not connected");
       return;
     }
 
     let finalMessage = message.trim();
 
     // Send via WebSocket with agent routing info if agent was mentioned
-    const success = wsSendMessage({
-      content: finalMessage,
-      author_type: "user",
-      agent_id: mentionedAgent?.id,
-      agent_name: mentionedAgent?.name,
-    });
+    wsSendMessage(finalMessage, mentionedAgent?.name);
 
-    if (success) {
-      setMessage("");
-      setMentionedAgent(null);  // Clear mentioned agent after sending
-      setTimeout(() => {
-        textareaRef.current?.focus();
-      }, 0);
-    }
+    setMessage("");
+    setMentionedAgent(null);  // Clear mentioned agent after sending
+    setTimeout(() => {
+      textareaRef.current?.focus();
+    }, 0);
   };
 
   // Reset waiting state when we receive agent messages or agent starts typing/processing
   useEffect(() => {
-    if (wsMessages.length > 0) {
-      const lastMessage = wsMessages[wsMessages.length - 1];
+    if (wsMessagesArray && wsMessagesArray.length > 0) {
+      const lastMessage = wsMessagesArray[wsMessagesArray.length - 1];
       if (lastMessage.author_type === AuthorType.AGENT) {
         setIsWaitingForResponse(false);
       }
     }
-  }, [wsMessages]);
+  }, [wsMessagesArray]);
 
+  // Reset waiting state when agent status changes
   useEffect(() => {
-    if (typingAgents.length > 0 || agentProgress.isExecuting) {
+    if (agentStatus !== 'idle') {
       setIsWaitingForResponse(false);
     }
-  }, [typingAgents, agentProgress.isExecuting]);
+  }, [agentStatus]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (showMentions && filteredAgents.length > 0) {
@@ -312,8 +252,12 @@ export function ChatPanelWS({
     }
   };
 
-  const copyToClipboard = async (content: string, messageId: string) => {
+  const copyToClipboard = async (content: string | undefined, messageId: string) => {
     try {
+      if (!content) {
+        console.warn("No content to copy");
+        return;
+      }
       await navigator.clipboard.writeText(content);
       setCopiedMessageId(messageId);
       setTimeout(() => setCopiedMessageId(null), 2000);
@@ -356,14 +300,15 @@ export function ChatPanelWS({
   }
 
   const formatTimestamp = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const hours = date.getHours();
-    const minutes = date.getMinutes().toString().padStart(2, "0");
-    const ampm = hours >= 12 ? "PM" : "AM";
-    const displayHours = hours % 12 || 12;
-    const month = date.toLocaleString("en-US", { month: "short" });
-    const day = date.getDate().toString().padStart(2, "0");
-    return `${displayHours}:${minutes} ${ampm} on ${month} ${day}`;
+    try {
+      const date = new Date(dateStr);
+      // Automatically converts UTC to local time and formats
+      return format(date, 'h:mm a \'on\' MMM dd');
+      // Output example: "10:30 AM on Nov 25"
+    } catch (error) {
+      console.error('Error formatting timestamp:', error);
+      return dateStr;
+    }
   };
 
   const getAgentAvatar = (authorType: AuthorType) => {
@@ -409,20 +354,13 @@ export function ChatPanelWS({
     }, 0);
   };
 
-  // Notify parent about connection status (use isReady for accurate status)
+  // Notify parent about connection status
   useEffect(() => {
-    console.log("ChatPanelWS: isReady changed to", isReady, "- notifying parent");
+    console.log("ChatPanelWS: connection changed to", isConnected);
     if (onConnectionChange) {
-      onConnectionChange(isReady);
+      onConnectionChange(isConnected);
     }
-  }, [isReady, onConnectionChange]);
-
-  // Notify parent about sendMessage function
-  useEffect(() => {
-    if (onSendMessageReady) {
-      onSendMessageReady(wsSendMessage);
-    }
-  }, [wsSendMessage, onSendMessageReady]);
+  }, [isConnected, onConnectionChange]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -465,7 +403,7 @@ export function ChatPanelWS({
             <PanelRightClose className="w-5 h-5" />
           </Button>
           <div className="flex-1" />
-          {!isReady && (
+          {!isConnected && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="w-3 h-3 animate-spin" />
               Connecting...
@@ -499,13 +437,13 @@ export function ChatPanelWS({
       {!sidebarCollapsed && (
         <div className="flex items-center justify-between gap-2 px-3 py-2">
           <div className="flex items-center gap-2">
-            {!isReady && (
+            {!isConnected && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="w-3 h-3 animate-spin" />
                 Connecting...
               </div>
             )}
-            {isReady && (
+            {isConnected && (
               <div className="flex items-center gap-2 text-xs text-green-600">
                 <div className="w-2 h-2 bg-green-600 rounded-full" />
                 Connected
@@ -545,8 +483,6 @@ export function ChatPanelWS({
       >
         {uniqueMessages.map((msg) => {
           const isUserMessage = msg.author_type === AuthorType.USER;
-          const isExpanded = expandedMessages.has(msg.id);
-          const shouldTruncate = msg.content.length > 200;
 
           if (isUserMessage) {
             return (
@@ -555,7 +491,7 @@ export function ChatPanelWS({
                   <div className="space-y-1.5">
                     <div className="rounded-lg px-3 py-2 bg-muted w-fit ml-auto">
                       <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
-                        {msg.content}
+                        {msg.content || ''}
                       </div>
                     </div>
                     <div className="flex items-center justify-end gap-2 px-1">
@@ -582,21 +518,12 @@ export function ChatPanelWS({
             );
           }
 
-          // Activity message (progress tracking)
+          // Activity messages are now shown in the execution dialog
+          // Skip rendering them here
           if (msg.message_type === 'activity') {
-            return (
-              <div key={msg.id} className="flex gap-3">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
-                  {getAgentAvatar(msg.author_type)}
-                </div>
-                <div className="flex-1">
-                  <ActivityMessage message={msg} />
-                </div>
-              </div>
-            );
+            return null;
           }
 
-          // Agent/System message
           // Check if this is a structured message (preview)
           if (msg.message_type && msg.message_type !== 'text' && msg.structured_data) {
             return (
@@ -639,9 +566,7 @@ export function ChatPanelWS({
                 <div className="space-y-1.5">
                   <div className="rounded-lg px-3 py-2 bg-muted w-fit">
                     <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
-                      {shouldTruncate && !isExpanded
-                        ? msg.content.slice(0, 200) + "..."
-                        : msg.content}
+                      {msg.content || ''}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 px-1">
@@ -659,19 +584,6 @@ export function ChatPanelWS({
                         <Copy className="w-3.5 h-3.5 text-muted-foreground" />
                       )}
                     </button>
-                    {shouldTruncate && (
-                      <button
-                        onClick={() => toggleExpand(msg.id)}
-                        className="p-1 hover:bg-accent rounded transition-colors"
-                        title={isExpanded ? "Collapse" : "Expand"}
-                      >
-                        {isExpanded ? (
-                          <ChevronUp className="w-3.5 h-3.5 text-foreground" />
-                        ) : (
-                          <ChevronDown className="w-3.5 h-3.5 text-foreground" />
-                        )}
-                      </button>
-                    )}
                   </div>
                 </div>
               </div>
@@ -679,59 +591,14 @@ export function ChatPanelWS({
           );
         })}
 
-        {/* Waiting for agent response indicator */}
-        {isWaitingForResponse && typingAgents.length === 0 && !agentProgress.isExecuting && (
-          <div className="flex gap-3">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
-              🤖
-            </div>
-            <div className="flex-1 space-y-2">
-              <div className="text-xs font-medium text-muted-foreground">
-                Agent
-              </div>
-              <div className="flex items-center gap-1 text-muted-foreground">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                <span className="text-sm">Đang xử lý...</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {typingAgents.length > 0 && (
-          <div className="flex gap-3">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
-              🔧
-            </div>
-            <div className="flex-1 space-y-2">
-              <div className="text-xs font-medium text-muted-foreground">
-                {typingAgents[0]}
-              </div>
-              <div className="flex items-center gap-1 text-muted-foreground">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                <span className="text-sm">typing...</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Agent Status Indicator - shows thinking/acting/waiting status */}
-        {agentStatus.status !== 'idle' && (
-          <div className="flex gap-3 p-4 bg-muted/50 rounded-lg border">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
-              🤖
-            </div>
-            <div className="flex-1">
-              <AgentStatusIndicator
-                status={agentStatus.status}
-                agentName={agentStatus.agentName || undefined}
-                currentAction={agentStatus.currentAction || undefined}
-                currentStep={agentStatus.currentStep || undefined}
-                totalSteps={agentStatus.totalSteps || undefined}
-                executionId={agentStatus.executionId || undefined}
-              />
-            </div>
-          </div>
-        )}
+        {/* Typing Indicators - ChatGPT style inline indicators */}
+        {Array.from(typingAgents.values()).map((typing) => (
+          <TypingIndicator 
+            key={typing.id}
+            agentName={typing.agent_name}
+            message={typing.message}
+          />
+        ))}
       </div>
 
       <div className="p-2 m-4 rounded-4xl relative bg-muted">
@@ -783,7 +650,7 @@ export function ChatPanelWS({
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
             className="min-h-[40px] resize-none bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground p-1 focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
-            disabled={!isReady}
+            disabled={!isConnected}
           />
           <div className="flex items-center justify-between pt-3">
             <div className="flex gap-2">
@@ -795,7 +662,7 @@ export function ChatPanelWS({
                       size="icon"
                       className="h-8 w-8 hover:bg-accent"
                       onClick={triggerMention}
-                      disabled={!isReady}
+                      disabled={!isConnected}
                     >
                       <AtSign className="w-4 h-4" />
                     </Button>
@@ -822,7 +689,7 @@ export function ChatPanelWS({
               size="icon"
               className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90"
               onClick={handleSend}
-              disabled={!isReady || !message.trim()}
+              disabled={!isConnected || !message.trim()}
             >
               <ArrowUp className="w-4 h-4" />
             </Button>

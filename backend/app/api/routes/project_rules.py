@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from app.api.deps import CurrentUser, SessionDep
 from app.models import Project
 from app.schemas import ProjectRulesCreate, ProjectRulesUpdate, ProjectRulesPublic
-from app.crud import project_rules as crud_rules
+from app.services import ProjectRulesService
 
 router = APIRouter(prefix="/project-rules", tags=["project-rules"])
 
@@ -23,15 +23,15 @@ def create_project_rules(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    # Initialize service
+    rules_service = ProjectRulesService(session)
+
     # Check if rules already exist
-    existing_rules = crud_rules.get_project_rules(
-        session=session,
-        project_id=rules_in.project_id,
-    )
+    existing_rules = rules_service.get_by_project(rules_in.project_id)
     if existing_rules:
         raise HTTPException(status_code=400, detail="Project rules already exist")
 
-    rules = crud_rules.create_project_rules(session=session, rules_in=rules_in)
+    rules = rules_service.create(rules_in)
     return ProjectRulesPublic.model_validate(rules)
 
 
@@ -43,7 +43,8 @@ def get_project_rules(
     project_id: UUID,
 ) -> ProjectRulesPublic:
     """Get project rules by project_id."""
-    rules = crud_rules.get_project_rules(session=session, project_id=project_id)
+    rules_service = ProjectRulesService(session)
+    rules = rules_service.get_by_project(project_id)
     if not rules:
         raise HTTPException(status_code=404, detail="Project rules not found")
     return ProjectRulesPublic.model_validate(rules)
@@ -58,13 +59,10 @@ def update_project_rules(
     rules_in: ProjectRulesUpdate,
 ) -> ProjectRulesPublic:
     """Update project rules."""
-    db_rules = crud_rules.get_project_rules(session=session, project_id=project_id)
+    rules_service = ProjectRulesService(session)
+    db_rules = rules_service.get_by_project(project_id)
     if not db_rules:
         raise HTTPException(status_code=404, detail="Project rules not found")
 
-    rules = crud_rules.update_project_rules(
-        session=session,
-        db_rules=db_rules,
-        rules_in=rules_in,
-    )
+    rules = rules_service.update(db_rules, rules_in)
     return ProjectRulesPublic.model_validate(rules)

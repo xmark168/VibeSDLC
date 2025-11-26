@@ -8,8 +8,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from app import crud
 from app.api.deps import CurrentUser, SessionDep
+from app.services import ProjectService
 from app.models import Project, Role, Agent, AgentStatus
 from app.schemas import (
     ProjectCreate,
@@ -46,15 +46,14 @@ def list_projects(
     Returns:
         ProjectsPublic: List of projects with total count
     """
+    project_service = ProjectService(session)
     if current_user.role == Role.ADMIN:
-        projects, total_count = crud.project.get_projects(
-            session=session,
+        projects, total_count = project_service.get_all(
             skip=skip,
             limit=limit,
         )
     else:
-        projects, total_count = crud.project.get_projects_by_owner(
-            session=session,
+        projects, total_count = project_service.get_by_owner(
             owner_id=current_user.id,
             skip=skip,
             limit=limit,
@@ -86,7 +85,8 @@ def get_project(
     Raises:
         HTTPException: If project not found or user lacks access
     """
-    project = crud.project.get_project(session=session, project_id=project_id)
+    project_service = ProjectService(session)
+    project = project_service.get_by_id(project_id)
 
     if not project:
         logger.warning(f"Project {project_id} not found")
@@ -138,8 +138,8 @@ def create_project(
 
     try:
         # Create project without committing (uses flush to get ID)
-        project = crud.project.create_project_no_commit(
-            session=session,
+        project_service = ProjectService(session)
+        project = project_service.create_no_commit(
             project_in=project_in,
             owner_id=current_user.id,
         )
@@ -211,7 +211,8 @@ def update_project(
     Raises:
         HTTPException: If project not found or user lacks access
     """
-    project = crud.project.get_project(session=session, project_id=project_id)
+    project_service = ProjectService(session)
+    project = project_service.get_by_id(project_id)
 
     if not project:
         logger.warning(f"Project {project_id} not found for update")
@@ -233,8 +234,8 @@ def update_project(
 
     logger.info(f"Updating project {project.code} (ID: {project_id})")
 
-    updated_project = crud.project.update_project(
-        session=session,
+    project_service = ProjectService(session)
+    updated_project = project_service.update(
         db_project=project,
         project_in=project_in,
     )
@@ -259,7 +260,8 @@ def delete_project(
     Raises:
         HTTPException: If project not found or user lacks access
     """
-    project = crud.project.get_project(session=session, project_id=project_id)
+    project_service = ProjectService(session)
+    project = project_service.get_by_id(project_id)
 
     if not project:
         logger.warning(f"Project {project_id} not found for deletion")
@@ -280,4 +282,5 @@ def delete_project(
         )
 
     logger.info(f"Deleting project {project.code} (ID: {project_id})")
-    crud.project.delete_project(session=session, project_id=project_id)
+    project_service = ProjectService(session)
+    project_service.delete(project_id)

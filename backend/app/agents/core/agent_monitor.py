@@ -93,6 +93,9 @@ class AgentMonitor:
             logger.info("AgentMonitor stopped")
             return True
             
+        except asyncio.CancelledError:
+            logger.info("AgentMonitor stop cancelled")
+            return False
         except Exception as e:
             logger.error(f"Error stopping AgentMonitor: {e}", exc_info=True)
             return False

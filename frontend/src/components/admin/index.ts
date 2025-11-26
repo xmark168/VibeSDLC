@@ -1,2 +1,3 @@
 export { MetricCard } from "./MetricCard"
-export { TimeRangeSelector, type TimeRange } from "./TimeRangeSelector"
+export { TimeRangeSelector } from "./TimeRangeSelector"
+export type { TimeRange } from "@/types"

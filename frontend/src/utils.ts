@@ -1,15 +1,7 @@
 import type { JSX } from "react"
 import toast from "react-hot-toast"
 import type { ApiError } from "./client"
-
-/**
- * Toast message configuration for async operations
- */
-export interface ToastMessages {
-  loading: string | JSX.Element
-  success: string | JSX.Element
-  error: string | JSX.Element
-}
+import type { ToastMessages } from "@/types"
 
 /**
  * Wraps an async operation with react-hot-toast loading states

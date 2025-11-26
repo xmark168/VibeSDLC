@@ -35,7 +35,7 @@ class KafkaTopics(str, Enum):
 class BaseKafkaEvent(BaseModel):
     """Base schema for all Kafka events."""
 
-    event_id: str = Field(default_factory=lambda: str(UUID))
+    event_id: str = Field(default_factory=lambda: str(uuid4()))  # FIX: Call uuid4() to generate UUID instance
     event_type: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     project_id: Optional[UUID] = None
