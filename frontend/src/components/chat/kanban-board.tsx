@@ -147,12 +147,37 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
   useEffect(() => {
     if (dbKanbanData && dbKanbanData.board) {
       console.log('[KanbanBoard] Loading Kanban board from database:', dbKanbanData)
+      console.log('[KanbanBoard] Board data counts:', {
+        Todo: dbKanbanData.board.Todo?.length || 0,
+        InProgress: dbKanbanData.board.InProgress?.length || 0,
+        Review: dbKanbanData.board.Review?.length || 0,
+        Done: dbKanbanData.board.Done?.length || 0,
+      })
+
+      // Debug: Log all story types to identify filtering issues
+      const allItems = [
+        ...(dbKanbanData.board.Todo || []),
+        ...(dbKanbanData.board.InProgress || []),
+        ...(dbKanbanData.board.Review || []),
+        ...(dbKanbanData.board.Done || []),
+      ]
+      const uniqueTypes = [...new Set(allItems.map((item: any) => item.type))]
+      console.log('[KanbanBoard] Story types in database:', uniqueTypes)
 
       // Lean Kanban: Only show UserStory and EnablerStory on board
       // Epic managed separately, Tasks are implementation details
-      const filterItems = (items: any[]) => items.filter((item: any) =>
-        item.type === "UserStory" || item.type === "EnablerStory"
-      )
+      // FIX: Also include stories without type or with different casing
+      const filterItems = (items: any[]) => {
+        const filtered = items.filter((item: any) => {
+          const itemType = item.type?.toLowerCase?.() || ''
+          // Include items without type, or with UserStory/EnablerStory type (case-insensitive)
+          return !item.type ||
+            itemType === "userstory" ||
+            itemType === "enablerstory"
+        })
+        console.log('[KanbanBoard] Filter result:', items.length, '->', filtered.length, 'items')
+        return filtered
+      }
 
       // TraDS ============= Kanban Hierarchy: Map items with parent/children relationships
       const mapItem = (item: any, columnId: string) => ({
@@ -235,13 +260,21 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
   // Update columns when WebSocket kanbanData changes (real-time updates)
   useEffect(() => {
     if (kanbanData && kanbanData.kanban_board) {
-      console.log('Updating Kanban board with WebSocket data:', kanbanData)
+      console.log('[KanbanBoard] Updating Kanban board with WebSocket data:', kanbanData)
 
       // Lean Kanban: Only show UserStory and EnablerStory on board
       // Epic managed separately, Tasks are implementation details
-      const filterItems = (items: any[]) => items.filter((item: any) =>
-        item.type === "UserStory" || item.type === "EnablerStory"
-      )
+      // FIX: Also include stories without type or with different casing
+      const filterItems = (items: any[]) => {
+        const filtered = items.filter((item: any) => {
+          const itemType = item.type?.toLowerCase?.() || ''
+          // Include items without type, or with UserStory/EnablerStory type (case-insensitive)
+          return !item.type ||
+            itemType === "userstory" ||
+            itemType === "enablerstory"
+        })
+        return filtered
+      }
 
       // TraDS ============= Kanban Hierarchy: Map items with parent/children relationships
       const mapItem = (item: any, columnId: string) => ({

@@ -74,10 +74,9 @@ class DeveloperCrew:
             backstory=planner_cfg["backstory"],
             verbose=True,
             llm=LLM(
-                model="openrouter/kwaipilot/kat-coder-pro:free",
-                temperature=0.1,
-                base_url="https://openrouter.ai/api/v1",
-                api_key="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",
+                    model="openai/claude-sonnet-4-5-20250929",
+                  temperature=0.1,base_url="https://ai.megallm.io/v1", 
+                  api_key="sk-mega-f2cad3ab748b80af3cc310789c808c7c83efc342729e533067d60d4b8db4cd01"
             ),
             tools=[
                 CodebaseSearchTool(project_id=self.project_id),
@@ -100,10 +99,9 @@ class DeveloperCrew:
             use_system_prompt=True,
             respect_context_window=True,
             llm=LLM(
-                model="openrouter/kwaipilot/kat-coder-pro:free",
-                temperature=0.1,
-                base_url="https://openrouter.ai/api/v1",
-                api_key="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",
+                    model="openai/claude-sonnet-4-5-20250929",
+                  temperature=0.1,base_url="https://ai.megallm.io/v1", 
+                  api_key="sk-mega-f2cad3ab748b80af3cc310789c808c7c83efc342729e533067d60d4b8db4cd01"
             ),
             tools=[
                 ShellCommandTool(root_dir=self.root_dir),
@@ -195,7 +193,7 @@ class DeveloperCrew:
             print(f"Git branch operation result (fallback): {branch_result}")
 
         
-        developer_dir = Path(__file__).parent  # This is the directory containing this crew.py file
+        developer_dir = Path(__file__).parent  
         knowledge_dir = developer_dir / "knowledge"
 
         knowledge_files = []
@@ -249,7 +247,7 @@ class DeveloperCrew:
         if 'workspace-' in str(active_git_tool.root_dir):
             print(f"Changes committed in worktree: {active_git_tool.root_dir}")
             # Future: Add logic to merge worktree changes back to main branch if needed
-        
+
         # Update both project and task indexes
         print(f"--- [After Kickoff] Crew run finished for project '{self.project_id}'. Updating indexes... ---")
         try:
@@ -263,5 +261,139 @@ class DeveloperCrew:
 
         except Exception as e:
             print(f"An unexpected error occurred during index update: {e}")
+
+        return str(result)
+
+    async def report_progress(self, query: str, project_id: str = "default", task_id: str = None) -> str:
+        """Report on project or specific task progress based on the query.
+
+        Args:
+            query: User's query about progress (e.g., "What's the status?", "How far along are we?")
+            project_id: Project identifier for context
+            task_id: Specific task ID if querying about specific task (optional)
+
+        Returns:
+            Progress report based on available information and query
+        """
+        # Get the appropriate agent for progress reporting
+        reporter_agent = self.agents["coder"]  # Use the Coder agent that has knowledge of the codebase
+
+        progress_description = f"""
+Analyze and report on the development progress based on the following query:
+
+Query: {query}
+Project ID: {project_id}
+Task ID: {task_id or 'Not specified'}
+
+Based on the current codebase and your knowledge, provide a helpful progress report that includes:
+
+If it's a general progress query:
+- Features implemented so far
+- Current development status
+- What's working
+- What's planned next
+- Any development bottlenecks or considerations
+
+If it's about a specific task:
+- Status of that specific task
+- What code has been affected
+- Dependencies or related components
+- Estimated completion if possible
+
+Be concise but informative, friendly and professional.
+"""
+
+        progress_task = Task(
+            description=progress_description,
+            expected_output="Concise and informative progress report that addresses the user's query",
+            agent=reporter_agent,
+        )
+
+        # Execute crew
+        crew = Crew(
+            agents=[reporter_agent],
+            tasks=[progress_task],
+            process=Process.sequential,
+            verbose=True,
+            knowledge_sources=[],  # Use current knowledge as needed
+            embedder={
+                "provider": "openai",
+                "config": {"model": "text-embedding-3-large"},
+            },
+            memory=True,
+        )
+
+        result = await crew.kickoff_async()
+
+        return str(result)
+
+    async def react_task(self, story_details: str, user_request: str, project_id: str = "default", task_id: str = None) -> str:
+        """Handle user's additional feature/interface requests for a specific story/task.
+
+        Args:
+            story_details: Details about the existing story/task that user wants to extend
+            user_request: User's specific request for additional features/interfaces
+            project_id: Project identifier for context
+            task_id: Specific task ID if applicable (optional)
+
+        Returns:
+            Response with implementation plan or feasibility analysis for the requested additions
+        """
+        # Use the Coder agent to handle the user's additional requests
+        coder_agent = self.agents["coder"]
+
+        react_description = f"""
+Analyze and respond to the user's request for additional features/interfaces on an existing story/task:
+
+Existing Story/Task Details: {story_details}
+User's Additional Request: {user_request}
+Project ID: {project_id}
+Task ID: {task_id or 'Not specified'}
+
+Based on the current codebase, requirements, and your knowledge:
+
+1. Analyze Feasibility:
+- Is the requested feature/interface technically feasible?
+- What existing components can be reused?
+- What new components need to be created?
+
+2. Implementation Approach:
+- How should this be integrated with existing functionality?
+- What files/components need to be modified?
+- What new files/components need to be created?
+- Consider UI/UX implications if it's interface-related
+- Consider API/database changes if it affects data flow
+
+3. Dependencies & Impact:
+- Does this affect other parts of the system?
+- Are there any breaking changes?
+- What testing would be needed?
+
+4. Provide clear, actionable next steps
+
+Be constructive, professional, and specific in your response.
+"""
+
+        react_task = Task(
+            description=react_description,
+            expected_output="Detailed response analyzing the feasibility of the user's request with implementation approach and next steps",
+            agent=coder_agent,
+        )
+
+        # Execute crew
+        crew = Crew(
+            agents=[coder_agent],
+            tasks=[react_task],
+            process=Process.sequential,
+            verbose=True,
+            knowledge_sources=[],  # Use current knowledge as needed
+            embedder={
+                "provider": "openai",
+                "config": {"model": "text-embedding-3-large"},
+            },
+            memory=True,
+        )
+
+        result = await crew.kickoff_async()
 
         return str(result)
