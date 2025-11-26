@@ -63,27 +63,55 @@ class TeamLeader(BaseAgent):
 
             logger.info(f"[{self.name}] Processing {task_type}: {user_message[:50]}...")
 
+            # CHANGE 1: Make delegation_failed handling terminal - return immediately
             if task.context.get("delegation_failed"):
                 target_role = task.context.get("target_role")
                 error_message = task.context.get("error_message")
                 original_content = task.context.get("original_content", user_message)
                 
-                logger.warning(f"[{self.name}] Delegation to {target_role} failed, handling as fallback")
+                logger.warning(f"[{self.name}] Delegation to {target_role} failed, providing fallback response")
                 
-                await self.message_user("response", error_message, {
+                # Provide a helpful fallback response instead of trying to delegate again
+                fallback_response = (
+                    f"{error_message}\n\n"
+                    f"Tuy nhiên, tôi có thể giúp bạn một số việc:\n"
+                    f"- Giải thích cách bắt đầu một dự án mới\n"
+                    f"- Hướng dẫn quy trình phát triển\n"
+                    f"- Trả lời câu hỏi chung về dự án\n\n"
+                    f"Bạn muốn tôi giúp gì?"
+                )
+                
+                await self.message_user("response", fallback_response, {
                     "message_type": "text",
                     "delegation_failed": True,
                     "target_role": target_role
                 })
                 
-                user_message = original_content
+                # Return immediately - do NOT continue to crew processing
+                return TaskResult(
+                    success=True,
+                    output="",  # Already sent message above
+                    structured_data={
+                        "delegation_failed": True,
+                        "target_role": target_role,
+                        "fallback_provided": True
+                    }
+                )
             
+            # CHANGE 3: Check for prior delegation attempts before delegating
             should_delegate = False
-            if not task.context.get("delegation_failed"):
+            # Don't delegate if already attempted or if this is a delegation_failed callback
+            if not task.context.get("delegation_failed") and not task.context.get("delegation_attempted"):
                 should_delegate, reason = await self._should_delegate_to_analyst_smart(user_message)
                 
                 if should_delegate:
                     logger.info(f"[{self.name}] Delegating to BA (reason: {reason[:100]})")
+                    
+                    # CHANGE 2: Add marker to prevent re-delegation if this comes back
+                    from datetime import datetime, timezone
+                    task.context["delegation_attempted"] = True
+                    task.context["delegation_timestamp"] = datetime.now(timezone.utc).isoformat()
+                    
                     return await self.delegate_to_role(
                         task=task,
                         target_role="business_analyst",
@@ -112,15 +140,13 @@ class TeamLeader(BaseAgent):
                 logger.warning(f"[{self.name}] Response too long, truncating")
                 response = response[:5000] + "\n\n... (message truncated)"
             
-            await self.message_user("response", response, {"message_type": "text"})
-
+            # Don't call message_user here - TaskResult output will be sent automatically
             return TaskResult(
                 success=True,
                 output=response,
                 structured_data={
                     "task_type": task_type,
                     "routing_reason": task.routing_reason,
-                    "crew_agents_used": len(self.crew.agents),
                 },
                 requires_approval=False,
             )

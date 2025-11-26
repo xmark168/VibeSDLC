@@ -1,9 +1,11 @@
 """User-related schemas."""
 
-from uuid import UUID
 from typing import Optional
+from uuid import UUID
+
 from pydantic import EmailStr
 from sqlmodel import Field, SQLModel
+
 from app.models import Role
 
 

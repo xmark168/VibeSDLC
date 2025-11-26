@@ -83,7 +83,10 @@ class TeamLeaderCrew:
             verbose=True,
         )
         
-        result = await crew_instance.kickoff_async(inputs={"user_message": user_message})
+        result = await crew_instance.kickoff_async(inputs={
+            "user_message": user_message,
+            "context": ""
+        })
         return str(result)
     
     async def track_progress(self, project_context: str) -> str:
@@ -94,7 +97,10 @@ class TeamLeaderCrew:
             verbose=True,
         )
         
-        result = await crew_instance.kickoff_async(inputs={"project_context": project_context})
+        result = await crew_instance.kickoff_async(inputs={
+            "project_context": project_context,
+            "context": ""
+        })
         return str(result)
     
     async def check_should_delegate(self, message: str) -> tuple[bool, str]:
@@ -106,7 +112,10 @@ class TeamLeaderCrew:
             verbose=False,
         )
         
-        result = await crew_instance.kickoff_async(inputs={"message": message})
+        result = await crew_instance.kickoff_async(inputs={
+            "message": message,
+            "context": ""
+        })
         result_str = str(result).upper()
         
         should_delegate = "DECISION: YES" in result_str or "YES" in result_str[:100]
