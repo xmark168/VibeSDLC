@@ -1,10 +1,11 @@
 from datetime import datetime, timezone
-from uuid import UUID, uuid4
 from enum import Enum
-from pydantic import EmailStr
-from sqlmodel import Field, SQLModel, Relationship, Column
-from sqlalchemy import JSON, Text, Enum as SQLEnum, UniqueConstraint
 from typing import Optional
+from uuid import UUID, uuid4
+
+from pydantic import EmailStr
+from sqlalchemy import JSON, Text, Enum as SQLEnum, UniqueConstraint
+from sqlmodel import Field, SQLModel, Relationship, Column
 
 class Role(str, Enum):
     ADMIN = "admin"

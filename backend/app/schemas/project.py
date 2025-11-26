@@ -1,10 +1,11 @@
 """Project-related schemas."""
 
-from uuid import UUID
 from datetime import datetime
-from sqlmodel import SQLModel
-from typing import Optional, TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Optional, Union
+from uuid import UUID
+
 from pydantic import field_validator
+from sqlmodel import SQLModel
 
 if TYPE_CHECKING:
     from .agent import AgentPublic

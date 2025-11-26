@@ -1,9 +1,10 @@
 """Project rules schemas."""
 
-from uuid import UUID
 from datetime import datetime
-from sqlmodel import SQLModel
 from typing import Optional
+from uuid import UUID
+
+from sqlmodel import SQLModel
 
 
 class ProjectRulesCreate(SQLModel):

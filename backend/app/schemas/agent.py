@@ -1,10 +1,12 @@
 """Agent-related schemas (includes pool management)."""
 
-from uuid import UUID
 from datetime import datetime
+from typing import Optional
+from uuid import UUID
+
 from pydantic import BaseModel, Field
 from sqlmodel import SQLModel
-from typing import Optional
+
 from app.models import AgentStatus
 
 

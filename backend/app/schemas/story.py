@@ -1,9 +1,11 @@
 """Story-related schemas."""
 
+from datetime import datetime
+from typing import Literal, Optional
 from uuid import UUID
-from datetime import datetime, date
+
 from sqlmodel import Field, SQLModel
-from typing import Optional, Literal
+
 from app.models import StoryStatus, StoryType
 
 

@@ -1,9 +1,11 @@
 """Message-related schemas."""
 
-from uuid import UUID
 from datetime import datetime
+from typing import Any, Optional
+from uuid import UUID
+
 from sqlmodel import SQLModel
-from typing import Optional, Any
+
 from app.models import AuthorType
 
 
