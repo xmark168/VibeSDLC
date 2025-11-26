@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api.deps import CurrentUser, SessionDep
 from app.services import ProjectService
+from app.services.agent_service import AgentService
 from app.models import Project, Role, Agent, AgentStatus
 from app.schemas import (
     ProjectCreate,
