@@ -34,6 +34,7 @@ import { AuthorType, type Message } from "@/types/message";
 import { MessageStatusIndicator } from "./message-status-indicator";
 import { AgentQuestionCard } from "./AgentQuestionCard";
 import { ArtifactCard } from "./ArtifactCard";
+import { StoriesCreatedCard } from "./StoriesCreatedCard";
 import { useProjectAgents } from "@/queries/agents";
 
 interface ChatPanelProps {
@@ -655,22 +656,34 @@ export function ChatPanelWS({
                   </div>
                   
                   {/* Show artifact card if message type is artifact_created */}
-                  {msg.message_type === 'artifact_created' && msg.structured_data && (
+                  {msg.message_type === 'artifact_created' && msg.structured_data?.artifact_id && (
                     <ArtifactCard
                       artifact={{
-                        artifact_id: msg.structured_data.artifact_id || msg.id,
+                        artifact_id: msg.structured_data.artifact_id,
                         artifact_type: msg.structured_data.artifact_type || 'analysis',
                         title: msg.structured_data.title || 'Artifact',
                         description: msg.structured_data.description,
                         version: msg.structured_data.version || 1,
                         status: msg.structured_data.status || 'draft',
-                        agent_name: msg.agent_name || getAgentName(msg),
+                        agent_name: msg.structured_data.agent_name || msg.agent_name || getAgentName(msg),
                       }}
                       onClick={() => {
                         if (onOpenArtifact && msg.structured_data?.artifact_id) {
                           onOpenArtifact(msg.structured_data.artifact_id)
                         }
                       }}
+                    />
+                  )}
+                  
+                  {/* Show stories created card if message type is stories_created */}
+                  {msg.message_type === 'stories_created' && msg.structured_data?.story_ids && (
+                    <StoriesCreatedCard
+                      stories={{
+                        count: msg.structured_data.count || 0,
+                        story_ids: msg.structured_data.story_ids || [],
+                        prd_artifact_id: msg.structured_data.prd_artifact_id,
+                      }}
+                      projectId={projectId || ''}
                     />
                   )}
                 </div>

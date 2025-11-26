@@ -21,25 +21,40 @@ analyze_requirements:
 
 check_clarification_needed:
   description: >
-    Analyze this user message and decide if it's too vague and needs clarification.
-
+    Phân tích message của user và quyết định có cần làm rõ không.
+    
     User Message: {message}
-
-    A message needs clarification if it's:
-    - Very short and generic (e.g., "phân tích dự án", "analyze project", "help")
-    - Lacks specific details about what to analyze
-    - Too broad without clear scope
-
-    A message does NOT need clarification if it:
-    - Has specific details (API, database, features, user stories)
-    - Is a clear request even if short
-    - Contains enough context to understand intent
-
-    Answer in this format:
-    DECISION: [YES if needs clarification, NO if clear enough]
-    REASON: [one sentence why]
+    
+    Message CẦN clarification nếu:
+    - Chỉ nói về DOMAIN mà không nói TÍNH NĂNG cụ thể
+      VD: "website học tập", "app bán hàng", "hệ thống quản lý"
+    - Thiếu thông tin về USER ROLE
+      VD: "website học tập" → học sinh? giáo viên? admin?
+    - Thiếu thông tin về CORE FEATURES
+      VD: "website học tập" → học video? làm bài tập? thi online?
+    - Quá chung chung
+      VD: "phân tích dự án", "help me", "tạo app"
+    
+    Message KHÔNG CẦN clarification nếu:
+    - Có cụ thể tính năng
+      VD: "website học tập với video bài giảng và quiz"
+    - Có user roles rõ ràng
+      VD: "app cho học sinh làm bài tập trắc nghiệm"
+    - Có acceptance criteria
+      VD: "trang login với Google OAuth và remember me"
+    
+    QUYẾT ĐỊNH:
+    - Nếu thiếu ≥2 yếu tố (domain specifics, user roles, features) → YES
+    - Nếu đủ context để hiểu intent → NO
+    
+    Format:
+    DECISION: YES/NO
+    REASON: [một câu giải thích]
+    MISSING: [list các thông tin còn thiếu, nếu YES]
   expected_output: >
-    DECISION: YES/NO with brief reason
+    DECISION: YES/NO
+    REASON: brief explanation
+    MISSING: [optional list if YES]
   agent: business_analyst
 
 analyze_with_context:
@@ -59,4 +74,139 @@ analyze_with_context:
     Create a comprehensive PRD-style document.
   expected_output: >
     Detailed analysis document covering all selected aspects with actionable insights
+  agent: business_analyst
+
+detect_intent:
+  description: >
+    Phân tích ý định của người dùng từ message này:
+    
+    User Message: {user_message}
+    
+    Các ý định có thể:
+    - create_feature: Tạo feature/tính năng mới (e.g., "tạo login", "thêm thanh toán")
+    - edit_prd: Sửa PRD hiện có (e.g., "sửa PRD", "cập nhật document")
+    - edit_story: Sửa user story (e.g., "sửa story US-5", "update story")
+    - general_discussion: Thảo luận chung về nghiệp vụ (e.g., "giải thích...", "tại sao...")
+    
+    Trả về CHỈ tên ý định, không giải thích.
+  expected_output: >
+    Intent name: create_feature, edit_prd, edit_story, hoặc general_discussion
+  agent: business_analyst
+
+generate_interview_question:
+  description: >
+    Tạo câu hỏi phỏng vấn tiếp theo dựa vào context:
+    
+    User Message: {user_message}
+    Collected Info: {collected_info}
+    Previous Questions: {previous_questions}
+    
+    Hỏi về thông tin còn thiếu để tạo User Story hoàn chỉnh:
+    - User role (ai sử dụng?)
+    - Action/Feature (họ muốn làm gì?)
+    - Business value (tại sao quan trọng?)
+    - Acceptance criteria (làm sao biết thành công?)
+    - Priority (mức độ quan trọng?)
+    - Constraints (giới hạn kỹ thuật?)
+    
+    Hỏi bằng tiếng Việt, tự nhiên, từng thông tin một.
+    
+    Trả về JSON:
+    {{
+      "text": "câu hỏi bằng tiếng Việt",
+      "type": "open" hoặc "multichoice",
+      "options": [...] (nếu multichoice),
+      "allow_multiple": true/false
+    }}
+  expected_output: >
+    JSON với câu hỏi tiếp theo
+  agent: business_analyst
+
+generate_prd_from_interview:
+  description: >
+    Tạo Product Requirements Document từ thông tin phỏng vấn:
+    
+    Original Request: {original_request}
+    Interview Q&A: {interview_data}
+    
+    Tạo PRD JSON chi tiết với cấu trúc:
+    {{
+      "project_name": "Tên dự án ngắn gọn",
+      "version": "1.0",
+      "overview": "Tổng quan chi tiết về dự án và mục đích",
+      "goals": ["Mục tiêu 1", "Mục tiêu 2", "Mục tiêu 3"],
+      "target_users": ["User persona 1", "User persona 2"],
+      "features": [
+        {{
+          "name": "Tên feature",
+          "description": "Mô tả chi tiết feature",
+          "priority": "High/Medium/Low"
+        }}
+      ],
+      "acceptance_criteria": ["Tiêu chí 1", "Tiêu chí 2"],
+      "constraints": ["Ràng buộc kỹ thuật"],
+      "success_metrics": ["Metric đo lường thành công"],
+      "next_steps": ["Bước tiếp theo 1", "Bước 2"]
+    }}
+    
+    Viết bằng tiếng Việt, chi tiết, chuyên nghiệp.
+  expected_output: >
+    PRD JSON object đầy đủ
+  agent: business_analyst
+
+extract_user_stories_from_prd:
+  description: >
+    Trích xuất User Stories từ PRD features:
+    
+    PRD Data: {prd_data}
+    
+    Cho mỗi feature, tạo user story theo format INVEST:
+    - Independent (độc lập)
+    - Negotiable (có thể thương lượng)
+    - Valuable (có giá trị)
+    - Estimable (có thể ước lượng)
+    - Small (nhỏ, làm trong sprint)
+    - Testable (có thể test)
+    
+    Format:
+    "As a [user type], I want [action], so that [benefit]"
+    
+    Trả về JSON array:
+    [
+      {{
+        "title": "Tên story ngắn gọn",
+        "description": "As a... I want... So that...",
+        "acceptance_criteria": "Given...\\nWhen...\\nThen...",
+        "priority": 1-5 (1=lowest, 5=highest),
+        "story_points": 1/2/3/5/8/13 (Fibonacci),
+        "tags": ["tag1", "tag2"]
+      }}
+    ]
+    
+    Mỗi story phải có acceptance criteria theo format Given/When/Then.
+    Viết bằng tiếng Việt.
+  expected_output: >
+    JSON array of user stories
+  agent: business_analyst
+
+update_existing_prd:
+  description: >
+    Cập nhật PRD hiện có theo yêu cầu:
+    
+    Edit Request: {edit_request}
+    Existing PRD: {existing_prd}
+    
+    Phân tích yêu cầu sửa đổi:
+    - Thêm features mới
+    - Sửa features hiện có
+    - Cập nhật acceptance criteria
+    - Thay đổi priority
+    
+    Giữ nguyên các phần không liên quan.
+    Thêm trường "change_summary" mô tả những gì đã thay đổi.
+    Tăng version number (e.g., 1.0 → 1.1)
+    
+    Trả về PRD JSON đã cập nhật (format giống generate_prd_from_interview).
+  expected_output: >
+    Updated PRD JSON với change_summary
   agent: business_analyst
