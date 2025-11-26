@@ -14,54 +14,55 @@ logger = logging.getLogger(__name__)
 @CrewBase
 class TeamLeaderCrew:
     """Team Leader crew with multiple specialist agents."""
-    
+    agents: List[CrewAIBaseAgent]
+    tasks: List[Task]
     agents_config = 'config/agents.yaml'
     tasks_config = 'config/tasks.yaml'
     
     @agent
     def requirements_analyst(self) -> Agent:
         return Agent(
-            config=self.agents_config['requirements_analyst'],
+            config=self.agents_config['requirements_analyst'],  # type: ignore[index]
             verbose=True
         )
     
     @agent
     def project_coordinator(self) -> Agent:
         return Agent(
-            config=self.agents_config['project_coordinator'],
+            config=self.agents_config['project_coordinator'],  # type: ignore[index]
             verbose=True
         )
     
     @agent
     def progress_tracker(self) -> Agent:
         return Agent(
-            config=self.agents_config['progress_tracker'],
+            config=self.agents_config['progress_tracker'],  # type: ignore[index]
             verbose=True
         )
     
     @task
     def analyze_requirements_task(self) -> Task:
         return Task(
-            config=self.tasks_config['analyze_request']
+            config=self.tasks_config['analyze_request']  # type: ignore[index]
         )
     
     @task
     def coordinate_response_task(self) -> Task:
         return Task(
-            config=self.tasks_config['coordinate_response'],
-            context=[self.analyze_requirements_task()]
+            config=self.tasks_config['coordinate_response'],  # type: ignore[index]
+            context=[self.analyze_requirements_task()]  # type: ignore[index]
         )
     
     @task
     def track_progress_task(self) -> Task:
         return Task(
-            config=self.tasks_config['track_progress']
+            config=self.tasks_config['track_progress']  # type: ignore[index]
         )
     
     @task
     def check_delegation_task(self) -> Task:
         return Task(
-            config=self.tasks_config['check_delegation']
+            config=self.tasks_config['check_delegation']  # type: ignore[index]
         )
     
     @crew

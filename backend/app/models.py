@@ -144,6 +144,14 @@ class Project(BaseModel, table=True):
     websocket_connected: bool = Field(default=False)
     websocket_last_seen: datetime | None = Field(default=None)
     
+    # Token budget fields for cost control
+    token_budget_daily: int = Field(default=100000)  # 100K tokens/day
+    token_budget_monthly: int = Field(default=2000000)  # 2M tokens/month
+    tokens_used_today: int = Field(default=0)
+    tokens_used_this_month: int = Field(default=0)
+    budget_last_reset_daily: datetime | None = Field(default=None)
+    budget_last_reset_monthly: datetime | None = Field(default=None)
+    
     owner: User = Relationship(back_populates="owned_projects")
     stories: list["Story"] = Relationship(
         back_populates="project",

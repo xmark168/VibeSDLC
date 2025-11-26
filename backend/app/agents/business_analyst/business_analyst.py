@@ -1,5 +1,9 @@
 """
 Business Analyst Agent
+
+ARCHITECTURE NOTE:
+Uses AgentToolContext for dependency injection, allowing tools to access
+agent operations without tight coupling to pool manager.
 """
 
 import json
@@ -10,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
+from app.agents.core.agent_context import AgentToolContext
 from app.agents.business_analyst.crew import BusinessAnalystCrew
 from app.models import Agent as AgentModel
 from app.utils.project_files import ProjectFiles
@@ -42,10 +47,14 @@ class BusinessAnalyst(BaseAgent):
     def __init__(self, agent_model: AgentModel, **kwargs):
         super().__init__(agent_model, **kwargs)
 
+        # Create tool context for dependency injection
+        tool_context = AgentToolContext(self)
+        
         self.crew = BusinessAnalystCrew(
             agent_name=agent_model.human_name,
             personality_traits=agent_model.personality_traits or [],
-            communication_style=agent_model.communication_style
+            communication_style=agent_model.communication_style,
+            tool_context=tool_context  # Inject context into crew
         )
         
         self.project_files = None

@@ -1,16 +1,22 @@
-"""Business Analyst Crew - Requirements analysis and PRD generation."""
+"""Business Analyst Crew - Requirements analysis and PRD generation.
+
+ARCHITECTURE NOTE:
+Crew now accepts AgentContext for dependency injection, allowing tools
+to access agent operations without tight coupling to pool manager.
+"""
 
 import json
 import logging
 
 from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
+from app.agents.core.agent_context import AgentContext
 
 from .tools import (
     load_prd_from_file, save_prd_to_file, update_prd_section,
     load_user_stories_from_file, save_user_stories_to_file, add_user_story,
     validate_prd_completeness, validate_user_story,
-    ask_user_question  # Tool for agents to ask user clarification questions
+    create_ask_user_question_tool  # Factory for ask_user_question tool
 )
 
 logger = logging.getLogger(__name__)
@@ -27,11 +33,24 @@ class BusinessAnalystCrew:
         self,
         agent_name: str = "Business Analyst",
         personality_traits: list[str] | None = None,
-        communication_style: str | None = None
+        communication_style: str | None = None,
+        tool_context: AgentContext | None = None
     ):
         self.agent_name = agent_name
         self.personality_traits = personality_traits or []
         self.communication_style = communication_style or "professional and clear"
+        self.tool_context = tool_context
+        
+        # Create ask_user_question tool with injected context
+        if tool_context:
+            self.ask_user_question_tool = create_ask_user_question_tool(tool_context)
+        else:
+            # Fallback: Create dummy tool that returns error
+            from crewai.tools import tool
+            @tool
+            def ask_user_question_dummy(*args, **kwargs):
+                return {"error": "No tool context provided to crew"}
+            self.ask_user_question_tool = ask_user_question_dummy
         
         self.persona_description = self._build_persona_description()
     
@@ -51,7 +70,7 @@ Embody this personality in all responses while maintaining professionalism."""
         return Agent(
             config=self.agents_config['requirements_engineer'], # type: ignore[index]
             backstory=backstory,
-            tools=[load_prd_from_file, ask_user_question],  # Can read PRD and ask user questions
+            tools=[load_prd_from_file, self.ask_user_question_tool],  # Can read PRD and ask user questions
             verbose=True
         )
     
@@ -64,7 +83,7 @@ As a Domain Expert, you analyze business context and explain complex domain conc
         return Agent(
             config=self.agents_config['domain_expert'], # type: ignore[index]
             backstory=backstory,
-            tools=[ask_user_question],  # Can ask for domain/business clarification
+            tools=[self.ask_user_question_tool],  # Can ask for domain/business clarification
             verbose=True
         )
     
@@ -82,7 +101,7 @@ As a PRD Specialist, you create clear and comprehensive documentation."""
                 save_prd_to_file,
                 update_prd_section,
                 validate_prd_completeness,
-                ask_user_question  # Can ask for PRD specification details
+                self.ask_user_question_tool  # Can ask for PRD specification details
             ],  # Tools for PRD operations
             verbose=True
         )
