@@ -584,12 +584,13 @@ class AgentMessageRouter(BaseEventRouter):
                     )
                     
                     # Broadcast ownership change (MetaGPT-style)
-                    await self._broadcast_ownership_change(
-                        project_id=agent.project_id,
-                        new_agent=agent,
-                        previous_agent_id=previous_agent_id,
-                        reason="task_started"
-                    )
+                    # TODO: Fix inheritance issue with _broadcast_ownership_change
+                    # await self._broadcast_ownership_change(
+                    #     project_id=agent.project_id,
+                    #     new_agent=agent,
+                    #     previous_agent_id=previous_agent_id,
+                    #     reason="task_started"
+                    # )
 
 
 class TaskCompletionRouter(BaseEventRouter):

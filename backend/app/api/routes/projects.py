@@ -17,7 +17,7 @@ from app.schemas import (
     ProjectPublic,
     ProjectsPublic,
 )
-from app.utils.name_generator import generate_agent_name, get_display_name
+from app.services.persona_service import PersonaService
 
 logger = logging.getLogger(__name__)
 
@@ -152,22 +152,39 @@ def create_project(
         project_folder.mkdir(parents=True, exist_ok=True)
         logger.info(f"Created project folder: {project_folder}")
 
-        # Auto-create default agents for the project (1 per role type)
+        # Auto-create default agents for the project with diverse personas
+        persona_service = PersonaService(session)
+        agent_service = AgentService(session)
         created_agents = []
+        used_persona_ids = []
+        
         for role_type in DEFAULT_AGENT_ROLES:
-            human_name = generate_agent_name(role_type, existing_names=[])
-            display_name = get_display_name(human_name, role_type)
-
-            agent = Agent(
-                project_id=project.id,
-                name=display_name,
-                human_name=human_name,
+            # Get random persona for this role (avoid duplicates in same project)
+            persona = persona_service.get_random_persona_for_role(
                 role_type=role_type,
-                agent_type=role_type,
-                status=AgentStatus.idle,
+                exclude_ids=used_persona_ids
             )
-            session.add(agent)
+            
+            if not persona:
+                # No fallback - fail fast if personas not seeded
+                session.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"No persona templates found for role '{role_type}'. Please seed persona templates first by running: python app/db/seed_personas_script.py"
+                )
+            
+            # Create agent from persona template
+            agent = agent_service.create_from_template(
+                project_id=project.id,
+                persona_template=persona
+            )
+            used_persona_ids.append(persona.id)
             created_agents.append(agent)
+            
+            logger.info(
+                f"✓ Created {agent.human_name} ({role_type}) "
+                f"with persona: {persona.communication_style}, traits: {', '.join(persona.personality_traits[:2]) if persona.personality_traits else 'default'}"
+            )
 
         # Commit both project and agents in a single transaction
         session.commit()
