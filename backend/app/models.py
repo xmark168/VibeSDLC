@@ -4,7 +4,7 @@ from typing import Optional
 from uuid import UUID, uuid4
 
 from pydantic import EmailStr
-from sqlalchemy import JSON, Text, Enum as SQLEnum, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Text, Enum as SQLEnum, UniqueConstraint
 from sqlmodel import Field, SQLModel, Relationship, Column
 
 class Role(str, Enum):
