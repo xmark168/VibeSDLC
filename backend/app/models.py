@@ -714,7 +714,7 @@ class Artifact(BaseModel, table=True):
 class OrderType(str, Enum):
     """Type of order"""
     SUBSCRIPTION = "subscription"
-    ADDON = "addon"
+    CREDIT = "credit"
 
 
 class OrderStatus(str, Enum):

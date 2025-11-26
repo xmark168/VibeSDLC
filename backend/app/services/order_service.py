@@ -148,6 +148,7 @@ class OrderService:
             amount=float(total_amount),
             status=OrderStatus.PENDING,
             payos_order_code=payos_order_code,
+            credit_amount=credit_amount,  # Store credit amount
             is_active=True
         )
         self.session.add(order)

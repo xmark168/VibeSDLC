@@ -7,6 +7,7 @@ import { usePlans } from "@/queries/plans"
 import { formatPrice } from "@/apis/plans"
 import { InvoiceConfirmDialog } from "@/components/upgrade/InvoiceConfirmDialog"
 import { InvoiceDetailDialog } from "@/components/upgrade/InvoiceDetailDialog"
+import { CreditPurchaseDialog } from "@/components/upgrade/CreditPurchaseDialog"
 import { useCreatePaymentLink, usePaymentHistory } from "@/queries/payments"
 import { paymentsApi } from "@/apis/payments"
 import { useCurrentSubscription } from "@/queries/subscription"
@@ -51,6 +52,10 @@ function RouteComponent() {
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false)
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null)
   const createPayment = useCreatePaymentLink()
+
+  // Credit purchase dialog state
+  const [creditPurchaseDialogOpen, setCreditPurchaseDialogOpen] = useState(false)
+  const [isPurchasingCredit, setIsPurchasingCredit] = useState(false)
 
   // Invoice detail dialog state
   const [invoiceDetailOpen, setInvoiceDetailOpen] = useState(false)
@@ -254,6 +259,44 @@ function RouteComponent() {
           border: '1px solid #334155',
         },
       })
+    }
+  }
+
+  // Handle credit purchase confirmation
+  const handleCreditPurchaseConfirm = async () => {
+    setIsPurchasingCredit(true)
+
+    try {
+      const paymentData = await paymentsApi.purchaseCredits(creditAmount)
+
+      // Close dialog
+      setCreditPurchaseDialogOpen(false)
+
+      // Show loading message
+      const loadingToast = toast.loading("Đang chuyển đến trang thanh toán...", {
+        style: {
+          background: '#1e293b',
+          color: '#fff',
+          border: '1px solid #334155',
+        },
+      })
+
+      // Redirect to PayOS checkout page
+      setTimeout(() => {
+        toast.dismiss(loadingToast)
+        window.location.href = paymentData.checkout_url
+      }, 1000)
+    } catch (error: any) {
+      console.error('Credit purchase failed:', error)
+      toast.error(error?.body?.detail || 'Có lỗi xảy ra khi mua credits', {
+        style: {
+          background: '#1e293b',
+          color: '#fff',
+          border: '1px solid #334155',
+        },
+      })
+    } finally {
+      setIsPurchasingCredit(false)
     }
   }
 
@@ -568,7 +611,10 @@ function RouteComponent() {
                 </div>
 
                 {/* Purchase Button */}
-                <Button className="w-full h-12 text-base bg-primary hover:bg-primary/90">
+                <Button
+                  className="w-full h-12 text-base bg-primary hover:bg-primary/90"
+                  onClick={() => setCreditPurchaseDialogOpen(true)}
+                >
                   Purchase
                 </Button>
 
@@ -753,6 +799,18 @@ function RouteComponent() {
         billingCycle={billingCycle}
         onConfirm={handlePaymentConfirm}
         isProcessing={createPayment.isPending}
+      />
+
+      {/* Credit Purchase Dialog */}
+      <CreditPurchaseDialog
+        open={creditPurchaseDialogOpen}
+        onOpenChange={setCreditPurchaseDialogOpen}
+        creditAmount={creditAmount}
+        pricePerCredit={getPricePerCredit()}
+        totalPrice={totalPrice}
+        currency={currentPlan?.currency || 'VND'}
+        onConfirm={handleCreditPurchaseConfirm}
+        isProcessing={isPurchasingCredit}
       />
 
       {/* Invoice Detail Dialog */}

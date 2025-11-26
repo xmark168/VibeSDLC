@@ -110,3 +110,52 @@ class SubscriptionService:
             status=InvoiceStatus.PAID
         )
         return invoice
+
+    def add_credits_to_wallet(
+        self,
+        user_id: UUID,
+        credit_amount: int,
+        order: Order
+    ) -> tuple[CreditWallet, Invoice]:
+        """
+        Add credits to user's active subscription wallet
+        Returns: (CreditWallet, Invoice)
+        """
+        # Get user's active subscription
+        statement = (
+            select(Subscription)
+            .where(Subscription.user_id == user_id)
+            .where(Subscription.status == "active")
+            .order_by(Subscription.created_at.desc())
+        )
+        subscription = self.session.exec(statement).first()
+
+        if not subscription:
+            raise ValueError("No active subscription found")
+
+        # Get wallet for this subscription
+        wallet_statement = (
+            select(CreditWallet)
+            .where(CreditWallet.user_id == user_id)
+            .where(CreditWallet.subscription_id == subscription.id)
+            .where(CreditWallet.wallet_type == "subscription")
+        )
+        wallet = self.session.exec(wallet_statement).first()
+
+        if not wallet:
+            raise ValueError("No wallet found for subscription")
+
+        # Add credits to wallet
+        wallet.total_credits += credit_amount
+        self.session.add(wallet)
+
+        # Generate invoice
+        invoice = self._generate_invoice(order, subscription)
+        self.session.add(invoice)
+
+        self.session.commit()
+        self.session.refresh(wallet)
+        self.session.refresh(invoice)
+
+        logger.info(f"Added {credit_amount} credits to wallet {wallet.id} for user {user_id}")
+        return wallet, invoice
