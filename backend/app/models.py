@@ -116,6 +116,19 @@ class Project(BaseModel, table=True):
 
     # File system path for project files (auto-generated: projects/{project_id})
     project_path: str | None = Field(default=None, max_length=500)
+    
+    # Conversation context tracking - routes follow-up messages to active agent
+    active_agent_id: UUID | None = Field(
+        default=None,
+        foreign_key="agents.id",
+        ondelete="SET NULL"
+    )
+    active_agent_updated_at: datetime | None = Field(default=None)
+    
+    # WebSocket session tracking - for smart timeouts
+    websocket_connected: bool = Field(default=False)
+    websocket_last_seen: datetime | None = Field(default=None)
+    
     owner: User = Relationship(back_populates="owned_projects")
     stories: list["Story"] = Relationship(
         back_populates="project",
@@ -127,7 +140,10 @@ class Project(BaseModel, table=True):
     )
     agents: list["Agent"] = Relationship(
         back_populates="project",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan",
+            "foreign_keys": "[Agent.project_id]"  # Use Agent.project_id, not Project.active_agent_id
+        },
     )
     # TraDS ============= Project Rules
 
@@ -342,7 +358,12 @@ class Agent(BaseModel, table=True):
     status: AgentStatus = Field(default=AgentStatus.idle)
 
     # Relationships
-    project: "Project" = Relationship(back_populates="agents")
+    project: "Project" = Relationship(
+        back_populates="agents",
+        sa_relationship_kwargs={
+            "foreign_keys": "[Agent.project_id]"  # Use Agent.project_id, not Project.active_agent_id
+        }
+    )
     messages: list["Message"] = Relationship(back_populates="agent")
 
 
@@ -541,7 +562,6 @@ class ApprovalRequest(BaseModel, table=True):
 
     # Proposed changes
     proposed_data: dict = Field(sa_column=Column(JSON))  # What the agent wants to do
-    preview_data: dict | None = Field(default=None, sa_column=Column(JSON))  # Preview for UI
     explanation: str | None = Field(default=None, sa_column=Column(Text))  # Why the agent proposes this
 
     # Approval tracking
@@ -557,3 +577,129 @@ class ApprovalRequest(BaseModel, table=True):
     applied: bool = Field(default=False)  # Whether the approval was actually applied
     applied_at: datetime | None = Field(default=None)
     created_entity_id: UUID | None = Field(default=None)  # ID of created Story/Epic if applicable
+
+
+# ==================== AGENT CLARIFICATION QUESTIONS ====================
+
+class QuestionType(str, Enum):
+    """Question types for agent clarification"""
+    OPEN = "open"
+    MULTICHOICE = "multichoice"
+
+
+class QuestionStatus(str, Enum):
+    """Status of clarification questions"""
+    WAITING_ANSWER = "waiting_answer"
+    ANSWERED = "answered"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+
+
+class AgentQuestion(BaseModel, table=True):
+    """Agent clarification questions for user"""
+    __tablename__ = "agent_questions"
+    
+    # Relationships
+    project_id: UUID = Field(foreign_key="projects.id", ondelete="CASCADE")
+    agent_id: UUID = Field(foreign_key="agents.id", ondelete="CASCADE")
+    user_id: UUID = Field(foreign_key="users.id")
+    
+    # Question details
+    question_type: QuestionType = Field(sa_column=Column(SQLEnum(QuestionType)))
+    question_text: str = Field(sa_column=Column(Text))
+    
+    # For multichoice questions
+    options: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    allow_multiple: bool = Field(default=False)
+    
+    # Answer
+    answer: str | None = Field(default=None, sa_column=Column(Text))
+    selected_options: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    
+    # Status
+    status: QuestionStatus = Field(
+        default=QuestionStatus.WAITING_ANSWER,
+        sa_column=Column(SQLEnum(QuestionStatus))
+    )
+    
+    # Task context for resume
+    task_id: UUID
+    execution_id: UUID | None = None
+    task_context: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    
+    # Timestamps
+    expires_at: datetime
+    answered_at: datetime | None = None
+    
+    # Extra metadata
+    extra_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
+
+
+# ==================== ARTIFACT SYSTEM ====================
+
+class ArtifactType(str, Enum):
+    """Types of artifacts agents can produce"""
+    PRD = "prd"                          # Product Requirements Document
+    ARCHITECTURE = "architecture"        # System architecture design
+    API_SPEC = "api_spec"               # API specification
+    DATABASE_SCHEMA = "database_schema"  # Database design
+    USER_STORIES = "user_stories"        # User stories collection
+    CODE = "code"                        # Code files
+    TEST_PLAN = "test_plan"             # Test plan document
+    REVIEW = "review"                    # Code review document
+    ANALYSIS = "analysis"                # General analysis document
+
+
+class ArtifactStatus(str, Enum):
+    """Status of an artifact"""
+    DRAFT = "draft"                      # Initial version
+    PENDING_REVIEW = "pending_review"    # Waiting for review
+    APPROVED = "approved"                # Approved by user
+    REJECTED = "rejected"                # Rejected by user
+    ARCHIVED = "archived"                # Old version
+
+
+class Artifact(BaseModel, table=True):
+    """Agent-produced artifacts (documents, designs, code, etc.)"""
+    __tablename__ = "artifacts"
+    
+    # Identity
+    project_id: UUID = Field(foreign_key="projects.id", ondelete="CASCADE", index=True)
+    agent_id: UUID | None = Field(default=None, foreign_key="agents.id", ondelete="SET NULL")
+    agent_name: str = Field(nullable=False)
+    
+    # Artifact metadata
+    artifact_type: ArtifactType = Field(sa_column=Column(SQLEnum(ArtifactType)))
+    title: str = Field(max_length=255)
+    description: str | None = Field(default=None, sa_column=Column(Text))
+    
+    # Content
+    content: dict = Field(sa_column=Column(JSON))  # Structured content (schema depends on type)
+    file_path: str | None = Field(default=None)    # Path in workspace if saved to file
+    
+    # Versioning
+    version: int = Field(default=1)
+    parent_artifact_id: UUID | None = Field(default=None, foreign_key="artifacts.id", ondelete="SET NULL")
+    
+    # Status
+    status: ArtifactStatus = Field(default=ArtifactStatus.DRAFT, sa_column=Column(SQLEnum(ArtifactStatus)))
+    
+    # Review tracking
+    reviewed_by_user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
+    reviewed_at: datetime | None = Field(default=None)
+    review_feedback: str | None = Field(default=None, sa_column=Column(Text))
+    
+    # Metadata
+    tags: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    extra_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
+    
+    # Relationships
+    project: "Project" = Relationship()
+    agent: Optional["Agent"] = Relationship()
+    reviewed_by: Optional["User"] = Relationship()
+    parent: Optional["Artifact"] = Relationship(
+        sa_relationship_kwargs={
+            "remote_side": "[Artifact.id]",
+            "foreign_keys": "[Artifact.parent_artifact_id]"
+        }
+    )
