@@ -356,3 +356,84 @@ decide_next_action:
   expected_output: >
     JSON object with action, agent_to_use, reason, and optional estimated_missing_info
   agent: workflow_orchestrator
+
+analyze_and_route:
+  description: >
+    Analyze user message and current state, then decide intent + next action.
+    
+    User Message: {user_message}
+    Current State:
+      - Phase: {current_phase}
+      - Collected Info: {collected_info}
+      - Questions Asked: {questions_asked}
+      - Existing PRD: {has_existing_prd}
+      - Existing Stories: {has_stories}
+    
+    **Step 1: Detect Intent**
+    
+    Intents:
+    - **create_feature**: User wants to create new feature/system
+      Examples: "tạo login", "website học tập", "thêm payment"
+    
+    - **edit_prd**: User wants to modify existing PRD
+      Examples: "sửa PRD", "cập nhật requirements", "thêm feature vào doc"
+    
+    - **edit_story**: User wants to modify user story
+      Examples: "sửa story US-5", "update acceptance criteria"
+    
+    - **generate_stories**: User wants to extract stories from PRD
+      Examples: "tạo user stories", "extract stories từ PRD"
+    
+    - **general_discussion**: Q&A, explain concepts
+      Examples: "giải thích về...", "tại sao...", "phân tích domain"
+    
+    **Step 2: Decide Next Action**
+    
+    Based on intent + state, choose action:
+    
+    For **create_feature**:
+    - ASK_CLARIFICATION: If requirements vague (missing domain/users/features)
+    - ANALYZE_DOMAIN: If have requirements, need deeper business context
+    - GENERATE_PRD: If info complete (domain + users + features)
+    
+    For **edit_prd**:
+    - UPDATE_PRD: If PRD exists → use prd_specialist to update
+    - ERROR: If no PRD → ask if user wants to create new
+    
+    For **edit_story**:
+    - UPDATE_STORY: If story exists → update it
+    - ERROR: If no story found → ask for story ID
+    
+    For **generate_stories**:
+    - EXTRACT_STORIES: If PRD exists → use story_writer
+    - ERROR: If no PRD → need PRD first
+    
+    For **general_discussion**:
+    - ANALYZE_DOMAIN: Use domain_expert for analysis
+    
+    **Step 3: Assign Agent**
+    
+    - ASK_CLARIFICATION → requirements_engineer
+    - ANALYZE_DOMAIN → domain_expert
+    - GENERATE_PRD → prd_specialist
+    - UPDATE_PRD → prd_specialist
+    - EXTRACT_STORIES → story_writer
+    - UPDATE_STORY → story_writer
+    
+    **Return JSON:**
+    {{
+      "intent": "create_feature|edit_prd|edit_story|generate_stories|general_discussion",
+      "action": "ASK_CLARIFICATION|ANALYZE_DOMAIN|GENERATE_PRD|UPDATE_PRD|EXTRACT_STORIES|UPDATE_STORY|ERROR",
+      "agent_to_use": "requirements_engineer|domain_expert|prd_specialist|story_writer|none",
+      "reason": "Brief explanation why this decision",
+      "estimated_missing_info": ["list if ASK_CLARIFICATION"],
+      "error_message": "Only if action is ERROR"
+    }}
+    
+    Be adaptive:
+    - Skip interview if user provides complete requirements
+    - Don't over-interview (max 3 questions)
+    - Recognize when to move to next phase
+  expected_output: >
+    JSON with intent, action, agent_to_use, reason, and optional fields
+  agent: workflow_orchestrator

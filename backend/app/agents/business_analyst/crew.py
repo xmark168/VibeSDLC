@@ -3,7 +3,7 @@
 import json
 import logging
 
-from crewai import Agent, Crew, Task, Process
+from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 
 
@@ -23,17 +23,13 @@ class BusinessAnalystCrew:
         personality_traits: list[str] = None,
         communication_style: str = None
     ):
-        """Initialize crew with simplified persona context."""
-        # Store persona attributes (before super call)
         self.agent_name = agent_name
         self.personality_traits = personality_traits or []
         self.communication_style = communication_style or "professional and clear"
         
-        # Build persona description for prompts
         self.persona_description = self._build_persona_description()
     
     def _build_persona_description(self) -> str:
-        """Build concise persona description for CrewAI."""
         traits_str = ", ".join(self.personality_traits) if self.personality_traits else "professional"
         
         return f"""You are {self.agent_name}, a Business Analyst.
@@ -43,14 +39,10 @@ Communication Style: {self.communication_style}
 
 Embody this personality in all responses while maintaining professionalism."""
     
-    # === SPECIALIZED AGENTS ===
-    
     @agent
     def requirements_engineer(self) -> Agent:
-        """Interview & clarification specialist with persona."""
         base_config = self.agents_config['requirements_engineer'].copy()
         
-        # Inject simplified persona into backstory
         base_config['backstory'] = f"""{self.persona_description}
 
 As a Requirements Engineer, you excel at asking targeted clarification questions and detecting missing information."""
@@ -62,10 +54,8 @@ As a Requirements Engineer, you excel at asking targeted clarification questions
     
     @agent
     def domain_expert(self) -> Agent:
-        """Business domain & analysis specialist with persona."""
         base_config = self.agents_config['domain_expert'].copy()
         
-        # Inject simplified persona into backstory
         base_config['backstory'] = f"""{self.persona_description}
 
 As a Domain Expert, you analyze business context and explain complex domain concepts clearly."""
@@ -77,10 +67,8 @@ As a Domain Expert, you analyze business context and explain complex domain conc
     
     @agent
     def prd_specialist(self) -> Agent:
-        """PRD documentation specialist with persona."""
         base_config = self.agents_config['prd_specialist'].copy()
         
-        # Inject simplified persona into backstory
         base_config['backstory'] = f"""{self.persona_description}
 
 As a PRD Specialist, you create clear and comprehensive documentation."""
@@ -92,10 +80,8 @@ As a PRD Specialist, you create clear and comprehensive documentation."""
     
     @agent
     def story_writer(self) -> Agent:
-        """User story extraction specialist with persona."""
         base_config = self.agents_config['story_writer'].copy()
         
-        # Inject simplified persona into backstory
         base_config['backstory'] = f"""{self.persona_description}
 
 As a Story Writer, you craft clear, actionable user stories."""
@@ -107,10 +93,8 @@ As a Story Writer, you craft clear, actionable user stories."""
     
     @agent
     def workflow_orchestrator(self) -> Agent:
-        """Workflow orchestrator & coordinator with persona."""
         base_config = self.agents_config['workflow_orchestrator'].copy()
         
-        # Inject simplified persona into backstory
         base_config['backstory'] = f"""{self.persona_description}
 
 As the Workflow Orchestrator, you coordinate your team of specialists and make intelligent routing decisions."""
@@ -119,8 +103,6 @@ As the Workflow Orchestrator, you coordinate your team of specialists and make i
             config=base_config,
             verbose=True
         )
-    
-    # === TASKS ===
     
     @task
     def analyze_requirements_task(self) -> Task:
@@ -188,7 +170,11 @@ As the Workflow Orchestrator, you coordinate your team of specialists and make i
             config=self.tasks_config['decide_next_action']
         )
     
-    # === CREW ===
+    @task
+    def analyze_and_route_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['analyze_and_route']
+        )
     
     @crew
     def crew(self) -> Crew:
@@ -607,3 +593,74 @@ As the Workflow Orchestrator, you coordinate your team of specialists and make i
                     "reason": "Fallback to PRD generation (orchestrator parse failed, have some info)",
                     "estimated_missing_info": []
                 }
+    
+    async def analyze_and_route(
+        self,
+        user_message: str,
+        current_phase: str,
+        collected_info: dict,
+        questions_asked: list,
+        has_existing_prd: bool,
+        has_stories: bool
+    ) -> dict:
+        """Orchestrator analyzes message and decides intent + next action.
+        
+        Returns:
+            {
+                "intent": str,
+                "action": str,
+                "agent_to_use": str,
+                "reason": str,
+                "estimated_missing_info": list,  # optional
+                "error_message": str  # optional
+            }
+        """
+        crew_instance = Crew(
+            agents=[self.workflow_orchestrator()],
+            tasks=[self.analyze_and_route_task()],
+            process=Process.sequential,
+            verbose=False,
+        )
+        
+        result = await crew_instance.kickoff_async(inputs={
+            "user_message": user_message,
+            "current_phase": current_phase,
+            "collected_info": json.dumps(collected_info, ensure_ascii=False, indent=2),
+            "questions_asked": json.dumps(questions_asked, ensure_ascii=False),
+            "has_existing_prd": "yes" if has_existing_prd else "no",
+            "has_stories": "yes" if has_stories else "no"
+        })
+        
+        # Parse JSON response
+        try:
+            result_str = str(result).strip()
+            if "```json" in result_str:
+                result_str = result_str.split("```json")[1].split("```")[0].strip()
+            elif "```" in result_str:
+                result_str = result_str.split("```")[1].split("```")[0].strip()
+            
+            routing_data = json.loads(result_str)
+            
+            # Validate required fields
+            required_fields = ["intent", "action", "agent_to_use"]
+            if not all(field in routing_data for field in required_fields):
+                raise ValueError("Missing required fields in orchestrator response")
+            
+            logger.info(
+                f"[Orchestrator] Intent: {routing_data['intent']}, "
+                f"Action: {routing_data['action']}, "
+                f"Agent: {routing_data['agent_to_use']}"
+            )
+            
+            return routing_data
+            
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.error(f"Failed to parse orchestrator routing: {e}, result: {result}")
+            # Fallback
+            return {
+                "intent": "create_feature",
+                "action": "ASK_CLARIFICATION",
+                "agent_to_use": "requirements_engineer",
+                "reason": "Fallback routing (parse failed)",
+                "estimated_missing_info": []
+            }
