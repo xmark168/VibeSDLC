@@ -138,11 +138,24 @@ class GitPythonTool(BaseTool):
             return f"Failed to create branch '{branch_name}': {str(e)}"
 
     def _create_worktree(self, branch_name: str) -> str:
-        """Create a worktree for isolated development"""
+        """Create a worktree for isolated development.
+
+        For branch names like 'story_abc123', creates worktree at 'ws_story_abc123'.
+        For other branch names, creates worktree at 'ws_{branch_name}'.
+        """
         try:
             repo = Repo(self.root_dir)
 
-            worktree_path = Path(self.root_dir).parent / f"workspace-{branch_name}"
+            # Determine worktree name based on branch_name format
+            if branch_name.startswith("story_"):
+                # Extract the story ID part and create ws_story_{id}
+                story_id = branch_name.replace("story_", "")
+                worktree_name = f"ws_story_{story_id}"
+            else:
+                # For other branches, just use ws_{branch_name}
+                worktree_name = f"ws_{branch_name}"
+
+            worktree_path = Path(self.root_dir).parent / worktree_name
 
             if worktree_path.exists() and any(worktree_path.iterdir()):
                 return f"Worktree directory '{worktree_path}' already exists and is not empty. Use a different branch name or remove the existing directory."

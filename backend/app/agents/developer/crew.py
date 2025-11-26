@@ -131,24 +131,84 @@ class DeveloperCrew:
         Returns:
             Working Code Result
         """
+        # Index the main workspace first
         if os.path.exists(self.root_dir):
             try:
                 logger.info(f"Checking project registration for '{self.project_id}' at '{self.root_dir}'...")
-
                 project_manager.register_project(self.project_id, self.root_dir)
-
                 logger.info(f"Project index updated successfully for project '{self.project_id}'")
             except Exception as e:
                 logger.error(f"Failed to register or update project index for project '{self.project_id}': {e}")
         else:
             logger.warning(f"Project directory does not exist: {self.root_dir}. Skipping indexing.")
 
+        # Generate task ID if not provided
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if task_id is None:
+            task_id = f"ai-task-{timestamp}-{hash(user_story) % 10000:04d}"
+
+        short_task_id = task_id.split('-')[-1] if '-' in task_id else task_id[:8]
+        branch_name = f"story_{short_task_id}"
+
+        # Initialize Git in main workspace if needed
+        git_tool = GitPythonTool(root_dir=self.root_dir)
+        init_result = git_tool._run("init", message="Initializing project git repo")
+        print(f" Git init result: {init_result}")
+
+        # Make initial commit in main workspace if needed
+        status_result = git_tool._run("status")
+        if "nothing to commit" not in status_result and "No commits yet" in status_result:
+            print(" Creating initial commit in main workspace...")
+            git_tool._run("commit", message="Initial commit", files=["."])
+
+        # Create Git worktree for this task
+        print(f" Creating Git worktree for branch '{branch_name}'...")
+        worktree_result = git_tool._run("create_worktree", branch_name=branch_name)
+        print(f"Git worktree result: {worktree_result}")
+
+        # Determine worktree path
+        worktree_path = Path(self.root_dir).parent / f"ws_story_{short_task_id}"
+
+        # Check if worktree was created successfully
+        if worktree_path.exists() and worktree_path.is_dir():
+            print(f"✓ Worktree created successfully: {worktree_path}")
+
+            # Switch to worktree for all operations
+            active_root_dir = str(worktree_path)
+            active_git_tool = GitPythonTool(root_dir=active_root_dir)
+
+            # Update all agent tools to use worktree path
+            for agent_name, agent in self.agents.items():
+                for tool in agent.tools:
+                    if hasattr(tool, 'root_dir'):
+                        tool.root_dir = active_root_dir
+                        print(f"  → Updated {tool.name} root_dir to: {active_root_dir}")
+
+            # Register task workspace for indexing
+            try:
+                logger.info(f"Registering task workspace for indexing: '{task_id}' in project '{self.project_id}'")
+                project_manager.register_task(self.project_id, task_id, active_root_dir)
+            except Exception as e:
+                logger.error(f"Failed to register task workspace for indexing: {e}")
+
+        else:
+            # Fallback to main workspace if worktree creation failed
+            print(f" Worktree not created, falling back to main workspace: {self.root_dir}")
+            print(f"  Creating branch '{branch_name}' in main workspace instead...")
+
+            active_root_dir = self.root_dir
+            active_git_tool = git_tool
+
+            # Create branch and checkout
+            git_tool._run("create_branch", branch_name=branch_name)
+
+        # Now create the tasks with the active workspace
         tasks_config = self.config.get("tasks", {})
 
         plan_task_cfg = tasks_config.get("plan_task", {})
         plan_task = Task(
             description=plan_task_cfg["description"].format(
-                user_story=user_story, working_dir=self.root_dir
+                user_story=user_story, working_dir=active_root_dir
             ),
             agent=self.agents["planner"],
             expected_output=plan_task_cfg["expected_output"],
@@ -157,52 +217,31 @@ class DeveloperCrew:
         code_task_cfg = tasks_config.get("code_task", {})
         code_task = Task(
             description=code_task_cfg["description"].format(
-                user_story=user_story, working_dir=self.root_dir
+                user_story=user_story, working_dir=active_root_dir
             ),
             agent=self.agents["coder"],
             expected_output=code_task_cfg["expected_output"],
         )
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        if task_id is None:
-            task_id = f"ai-task-{timestamp}-{hash(user_story) % 10000:04d}"
-
-        short_task_id = task_id.split('-')[-1] if '-' in task_id else task_id[:8]  # Take last part or first 8 chars
-        branch_name = f"task_{short_task_id}"
-
-        git_tool = GitPythonTool(root_dir=self.root_dir)
-
-        init_result = git_tool._run("init", message="Initializing project git repo")
-        print(f"Git init result: {init_result}")
-
-        worktree_result = git_tool._run("create_worktree", branch_name=branch_name)
-        print(f"Git worktree operation result: {worktree_result}")
-
-        worktree_path = Path(self.root_dir).parent / f"ws_{short_task_id}"
-        if worktree_path.exists():
-            worktree_git_tool = GitPythonTool(root_dir=str(worktree_path))
-            active_git_tool = worktree_git_tool
-            try:
-                logger.info(f"Registering task workspace for indexing: '{task_id}' in project '{self.project_id}'")
-                project_manager.register_task(self.project_id, task_id, str(worktree_path))
-            except Exception as e:
-                logger.error(f"Failed to register task workspace for indexing: {e}")
-        else:
-            active_git_tool = git_tool
-            branch_result = git_tool._run("create_branch", branch_name=branch_name)
-            print(f"Git branch operation result (fallback): {branch_result}")
-
-        
-        developer_dir = Path(__file__).parent  
+        # Load knowledge sources
+        developer_dir = Path(__file__).parent
         knowledge_dir = developer_dir / "knowledge"
+
+        # Save current working directory and change to developer_dir
+        # because TextFileKnowledgeSource expects relative paths from cwd
+        original_cwd = os.getcwd()
 
         knowledge_files = []
         if knowledge_dir.exists():
+            # Change to developer_dir so relative paths work correctly
+            os.chdir(developer_dir)
+
             for ext in ["**/*.md", "**/*.txt", "**/*.mdx"]:
                 for file_path in knowledge_dir.glob(ext):
                     if file_path.exists() and file_path.is_file():
-                        abs_path = file_path.resolve()  # Use resolve() instead of absolute() to get canonical path
-                        knowledge_files.append(str(abs_path))
+                        # Use relative path from developer_dir (which is now cwd)
+                        relative_path = file_path.relative_to(developer_dir)
+                        knowledge_files.append(str(relative_path))
 
         knowledge_sources = []
         if knowledge_files:
@@ -211,13 +250,16 @@ class DeveloperCrew:
                     text_knowledge = TextFileKnowledgeSource(file_paths=knowledge_files)
                     knowledge_sources = [text_knowledge]
                     logger.info(f"Loaded {len(knowledge_files)} knowledge files from {knowledge_dir}")
-                    logger.info(f"Knowledge files: {knowledge_files}")
+                    logger.info(f"Knowledge files (relative): {knowledge_files}")
                 else:
                     logger.info("No existing knowledge files found to load")
             except Exception as e:
                 logger.error(f"Error loading knowledge sources: {e}")
                 logger.error(f"Attempted to load these files: {knowledge_files}")
                 logger.error(f"Knowledge directory: {knowledge_dir}, exists: {knowledge_dir.exists()}")
+            finally:
+                # Restore original working directory
+                os.chdir(original_cwd)
 
         # Execute crew
         crew = Crew(
@@ -238,15 +280,19 @@ class DeveloperCrew:
 
         result = await crew.kickoff_async()
 
-        # Commit the changes after task completion (only changed files)
-        # Use the active git tool (either main repo or worktree)
-        commit_result = active_git_tool._run("commit", message=f"Auto-commit: Implementing task - {user_story[:50]}...", files=["."])
-        print(f"Git commit result: {commit_result}")
 
-        # If we used a worktree, we may want to merge back to main or handle differently
-        if 'workspace-' in str(active_git_tool.root_dir):
-            print(f"Changes committed in worktree: {active_git_tool.root_dir}")
-            # Future: Add logic to merge worktree changes back to main branch if needed
+        commit_result = active_git_tool._run("commit", message=f"Auto-commit: Implementing task - {user_story[:50]}...", files=["."])
+        print(f" Git commit result: {commit_result}")
+
+        # Check if we're in worktree
+        if worktree_path.exists() and str(worktree_path) == active_root_dir:
+            print(f" Changes committed in worktree: {worktree_path}")
+            print(f"  Branch: {branch_name}")
+            print(f"  To merge back to main:")
+            print(f"    cd {self.root_dir}")
+            print(f"    git merge {branch_name}")
+        else:
+            print(f" Changes committed in main workspace: {active_root_dir}")
 
         # Update both project and task indexes
         print(f"--- [After Kickoff] Crew run finished for project '{self.project_id}'. Updating indexes... ---")
