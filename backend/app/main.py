@@ -28,11 +28,9 @@ def custom_generate_unique_id(route: APIRoute) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Initialize database, create superuser
     with Session(engine) as session:
         init_db(session)
 
-    # Ensure Kafka topics exist before starting services
     from app.kafka import ensure_kafka_topics
     try:
         topics_ok = await ensure_kafka_topics()
@@ -41,28 +39,24 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to ensure Kafka topics: {e}")
 
-
     from app.agents.core.router import start_router_service, stop_router_service
     try:
         await start_router_service()
     except Exception as e:
         logger.warning(f"⚠️ Failed to start Message Router: {e}")
 
-    # Start all Kafka consumers (legacy consumer registry)
     from app.kafka.consumer_registry import start_all_consumers, shutdown_all_consumers
     try:
         await start_all_consumers()
     except Exception as e:
         logger.warning(f"⚠️ Failed to start Kafka consumers: {e}")
 
-    # Initialize default agent pools (using AgentPoolManager)
     from app.api.routes.agent_management import initialize_default_pools
     try:
         await initialize_default_pools()
     except Exception as e:
         logger.warning(f"⚠️ Failed to initialize agent pools: {e}")
 
-    # Start agent monitoring system
     from app.agents.core import get_agent_monitor
     try:
         monitor = get_agent_monitor()
@@ -70,14 +64,12 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️ Failed to start monitoring: {e}")
 
-    # Start activity buffer for batched DB writes
     from app.websocket.activity_buffer import activity_buffer
     try:
         await activity_buffer.start()
     except Exception as e:
         logger.warning(f"Failed to start activity buffer: {e}")
 
-    # Start WebSocket-Kafka bridge (for backward compatibility)
     from app.websocket.kafka_bridge import websocket_kafka_bridge
     try:
         await websocket_kafka_bridge.start()
@@ -86,29 +78,23 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown
-
     try:
-        # Shutdown WebSocket Kafka Bridge
         try:
             await websocket_kafka_bridge.stop()
         except (Exception, asyncio.CancelledError) as e:
             logger.error(f"Error stopping WebSocket bridge: {e}")
         
-        # Shutdown activity buffer
         try:
             await activity_buffer.stop()
         except (Exception, asyncio.CancelledError) as e:
             logger.error(f"Error stopping activity buffer: {e}")
 
-        # Shutdown agent monitoring system
         try:
             monitor = get_agent_monitor()
             await monitor.stop()
         except (Exception, asyncio.CancelledError) as e:
             logger.error(f"Error shutting down monitoring system: {e}")
 
-        # Shutdown agent pools (in-memory managers)
         from app.api.routes.agent_management import _manager_registry
         try:
             for pool_name, manager in list(_manager_registry.items()):
@@ -125,7 +111,6 @@ async def lifespan(app: FastAPI):
         except (Exception, asyncio.CancelledError) as e:
             logger.error(f"Error shutting down consumers: {e}")
 
-        # Shutdown Central Message Router
         try:
             await stop_router_service()
         except (Exception, asyncio.CancelledError) as e:
@@ -149,10 +134,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Add rate limiter to app state
-
-# Add middlewares in order (they execute in reverse order of addition)
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.all_cors_origins,
@@ -160,8 +141,5 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# SlowAPI middleware temporarily disabled for debugging
-# app.add_middleware(SlowAPIMiddleware)
 
 app.include_router(api_router, prefix=settings.API_V1_STR)

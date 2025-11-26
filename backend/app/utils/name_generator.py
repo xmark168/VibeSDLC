@@ -2,15 +2,6 @@
 
 
 def get_display_name(human_name: str, role_type: str) -> str:
-    """Get display name with role suffix.
-
-    Args:
-        human_name: Agent's human name (from persona template)
-        role_type: Agent role type
-
-    Returns:
-        Display name like "Sarah (Business Analyst)"
-    """
     role_display = {
         "team_leader": "Team Leader",
         "business_analyst": "Business Analyst",
