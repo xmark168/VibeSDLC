@@ -22,6 +22,15 @@ class StoryStatus(str, Enum):
     IN_PROGRESS = "InProgress"
     REVIEW = "Review"
     DONE = "Done"
+    ARCHIVED = "Archived"
+
+
+class StoryAgentState(str, Enum):
+    """Agent execution state on a story. Resets when story changes column."""
+    PENDING = "pending"       # Waiting to start
+    PROCESSING = "processing" # Agent working
+    CANCELED = "canceled"     # Work canceled
+    FINISHED = "finished"     # Work completed
 
 
 class StoryType(str, Enum):
@@ -230,9 +239,21 @@ class Story(BaseModel, table=True):
     review_started_at: datetime | None = Field(default=None)
 
     token_used: int | None = Field(default=None)
+    
+    # Agent tracking - resets when story changes column
+    agent_state: StoryAgentState | None = Field(default=None)
+    assigned_agent_id: UUID | None = Field(
+        default=None, foreign_key="agents.id", ondelete="SET NULL"
+    )
+    
+    # Git worktree - each story has its own branch
+    branch_name: str | None = Field(default=None, max_length=255)
 
     project: Project = Relationship(back_populates="stories")
     epic: Optional["Epic"] = Relationship(back_populates="stories")
+    assigned_agent: Optional["Agent"] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[Story.assigned_agent_id]"}
+    )
     parent: Optional["Story"] = Relationship(
         back_populates="children",
         sa_relationship_kwargs={"remote_side": "Story.id"},

@@ -26,10 +26,13 @@ def get_langfuse_client() -> Optional[Langfuse]:
     
     if _langfuse_client is None:
         try:
+            # Set OTEL timeout via environment before initialization
+            import os
+            
             _langfuse_client = Langfuse(
                 secret_key=settings.LANGFUSE_SECRET_KEY,
                 public_key=settings.LANGFUSE_PUBLIC_KEY,
-                host=settings.LANGFUSE_HOST,
+                host=settings.LANGFUSE_BASE_URL,
             )
             logger.info("Langfuse client initialized successfully")
         except Exception as e:

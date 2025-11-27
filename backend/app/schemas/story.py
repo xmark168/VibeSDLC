@@ -6,7 +6,7 @@ from uuid import UUID
 
 from sqlmodel import Field, SQLModel
 
-from app.models import StoryStatus, StoryType
+from app.models import StoryStatus, StoryType, StoryAgentState
 
 
 class StoryBase(SQLModel):
@@ -40,6 +40,9 @@ class StoryPublic(StoryBase):
     id: UUID
     project_id: UUID
     status: StoryStatus
+    agent_state: Optional[StoryAgentState] = None
+    assigned_agent_id: Optional[UUID] = None
+    branch_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime] = None
@@ -67,6 +70,10 @@ class StoryUpdate(SQLModel):
     blocking: Optional[list[UUID]] = None
     attachments: Optional[list[str]] = None
     labels: Optional[list[str]] = None
+    # Agent tracking
+    agent_state: Optional[StoryAgentState] = None
+    assigned_agent_id: Optional[UUID] = None
+    branch_name: Optional[str] = None
 
 
 class StoriesPublic(SQLModel):

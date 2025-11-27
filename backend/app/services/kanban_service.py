@@ -50,6 +50,12 @@ class KanbanService:
                 "type": "hard",
                 "source": "dynamic",
                 "agent_count": tester_count
+            },
+            "Done": {
+                "limit": 20,
+                "type": "soft",
+                "source": "default",
+                "agent_count": None
             }
         }
 
@@ -75,7 +81,7 @@ class KanbanService:
         
         if project.wip_data:
             for column_name, config in project.wip_data.items():
-                if column_name not in ["InProgress", "Review"]:
+                if column_name not in ["InProgress", "Review", "Done"]:
                     limits.append({
                         "id": str(project_id),
                         "project_id": str(project_id),
@@ -106,6 +112,13 @@ class KanbanService:
             .where(Story.status == StoryStatus.REVIEW)
         ).one()
         
+        done_count = self.session.exec(
+            select(func.count())
+            .select_from(Story)
+            .where(Story.project_id == project_id)
+            .where(Story.status == StoryStatus.DONE)
+        ).one()
+        
         return {
             "InProgress": {
                 **dynamic_limits["InProgress"],
@@ -116,6 +129,11 @@ class KanbanService:
                 **dynamic_limits["Review"],
                 "current_stories": review_count,
                 "available": max(dynamic_limits["Review"]["limit"] - review_count, 0)
+            },
+            "Done": {
+                **dynamic_limits["Done"],
+                "current_stories": done_count,
+                "available": max(dynamic_limits["Done"]["limit"] - done_count, 0)
             }
         }
 
@@ -130,7 +148,7 @@ class KanbanService:
         if not project:
             raise ValueError(f"Project {project_id} not found")
         
-        if target_status in ["InProgress", "Review"]:
+        if target_status in ["InProgress", "Review", "Done"]:
             dynamic_limits = self.get_dynamic_wip_limits(project_id)
             wip_config = dynamic_limits[target_status]
             wip_limit_value = wip_config["limit"]

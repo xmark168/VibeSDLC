@@ -29,6 +29,7 @@ const initialColumns: KanbanColumnData[] = [
   { id: "inprogress", title: "InProgress", color: "border-red-500", cards: [] },
   { id: "review", title: "Review", color: "border-blue-500", cards: [] },
   { id: "done", title: "Done", color: "border-cyan-500", cards: [] },
+  { id: "archived", title: "Archived", color: "border-gray-400", cards: [] },
 ]
 
 export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
@@ -150,6 +151,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         InProgress: dbKanbanData.board.InProgress?.length || 0,
         Review: dbKanbanData.board.Review?.length || 0,
         Done: dbKanbanData.board.Done?.length || 0,
+        Archived: dbKanbanData.board.Archived?.length || 0,
       })
 
       // Debug: Log all story types to identify filtering issues
@@ -158,6 +160,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         ...(dbKanbanData.board.InProgress || []),
         ...(dbKanbanData.board.Review || []),
         ...(dbKanbanData.board.Done || []),
+        ...(dbKanbanData.board.Archived || []),
       ]
       const uniqueTypes = [...new Set(allItems.map((item: any) => item.type))]
       console.log('[KanbanBoard] Story types in database:', uniqueTypes)
@@ -248,6 +251,14 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
           cards: filterItems(dbKanbanData.board.Done || []).map((item: any) => mapItem(item, "done")),
           wipLimit: dbKanbanData.wip_limits?.Done?.wip_limit,
           limitType: dbKanbanData.wip_limits?.Done?.limit_type
+        },
+        {
+          id: "archived",
+          title: "Archived",
+          color: "border-gray-400",
+          cards: filterItems(dbKanbanData.board.Archived || []).map((item: any) => mapItem(item, "archived")),
+          wipLimit: undefined,
+          limitType: undefined
         },
       ]
 
@@ -553,11 +564,12 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
 
     if (projectId && draggedCard.id) {
       try {
-        const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done'> = {
+        const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done' | 'Archived'> = {
           'todo': 'Todo',
           'inprogress': 'InProgress',
           'review': 'Review',
           'done': 'Done',
+          'archived': 'Archived',
         };
 
         const fromStatus = statusMap[draggedCard.columnId.toLowerCase()] || 'Todo';
@@ -651,6 +663,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         'inprogress': 'InProgress',
         'review': 'Review',
         'done': 'Done',
+        'archived': 'Archived',
       }[targetColumnId.toLowerCase()] || 'Todo';
 
       console.log("About to update story status via API:", {
@@ -663,11 +676,12 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
       const { storiesApi } = await import('@/apis/stories');
 
       // Map column IDs to backend status format
-      const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done'> = {
+      const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done' | 'Archived'> = {
         'todo': 'Todo',
         'inprogress': 'InProgress',
         'review': 'Review',
         'done': 'Done',
+        'archived': 'Archived',
       };
 
       await storiesApi.updateStatus(
