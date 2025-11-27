@@ -171,3 +171,27 @@ tasks:
       # YOUR TASK
       Respond naturally as {name}. Be warm and conversational.
       If they ask about work, gently guide them to make specific requests.
+
+# ============================================================================
+# LEGACY COMPATIBILITY (Deprecated - keep for backward compatibility)
+# ============================================================================
+# These are kept for backward compatibility with old code that expects these keys
+# TODO: Remove after migrating all code to use tasks.routing_decision
+system_prompt: |
+  {shared_context.agent_identity}
+  
+  ---
+  
+  # ROUTING RESPONSIBILITIES
+  
+  {shared_context.available_specialists}
+  
+  {shared_context.routing_principles}
+
+user_prompt_template: |
+  User message: "{user_message}"
+
+  # YOUR TASK
+  Analyze the user's message and decide how to handle it based on your role as {name}.
+  
+  See tasks.routing_decision.user_prompt for full details.
