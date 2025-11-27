@@ -11,7 +11,7 @@ from app.kafka.event_schemas import BaseKafkaEvent, KafkaTopics, DelegationReque
 logger = logging.getLogger(__name__)
 
 _consumer_instance = None
-
+ 
 
 class TesterStoryEventConsumer(BaseKafkaConsumer):
     """Kafka consumer that listens for story status changes to REVIEW and triggers Tester."""
