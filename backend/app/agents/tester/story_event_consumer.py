@@ -40,15 +40,15 @@ class TesterStoryEventConsumer(BaseKafkaConsumer):
             if event_type != "story.status.changed":
                 return
             
-            data = raw_data.get("data", {})
-            new_status = data.get("new_status")
+            # StoryEvent fields are NOT nested in "data" - they're at root level
+            new_status = raw_data.get("new_status")
             
             # Only trigger when status changes to REVIEW
             if new_status != "Review":
                 return
             
-            story_id = data.get("story_id")
-            project_id = data.get("project_id")
+            story_id = raw_data.get("story_id")
+            project_id = raw_data.get("project_id")
             
             if not story_id or not project_id:
                 self.logger.warning(f"Missing story_id or project_id in event: {raw_data}")
@@ -92,7 +92,7 @@ class TesterStoryEventConsumer(BaseKafkaConsumer):
                 event_type="delegation.request",
                 event_id=uuid4(),
                 project_id=UUID(project_id),
-                user_id=UUID(data.get("user_id", "00000000-0000-0000-0000-000000000000")),
+                user_id=UUID(raw_data.get("user_id", "00000000-0000-0000-0000-000000000000")),
                 original_task_id=str(uuid4()),
                 delegating_agent_id="system",
                 delegating_agent_name="TesterStoryConsumer",

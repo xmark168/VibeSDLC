@@ -258,8 +258,8 @@ class Tester(BaseAgent):
             logger.error(f"[{self.name}] No project_path available for test generation")
             await self.message_user(
                 "response",
-                "❌ Cannot generate tests: project path not configured. "
-                "Please contact admin to set up project directory."
+                "❌ **Cannot generate tests:** project path not configured.\n\n"
+                "**Story remains in REVIEW status.** Please contact admin to set up project directory."
             )
             return TaskResult(
                 success=False,
@@ -280,7 +280,9 @@ class Tester(BaseAgent):
                 logger.error(f"[{self.name}] TesterCrew error: {result['error']}")
                 await self.message_user(
                     "response",
-                    f"⚠️ Test generation encountered issues:\n{result['error']}\n\n"
+                    f"⚠️ **Test generation failed**\n\n"
+                    f"**Error:** {result['error']}\n\n"
+                    f"**Story remains in REVIEW status.** Please fix the issue or contact admin.\n\n"
                     f"Raw output: {result.get('raw_output', 'N/A')[:500]}"
                 )
                 return TaskResult(
@@ -296,12 +298,12 @@ class Tester(BaseAgent):
             # Send success message to user
             await self.message_user(
                 "response",
-                f"✅ Integration tests generated!\n\n"
+                f"✅ **Integration tests generated successfully!**\n\n"
                 f"📁 **File:** `tests/integration/{test_file}`\n"
                 f"📝 **Tests created:** {test_count} test cases\n"
                 f"📋 **Stories covered:** {len(stories_covered)}\n\n"
                 f"🧪 **Run tests:** `npm test tests/integration/`\n\n"
-                f"Tests verify both API responses and database state changes.",
+                f"**Story remains in REVIEW.** Please review the tests and move to DONE when ready.",
                 {
                     "message_type": "tests_generated",
                     "test_file": test_file,
