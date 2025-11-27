@@ -156,6 +156,11 @@ class Settings(BaseSettings):
     KAFKA_SASL_PASSWORD: str | None = None
     KAFKA_SECURITY_PROTOCOL: Literal["PLAINTEXT", "SSL", "SASL_PLAINTEXT", "SASL_SSL"] = "PLAINTEXT"
 
+    LANGFUSE_SECRET_KEY: str | None = None
+    LANGFUSE_PUBLIC_KEY: str | None = None
+    LANGFUSE_HOST: str = "https://cloud.langfuse.com"
+    LANGFUSE_ENABLED: bool = True
+
     # PAYOS PAYMENT GATEWAY SETTINGS
     PAYOS_CLIENT_ID: str = ""
     PAYOS_API_KEY: str = ""

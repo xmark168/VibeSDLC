@@ -9,6 +9,7 @@ This is the new simplified agent architecture where:
 
 import asyncio
 import logging
+import traceback
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
@@ -25,6 +26,7 @@ from app.kafka.event_schemas import (
 )
 from app.models import Agent as AgentModel, AgentStatus
 from datetime import datetime, timezone
+from app.core.langfuse_client import get_langfuse_client, flush_langfuse
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +126,10 @@ class BaseAgent(ABC):
         self._task_queue: asyncio.Queue = asyncio.Queue(maxsize=10)
         self._queue_running: bool = False
         self._queue_worker_task: Optional[asyncio.Task] = None
+
+        # Langfuse tracing
+        self.langfuse_client = get_langfuse_client()
+        self._current_trace_id: Optional[str] = None
 
         logger.info(
             f"Initialized {self.role_type} agent: {self.name} "
@@ -957,6 +963,49 @@ class BaseAgent(ABC):
                 error_message=f"Failed to delegate: {str(e)}"
             )
 
+    def get_langfuse_callback(
+        self,
+        trace_name: str,
+        tags: List[str] = None,
+        metadata: Dict[str, Any] = None
+    ) -> Optional[Any]:
+        """Get Langfuse callback handler for LangChain integration.
+        
+        Usage:
+            llm = ChatOpenAI(...)
+            callback = self.get_langfuse_callback("my_llm_call", tags=["routing"])
+            response = await llm.ainvoke(messages, callbacks=[callback] if callback else [])
+        
+        Args:
+            trace_name: Name for the trace
+            tags: Optional list of tags
+            metadata: Optional metadata dict
+            
+        Returns:
+            CallbackHandler instance or None if Langfuse not available
+        """
+        if not self.langfuse_client:
+            return None
+        
+        try:
+            from langfuse.callback import CallbackHandler
+            
+            return CallbackHandler(
+                trace_name=trace_name,
+                session_id=str(self.project_id),
+                user_id=str(self._current_user_id) if self._current_user_id else None,
+                tags=tags or [self.role_type],
+                metadata={
+                    "agent_id": str(self.agent_id),
+                    "agent_name": self.name,
+                    "agent_role": self.role_type,
+                    "task_id": str(self._current_task_id) if self._current_task_id else None,
+                    **(metadata or {})
+                }
+            )
+        except Exception as e:
+            logger.warning(f"[{self.name}] Failed to create Langfuse callback: {e}")
+            return None
 
     async def _create_execution_record(self, task: "TaskContext") -> UUID:
         """Create AgentExecution record in database"""
@@ -1180,6 +1229,9 @@ class BaseAgent(ABC):
         Args:
             task_data: RouterTaskEvent as dict
         """
+        trace = None
+        span = None
+        
         try:
             # Extract task info
             task_id = task_data.get("task_id")
@@ -1187,6 +1239,28 @@ class BaseAgent(ABC):
             
             # Extract context
             context = task_data.get("context", {})
+            
+            # Start Langfuse trace
+            if self.langfuse_client:
+                try:
+                    trace = self.langfuse_client.trace(
+                        name=f"{self.role_type}_task",
+                        user_id=str(context.get("user_id", "unknown")),
+                        session_id=str(self.project_id),
+                        metadata={
+                            "agent_id": str(self.agent_id),
+                            "agent_name": self.name,
+                            "agent_role": self.role_type,
+                            "project_id": str(self.project_id),
+                            "task_id": str(task_id),
+                            "task_type": task_data.get("task_type"),
+                            "routing_reason": task_data.get("routing_reason"),
+                            "personality_traits": self.personality_traits[:3] if self.personality_traits else [],
+                        }
+                    )
+                    self._current_trace_id = trace.id if trace else None
+                except Exception as e:
+                    logger.warning(f"[{self.name}] Failed to start Langfuse trace: {e}")
             
             # Track task context for clarification questions
             self._current_task_type = task_data.get("task_type", "message")
@@ -1253,8 +1327,32 @@ class BaseAgent(ABC):
 
             task_failed = False
             try:
+                # Create span for handle_task
+                if trace:
+                    try:
+                        span = trace.span(
+                            name="handle_task",
+                            input={"content": task.content[:200], "task_type": task.task_type.value}
+                        )
+                    except Exception as e:
+                        logger.warning(f"[{self.name}] Failed to create Langfuse span: {e}")
+                
                 # Call agent's implementation
                 result = await self.handle_task(task)
+                
+                # End span with success
+                if span:
+                    try:
+                        span.end(
+                            output={
+                                "success": result.success,
+                                "output": result.output[:200] if result.output else "",
+                                "structured_data": result.structured_data,
+                            },
+                            level="DEFAULT" if result.success else "ERROR"
+                        )
+                    except Exception as e:
+                        logger.warning(f"[{self.name}] Failed to end Langfuse span: {e}")
                 
                 # Record actual token usage
                 actual_tokens = self._extract_token_usage(result)
@@ -1282,6 +1380,16 @@ class BaseAgent(ABC):
                 
             except Exception as e:
                 task_failed = True
+                
+                # End span with error
+                if span:
+                    try:
+                        span.end(
+                            output={"error": str(e)},
+                            level="ERROR"
+                        )
+                    except Exception as span_error:
+                        logger.warning(f"[{self.name}] Failed to end Langfuse span with error: {span_error}")
                 
                 # Emit error status to frontend
                 await self.message_user("error", f"Task failed: {str(e)}", {
@@ -1324,8 +1432,24 @@ class BaseAgent(ABC):
                 exc_info=True
             )
         finally:
+            # End Langfuse trace
+            if trace:
+                try:
+                    duration_ms = (datetime.now(timezone.utc) - self._execution_start_time).total_seconds() * 1000 if self._execution_start_time else 0
+                    trace.update(
+                        output={
+                            "agent": self.name,
+                            "execution_id": str(self._current_execution_id) if self._current_execution_id else None,
+                            "duration_ms": duration_ms,
+                        }
+                    )
+                    flush_langfuse()
+                except Exception as e:
+                    logger.warning(f"[{self.name}] Failed to end Langfuse trace: {e}")
+            
             self._current_task_id = None
             self._current_execution_id = None
+            self._current_trace_id = None
     
     # ===== Token Budget Methods =====
     
