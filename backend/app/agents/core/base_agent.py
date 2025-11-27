@@ -44,6 +44,7 @@ class TaskContext:
     project_id: Optional[UUID] = None
     content: str = ""
     message_type: str = "text"
+    execution_mode: str = "interactive"  # NEW: "interactive" | "background" | "silent"
     context: Dict[str, Any] = None
 
     def __post_init__(self):
@@ -111,6 +112,7 @@ class BaseAgent(ABC):
         self._current_task_content: Optional[str] = None
         self._current_routing_reason: Optional[str] = None
         self._current_user_id: Optional[UUID] = None
+        self._current_execution_mode: str = "interactive"  # NEW: Track execution mode
         
         # Execution tracking
         self._execution_start_time: Optional[Any] = None  # datetime object
@@ -171,6 +173,7 @@ class BaseAgent(ABC):
         *,
         artifact_config: Optional[Dict[str, Any]] = None,
         question_config: Optional[Dict[str, Any]] = None,
+        display_mode: Optional[str] = None,  # NEW: "chat" | "progress_bar" | "notification" | "none"
         save_to_db: bool = True,
         broadcast_ws: bool = True,
         **kwargs
@@ -242,7 +245,7 @@ class BaseAgent(ABC):
                 return await self._handle_question_message(content, question_config, details, **kwargs)
             
             # Handle simple messages/events
-            return await self._handle_simple_message(event_type, content, details, save_to_db, broadcast_ws, **kwargs)
+            return await self._handle_simple_message(event_type, content, details, display_mode, save_to_db, broadcast_ws, **kwargs)
 
         except Exception as e:
             logger.error(f"[{self.name}] Failed to send message: {e}", exc_info=True)
@@ -253,12 +256,17 @@ class BaseAgent(ABC):
         event_type: str,
         content: str,
         details: Optional[Dict[str, Any]],
+        display_mode: Optional[str],
         save_to_db: bool,
         broadcast_ws: bool,
         **kwargs
     ) -> None:
-        """Handle simple message/event (existing logic)."""
+        """Handle simple message/event with execution context."""
         producer = await self._get_producer()
+        
+        # Determine display mode (smart defaults)
+        if display_mode is None:
+            display_mode = self._get_default_display_mode(event_type)
         
         event = AgentEvent(
             event_type=f"agent.{event_type}",
@@ -269,6 +277,12 @@ class BaseAgent(ABC):
             task_id=str(self._current_task_id) if self._current_task_id else None,
             content=content,
             details=details or {},
+            execution_context={  # NEW: Add execution context
+                "mode": self._current_execution_mode,
+                "task_id": str(self._current_task_id) if self._current_task_id else None,
+                "task_type": self._current_task_type or "unknown",
+                "display_mode": display_mode,
+            },
             metadata={
                 "agent_type": self.role_type,
                 "agent_execution_id": str(self._current_execution_id) if self._current_execution_id else None,
@@ -283,6 +297,33 @@ class BaseAgent(ABC):
             await self._save_message_to_db(content, "text", details, **kwargs)
         
         logger.info(f"[{self.name}] {event_type}: {content[:100]}")
+    
+    def _get_default_display_mode(self, event_type: str) -> str:
+        """Determine default display mode based on execution mode and event type.
+        
+        Returns:
+            "chat" | "progress_bar" | "notification" | "none"
+        """
+        mode = self._current_execution_mode
+        
+        if mode == "interactive":
+            # Interactive: All events go to chat
+            return "chat"
+        
+        elif mode == "background":
+            # Background: Different display per event type
+            if event_type == "thinking":
+                return "none"  # Skip thinking events
+            elif event_type == "progress":
+                return "progress_bar"  # Show in progress panel
+            elif event_type in ["response", "completed"]:
+                return "notification"  # Show as toast
+            else:
+                return "none"  # Default: skip
+        
+        else:  # silent
+            # Silent: Only log, no UI
+            return "none"
     
     async def _handle_artifact_message(
         self,
@@ -350,6 +391,7 @@ class BaseAgent(ABC):
                 "artifact_type": artifact_type,
                 "artifact_title": title,
             },
+            display_mode=None,  # Use default display mode
             save_to_db=True,
             broadcast_ws=False,
             **kwargs
@@ -1279,8 +1321,12 @@ class BaseAgent(ABC):
                 project_id=context.get("project_id") or self.project_id,
                 content=context.get("content", ""),
                 message_type=context.get("message_type", "text"),
+                execution_mode=context.get("execution_mode", "interactive"),  # NEW: Get execution mode
                 context=context,
             )
+            
+            # Set current execution mode for display_mode logic
+            self._current_execution_mode = task.execution_mode
            
             # Create execution record in database
             self._current_execution_id = await self._create_execution_record(task)

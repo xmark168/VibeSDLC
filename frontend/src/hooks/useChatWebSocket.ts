@@ -16,8 +16,11 @@ import type {
   TypingState,
   AgentStatusType,
   UseChatWebSocketReturn,
+  BackgroundTask,
+  ExecutionContext,
 } from '@/types'
 import { AuthorType } from '@/types'
+import { toast } from 'sonner'
 
 // ============================================================================
 // Helper Functions
@@ -57,6 +60,7 @@ export function useChatWebSocket(
   const [messages, setMessages] = useState<Message[]>([])
   const [agentStatus, setAgentStatus] = useState<AgentStatusType>('idle')
   const [typingAgents, setTypingAgents] = useState<Map<string, TypingState>>(new Map())
+  const [backgroundTasks, setBackgroundTasks] = useState<Map<string, BackgroundTask>>(new Map())  // NEW
   const [conversationOwner, setConversationOwner] = useState<{
     agentId: string
     agentName: string
@@ -143,6 +147,10 @@ export function useChatWebSocket(
       
       case 'agent.messaging.start':
         handleStart(msg)
+        break
+      
+      case 'agent.messaging.progress':
+        handleProgress(msg)
         break
       
       case 'agent.messaging.tool_call':
@@ -281,26 +289,97 @@ export function useChatWebSocket(
   }
   
   const handleStart = (msg: any) => {
-    console.log('[WS] 🚀 Start:', msg.agent_name, msg.content)
-    setAgentStatus('thinking')
+    const displayMode = msg.execution_context?.display_mode || 'chat'
     
-    // Add typing indicator
-    const typingState: TypingState = {
-      id: msg.id,
-      agent_name: msg.agent_name,
-      started_at: msg.timestamp,
-      message: msg.content || undefined
+    console.log('[WS] 🚀 Start:', msg.agent_name, msg.content, 'display:', displayMode)
+    
+    // Handle based on display mode
+    if (displayMode === 'none') {
+      // Silent mode - skip
+      return
     }
     
-    setTypingAgents(prev => {
-      const updated = new Map(prev)
-      updated.set(msg.id, typingState)
-      return updated
-    })
+    if (displayMode === 'chat') {
+      // Interactive mode - show typing indicator
+      setAgentStatus('thinking')
+      
+      const typingState: TypingState = {
+        id: msg.id,
+        agent_name: msg.agent_name,
+        started_at: msg.timestamp,
+        message: msg.content || undefined
+      }
+      
+      setTypingAgents(prev => {
+        const updated = new Map(prev)
+        updated.set(msg.id, typingState)
+        return updated
+      })
+    }
+  }
+  
+  const handleProgress = (msg: any) => {
+    const displayMode = msg.execution_context?.display_mode || 'chat'
+    const details = msg.details || {}
+    
+    console.log('[WS] ⏳ Progress:', msg.agent_name, details, 'display:', displayMode)
+    
+    // Handle based on display mode
+    switch (displayMode) {
+      case 'chat':
+        // Show as chat message
+        const progressMessage: Message = {
+          id: `progress_${msg.timestamp}_${Math.random()}`,
+          project_id: projectIdRef.current!,
+          agent_name: msg.agent_name,
+          author_type: AuthorType.AGENT,
+          content: msg.content,
+          message_type: 'agent_progress',
+          structured_data: details,
+          created_at: msg.timestamp,
+          updated_at: msg.timestamp,
+        }
+        setMessages(prev => [...prev, progressMessage])
+        break
+      
+      case 'progress_bar':
+        // Update background task
+        const taskId = msg.execution_context?.task_id || msg.task_id
+        if (taskId) {
+          setBackgroundTasks(prev => {
+            const updated = new Map(prev)
+            updated.set(taskId, {
+              task_id: taskId,
+              agent_name: msg.agent_name,
+              status: 'in_progress',
+              current: details.step || 0,
+              total: details.total || 100,
+              percentage: details.percentage || 0,
+              message: msg.content,
+              updated_at: msg.timestamp,
+            })
+            return updated
+          })
+        }
+        break
+      
+      case 'notification':
+        // Show as toast
+        toast.info(msg.content, {
+          description: `${msg.agent_name}${details.step ? ` - ${details.step}/${details.total}` : ''}`,
+        })
+        break
+      
+      case 'none':
+        // Silent - skip
+        break
+    }
   }
   
   const handleResponse = (msg: any) => {
-    console.log('[WS] 💬 Response:', msg.agent_name)
+    const displayMode = msg.execution_context?.display_mode || 'chat'
+    
+    console.log('[WS] 💬 Response:', msg.agent_name, 'display:', displayMode)
     
     // Remove typing indicator for this execution
     setTypingAgents(prev => {
@@ -310,6 +389,21 @@ export function useChatWebSocket(
       return updated
     })
     
+    // Handle based on display mode
+    if (displayMode === 'none') {
+      // Silent - skip
+      return
+    }
+    
+    if (displayMode === 'notification') {
+      // Show as toast
+      toast.success(msg.content, {
+        description: msg.agent_name,
+      })
+      return
+    }
+    
+    // Chat or progress_bar mode: Add to messages
     const message: Message = {
       id: msg.id,
       project_id: projectIdRef.current!,
@@ -332,7 +426,9 @@ export function useChatWebSocket(
   }
   
   const handleFinish = (msg: any) => {
-    console.log('[WS] ✅ Finish:', msg.summary)
+    const displayMode = msg.execution_context?.display_mode || 'chat'
+    
+    console.log('[WS] ✅ Finish:', msg.summary, 'display:', displayMode)
     setAgentStatus('idle')
     
     // Remove typing indicators for this agent
@@ -345,6 +441,36 @@ export function useChatWebSocket(
       }
       return updated
     })
+    
+    // Mark background task as completed (if any)
+    const taskId = msg.execution_context?.task_id || msg.task_id
+    if (taskId && displayMode === 'progress_bar') {
+      setBackgroundTasks(prev => {
+        const task = prev.get(taskId)
+        if (task) {
+          const updated = new Map(prev)
+          updated.set(taskId, {
+            ...task,
+            status: 'completed',
+            percentage: 100,
+            message: msg.summary || 'Completed',
+            updated_at: msg.timestamp,
+          })
+          
+          // Remove after 3 seconds
+          setTimeout(() => {
+            setBackgroundTasks(current => {
+              const next = new Map(current)
+              next.delete(taskId)
+              return next
+            })
+          }, 3000)
+          
+          return updated
+        }
+        return prev
+      })
+    }
   }
   
   const handleAgentQuestion = (msg: any) => {
@@ -427,7 +553,7 @@ export function useChatWebSocket(
     const handoffMessage: Message = {
       id: `handoff_${Date.now()}`,
       project_id: projectIdRef.current!,
-      author_type: AuthorType.SYSTEM,
+      author_type: AuthorType.AGENT,  // System notification shown as agent message
       content: '',
       message_type: 'agent_handoff',
       structured_data: {
@@ -627,6 +753,7 @@ export function useChatWebSocket(
     messages,
     agentStatus,
     typingAgents,
+    backgroundTasks,  // NEW
     conversationOwner,
     sendMessage,
     sendQuestionAnswer,

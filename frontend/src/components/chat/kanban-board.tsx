@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { KanbanColumn, type KanbanColumnData } from "./kanban-column"
 import { TaskDetailModal } from "./task-detail-modal"
-import { WIPLimitSettingsDialog } from "./wip-limit-settings-dialog"
 import { FlowMetricsDashboard } from "./flow-metrics-dashboard"
 import { PolicyValidationDialog, type PolicyViolation } from "./policy-validation-dialog"
 import { PolicySettingsDialog } from "./policy-settings-dialog"
@@ -37,7 +36,6 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
   const [draggedCard, setDraggedCard] = useState<KanbanCardData | null>(null)
   const [draggedOverColumn, setDraggedOverColumn] = useState<string | null>(null)
   const [selectedCard, setSelectedCard] = useState<KanbanCardData | null>(null)
-  const [showWIPSettings, setShowWIPSettings] = useState(false)
   const [showFlowMetrics, setShowFlowMetrics] = useState(false)
   const [showPolicySettings, setShowPolicySettings] = useState(false)
   const [showCFD, setShowCFD] = useState(false)
@@ -776,15 +774,6 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
                   <Shield className="w-4 h-4" />
                   <span className="font-medium">Policies</span>
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowWIPSettings(true)}
-                  className="gap-2 h-9 px-3.5 rounded-lg hover:bg-muted/80 transition-colors"
-                >
-                  <Settings className="w-4 h-4" />
-                  <span className="font-medium">WIP Limits</span>
-                </Button>
               </div>
             )}
           </div>
@@ -962,12 +951,6 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         open={!!selectedCard}
         onOpenChange={() => setSelectedCard(null)}
         onDownloadResult={handleDownloadResult}
-      />
-
-      <WIPLimitSettingsDialog
-        projectId={projectId}
-        open={showWIPSettings}
-        onOpenChange={setShowWIPSettings}
       />
 
       <FlowMetricsDashboard

@@ -76,13 +76,22 @@ function KanbanColumnComponent({
             {column.title}
           </h3>
           <span className={`text-xs px-2.5 py-1 rounded-lg ${getWIPBadgeStyle()}`}>
-            {column.wipLimit
-              ? `${column.cards.length}/${column.wipLimit}`
-              : column.cards.length
+            {/* Todo: Show only count, no WIP limit */}
+            {column.id === "todo" 
+              ? column.cards.length
+              : column.wipLimit
+                ? `${column.cards.length}/${column.wipLimit}`
+                : column.cards.length
             }
           </span>
+          {/* Dynamic WIP indicator for InProgress/Review */}
+          {(column.id === "inprogress" || column.id === "review") && (
+            <span className="text-xs text-muted-foreground" title="Auto-managed by agent count">
+              🤖
+            </span>
+          )}
         </div>
-        {column.wipLimit && column.cards.length >= column.wipLimit && (
+        {column.wipLimit && column.cards.length >= column.wipLimit && column.id !== "todo" && (
           <span className="text-sm" title="WIP limit reached">
             🚫
           </span>

@@ -330,6 +330,7 @@ class AgentEvent(BaseKafkaEvent):
     task_id: Optional[str] = None
     content: str
     details: Dict[str, Any] = Field(default_factory=dict)
+    execution_context: Optional[Dict[str, Any]] = Field(default_factory=dict)  # NEW: mode, task_type, display_mode
 
 
 # EVENT REGISTRY
