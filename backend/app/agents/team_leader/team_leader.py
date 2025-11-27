@@ -3,7 +3,7 @@
 import logging
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
 from app.models import Agent as AgentModel
-from app.agents.team_leader.graph import TeamLeaderGraph
+from app.agents.team_leader.src import TeamLeaderGraph
 
 logger = logging.getLogger(__name__)
 
