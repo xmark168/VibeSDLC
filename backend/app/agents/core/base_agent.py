@@ -996,9 +996,15 @@ class BaseAgent(ABC):
             
             logger.info(f"[{self.name}] Published delegation request to role: {target_role}")
             
+            # Send notification to user
+            await self.message_user("response", delegation_message, {
+                "message_type": "text",
+                "delegation_to_role": target_role,
+            })
+            
             return TaskResult(
                 success=True,
-                output=delegation_message,
+                output="",  # Empty output - message already sent above
                 structured_data={
                     "delegation_to_role": target_role,
                     "delegation_status": "pending"
