@@ -89,3 +89,14 @@ export type {
   ThemeProviderProps,
   ThemeProviderState
 } from './common'
+
+// Persona types
+export type {
+  PersonaTemplate,
+  PersonaCreate,
+  PersonaUpdate,
+  PersonaWithUsageStats,
+  RoleType
+} from './persona'
+
+export { roleTypeLabels, roleTypeColors } from './persona'

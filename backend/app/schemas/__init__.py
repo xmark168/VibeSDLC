@@ -143,6 +143,15 @@ from .subscription import (
     UserSubscriptionResponse,
 )
 
+# Persona schemas
+from .persona import (
+    PersonaBase,
+    PersonaCreate,
+    PersonaUpdate,
+    PersonaResponse,
+    PersonaWithUsageStats,
+)
+
 __all__ = [
     # User
     "UserPublic",
@@ -260,4 +269,11 @@ __all__ = [
     "SubscriptionPublic",
     "CreditWalletPublic",
     "UserSubscriptionResponse",
+
+    # Persona
+    "PersonaBase",
+    "PersonaCreate",
+    "PersonaUpdate",
+    "PersonaResponse",
+    "PersonaWithUsageStats",
 ]
