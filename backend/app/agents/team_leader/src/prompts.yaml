@@ -65,10 +65,16 @@ tasks:
       {shared_context.routing_principles}
 
     user_prompt: |
+      # RECENT CONVERSATION
+      {conversation_history}
+      
+      ---
+      
       User message: "{user_message}"
 
       # YOUR TASK
       Analyze the user's message and decide how to handle it based on your role as {name}.
+      Consider the conversation history above for context.
       
       Remember your personality:
       - Be warm and acknowledge their request

@@ -29,7 +29,12 @@ async def llm_routing(state: TeamLeaderState, agent=None) -> TeamLeaderState:
         
         system_prompt = build_system_prompt(agent)
         agent_name = agent.name if agent else "Team Leader"
-        user_prompt = build_user_prompt(state["user_message"], name=agent_name)
+        conversation_history = state.get("conversation_history", "")
+        user_prompt = build_user_prompt(
+            state["user_message"], 
+            name=agent_name,
+            conversation_history=conversation_history
+        )
         
         # Build messages for LLM
         messages = [
