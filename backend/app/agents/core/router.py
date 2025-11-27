@@ -27,7 +27,6 @@ from sqlmodel import Session, select
 from app.kafka.event_schemas import (
     AgentResponseEvent,
     AgentTaskType,
-    ApprovalResponseEvent,
     BaseKafkaEvent,
     RouterTaskEvent,
     UserMessageEvent,
@@ -42,41 +41,22 @@ from app.core.db import engine
 logger = logging.getLogger(__name__)
 
 class BaseEventRouter(ABC):
-    """Abstract base class for event routers.
-    """
+    """Abstract base class for event routers."""
 
     def __init__(self, producer: KafkaProducer):
-        """Initialize the router with a Kafka producer.
-
-        Args:
-            producer: Kafka producer for publishing router tasks
-        """
         self.producer = producer
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
     @abstractmethod
     def should_handle(self, event: BaseKafkaEvent | Dict[str, Any]) -> bool:
-        """Check if this router should handle the given event.
-
-        Args:
-            event: Event to check
-
-        Returns:
-            True if this router should handle the event
-        """
+        """Check if this router should handle the given event."""
         pass
 
     @abstractmethod
     async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
         """Route the event to appropriate agent(s).
 
-        This method contains the core routing logic. It should:
-        1. Analyze the event
-        2. Determine target agent(s)
-        3. Publish RouterTaskEvent(s) to AGENT_TASKS topic
-
-        Args:
-            event: Event to route
+        Analyzes the event, determines target agent(s), and publishes RouterTaskEvent(s) to AGENT_TASKS topic.
         """
         pass
 
@@ -89,25 +69,14 @@ class BaseEventRouter(ABC):
         priority: str = "medium",
         additional_context: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Publish a RouterTaskEvent to AGENT_TASKS topic.
-
-        Args:
-            agent_id: Target agent UUID
-            task_type: Type of task (AgentTaskType enum)
-            source_event: Original event that triggered routing
-            routing_reason: Explanation of why this agent was chosen
-            priority: Task priority (low, medium, high, critical)
-            additional_context: Extra context to include in task
-        """
+        """Publish a RouterTaskEvent to AGENT_TASKS topic."""
         event_dict = source_event if isinstance(source_event, dict) else source_event.model_dump()
 
-        # Build context
         context = {
             **event_dict,
             **(additional_context or {}),
         }
 
-        # Create router task
         task = RouterTaskEvent(
             task_id=uuid4(),
             task_type=task_type,
@@ -121,7 +90,6 @@ class BaseEventRouter(ABC):
             context=context,
         )
 
-        # Publish to AGENT_TASKS topic
         await self.producer.publish(
             topic=KafkaTopics.AGENT_TASKS,
             event=task,
@@ -132,17 +100,10 @@ class BaseEventRouter(ABC):
             f"(reason: {routing_reason})"
         )
 
-        # Broadcast message_delivered to frontend via WebSocket
         await self._mark_message_delivered(event_dict)
 
     async def _mark_message_delivered(self, event_dict: Dict[str, Any]) -> None:
-        """Mark message as delivered and broadcast to frontend.
-        
-        Called after successfully routing message to agent.
-        
-        Args:
-            event_dict: Source event dictionary containing message_id and project_id
-        """
+        """Mark message as delivered and broadcast to frontend."""
         message_id = event_dict.get("message_id")
         project_id = event_dict.get("project_id")
         
@@ -181,10 +142,9 @@ class UserMessageRouter(BaseEventRouter):
 
     MENTION_PATTERN = re.compile(r"@(\w+)")
     
-    # Smart session-aware timeouts
     CONTEXT_TIMEOUT_ONLINE_MINUTES = 7   # User online (WebSocket active)
     CONTEXT_TIMEOUT_OFFLINE_MINUTES = 15  # User offline
-    GRACE_PERIOD_SECONDS = 120  # 2 min grace after disconnect
+    GRACE_PERIOD_SECONDS = 120  # Grace period after disconnect
 
     def should_handle(self, event: BaseKafkaEvent | Dict[str, Any]) -> bool:
         """Check if event is a user message."""
@@ -192,14 +152,7 @@ class UserMessageRouter(BaseEventRouter):
         return event_dict.get("event_type") == "user.message.sent"
 
     async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
-        """Route user message to appropriate agent.
-
-        Logic:
-        - Extract @mentions from message content
-        - Look up mentioned agent in database
-        - If found, route to that agent
-        - If not found or no mention, route to Team Leader
-        """
+        """Route user message to appropriate agent based on @mentions or conversation context."""
         event_dict = event if isinstance(event, dict) else event.model_dump()
 
         project_id = event_dict.get("project_id")
@@ -208,14 +161,11 @@ class UserMessageRouter(BaseEventRouter):
 
         self.logger.info(f"[USER_MESSAGE_ROUTER] Routing user message {message_id} in project {project_id}")
 
-        # Parse @mentions
         mentions = self.MENTION_PATTERN.findall(content)
 
         if mentions:
-            # User mentioned agent(s)
             await self._route_with_mention(event_dict, mentions[0], project_id)
         else:
-            # No mention → check conversation context
             await self._route_with_context(event_dict, project_id)
 
     async def _route_with_context(
@@ -225,31 +175,24 @@ class UserMessageRouter(BaseEventRouter):
     ) -> None:
         """Route based on active conversation context."""
         with Session(engine) as session:
-            # Get project with active agent
             project = session.get(Project, project_id)
             
             if not project:
                 self.logger.error(f"Project {project_id} not found!")
                 return
             
-            # Check if there's an active agent
             active_agent_id = project.active_agent_id
             active_updated_at = project.active_agent_updated_at
             
-            # Check if context is still valid (not expired)
             if active_agent_id and active_updated_at:
-                # Ensure active_updated_at is timezone-aware
                 if active_updated_at.tzinfo is None:
                     active_updated_at = active_updated_at.replace(tzinfo=timezone.utc)
                 
                 time_since_update = datetime.now(timezone.utc) - active_updated_at
-                
-                # Get smart timeout based on WebSocket connection
                 timeout_minutes = self._get_timeout_for_project(project)
                 timeout_seconds = timeout_minutes * 60
                 
                 if time_since_update.total_seconds() < timeout_seconds:
-                    # Context still valid → route to active agent
                     agent = session.get(Agent, active_agent_id)
                     
                     if agent:
@@ -271,7 +214,6 @@ class UserMessageRouter(BaseEventRouter):
                         )
                         return
                 else:
-                    # Context expired → clear it
                     connection_status = "online" if project.websocket_connected else "offline"
                     self.logger.info(
                         f"[CONTEXT_ROUTING] Context expired after {timeout_minutes}min "
@@ -279,7 +221,6 @@ class UserMessageRouter(BaseEventRouter):
                     )
                     await self._clear_conversation_context(session, project_id)
             
-            # No active context or expired → default to Team Leader
             await self._route_to_team_leader(event_dict, project_id)
 
     def _get_timeout_for_project(self, project: Project) -> int:
@@ -290,24 +231,19 @@ class UserMessageRouter(BaseEventRouter):
         - 15 minutes if user is offline
         - Grace period: Uses online timeout if disconnected < 2 minutes ago
         """
-        # Check if user is currently online
         if project.websocket_connected:
             return self.CONTEXT_TIMEOUT_ONLINE_MINUTES
         
-        # Check when WebSocket last seen (grace period for brief disconnects)
         if project.websocket_last_seen:
-            # Ensure websocket_last_seen is timezone-aware
             websocket_last_seen = project.websocket_last_seen
             if websocket_last_seen.tzinfo is None:
                 websocket_last_seen = websocket_last_seen.replace(tzinfo=timezone.utc)
             
             offline_duration = datetime.now(timezone.utc) - websocket_last_seen
             
-            # If recently disconnected (< 2 min), use online timeout
             if offline_duration.total_seconds() < self.GRACE_PERIOD_SECONDS:
                 return self.CONTEXT_TIMEOUT_ONLINE_MINUTES
         
-        # User offline → longer timeout
         return self.CONTEXT_TIMEOUT_OFFLINE_MINUTES
 
     async def _route_with_mention(
@@ -315,7 +251,6 @@ class UserMessageRouter(BaseEventRouter):
     ) -> None:
         """Route message to mentioned agent (one-off request, doesn't switch context)."""
         with Session(engine) as session:
-            # Look up agent by name in project using AgentService
             from app.services import AgentService
             agent_service = AgentService(session)
             agent = agent_service.get_by_project_and_name(
@@ -327,9 +262,7 @@ class UserMessageRouter(BaseEventRouter):
             if agent:
                 # NOTE: @mention does NOT update conversation context
                 # Only Team Leader delegation can assign conversation rights
-                # This allows users to ask one-off questions without switching context
                 
-                # Found mentioned agent - infer task type
                 task_type = self._infer_task_type(event_dict, agent.role_type)
 
                 await self.publish_task(
@@ -344,7 +277,6 @@ class UserMessageRouter(BaseEventRouter):
                     f"task_type={task_type.value}"
                 )
             else:
-                # Mentioned agent not found → fallback to Team Leader
                 self.logger.warning(
                     f"Mentioned agent '@{mentioned_name}' not found in project {project_id}, "
                     f"routing to Team Leader"
@@ -365,10 +297,7 @@ class UserMessageRouter(BaseEventRouter):
                 project.active_agent_updated_at = datetime.now(timezone.utc)
                 session.add(project)
                 session.commit()
-                
-                self.logger.info(
-                    f"[CONTEXT_UPDATE] Set active agent for project {project_id}: {agent_id}"
-                )
+                self.logger.info(f"[CONTEXT_UPDATE] Set active agent for project {project_id}: {agent_id}")
         except Exception as e:
             self.logger.error(f"Failed to update conversation context: {e}", exc_info=True)
             session.rollback()
@@ -378,7 +307,7 @@ class UserMessageRouter(BaseEventRouter):
         session: Session,
         project_id: UUID
     ) -> None:
-        """Clear conversation context (set to NULL)."""
+        """Clear conversation context."""
         try:
             project = session.get(Project, project_id)
             if project:
@@ -386,10 +315,7 @@ class UserMessageRouter(BaseEventRouter):
                 project.active_agent_updated_at = None
                 session.add(project)
                 session.commit()
-                
-                self.logger.info(
-                    f"[CONTEXT_CLEAR] Cleared conversation context for project {project_id}"
-                )
+                self.logger.info(f"[CONTEXT_CLEAR] Cleared conversation context for project {project_id}")
         except Exception as e:
             self.logger.error(f"Failed to clear conversation context: {e}", exc_info=True)
             session.rollback()
@@ -462,7 +388,6 @@ class UserMessageRouter(BaseEventRouter):
     ) -> None:
         """Route message to Team Leader (default behavior)."""
         with Session(engine) as session:
-            # Find Team Leader in project using AgentService
             from app.services import AgentService
             agent_service = AgentService(session)
             team_leader = agent_service.get_by_project_and_role(
@@ -471,7 +396,6 @@ class UserMessageRouter(BaseEventRouter):
             )
 
             if team_leader:
-                # Team Leader gets MESSAGE task type
                 await self.publish_task(
                     agent_id=team_leader.id,
                     task_type=AgentTaskType.MESSAGE,
@@ -479,28 +403,15 @@ class UserMessageRouter(BaseEventRouter):
                     routing_reason="no_mention_default_team_leader",
                     priority="medium",
                 )
-                self.logger.info(
-                    f"Routed message to Team Leader: {team_leader.name} ({team_leader.id})"
-                )
+                self.logger.info(f"Routed message to Team Leader: {team_leader.name} ({team_leader.id})")
             else:
-                self.logger.error(
-                    f"No Team Leader found in project {project_id}, cannot route message!"
-                )
+                self.logger.error(f"No Team Leader found in project {project_id}, cannot route message!")
 
     def _infer_task_type(self, event_dict: Dict[str, Any], agent_role: str = None) -> AgentTaskType:
-        """Infer task type from message content and type.
-
-        Args:
-            event_dict: Event dictionary with message data
-            agent_role: Role of target agent (optional, for role-specific inference)
-
-        Returns:
-            AgentTaskType enum value
-        """
+        """Infer task type from message content and type."""
         message_type = event_dict.get("message_type", "text")
         content = event_dict.get("content", "").lower()
 
-        # Infer from message_type
         if message_type == "product_brief" or message_type == "product_vision":
             return AgentTaskType.ANALYZE_REQUIREMENTS
         elif message_type == "prd":
@@ -508,7 +419,6 @@ class UserMessageRouter(BaseEventRouter):
         elif message_type == "code_review":
             return AgentTaskType.CODE_REVIEW
 
-        # Infer from content keywords
         if "review" in content and "code" in content:
             return AgentTaskType.CODE_REVIEW
         elif "test" in content or "bug" in content:
@@ -522,7 +432,6 @@ class UserMessageRouter(BaseEventRouter):
         elif "story" in content or "stories" in content:
             return AgentTaskType.CREATE_STORIES
 
-        # Default based on agent role
         if agent_role:
             role_defaults = {
                 "business_analyst": AgentTaskType.ANALYZE_REQUIREMENTS,
@@ -532,7 +441,6 @@ class UserMessageRouter(BaseEventRouter):
             }
             return role_defaults.get(agent_role, AgentTaskType.MESSAGE)
 
-        # Final fallback
         return AgentTaskType.MESSAGE
 
 
@@ -540,11 +448,8 @@ class AgentMessageRouter(BaseEventRouter):
     """Router that updates conversation context when agent sends messages."""
     
     def should_handle(self, event: BaseKafkaEvent | Dict[str, Any]) -> bool:
-        """Check if event is agent message/response."""
         event_dict = event if isinstance(event, dict) else event.model_dump()
         event_type = event_dict.get("event_type", "")
-        
-        # Handle agent response events
         return event_type in ["agent.response", "agent.response.created"]
     
     async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
@@ -558,7 +463,6 @@ class AgentMessageRouter(BaseEventRouter):
             return
         
         with Session(engine) as session:
-            # Look up agent
             from app.services import AgentService
             agent_service = AgentService(session)
             
@@ -569,7 +473,6 @@ class AgentMessageRouter(BaseEventRouter):
             )
             
             if agent:
-                # Update active agent context
                 project = session.get(Project, agent.project_id)
                 if project:
                     previous_agent_id = project.active_agent_id
@@ -582,25 +485,14 @@ class AgentMessageRouter(BaseEventRouter):
                         f"[CONTEXT_UPDATE] Agent {agent.human_name} responded, "
                         f"set as active for project {project_id}"
                     )
-                    
-                    # Broadcast ownership change (MetaGPT-style)
-                    # TODO: Fix inheritance issue with _broadcast_ownership_change
-                    # await self._broadcast_ownership_change(
-                    #     project_id=agent.project_id,
-                    #     new_agent=agent,
-                    #     previous_agent_id=previous_agent_id,
-                    #     reason="task_started"
-                    # )
 
 
 class TaskCompletionRouter(BaseEventRouter):
     """Router that clears conversation context when agent completes task."""
     
     def should_handle(self, event: BaseKafkaEvent | Dict[str, Any]) -> bool:
-        """Check if event signals task completion."""
         event_dict = event if isinstance(event, dict) else event.model_dump()
         
-        # Check for task completion signal in agent response events
         if event_dict.get("event_type") in ["agent.response", "agent.response.created"]:
             structured_data = event_dict.get("structured_data", {})
             return structured_data.get("task_completed") == True
@@ -624,10 +516,8 @@ class TaskCompletionRouter(BaseEventRouter):
             )
             
             if project and project.active_agent_id:
-                # Get agent before clearing
                 agent = session.get(Agent, project.active_agent_id)
                 
-                # Clear context after task completion
                 project.active_agent_id = None
                 project.active_agent_updated_at = None
                 session.add(project)
@@ -638,7 +528,6 @@ class TaskCompletionRouter(BaseEventRouter):
                     f"after {agent_name} completed task"
                 )
                 
-                # Broadcast ownership released (MetaGPT-style)
                 if agent:
                     await self._broadcast_ownership_released(
                         project_id=UUID(project_id) if isinstance(project_id, str) else project_id,
@@ -648,115 +537,47 @@ class TaskCompletionRouter(BaseEventRouter):
 
 
 class AgentResponseRouter(BaseEventRouter):
-    """Router for AGENT_RESPONSES events.
-
-    Handles workflow transitions after an agent responds.
-    For example: BA finishes analysis → route to Developer
-    """
+    """Router for AGENT_RESPONSES events. Handles workflow transitions after an agent responds."""
 
     def should_handle(self, event: BaseKafkaEvent | Dict[str, Any]) -> bool:
-        """Check if event is an agent response."""
         event_dict = event if isinstance(event, dict) else event.model_dump()
         return event_dict.get("event_type") == "agent.response.created"
 
     async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
-        """Route based on agent response workflow.
-
-        Currently: Log the response, no automatic routing.
-        Future: Implement workflow state machine transitions.
-        """
+        """Route based on agent response workflow (currently logs only)."""
         event_dict = event if isinstance(event, dict) else event.model_dump()
         agent_name = event_dict.get("agent_name", "unknown")
         project_id = event_dict.get("project_id")
 
-        self.logger.info(
-            f"Agent '{agent_name}' responded in project {project_id}. "
-            f"No automatic workflow transition configured yet."
-        )
-
-        # TODO: Implement workflow transitions
-        # Example: If BA finished requirements → route task to Developer
-        # This requires workflow state tracking
-
-
-class ApprovalResponseRouter(BaseEventRouter):
-    """Router for APPROVAL_RESPONSES events.
-
-    Handles routing after user approves/rejects agent proposals.
-    """
-
-    def should_handle(self, event: BaseKafkaEvent | Dict[str, Any]) -> bool:
-        """Check if event is an approval response."""
-        event_dict = event if isinstance(event, dict) else event.model_dump()
-        return event_dict.get("event_type") == "approval.response.submitted"
-
-    async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
-        """Route based on approval decision.
-
-        If approved: Continue workflow
-        If rejected: Route back to originating agent with feedback
-        """
-        event_dict = event if isinstance(event, dict) else event.model_dump()
-        approved = event_dict.get("approved", False)
-        approval_request_id = event_dict.get("approval_request_id")
-        feedback = event_dict.get("feedback")
-
-        self.logger.info(
-            f"Approval request {approval_request_id}: "
-            f"{'APPROVED' if approved else 'REJECTED'}"
-        )
-
-        if not approved and feedback:
-            # TODO: Route back to agent with feedback
-            self.logger.info(f"Rejection feedback: {feedback}")
-            # Need to look up which agent created the approval request
-            # Then route task back to them with feedback
-
-        # TODO: Implement approval workflow routing
+        self.logger.info(f"Agent '{agent_name}' responded in project {project_id}.")
 
 
 class AgentStatusRouter(BaseEventRouter):
-    """Router for AGENT_STATUS events.
-
-    Tracks agent availability for load balancing.
-    Currently passive (just logs), but can be extended for smart routing.
-    """
+    """Router for AGENT_STATUS events. Tracks agent availability for load balancing."""
 
     def should_handle(self, event: BaseKafkaEvent | Dict[str, Any]) -> bool:
-        """Check if event is an agent status update."""
         event_dict = event if isinstance(event, dict) else event.model_dump()
         event_type = event_dict.get("event_type", "")
         return event_type.startswith("agent.")
 
     async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
-        """Track agent status for future load balancing.
-
-        Currently: Just log status changes
-        Future: Use status for routing decisions (don't route to offline agents)
-        """
+        """Track agent status (currently logs only)."""
         event_dict = event if isinstance(event, dict) else event.model_dump()
         agent_name = event_dict.get("agent_name", "unknown")
         status = event_dict.get("status", "unknown")
 
         self.logger.debug(f"Agent '{agent_name}' status: {status}")
 
-        # TODO: Maintain agent availability state for smart routing
-        # Can use Redis/in-memory dict to track which agents are available
-
 
 class QuestionAnswerRouter(BaseEventRouter):
-    """Router for QUESTION_ANSWERS events.
-    
-    Routes user answers back to the agent that asked the question,
-    resuming the paused task with the answer.
-    """
+    """Router for QUESTION_ANSWERS events. Routes user answers back to the agent that asked the question."""
     
     def should_handle(self, event: BaseKafkaEvent | Dict[str, Any]) -> bool:
         event_dict = event if isinstance(event, dict) else event.model_dump()
         return event_dict.get("event_type") == "user.question_answer"
     
     async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
-        """Route answer back to agent and resume task"""
+        """Route answer back to agent and resume task."""
         event_dict = event if isinstance(event, dict) else event.model_dump()
         
         question_id = event_dict.get("question_id")
@@ -765,12 +586,10 @@ class QuestionAnswerRouter(BaseEventRouter):
         answer = event_dict.get("answer")
         selected_options = event_dict.get("selected_options")
         
-        # Validate required fields
         if not question_id or not agent_id_raw:
             self.logger.error(f"Missing required fields: question_id={question_id}, agent_id={agent_id_raw}")
             return
         
-        # Convert agent_id to UUID
         agent_id = UUID(agent_id_raw) if isinstance(agent_id_raw, str) else agent_id_raw
         
         self.logger.info(
@@ -778,8 +597,7 @@ class QuestionAnswerRouter(BaseEventRouter):
             f"back to agent {agent_id}"
         )
         
-        # Load question from DB to get full context
-        from app.models import AgentQuestion, QuestionStatus
+        from app.models import AgentQuestion, QuestionStatus, QuestionType
         
         with Session(engine) as session:
             question = session.get(AgentQuestion, question_id)
@@ -794,18 +612,20 @@ class QuestionAnswerRouter(BaseEventRouter):
                 )
                 return
             
-            # Update question status
             question.status = QuestionStatus.ANSWERED
             question.answer = answer
             question.selected_options = selected_options
+            
+            if question.question_type == QuestionType.APPROVAL:
+                question.approved = event_dict.get("approved")
+                question.modified_data = event_dict.get("modified_data")
+            
             question.answered_at = datetime.now(timezone.utc)
             session.add(question)
             
-            # ALSO update messages table for chat history persistence
             from app.models import Message
             message = session.get(Message, question_id)
             if message:
-                # Update structured_data to mark as answered
                 message.structured_data = {
                     **(message.structured_data or {}),
                     "answered": True,
@@ -817,31 +637,38 @@ class QuestionAnswerRouter(BaseEventRouter):
                 session.add(message)
             
             session.commit()
-            
-            # Load original task context
             original_task_context = question.task_context
         
-        # Publish RESUME task to agent
+        context_data = {
+            "question_id": str(question_id),
+            "question_text": question.question_text,
+            "question_type": question.question_type.value,
+            "answer": answer,
+            "selected_options": selected_options,
+            "original_context": original_task_context,
+        }
+        
+        if question.question_type == QuestionType.APPROVAL:
+            context_data.update({
+                "approved": question.approved,
+                "modified_data": question.modified_data,
+                "proposed_data": question.proposed_data,
+                "final_data": question.modified_data if question.modified_data else question.proposed_data,
+            })
+        
         await self.publish_task(
             agent_id=agent_id,
             task_type=AgentTaskType.RESUME_WITH_ANSWER,
             source_event=event_dict,
             routing_reason=f"question_answer:{question_id}",
             priority="high",
-            additional_context={
-                "question_id": str(question_id),
-                "question_text": question.question_text,
-                "answer": answer,
-                "selected_options": selected_options,
-                "original_context": original_task_context,
-            }
+            additional_context=context_data
         )
         
         self.logger.info(
             f"Published RESUME_WITH_ANSWER task to agent {agent_id}"
         )
         
-        # Broadcast agent resumed event to WebSocket
         from app.websocket.connection_manager import connection_manager
         await connection_manager.broadcast_to_project(
             {
@@ -856,22 +683,18 @@ class QuestionAnswerRouter(BaseEventRouter):
 
 
 class BatchAnswersRouter(BaseEventRouter):
-    """Router for QUESTION_ANSWERS events (batch mode).
-    
-    Routes user answers for multiple questions back to the agent that asked them,
-    resuming the paused task with all answers at once.
-    """
+    """Router for QUESTION_ANSWERS events (batch mode). Routes multiple answers back to agent at once."""
     
     def should_handle(self, event: BaseKafkaEvent | Dict[str, Any]) -> bool:
         event_dict = event if isinstance(event, dict) else event.model_dump()
         return event_dict.get("event_type") == "user.question_batch_answer"
     
     async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
-        """Route batch answers back to agent and resume task"""
+        """Route batch answers back to agent and resume task."""
         event_dict = event if isinstance(event, dict) else event.model_dump()
         
         batch_id = event_dict.get("batch_id")
-        answers = event_dict.get("answers", [])  # List of { question_id, answer, selected_options }
+        answers = event_dict.get("answers", [])
         agent_id_raw = event_dict.get("agent_id")
         task_id = event_dict.get("task_id")
         
@@ -879,7 +702,6 @@ class BatchAnswersRouter(BaseEventRouter):
             self.logger.error("Batch answer event missing batch_id or answers")
             return
         
-        # Convert IDs to UUID
         try:
             if isinstance(agent_id_raw, str):
                 agent_id = UUID(agent_id_raw)
@@ -896,7 +718,6 @@ class BatchAnswersRouter(BaseEventRouter):
         if isinstance(project_id, str):
             project_id = UUID(project_id)
         
-        # Update all questions in database
         from app.models import AgentQuestion, Message, QuestionStatus
         
         with Session(engine) as session:
@@ -905,7 +726,6 @@ class BatchAnswersRouter(BaseEventRouter):
             for ans_data in answers:
                 question_id = UUID(ans_data["question_id"])
                 
-                # Update agent_questions table
                 question = session.get(AgentQuestion, question_id)
                 if question:
                     if not first_question:
@@ -917,7 +737,6 @@ class BatchAnswersRouter(BaseEventRouter):
                     question.answered_at = datetime.now(timezone.utc)
                     session.add(question)
                 
-                # Update messages table (for chat history)
                 message = session.get(Message, question_id)
                 if message:
                     message.structured_data = {
@@ -931,11 +750,8 @@ class BatchAnswersRouter(BaseEventRouter):
                     session.add(message)
             
             session.commit()
-            
-            # Get original task context from first question
             original_task_context = first_question.task_context if first_question else {}
         
-        # Resume agent with all answers at once
         await self.publish_task(
             agent_id=agent_id,
             task_type=AgentTaskType.RESUME_WITH_ANSWER,
@@ -944,18 +760,15 @@ class BatchAnswersRouter(BaseEventRouter):
             priority="high",
             additional_context={
                 "batch_id": batch_id,
-                "batch_answers": answers,  # All answers at once
+                "batch_answers": answers,
                 "answer_count": len(answers),
                 "original_context": original_task_context,
                 "is_batch": True,
             }
         )
         
-        self.logger.info(
-            f"Published RESUME_WITH_ANSWER task to agent {agent_id} with {len(answers)} batch answers"
-        )
+        self.logger.info(f"Published RESUME_WITH_ANSWER task to agent {agent_id} with {len(answers)} batch answers")
         
-        # Broadcast agent resumed event to WebSocket
         from app.websocket.connection_manager import connection_manager
         await connection_manager.broadcast_to_project(
             {
@@ -988,11 +801,9 @@ class DelegationRouter(BaseEventRouter):
             self.logger.error("Delegation request missing project_id or target_role")
             return
         
-        # Convert project_id to UUID if needed
         if isinstance(project_id, str):
             project_id = UUID(project_id)
         
-        # Find best agent for role
         agent = await self._find_best_agent(project_id, target_role)
         
         if not agent:
@@ -1006,14 +817,11 @@ class DelegationRouter(BaseEventRouter):
             )
             return
         
-        # Create task for selected agent
         producer = await get_kafka_producer()
         
-        # Extract context and ensure content is included
         delegation_context = event_dict.get("context", {})
         delegation_content = event_dict.get("content", "")
         
-        # Add content to context if not already there
         if "content" not in delegation_context:
             delegation_context["content"] = delegation_content
         
@@ -1037,18 +845,13 @@ class DelegationRouter(BaseEventRouter):
             event=task_event
         )
         
-        # Update conversation context
         await self._update_active_agent(project_id, agent.id)
         
-        self.logger.info(
-            f"[DelegationRouter] Delegated to {agent.human_name} "
-            f"(role={target_role}) for project {project_id}"
-        )
+        self.logger.info(f"[DelegationRouter] Delegated to {agent.human_name} (role={target_role}) for project {project_id}")
     
     async def _find_best_agent(self, project_id: UUID, role_type: str) -> Optional[Agent]:
         """Find best agent for role - prefers idle agents."""
         with Session(engine) as session:
-            # Get all agents with target role in project (exclude terminated/stopped)
             agents = session.exec(
                 select(Agent).where(
                     Agent.project_id == project_id,
@@ -1066,14 +869,12 @@ class DelegationRouter(BaseEventRouter):
                 f"{[(str(a.id), a.human_name, a.status) for a in agents]}"
             )
             
-            # Strategy: Prefer idle > busy > any
             idle_agents = [a for a in agents if a.status == "idle"]
             if idle_agents:
                 selected = idle_agents[0]
                 self.logger.info(f"[DelegationRouter] Selected idle agent: {selected.human_name} (id={selected.id})")
                 return selected
             
-            # Return first agent (simple strategy)
             selected = agents[0]
             self.logger.info(f"[DelegationRouter] Selected busy agent: {selected.human_name} (id={selected.id})")
             return selected
@@ -1095,13 +896,7 @@ class DelegationRouter(BaseEventRouter):
         target_role: str,
         reason: str
     ) -> None:
-        """Handle delegation failure - send error back to delegating agent.
-        
-        The delegating agent will receive a DELEGATION_FAILED task and can:
-        1. Notify user about the error
-        2. Handle the task itself as fallback
-        3. Try delegating to another role
-        """
+        """Handle delegation failure - send error back to delegating agent."""
         delegating_agent_id = event_dict.get("delegating_agent_id")
         delegating_agent_name = event_dict.get("delegating_agent_name")
         
@@ -1109,11 +904,9 @@ class DelegationRouter(BaseEventRouter):
             self.logger.error("Cannot handle delegation failure: delegating_agent_id missing")
             return
         
-        # Convert to UUID if needed
         if isinstance(delegating_agent_id, str):
             delegating_agent_id = UUID(delegating_agent_id)
         
-        # Create error message for user
         role_names = {
             "business_analyst": "Business Analyst",
             "developer": "Developer",
@@ -1127,10 +920,8 @@ class DelegationRouter(BaseEventRouter):
             f"Tôi sẽ cố gắng giúp bạn trực tiếp! 💪"
         )
         
-        # Send task back to delegating agent to handle the error
         producer = await get_kafka_producer()
         
-        # Create a DELEGATION_FAILED task for the delegating agent
         error_task = RouterTaskEvent(
             event_type="router.task.dispatched",
             task_id=uuid4(),
@@ -1149,7 +940,6 @@ class DelegationRouter(BaseEventRouter):
                 "target_role": target_role,
                 "failure_reason": reason,
                 "error_message": error_message,
-                # Preserve original content so agent can handle it
                 "original_content": event_dict.get("content"),
             }
         )
@@ -1159,10 +949,7 @@ class DelegationRouter(BaseEventRouter):
             event=error_task
         )
         
-        self.logger.info(
-            f"[DelegationRouter] Delegation failed (no {target_role} found), "
-            f"sent error task back to {delegating_agent_name}"
-        )
+        self.logger.info(f"[DelegationRouter] Delegation failed (no {target_role} found), sent error task back to {delegating_agent_name}")
 
 
 # ============================================================================
@@ -1171,27 +958,16 @@ class DelegationRouter(BaseEventRouter):
 
 
 class MessageRouterService(BaseKafkaConsumer):
-    """Central routing service that subscribes to events and dispatches to routers.
-
-    This service:
-    1. Subscribes to multiple Kafka topics
-    2. Receives events
-    3. Dispatches to appropriate router based on event type
-    4. Routers publish RouterTaskEvent to AGENT_TASKS topic
-    """
+    """Central routing service that subscribes to events and dispatches to routers."""
 
     def __init__(self):
-        """Initialize the router service."""
-        # Subscribe to topics that need routing
         topics = [
             KafkaTopics.USER_MESSAGES.value,
-            KafkaTopics.AGENT_EVENTS.value,  # For agent responses to update context
-            KafkaTopics.APPROVAL_RESPONSES.value,
+            KafkaTopics.AGENT_EVENTS.value,
             KafkaTopics.QUESTION_ANSWERS.value,
-            KafkaTopics.DELEGATION_REQUESTS.value,  # For delegation by role
+            KafkaTopics.DELEGATION_REQUESTS.value,
         ]
 
-        # Use a dedicated consumer group for the router
         super().__init__(
             topics=topics,
             group_id="message_router_service",
@@ -1202,20 +978,15 @@ class MessageRouterService(BaseKafkaConsumer):
         self.logger = logging.getLogger(__name__)
 
     async def start(self):
-        """Start the router service.
-
-        Initializes routers and starts consuming events.
-        """
+        """Start the router service."""
         self.logger.info("Starting Message Router Service...")
 
-        # Initialize routers with Kafka producer
         producer = await get_kafka_producer()
 
         self.routers = [
             UserMessageRouter(producer),
             AgentMessageRouter(producer),
             TaskCompletionRouter(producer),
-            ApprovalResponseRouter(producer),
             QuestionAnswerRouter(producer),
             BatchAnswersRouter(producer),
             DelegationRouter(producer),
@@ -1223,7 +994,6 @@ class MessageRouterService(BaseKafkaConsumer):
 
         self.logger.info(f"Initialized {len(self.routers)} routers")
 
-        # Start consuming
         await super().start()
 
         self.logger.info("Message Router Service started successfully")
@@ -1243,33 +1013,20 @@ class MessageRouterService(BaseKafkaConsumer):
         partition: int,
         offset: int,
     ) -> None:
-        """Handle incoming event by dispatching to appropriate router.
-
-        This method is called by BaseKafkaConsumer for each message.
-
-        Args:
-            topic: Kafka topic name
-            event: Validated event object or raw dict
-            raw_data: Raw event data dict
-            key: Message key
-            partition: Partition number
-            offset: Message offset
-        """
+        """Handle incoming event by dispatching to appropriate router."""
         event_type = raw_data.get("event_type", "unknown")
 
         self.logger.info(f"[ROUTER] Received event: {event_type} from topic: {topic}")
         
-        # Use raw_data for routing (event might be validated object)
         event_dict = raw_data if isinstance(raw_data, dict) else (event if isinstance(event, dict) else event.model_dump())
 
-        # Dispatch to routers
         routed = False
         for router in self.routers:
             try:
                 if router.should_handle(event_dict):
                     await router.route(event_dict)
                     routed = True
-                    break  # Only first matching router handles the event
+                    break
             except Exception as e:
                 self.logger.error(
                     f"Error routing event {event_type} with {router.__class__.__name__}: {e}",
@@ -1289,11 +1046,7 @@ _router_service: MessageRouterService | None = None
 
 
 async def get_router_service() -> MessageRouterService:
-    """Get the global router service instance.
-
-    Returns:
-        MessageRouterService instance
-    """
+    """Get the global router service instance."""
     global _router_service
 
     if _router_service is None:
@@ -1303,11 +1056,7 @@ async def get_router_service() -> MessageRouterService:
 
 
 async def start_router_service() -> MessageRouterService:
-    """Start the global router service.
-
-    Returns:
-        Started MessageRouterService instance
-    """
+    """Start the global router service."""
     service = await get_router_service()
     if not service.running:
         await service.start()

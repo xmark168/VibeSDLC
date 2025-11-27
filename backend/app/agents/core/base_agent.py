@@ -391,6 +391,8 @@ class BaseAgent(ABC):
         question_type = question_config.get("question_type", "open")
         options = question_config.get("options")
         allow_multiple = question_config.get("allow_multiple", False)
+        proposed_data = question_config.get("proposed_data")
+        explanation = question_config.get("explanation")
         
         question_id = uuid4()
         
@@ -415,6 +417,8 @@ class BaseAgent(ABC):
                 question_text=content,
                 options=options,
                 allow_multiple=allow_multiple,
+                proposed_data=proposed_data,
+                explanation=explanation,
                 status=QuestionStatus.WAITING_ANSWER,
                 task_id=self._current_task_id,
                 execution_id=self._current_execution_id,
@@ -459,6 +463,8 @@ class BaseAgent(ABC):
             question_text=content,
             options=options,
             allow_multiple=allow_multiple,
+            proposed_data=proposed_data,
+            explanation=explanation,
             task_id=str(self._current_task_id),
             execution_id=str(self._current_execution_id) if self._current_execution_id else None,
         )
@@ -476,6 +482,8 @@ class BaseAgent(ABC):
                 "question_type": question_type,
                 "options": options,
                 "allow_multiple": allow_multiple,
+                "proposed_data": proposed_data,
+                "explanation": explanation,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
             self.project_id
@@ -581,6 +589,62 @@ class BaseAgent(ABC):
                 "allow_multiple": allow_multiple
             }
         )
+
+    async def ask_approval(
+        self,
+        proposal_title: str,
+        proposed_data: Dict[str, Any],
+        explanation: Optional[str] = None,
+        allow_modification: bool = True
+    ) -> Dict[str, Any]:
+        """Ask user to approve/reject a proposal.
+        
+        Agent execution will pause until user responds.
+        
+        Args:
+            proposal_title: Title of the proposal (e.g., "Create PRD Document")
+            proposed_data: The data being proposed (e.g., PRD content)
+            explanation: Why this approval is needed
+            allow_modification: Whether user can modify the data
+        
+        Returns:
+            {
+                "approved": bool,
+                "feedback": str | None,
+                "modified_data": dict | None,
+                "final_data": dict  # proposed_data or modified_data
+            }
+        
+        Example:
+            >>> result = await self.ask_approval(
+            ...     proposal_title="Create User Stories",
+            ...     proposed_data={"stories": [...], "acceptance_criteria": [...]},
+            ...     explanation="Based on the PRD analysis"
+            ... )
+            >>> if result["approved"]:
+            ...     await self.create_stories(result["final_data"])
+        """
+        question_id = await self.message_user(
+            "question",
+            proposal_title,
+            question_config={
+                "question_type": "approval",
+                "proposed_data": proposed_data,
+                "explanation": explanation,
+                "allow_modification": allow_modification,
+            }
+        )
+        
+        # Wait for user answer (blocking)
+        # The answer will be provided by QuestionAnswerRouter via RESUME task
+        # For now, return question_id - the calling code should handle the pause/resume
+        logger.info(f"[{self.name}] Waiting for approval (question_id={question_id})")
+        
+        # Return placeholder - actual implementation will need CrewAI Flow pause/resume
+        return {
+            "question_id": str(question_id),
+            "status": "waiting_approval"
+        }
 
     async def ask_multiple_clarification_questions(
         self,

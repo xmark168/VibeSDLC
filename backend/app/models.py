@@ -599,40 +599,10 @@ class AgentMetricsSnapshot(BaseModel, table=True):
     snapshot_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
 
 
-class ApprovalStatus(str, Enum):
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    CANCELLED = "cancelled"
-
-
-class ApprovalRequest(BaseModel, table=True):
-    __tablename__ = "approval_requests"
-
-    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
-    execution_id: UUID | None = Field(default=None, foreign_key="agent_executions.id", ondelete="CASCADE")
-
-    request_type: str = Field(nullable=False)
-    agent_name: str = Field(nullable=False)
-
-    proposed_data: dict = Field(sa_column=Column(JSON))
-    explanation: str | None = Field(default=None, sa_column=Column(Text))
-
-    status: ApprovalStatus = Field(default=ApprovalStatus.PENDING)
-    approved_by_user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
-    approved_at: datetime | None = Field(default=None)
-
-    user_feedback: str | None = Field(default=None, sa_column=Column(Text))
-    modified_data: dict | None = Field(default=None, sa_column=Column(JSON))
-
-    applied: bool = Field(default=False)
-    applied_at: datetime | None = Field(default=None)
-    created_entity_id: UUID | None = Field(default=None)
-
-
 class QuestionType(str, Enum):
     OPEN = "open"
     MULTICHOICE = "multichoice"
+    APPROVAL = "approval"
 
 
 class QuestionStatus(str, Enum):
@@ -655,8 +625,13 @@ class AgentQuestion(BaseModel, table=True):
     options: list[str] | None = Field(default=None, sa_column=Column(JSON))
     allow_multiple: bool = Field(default=False)
     
+    proposed_data: dict | None = Field(default=None, sa_column=Column(JSON))
+    explanation: str | None = Field(default=None, sa_column=Column(Text))
+    
     answer: str | None = Field(default=None, sa_column=Column(Text))
     selected_options: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    approved: bool | None = Field(default=None)
+    modified_data: dict | None = Field(default=None, sa_column=Column(JSON))
     
     status: QuestionStatus = Field(
         default=QuestionStatus.WAITING_ANSWER,

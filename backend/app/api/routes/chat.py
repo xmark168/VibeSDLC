@@ -235,51 +235,13 @@ async def websocket_endpoint(
                         )
                         logger.info(f"Broadcasted user message {message_id} to all clients in project {project_id}")
 
-                    # Handle user answer (for agent questions/approvals)
-                    elif message_type == "user_answer":
-                        approval_request_id = message.get("approval_request_id")
-                        answer = message.get("answer")
-
-                        if not approval_request_id or answer is None:
-                            await websocket.send_json({
-                                "type": "error",
-                                "message": "approval_request_id and answer are required"
-                            })
-                            continue
-
-                        # Publish approval response to Kafka
-                        try:
-                            from app.kafka.event_schemas import ApprovalResponseEvent
-
-                            producer = await get_kafka_producer()
-                            approval_event = ApprovalResponseEvent(
-                                approval_request_id=UUID(approval_request_id),
-                                project_id=project_id,
-                                user_id=user.id,
-                                approved=answer.get("approved", False) if isinstance(answer, dict) else bool(answer),
-                                feedback=answer.get("feedback", "") if isinstance(answer, dict) else "",
-                                modified_data=answer.get("modified_data") if isinstance(answer, dict) else None,
-                            )
-                            await producer.publish(
-                                topic=KafkaTopics.APPROVAL_RESPONSES,
-                                event=approval_event,
-                            )
-                            logger.info(f"Approval response published for {approval_request_id}")
-                        except Exception as e:
-                            logger.error(f"Failed to publish approval response: {e}")
-
-                        await websocket.send_json({
-                            "type": "answer_ack",
-                            "approval_request_id": approval_request_id,
-                            "status": "received",
-                            "timestamp": datetime.now(timezone.utc).isoformat()
-                        })
-
                     # Handle clarification question answer
                     elif message_type == "question_answer":
                         question_id_str = message.get("question_id")
                         answer = message.get("answer")
                         selected_options = message.get("selected_options")
+                        approved = message.get("approved")
+                        modified_data = message.get("modified_data")
                         
                         if not question_id_str:
                             await websocket.send_json({
@@ -321,6 +283,8 @@ async def websocket_endpoint(
                                     question_id=UUID(question_id_str),
                                     answer=answer or "",
                                     selected_options=selected_options,
+                                    approved=approved,
+                                    modified_data=modified_data,
                                     agent_id=question.agent_id,
                                     task_id=question.task_id,
                                     project_id=str(project_id),
