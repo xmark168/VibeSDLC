@@ -9,18 +9,25 @@ logger = logging.getLogger(__name__)
 
 
 class TeamLeader(BaseAgent):
-    """Team Leader using LangGraph for intelligent routing."""
+    """Team Leader using LangGraph for intelligent routing.
+    
+    Langfuse tracing is handled by BaseAgent._process_task().
+    """
 
     def __init__(self, agent_model: AgentModel, **kwargs):
         super().__init__(agent_model, **kwargs)
         logger.info(f"[{self.name}] Initializing Team Leader LangGraph")
         
+        # Pass self to graph for delegation and Langfuse callback access
         self.graph_engine = TeamLeaderGraph(agent=self)
         
         logger.info(f"[{self.name}] LangGraph initialized successfully")
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
-        """Handle task using LangGraph."""
+        """Handle task using LangGraph.
+        
+        Note: Langfuse tracing is automatically handled by BaseAgent.
+        """
         logger.info(f"[{self.name}] Processing task with LangGraph: {task.content[:50]}")
         
         try:
@@ -42,6 +49,7 @@ class TeamLeader(BaseAgent):
             
             action = final_state.get("action")
             confidence = final_state.get("confidence")
+            target_role = final_state.get("target_role")
             
             logger.info(
                 f"[{self.name}] Graph completed: action={action}, "
@@ -53,7 +61,7 @@ class TeamLeader(BaseAgent):
                 output=final_state.get("message", ""),
                 structured_data={
                     "action": action,
-                    "target_role": final_state.get("target_role"),
+                    "target_role": target_role,
                     "reason": final_state.get("reason"),
                     "confidence": confidence,
                 }

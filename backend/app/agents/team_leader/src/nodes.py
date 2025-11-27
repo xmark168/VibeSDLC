@@ -17,7 +17,10 @@ logger = logging.getLogger(__name__)
 
 
 async def llm_routing(state: TeamLeaderState, agent=None) -> TeamLeaderState:
-    """Node 1: LLM-based routing for all requests."""
+    """Node 1: LLM-based routing for all requests.
+    
+    Uses BaseAgent's get_langfuse_callback() for LLM tracing.
+    """
     
     logger.info("[llm_routing] Using LLM for routing decision")
     
@@ -27,10 +30,27 @@ async def llm_routing(state: TeamLeaderState, agent=None) -> TeamLeaderState:
         system_prompt = build_system_prompt(agent)
         user_prompt = build_user_prompt(state["user_message"])
         
-        response = await llm.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_prompt)
-        ])
+        # Get Langfuse callback from agent (BaseAgent provides this)
+        callbacks = []
+        if agent:
+            callback = agent.get_langfuse_callback(
+                trace_name="team_leader_routing_llm",
+                tags=["routing", "llm"],
+                metadata={
+                    "project_id": state.get("project_id"),
+                    "task_id": state.get("task_id"),
+                }
+            )
+            if callback:
+                callbacks.append(callback)
+        
+        response = await llm.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ],
+            config={"callbacks": callbacks} if callbacks else None
+        )
         
         decision = parse_llm_decision(response.content)
         
