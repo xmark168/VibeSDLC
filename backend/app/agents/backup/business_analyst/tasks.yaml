@@ -1,0 +1,661 @@
+analysis_task:
+  description: >
+    You are conducting a requirements gathering session with a user who wants to build software.
+
+    Current conversation context:
+    {conversation_context}
+
+    User's latest message:
+    {user_message}
+
+    Current turn: {turn_count}
+    Total requirements collected: {total_requirements}
+
+    Your job is to:
+    1. Extract ALL requirements from the user's message
+    2. Return them in a structured format (see expected_output)
+    3. Provide a conversational response
+
+    Analyze the user's message and identify requirements in these categories:
+    - Problem & Goals: What problem are they solving? What are the business objectives?
+    - Users & Stakeholders: Who will use this? What are their roles and needs?
+    - Features & Scope: What features do they need? What's in/out of scope?
+
+    If the user's message contains NO new requirements (e.g., just "ok", "yes", "that's enough"),
+    return an empty requirements section.
+
+    Response rules:
+    - ALWAYS ask clarifying questions to gather more details unless you have sufficient requirements
+    - Minimum requirements to end gathering: (turn >= 3 AND total_requirements >= 6) OR total_requirements >= 8
+    - When the above condition is met: Thank them, summarize what you've gathered, and tell them to type 'next' to create the PRD
+    - Otherwise: Ask 1-2 specific clarifying questions about missing information
+
+    Questions to ask if information is missing:
+    - Target users: Who will use this system? (customers, admins, etc.)
+    - Key features: What main features do you need?
+    - Business goals: What problems are you trying to solve?
+    - Technical requirements: Any specific integrations or platforms?
+
+    When ending the requirements gathering (condition met):
+    - Thank the user for the information
+    - Briefly summarize the key requirements collected (list 3-5 main points)
+    - Add this instruction at the end: "Nhập 'next' để tạo PRD." (or in English: "Type 'next' to create the PRD.")
+
+    IMPORTANT: Always respond in the SAME LANGUAGE as the user.
+  expected_output: >
+    You MUST return your response in this EXACT format:
+
+    === EXTRACTED REQUIREMENTS ===
+    PROBLEM_GOALS:
+    - [requirement text]
+    - [requirement text]
+
+    USERS_STAKEHOLDERS:
+    - [requirement text]
+    - [requirement text]
+
+    FEATURES_SCOPE:
+    - [requirement text]
+    - [requirement text]
+    === END REQUIREMENTS ===
+
+    === USER RESPONSE ===
+    [Your conversational response here - acknowledge what they shared, confirm understanding, ask follow-up questions if needed]
+    === END RESPONSE ===
+
+    Example:
+    === EXTRACTED REQUIREMENTS ===
+    PROBLEM_GOALS:
+    - Build an e-commerce platform to overcome offline sales limitations
+    - Expand business reach through online book sales
+
+    USERS_STAKEHOLDERS:
+    - Students who need textbooks
+    - Working professionals interested in books
+    - Warehouse managers who need to manage inventory
+
+    FEATURES_SCOPE:
+    - Shopping cart functionality
+    - QR code payment integration
+    - Order management system
+    === END REQUIREMENTS ===
+
+    === USER RESPONSE ===
+    Cảm ơn bạn đã chia sẻ thông tin chi tiết! Tôi hiểu bạn muốn xây dựng website bán sách với thanh toán QR code và quản lý kho hàng. Cho tôi hỏi thêm về...
+    === END RESPONSE ===
+
+    CRITICAL: Always include the === EXTRACTED REQUIREMENTS === section even if empty. Always include the === USER RESPONSE === section.
+  agent: business_analyst
+
+phase_evaluation_task:
+  description: >
+    Evaluate if the Analysis phase has collected sufficient requirements to proceed to the Solution phase.
+
+    CRITICAL: You MUST use the State Manager Tool to check actual requirements. DO NOT rely on the summary text below.
+
+    STEP 1 - CHECK COMPLETENESS (MANDATORY):
+    You MUST call the State Manager Tool:
+    Tool: State Manager Tool
+    Parameters:
+      - action: 'check_complete'
+
+    This will return the ACTUAL count of requirements in each category.
+
+    STEP 2 - ANALYZE THE TOOL RESULT:
+    Based on the tool's response, evaluate:
+    - Do we have at least 2 requirements in each category (problem_goals, users_stakeholders, features_scope)?
+    - OR do we have at least 8 total requirements across all categories?
+    - Are the requirements specific and actionable?
+
+    STEP 3 - MAKE DECISION:
+    - If criteria met: DECISION: READY
+    - If criteria NOT met: DECISION: NOT_READY
+
+    IMPORTANT: Base your decision ONLY on the tool result, NOT on the text summary below.
+
+    Current requirements summary (for reference only):
+    {requirements_summary}
+  expected_output: >
+    A clear decision in this format:
+
+    DECISION: [READY or NOT_READY]
+
+    REASONING: [2-3 sentences explaining why, citing ACTUAL numbers from the tool]
+
+    NEXT_STEPS: [What should happen next - either move to Solution phase or what questions still need answers]
+  agent: phase_coordinator
+
+# ==================== SOLUTION DESIGN PHASE - SINGLE TASK FOR FLOWS ====================
+
+solution_design_flows_task:
+  description: >
+    Design all BUSINESS FLOWS (user journeys) for the solution.
+
+    CRITICAL: You are a BUSINESS ANALYST, NOT a technical architect.
+
+    PRD (defines WHAT to build):
+    {product_brief}
+
+    Requirements to analyze:
+    {requirements_summary}
+
+    Current Solution (if refining):
+    {current_solution}
+
+    Revision Feedback (if any):
+    {revision_feedback}
+
+    YOUR JOB: Analyze the PRD and identify ALL major user journeys/workflows.
+
+    REFINEMENT MODE: If current_solution is provided (not "None"), you are in REFINEMENT mode.
+    In this mode, you must:
+    1. Read the current_solution carefully to understand existing business flows
+    2. Read the revision_feedback to understand what needs to be changed
+    3. Make ONLY the changes requested in revision_feedback
+    4. Keep all other flows EXACTLY as they were
+    5. Example: If feedback says "ở luồng đăng ký, không cần thêm xác nhận đồng ý điều khoản" → Remove that step from the registration flow, keep other flows unchanged
+
+    STEP 1 - ANALYZE AND PLAN:
+    Review the PRD to identify ALL major flows needed:
+    - What are the main user journeys? (e.g., customer purchasing a book, admin managing inventory)
+    - What are the key workflows that achieve product goals?
+    - What processes span across the system?
+
+    STEP 2 - DESIGN FLOWS:
+    For each flow, define:
+    - name: Flow name (e.g., "Book Purchase Flow")
+    - description: What this flow accomplishes
+    - steps: Array of detailed steps from start to finish
+    - actors: Array of actors involved (users, systems, external services)
+
+    CRITICAL REFINEMENT INSTRUCTIONS:
+    If you are in REFINEMENT MODE (current_solution is not "None"):
+    - START with the current_solution as your base
+    - ONLY change the specific flow(s) mentioned in revision_feedback
+    - If feedback says "ở luồng X, bỏ step Y" → Find flow X, remove step Y, keep ALL other flows unchanged
+    - If feedback says "thêm luồng Z" → Add flow Z, keep ALL other flows unchanged
+    - If feedback says "sửa luồng A" → Modify flow A as requested, keep ALL other flows unchanged
+    - DO NOT regenerate all flows - just apply the specific changes
+    - All unchanged flows must remain IDENTICAL to current_solution
+
+    CRITICAL LANGUAGE REQUIREMENT:
+    You MUST write ALL business flows in the SAME LANGUAGE as the PRD.
+    - If the PRD is in Vietnamese (Tiếng Việt), write ALL flow names, descriptions, steps, and actors in Vietnamese.
+    - If the PRD is in English, write ALL flow names, descriptions, steps, and actors in English.
+    - Check the language of the PRD carefully and use that exact language.
+    - DO NOT translate or mix languages. Maintain 100% language consistency.
+
+    CRITICAL RULES:
+    - Design ALL flows at once
+    - Focus on complete end-to-end user journeys
+    - Include all steps from start to finish
+    - Identify all actors (users, systems, external services)
+    - Your output will be automatically parsed as FlowsOutput Pydantic model
+  expected_output: >
+    A complete list of all business flows in the solution. Each flow must have:
+    - name: Flow name
+    - description: What this flow accomplishes
+    - steps: List of detailed steps
+    - actors: List of actors involved
+  agent: solution_designer
+
+solution_validation_task:
+  description: >
+    Validate the designed solution for completeness and coherence against the PRD.
+
+    STEP 1 - GET SOLUTION:
+    Use the Solution Manager Tool to get current solution:
+    Tool: Solution Manager Tool
+    Parameters:
+      - action: 'get_solution'
+
+    STEP 2 - CHECK COMPLETENESS:
+    Use the Solution Manager Tool to check if solution is complete:
+    Tool: Solution Manager Tool
+    Parameters:
+      - action: 'check_complete'
+
+    PRD (what we're building):
+    {product_brief}
+
+    Requirements to validate against:
+    {requirements_summary}
+
+    Current solution components:
+    {solution_summary}
+
+    STEP 3 - ANALYZE:
+    - Does the solution support all Product Goals defined in the Brief?
+    - Does every requirement have corresponding business flows?
+    - Are all Target Users from the Brief considered in the flows?
+    - Does the solution stay within the defined Scope from the Brief?
+    - Are major user journeys documented as business flows?
+    - Are there any gaps or missing pieces?
+
+    STEP 4 - PROVIDE VALIDATION REPORT:
+    Based on your analysis, provide the final validation report (do NOT make more tool calls after this).
+
+    If gaps found: Clearly identify what's missing and recommend additions.
+    If complete: Confirm solution is ready for backlog creation.
+
+    CRITICAL LANGUAGE REQUIREMENT:
+    You MUST write your validation report in the SAME LANGUAGE as the PRD and Solution being validated.
+    - If the PRD and Solution are in Vietnamese (Tiếng Việt), write your ENTIRE validation report in Vietnamese.
+    - If the PRD and Solution are in English, write your ENTIRE validation report in English.
+    - DO NOT translate or mix languages. Maintain 100% language consistency.
+  expected_output: >
+    A validation report in this EXACT format:
+
+    VALIDATION STATUS: [COMPLETE or INCOMPLETE]
+
+    COVERAGE ANALYSIS:
+    - Business Flows: [Assessment of business flows coverage - do they cover all user journeys and product goals?]
+
+    GAPS IDENTIFIED: [List any missing flows or "None" if complete]
+
+    RECOMMENDATION: [What should happen next]
+
+    CRITICAL: After providing this report, your task is COMPLETE. Do NOT make additional tool calls.
+  agent: solution_validator
+
+solution_phase_evaluation_task:
+  description: >
+    Evaluate if the Solution phase is complete and ready to move to Documentation phase.
+
+    Use the Solution Manager Tool to:
+    1. Get solution summary: action='get_summary'
+    2. Check completeness: action='check_complete'
+
+    Current solution status:
+    {solution_summary}
+
+    Validation results:
+    {validation_results}
+
+    Decision criteria:
+    - At least 2 business flows documented
+    - OR at least 3 total solution elements
+    - All major requirements have corresponding business flows
+
+    If ready: Recommend moving to Documentation phase.
+    If not ready: Identify what still needs to be designed.
+  expected_output: >
+    A clear decision in this format:
+
+    DECISION: [READY or NOT_READY]
+
+    REASONING: [2-3 sentences explaining why]
+
+    NEXT_STEPS: [What should happen next - either move to Documentation phase or what needs to be added to solution]
+  agent: phase_coordinator
+
+product_brief_creation_task:
+  description: >
+    Create a comprehensive PRD based on requirements analysis.
+    This brief defines WHAT needs to be built, and will guide the Solution Design phase (HOW to build it).
+
+    Requirements:
+    {requirements_summary}
+
+    Current PRD (if refining):
+    {current_brief}
+
+    Revision Feedback (if any):
+    {revision_feedback}
+
+    YOUR JOB: Analyze requirements and create a PRD with all required sections.
+
+    REFINEMENT MODE: If current_brief is provided (not "None"), you are in REFINEMENT mode.
+    In this mode, you must:
+    1. Read the current_brief carefully to understand what already exists
+    2. Read the revision_feedback to understand what needs to be changed
+    3. Make ONLY the changes requested in revision_feedback
+    4. Keep all other sections EXACTLY as they were in current_brief
+    5. Example: If feedback says "bỏ X ở OUT OF SCOPE" → Remove X from OUT OF SCOPE section
+
+    STEP 1 - ANALYZE REQUIREMENTS:
+    Review the requirements gathered during the analysis phase.
+    Extract key information needed for each PRD section:
+    - What problem are we solving? (from problem_goals)
+    - Who are the users and what do they need? (from users_stakeholders)
+    - What features should be included? (from features_scope)
+    - What are the success criteria and objectives?
+
+    STEP 2 - CREATE PRODUCT BRIEF:
+    Design the PRD with these sections:
+    - product_summary: Brief overview (2-3 sentences). Use clear, concise language.
+    - problem_statement: What problem does this solve? Why is it needed? Write in short paragraphs (max 3-4 sentences each) separated by newlines.
+    - target_users: Who will use this product? Format as numbered list, one user group per line.
+    - product_goals: Key objectives and success criteria. Format as numbered list with clear goals.
+    - scope: What's IN SCOPE and what's OUT OF SCOPE. Separate sections clearly.
+    - revision_count: Set to 0 (or increment if revision_feedback provided)
+
+    FORMATTING REQUIREMENTS:
+    - Use \n for line breaks within each field to improve readability
+    - Use numbered lists (1., 2., 3.) or bullet points (-, •) where appropriate
+    - Keep paragraphs short (max 3-4 sentences before a line break)
+    - Separate major sections within a field with double line breaks (\n\n)
+    - Target Users: Format as numbered list, one user group per line
+    - Product Goals: Format as numbered list with clear, measurable goals
+    - Scope: Clearly separate IN SCOPE and OUT OF SCOPE sections
+
+    CRITICAL REFINEMENT INSTRUCTIONS:
+    If you are in REFINEMENT MODE (current_brief is not "None"):
+    - START with the current_brief as your base
+    - ONLY change what is explicitly mentioned in revision_feedback
+    - If feedback says "bỏ X" or "remove X" → DELETE X from the document
+    - If feedback says "thêm Y" or "add Y" → ADD Y to the document
+    - If feedback says "sửa Z thành W" or "change Z to W" → REPLACE Z with W
+    - DO NOT rewrite or regenerate the entire brief - just apply the changes
+    - All unchanged sections must remain IDENTICAL to current_brief
+
+    CRITICAL LANGUAGE REQUIREMENT:
+    You MUST write the PRD in the SAME LANGUAGE as the requirements above.
+    - If the requirements are in Vietnamese (Tiếng Việt), write the ENTIRE PRD in Vietnamese.
+    - If the requirements are in English, write the ENTIRE PRD in English.
+    - Check the language of the {requirements_summary} carefully and use that exact language.
+    - DO NOT translate or mix languages. Maintain 100% language consistency.
+
+    IMPORTANT: ALL fields are REQUIRED and must be filled with meaningful content based on requirements.
+    Do NOT leave any field empty or with placeholder text.
+  expected_output: >
+    A complete PRD with all required sections filled with meaningful content from the requirements.
+    The output will be automatically parsed as ProductBriefData Pydantic model.
+  agent: product_brief_writer
+
+product_brief_review_task:
+  description: >
+    Review the PRD for quality, clarity, and alignment with requirements.
+    This brief will guide the Solution Design phase, so it must be complete and clear.
+
+    STEP 1 - GET BRIEF:
+    Use the Documentation Manager Tool to get the current brief:
+    Tool: Documentation Manager Tool
+    Parameters:
+      - action: 'get_brief'
+
+    Requirements:
+    {requirements_summary}
+
+    STEP 2 - EVALUATE:
+    - Is the Product Summary clear and concise?
+    - Does the Problem Statement accurately reflect the requirements?
+    - Are Target Users well-defined based on stakeholder requirements?
+    - Are Product Goals specific and measurable?
+    - Is the Scope clear about what's included and excluded?
+    - Does everything align with the requirements and solution?
+
+    STEP 3 - PROVIDE REVIEW:
+    Based on your evaluation, provide the final review report (do NOT make more tool calls after this).
+    Provide specific, actionable feedback for improvements.
+
+    CRITICAL LANGUAGE REQUIREMENT:
+    You MUST write your review in the SAME LANGUAGE as the PRD you are reviewing.
+    - If the PRD is in Vietnamese (Tiếng Việt), write your ENTIRE review in Vietnamese.
+    - If the PRD is in English, write your ENTIRE review in English.
+    - DO NOT translate or mix languages. Maintain 100% language consistency with the document.
+  expected_output: >
+    A review report in this EXACT format:
+
+    REVIEW STATUS: [APPROVED or NEEDS_REVISION]
+
+    STRENGTHS: [What's good about the brief]
+
+    IMPROVEMENT AREAS: [Specific sections that need work, if any]
+
+    RECOMMENDATIONS: [Concrete suggestions for improvement]
+
+    CRITICAL: After providing this review, your task is COMPLETE. Do NOT make additional tool calls.
+  agent: brief_reviewer
+
+epic_story_creation_task:
+  description: >
+    Create Epics and User Stories based on the PRD and Business Flows, organized by feature domain.
+
+    PRD:
+    {product_brief}
+
+    Business Flows (from Solution Design):
+    {solution_summary}
+
+    Current Product Backlog (if refining):
+    {current_backlog}
+
+    Revision Feedback (if any):
+    {revision_feedback}
+
+    YOUR JOB: Design comprehensive Epics and User Stories based on user goals and journeys.
+
+    REFINEMENT MODE: If current_backlog is provided (not "None"), you are in REFINEMENT mode.
+    In this mode, you must:
+    1. Read the current_backlog carefully to understand existing epics and stories
+    2. Read the revision_feedback to understand what needs to be changed
+    3. Make ONLY the changes requested in revision_feedback
+    4. Keep all other epics and stories EXACTLY as they were
+    5. Example: If feedback says "thêm story cho X" → Add story for X, keep others unchanged
+
+    STEP 1 - UNDERSTAND PRODUCT CONTEXT:
+    Review the PRD to understand:
+    - Problem Statement: What problem are we solving?
+    - Target Users: Who will use this system and what are their needs?
+    - Product Goals: What are the success criteria?
+    - Scope: What's in-scope vs out-of-scope?
+
+    STEP 2 - ANALYZE BUSINESS FLOWS:
+    Review the Business Flows to understand:
+    - What are the main user journeys?
+    - What steps do users take to achieve their goals?
+    - What value does each flow provide?
+
+    STEP 3 - IDENTIFY FEATURE DOMAINS:
+    Based on Product Goals and user journeys, identify 3-5 major feature domains (e.g., Product Discovery, Shopping Cart, Order Management, Payment Processing).
+
+    STEP 4 - DESIGN EPICS:
+    For EACH feature domain, create an Epic with:
+    - id: Epic ID (e.g., "epic-1", "epic-2")
+    - name: Epic name
+    - description: What this epic delivers
+    - domain: Feature domain name
+
+    STEP 5 - DESIGN USER STORIES:
+    For EACH business flow step, create User Stories that enable that step.
+    IMPORTANT: Consider Target Users from PRD when writing stories (use correct roles like "customer", "admin", "warehouse manager").
+
+    CRITICAL - STORY TYPE CLASSIFICATION:
+    Classify EACH story as UserStory or EnablerStory:
+
+    ** Use "UserStory" for:**
+    - Features directly used by end users (customers, admins, managers)
+    - Business capabilities that deliver direct value
+    - User-facing workflows and interfaces
+    - Business logic and rules users interact with
+    Examples: Login, shopping cart, product search, order tracking, payment, user profile
+
+    **Use "EnablerStory" for:**
+    - Infrastructure and architecture work
+    - Technical foundations that enable future features
+    - DevOps, CI/CD, deployment automation
+    - Database optimization, caching, performance
+    - API development, integration services
+    - Security implementation, authentication systems
+    - Code refactoring, technical debt reduction
+    - Monitoring, logging, observability
+    - Development tools and frameworks setup
+    Examples: Setup CI/CD pipeline, implement caching layer, database migration, API authentication, monitoring dashboard
+
+    KEYWORDS FOR EnablerStory (if title/description contains these, likely EnablerStory):
+    - Infrastructure, architecture, framework, platform
+    - API, service, integration, microservice
+    - Database, schema, migration, optimization
+    - DevOps, CI/CD, deployment, pipeline
+    - Security, authentication, authorization
+    - Cache, performance, scalability
+    - Monitoring, logging, observability
+    - Refactor, technical debt, code quality
+    - Setup, configure, implement (technical components)
+
+    APPLY INVEST PRINCIPLES TO EVERY STORY:
+
+    Each story must have:
+    - epic_id: ID of the epic this story belongs to
+    - title: In format "As a [role from Target Users], I want [feature] so that [benefit aligned with Product Goals]"
+    - description: Detailed description of the story
+    - acceptance_criteria: List of criteria in Given-When-Then format
+    - story_type: "UserStory" or "EnablerStory" (REQUIRED - classify based on guidance above)
+
+    INVEST FIELDS (REQUIRED):
+    - story_points: Estimate using Fibonacci (1,2,3,5,8,13). Use estimation guide from your backstory.
+        - 1 = 1 day (simple UI, basic CRUD)
+        - 2 = 2 days (standard feature)
+        - 3 = 3 days (some complexity)
+        - 5 = 1 week (complex feature)
+        - 8 = 2 weeks (very complex - consider splitting)
+        - 13 = TOO LARGE (MUST split into smaller stories)
+    - priority: Assign based on Product Goals
+        - High: Must have for MVP, critical to goals, blocking
+        - Medium: Should have, important but not critical
+        - Low: Nice to have, can defer
+    - dependencies: List story IDs this depends on (keep MINIMAL for Independence)
+        - Try to have 0 dependencies
+        - Max 2-3 dependencies per story
+        - Avoid circular dependencies
+
+    Target: Create at least 10-15 user stories total covering all business flows and product goals.
+    Ensure stories align with Product Goals and stay within defined Scope.
+
+    CRITICAL REFINEMENT INSTRUCTIONS:
+    If you are in REFINEMENT MODE (current_backlog is not "None"):
+    - START with the current_backlog as your base
+    - ONLY change what is explicitly mentioned in revision_feedback
+    - If feedback says "bỏ epic X" or "remove epic X" → DELETE epic X
+    - If feedback says "thêm story Y" or "add story Y" → ADD story Y
+    - If feedback says "sửa story Z" or "modify story Z" → MODIFY story Z as requested
+    - DO NOT regenerate the entire backlog - just apply the changes
+    - All unchanged epics and stories must remain IDENTICAL
+
+    CRITICAL LANGUAGE REQUIREMENT:
+    You MUST write Epics and User Stories in the SAME LANGUAGE as the PRD and Requirements.
+    - If the PRD is in Vietnamese (Tiếng Việt), write ALL epics and stories in Vietnamese.
+    - If the PRD is in English, write ALL epics and stories in English.
+    - Check the language of the PRD carefully and use that exact language.
+    - User story format: "Với vai trò [role], tôi muốn [feature] để [benefit]" (Vietnamese) or "As a [role], I want [feature] so that [benefit]" (English)
+    - DO NOT translate or mix languages. Maintain 100% language consistency.
+
+    IMPORTANT: Create comprehensive epics and stories covering ALL user journeys and product goals.
+    Every story MUST have story_points and priority assigned.
+  expected_output: >
+    A complete backlog with both epics and stories.
+    Output format:
+    - epics: List of all epics organized by feature domain
+    - stories: List of all user stories with acceptance criteria
+
+    The output will be automatically parsed as BacklogOutput Pydantic model.
+  agent: epic_story_writer
+
+backlog_validation_task:
+  description: >
+    Validate that Epics and Stories comprehensively cover the PRD scope and business flows.
+
+    STEP 1 - GET DOCUMENTATION:
+    Use the Documentation Manager Tool to get current documentation:
+    Tool: Documentation Manager Tool
+    Parameters:
+      - action: 'get_documentation'
+
+    PRD:
+    {product_brief}
+
+    Business Flows (Solution Design):
+    {solution_summary}
+
+    STEP 2 - ANALYZE COVERAGE:
+    - Does every business flow have corresponding user stories?
+    - Are epics properly organized by feature domain?
+    - Do all stories align with Target Users defined in PRD?
+    - Do stories support Product Goals?
+    - Are all in-scope features from PRD covered?
+    - Are there any out-of-scope features included by mistake?
+    - Do all stories have clear acceptance criteria?
+    - Are there any gaps or missing stories?
+
+    STEP 2.5 - VALIDATE INVEST COMPLIANCE (CRITICAL):
+    For EVERY story, check:
+
+    1. INDEPENDENT - Dependencies check:
+       - Count dependencies per story
+       - Flag stories with >3 dependencies as "too coupled"
+       - Check for circular dependencies (A→B→A)
+       - Recommend refactoring if many stories are interdependent
+
+    2. NEGOTIABLE - Priority check:
+       - Verify ALL stories have priority field
+       - Check priority is one of: High, Medium, Low
+       - Flag stories missing priority
+
+    3. VALUABLE - Value check:
+       - Verify story title includes "so that [benefit]"
+       - Check benefit aligns with Product Goals
+
+    4. ESTIMABLE - Story points check:
+       - Verify ALL stories have story_points field
+       - Check story_points is valid Fibonacci: 1, 2, 3, 5, 8, 13
+       - Flag stories missing story_points
+       - Flag invalid estimates (not Fibonacci)
+
+    5. SMALL - Size check:
+       - Flag stories with 8 points as "Large - consider splitting"
+       - Flag stories with 13 points as "TOO LARGE - MUST split"
+
+    6. TESTABLE - Acceptance criteria check:
+       - Verify all stories have acceptance_criteria
+       - Check criteria follow Given-When-Then format
+
+    INVEST RED FLAGS (report these in validation):
+    - Stories missing story_points
+    - Stories with invalid story_points (e.g., 4, 6, 7, 10)
+    - Stories with 8+ points (too large)
+    - Stories missing priority
+    - Stories with >3 dependencies
+    - Circular dependencies detected
+    - Missing acceptance criteria
+
+    STEP 3 - PROVIDE VALIDATION:
+    Based on your analysis, provide the final validation report (do NOT make more tool calls after this).
+
+    CRITICAL LANGUAGE REQUIREMENT:
+    You MUST write your validation report in the SAME LANGUAGE as the Epics and Stories you are validating.
+    - If the Epics and Stories are in Vietnamese (Tiếng Việt), write your ENTIRE validation report in Vietnamese.
+    - If the Epics and Stories are in English, write your ENTIRE validation report in English.
+    - DO NOT translate or mix languages. Maintain 100% language consistency with the backlog.
+  expected_output: >
+    A validation report in this EXACT format:
+
+    VALIDATION STATUS: [COMPLETE or INCOMPLETE]
+
+    COVERAGE ANALYSIS:
+    - Epics: [Assessment of epic organization]
+    - Stories: [Assessment of story coverage]
+    - Acceptance Criteria: [Assessment of criteria quality]
+
+    INVEST COMPLIANCE:
+    - Independent: [Number of stories with 0 deps / 1-3 deps / >3 deps. Any circular dependencies?]
+    - Negotiable: [Number of stories with priority assigned vs missing. Priority distribution High/Medium/Low]
+    - Valuable: [Do story titles show clear benefits? Alignment with Product Goals?]
+    - Estimable: [Number of stories with story_points vs missing. Any invalid estimates?]
+    - Small: [Number of stories by size: 1-3pts / 5pts / 8pts / 13pts. Flag large stories]
+    - Testable: [All stories have acceptance criteria? Given-When-Then format?]
+
+    INVEST RED FLAGS: [List any violations or "None" if all pass]
+    - Stories missing story_points: [list IDs or "None"]
+    - Stories with invalid story_points: [list IDs or "None"]
+    - Stories too large (8+ points): [list IDs or "None"]
+    - Stories missing priority: [list IDs or "None"]
+    - Stories with >3 dependencies: [list IDs or "None"]
+    - Circular dependencies: [describe or "None"]
+
+    GAPS IDENTIFIED: [List any missing stories or epics, or "None" if complete]
+
+    RECOMMENDATIONS: [What should be added or improved, including INVEST fixes]
+
+    CRITICAL: After providing this validation, your task is COMPLETE. Do NOT make additional tool calls.
+  agent: backlog_validator
