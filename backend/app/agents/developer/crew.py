@@ -74,7 +74,7 @@ class DeveloperCrew:
             backstory=planner_cfg["backstory"],
             verbose=True,
             llm=LLM(
-                    model="openai/claude-sonnet-4-5-20250929",
+                    model="openai/alibaba-qwen3-32b",
                   temperature=0.1,base_url="https://ai.megallm.io/v1", 
                   api_key="sk-mega-f2cad3ab748b80af3cc310789c808c7c83efc342729e533067d60d4b8db4cd01"
             ),
@@ -99,7 +99,7 @@ class DeveloperCrew:
             use_system_prompt=True,
             respect_context_window=True,
             llm=LLM(
-                    model="openai/claude-sonnet-4-5-20250929",
+                    model="openai/alibaba-qwen3-32b",
                   temperature=0.1,base_url="https://ai.megallm.io/v1", 
                   api_key="sk-mega-f2cad3ab748b80af3cc310789c808c7c83efc342729e533067d60d4b8db4cd01"
             ),
@@ -270,12 +270,12 @@ class DeveloperCrew:
             tasks=[plan_task, code_task],
             process=Process.sequential,
             verbose=True,
-            knowledge_sources=knowledge_sources,  # Add knowledge sources
-            embedder={
-                "provider": "openai",
-                "config": {"model": "text-embedding-3-large"},
-            },
-            memory=True,
+            # knowledge_sources=knowledge_sources,  # Add knowledge sources
+            # embedder={
+            #     "provider": "openai",
+            #     "config": {"model": "text-embedding-3-large"},
+            # },
+            # memory=True,
         )
 
         result = await crew.kickoff_async()
@@ -361,12 +361,12 @@ Be concise but informative, friendly and professional.
             tasks=[progress_task],
             process=Process.sequential,
             verbose=True,
-            knowledge_sources=[],  # Use current knowledge as needed
-            embedder={
-                "provider": "openai",
-                "config": {"model": "text-embedding-3-large"},
-            },
-            memory=True,
+            # knowledge_sources=[],  # Use current knowledge as needed
+            # embedder={
+            #     "provider": "openai",
+            #     "config": {"model": "text-embedding-3-large"},
+            # },
+            # memory=True,
         )
 
         result = await crew.kickoff_async()
@@ -432,12 +432,12 @@ Be constructive, professional, and specific in your response.
             tasks=[react_task],
             process=Process.sequential,
             verbose=True,
-            knowledge_sources=[],  # Use current knowledge as needed
-            embedder={
-                "provider": "openai",
-                "config": {"model": "text-embedding-3-large"},
-            },
-            memory=True,
+            # knowledge_sources=[],  # Use current knowledge as needed
+            # embedder={
+            #     "provider": "openai",
+            #     "config": {"model": "text-embedding-3-large"},
+            # },
+            # memory=True,
         )
 
         result = await crew.kickoff_async()
