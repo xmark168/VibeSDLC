@@ -8,12 +8,12 @@ from crewai.knowledge.source.string_knowledge_source import StringKnowledgeSourc
 from crewai_tools import TavilySearchTool,TavilyExtractorTool
 from crewai import LLM
 import glob
-from .tools.custom_tool import (
+from backend.app.agents.developer.tools import (
     CodebaseSearchTool,
     DuckDuckGoSearchTool,
     ShellCommandTool,
 )
-from .tools.filesystem_tools import (
+from backend.app.agents.developer.tools.filesystem_tools import (
     FileSearchTool,
     SafeFileDeleteTool,
     SafeFileEditTool,
@@ -21,7 +21,7 @@ from .tools.filesystem_tools import (
     SafeFileReadTool,
     SafeFileWriteTool,
 )
-from .project_manager import project_manager
+from backend.app.agents.developer.project_manager import project_manager
 
 # If you want to run a snippet of code before or after the crew starts,
 # you can use the @before_kickoff and @after_kickoff decorators
