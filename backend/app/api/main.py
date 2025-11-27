@@ -10,6 +10,7 @@ from app.api.routes import (
     lean_kanban,  # Lean Kanban features: WIP limits, policies, flow metrics
     messages,
     payments,  # Payment and PayOS integration
+    personas,  # Persona template management
     plans,  # Plan management
     project_rules,  # Project-specific rules and configurations
     projects,
@@ -29,6 +30,7 @@ api_router.include_router(lean_kanban.router)  # Lean Kanban: WIP limits, polici
 api_router.include_router(messages.router)
 api_router.include_router(plans.router)  # Plan management
 api_router.include_router(payments.router)  # Payment and PayOS integration
+api_router.include_router(personas.router)  # Persona template management
 api_router.include_router(agent_management.router)  # Agent pools and monitoring - MUST be before agents.router
 api_router.include_router(agents.router)
 api_router.include_router(artifacts.router)  # Artifact management (agent-produced documents)

@@ -19,7 +19,6 @@ class KafkaTopics(str, Enum):
     DOMAIN_EVENTS = "domain_events"
     STORY_EVENTS = "story_events"
     FLOW_STATUS = "flow_status"
-    APPROVAL_RESPONSES = "approval_responses"
     QUESTION_ANSWERS = "question_answers"
     DELEGATION_REQUESTS = "delegation_requests"
     
@@ -58,8 +57,6 @@ class AgentResponseEvent(BaseKafkaEvent):
     agent_type: str
     content: str
     structured_data: Optional[Dict[str, Any]] = None
-    requires_approval: bool = False
-    approval_request_id: Optional[UUID] = None
 
 
 class AgentRoutingEvent(BaseKafkaEvent):
@@ -145,27 +142,6 @@ class StoryEvent(BaseKafkaEvent):
     assigned_by: Optional[str] = None
 
 
-class ApprovalRequestEvent(BaseKafkaEvent):
-    """Approval request."""
-
-    event_type: str = "approval.request.created"
-    approval_request_id: UUID
-    request_type: str
-    agent_name: str
-    proposed_data: Dict[str, Any]
-    explanation: Optional[str] = None
-
-
-class ApprovalResponseEvent(BaseKafkaEvent):
-    """Approval response."""
-
-    event_type: str = "approval.response.submitted"
-    approval_request_id: UUID
-    approved: bool
-    feedback: Optional[str] = None
-    modified_data: Optional[Dict[str, Any]] = None
-
-
 class QuestionAskedEvent(BaseKafkaEvent):
     """Agent clarification question."""
     
@@ -177,6 +153,8 @@ class QuestionAskedEvent(BaseKafkaEvent):
     question_text: str
     options: Optional[List[str]] = None
     allow_multiple: bool = False
+    proposed_data: Optional[Dict[str, Any]] = None
+    explanation: Optional[str] = None
     task_id: str
     execution_id: Optional[str] = None
 
@@ -188,6 +166,8 @@ class QuestionAnswerEvent(BaseKafkaEvent):
     question_id: UUID
     answer: str
     selected_options: Optional[List[str]] = None
+    approved: Optional[bool] = None
+    modified_data: Optional[Dict[str, Any]] = None
     agent_id: UUID
     task_id: UUID
 
@@ -338,7 +318,6 @@ class AgentEventType:
     RESPONSE = "response"
     DELEGATION = "delegation"
     QUESTION = "question"
-    APPROVAL_REQUEST = "approval_request"
 
 
 class AgentEvent(BaseKafkaEvent):
@@ -364,8 +343,6 @@ EVENT_TYPE_TO_SCHEMA = {
     StoryEventType.STATUS_CHANGED.value: StoryEvent,
     StoryEventType.ASSIGNED.value: StoryEvent,
     StoryEventType.DELETED.value: StoryEvent,
-    "approval.request.created": ApprovalRequestEvent,
-    "approval.response.submitted": ApprovalResponseEvent,
     "agent.question_asked": QuestionAskedEvent,
     "user.question_answer": QuestionAnswerEvent,
     "agent.question_batch_asked": BatchQuestionsAskedEvent,
@@ -400,7 +377,6 @@ EVENT_TYPE_TO_SCHEMA = {
     "agent.response": AgentEvent,
     "agent.delegation": AgentEvent,
     "agent.question": AgentEvent,
-    "agent.approval_request": AgentEvent,
 }
 
 

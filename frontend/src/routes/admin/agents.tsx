@@ -99,6 +99,7 @@ import {
   LLMCallsChart,
 } from "@/components/charts"
 import { TimeRangeSelector, type TimeRange, MetricCard } from "@/components/admin"
+import { PersonasTab } from "@/components/admin/agents"
 
 export const Route = createFileRoute("/admin/agents")({
   beforeLoad: async () => {
@@ -144,7 +145,7 @@ function AgentAdminPage() {
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="pools">
             <Server className="w-4 h-4 mr-2" />
             Pools
@@ -152,6 +153,10 @@ function AgentAdminPage() {
           <TabsTrigger value="agents">
             <Users className="w-4 h-4 mr-2" />
             Agents
+          </TabsTrigger>
+          <TabsTrigger value="personas">
+            <Users className="w-4 h-4 mr-2" />
+            Personas
           </TabsTrigger>
           <TabsTrigger value="health">
             <Heart className="w-4 h-4 mr-2" />
@@ -182,6 +187,10 @@ function AgentAdminPage() {
 
         <TabsContent value="agents" className="mt-6">
           <AgentsTab healthData={healthData} pools={pools || []} isLoading={healthLoading} />
+        </TabsContent>
+
+        <TabsContent value="personas" className="mt-6">
+          <PersonasTab />
         </TabsContent>
 
         <TabsContent value="health" className="mt-6">
@@ -429,7 +438,7 @@ function PoolsTab({
                     </Button>
                     <div>
                       <CardTitle className="text-base">{pool.pool_name}</CardTitle>
-                      <CardDescription>{pool.role_class}</CardDescription>
+                      <CardDescription>{pool.role_type}</CardDescription>
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
@@ -466,7 +475,9 @@ function PoolsTab({
                     <div>
                       <span className="text-muted-foreground">Created:</span>
                       <span className="ml-2 font-medium">
-                        {formatDistanceToNow(new Date(pool.created_at), { addSuffix: true })}
+                        {pool.created_at
+                          ? formatDistanceToNow(new Date(pool.created_at), { addSuffix: true })
+                          : "N/A"}
                       </span>
                     </div>
                   </div>
@@ -844,7 +855,7 @@ function HealthTab({
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle>{pool.pool_name}</CardTitle>
-                  <CardDescription>{pool.role_class}</CardDescription>
+                  <CardDescription>{pool.role_type}</CardDescription>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-1">

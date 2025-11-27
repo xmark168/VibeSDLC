@@ -11,7 +11,7 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID, uuid4
 
 from app.kafka.producer import KafkaProducer, get_kafka_producer
@@ -391,6 +391,8 @@ class BaseAgent(ABC):
         question_type = question_config.get("question_type", "open")
         options = question_config.get("options")
         allow_multiple = question_config.get("allow_multiple", False)
+        proposed_data = question_config.get("proposed_data")
+        explanation = question_config.get("explanation")
         
         question_id = uuid4()
         
@@ -415,6 +417,8 @@ class BaseAgent(ABC):
                 question_text=content,
                 options=options,
                 allow_multiple=allow_multiple,
+                proposed_data=proposed_data,
+                explanation=explanation,
                 status=QuestionStatus.WAITING_ANSWER,
                 task_id=self._current_task_id,
                 execution_id=self._current_execution_id,
@@ -459,6 +463,8 @@ class BaseAgent(ABC):
             question_text=content,
             options=options,
             allow_multiple=allow_multiple,
+            proposed_data=proposed_data,
+            explanation=explanation,
             task_id=str(self._current_task_id),
             execution_id=str(self._current_execution_id) if self._current_execution_id else None,
         )
@@ -476,6 +482,8 @@ class BaseAgent(ABC):
                 "question_type": question_type,
                 "options": options,
                 "allow_multiple": allow_multiple,
+                "proposed_data": proposed_data,
+                "explanation": explanation,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
             self.project_id
@@ -581,6 +589,62 @@ class BaseAgent(ABC):
                 "allow_multiple": allow_multiple
             }
         )
+
+    async def ask_approval(
+        self,
+        proposal_title: str,
+        proposed_data: Dict[str, Any],
+        explanation: Optional[str] = None,
+        allow_modification: bool = True
+    ) -> Dict[str, Any]:
+        """Ask user to approve/reject a proposal.
+        
+        Agent execution will pause until user responds.
+        
+        Args:
+            proposal_title: Title of the proposal (e.g., "Create PRD Document")
+            proposed_data: The data being proposed (e.g., PRD content)
+            explanation: Why this approval is needed
+            allow_modification: Whether user can modify the data
+        
+        Returns:
+            {
+                "approved": bool,
+                "feedback": str | None,
+                "modified_data": dict | None,
+                "final_data": dict  # proposed_data or modified_data
+            }
+        
+        Example:
+            >>> result = await self.ask_approval(
+            ...     proposal_title="Create User Stories",
+            ...     proposed_data={"stories": [...], "acceptance_criteria": [...]},
+            ...     explanation="Based on the PRD analysis"
+            ... )
+            >>> if result["approved"]:
+            ...     await self.create_stories(result["final_data"])
+        """
+        question_id = await self.message_user(
+            "question",
+            proposal_title,
+            question_config={
+                "question_type": "approval",
+                "proposed_data": proposed_data,
+                "explanation": explanation,
+                "allow_modification": allow_modification,
+            }
+        )
+        
+        # Wait for user answer (blocking)
+        # The answer will be provided by QuestionAnswerRouter via RESUME task
+        # For now, return question_id - the calling code should handle the pause/resume
+        logger.info(f"[{self.name}] Waiting for approval (question_id={question_id})")
+        
+        # Return placeholder - actual implementation will need CrewAI Flow pause/resume
+        return {
+            "question_id": str(question_id),
+            "status": "waiting_approval"
+        }
 
     async def ask_multiple_clarification_questions(
         self,
@@ -1157,6 +1221,33 @@ class BaseAgent(ABC):
             # Update state to busy
             self.state = AgentStatus.busy
             
+            # CHECK TOKEN BUDGET BEFORE PROCESSING
+            estimated_tokens = self._estimate_task_tokens(task)
+            budget_allowed, budget_reason = await self._check_token_budget(estimated_tokens)
+            
+            if not budget_allowed:
+                # Budget exceeded - reject task
+                logger.warning(
+                    f"[{self.name}] Task {task_id} rejected: {budget_reason}"
+                )
+                
+                await self.message_user(
+                    "error",
+                    f"⚠️ **Token Budget Exceeded**\n\n{budget_reason}\n\n"
+                    f"Please contact your project admin or try again later.",
+                    {"budget_exceeded": True, "reason": budget_reason}
+                )
+                
+                # Update execution record with budget error
+                await self._complete_execution_record(
+                    error=budget_reason,
+                    success=False
+                )
+                
+                # Return to idle
+                self.state = AgentStatus.idle
+                return
+            
             # Emit "thinking" status ONCE - agents can send custom thinking messages in handle_task
             await self.message_user("thinking", f"Processing request...")
 
@@ -1164,6 +1255,11 @@ class BaseAgent(ABC):
             try:
                 # Call agent's implementation
                 result = await self.handle_task(task)
+                
+                # Record actual token usage
+                actual_tokens = self._extract_token_usage(result)
+                if actual_tokens > 0:
+                    await self._record_token_usage(actual_tokens)
                 
                 # NOTE: Agents should send their own response via message_user("response", ...)
                 # inside handle_task(). Don't auto-send here to avoid duplicates.
@@ -1230,6 +1326,142 @@ class BaseAgent(ABC):
         finally:
             self._current_task_id = None
             self._current_execution_id = None
+    
+    # ===== Token Budget Methods =====
+    
+    def _estimate_task_tokens(self, task: TaskContext) -> int:
+        """Estimate tokens needed for task.
+        
+        Simple estimation based on content length and task type.
+        For more accurate estimation, subclasses can override this.
+        
+        Args:
+            task: Task context
+            
+        Returns:
+            Estimated tokens (conservative estimate)
+        """
+        # Base estimate from content length
+        # Rough approximation: 1 token ~= 4 characters for English
+        content_tokens = len(task.content) // 4
+        
+        # Task type multipliers (accounts for processing complexity)
+        multipliers = {
+            AgentTaskType.MESSAGE: 500,  # Simple messages
+            AgentTaskType.ANALYZE_REQUIREMENTS: 2000,  # Analysis tasks
+            AgentTaskType.CREATE_STORIES: 1500,
+            AgentTaskType.IMPLEMENT_STORY: 3000,  # Code generation
+            AgentTaskType.WRITE_TESTS: 2000,
+            AgentTaskType.CODE_REVIEW: 1500,
+            AgentTaskType.FIX_BUG: 2000,
+            AgentTaskType.REFACTOR: 2500,
+            AgentTaskType.RESUME_WITH_ANSWER: 1000,
+        }
+        
+        base_estimate = multipliers.get(task.task_type, 1000)
+        
+        # Total estimate: base + content-based
+        estimated = base_estimate + content_tokens
+        
+        logger.debug(
+            f"[{self.name}] Estimated {estimated:,} tokens for task "
+            f"(type={task.task_type.value}, content_len={len(task.content)})"
+        )
+        
+        return estimated
+    
+    def _extract_token_usage(self, result: TaskResult) -> int:
+        """Extract actual token usage from task result.
+        
+        Looks for token usage in structured_data or estimates from output.
+        
+        Args:
+            result: Task result
+            
+        Returns:
+            Actual tokens used (0 if not available)
+        """
+        if not result:
+            return 0
+        
+        # Check structured_data for token_usage field
+        if result.structured_data:
+            tokens = result.structured_data.get("token_usage") or \
+                    result.structured_data.get("tokens_used") or \
+                    result.structured_data.get("total_tokens")
+            
+            if tokens and isinstance(tokens, int):
+                return tokens
+        
+        # Fallback: Estimate from output length
+        if result.output:
+            estimated = len(result.output) // 4
+            logger.debug(
+                f"[{self.name}] Estimated {estimated:,} tokens from output length "
+                f"(no explicit token_usage in result)"
+            )
+            return estimated
+        
+        return 0
+    
+    async def _check_token_budget(self, estimated_tokens: int) -> Tuple[bool, str]:
+        """Check if project has token budget for task.
+        
+        Args:
+            estimated_tokens: Estimated tokens needed
+            
+        Returns:
+            Tuple of (allowed, reason)
+        """
+        if not self.project_id:
+            # No project - allow (shouldn't happen in production)
+            return True, ""
+        
+        try:
+            from sqlmodel import Session
+            from app.core.db import engine
+            from app.services.token_budget_service import TokenBudgetManager
+            
+            with Session(engine) as session:
+                budget_mgr = TokenBudgetManager(session)
+                allowed, reason = await budget_mgr.check_budget(
+                    self.project_id,
+                    estimated_tokens
+                )
+                
+                return allowed, reason
+                
+        except Exception as e:
+            logger.error(
+                f"[{self.name}] Error checking token budget: {e}", 
+                exc_info=True
+            )
+            # Fail open - allow task on error to avoid blocking
+            return True, ""
+    
+    async def _record_token_usage(self, tokens_used: int) -> None:
+        """Record actual token usage.
+        
+        Args:
+            tokens_used: Actual tokens consumed
+        """
+        if not self.project_id:
+            return
+        
+        try:
+            from sqlmodel import Session
+            from app.core.db import engine
+            from app.services.token_budget_service import TokenBudgetManager
+            
+            with Session(engine) as session:
+                budget_mgr = TokenBudgetManager(session)
+                await budget_mgr.record_usage(self.project_id, tokens_used)
+                
+        except Exception as e:
+            logger.error(
+                f"[{self.name}] Error recording token usage: {e}",
+                exc_info=True
+            )
 
 
 class AgentTaskConsumer:

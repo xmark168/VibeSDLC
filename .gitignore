@@ -130,3 +130,6 @@ openapi.json
 /playwright/.auth/
 frontend/pnpm-lock.yaml
 backend/app/agents/developer/projects_workspace
+backend/projects
+
+backend/uv.lock

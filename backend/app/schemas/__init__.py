@@ -64,6 +64,12 @@ from .agent import (
     TerminateAgentRequest,
     PoolResponse,
     SystemStatsResponse,
+    AgentPoolPublic,
+    UpdatePoolConfigRequest,
+    AgentPoolMetricsPublic,
+    CreatePoolRequestExtended,
+    ScalePoolRequest,
+    PoolSuggestion,
 )
 
 # Story schemas
@@ -139,6 +145,15 @@ from .subscription import (
     UpdateAutoRenew,
 )
 
+# Persona schemas
+from .persona import (
+    PersonaBase,
+    PersonaCreate,
+    PersonaUpdate,
+    PersonaResponse,
+    PersonaWithUsageStats,
+)
+
 __all__ = [
     # User
     "UserPublic",
@@ -195,6 +210,12 @@ __all__ = [
     "TerminateAgentRequest",
     "PoolResponse",
     "SystemStatsResponse",
+    "AgentPoolPublic",
+    "UpdatePoolConfigRequest",
+    "AgentPoolMetricsPublic",
+    "CreatePoolRequestExtended",
+    "ScalePoolRequest",
+    "PoolSuggestion",
     
     # Story
     "StoryBase",
@@ -251,5 +272,12 @@ __all__ = [
     "SubscriptionPublic",
     "CreditWalletPublic",
     "UserSubscriptionResponse",
+
+    # Persona
+    "PersonaBase",
+    "PersonaCreate",
+    "PersonaUpdate",
+    "PersonaResponse",
+    "PersonaWithUsageStats",
     "UpdateAutoRenew",
 ]

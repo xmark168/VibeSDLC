@@ -5,6 +5,7 @@ import {
   type CreatePoolRequest,
   type SpawnAgentRequest,
   type ExecutionFilters,
+  type UpdatePoolConfigRequest,
 } from "@/apis/agents"
 
 // ===== Query Keys =====
@@ -12,6 +13,10 @@ export const agentQueryKeys = {
   all: ["agents"] as const,
   pools: () => [...agentQueryKeys.all, "pools"] as const,
   pool: (poolName: string) => [...agentQueryKeys.pools(), poolName] as const,
+  poolDb: (poolName: string) => [...agentQueryKeys.pool(poolName), "db"] as const,
+  poolMetrics: (poolId: string, startDate?: string, endDate?: string) =>
+    [...agentQueryKeys.all, "pool-metrics", poolId, startDate, endDate] as const,
+  poolSuggestions: () => [...agentQueryKeys.pools(), "suggestions"] as const,
   health: () => [...agentQueryKeys.all, "health"] as const,
   agentHealth: (agentId: string, poolName: string) =>
     [...agentQueryKeys.health(), agentId, poolName] as const,
@@ -335,6 +340,112 @@ export function useStopMonitoring() {
     mutationFn: () => agentsApi.stopMonitoring(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: agentQueryKeys.systemStats() })
+    },
+  })
+}
+
+// ===== Pool DB Management Queries & Mutations =====
+
+/**
+ * Fetch pool database information
+ * Returns persistent pool record including configuration, counters, and metadata
+ */
+export function usePoolDbInfo(poolName: string, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: agentQueryKeys.poolDb(poolName),
+    queryFn: () => agentsApi.getPoolDbInfo(poolName),
+    enabled: (options?.enabled ?? true) && !!poolName,
+    staleTime: 30000, // 30s - DB data doesn't change frequently
+    refetchInterval: 60000, // Refetch every minute
+  })
+}
+
+/**
+ * Fetch pool metrics history from database
+ * Returns time-series metrics including tokens, requests, agent counts, executions
+ */
+export function usePoolMetrics(
+  poolId: string,
+  options?: {
+    enabled?: boolean
+    startDate?: string
+    endDate?: string
+    limit?: number
+  }
+) {
+  return useQuery({
+    queryKey: agentQueryKeys.poolMetrics(poolId, options?.startDate, options?.endDate),
+    queryFn: () =>
+      agentsApi.getPoolMetrics(poolId, options?.startDate, options?.endDate, options?.limit),
+    enabled: (options?.enabled ?? true) && !!poolId,
+    staleTime: 60000, // 1 minute - historical data
+    refetchInterval: 120000, // Refetch every 2 minutes
+  })
+}
+
+/**
+ * Fetch pool creation suggestions based on current load
+ * Analyzes pools and suggests creating new ones when needed
+ */
+export function usePoolSuggestions(options?: { enabled?: boolean; refetchInterval?: number }) {
+  return useQuery({
+    queryKey: agentQueryKeys.poolSuggestions(),
+    queryFn: () => agentsApi.getPoolSuggestions(),
+    enabled: options?.enabled ?? true,
+    staleTime: 30000, // 30s
+    refetchInterval: options?.refetchInterval ?? 60000, // Default 1 minute
+  })
+}
+
+/**
+ * Update pool configuration in database
+ * Also updates runtime manager if pool is active
+ */
+export function useUpdatePoolConfig() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({
+      poolId,
+      config,
+    }: {
+      poolId: string
+      config: Omit<UpdatePoolConfigRequest, "pool_id">
+    }) => agentsApi.updatePoolConfig(poolId, config),
+    onSuccess: (data) => {
+      // Invalidate pool DB info
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.poolDb(data.pool_name) })
+      // Invalidate pool stats (runtime data)
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.pool(data.pool_name) })
+      // Invalidate pools list
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.pools() })
+      // Invalidate dashboard
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.dashboard() })
+    },
+  })
+}
+
+/**
+ * Scale pool to target agent count
+ * Automatically spawns or terminates agents
+ */
+export function useScalePool() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ poolName, targetAgents }: { poolName: string; targetAgents: number }) =>
+      agentsApi.scalePool(poolName, targetAgents),
+    onSuccess: (_, variables) => {
+      // Invalidate pool DB info
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.poolDb(variables.poolName) })
+      // Invalidate pool stats
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.pool(variables.poolName) })
+      // Invalidate health data
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.health() })
+      // Invalidate pools list
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.pools() })
+      // Invalidate dashboard
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.dashboard() })
     },
   })
 }

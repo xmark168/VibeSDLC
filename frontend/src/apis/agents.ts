@@ -12,6 +12,10 @@ import type {
   SpawnAgentRequest,
   SpawnAgentResponse,
   CreatePoolRequest,
+  AgentPoolDB,
+  AgentPoolMetrics,
+  UpdatePoolConfigRequest,
+  PoolSuggestion,
 } from "@/types"
 
 // Re-export types for convenience
@@ -27,6 +31,10 @@ export type {
   SpawnAgentRequest,
   SpawnAgentResponse,
   CreatePoolRequest,
+  AgentPoolDB,
+  AgentPoolMetrics,
+  UpdatePoolConfigRequest,
+  PoolSuggestion,
 }
 
 // ===== API Client =====
@@ -259,6 +267,67 @@ export const agentsApi = {
         time_range: params.time_range || "24h",
         group_by: params.group_by || "pool",
       },
+    })
+  },
+
+  // ===== Pool DB Management =====
+
+  getPoolDbInfo: async (poolName: string): Promise<AgentPoolDB> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: `/api/v1/agent-management/pools/${poolName}/db`,
+    })
+  },
+
+  updatePoolConfig: async (
+    poolId: string,
+    config: Omit<UpdatePoolConfigRequest, "pool_id">
+  ): Promise<AgentPoolDB> => {
+    return __request(OpenAPI, {
+      method: "PUT",
+      url: `/api/v1/agent-management/pools/${poolId}/config`,
+      body: config,
+    })
+  },
+
+  getPoolMetrics: async (
+    poolId: string,
+    startDate?: string,
+    endDate?: string,
+    limit: number = 100
+  ): Promise<AgentPoolMetrics[]> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: `/api/v1/agent-management/pools/${poolId}/metrics`,
+      query: {
+        start_date: startDate,
+        end_date: endDate,
+        limit,
+      },
+    })
+  },
+
+  scalePool: async (
+    poolName: string,
+    targetAgents: number
+  ): Promise<{
+    message: string
+    current_count: number
+    target_count: number
+    spawned?: number
+    terminated?: number
+  }> => {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: `/api/v1/agent-management/pools/${poolName}/scale`,
+      body: { target_agents: targetAgents },
+    })
+  },
+
+  getPoolSuggestions: async (): Promise<PoolSuggestion[]> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/agent-management/pools/suggestions",
     })
   },
 }

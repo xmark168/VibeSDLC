@@ -7,7 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 from sqlmodel import SQLModel
 
-from app.models import AgentStatus
+from app.models import AgentStatus, PoolType
 
 
 class AgentBase(SQLModel):
@@ -56,6 +56,7 @@ class PoolConfigSchema(BaseModel):
 
 
 class CreatePoolRequest(BaseModel):
+    pool_name: str
     role_type: str
     config: PoolConfigSchema = Field(default_factory=PoolConfigSchema)
 
@@ -88,3 +89,81 @@ class SystemStatsResponse(BaseModel):
     total_pools: int
     total_agents: int
     pools: list[PoolResponse]
+
+
+# ===== Pool DB Schemas =====
+
+class AgentPoolPublic(SQLModel):
+    """Pool database record schema."""
+    id: UUID
+    pool_name: str
+    role_type: Optional[str]
+    pool_type: PoolType
+    max_agents: int
+    health_check_interval: int
+    llm_model_config: Optional[dict] = None
+    allowed_template_ids: Optional[list[str]] = None
+    is_active: bool
+    last_started_at: Optional[datetime] = None
+    last_stopped_at: Optional[datetime] = None
+    total_spawned: int
+    total_terminated: int
+    current_agent_count: int
+    created_by: Optional[UUID] = None
+    updated_by: Optional[UUID] = None
+    auto_created: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class UpdatePoolConfigRequest(BaseModel):
+    """Update pool configuration request."""
+    max_agents: Optional[int] = Field(default=None, ge=1)
+    health_check_interval: Optional[int] = Field(default=None, ge=10)
+    llm_model_config: Optional[dict] = None
+    allowed_template_ids: Optional[list[str]] = None
+
+
+class AgentPoolMetricsPublic(SQLModel):
+    """Pool metrics record schema."""
+    id: UUID
+    pool_id: UUID
+    period_start: datetime
+    period_end: datetime
+    total_tokens_used: int
+    tokens_per_model: dict
+    total_requests: int
+    requests_per_model: dict
+    peak_agent_count: int
+    avg_agent_count: float
+    total_executions: int
+    successful_executions: int
+    failed_executions: int
+    avg_execution_duration_ms: Optional[float] = None
+    snapshot_metadata: Optional[dict] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class CreatePoolRequestExtended(BaseModel):
+    """Extended pool creation request with DB fields."""
+    pool_name: str
+    role_type: Optional[str] = None
+    pool_type: PoolType = Field(default=PoolType.FREE)
+    max_agents: int = Field(default=100, ge=1)
+    health_check_interval: int = Field(default=60, ge=10)
+    llm_model_config: Optional[dict] = None
+    allowed_template_ids: Optional[list[str]] = None
+
+
+class ScalePoolRequest(BaseModel):
+    """Scale pool request."""
+    target_agents: int = Field(ge=0)
+
+
+class PoolSuggestion(BaseModel):
+    """Pool creation suggestion."""
+    reason: str
+    recommended_pool_name: str
+    role_type: Optional[str] = None
+    estimated_agents: int

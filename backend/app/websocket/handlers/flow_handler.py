@@ -1,8 +1,4 @@
-"""
-Flow Handler
-
-Handles flow execution events (development flow progress)
-"""
+"""Flow Handler - Handles development flow execution events."""
 
 import logging
 from .base import BaseEventHandler
@@ -11,10 +7,9 @@ logger = logging.getLogger(__name__)
 
 
 class FlowHandler(BaseEventHandler):
-    """Handles flow-related WebSocket events"""
+    """Handles flow-related WebSocket events."""
 
     async def handle_flow_event(self, event):
-        """Handle flow execution events (started, in_progress, completed, failed)"""
         try:
             event_data = self._normalize_event(event)
             project_id = self._to_uuid(event_data.get("project_id"))
@@ -35,11 +30,9 @@ class FlowHandler(BaseEventHandler):
                 "timestamp": self._get_timestamp(event_data),
             }
 
-            # Add error message if failed
             if event_data.get("error_message"):
                 ws_message["error_message"] = event_data["error_message"]
 
-            # Add result if completed
             if event_data.get("result"):
                 ws_message["result"] = event_data["result"]
 
