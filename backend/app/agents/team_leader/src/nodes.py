@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 async def llm_routing(state: TeamLeaderState, agent=None) -> TeamLeaderState:
     """Node 1: LLM-based routing for all requests.
     
-    Uses BaseAgent's get_langfuse_callback() for LLM tracing.
+    Uses BaseAgent's track_llm_generation() for Langfuse tracing with token usage.
     """
     
     logger.info("[llm_routing] Using LLM for routing decision")
@@ -31,27 +31,24 @@ async def llm_routing(state: TeamLeaderState, agent=None) -> TeamLeaderState:
         agent_name = agent.name if agent else "Team Leader"
         user_prompt = build_user_prompt(state["user_message"], name=agent_name)
         
-        # Get Langfuse callback from agent (BaseAgent provides this)
-        callbacks = []
-        if agent:
-            callback = agent.get_langfuse_callback(
-                trace_name="team_leader_routing_llm",
-                tags=["routing", "llm"],
-                metadata={
-                    "project_id": state.get("project_id"),
-                    "task_id": state.get("task_id"),
-                }
-            )
-            if callback:
-                callbacks.append(callback)
+        # Build messages for LLM
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ]
         
-        response = await llm.ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_prompt)
-            ],
-            config={"callbacks": callbacks} if callbacks else None
-        )
+        # Invoke LLM
+        response = await llm.ainvoke(messages)
+        
+        # Track LLM generation with token usage in Langfuse
+        if agent:
+            agent.track_llm_generation(
+                name="routing_decision",
+                model="gpt-4o-mini",
+                input_messages=messages,
+                response=response,
+                model_parameters={"temperature": 0}
+            )
         
         decision = parse_llm_decision(response.content)
         
@@ -77,7 +74,7 @@ async def llm_routing(state: TeamLeaderState, agent=None) -> TeamLeaderState:
 
 
 async def delegate(state: TeamLeaderState, agent=None) -> TeamLeaderState:
-    """Node 2: Delegate to target agent."""
+    """Node 2: Delegate to target agent with Langfuse span tracking."""
     
     target_role = state["target_role"]
     logger.info(f"[delegate] Delegating to {target_role}")
@@ -85,6 +82,12 @@ async def delegate(state: TeamLeaderState, agent=None) -> TeamLeaderState:
     if agent:
         from app.agents.core.base_agent import TaskContext
         from app.kafka.event_schemas import AgentTaskType
+        
+        # Create span for delegation tracking
+        delegation_span = agent.create_span(
+            name="delegation",
+            input_data={"target_role": target_role, "message": state["user_message"][:200]}
+        )
         
         task = TaskContext(
             task_id=UUID(state["task_id"]),
@@ -101,6 +104,20 @@ async def delegate(state: TeamLeaderState, agent=None) -> TeamLeaderState:
             target_role=target_role,
             delegation_message=state.get("message", f"Routing to {target_role}"),
         )
+        
+        # End delegation span
+        if delegation_span:
+            try:
+                delegation_span.end(output={"delegated_to": target_role, "success": True})
+            except Exception:
+                pass
+        
+        # Track delegation event
+        agent.track_event("delegation_completed", {
+            "target_role": target_role,
+            "task_id": state.get("task_id"),
+            "routing_reason": state.get("reason")
+        })
     
     return {**state, "action": "DELEGATE"}
 
