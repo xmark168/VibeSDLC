@@ -122,13 +122,35 @@ def parse_llm_decision(response: str) -> dict:
     """Parse LLM JSON response."""
     
     try:
-        json_match = re.search(r'\{[^{}]*"action"[^{}]*\}', response, re.DOTALL)
+        # Try to find JSON block (handles nested structures like arrays)
+        json_match = re.search(r'\{.*"action".*\}', response, re.DOTALL)
         if json_match:
-            decision = json.loads(json_match.group(0))
+            # Find the balanced braces
+            json_str = json_match.group(0)
+            # Try to parse - if fails, try to find balanced JSON
+            try:
+                decision = json.loads(json_str)
+            except json.JSONDecodeError:
+                # Find balanced braces manually
+                start = response.find('{')
+                if start != -1:
+                    depth = 0
+                    for i, c in enumerate(response[start:], start):
+                        if c == '{':
+                            depth += 1
+                        elif c == '}':
+                            depth -= 1
+                            if depth == 0:
+                                json_str = response[start:i+1]
+                                decision = json.loads(json_str)
+                                break
+                    else:
+                        raise ValueError("No balanced JSON found")
             
             if "action" in decision and "message" in decision:
                 return decision
         
+        # Fallback: detect action from text
         if "DELEGATE" in response.upper():
             return {
                 "action": "DELEGATE",

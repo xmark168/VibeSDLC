@@ -182,6 +182,11 @@ class Project(BaseModel, table=True):
         back_populates="project",
         sa_relationship_kwargs={"uselist": False, "cascade": "all, delete-orphan"}
     )
+    
+    preference: Optional["ProjectPreference"] = Relationship(
+        back_populates="project",
+        sa_relationship_kwargs={"uselist": False, "cascade": "all, delete-orphan"}
+    )
 
 
 class WorkflowPolicy(BaseModel, table=True):
@@ -540,6 +545,34 @@ class ProjectRules(BaseModel, table=True):
     tester_prompt: str | None = Field(default=None, sa_column=Column(Text))
 
     project: Project = Relationship(back_populates="rules")
+
+
+class ProjectPreference(BaseModel, table=True):
+    """User preferences per project for AI agent personalization.
+    
+    Flexible JSONB-based preferences storage.
+    
+    Example preferences:
+    {
+        "preferred_language": "vi",
+        "communication_style": "casual",
+        "response_length": "concise", 
+        "emoji_usage": true,
+        "expertise_level": "intermediate",
+        "timezone": "Asia/Ho_Chi_Minh",
+        "custom_instructions": "Always explain technical terms",
+        "domain_context": "E-commerce platform",
+        "tech_stack": ["React", "FastAPI", "PostgreSQL"]
+    }
+    """
+    __tablename__ = "project_preferences"
+
+    project_id: UUID = Field(foreign_key="projects.id", unique=True, nullable=False, ondelete="CASCADE")
+    
+    # All preferences stored as flexible JSONB
+    preferences: dict = Field(default_factory=dict, sa_column=Column(JSON))
+
+    project: Project = Relationship(back_populates="preference")
 
 
 class AgentExecutionStatus(str, Enum):

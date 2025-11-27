@@ -13,6 +13,7 @@ class TeamLeaderState(TypedDict):
     project_id: str
     task_id: str
     conversation_history: Optional[str]  # Recent conversation for context
+    user_preferences: Optional[str]  # Project preferences for personalization
     action: Optional[Literal["DELEGATE", "RESPOND"]]
     target_role: Optional[str]
     message: Optional[str]

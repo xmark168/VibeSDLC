@@ -65,6 +65,9 @@ tasks:
       {shared_context.routing_principles}
 
     user_prompt: |
+      # USER PREFERENCES
+      {user_preferences}
+      
       # RECENT CONVERSATION
       {conversation_history}
       
@@ -74,7 +77,7 @@ tasks:
 
       # YOUR TASK
       Analyze the user's message and decide how to handle it based on your role as {name}.
-      Consider the conversation history above for context.
+      Consider the conversation history and user preferences above for context.
       
       Remember your personality:
       - Be warm and acknowledge their request
@@ -84,14 +87,14 @@ tasks:
 
       Respond with JSON:
       {{
-          "action": "DELEGATE" or "RESPOND",
+          "action": "DELEGATE" | "RESPOND",
           "target_role": "business_analyst" | "developer" | "tester" (if DELEGATE),
           "message": "Your response to user (in Vietnamese if appropriate, warm and explanatory)",
           "reason": "Internal routing reason"
       }}
 
       # ROUTING EXAMPLES
-      
+
       **New Features (→ business_analyst):**
       ✅ "tạo website bán hàng" 
          → message: "Chào bạn! Mình sẽ chuyển request này cho Business Analyst để phân tích requirements cho website bán hàng nhé. Họ sẽ giúp làm rõ các tính năng cần thiết trước khi bắt đầu code 😊"

@@ -1,6 +1,7 @@
 """Node functions for Team Leader graph."""
 
 import logging
+import re
 from uuid import UUID
 
 from langchain_openai import ChatOpenAI
@@ -14,6 +15,64 @@ from app.agents.team_leader.src.prompts import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Preference detection patterns (case-insensitive)
+PREFERENCE_PATTERNS = {
+    "preferred_language": [
+        (r"\b(tiếng việt|vietnamese)\b", "vi"),
+        (r"\b(tiếng anh|english)\b", "en"),
+    ],
+    "emoji_usage": [
+        (r"\b(đừng|không|no|don'?t)\s*(dùng|sử dụng|use)?\s*emoji\b", False),
+    ],
+    "expertise_level": [
+        (r"\b(senior|expert|chuyên gia)\b", "expert"),
+        (r"\b(junior|beginner|mới học|newbie)\b", "beginner"),
+        (r"\b(mid|intermediate|trung bình)\b", "intermediate"),
+    ],
+    "response_length": [
+        (r"\b(ngắn gọn|concise|brief|short)\b", "concise"),
+        (r"\b(chi tiết|detailed|verbose|dài)\b", "detailed"),
+    ],
+}
+
+
+async def extract_preferences(state: TeamLeaderState, agent=None) -> TeamLeaderState:
+    """Node 0: Silently extract and save user preferences from message.
+    
+    Runs BEFORE routing. Does not change main flow.
+    """
+    user_message = state.get("user_message", "").lower()
+    detected = {}
+    
+    for pref_key, patterns in PREFERENCE_PATTERNS.items():
+        for pattern, value in patterns:
+            if re.search(pattern, user_message, re.IGNORECASE):
+                detected[pref_key] = value
+                break
+    
+    # Extract tech stack (special handling for multiple values)
+    tech_patterns = [
+        r"\b(react|vue|angular|nextjs|nuxt)\b",
+        r"\b(fastapi|django|flask|express|nestjs)\b",
+        r"\b(python|javascript|typescript|java|go|rust)\b",
+        r"\b(postgresql|mysql|mongodb|redis)\b",
+    ]
+    tech_stack = []
+    for pattern in tech_patterns:
+        matches = re.findall(pattern, user_message, re.IGNORECASE)
+        tech_stack.extend([m.capitalize() for m in matches])
+    
+    if tech_stack:
+        detected["tech_stack"] = list(set(tech_stack))
+    
+    # Save detected preferences silently
+    if detected and agent:
+        for key, value in detected.items():
+            await agent.update_preference(key, value)
+        logger.info(f"[extract_preferences] Silently saved: {detected}")
+    
+    return state  # Pass through unchanged
 
 
 async def llm_routing(state: TeamLeaderState, agent=None) -> TeamLeaderState:
@@ -30,10 +89,12 @@ async def llm_routing(state: TeamLeaderState, agent=None) -> TeamLeaderState:
         system_prompt = build_system_prompt(agent)
         agent_name = agent.name if agent else "Team Leader"
         conversation_history = state.get("conversation_history", "")
+        user_preferences = state.get("user_preferences", "")
         user_prompt = build_user_prompt(
             state["user_message"], 
             name=agent_name,
-            conversation_history=conversation_history
+            conversation_history=conversation_history,
+            user_preferences=user_preferences
         )
         
         # Build messages for LLM
@@ -137,3 +198,6 @@ async def respond(state: TeamLeaderState, agent=None) -> TeamLeaderState:
         await agent.message_user("response", message)
     
     return {**state, "action": "RESPOND"}
+
+
+
