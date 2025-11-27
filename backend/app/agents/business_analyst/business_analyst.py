@@ -1,68 +1,33 @@
-"""
-Business Analyst Agent
+"""Business Analyst Agent - LangGraph-based Implementation."""
 
-ARCHITECTURE NOTE:
-Refactored to use Flow-based architecture instead of Crew hierarchical process.
-Uses AgentToolContext for dependency injection, allowing tools to access
-agent operations without tight coupling to pool manager.
-"""
-
-import json
 import logging
-from uuid import UUID
 from pathlib import Path
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+
+from sqlmodel import Session, select
 
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
-from app.agents.core.agent_context import AgentToolContext
-from app.agents.business_analyst.flow import BusinessAnalystFlow, BAFlowState
-from app.models import Agent as AgentModel
+from app.models import Agent as AgentModel, Project
 from app.utils.project_files import ProjectFiles
 from app.kafka.event_schemas import AgentTaskType
+from app.core.db import engine
+from app.agents.business_analyst.src import BusinessAnalystGraph
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class BAConversationState:
-    conversation_id: UUID
-    intent: str = "unknown"
-    phase: str = "initial"
-    collected_info: dict = field(default_factory=dict)
-    questions_asked: list = field(default_factory=list)
-    questions_answered: list = field(default_factory=list)
-    is_info_complete: bool = False
-    existing_prd: dict | None = None
-    editing_story_id: UUID | None = None
-
-
 class BusinessAnalyst(BaseAgent):
-    """Business Analyst agent using Flow-based workflow.
+    """Business Analyst using LangGraph for workflow management.
     
-    ARCHITECTURE: Uses CrewAI Flows instead of hierarchical Crew for:
-    - Explicit control flow with @start, @listen, @router decorators
-    - Better state management with Pydantic models
-    - Improved observability and testing
+    Langfuse tracing is handled by BaseAgent.get_langfuse_callback().
     """
-    
-    INTERVIEW_MODE = "sequential"
 
     def __init__(self, agent_model: AgentModel, **kwargs):
         super().__init__(agent_model, **kwargs)
-
-        # Create tool context for dependency injection
-        tool_context = AgentToolContext(self)
+        logger.info(f"[{self.name}] Initializing Business Analyst LangGraph")
         
         # Initialize project files
         self.project_files = None
-        project_path_str = ""
-        
         if self.project_id:
-            from app.core.db import engine
-            from sqlmodel import Session, select
-            from app.models import Project
-            
             with Session(engine) as session:
                 project = session.exec(
                     select(Project).where(Project.id == self.project_id)
@@ -70,329 +35,103 @@ class BusinessAnalyst(BaseAgent):
                 
                 if project and project.project_path:
                     self.project_files = ProjectFiles(Path(project.project_path))
-                    project_path_str = str(project.project_path)
                 else:
                     default_path = Path("projects") / str(self.project_id)
                     default_path.mkdir(parents=True, exist_ok=True)
                     self.project_files = ProjectFiles(default_path)
-                    project_path_str = str(default_path)
         
-        # Create Flow instead of Crew
-        self.flow = BusinessAnalystFlow(
-            agent_context=tool_context,
-            project_files=self.project_files,
-            agent_name=agent_model.human_name,
-            personality_traits=agent_model.personality_traits or [],
-            communication_style=agent_model.communication_style
-        )
+        # Pass self to graph for Langfuse callback access
+        self.graph_engine = BusinessAnalystGraph(agent=self)
         
-        # Store project path in flow state for tools
-        self.flow.state.project_path = project_path_str
-        
-        self.conversation_states: dict[UUID, BAConversationState] = {}
-
-        logger.info(f"Business Analyst initialized with Flow: {self.name}")
-    
-    def _get_conversation_state(self, user_id: UUID) -> BAConversationState:
-        if user_id not in self.conversation_states:
-            self.conversation_states[user_id] = BAConversationState(
-                conversation_id=user_id,
-                phase="interview"
-            )
-        return self.conversation_states[user_id]
-    
-    def _clear_conversation_state(self, user_id: UUID):
-        if user_id in self.conversation_states:
-            del self.conversation_states[user_id]
+        logger.info(f"[{self.name}] LangGraph initialized successfully")
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
-        """Handle task using CrewAI Flow."""
+        """Handle task using LangGraph.
+        
+        Note: Langfuse tracing is automatically handled by BaseAgent.
+        """
+        logger.info(f"[{self.name}] Processing task with LangGraph: {task.content[:50]}")
+        
         try:
-            # Handle resume - update flow state with collected info
-            if task.task_type == AgentTaskType.RESUME_WITH_ANSWER:
-                return await self._resume_with_flow(task)
-            
-            user_message = task.content
-            logger.info(f"[{self.name}] Processing with Flow: {user_message[:80]}...")
-            
-            # Check if we have project files initialized
-            if not self.project_files:
-                logger.warning(f"[{self.name}] No ProjectFiles, using simple analysis")
-                return await self._simple_analysis(user_message)
-            
-            # Get conversation state for context
-            conv_state = self._get_conversation_state(task.user_id)
-            
-            # Update flow state with current context
-            self.flow.state.user_message = user_message
-            self.flow.state.collected_info = conv_state.collected_info
-            
-            # Load existing PRD if available
-            try:
-                existing_prd = await self.project_files.load_prd()
-                if existing_prd:
-                    self.flow.state.existing_prd = existing_prd
-                    logger.info(f"[{self.name}] Loaded existing PRD into flow state")
-            except Exception as e:
-                logger.debug(f"[{self.name}] No existing PRD: {e}")
-            
-            # Run flow - it will automatically route through workflow
-            logger.info(f"[{self.name}] Running flow...")
-            result = await self._run_flow_async()
-            
-            # Parse result from flow
-            result_data = result if isinstance(result, dict) else {"raw_result": str(result)}
-            action = result_data.get("action_taken", self.flow.state.intent)
-            output = result_data.get("result", {})
-            summary = result_data.get("summary", "Flow completed")
-            next_steps = result_data.get("next_steps", [])
-            
-            logger.info(f"[{self.name}] Flow completed: action={action}")
-            
-            # Send appropriate response to user based on action
-            await self._send_result_to_user(action, output, summary, next_steps)
-            
-            # Save artifacts if needed
-            if action in ["prd_create", "generated_prd", "prd_update", "updated_prd"]:
-                if self.project_files and isinstance(output, dict):
-                    try:
-                        await self.project_files.save_prd(output)
-                        
-                        # Create artifact
-                        artifact_id = await self.create_artifact(
-                            artifact_type="prd",
-                            title=f"PRD: {output.get('project_name', 'Project')}",
-                            content=output,
-                            description=output.get('overview', '')[:200],
-                            tags=["prd", "business_analysis"]
-                        )
-                        logger.info(f"[{self.name}] Created PRD artifact {artifact_id}")
-                    except Exception as e:
-                        logger.error(f"[{self.name}] Failed to save PRD: {e}")
-            
-            # Update conversation state
-            conv_state.phase = action
-            conv_state.intent = self.flow.state.intent
-            if self.flow.state.collected_info:
-                conv_state.collected_info.update(self.flow.state.collected_info)
-            
-            # Clear state if workflow complete
-            if self.flow.state.is_complete and action not in ["interview", "gather_requirements"]:
-                self._clear_conversation_state(task.user_id)
-            
-            return TaskResult(
-                success=True,
-                output=str(result),
-                structured_data=result_data
-            )
-
-        except Exception as e:
-            logger.error(f"[{self.name}] Flow error: {e}", exc_info=True)
-            return TaskResult(
-                success=False,
-                output="",
-                error_message=str(e),
-            )
-    
-    async def _run_flow_async(self):
-        """Run flow in async context."""
-        import asyncio
-        import nest_asyncio
-        nest_asyncio.apply()
-        
-        # Flow.kickoff is sync, so we run it in executor
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, self.flow.kickoff)
-        return result
-    
-    def _parse_flow_result(self, result_str: str) -> dict:
-        """Parse JSON result from flow with fallback."""
-        try:
-            # Extract JSON from markdown code blocks if present
-            if "```json" in result_str:
-                result_str = result_str.split("```json")[1].split("```")[0].strip()
-            elif "```" in result_str:
-                result_str = result_str.split("```")[1].split("```")[0].strip()
-            
-            return json.loads(result_str)
-        except (json.JSONDecodeError, ValueError, IndexError) as e:
-            logger.warning(f"[{self.name}] Could not parse flow result as JSON: {e}")
-            return {
-                "action_taken": "unknown",
-                "result": result_str,
-                "summary": "Flow completed but result format unexpected",
-                "next_steps": []
-            }
-    
-    async def _send_result_to_user(self, action: str, output: any, summary: str, next_steps: list):
-        """Send appropriate message to user based on action type."""
-        # Normalize action names (flow uses different names than old crew)
-        action_map = {
-            "interview": "interviewed",
-            "gather_requirements": "interviewed",
-            "prd_create": "generated_prd",
-            "generate_prd": "generated_prd",
-            "prd_update": "updated_prd",
-            "update_prd": "updated_prd",
-            "stories": "extracted_stories",
-            "extract_stories": "extracted_stories",
-            "domain_analysis": "domain_analysis",
-            "analyze_domain": "domain_analysis"
-        }
-        
-        normalized_action = action_map.get(action, action)
-        
-        if normalized_action == "interviewed":
-            # Questions generated - ask user
-            questions = output.get("questions", []) if isinstance(output, dict) else []
-            if questions:
-                await self.message_user("clarification_question",
-                    f"**Câu hỏi làm rõ:**\n\n{chr(10).join(f'{i+1}. {q}' for i, q in enumerate(questions))}\n\n{summary}",
-                    {"questions": questions, "next_steps": next_steps}
+            # Validate user message
+            if not task.content or not task.content.strip():
+                logger.error(f"[{self.name}] Empty task content received")
+                return TaskResult(
+                    success=False,
+                    output="",
+                    error_message="Empty user message"
                 )
-            else:
-                await self.message_user("response", summary, {"next_steps": next_steps})
-        
-        elif normalized_action == "generated_prd":
-            await self.message_user("response",
-                f"✅ **PRD Created Successfully**\n\n{summary}\n\n**Next steps:**\n" +
-                "\n".join(f"- {step}" for step in next_steps),
-                {"prd": output, "next_steps": next_steps}
-            )
-        
-        elif normalized_action == "updated_prd":
-            change_summary = output.get("change_summary", "PRD updated") if isinstance(output, dict) else "PRD updated"
-            await self.message_user("response",
-                f"✅ **PRD Updated**\n\n{change_summary}\n\n{summary}",
-                {"prd": output, "next_steps": next_steps}
-            )
-        
-        elif normalized_action == "extracted_stories":
-            stories_count = len(output) if isinstance(output, list) else 0
-            await self.message_user("response",
-                f"✅ **User Stories Extracted** ({stories_count} stories)\n\n{summary}\n\n**Next steps:**\n" +
-                "\n".join(f"- {step}" for step in next_steps),
-                {"stories": output, "next_steps": next_steps}
-            )
-        
-        elif normalized_action == "domain_analysis":
-            analysis_text = output.get("analysis_text", str(output)) if isinstance(output, dict) else str(output)
-            await self.message_user("response",
-                f"📊 **Domain Analysis Complete**\n\n{analysis_text}\n\n{summary}",
-                {"analysis": output, "next_steps": next_steps}
-            )
-        
-        else:
-            # Unknown action - send raw result
-            await self.message_user("response", f"{summary}\n\nResult: {str(output)[:500]}")
-    
-    async def _simple_analysis(self, user_message: str) -> TaskResult:
-        """Fallback: simple analysis without file management."""
-        try:
-            # Update flow state with message
-            self.flow.state.user_message = user_message
             
-            # Run flow
-            result = await self._run_flow_async()
-            
-            result_str = str(result) if not isinstance(result, dict) else result.get("summary", str(result))
-            await self.message_user("response", result_str[:1000], {
-                "message_type": "requirements_analysis"
-            })
-            
-            return TaskResult(
-                success=True,
-                output=result_str,
-                structured_data={"analysis_type": "simple"}
-            )
-        except Exception as e:
-            logger.error(f"[{self.name}] Simple analysis error: {e}")
-            return TaskResult(
-                success=False,
-                output="",
-                error_message=str(e)
-            )
-    
-    async def _resume_with_flow(self, task: TaskContext) -> TaskResult:
-        """Resume workflow by updating flow state with collected info."""
-        try:
-            # Get conversation state
-            conv_state = self._get_conversation_state(task.user_id)
-            
-            # Add user's answer to collected info
-            user_answer = task.content
-            conv_state.questions_asked.append({
-                "answer": user_answer,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
-            
-            # Update collected info with answer
-            conv_state.collected_info["latest_answer"] = user_answer
-            
-            logger.info(f"[{self.name}] Resume with user answer: {user_answer[:80]}...")
-            
-            # Update flow state
-            self.flow.state.user_message = f"User provided answer: {user_answer}. Continue BA workflow based on collected information."
-            self.flow.state.collected_info = conv_state.collected_info
+            # Check if this is a resume task
+            is_resume = task.task_type == AgentTaskType.RESUME_WITH_ANSWER
             
             # Load existing PRD if available
+            existing_prd = None
             if self.project_files:
                 try:
                     existing_prd = await self.project_files.load_prd()
-                    if existing_prd:
-                        self.flow.state.existing_prd = existing_prd
                 except Exception as e:
-                    logger.warning(f"[{self.name}] Could not load existing PRD: {e}")
+                    logger.debug(f"[{self.name}] No existing PRD: {e}")
             
-            # Resume flow
-            logger.info(f"[{self.name}] Resuming flow with collected info...")
-            result = await self._run_flow_async()
+            # Prepare collected_info based on task type
+            collected_info = {}
+            user_message = task.content
             
-            # Parse and send result
-            result_data = result if isinstance(result, dict) else {"raw_result": str(result)}
-            action = result_data.get("action_taken", self.flow.state.intent)
-            output = result_data.get("result", {})
-            summary = result_data.get("summary", "")
-            next_steps = result_data.get("next_steps", [])
+            if is_resume:
+                collected_info = {
+                    "user_answers": [task.content],
+                    "last_interaction": "answered_questions"
+                }
+                user_message = (
+                    f"User provided answer to previous questions: {task.content}\n\n"
+                    f"Now that we have more information, proceed to generate PRD."
+                )
             
-            await self._send_result_to_user(action, output, summary, next_steps)
+            # Prepare initial state
+            initial_state = {
+                "user_message": user_message,
+                "project_id": str(self.project_id),
+                "task_id": str(task.task_id),
+                "user_id": str(task.user_id) if task.user_id else "",
+                "project_path": str(self.project_files.project_path) if self.project_files else "",
+                "collected_info": collected_info,
+                "existing_prd": existing_prd,
+                "intent": "",
+                "reasoning": "",
+                "questions": [],
+                "questions_sent": False,
+                "prd_draft": None,
+                "prd_final": None,
+                "prd_saved": False,
+                "change_summary": "",
+                "stories": [],
+                "stories_saved": False,
+                "analysis_text": "",
+                "error": None,
+                "retry_count": 0,
+                "result": {},
+                "is_complete": False
+            }
             
-            # Save artifacts if needed
-            if action in ["prd_create", "generated_prd", "prd_update", "updated_prd"]:
-                if self.project_files and isinstance(output, dict):
-                    try:
-                        await self.project_files.save_prd(output)
-                        
-                        # Create artifact
-                        artifact_id = await self.create_artifact(
-                            artifact_type="prd",
-                            title=f"PRD: {output.get('project_name', 'Project')}",
-                            content=output,
-                            description=output.get('overview', '')[:200],
-                            tags=["prd", "business_analysis"]
-                        )
-                        logger.info(f"[{self.name}] Created PRD artifact {artifact_id}")
-                    except Exception as e:
-                        logger.error(f"[{self.name}] Failed to save PRD: {e}")
+            logger.info(f"[{self.name}] Invoking LangGraph...")
+            final_state = await self.graph_engine.execute(initial_state)
             
-            # Update state
-            conv_state.phase = action
-            conv_state.intent = self.flow.state.intent
+            # Extract result
+            result_data = final_state.get("result", {})
+            action = final_state.get("intent", "completed")
             
-            # Clear state if complete
-            if self.flow.state.is_complete and action not in ["interview", "gather_requirements"]:
-                self._clear_conversation_state(task.user_id)
+            logger.info(f"[{self.name}] Graph completed: action={action}")
             
             return TaskResult(
                 success=True,
-                output=str(result),
+                output=str(result_data),
                 structured_data=result_data
             )
             
         except Exception as e:
-            logger.error(f"[{self.name}] Resume error: {e}", exc_info=True)
+            logger.error(f"[{self.name}] LangGraph error: {e}", exc_info=True)
             return TaskResult(
                 success=False,
                 output="",
-                error_message=str(e)
+                error_message=f"Graph execution error: {str(e)}"
             )
