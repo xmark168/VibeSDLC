@@ -144,6 +144,14 @@ class Project(BaseModel, table=True):
     websocket_connected: bool = Field(default=False)
     websocket_last_seen: datetime | None = Field(default=None)
     
+    # Token budget fields for cost control
+    token_budget_daily: int = Field(default=100000)  # 100K tokens/day
+    token_budget_monthly: int = Field(default=2000000)  # 2M tokens/month
+    tokens_used_today: int = Field(default=0)
+    tokens_used_this_month: int = Field(default=0)
+    budget_last_reset_daily: datetime | None = Field(default=None)
+    budget_last_reset_monthly: datetime | None = Field(default=None)
+    
     owner: User = Relationship(back_populates="owned_projects")
     stories: list["Story"] = Relationship(
         back_populates="project",
@@ -337,6 +345,85 @@ class AgentStatus(str, Enum):
     terminated = "terminated"
 
 
+class PoolType(str, Enum):
+    FREE = "free"
+    PAID = "paid"
+
+
+class AgentPool(BaseModel, table=True):
+    __tablename__ = "agent_pools"
+    
+    pool_name: str = Field(unique=True, nullable=False)
+    role_type: str | None = Field(default=None, index=True)
+    
+    pool_type: PoolType = Field(default=PoolType.FREE, index=True)
+    
+    max_agents: int = Field(default=100)
+    health_check_interval: int = Field(default=60)
+    
+    llm_model_config: dict | None = Field(default=None, sa_column=Column(JSON))
+    allowed_template_ids: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    
+    is_active: bool = Field(default=True, index=True)
+    last_started_at: datetime | None = Field(default=None)
+    last_stopped_at: datetime | None = Field(default=None)
+    
+    total_spawned: int = Field(default=0)
+    total_terminated: int = Field(default=0)
+    current_agent_count: int = Field(default=0)
+    
+    created_by: UUID | None = Field(
+        default=None,
+        foreign_key="users.id",
+        ondelete="SET NULL"
+    )
+    updated_by: UUID | None = Field(
+        default=None,
+        foreign_key="users.id",
+        ondelete="SET NULL"
+    )
+    auto_created: bool = Field(default=False)
+    
+    agents: list["Agent"] = Relationship(back_populates="pool")
+    metrics: list["AgentPoolMetrics"] = Relationship(
+        back_populates="pool",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+
+
+class AgentPoolMetrics(BaseModel, table=True):
+    __tablename__ = "agent_pool_metrics"
+    
+    pool_id: UUID = Field(
+        foreign_key="agent_pools.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True
+    )
+    
+    period_start: datetime = Field(nullable=False, index=True)
+    period_end: datetime = Field(nullable=False)
+    
+    total_tokens_used: int = Field(default=0)
+    tokens_per_model: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    
+    total_requests: int = Field(default=0)
+    requests_per_model: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    
+    peak_agent_count: int = Field(default=0)
+    avg_agent_count: float = Field(default=0.0)
+    
+    total_executions: int = Field(default=0)
+    successful_executions: int = Field(default=0)
+    failed_executions: int = Field(default=0)
+    
+    avg_execution_duration_ms: float | None = Field(default=None)
+    
+    snapshot_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
+    
+    pool: "AgentPool" = Relationship(back_populates="metrics")
+
+
 class Agent(BaseModel, table=True):
     __tablename__ = "agents"
 
@@ -346,6 +433,13 @@ class Agent(BaseModel, table=True):
         default=None,
         foreign_key="agent_persona_templates.id",
         ondelete="RESTRICT"
+    )
+    
+    pool_id: UUID | None = Field(
+        default=None,
+        foreign_key="agent_pools.id",
+        ondelete="SET NULL",
+        index=True
     )
 
     name: str
@@ -360,6 +454,7 @@ class Agent(BaseModel, table=True):
     status: AgentStatus = Field(default=AgentStatus.idle)
 
     persona_template: Optional["AgentPersonaTemplate"] = Relationship(back_populates="agents")
+    pool: Optional["AgentPool"] = Relationship(back_populates="agents")
     project: "Project" = Relationship(
         back_populates="agents",
         sa_relationship_kwargs={
@@ -510,40 +605,10 @@ class AgentMetricsSnapshot(BaseModel, table=True):
     snapshot_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
 
 
-class ApprovalStatus(str, Enum):
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    CANCELLED = "cancelled"
-
-
-class ApprovalRequest(BaseModel, table=True):
-    __tablename__ = "approval_requests"
-
-    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
-    execution_id: UUID | None = Field(default=None, foreign_key="agent_executions.id", ondelete="CASCADE")
-
-    request_type: str = Field(nullable=False)
-    agent_name: str = Field(nullable=False)
-
-    proposed_data: dict = Field(sa_column=Column(JSON))
-    explanation: str | None = Field(default=None, sa_column=Column(Text))
-
-    status: ApprovalStatus = Field(default=ApprovalStatus.PENDING)
-    approved_by_user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
-    approved_at: datetime | None = Field(default=None)
-
-    user_feedback: str | None = Field(default=None, sa_column=Column(Text))
-    modified_data: dict | None = Field(default=None, sa_column=Column(JSON))
-
-    applied: bool = Field(default=False)
-    applied_at: datetime | None = Field(default=None)
-    created_entity_id: UUID | None = Field(default=None)
-
-
 class QuestionType(str, Enum):
     OPEN = "open"
     MULTICHOICE = "multichoice"
+    APPROVAL = "approval"
 
 
 class QuestionStatus(str, Enum):
@@ -566,8 +631,13 @@ class AgentQuestion(BaseModel, table=True):
     options: list[str] | None = Field(default=None, sa_column=Column(JSON))
     allow_multiple: bool = Field(default=False)
     
+    proposed_data: dict | None = Field(default=None, sa_column=Column(JSON))
+    explanation: str | None = Field(default=None, sa_column=Column(Text))
+    
     answer: str | None = Field(default=None, sa_column=Column(Text))
     selected_options: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    approved: bool | None = Field(default=None)
+    modified_data: dict | None = Field(default=None, sa_column=Column(JSON))
     
     status: QuestionStatus = Field(
         default=QuestionStatus.WAITING_ANSWER,

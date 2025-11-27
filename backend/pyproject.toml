@@ -39,6 +39,7 @@ dependencies = [
     "tavily-python>=0.7.13",
     "aiofiles>=25.1.0",
     "payos>=0.1.8",
+    "nest-asyncio>=1.6.0",
 ]
 
 

@@ -1,8 +1,4 @@
-"""
-Task Handler
-
-Handles agent task events (assigned, started, progress, completed, failed, cancelled)
-"""
+"""Task Handler - Handles agent task events."""
 
 import logging
 from .base import BaseEventHandler
@@ -11,10 +7,9 @@ logger = logging.getLogger(__name__)
 
 
 class TaskHandler(BaseEventHandler):
-    """Handles task-related WebSocket events"""
+    """Handles task-related WebSocket events."""
 
     async def handle_task_assigned(self, event):
-        """Handle agent task assigned events"""
         try:
             event_data = self._normalize_event(event)
             project_id = self._to_uuid(event_data.get("project_id"))
@@ -43,7 +38,6 @@ class TaskHandler(BaseEventHandler):
             logger.error(f"Error handling task assigned: {e}", exc_info=True)
 
     async def handle_task_started(self, event):
-        """Handle agent task started events"""
         try:
             event_data = self._normalize_event(event)
             project_id = self._to_uuid(event_data.get("project_id"))
@@ -52,7 +46,6 @@ class TaskHandler(BaseEventHandler):
                 logger.warning("Task started event missing project_id")
                 return
 
-            # Skip if no active connections
             if not self._has_active_connections(project_id):
                 return
 
@@ -72,7 +65,6 @@ class TaskHandler(BaseEventHandler):
             logger.error(f"Error handling task started: {e}", exc_info=True)
 
     async def handle_task_progress(self, event):
-        """Handle agent task progress events"""
         try:
             event_data = self._normalize_event(event)
             project_id = self._to_uuid(event_data.get("project_id"))
@@ -81,7 +73,6 @@ class TaskHandler(BaseEventHandler):
                 logger.warning("Task progress event missing project_id")
                 return
 
-            # Skip if no active connections
             if not self._has_active_connections(project_id):
                 return
 
@@ -107,7 +98,6 @@ class TaskHandler(BaseEventHandler):
             logger.error(f"Error handling task progress: {e}", exc_info=True)
 
     async def handle_task_completed(self, event):
-        """Handle agent task completed events"""
         try:
             event_data = self._normalize_event(event)
             project_id = self._to_uuid(event_data.get("project_id"))
@@ -138,7 +128,6 @@ class TaskHandler(BaseEventHandler):
             logger.error(f"Error handling task completed: {e}", exc_info=True)
 
     async def handle_task_failed(self, event):
-        """Handle agent task failed events"""
         try:
             event_data = self._normalize_event(event)
             project_id = self._to_uuid(event_data.get("project_id"))
@@ -167,7 +156,6 @@ class TaskHandler(BaseEventHandler):
             logger.error(f"Error handling task failed: {e}", exc_info=True)
 
     async def handle_task_cancelled(self, event):
-        """Handle agent task cancelled events"""
         try:
             event_data = self._normalize_event(event)
             project_id = self._to_uuid(event_data.get("project_id"))

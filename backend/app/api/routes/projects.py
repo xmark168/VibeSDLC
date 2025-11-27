@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api.deps import CurrentUser, SessionDep
 from app.services import ProjectService
+from app.services.agent_service import AgentService
 from app.models import Project, Role, Agent, AgentStatus
 from app.schemas import (
     ProjectCreate,
@@ -110,7 +111,7 @@ def get_project(
 
 
 @router.post("/", response_model=ProjectPublic, status_code=status.HTTP_201_CREATED)
-def create_project(
+async def create_project(
     project_in: ProjectCreate,
     session: SessionDep,
     current_user: CurrentUser,
@@ -194,6 +195,41 @@ def create_project(
             f"Project created successfully: {project.code} (ID: {project.id}) "
             f"with {len(created_agents)} agents"
         )
+        
+        # Auto-spawn agents after project creation
+        from app.api.routes.agent_management import _manager_registry, get_role_class_map
+        
+        universal_pool = _manager_registry.get("universal_pool")
+        
+        if universal_pool:
+            role_class_map = get_role_class_map()
+            spawned_count = 0
+            
+            for agent in created_agents:
+                role_class = role_class_map.get(agent.role_type)
+                if not role_class:
+                    logger.warning(f"No role class found for {agent.role_type}, skipping spawn")
+                    continue
+                
+                try:
+                    success = await universal_pool.spawn_agent(
+                        agent_id=agent.id,
+                        role_class=role_class,
+                        heartbeat_interval=30,
+                        max_idle_time=300,
+                    )
+                    if success:
+                        spawned_count += 1
+                        logger.info(f"✓ Spawned agent {agent.human_name} ({agent.role_type})")
+                    else:
+                        logger.warning(f"Failed to spawn agent {agent.human_name}")
+                except Exception as e:
+                    logger.error(f"Error spawning agent {agent.human_name}: {e}")
+            
+            logger.info(f"Auto-spawned {spawned_count}/{len(created_agents)} agents for project {project.code}")
+        else:
+            logger.warning("Universal pool not found, agents created but not spawned")
+        
         return ProjectPublic.model_validate(project)
 
     except Exception as e:

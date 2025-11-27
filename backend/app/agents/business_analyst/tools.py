@@ -2,12 +2,20 @@
 
 Tools for BA sub-agents to interact with PRD and User Stories files.
 Provides synchronous interface to async ProjectFiles operations.
+
+ARCHITECTURE NOTE:
+Tools now use AgentContext protocol for loose coupling instead of
+importing agent pool manager directly. This enables:
+- Better testability (mock AgentContext)
+- Reusability across environments
+- Future-proof for distributed architecture
 """
 
 from crewai.tools import tool
 from pathlib import Path
 import json
 from typing import Optional, Any
+from app.agents.core.agent_context import AgentContext
 
 
 # ==================== Helper Functions ====================
@@ -69,147 +77,118 @@ def _success_response(message: str, **kwargs) -> dict:
 
 # ==================== User Interaction Tools ====================
 
-@tool
-def ask_user_question(question: str, question_type: str = "open", options: str = "", agent_id: str = "") -> dict:
-    """
-    Ask the user a clarification question and wait for their answer.
+def create_ask_user_question_tool(context: AgentContext):
+    """Factory function to create ask_user_question tool with injected context.
     
-    Use this when you need more information from the user to proceed with analysis.
-    The question will be sent to the user immediately, and their answer will be
-    available when the task resumes.
+    This allows the tool to access agent operations without tight coupling
+    to the agent pool manager.
     
     Args:
-        question: The question to ask the user (clear and specific)
-        question_type: Type of question:
-                      - "open": Free text response
-                      - "multichoice": Pick one option from a list
-                      - "multiselect": Pick multiple options from a list
-                      - "yesno": Simple yes/no question
-        options: For multichoice/multiselect only - comma-separated options
-                Example: "OAuth,JWT,Session-based"
-        agent_id: BA agent ID (auto-provided by crew)
-    
+        context: AgentContext implementation (e.g., AgentToolContext)
+        
     Returns:
-        Dictionary with status:
-        - On success: {"status": "question_sent", "question_id": "...", "message": "..."}
-        - On error: {"error": "error message"}
-    
-    Examples:
-        # Open question for free text
-        result = ask_user_question(
-            "What authentication methods do you need for this feature?",
-            question_type="open"
-        )
-        
-        # Multiple choice - user picks one
-        result = ask_user_question(
-            "Which authentication method would you prefer?",
-            question_type="multichoice",
-            options="OAuth 2.0,JWT tokens,Session-based,API keys"
-        )
-        
-        # Multiple select - user picks several
-        result = ask_user_question(
-            "Which features are required? (select all that apply)",
-            question_type="multiselect",
-            options="Login,Registration,Password Reset,2FA,Social Login"
-        )
-        
-        # Yes/No question
-        result = ask_user_question(
-            "Do you need two-factor authentication (2FA)?",
-            question_type="yesno"
-        )
-    
-    Note:
-        After sending the question, the current analysis will pause. When the user
-        answers, the task will resume with the answer included in the context.
+        Configured ask_user_question tool
     """
-    if not agent_id:
-        return {
-            "error": "agent_id required to send question",
-            "note": "Make sure to pass agent_id parameter"
-        }
     
-    # Get BA agent from pool manager
-    try:
-        from uuid import UUID
-        from app.api.routes.agent_management import _manager_registry
+    @tool
+    def ask_user_question(question: str, question_type: str = "open", options: str = "") -> dict:
+        """
+        Ask the user a clarification question and wait for their answer.
         
-        # Convert agent_id string to UUID
-        try:
-            agent_uuid = UUID(agent_id)
-        except (ValueError, AttributeError):
-            return {"error": f"Invalid agent_id format: {agent_id}"}
+        Use this when you need more information from the user to proceed with analysis.
+        The question will be sent to the user immediately, and their answer will be
+        available when the task resumes.
         
-        # Get pool manager (should only be one for universal pool)
-        if not _manager_registry:
-            return {"error": "Agent pool manager not initialized"}
+        Args:
+            question: The question to ask the user (clear and specific)
+            question_type: Type of question:
+                          - "open": Free text response
+                          - "multichoice": Pick one option from a list
+                          - "multiselect": Pick multiple options from a list
+                          - "yesno": Simple yes/no question
+            options: For multichoice/multiselect only - comma-separated options
+                    Example: "OAuth,JWT,Session-based"
         
-        # Get agent from pool manager
-        pool_manager = next(iter(_manager_registry.values()), None)
-        if not pool_manager:
-            return {"error": "No pool manager found"}
+        Returns:
+            Dictionary with status:
+            - On success: {"status": "question_sent", "question_id": "...", "message": "..."}
+            - On error: {"error": "error message"}
         
-        agent = pool_manager.get_agent(agent_uuid)
-        if not agent:
-            return {"error": f"No agent found with ID {agent_id}"}
-        
-    except Exception as e:
-        return {"error": f"Failed to get agent: {str(e)}"}
-    
-    # Now use the agent to send question
-    try:
-        nest_asyncio.apply()
-        loop = asyncio.get_event_loop()
-        
-        # Prepare question configuration
-        question_config = {
-            "question_type": question_type,
-            "allow_multiple": question_type == "multiselect"
-        }
-        
-        # Parse options if provided for multichoice/multiselect
-        if options and question_type in ["multichoice", "multiselect"]:
-            parsed_options = [opt.strip() for opt in options.split(",") if opt.strip()]
-            if parsed_options:
-                question_config["options"] = parsed_options
-            else:
-                return {
-                    "error": f"Invalid options format. Provide comma-separated values.",
-                    "example": "OAuth,JWT,Session"
-                }
-        elif question_type in ["multichoice", "multiselect"] and not options:
-            return {
-                "error": f"Options required for question_type '{question_type}'",
-                "example": "ask_user_question('Pick one:', 'multichoice', 'Option1,Option2,Option3')"
-            }
-        
-        # Send question via BaseAgent's message_user method
-        question_id = loop.run_until_complete(
-            agent.message_user(
-                event_type="question",
-                content=question,
-                question_config=question_config
+        Examples:
+            # Open question for free text
+            result = ask_user_question(
+                "What authentication methods do you need for this feature?",
+                question_type="open"
             )
-        )
+            
+            # Multiple choice - user picks one
+            result = ask_user_question(
+                "Which authentication method would you prefer?",
+                question_type="multichoice",
+                options="OAuth 2.0,JWT tokens,Session-based,API keys"
+            )
+            
+            # Multiple select - user picks several
+            result = ask_user_question(
+                "Which features are required? (select all that apply)",
+                question_type="multiselect",
+                options="Login,Registration,Password Reset,2FA,Social Login"
+            )
+            
+            # Yes/No question
+            result = ask_user_question(
+                "Do you need two-factor authentication (2FA)?",
+                question_type="yesno"
+            )
         
-        if not question_id:
-            return {"error": "Failed to send question to user. Check agent logs."}
-        
-        return {
-            "status": "question_sent",
-            "question_id": str(question_id),
-            "message": f"Question sent to user successfully.",
-            "note": "The user's answer will be available when the task resumes. Continue with available information or indicate you need the answer."
-        }
-        
-    except Exception as e:
-        return {
-            "error": f"Failed to ask question: {str(e)}",
-            "question": question,
-            "question_type": question_type
-        }
+        Note:
+            After sending the question, the current analysis will pause. When the user
+            answers, the task will resume with the answer included in the context.
+        """
+        try:
+            # Parse options if provided for multichoice/multiselect
+            parsed_options = None
+            if options and question_type in ["multichoice", "multiselect"]:
+                parsed_options = [opt.strip() for opt in options.split(",") if opt.strip()]
+                if not parsed_options:
+                    return {
+                        "error": f"Invalid options format. Provide comma-separated values.",
+                        "example": "OAuth,JWT,Session"
+                    }
+            elif question_type in ["multichoice", "multiselect"] and not options:
+                return {
+                    "error": f"Options required for question_type '{question_type}'",
+                    "example": "ask_user_question('Pick one:', 'multichoice', 'Option1,Option2,Option3')"
+                }
+            
+            # Use injected context to send question (no more pool manager import!)
+            question_id = _run_async(
+                context.ask_question(
+                    question=question,
+                    question_type=question_type,
+                    options=parsed_options,
+                    allow_multiple=question_type == "multiselect"
+                )
+            )
+            
+            if not question_id:
+                return {"error": "Failed to send question to user. Check agent logs."}
+            
+            return {
+                "status": "question_sent",
+                "question_id": str(question_id),
+                "message": f"Question sent to user successfully.",
+                "note": "The user's answer will be available when the task resumes. Continue with available information or indicate you need the answer."
+            }
+            
+        except Exception as e:
+            return {
+                "error": f"Failed to ask question: {str(e)}",
+                "question": question,
+                "question_type": question_type
+            }
+    
+    return ask_user_question
 
 
 # ==================== PRD Tools ====================

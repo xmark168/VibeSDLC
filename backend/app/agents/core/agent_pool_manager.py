@@ -7,8 +7,9 @@ from uuid import UUID
 from sqlmodel import Session, select, update
 
 from app.agents.core.base_agent import BaseAgent
-from app.models import Agent as AgentModel, AgentStatus
+from app.models import Agent as AgentModel, AgentStatus, AgentPool, PoolType
 from app.core.db import engine
+from app.services.pool_service import PoolService
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ class AgentPoolManager:
         pool_name: str,
         max_agents: int = 100,
         health_check_interval: int = 60,
+        pool_id: Optional[UUID] = None,
     ):
         """Initialize pool manager.
 
@@ -39,10 +41,12 @@ class AgentPoolManager:
             pool_name: Pool name (e.g., "universal_pool")
             max_agents: Maximum agents allowed in pool
             health_check_interval: Seconds between health checks
+            pool_id: Database pool ID (if already exists)
         """
         self.pool_name = pool_name
         self.max_agents = max_agents
         self.health_check_interval = health_check_interval
+        self.pool_id = pool_id
 
         # Direct in-memory agent storage
         self.agents: Dict[UUID, BaseAgent] = {}
@@ -55,10 +59,11 @@ class AgentPoolManager:
         self.created_at = datetime.now(timezone.utc)
         self.total_spawned = 0
         self.total_terminated = 0
+        self._is_running = False
 
         logger.info(
             f"AgentPoolManager initialized: pool={pool_name}, "
-            f"max_agents={max_agents}"
+            f"max_agents={max_agents}, pool_id={pool_id}"
         )
 
     async def start(self) -> bool:
@@ -70,6 +75,13 @@ class AgentPoolManager:
         try:
             # Start health monitor
             self._monitor_task = asyncio.create_task(self._monitor_loop())
+            self._is_running = True
+
+            # Update DB: mark pool as started
+            if self.pool_id:
+                with Session(engine) as session:
+                    pool_service = PoolService(session)
+                    pool_service.mark_pool_started(self.pool_id)
 
             logger.info(f"✓ AgentPoolManager started: {self.pool_name}")
             return True
@@ -91,6 +103,7 @@ class AgentPoolManager:
             logger.info(f"Stopping pool manager '{self.pool_name}' (graceful={graceful})...")
 
             self._shutdown_event.set()
+            self._is_running = False
 
             # Stop monitor task
             if self._monitor_task:
@@ -107,6 +120,13 @@ class AgentPoolManager:
                     await self.terminate_agent(agent_id, graceful=graceful)
                 except (Exception, asyncio.CancelledError) as e:
                     logger.error(f"Error terminating agent {agent_id}: {e}")
+
+            # Update DB: mark pool as stopped
+            if self.pool_id:
+                with Session(engine) as session:
+                    pool_service = PoolService(session)
+                    pool_service.mark_pool_stopped(self.pool_id)
+                    pool_service.update_agent_count(self.pool_id, 0)
 
             logger.info(f"✓ Pool manager stopped: {self.pool_name}")
             return True
@@ -182,7 +202,17 @@ class AgentPoolManager:
                     # 7. Update DB status
                     from app.services import AgentService
                     agent_service = AgentService(db_session)
-                    agent_service.update_status(agent_id, AgentStatus.idle, commit=True)
+                    agent_service.update_status(agent_id, AgentStatus.idle, commit=False)
+                    
+                    # 8. Update agent pool_id and increment counters
+                    agent_model.pool_id = self.pool_id
+                    db_session.add(agent_model)
+                    db_session.commit()
+                    
+                    # 9. Update pool counters in DB
+                    if self.pool_id:
+                        pool_service = PoolService(db_session)
+                        pool_service.increment_spawn_count(self.pool_id)
 
                     logger.info(
                         f"✓ Spawned agent: {agent_model.human_name} ({agent_id}) "
@@ -220,11 +250,16 @@ class AgentPoolManager:
             del self.agents[agent_id]
             self.total_terminated += 1
 
-            # 3. Update DB status
+            # 3. Update DB status and pool counters
             with Session(engine) as db_session:
                 from app.services import AgentService
                 agent_service = AgentService(db_session)
                 agent_service.update_status(agent_id, AgentStatus.stopped, commit=True)
+                
+                # 4. Update pool counters in DB
+                if self.pool_id:
+                    pool_service = PoolService(db_session)
+                    pool_service.increment_terminate_count(self.pool_id)
 
             logger.info(f"✓ Terminated agent {agent.name} ({agent_id}) from pool '{self.pool_name}'")
             return True
@@ -252,6 +287,15 @@ class AgentPoolManager:
         """
         return list(self.agents.values())
 
+    @property
+    def is_running(self) -> bool:
+        """Check if pool manager is running.
+
+        Returns:
+            True if running
+        """
+        return self._is_running
+
     # ===== Statistics =====
 
     async def get_stats(self) -> Dict[str, Any]:
@@ -268,13 +312,26 @@ class AgentPoolManager:
         successful_executions = sum(a.successful_executions for a in self.agents.values())
         failed_executions = sum(a.failed_executions for a in self.agents.values())
 
+        # Get agents list
+        agents_list = []
+        for agent_id, agent in self.agents.items():
+            agents_list.append({
+                "agent_id": str(agent_id),
+                "name": getattr(agent, 'name', 'Unknown'),
+                "role": getattr(agent, 'role', agent.__class__.__name__),
+                "state": agent.state.value if hasattr(agent.state, 'value') else str(agent.state),
+            })
+
         return {
             "pool_name": self.pool_name,
+            "role_type": "universal",  # Default role type, can be overridden
             "manager_type": "in-memory",
             "total_agents": len(self.agents),
             "active_agents": active_agents,
             "busy_agents": busy_agents,
             "idle_agents": idle_agents,
+            "max_agents": self.max_agents,
+            "is_running": self.is_running,
             "total_spawned": self.total_spawned,
             "total_terminated": self.total_terminated,
             "total_executions": total_executions,
@@ -284,6 +341,7 @@ class AgentPoolManager:
             "load": busy_agents / len(self.agents) if len(self.agents) > 0 else 0,
             "created_at": self.created_at.isoformat(),
             "manager_uptime_seconds": (datetime.now(timezone.utc) - self.created_at).total_seconds(),
+            "agents": agents_list,
         }
 
     async def get_all_agent_health(self) -> List[Dict]:
