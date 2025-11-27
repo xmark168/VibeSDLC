@@ -1,77 +1,69 @@
-"""Team Leader Agent - CrewAI Flow-based Kanban Orchestration."""
+"""Team Leader Agent - LangGraph-based Routing."""
 
 import logging
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
 from app.models import Agent as AgentModel
-from app.agents.team_leader.flow import TeamLeaderFlow
+from app.agents.team_leader.graph import TeamLeaderGraph
 
 logger = logging.getLogger(__name__)
 
 
 class TeamLeader(BaseAgent):
-    """Team Leader"""
+    """Team Leader using LangGraph for intelligent routing."""
 
     def __init__(self, agent_model: AgentModel, **kwargs):
         super().__init__(agent_model, **kwargs)
-        logger.info(f"[{self.name}] Initializing Team Leader Flow")
+        logger.info(f"[{self.name}] Initializing Team Leader LangGraph")
         
+        self.graph_engine = TeamLeaderGraph(agent=self)
         
-        self.flow = TeamLeaderFlow(
-            project_id=self.project_id,
-            agent_name=self.name
-        )
+        logger.info(f"[{self.name}] LangGraph initialized successfully")
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
-        """Handle task using Flow."""
-        logger.info(f"[{self.name}] Processing task with Flow")
+        """Handle task using LangGraph."""
+        logger.info(f"[{self.name}] Processing task with LangGraph: {task.content[:50]}")
         
         try:
-            # Store task in flow before kickoff
-            self.flow.current_task = task
+            initial_state = {
+                "messages": [],
+                "user_message": task.content,
+                "user_id": str(task.user_id) if task.user_id else "",
+                "project_id": str(self.project_id),
+                "task_id": str(task.task_id),
+                "action": None,
+                "target_role": None,
+                "message": None,
+                "reason": None,
+                "confidence": None,
+            }
             
-            # Kickoff flow - returns routing decision dict
-            routing = await self.flow.kickoff_async()
+            logger.info(f"[{self.name}] Invoking LangGraph...")
+            final_state = await self.graph_engine.graph.ainvoke(initial_state)
             
-            # Execute routing decision
-            action = routing.get("action")
+            action = final_state.get("action")
+            confidence = final_state.get("confidence")
             
-            if action == "DELEGATE":
-                # Delegate to specialist
-                from datetime import datetime, timezone
-                
-                task.context["delegation_attempted"] = True
-                task.context["delegation_timestamp"] = datetime.now(timezone.utc).isoformat()
-                
-                return await self.delegate_to_role(
-                    task=task,
-                    target_role=routing["target_role"],
-                    delegation_message=routing["message"]
-                )
+            logger.info(
+                f"[{self.name}] Graph completed: action={action}, "
+                f"confidence={confidence}"
+            )
             
-            elif action == "RESPOND":
-                # Respond directly to user
-                await self.message_user("response", routing["message"])
-                
-                return TaskResult(
-                    success=True,
-                    output=routing["message"],
-                    structured_data={"action": "respond_direct"}
-                )
-            
-            else:
-                # Unknown action
-                logger.error(f"Unknown routing action: {action}")
-                return TaskResult(
-                    success=False,
-                    output="",
-                    error_message=f"Unknown routing action: {action}"
-                )
+            return TaskResult(
+                success=True,
+                output=final_state.get("message", ""),
+                structured_data={
+                    "action": action,
+                    "target_role": final_state.get("target_role"),
+                    "reason": final_state.get("reason"),
+                    "confidence": confidence,
+                }
+            )
             
         except Exception as e:
-            logger.error(f"[{self.name}] Flow error: {e}", exc_info=True)
+            logger.error(f"[{self.name}] LangGraph error: {e}", exc_info=True)
             return TaskResult(
                 success=False,
                 output="",
-                error_message=f"Flow execution error: {str(e)}"
+                error_message=f"Graph execution error: {str(e)}"
             )
 
