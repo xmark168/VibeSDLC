@@ -19,9 +19,11 @@ class TesterStoryEventConsumer(BaseKafkaConsumer):
     def __init__(self):
         super().__init__(
             topics=["story_events"],
-            group_id="tester-story-event-group"
+            group_id="tester-story-consumer-v5",  # Fresh group with debug logging
+            auto_offset_reset="earliest"  # Process all messages including historical
         )
         self.logger = logging.getLogger("TesterConsumer")
+        self.logger.info("[TesterConsumer] Initialized with auto_offset_reset=earliest")
     
     async def handle_message(
         self,
@@ -34,18 +36,29 @@ class TesterStoryEventConsumer(BaseKafkaConsumer):
     ) -> None:
         """Process story event messages and trigger Tester for REVIEW status."""
         try:
+            # DEBUG: Log all incoming messages
+            self.logger.info(f"[TesterConsumer] Received message on topic={topic}, offset={offset}")
+            self.logger.debug(f"[TesterConsumer] Raw data: {raw_data}")
+            
             event_type = raw_data.get("event_type")
+            self.logger.info(f"[TesterConsumer] Event type: {event_type}")
             
             # Filter for story.status.changed events
             if event_type != "story.status.changed":
+                self.logger.debug(f"[TesterConsumer] Ignoring event_type={event_type}, not story.status.changed")
                 return
             
             # StoryEvent fields are NOT nested in "data" - they're at root level
             new_status = raw_data.get("new_status")
+            old_status = raw_data.get("old_status")
+            self.logger.info(f"[TesterConsumer] Status change: {old_status} -> {new_status}")
             
             # Only trigger when status changes to REVIEW
             if new_status != "Review":
+                self.logger.debug(f"[TesterConsumer] Ignoring new_status={new_status}, not Review")
                 return
+            
+            self.logger.info(f"[TesterConsumer] *** REVIEW status detected! Proceeding with test generation ***")
             
             story_id = raw_data.get("story_id")
             project_id = raw_data.get("project_id")
