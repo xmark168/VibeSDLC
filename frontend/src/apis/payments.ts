@@ -19,6 +19,15 @@ export const paymentsApi = {
     })
   },
 
+  // Purchase credits
+  purchaseCredits: async (credit_amount: number): Promise<PaymentLinkResponse> => {
+    return __request<PaymentLinkResponse>(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/payments/credits/purchase",
+      body: { credit_amount },
+    })
+  },
+
   // Check payment status
   getPaymentStatus: async (orderId: string): Promise<PaymentStatusResponse> => {
     return __request<PaymentStatusResponse>(OpenAPI, {

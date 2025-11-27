@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { User, CreditCard, LogOut, Pencil, Info, Sun, Moon, Monitor } from "lucide-react"
+import { User, CreditCard, LogOut, Pencil, Info, Sun, Moon, Monitor, AlertTriangle, RefreshCw } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -8,12 +8,16 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Switch } from "@/components/ui/switch"
 import { useAppStore } from "@/stores/auth-store"
 import useAuth from "@/hooks/useAuth"
 import { useTheme } from "@/components/provider/theme-provider"
 import { cn } from "@/lib/utils"
 import { useCurrentSubscription } from "@/queries/subscription"
+import { subscriptionApi } from "@/apis/subscription"
 import { format } from "date-fns"
+import { useQueryClient } from "@tanstack/react-query"
+import toast from "react-hot-toast"
 
 interface SettingsDialogProps {
   open: boolean
@@ -24,14 +28,77 @@ type SettingsTab = "profile" | "billing" | "theme"
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile")
+  const [isCanceling, setIsCanceling] = useState(false)
+  const [isTogglingAutoRenew, setIsTogglingAutoRenew] = useState(false)
+  const [showCancelDialog, setShowCancelDialog] = useState(false)
   const user = useAppStore((state) => state.user)
   const { logout } = useAuth()
   const { theme, setTheme } = useTheme()
   const { data: subscriptionData, isLoading: subscriptionLoading } = useCurrentSubscription()
+  const queryClient = useQueryClient()
 
   const handleLogout = () => {
     logout.mutate()
     onOpenChange(false)
+  }
+
+  const handleCancelSubscription = async () => {
+    setShowCancelDialog(false)
+    setIsCanceling(true)
+    try {
+      const result = await subscriptionApi.cancelSubscription()
+
+      // Invalidate subscription query to refetch
+      queryClient.invalidateQueries({ queryKey: ['subscription', 'current'] })
+
+      toast.success(result.message, {
+        duration: 5000,
+        style: {
+          background: '#1e293b',
+          color: '#fff',
+          border: '1px solid #334155',
+        },
+      })
+    } catch (error: any) {
+      toast.error(error?.body?.detail || 'Không thể hủy subscription', {
+        style: {
+          background: '#1e293b',
+          color: '#fff',
+          border: '1px solid #334155',
+        },
+      })
+    } finally {
+      setIsCanceling(false)
+    }
+  }
+
+  const handleToggleAutoRenew = async (enabled: boolean) => {
+    setIsTogglingAutoRenew(true)
+    try {
+      const result = await subscriptionApi.updateAutoRenew(enabled)
+
+      // Invalidate subscription query to refetch
+      queryClient.invalidateQueries({ queryKey: ['subscription', 'current'] })
+
+      toast.success(result.message, {
+        duration: 3000,
+        style: {
+          background: '#1e293b',
+          color: '#fff',
+          border: '1px solid #334155',
+        },
+      })
+    } catch (error: any) {
+      toast.error(error?.body?.detail || 'Không thể cập nhật auto-renew', {
+        style: {
+          background: '#1e293b',
+          color: '#fff',
+          border: '1px solid #334155',
+        },
+      })
+    } finally {
+      setIsTogglingAutoRenew(false)
+    }
   }
 
   const getInitials = (name: string) => {
@@ -54,6 +121,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const periodEnd = subscriptionData?.credit_wallet?.period_end
     ? format(new Date(subscriptionData.credit_wallet.period_end), 'MMM dd')
     : null
+
+  // Get auto-renew status (default to false for FREE plan)
+  const autoRenew = subscriptionData?.subscription?.auto_renew || false
+  const isPaidSubscription = subscriptionData?.subscription && currentPlanName !== "Free"
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -211,14 +282,67 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     )}
                   </div>
 
-                  {/* Upgrade Plan Button */}
+                  {/* Auto-renew Toggle - Only show for paid subscriptions */}
+                  {isPaidSubscription && (
+                    <div className="px-8">
+                      <div className="bg-secondary/20 border border-border/50 rounded-lg p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <RefreshCw className="h-5 w-5 text-primary" />
+                            <div>
+                              <p className="text-sm font-medium text-foreground">Auto-renew</p>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                {autoRenew
+                                  ? "Your subscription will automatically renew"
+                                  : "Your subscription will not renew automatically"}
+                              </p>
+                            </div>
+                          </div>
+                          <Switch
+                            checked={autoRenew}
+                            onCheckedChange={handleToggleAutoRenew}
+                            disabled={isTogglingAutoRenew}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
                   <div className="px-8 py-6">
-                    <Button
-                      onClick={() => window.open('/upgrade', '_blank')}
-                      className="w-full h-12 text-base bg-primary hover:bg-primary/90"
-                    >
-                      Upgrade Plan
-                    </Button>
+                    {/* FREE plan: Only show Upgrade button */}
+                    {(!subscriptionData?.subscription || currentPlanName === "Free") && (
+                      <Button
+                        onClick={() => window.open('/upgrade', '_blank')}
+                        className="w-full h-12 text-base bg-primary hover:bg-primary/90"
+                      >
+                        Upgrade Plan
+                      </Button>
+                    )}
+
+                    {/* Paid subscription: Show both Cancel and Upgrade buttons */}
+                    {subscriptionData?.subscription && currentPlanName !== "Free" && (
+                      <div className="flex gap-3">
+                        {/* Cancel button on the left */}
+                        <Button
+                          variant="outline"
+                          onClick={() => setShowCancelDialog(true)}
+                          disabled={isCanceling}
+                          className="flex-1 h-12 text-base border-destructive/50 text-destructive hover:bg-destructive/10"
+                        >
+                          <AlertTriangle className="h-4 w-4 mr-2" />
+                          {isCanceling ? "Đang hủy..." : "Cancel Subscription"}
+                        </Button>
+
+                        {/* Upgrade button on the right */}
+                        <Button
+                          onClick={() => window.open('/upgrade', '_blank')}
+                          className="flex-1 h-12 text-base bg-primary hover:bg-primary/90"
+                        >
+                          Upgrade Plan
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -296,6 +420,39 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           </div>
         </div>
       </DialogContent>
+
+      {/* Cancel Subscription Confirmation Dialog */}
+      <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Cancel Subscription
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Bạn có chắc muốn hủy subscription? Gói dịch vụ sẽ vẫn hoạt động đến hết thời hạn hiện tại.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => setShowCancelDialog(false)}
+                disabled={isCanceling}
+              >
+                Hủy bỏ
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleCancelSubscription}
+                disabled={isCanceling}
+              >
+                {isCanceling ? "Đang hủy..." : "Xác nhận"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   )
 }

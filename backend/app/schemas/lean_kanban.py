@@ -1,16 +1,17 @@
-"""Lean Kanban schemas - WIP limits, workflow policies, and flow metrics."""
+"""Lean Kanban schemas."""
 
-from uuid import UUID
 from datetime import datetime
+from typing import Any, Optional
+from uuid import UUID
+
 from sqlmodel import Field, SQLModel
-from typing import Optional, Any
 
 
 class WIPLimitCreate(SQLModel):
     project_id: UUID
     column_name: str
     wip_limit: int = Field(ge=0)
-    limit_type: str = Field(default="hard")  # "hard" or "soft"
+    limit_type: str = Field(default="hard")
 
 
 class WIPLimitUpdate(SQLModel):
@@ -67,7 +68,6 @@ class WorkflowPoliciesPublic(SQLModel):
 
 
 class StoryFlowMetrics(SQLModel):
-    """Flow metrics for a single story"""
     id: UUID
     title: str
     status: str
@@ -81,21 +81,19 @@ class StoryFlowMetrics(SQLModel):
 
 
 class ProjectFlowMetrics(SQLModel):
-    """Aggregated flow metrics for a project"""
     avg_cycle_time_hours: Optional[float] = None
     avg_lead_time_hours: Optional[float] = None
     throughput_per_week: float
     total_completed: int
     work_in_progress: int
-    aging_items: list[dict[str, Any]]  # Stories aging in current status
-    bottlenecks: dict[str, Any]  # WIP distribution by column
+    aging_items: list[dict[str, Any]]
+    bottlenecks: dict[str, Any]
 
 
 class WIPViolation(SQLModel):
-    """WIP limit violation details"""
     column_name: str
     current_count: int
     wip_limit: int
     new_count: int
-    violation_type: str = "hard"  # "hard" or "soft"
+    violation_type: str = "hard"
     message: str

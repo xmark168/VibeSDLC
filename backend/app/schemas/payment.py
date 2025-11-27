@@ -17,6 +17,14 @@ class CreatePaymentRequest(BaseModel):
     """Request to create payment order"""
     plan_id: UUID
     billing_cycle: Literal["monthly", "yearly"] = "monthly"
+    auto_renew: bool = True
+    return_url: Optional[str] = None
+    cancel_url: Optional[str] = None
+
+
+class CreateCreditPurchaseRequest(BaseModel):
+    """Request to purchase additional credits"""
+    credit_amount: int = Field(ge=10, description="Number of credits to purchase (minimum 10)")
     return_url: Optional[str] = None
     cancel_url: Optional[str] = None
 

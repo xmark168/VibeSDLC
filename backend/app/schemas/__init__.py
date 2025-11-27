@@ -124,6 +124,7 @@ from .plan import (
 from .payment import (
     PaymentItemData,
     CreatePaymentRequest,
+    CreateCreditPurchaseRequest,
     PaymentLinkResponse,
     PaymentStatusResponse,
     PayOSWebhookData,
@@ -135,6 +136,7 @@ from .subscription import (
     SubscriptionPublic,
     CreditWalletPublic,
     UserSubscriptionResponse,
+    UpdateAutoRenew,
 )
 
 __all__ = [
@@ -239,6 +241,7 @@ __all__ = [
     # Payment
     "PaymentItemData",
     "CreatePaymentRequest",
+    "CreateCreditPurchaseRequest",
     "PaymentLinkResponse",
     "PaymentStatusResponse",
     "PayOSWebhookData",
@@ -248,4 +251,5 @@ __all__ = [
     "SubscriptionPublic",
     "CreditWalletPublic",
     "UserSubscriptionResponse",
+    "UpdateAutoRenew",
 ]

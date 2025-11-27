@@ -1,10 +1,11 @@
 from datetime import datetime, timezone
-from uuid import UUID, uuid4
 from enum import Enum
-from pydantic import EmailStr
-from sqlmodel import Field, SQLModel, Relationship, Column
-from sqlalchemy import JSON, Text, BigInteger, Enum as SQLEnum
 from typing import Optional
+from uuid import UUID, uuid4
+
+from pydantic import EmailStr
+from sqlalchemy import JSON, BigInteger, Text, Enum as SQLEnum, UniqueConstraint
+from sqlmodel import Field, SQLModel, Relationship, Column
 
 class Role(str, Enum):
     ADMIN = "admin"
@@ -29,10 +30,9 @@ class StoryType(str, Enum):
 
 
 class StoryPriority(str, Enum):
-    """Story priority for INVEST principle (Negotiable)"""
-    HIGH = "High"  # Must have for MVP
-    MEDIUM = "Medium"  # Should have
-    LOW = "Low"  # Nice to have
+    HIGH = "High"
+    MEDIUM = "Medium"
+    LOW = "Low"
 
 
 class BaseModel(SQLModel):
@@ -47,7 +47,27 @@ class BaseModel(SQLModel):
     )
 
 
-# Shared properties
+class AgentPersonaTemplate(BaseModel, table=True):
+    __tablename__ = "agent_persona_templates"
+    
+    name: str = Field(nullable=False, index=True)
+    role_type: str = Field(nullable=False, index=True)
+    
+    personality_traits: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    communication_style: str = Field(nullable=False)
+    
+    persona_metadata: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    
+    is_active: bool = Field(default=True)
+    display_order: int = Field(default=0)
+    
+    agents: list["Agent"] = Relationship(back_populates="persona_template")
+    
+    __table_args__ = (
+        UniqueConstraint('name', 'role_type', name='uq_persona_name_role'),
+    )
+
+
 class User(BaseModel, table=True):
     __tablename__ = "users"
 
@@ -56,7 +76,6 @@ class User(BaseModel, table=True):
     hashed_password: str = Field(nullable=True, sa_column_kwargs={"name": "password_hash"})
     email: EmailStr = Field(unique=True, index=True, max_length=255)
     
-    # Database columns that exist
     address: str | None = Field(default=None, nullable=True)
     balance: float = Field(default=0.0, nullable=True)
     is_active: bool = Field(default=True, nullable=True)
@@ -64,7 +83,6 @@ class User(BaseModel, table=True):
     locked_until: datetime | None = Field(default=None)
     two_factor_enabled: bool = Field(default=False, nullable=True)
     
-    # Additional columns needed by application logic
     role: Role = Field(default=Role.USER, nullable=False)
     is_locked: bool = Field(default=False, nullable=False)
     login_provider: bool = Field(default=False, nullable=False)
@@ -83,25 +101,21 @@ class User(BaseModel, table=True):
 
 
 class EpicStatus(str, Enum):
-    """Status of an Epic"""
     PLANNED = "Planned"
     IN_PROGRESS = "InProgress"
     COMPLETED = "Completed"
 
 
 class Epic(BaseModel, table=True):
-    """Epic model for grouping stories"""
     __tablename__ = "epics"
 
     title: str
     description: str | None = Field(default=None, sa_column=Column(Text))
     project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE")
 
-    # BA workflow fields
-    domain: str | None = Field(default=None)  # Feature domain (e.g., Product, Cart, Order, Payment)
+    domain: str | None = Field(default=None)
     epic_status: EpicStatus = Field(default=EpicStatus.PLANNED)
 
-    # Relationships
     project: "Project" = Relationship(back_populates="epics")
     stories: list["Story"] = Relationship(back_populates="epic")
 
@@ -118,10 +132,8 @@ class Project(BaseModel, table=True):
     tech_stack: str = Field(default="nodejs-react")
     wip_data: dict | None = Field(default=None, sa_column=Column(JSON))
 
-    # File system path for project files (auto-generated: projects/{project_id})
     project_path: str | None = Field(default=None, max_length=500)
     
-    # Conversation context tracking - routes follow-up messages to active agent
     active_agent_id: UUID | None = Field(
         default=None,
         foreign_key="agents.id",
@@ -129,7 +141,6 @@ class Project(BaseModel, table=True):
     )
     active_agent_updated_at: datetime | None = Field(default=None)
     
-    # WebSocket session tracking - for smart timeouts
     websocket_connected: bool = Field(default=False)
     websocket_last_seen: datetime | None = Field(default=None)
     
@@ -146,10 +157,9 @@ class Project(BaseModel, table=True):
         back_populates="project",
         sa_relationship_kwargs={
             "cascade": "all, delete-orphan",
-            "foreign_keys": "[Agent.project_id]"  # Use Agent.project_id, not Project.active_agent_id
+            "foreign_keys": "[Agent.project_id]"
         },
     )
-    # TraDS ============= Project Rules
 
     rules: Optional["ProjectRules"] = Relationship(
         back_populates="project",
@@ -158,27 +168,19 @@ class Project(BaseModel, table=True):
 
 
 class WorkflowPolicy(BaseModel, table=True):
-    """Explicit policies for workflow transitions (DoR/DoD)"""
     __tablename__ = "workflow_policies"
 
     project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
     from_status: str = Field(max_length=50, nullable=False)
     to_status: str = Field(max_length=50, nullable=False)
     criteria: dict | None = Field(default=None, sa_column=Column(JSON))
-    # Example criteria: {"assignee_required": true, "acceptance_criteria_defined": true}
     required_role: str | None = Field(default=None, max_length=50)
     is_active: bool = Field(default=True, nullable=False)
 
-    # Relationships
     project: "Project" = Relationship()
 
 
 class Story(BaseModel, table=True):
-    """
-    Story model for Kanban board.
-    Replaces BacklogItem with proper status columns: Todo, InProgress, Review, Done.
-    Supports only UserStory and EnablerStory types.
-    """
     __tablename__ = "stories"
 
     project_id: UUID = Field(
@@ -188,19 +190,15 @@ class Story(BaseModel, table=True):
         default=None, foreign_key="stories.id", ondelete="SET NULL"
     )
 
-    # Story fields
     type: StoryType = Field(default=StoryType.USER_STORY)
     title: str
     description: str | None = Field(default=None, sa_column=Column(Text))
     status: StoryStatus = Field(default=StoryStatus.TODO)
 
-    # Epic relationship (for linking stories to epics table)
     epic_id: UUID | None = Field(default=None, foreign_key="epics.id", ondelete="SET NULL")
 
-    # Acceptance criteria (BA fills this)
     acceptance_criteria: str | None = Field(default=None, sa_column=Column(Text))
 
-    # Assignment fields (TeamLeader assigns)
     assignee_id: UUID | None = Field(
         default=None, foreign_key="users.id", ondelete="SET NULL"
     )
@@ -208,29 +206,23 @@ class Story(BaseModel, table=True):
         default=None, foreign_key="users.id", ondelete="SET NULL"
     )
 
-    # Planning fields
     rank: int | None = Field(default=None)
     estimate_value: int | None = Field(default=None)
-    story_point: int | None = Field(default=None)  # INVEST: Estimable (Fibonacci: 1,2,3,5,8,13)
-    priority: int | None = Field(default=None)  # Legacy numeric priority
+    story_point: int | None = Field(default=None)
+    priority: int | None = Field(default=None)
 
-    # INVEST principle fields (for BA workflow)
-    story_priority: StoryPriority | None = Field(default=None)  # High/Medium/Low
-    dependencies: list = Field(default_factory=list, sa_column=Column(JSON))  # INVEST: Independent (story IDs)
+    story_priority: StoryPriority | None = Field(default=None)
+    dependencies: list = Field(default_factory=list, sa_column=Column(JSON))
 
-    # Lifecycle fields
     pause: bool = Field(default=False)
     deadline: datetime | None = Field(default=None)
     completed_at: datetime | None = Field(default=None)
 
-    # Flow metrics tracking (Lean Kanban)
-    started_at: datetime | None = Field(default=None)  # When moved to InProgress
-    review_started_at: datetime | None = Field(default=None)  # When moved to Review
+    started_at: datetime | None = Field(default=None)
+    review_started_at: datetime | None = Field(default=None)
 
-    # Token usage tracking (for AI agents)
     token_used: int | None = Field(default=None)
 
-    # Relationships
     project: Project = Relationship(back_populates="stories")
     epic: Optional["Epic"] = Relationship(back_populates="stories")
     parent: Optional["Story"] = Relationship(
@@ -246,26 +238,21 @@ class Story(BaseModel, table=True):
         back_populates="story", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
-    # Lean Kanban flow metrics (computed properties)
     @property
     def cycle_time_hours(self) -> float | None:
-        """Cycle time: time from started (InProgress) to completed (Done)"""
         if self.started_at and self.completed_at:
             return (self.completed_at - self.started_at).total_seconds() / 3600
         return None
 
     @property
     def lead_time_hours(self) -> float | None:
-        """Lead time: time from created to completed"""
         if self.completed_at:
             return (self.completed_at - self.created_at).total_seconds() / 3600
         return None
 
     @property
     def age_in_current_status_hours(self) -> float:
-        """How long the story has been in its current status"""
-        # Determine when the current status started
-        status_start_time = self.created_at  # Default to creation
+        status_start_time = self.created_at
 
         if self.status == StoryStatus.IN_PROGRESS and self.started_at:
             status_start_time = self.started_at
@@ -275,6 +262,12 @@ class Story(BaseModel, table=True):
             status_start_time = self.completed_at
 
         current_time = datetime.now(timezone.utc)
+
+        # Ensure both datetimes are timezone-aware or timezone-naive for comparison
+        if status_start_time.tzinfo is None:
+            # Make status_start_time timezone-naive to match current_time
+            status_start_time = status_start_time.replace(tzinfo=timezone.utc)
+
         return (current_time - status_start_time).total_seconds() / 3600
 
 
@@ -328,44 +321,49 @@ class AuthorType(str, Enum):
 
 
 class MessageVisibility(str, Enum):
-    """Message visibility type - for filtering user-facing messages vs system logs"""
-    USER_MESSAGE = "user_message"  # Actual messages to display in chat UI
-    SYSTEM_LOG = "system_log"  # Internal logs, progress updates (not shown in chat)
+    USER_MESSAGE = "user_message"
+    SYSTEM_LOG = "system_log"
 
 
 class AgentStatus(str, Enum):
-    """Runtime status of an agent (unified for runtime and database)"""
-    created = "created"  # Initial state when agent is instantiated
-    starting = "starting"  # Agent is starting up
-    running = "running"  # Agent is running (legacy, mostly uses idle/busy)
-    idle = "idle"  # Agent is running and waiting for work
-    busy = "busy"  # Agent is actively executing a task
-    stopping = "stopping"  # Agent is shutting down
-    stopped = "stopped"  # Agent has stopped cleanly
-    error = "error"  # Agent encountered an error
-    terminated = "terminated"  # Permanent shutdown, won't restart
+    created = "created"
+    starting = "starting"
+    running = "running"
+    idle = "idle"
+    busy = "busy"
+    stopping = "stopping"
+    stopped = "stopped"
+    error = "error"
+    terminated = "terminated"
 
 
 class Agent(BaseModel, table=True):
     __tablename__ = "agents"
 
-    # Project relationship - each agent belongs to a project
     project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
 
-    # Agent identity
-    name: str  # Display name (e.g., "Mike (Developer)")
-    human_name: str = Field(nullable=False)  # Natural name like "Mike", "Alice"
-    role_type: str = Field(nullable=False)  # team_leader, business_analyst, developer, tester
-    agent_type: str | None = Field(default=None)  # Legacy field for compatibility
+    persona_template_id: UUID | None = Field(
+        default=None,
+        foreign_key="agent_persona_templates.id",
+        ondelete="RESTRICT"
+    )
 
-    # Runtime status
+    name: str
+    human_name: str = Field(nullable=False)
+    role_type: str = Field(nullable=False)
+    agent_type: str | None = Field(default=None)
+
+    personality_traits: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    communication_style: str | None = Field(default=None)
+    persona_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
+
     status: AgentStatus = Field(default=AgentStatus.idle)
 
-    # Relationships
+    persona_template: Optional["AgentPersonaTemplate"] = Relationship(back_populates="agents")
     project: "Project" = Relationship(
         back_populates="agents",
         sa_relationship_kwargs={
-            "foreign_keys": "[Agent.project_id]"  # Use Agent.project_id, not Project.active_agent_id
+            "foreign_keys": "[Agent.project_id]"
         }
     )
     messages: list["Message"] = Relationship(back_populates="agent")
@@ -374,18 +372,14 @@ class Agent(BaseModel, table=True):
 class Message(BaseModel, table=True):
     __tablename__ = "messages"
 
-    # Single-session-per-project: attach all messages to a project
     project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
 
-    # Author info: either user or agent (or system/tool)
     author_type: AuthorType = Field(default=AuthorType.USER, nullable=False)
     user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
     agent_id: UUID | None = Field(default=None, foreign_key="agents.id", ondelete="SET NULL")
 
-    # Message payload
     content: str
 
-    # Message visibility: user-facing message vs system log
     visibility: MessageVisibility = Field(
         default=MessageVisibility.USER_MESSAGE,
         sa_column=Column(
@@ -394,12 +388,10 @@ class Message(BaseModel, table=True):
         )
     )
 
-    # Structured data fields for agent previews
-    message_type: str = Field(default="text", nullable=True)  # "text" | "product_brief" | "product_vision" | "product_backlog"
-    structured_data: dict | None = Field(default=None, sa_column=Column(JSON))  # JSON data (brief/vision/backlog)
-    message_metadata: dict | None = Field(default=None, sa_column=Column(JSON))  # Message metadata (preview_id, quality_score, approved_by, etc.)
+    message_type: str = Field(default="text", nullable=True)
+    structured_data: dict | None = Field(default=None, sa_column=Column(JSON))
+    message_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
 
-    # Relationship back to agent
     agent: Agent | None = Relationship(back_populates="messages")
 
 
@@ -411,11 +403,9 @@ class RefreshToken(BaseModel, table=True):
     expires_at: datetime = Field(nullable=False)
     is_revoked: bool = Field(default=False, nullable=False)
 
-    # Token family tracking for rotation detection
     family_id: UUID = Field(nullable=False, index=True)
     parent_token_id: UUID | None = Field(default=None, foreign_key="refresh_tokens.id", ondelete="SET NULL")
 
-    # Relationships
     user: User = Relationship()
     parent: Optional["RefreshToken"] = Relationship(
         back_populates="children",
@@ -433,16 +423,10 @@ class ProjectRules(BaseModel, table=True):
     dev_prompt: str | None = Field(default=None, sa_column=Column(Text))
     tester_prompt: str | None = Field(default=None, sa_column=Column(Text))
 
-    # Relationship
     project: Project = Relationship(back_populates="rules")
 
 
-
-# ==================== AGENT PERSISTENCE MODELS ====================
-
-
 class AgentExecutionStatus(str, Enum):
-    """Status of an agent execution"""
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -451,65 +435,52 @@ class AgentExecutionStatus(str, Enum):
 
 
 class AgentExecution(BaseModel, table=True):
-    """Track agent execution runs for observability and debugging"""
     __tablename__ = "agent_executions"
 
     project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
 
-    # Agent info
     agent_name: str = Field(nullable=False)
-    agent_type: str = Field(nullable=False)  # TeamLeader, BusinessAnalyst, Developer, Tester
+    agent_type: str = Field(nullable=False)
 
-    # Execution tracking
     status: AgentExecutionStatus = Field(default=AgentExecutionStatus.PENDING)
     started_at: datetime | None = Field(default=None)
     completed_at: datetime | None = Field(default=None)
     duration_ms: int | None = Field(default=None)
 
-    # Context
     trigger_message_id: UUID | None = Field(default=None, foreign_key="messages.id", ondelete="SET NULL")
     user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
 
-    # Resource usage
     token_used: int = Field(default=0)
     llm_calls: int = Field(default=0)
 
-    # Error tracking
     error_message: str | None = Field(default=None, sa_column=Column(Text))
     error_traceback: str | None = Field(default=None, sa_column=Column(Text))
 
-    # Result
     result: dict | None = Field(default=None, sa_column=Column(JSON))
     extra_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
 
 
 class AgentConversation(BaseModel, table=True):
-    """Store agent-to-agent and agent-to-user conversation history"""
     __tablename__ = "agent_conversations"
 
     project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
     execution_id: UUID | None = Field(default=None, foreign_key="agent_executions.id", ondelete="CASCADE")
 
-    # Message info
-    sender_type: str = Field(nullable=False)  # "agent" or "user"
-    sender_name: str = Field(nullable=False)  # Agent name or user email
-    recipient_type: str | None = Field(default=None)  # "agent", "user", "broadcast"
+    sender_type: str = Field(nullable=False)
+    sender_name: str = Field(nullable=False)
+    recipient_type: str | None = Field(default=None)
     recipient_name: str | None = Field(default=None)
 
-    # Message content
-    message_type: str = Field(nullable=False)  # "UserRequest", "DelegateToBA", etc.
+    message_type: str = Field(nullable=False)
     content: str = Field(sa_column=Column(Text))
     structured_data: dict | None = Field(default=None, sa_column=Column(JSON))
 
-    # Metadata
     extra_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
 
 
 class AgentMetricsSnapshot(BaseModel, table=True):
-    """Periodic snapshots of agent pool metrics for historical analysis"""
     __tablename__ = "agent_metrics_snapshots"
 
-    # Snapshot metadata
     snapshot_timestamp: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         nullable=False,
@@ -517,36 +488,29 @@ class AgentMetricsSnapshot(BaseModel, table=True):
     )
     pool_name: str = Field(nullable=False, index=True)
 
-    # Agent state counts
     total_agents: int = Field(default=0)
     idle_agents: int = Field(default=0)
     busy_agents: int = Field(default=0)
     error_agents: int = Field(default=0)
 
-    # Execution metrics (aggregated from agent_executions)
     total_executions: int = Field(default=0)
     successful_executions: int = Field(default=0)
     failed_executions: int = Field(default=0)
 
-    # Resource usage metrics
     total_tokens: int = Field(default=0)
     total_llm_calls: int = Field(default=0)
 
-    # Performance metrics
     avg_execution_duration_ms: float | None = Field(default=None)
 
-    # Process metrics (multiprocessing specific)
     process_count: int = Field(default=0)
     total_capacity: int = Field(default=0)
     used_capacity: int = Field(default=0)
     utilization_percentage: float | None = Field(default=None)
 
-    # Additional snapshot metadata
     snapshot_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
 
 
 class ApprovalStatus(str, Enum):
-    """Status of an approval request"""
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
@@ -554,45 +518,35 @@ class ApprovalStatus(str, Enum):
 
 
 class ApprovalRequest(BaseModel, table=True):
-    """Human-in-the-loop approval requests from agents"""
     __tablename__ = "approval_requests"
 
     project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
     execution_id: UUID | None = Field(default=None, foreign_key="agent_executions.id", ondelete="CASCADE")
 
-    # Request info
-    request_type: str = Field(nullable=False)  # "story_creation", "story_update", "epic_creation"
+    request_type: str = Field(nullable=False)
     agent_name: str = Field(nullable=False)
 
-    # Proposed changes
-    proposed_data: dict = Field(sa_column=Column(JSON))  # What the agent wants to do
-    explanation: str | None = Field(default=None, sa_column=Column(Text))  # Why the agent proposes this
+    proposed_data: dict = Field(sa_column=Column(JSON))
+    explanation: str | None = Field(default=None, sa_column=Column(Text))
 
-    # Approval tracking
     status: ApprovalStatus = Field(default=ApprovalStatus.PENDING)
     approved_by_user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
     approved_at: datetime | None = Field(default=None)
 
-    # User feedback
     user_feedback: str | None = Field(default=None, sa_column=Column(Text))
-    modified_data: dict | None = Field(default=None, sa_column=Column(JSON))  # User modifications to proposal
+    modified_data: dict | None = Field(default=None, sa_column=Column(JSON))
 
-    # Result tracking
-    applied: bool = Field(default=False)  # Whether the approval was actually applied
+    applied: bool = Field(default=False)
     applied_at: datetime | None = Field(default=None)
-    created_entity_id: UUID | None = Field(default=None)  # ID of created Story/Epic if applicable
+    created_entity_id: UUID | None = Field(default=None)
 
-
-# ==================== AGENT CLARIFICATION QUESTIONS ====================
 
 class QuestionType(str, Enum):
-    """Question types for agent clarification"""
     OPEN = "open"
     MULTICHOICE = "multichoice"
 
 
 class QuestionStatus(str, Enum):
-    """Status of clarification questions"""
     WAITING_ANSWER = "waiting_answer"
     ANSWERED = "answered"
     EXPIRED = "expired"
@@ -600,104 +554,82 @@ class QuestionStatus(str, Enum):
 
 
 class AgentQuestion(BaseModel, table=True):
-    """Agent clarification questions for user"""
     __tablename__ = "agent_questions"
     
-    # Relationships
     project_id: UUID = Field(foreign_key="projects.id", ondelete="CASCADE")
     agent_id: UUID = Field(foreign_key="agents.id", ondelete="CASCADE")
     user_id: UUID = Field(foreign_key="users.id")
     
-    # Question details
     question_type: QuestionType = Field(sa_column=Column(SQLEnum(QuestionType)))
     question_text: str = Field(sa_column=Column(Text))
     
-    # For multichoice questions
     options: list[str] | None = Field(default=None, sa_column=Column(JSON))
     allow_multiple: bool = Field(default=False)
     
-    # Answer
     answer: str | None = Field(default=None, sa_column=Column(Text))
     selected_options: list[str] | None = Field(default=None, sa_column=Column(JSON))
     
-    # Status
     status: QuestionStatus = Field(
         default=QuestionStatus.WAITING_ANSWER,
         sa_column=Column(SQLEnum(QuestionStatus))
     )
     
-    # Task context for resume
     task_id: UUID
     execution_id: UUID | None = None
     task_context: dict = Field(default_factory=dict, sa_column=Column(JSON))
     
-    # Timestamps
     expires_at: datetime
     answered_at: datetime | None = None
     
-    # Extra metadata
     extra_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
 
 
-# ==================== ARTIFACT SYSTEM ====================
-
 class ArtifactType(str, Enum):
-    """Types of artifacts agents can produce"""
-    PRD = "prd"                          # Product Requirements Document
-    ARCHITECTURE = "architecture"        # System architecture design
-    API_SPEC = "api_spec"               # API specification
-    DATABASE_SCHEMA = "database_schema"  # Database design
-    USER_STORIES = "user_stories"        # User stories collection
-    CODE = "code"                        # Code files
-    TEST_PLAN = "test_plan"             # Test plan document
-    REVIEW = "review"                    # Code review document
-    ANALYSIS = "analysis"                # General analysis document
+    PRD = "prd"
+    ARCHITECTURE = "architecture"
+    API_SPEC = "api_spec"
+    DATABASE_SCHEMA = "database_schema"
+    USER_STORIES = "user_stories"
+    CODE = "code"
+    TEST_PLAN = "test_plan"
+    REVIEW = "review"
+    ANALYSIS = "analysis"
 
 
 class ArtifactStatus(str, Enum):
-    """Status of an artifact"""
-    DRAFT = "draft"                      # Initial version
-    PENDING_REVIEW = "pending_review"    # Waiting for review
-    APPROVED = "approved"                # Approved by user
-    REJECTED = "rejected"                # Rejected by user
-    ARCHIVED = "archived"                # Old version
+    DRAFT = "draft"
+    PENDING_REVIEW = "pending_review"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    ARCHIVED = "archived"
 
 
 class Artifact(BaseModel, table=True):
-    """Agent-produced artifacts (documents, designs, code, etc.)"""
     __tablename__ = "artifacts"
     
-    # Identity
     project_id: UUID = Field(foreign_key="projects.id", ondelete="CASCADE", index=True)
     agent_id: UUID | None = Field(default=None, foreign_key="agents.id", ondelete="SET NULL")
     agent_name: str = Field(nullable=False)
     
-    # Artifact metadata
     artifact_type: ArtifactType = Field(sa_column=Column(SQLEnum(ArtifactType)))
     title: str = Field(max_length=255)
     description: str | None = Field(default=None, sa_column=Column(Text))
     
-    # Content
-    content: dict = Field(sa_column=Column(JSON))  # Structured content (schema depends on type)
-    file_path: str | None = Field(default=None)    # Path in workspace if saved to file
+    content: dict = Field(sa_column=Column(JSON))
+    file_path: str | None = Field(default=None)
     
-    # Versioning
     version: int = Field(default=1)
     parent_artifact_id: UUID | None = Field(default=None, foreign_key="artifacts.id", ondelete="SET NULL")
     
-    # Status
     status: ArtifactStatus = Field(default=ArtifactStatus.DRAFT, sa_column=Column(SQLEnum(ArtifactStatus)))
     
-    # Review tracking
     reviewed_by_user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
     reviewed_at: datetime | None = Field(default=None)
     review_feedback: str | None = Field(default=None, sa_column=Column(Text))
     
-    # Metadata
     tags: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     extra_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
     
-    # Relationships
     project: "Project" = Relationship()
     agent: Optional["Agent"] = Relationship()
     reviewed_by: Optional["User"] = Relationship()
@@ -714,7 +646,7 @@ class Artifact(BaseModel, table=True):
 class OrderType(str, Enum):
     """Type of order"""
     SUBSCRIPTION = "subscription"
-    ADDON = "addon"
+    CREDIT = "credit"
 
 
 class OrderStatus(str, Enum):
@@ -854,6 +786,8 @@ class Order(BaseModel, table=True):
     # Payment details
     billing_cycle: str | None = Field(default="monthly", sa_column=Column(Text))  # monthly, yearly
     plan_code: str | None = Field(default=None, sa_column=Column(Text))  # Store plan code for reference
+    auto_renew: bool = Field(default=True, nullable=False)  # Auto-renew subscription preference
+    credit_amount: int | None = Field(default=None, nullable=True)  # Number of credits for credit purchase orders
 
     # Relationships
     user: User = Relationship()
