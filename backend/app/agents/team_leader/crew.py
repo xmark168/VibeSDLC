@@ -1,4 +1,11 @@
-"""Team Leader Crew - Multi-agent crew for project coordination."""
+"""Team Leader Crew - Unified CrewAI workflow for Kanban-aware routing.
+
+Following CrewAI best practices:
+- ONE crew orchestrates entire workflow
+- Sequential process with automatic context passing
+- Agents specialized with detailed backstories
+- Tasks with clear descriptions and expected outputs
+"""
 
 import logging
 from typing import List
@@ -13,113 +20,111 @@ logger = logging.getLogger(__name__)
 
 @CrewBase
 class TeamLeaderCrew:
-    """Team Leader crew with multiple specialist agents."""
+    """Team Leader crew for Kanban-aware request routing.
+    
+    This crew follows CrewAI architecture:
+    1. Analyze Kanban context (board state, WIP, metrics)
+    2. Classify user intent (what they want)
+    3. Make routing decision (where to send it)
+    4. Generate natural response (communicate clearly)
+    
+    All tasks run sequentially with automatic context passing.
+    """
+    
     agents: List[CrewAIBaseAgent]
     tasks: List[Task]
     agents_config = 'config/agents.yaml'
     tasks_config = 'config/tasks.yaml'
     
+    # ===== AGENT DEFINITIONS =====
+    
     @agent
-    def requirements_analyst(self) -> Agent:
+    def kanban_context_analyzer(self) -> Agent:
+        """Senior analyst who reads board telemetry and connects to user intent."""
         return Agent(
-            config=self.agents_config['requirements_analyst'],  # type: ignore[index]
+            config=self.agents_config['kanban_context_analyzer'],
             verbose=True
         )
     
     @agent
-    def project_coordinator(self) -> Agent:
+    def intent_classifier(self) -> Agent:
+        """Conversational AI specialist who classifies user intent."""
         return Agent(
-            config=self.agents_config['project_coordinator'],  # type: ignore[index]
+            config=self.agents_config['intent_classifier'],
             verbose=True
         )
     
     @agent
-    def progress_tracker(self) -> Agent:
+    def intelligent_router(self) -> Agent:
+        """Routing specialist who makes Kanban-aware delegation decisions."""
         return Agent(
-            config=self.agents_config['progress_tracker'],  # type: ignore[index]
+            config=self.agents_config['intelligent_router'],
             verbose=True
         )
     
+    @agent
+    def response_coordinator(self) -> Agent:
+        """Communication specialist who crafts helpful responses."""
+        return Agent(
+            config=self.agents_config['response_coordinator'],
+            verbose=True
+        )
+    
+    # ===== TASK DEFINITIONS WITH CONTEXT CHAIN =====
+    
     @task
-    def analyze_requirements_task(self) -> Task:
+    def analyze_kanban_context_task(self) -> Task:
+        """Task 1: Analyze board state and user message."""
         return Task(
-            config=self.tasks_config['analyze_request']  # type: ignore[index]
+            config=self.tasks_config['analyze_kanban_context']
         )
     
     @task
-    def coordinate_response_task(self) -> Task:
+    def classify_intent_task(self) -> Task:
+        """Task 2: Classify user intent using context from Task 1."""
         return Task(
-            config=self.tasks_config['coordinate_response'],  # type: ignore[index]
-            context=[self.analyze_requirements_task()]  # type: ignore[index]
+            config=self.tasks_config['classify_intent'],
+            context=[self.analyze_kanban_context_task()]
         )
     
     @task
-    def track_progress_task(self) -> Task:
+    def route_decision_task(self) -> Task:
+        """Task 3: Make routing decision using context from Tasks 1 & 2."""
         return Task(
-            config=self.tasks_config['track_progress']  # type: ignore[index]
+            config=self.tasks_config['route_decision'],
+            context=[
+                self.analyze_kanban_context_task(),
+                self.classify_intent_task()
+            ]
         )
     
     @task
-    def check_delegation_task(self) -> Task:
+    def generate_response_task(self) -> Task:
+        """Task 4: Generate natural response using all previous context."""
         return Task(
-            config=self.tasks_config['check_delegation']  # type: ignore[index]
+            config=self.tasks_config['generate_response'],
+            context=[
+                self.analyze_kanban_context_task(),
+                self.classify_intent_task(),
+                self.route_decision_task()
+            ]
         )
+    
+    # ===== THE ONE CREW =====
     
     @crew
     def crew(self) -> Crew:
-        """Creates the Team Leader crew."""
+        """Creates the unified Team Leader crew.
+        
+        This is the ONLY crew instance. It orchestrates the entire workflow:
+        - All 4 agents work sequentially
+        - All 4 tasks execute in order
+        - Context flows automatically between tasks
+        - One kickoff handles everything
+        """
         return Crew(
             agents=self.agents,
             tasks=self.tasks,
             process=Process.sequential,
-            verbose=True,
+            verbose=True
         )
-    
-    async def analyze_request(self, user_message: str) -> str:
-        """Analyze user request and provide guidance."""
-        crew_instance = Crew(
-            agents=[self.requirements_analyst(), self.project_coordinator()],
-            tasks=[self.analyze_requirements_task(), self.coordinate_response_task()],
-            process=Process.sequential,
-            verbose=True,
-        )
-        
-        result = await crew_instance.kickoff_async(inputs={
-            "user_message": user_message,
-            "context": ""
-        })
-        return str(result)
-    
-    async def track_progress(self, project_context: str) -> str:
-        """Track project progress and provide status update."""
-        crew_instance = Crew(
-            agents=[self.progress_tracker()],
-            tasks=[self.track_progress_task()],
-            verbose=True,
-        )
-        
-        result = await crew_instance.kickoff_async(inputs={
-            "project_context": project_context,
-            "context": ""
-        })
-        return str(result)
-    
-    async def check_should_delegate(self, message: str) -> tuple[bool, str]:
-        """Check if message should be delegated to BA."""
-        crew_instance = Crew(
-            agents=[self.project_coordinator()],
-            tasks=[self.check_delegation_task()],
-            process=Process.sequential,
-            verbose=False,
-        )
-        
-        result = await crew_instance.kickoff_async(inputs={
-            "message": message,
-            "context": ""
-        })
-        result_str = str(result).upper()
-        
-        should_delegate = "DECISION: YES" in result_str or "YES" in result_str[:100]
-        reason = str(result).split("REASON:")[-1].strip() if "REASON:" in str(result) else "AI decision"
-        
-        return should_delegate, reason

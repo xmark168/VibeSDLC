@@ -41,17 +41,8 @@ from app.core.db import engine
 
 logger = logging.getLogger(__name__)
 
-
-# ============================================================================
-# ROUTING LOGIC
-# ============================================================================
-
-
 class BaseEventRouter(ABC):
     """Abstract base class for event routers.
-
-    Each router handles a specific event type and implements routing logic
-    to determine which agent should handle the event.
     """
 
     def __init__(self, producer: KafkaProducer):
