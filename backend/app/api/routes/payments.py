@@ -10,6 +10,7 @@ import logging
 from app.api.deps import CurrentUser, SessionDep
 from app.schemas.payment import (
     CreatePaymentRequest,
+    CreateCreditPurchaseRequest,
     PaymentLinkResponse,
     PaymentStatusResponse,
     WebhookRequest
@@ -61,6 +62,7 @@ def create_payment_link(
             user_id=current_user.id,
             plan=plan,
             billing_cycle=payment_request.billing_cycle,
+            auto_renew=payment_request.auto_renew,
             return_url=return_url,
             cancel_url=cancel_url
         )
@@ -76,6 +78,46 @@ def create_payment_link(
 
     except Exception as e:
         logger.error(f"Failed to create payment: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/credits/purchase", response_model=PaymentLinkResponse)
+def purchase_credits(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    credit_request: CreateCreditPurchaseRequest
+) -> PaymentLinkResponse:
+    """
+    Create PayOS payment link for credit purchase
+    """
+    order_service = OrderService(session)
+
+    return_url = credit_request.return_url or f"{settings.FRONTEND_HOST}/upgrade?status=success&tab=credit"
+    cancel_url = credit_request.cancel_url or f"{settings.FRONTEND_HOST}/upgrade?status=cancel&tab=credit"
+
+    try:
+        order, payment_link = order_service.create_credit_purchase_order(
+            user_id=current_user.id,
+            credit_amount=credit_request.credit_amount,
+            return_url=return_url,
+            cancel_url=cancel_url
+        )
+
+        return PaymentLinkResponse(
+            order_id=order.id,
+            payos_order_code=order.payos_order_code,
+            checkout_url=order.checkout_url,
+            qr_code=order.qr_code,
+            amount=int(order.amount),
+            description=f"Purchase {credit_request.credit_amount} credits"
+        )
+
+    except ValueError as e:
+        logger.error(f"Validation error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to create credit purchase: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -120,7 +162,8 @@ def get_payment_status(
                     subscription, wallet, invoice = subscription_service.activate_subscription(
                         user_id=order.user_id,
                         plan=plan,
-                        order=order
+                        order=order,
+                        auto_renew=order.auto_renew
                     )
                     logger.info(f"Auto-activated subscription {subscription.id} for order {order.id}")
             except Exception as e:
@@ -223,7 +266,8 @@ def process_payment_webhook(session: SessionDep, webhook_data: dict):
                 subscription, wallet, invoice = subscription_service.activate_subscription(
                     user_id=order.user_id,
                     plan=plan,
-                    order=order
+                    order=order,
+                    auto_renew=order.auto_renew
                 )
                 logger.info(f"Subscription {subscription.id} activated for order {order.id}")
             else:
@@ -278,8 +322,8 @@ async def sync_order_status_by_code(
                 payment_info.get("id")
             )
 
-            # Activate subscription
-            if order.plan_code:
+            # Handle subscription orders
+            if order.order_type == "subscription" and order.plan_code:
                 plan_service = PlanService(session)
                 plan = plan_service.get_by_code(order.plan_code)
 
@@ -288,7 +332,8 @@ async def sync_order_status_by_code(
                     subscription, wallet, invoice = subscription_service.activate_subscription(
                         user_id=order.user_id,
                         plan=plan,
-                        order=order
+                        order=order,
+                        auto_renew=order.auto_renew
                     )
                     logger.info(f"Activated subscription {subscription.id}")
                     return {
@@ -296,6 +341,21 @@ async def sync_order_status_by_code(
                         "status": "PAID",
                         "subscription_id": str(subscription.id)
                     }
+
+            # Handle credit purchase orders
+            elif order.order_type == "credit" and order.credit_amount:
+                subscription_service = SubscriptionService(session)
+                wallet, invoice = subscription_service.add_credits_to_wallet(
+                    user_id=order.user_id,
+                    credit_amount=order.credit_amount,
+                    order=order
+                )
+                logger.info(f"Added {order.credit_amount} credits to wallet {wallet.id}")
+                return {
+                    "message": f"Payment confirmed and {order.credit_amount} credits added",
+                    "status": "PAID",
+                    "wallet_id": str(wallet.id)
+                }
 
         return {"message": "Payment not completed yet", "status": payment_info.get("status", "UNKNOWN")}
 

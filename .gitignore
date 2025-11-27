@@ -128,4 +128,5 @@ openapi.json
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
-backend/projects
+frontend/pnpm-lock.yaml
+backend/app/agents/developer/projects_workspace

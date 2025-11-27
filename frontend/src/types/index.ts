@@ -53,8 +53,17 @@ export type {
   WIPLimit,
   UpdateWIPLimitParams,
   FlowMetrics,
-  StoryFormData
 } from './backlog'
+
+// Story types
+export type {
+  Story,
+  StoryFormData,
+  CreateStoryResponse,
+  UpdateStoryParams,
+  StoryStatus,
+  StoryType
+} from './story'
 
 // File types
 export type {

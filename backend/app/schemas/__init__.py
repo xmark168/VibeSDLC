@@ -130,6 +130,7 @@ from .plan import (
 from .payment import (
     PaymentItemData,
     CreatePaymentRequest,
+    CreateCreditPurchaseRequest,
     PaymentLinkResponse,
     PaymentStatusResponse,
     PayOSWebhookData,
@@ -141,6 +142,7 @@ from .subscription import (
     SubscriptionPublic,
     CreditWalletPublic,
     UserSubscriptionResponse,
+    UpdateAutoRenew,
 )
 
 # Persona schemas
@@ -260,6 +262,7 @@ __all__ = [
     # Payment
     "PaymentItemData",
     "CreatePaymentRequest",
+    "CreateCreditPurchaseRequest",
     "PaymentLinkResponse",
     "PaymentStatusResponse",
     "PayOSWebhookData",
@@ -276,4 +279,5 @@ __all__ = [
     "PersonaUpdate",
     "PersonaResponse",
     "PersonaWithUsageStats",
+    "UpdateAutoRenew",
 ]

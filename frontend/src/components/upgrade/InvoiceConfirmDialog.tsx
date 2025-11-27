@@ -1,14 +1,15 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Loader2, Receipt, Calendar, CreditCard } from "lucide-react"
+import { Loader2, Receipt, Calendar, CreditCard, RefreshCw } from "lucide-react"
 import type { Plan } from "@/types/plan"
+import { useState } from "react"
 
 interface InvoiceConfirmDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   plan: Plan | null
   billingCycle: 'monthly' | 'yearly'
-  onConfirm: () => void
+  onConfirm: (autoRenew: boolean) => void
   isProcessing: boolean
 }
 
@@ -20,6 +21,8 @@ export function InvoiceConfirmDialog({
   onConfirm,
   isProcessing
 }: InvoiceConfirmDialogProps) {
+  const [autoRenew, setAutoRenew] = useState(true)
+
   if (!plan) return null
 
   const amount = billingCycle === 'monthly' ? plan.monthly_price : plan.yearly_price
@@ -129,6 +132,27 @@ export function InvoiceConfirmDialog({
             </div>
           </div>
 
+          {/* Auto-renew Option */}
+          <div className="bg-secondary/20 border border-border/50 rounded-lg p-4">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={autoRenew}
+                onChange={(e) => setAutoRenew(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+              />
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <RefreshCw className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-medium text-white">Tự động gia hạn</span>
+                </div>
+                <p className="text-xs text-slate-400 mt-1">
+                  Gói dịch vụ sẽ được tự động gia hạn {billingCycle === 'monthly' ? 'hàng tháng' : 'hàng năm'} cho đến khi bạn hủy
+                </p>
+              </div>
+            </label>
+          </div>
+
           {/* Notice */}
           <p className="text-xs text-center text-slate-500">
             Sau khi thanh toán, gói dịch vụ sẽ được kích hoạt tự động
@@ -145,7 +169,7 @@ export function InvoiceConfirmDialog({
             Hủy
           </Button>
           <Button
-            onClick={onConfirm}
+            onClick={() => onConfirm(autoRenew)}
             disabled={isProcessing}
             className="flex-1 bg-primary hover:bg-primary/90"
           >

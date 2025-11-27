@@ -552,6 +552,76 @@ class AgentResponseRouter(BaseEventRouter):
         self.logger.info(f"Agent '{agent_name}' responded in project {project_id}.")
 
 
+class StoryEventRouter(BaseEventRouter):
+    """Router for STORY_EVENTS events.
+
+    Handles story status changes (e.g., Todo → In Progress).
+    For example: Story moves to In Progress → route to Developer
+    """
+
+    def should_handle(self, event: BaseKafkaEvent | Dict[str, Any]) -> bool:
+        """Check if event is a story event."""
+        event_dict = event if isinstance(event, dict) else event.model_dump()
+        event_type = event_dict.get("event_type", "")
+        return event_type.startswith("story.")
+
+    async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
+        """Route based on story status change.
+
+        Logic: If story moves to In Progress → route to Developer
+        """
+        event_dict = event if isinstance(event, dict) else event.model_dump()
+        story_id = event_dict.get("story_id")
+        project_id = event_dict.get("project_id")
+        new_status = event_dict.get("new_status")
+        old_status = event_dict.get("old_status")
+
+        self.logger.info(
+            f"Story {story_id} moved from {old_status} to {new_status} in project {project_id}"
+        )
+
+        # If story moves to In Progress, route to Developer agent
+        if new_status == "InProgress" and old_status == "Todo":
+            await self._route_to_developer(event_dict, project_id)
+
+    async def _route_to_developer(self, event_dict: Dict[str, Any], project_id: UUID) -> None:
+        """Route task to Developer agent."""
+        with Session(engine) as session:
+            from app.services import AgentService
+            agent_service = AgentService(session)
+
+            # Find Developer agent in project
+            developer = agent_service.get_by_project_and_role(
+                project_id=project_id,
+                role_type="developer"
+            )
+
+            if developer:
+                # Create a message for the developer about the status change
+                story_title = event_dict.get('story_title', 'Unknown Story')
+                content = f"Story '{story_title}' has been moved to In Progress. Please start development."
+
+                await self.publish_task(
+                    agent_id=developer.id,
+                    task_type=AgentTaskType.IMPLEMENT_STORY,  # or other appropriate task type
+                    source_event=event_dict,
+                    routing_reason="story_status_changed_to_in_progress",
+                    priority="high",
+                    additional_context={
+                        "story_id": event_dict.get("story_id"),
+                        "content": content
+                    }
+                )
+
+                self.logger.info(
+                    f"Routed story status change to Developer: {developer.name} ({developer.id})"
+                )
+            else:
+                self.logger.warning(
+                    f"No Developer found in project {project_id} for story status change"
+                )
+
+
 class AgentStatusRouter(BaseEventRouter):
     """Router for AGENT_STATUS events. Tracks agent availability for load balancing."""
 
@@ -963,7 +1033,8 @@ class MessageRouterService(BaseKafkaConsumer):
     def __init__(self):
         topics = [
             KafkaTopics.USER_MESSAGES.value,
-            KafkaTopics.AGENT_EVENTS.value,
+            KafkaTopics.AGENT_EVENTS.value,  # For agent responses to update context
+            KafkaTopics.STORY_EVENTS.value,  # Add story events for status change routing
             KafkaTopics.QUESTION_ANSWERS.value,
             KafkaTopics.DELEGATION_REQUESTS.value,
         ]
@@ -987,6 +1058,7 @@ class MessageRouterService(BaseKafkaConsumer):
             UserMessageRouter(producer),
             AgentMessageRouter(producer),
             TaskCompletionRouter(producer),
+            StoryEventRouter(producer),
             QuestionAnswerRouter(producer),
             BatchAnswersRouter(producer),
             DelegationRouter(producer),
