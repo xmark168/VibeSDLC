@@ -247,6 +247,10 @@ class UserMessageRouter(BaseEventRouter):
             
             # Check if context is still valid (not expired)
             if active_agent_id and active_updated_at:
+                # Ensure active_updated_at is timezone-aware
+                if active_updated_at.tzinfo is None:
+                    active_updated_at = active_updated_at.replace(tzinfo=timezone.utc)
+                
                 time_since_update = datetime.now(timezone.utc) - active_updated_at
                 
                 # Get smart timeout based on WebSocket connection
@@ -301,7 +305,12 @@ class UserMessageRouter(BaseEventRouter):
         
         # Check when WebSocket last seen (grace period for brief disconnects)
         if project.websocket_last_seen:
-            offline_duration = datetime.now(timezone.utc) - project.websocket_last_seen
+            # Ensure websocket_last_seen is timezone-aware
+            websocket_last_seen = project.websocket_last_seen
+            if websocket_last_seen.tzinfo is None:
+                websocket_last_seen = websocket_last_seen.replace(tzinfo=timezone.utc)
+            
+            offline_duration = datetime.now(timezone.utc) - websocket_last_seen
             
             # If recently disconnected (< 2 min), use online timeout
             if offline_duration.total_seconds() < self.GRACE_PERIOD_SECONDS:
