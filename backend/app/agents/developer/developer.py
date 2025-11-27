@@ -6,6 +6,7 @@ NEW ARCHITECTURE:
 - Integrates CrewAI crew logic directly
 """
 
+import asyncio
 import logging
 
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult

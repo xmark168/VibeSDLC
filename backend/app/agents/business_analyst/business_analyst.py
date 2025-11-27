@@ -7,6 +7,7 @@ NEW ARCHITECTURE:
 - Provides PRD generation and requirements gathering
 """
 
+import asyncio
 import logging
 from typing import Any, Dict
 from uuid import UUID
@@ -83,8 +84,7 @@ comprehensive documentation that helps the development team understand what to b
 
             logger.info(f"[{self.name}] Processing BA task: {user_message[:50]}...")
 
-            # Status update
-            await self.message_user("thinking", "Analyzing business requirements")
+            # NOTE: Base agent already sent "thinking" event, no need to duplicate
 
             # Create CrewAI task for requirements analysis
             crew_task = Task(
@@ -109,36 +109,29 @@ comprehensive documentation that helps the development team understand what to b
                 agent=self.crew_agent,
             )
 
-            await self.message_user("progress", "Requirements identified", {
-                "milestone": "analysis_started"
-            })
-
             # Execute crew
-            await self.message_user("thinking", "Creating requirements documentation")
-
             crew = Crew(
                 agents=[self.crew_agent],
                 tasks=[crew_task],
                 verbose=True,
             )
 
-            result = crew.kickoff()
+            # Run CrewAI asynchronously using native async support
+            result = await crew.kickoff_async(inputs={})
 
             # Extract response
             response = str(result)
 
-            await self.message_user("progress", "Documentation complete", {
-                "milestone": "documentation_complete"
-            })
-
-            await self.message_user("thinking", "Reviewing requirements")
-
-            # Final milestone
-            await self.message_user("progress", "Requirements analysis complete", {
-                "milestone": "completed"
-            })
-
             logger.info(f"[{self.name}] Requirements analysis completed: {len(response)} chars")
+            
+            # Send response back to user
+            await self.message_user("response", response, {
+                "message_type": "requirements_analysis",
+                "data": {
+                    "analysis": response,
+                    "analysis_type": "requirements_analysis"
+                }
+            })
 
             return TaskResult(
                 success=True,

@@ -1,14 +1,11 @@
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import type { AgentState } from "@/apis/agents"
+import type { AgentState, AgentStatus } from "@/types"
 import { Circle, Loader2, AlertCircle, CheckCircle2, Pause, XCircle } from "lucide-react"
-
-// Database AgentStatus (4 states)
-export type AgentStatus = "idle" | "busy" | "stopped" | "error"
 
 interface AgentStatusBadgeProps {
   state?: AgentState
-  status?: AgentStatus // For database agent status
+  status?: AgentStatus
   className?: string
   showIcon?: boolean
   size?: "sm" | "md"

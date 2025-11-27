@@ -82,8 +82,8 @@ class TeamLeaderCrew:
         logger.info(f"Created {len(agents)} agents for Team Leader crew")
         return agents
     
-    def analyze_request(self, user_message: str) -> str:
-        """Analyze user request and provide guidance.
+    async def analyze_request(self, user_message: str) -> str:
+        """Analyze user request and provide guidance (async).
         
         Uses the Requirements Analyst and Project Coordinator to:
         1. Understand what the user needs
@@ -136,7 +136,7 @@ User: "kiểm tra code có bug không" → "Tôi sẽ nhờ @Tester review code 
             context=[analyze_task]
         )
         
-        # Execute crew
+        # Execute crew asynchronously
         crew = Crew(
             agents=[
                 self.agents["requirements_analyst"],
@@ -147,12 +147,12 @@ User: "kiểm tra code có bug không" → "Tôi sẽ nhờ @Tester review code 
             verbose=True,
         )
         
-        result = crew.kickoff()
+        result = await crew.kickoff_async(inputs={})
         
         return str(result)
     
-    def track_progress(self, project_context: str) -> str:
-        """Track project progress and provide status update.
+    async def track_progress(self, project_context: str) -> str:
+        """Track project progress and provide status update (async).
         
         Args:
             project_context: Context about current project state
@@ -181,6 +181,6 @@ Provide:
             verbose=True,
         )
         
-        result = crew.kickoff()
+        result = await crew.kickoff_async(inputs={})
         
         return str(result)

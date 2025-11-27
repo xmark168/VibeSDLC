@@ -1,10 +1,13 @@
 from datetime import datetime, timezone
-from uuid import UUID, uuid4
 from enum import Enum
-from pydantic import EmailStr
-from sqlmodel import Field, SQLModel, Relationship, Column
-from sqlalchemy import JSON, Text
 from typing import Optional
+from uuid import UUID, uuid4
+
+from pydantic import EmailStr
+from sqlalchemy import JSON, Text
+from sqlalchemy import Enum as SQLEnum
+from sqlmodel import Column, Field, Relationship, SQLModel
+
 
 class Role(str, Enum):
     ADMIN = "admin"
@@ -30,6 +33,7 @@ class StoryType(str, Enum):
 
 class StoryPriority(str, Enum):
     """Story priority for INVEST principle (Negotiable)"""
+
     HIGH = "High"  # Must have for MVP
     MEDIUM = "Medium"  # Should have
     LOW = "Low"  # Nice to have
@@ -51,11 +55,13 @@ class BaseModel(SQLModel):
 class User(BaseModel, table=True):
     __tablename__ = "users"
 
-    username : str | None = Field(default=None, max_length=50, nullable=True)
+    username: str | None = Field(default=None, max_length=50, nullable=True)
     full_name: str | None = Field(default=None, max_length=50, nullable=True)
-    hashed_password: str = Field(nullable=True, sa_column_kwargs={"name": "password_hash"})
+    hashed_password: str = Field(
+        nullable=True, sa_column_kwargs={"name": "password_hash"}
+    )
     email: EmailStr = Field(unique=True, index=True, max_length=255)
-    
+
     # Database columns that exist
     address: str | None = Field(default=None, nullable=True)
     balance: float = Field(default=0.0, nullable=True)
@@ -63,11 +69,11 @@ class User(BaseModel, table=True):
     failed_login_attempts: int = Field(default=0, nullable=False)
     locked_until: datetime | None = Field(default=None)
     two_factor_enabled: bool = Field(default=False, nullable=True)
-    
+
     # Additional columns needed by application logic
     role: Role = Field(default=Role.USER, nullable=False)
     is_locked: bool = Field(default=False, nullable=False)
-    login_provider: bool = Field(default=False, nullable=False)
+    login_provider: str | None = Field(default=None, nullable=True)
 
     owned_projects: list["Project"] = Relationship(
         back_populates="owner", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
@@ -80,6 +86,7 @@ class User(BaseModel, table=True):
 
 class EpicStatus(str, Enum):
     """Status of an Epic"""
+
     PLANNED = "Planned"
     IN_PROGRESS = "InProgress"
     COMPLETED = "Completed"
@@ -87,14 +94,19 @@ class EpicStatus(str, Enum):
 
 class Epic(BaseModel, table=True):
     """Epic model for grouping stories"""
+
     __tablename__ = "epics"
 
     title: str
     description: str | None = Field(default=None, sa_column=Column(Text))
-    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE")
+    project_id: UUID = Field(
+        foreign_key="projects.id", nullable=False, ondelete="CASCADE"
+    )
 
     # BA workflow fields
-    domain: str | None = Field(default=None)  # Feature domain (e.g., Product, Cart, Order, Payment)
+    domain: str | None = Field(
+        default=None
+    )  # Feature domain (e.g., Product, Cart, Order, Payment)
     epic_status: EpicStatus = Field(default=EpicStatus.PLANNED)
 
     # Relationships
@@ -133,15 +145,18 @@ class Project(BaseModel, table=True):
 
     rules: Optional["ProjectRules"] = Relationship(
         back_populates="project",
-        sa_relationship_kwargs={"uselist": False, "cascade": "all, delete-orphan"}
+        sa_relationship_kwargs={"uselist": False, "cascade": "all, delete-orphan"},
     )
 
 
 class WorkflowPolicy(BaseModel, table=True):
     """Explicit policies for workflow transitions (DoR/DoD)"""
+
     __tablename__ = "workflow_policies"
 
-    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
+    project_id: UUID = Field(
+        foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True
+    )
     from_status: str = Field(max_length=50, nullable=False)
     to_status: str = Field(max_length=50, nullable=False)
     criteria: dict | None = Field(default=None, sa_column=Column(JSON))
@@ -159,6 +174,7 @@ class Story(BaseModel, table=True):
     Replaces BacklogItem with proper status columns: Todo, InProgress, Review, Done.
     Supports only UserStory and EnablerStory types.
     """
+
     __tablename__ = "stories"
 
     project_id: UUID = Field(
@@ -175,7 +191,9 @@ class Story(BaseModel, table=True):
     status: StoryStatus = Field(default=StoryStatus.TODO)
 
     # Epic relationship (for linking stories to epics table)
-    epic_id: UUID | None = Field(default=None, foreign_key="epics.id", ondelete="SET NULL")
+    epic_id: UUID | None = Field(
+        default=None, foreign_key="epics.id", ondelete="SET NULL"
+    )
 
     # Acceptance criteria (BA fills this)
     acceptance_criteria: str | None = Field(default=None, sa_column=Column(Text))
@@ -191,12 +209,16 @@ class Story(BaseModel, table=True):
     # Planning fields
     rank: int | None = Field(default=None)
     estimate_value: int | None = Field(default=None)
-    story_point: int | None = Field(default=None)  # INVEST: Estimable (Fibonacci: 1,2,3,5,8,13)
+    story_point: int | None = Field(
+        default=None
+    )  # INVEST: Estimable (Fibonacci: 1,2,3,5,8,13)
     priority: int | None = Field(default=None)  # Legacy numeric priority
 
     # INVEST principle fields (for BA workflow)
     story_priority: StoryPriority | None = Field(default=None)  # High/Medium/Low
-    dependencies: list = Field(default_factory=list, sa_column=Column(JSON))  # INVEST: Independent (story IDs)
+    dependencies: list = Field(
+        default_factory=list, sa_column=Column(JSON)
+    )  # INVEST: Independent (story IDs)
 
     # Lifecycle fields
     pause: bool = Field(default=False)
@@ -276,9 +298,7 @@ class Comment(BaseModel, table=True):
 class IssueActivity(BaseModel, table=True):
     __tablename__ = "issue_activities"
 
-    issue_id: UUID = Field(
-        foreign_key="stories.id", nullable=False, ondelete="CASCADE"
-    )
+    issue_id: UUID = Field(foreign_key="stories.id", nullable=False, ondelete="CASCADE")
     actor_id: str | None = Field(default=None)
     actor_name: str | None = Field(default=None)
 
@@ -300,15 +320,24 @@ class IssueActivity(BaseModel, table=True):
     type_to: str | None = Field(default=None)
     note: str | None = Field(default=None)
 
-    story: Story = Relationship(back_populates="activities") 
+    story: Story = Relationship(back_populates="activities")
+
 
 class AuthorType(str, Enum):
     USER = "user"
     AGENT = "agent"
 
 
+class MessageVisibility(str, Enum):
+    """Message visibility type - for filtering user-facing messages vs system logs"""
+
+    USER_MESSAGE = "user_message"  # Actual messages to display in chat UI
+    SYSTEM_LOG = "system_log"  # Internal logs, progress updates (not shown in chat)
+
+
 class AgentStatus(str, Enum):
     """Runtime status of an agent (unified for runtime and database)"""
+
     created = "created"  # Initial state when agent is instantiated
     starting = "starting"  # Agent is starting up
     running = "running"  # Agent is running (legacy, mostly uses idle/busy)
@@ -324,12 +353,16 @@ class Agent(BaseModel, table=True):
     __tablename__ = "agents"
 
     # Project relationship - each agent belongs to a project
-    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
+    project_id: UUID = Field(
+        foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True
+    )
 
     # Agent identity
     name: str  # Display name (e.g., "Mike (Developer)")
     human_name: str = Field(nullable=False)  # Natural name like "Mike", "Alice"
-    role_type: str = Field(nullable=False)  # team_leader, business_analyst, developer, tester
+    role_type: str = Field(
+        nullable=False
+    )  # team_leader, business_analyst, developer, tester
     agent_type: str | None = Field(default=None)  # Legacy field for compatibility
 
     # Runtime status
@@ -344,20 +377,46 @@ class Message(BaseModel, table=True):
     __tablename__ = "messages"
 
     # Single-session-per-project: attach all messages to a project
-    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
+    project_id: UUID = Field(
+        foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True
+    )
 
     # Author info: either user or agent (or system/tool)
     author_type: AuthorType = Field(default=AuthorType.USER, nullable=False)
-    user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
-    agent_id: UUID | None = Field(default=None, foreign_key="agents.id", ondelete="SET NULL")
+    user_id: UUID | None = Field(
+        default=None, foreign_key="users.id", ondelete="SET NULL"
+    )
+    agent_id: UUID | None = Field(
+        default=None, foreign_key="agents.id", ondelete="SET NULL"
+    )
 
     # Message payload
     content: str
 
+    # Message visibility: user-facing message vs system log
+    visibility: MessageVisibility = Field(
+        default=MessageVisibility.USER_MESSAGE,
+        sa_column=Column(
+            SQLEnum(
+                MessageVisibility,
+                name="messagevisibility",
+                native_enum=True,
+                values_callable=lambda x: [e.value for e in x],
+            ),
+            nullable=False,
+        ),
+    )
+
     # Structured data fields for agent previews
-    message_type: str = Field(default="text", nullable=True)  # "text" | "product_brief" | "product_vision" | "product_backlog"
-    structured_data: dict | None = Field(default=None, sa_column=Column(JSON))  # JSON data (brief/vision/backlog)
-    message_metadata: dict | None = Field(default=None, sa_column=Column(JSON))  # Message metadata (preview_id, quality_score, approved_by, etc.)
+    message_type: str = Field(
+        default="text", nullable=True
+    )  # "text" | "product_brief" | "product_vision" | "product_backlog"
+    structured_data: dict | None = Field(
+        default=None, sa_column=Column(JSON)
+    )  # JSON data (brief/vision/backlog)
+    message_metadata: dict | None = Field(
+        default=None, sa_column=Column(JSON)
+    )  # Message metadata (preview_id, quality_score, approved_by, etc.)
 
     # Relationship back to agent
     agent: Agent | None = Relationship(back_populates="messages")
@@ -373,7 +432,9 @@ class RefreshToken(BaseModel, table=True):
 
     # Token family tracking for rotation detection
     family_id: UUID = Field(nullable=False, index=True)
-    parent_token_id: UUID | None = Field(default=None, foreign_key="refresh_tokens.id", ondelete="SET NULL")
+    parent_token_id: UUID | None = Field(
+        default=None, foreign_key="refresh_tokens.id", ondelete="SET NULL"
+    )
 
     # Relationships
     user: User = Relationship()
@@ -387,7 +448,9 @@ class RefreshToken(BaseModel, table=True):
 class ProjectRules(BaseModel, table=True):
     __tablename__ = "projectrules"
 
-    project_id: UUID = Field(foreign_key="projects.id", unique=True, nullable=False, ondelete="CASCADE")
+    project_id: UUID = Field(
+        foreign_key="projects.id", unique=True, nullable=False, ondelete="CASCADE"
+    )
 
     po_prompt: str | None = Field(default=None, sa_column=Column(Text))
     dev_prompt: str | None = Field(default=None, sa_column=Column(Text))
@@ -397,12 +460,12 @@ class ProjectRules(BaseModel, table=True):
     project: Project = Relationship(back_populates="rules")
 
 
-
 # ==================== AGENT PERSISTENCE MODELS ====================
 
 
 class AgentExecutionStatus(str, Enum):
     """Status of an agent execution"""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -412,13 +475,18 @@ class AgentExecutionStatus(str, Enum):
 
 class AgentExecution(BaseModel, table=True):
     """Track agent execution runs for observability and debugging"""
+
     __tablename__ = "agent_executions"
 
-    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
+    project_id: UUID = Field(
+        foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True
+    )
 
     # Agent info
     agent_name: str = Field(nullable=False)
-    agent_type: str = Field(nullable=False)  # TeamLeader, BusinessAnalyst, Developer, Tester
+    agent_type: str = Field(
+        nullable=False
+    )  # TeamLeader, BusinessAnalyst, Developer, Tester
 
     # Execution tracking
     status: AgentExecutionStatus = Field(default=AgentExecutionStatus.PENDING)
@@ -427,8 +495,12 @@ class AgentExecution(BaseModel, table=True):
     duration_ms: int | None = Field(default=None)
 
     # Context
-    trigger_message_id: UUID | None = Field(default=None, foreign_key="messages.id", ondelete="SET NULL")
-    user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
+    trigger_message_id: UUID | None = Field(
+        default=None, foreign_key="messages.id", ondelete="SET NULL"
+    )
+    user_id: UUID | None = Field(
+        default=None, foreign_key="users.id", ondelete="SET NULL"
+    )
 
     # Resource usage
     token_used: int = Field(default=0)
@@ -445,10 +517,15 @@ class AgentExecution(BaseModel, table=True):
 
 class AgentConversation(BaseModel, table=True):
     """Store agent-to-agent and agent-to-user conversation history"""
+
     __tablename__ = "agent_conversations"
 
-    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
-    execution_id: UUID | None = Field(default=None, foreign_key="agent_executions.id", ondelete="CASCADE")
+    project_id: UUID = Field(
+        foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    execution_id: UUID | None = Field(
+        default=None, foreign_key="agent_executions.id", ondelete="CASCADE"
+    )
 
     # Message info
     sender_type: str = Field(nullable=False)  # "agent" or "user"
@@ -467,13 +544,12 @@ class AgentConversation(BaseModel, table=True):
 
 class AgentMetricsSnapshot(BaseModel, table=True):
     """Periodic snapshots of agent pool metrics for historical analysis"""
+
     __tablename__ = "agent_metrics_snapshots"
 
     # Snapshot metadata
     snapshot_timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        nullable=False,
-        index=True
+        default_factory=lambda: datetime.now(timezone.utc), nullable=False, index=True
     )
     pool_name: str = Field(nullable=False, index=True)
 
@@ -507,6 +583,7 @@ class AgentMetricsSnapshot(BaseModel, table=True):
 
 class ApprovalStatus(str, Enum):
     """Status of an approval request"""
+
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
@@ -515,30 +592,47 @@ class ApprovalStatus(str, Enum):
 
 class ApprovalRequest(BaseModel, table=True):
     """Human-in-the-loop approval requests from agents"""
+
     __tablename__ = "approval_requests"
 
-    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
-    execution_id: UUID | None = Field(default=None, foreign_key="agent_executions.id", ondelete="CASCADE")
+    project_id: UUID = Field(
+        foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    execution_id: UUID | None = Field(
+        default=None, foreign_key="agent_executions.id", ondelete="CASCADE"
+    )
 
     # Request info
-    request_type: str = Field(nullable=False)  # "story_creation", "story_update", "epic_creation"
+    request_type: str = Field(
+        nullable=False
+    )  # "story_creation", "story_update", "epic_creation"
     agent_name: str = Field(nullable=False)
 
     # Proposed changes
     proposed_data: dict = Field(sa_column=Column(JSON))  # What the agent wants to do
-    preview_data: dict | None = Field(default=None, sa_column=Column(JSON))  # Preview for UI
-    explanation: str | None = Field(default=None, sa_column=Column(Text))  # Why the agent proposes this
+    preview_data: dict | None = Field(
+        default=None, sa_column=Column(JSON)
+    )  # Preview for UI
+    explanation: str | None = Field(
+        default=None, sa_column=Column(Text)
+    )  # Why the agent proposes this
 
     # Approval tracking
     status: ApprovalStatus = Field(default=ApprovalStatus.PENDING)
-    approved_by_user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
+    approved_by_user_id: UUID | None = Field(
+        default=None, foreign_key="users.id", ondelete="SET NULL"
+    )
     approved_at: datetime | None = Field(default=None)
 
     # User feedback
     user_feedback: str | None = Field(default=None, sa_column=Column(Text))
-    modified_data: dict | None = Field(default=None, sa_column=Column(JSON))  # User modifications to proposal
+    modified_data: dict | None = Field(
+        default=None, sa_column=Column(JSON)
+    )  # User modifications to proposal
 
     # Result tracking
     applied: bool = Field(default=False)  # Whether the approval was actually applied
     applied_at: datetime | None = Field(default=None)
-    created_entity_id: UUID | None = Field(default=None)  # ID of created Story/Epic if applicable
+    created_entity_id: UUID | None = Field(
+        default=None
+    )  # ID of created Story/Epic if applicable
