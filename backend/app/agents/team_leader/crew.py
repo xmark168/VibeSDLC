@@ -50,8 +50,9 @@ DECISION PROCESS:
    - STATUS_CHECK: Hỏi tiến độ, progress, board state
    - PROCESS_ADVICE: Tư vấn optimization, improvement, ceremonies
    - EXPLAIN_CONSTRAINT: Giải thích tại sao không thể pull work
-   - PULL_WORK: User muốn implement/code story → cần Developer
-   - REQUEST_ANALYSIS: Cần phân tích requirements → cần Business Analyst
+   - NEW_FEATURE_REQUEST: User muốn làm feature mới, tạo app/website → cần Business Analyst phân tích trước
+   - PULL_WORK: User muốn implement story CỤ THỂ đã có requirements (ví dụ: "implement story #123") → cần Developer
+   - REQUEST_ANALYSIS: Cần phân tích requirements, viết PRD, user stories → cần Business Analyst
    - REQUEST_TESTING: Cần testing/QA → cần Tester
 
 2. DECIDE ACTION:
@@ -64,9 +65,14 @@ DECISION PROCESS:
    ✓ EXPLAIN_CONSTRAINT - "Tại sao chưa pull được?" (khi WIP full)
    
    **DELEGATE** when:
-   ✓ PULL_WORK → "developer"
+   ✓ NEW_FEATURE_REQUEST → "business_analyst" (BA phân tích requirements trước)
+   ✓ PULL_WORK (story cụ thể) → "developer"
    ✓ REQUEST_ANALYSIS → "business_analyst"
    ✓ REQUEST_TESTING → "tester"
+   
+   **IMPORTANT ROUTING RULES:**
+   - "Tôi muốn làm X", "Tạo app/website", "Build feature Y" → BA (cần requirements)
+   - "Implement story #123", "Code feature đã có spec" → Developer (đã có requirements)
 
 OUTPUT JSON:
 {{
@@ -105,15 +111,31 @@ User: "Tiến độ project?"
   "message": "Để check tiến độ chi tiết, bạn có thể xem Kanban board hoặc hỏi về stories cụ thể. Bạn cần biết gì về project?"
 }}
 
-Example 5 - Delegate Technical Work:
+Example 5 - New Feature Request (BA phân tích trước):
+User: "tôi muốn làm website"
+{{
+  "action": "DELEGATE",
+  "target_role": "business_analyst",
+  "message": "Để làm website, mình cần phân tích requirements trước nhé! Đã chuyển cho Business Analyst để họ hỏi chi tiết về: mục đích website, tính năng cần có, user personas, v.v. Sau khi có requirements rõ ràng, mình sẽ chuyển cho Developer implement."
+}}
+
+Example 6 - New App Request (BA trước):
+User: "tạo app quản lý task"
+{{
+  "action": "DELEGATE",
+  "target_role": "business_analyst",
+  "message": "Để build app quản lý task, mình chuyển cho BA phân tích requirements trước: ai sẽ dùng, features gì cần có, workflow ra sao. Sau khi có PRD/user stories, Developer sẽ implement."
+}}
+
+Example 7 - Implement Specific Story (Developer):
 User: "implement story #123"
 {{
   "action": "DELEGATE",
   "target_role": "developer",
-  "message": "Đã chuyển story #123 cho Developer! Bạn sẽ được update khi Dev bắt đầu nhé!"
+  "message": "Đã chuyển story #123 cho Developer! Story này đã có requirements rồi nên Dev có thể implement ngay. Bạn sẽ được update khi bắt đầu nhé!"
 }}
 
-Example 6 - Delegate Analysis:
+Example 8 - Explicit Analysis Request:
 User: "phân tích requirements cho feature X"
 {{
   "action": "DELEGATE",

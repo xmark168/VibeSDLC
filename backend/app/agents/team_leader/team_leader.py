@@ -3,6 +3,7 @@
 import logging
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
 from app.models import Agent as AgentModel
+from app.agents.team_leader.flow import TeamLeaderFlow
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,6 @@ class TeamLeader(BaseAgent):
         super().__init__(agent_model, **kwargs)
         logger.info(f"[{self.name}] Initializing Team Leader Flow")
         
-        from app.agents.team_leader.flow import TeamLeaderFlow
         
         self.flow = TeamLeaderFlow(
             project_id=self.project_id,
@@ -29,16 +29,43 @@ class TeamLeader(BaseAgent):
             # Store task in flow before kickoff
             self.flow.current_task = task
             
-            # Kickoff flow (no inputs needed, task already stored)
-            result = await self.flow.kickoff_async()
+            # Kickoff flow - returns routing decision dict
+            routing = await self.flow.kickoff_async()
             
-            # Check if need to send message to user
-            if isinstance(result, TaskResult):
-                # If RESPOND action, send message to user
-                if result.structured_data and result.structured_data.get("action") == "respond_direct":
-                    await self.message_user("response", result.output)
+            # Execute routing decision
+            action = routing.get("action")
             
-            return result
+            if action == "DELEGATE":
+                # Delegate to specialist
+                from datetime import datetime, timezone
+                
+                task.context["delegation_attempted"] = True
+                task.context["delegation_timestamp"] = datetime.now(timezone.utc).isoformat()
+                
+                return await self.delegate_to_role(
+                    task=task,
+                    target_role=routing["target_role"],
+                    delegation_message=routing["message"]
+                )
+            
+            elif action == "RESPOND":
+                # Respond directly to user
+                await self.message_user("response", routing["message"])
+                
+                return TaskResult(
+                    success=True,
+                    output=routing["message"],
+                    structured_data={"action": "respond_direct"}
+                )
+            
+            else:
+                # Unknown action
+                logger.error(f"Unknown routing action: {action}")
+                return TaskResult(
+                    success=False,
+                    output="",
+                    error_message=f"Unknown routing action: {action}"
+                )
             
         except Exception as e:
             logger.error(f"[{self.name}] Flow error: {e}", exc_info=True)
