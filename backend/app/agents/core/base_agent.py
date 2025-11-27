@@ -1714,7 +1714,10 @@ Provide a helpful, concise response based on your expertise as a {self.role_type
             self._current_task_type = task_data.get("task_type", "message")
             self._current_task_content = context.get("content", "")
             self._current_routing_reason = task_data.get("routing_reason", "")
-            self._current_user_id = context.get("user_id")
+            # user_id can be at top-level (RouterTaskEvent) or in context
+            self._current_user_id = task_data.get("user_id") or context.get("user_id")
+            if self._current_user_id and isinstance(self._current_user_id, str):
+                self._current_user_id = UUID(self._current_user_id)
 
             # Handle collaboration task types separately (don't create full TaskContext)
             task_type_str = task_data.get("task_type", "message")

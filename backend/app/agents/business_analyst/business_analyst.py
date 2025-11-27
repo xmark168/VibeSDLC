@@ -2,15 +2,17 @@
 
 import logging
 from pathlib import Path
+from uuid import UUID
 
 from sqlmodel import Session, select
 
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
-from app.models import Agent as AgentModel, Project
+from app.models import Agent as AgentModel, Project, AgentQuestion, QuestionStatus
 from app.utils.project_files import ProjectFiles
 from app.kafka.event_schemas import AgentTaskType
 from app.core.db import engine
 from app.agents.business_analyst.src import BusinessAnalystGraph
+from app.agents.business_analyst.src.nodes import process_answer, ask_one_question, generate_prd, save_artifacts
 
 logger = logging.getLogger(__name__)
 
@@ -50,10 +52,19 @@ class BusinessAnalyst(BaseAgent):
         
         Note: Langfuse tracing is automatically handled by BaseAgent.
         """
-        logger.info(f"[{self.name}] Processing task with LangGraph: {task.content[:50]}")
+        # Check if this is a resume task (user answered a question)
+        is_resume = task.task_type == AgentTaskType.RESUME_WITH_ANSWER
+        
+        # For RESUME tasks, answer is in context, not content
+        if is_resume:
+            answer = task.context.get("answer", "") if task.context else ""
+            logger.info(f"[{self.name}] Processing RESUME task with answer: {answer[:50] if answer else 'empty'}")
+            return await self._handle_resume_task(task, answer)
+        
+        logger.info(f"[{self.name}] Processing task with LangGraph: {task.content[:50] if task.content else 'empty'}")
         
         try:
-            # Validate user message
+            # Validate user message (only for non-resume tasks)
             if not task.content or not task.content.strip():
                 logger.error(f"[{self.name}] Empty task content received")
                 return TaskResult(
@@ -62,71 +73,7 @@ class BusinessAnalyst(BaseAgent):
                     error_message="Empty user message"
                 )
             
-            # Check if this is a resume task
-            is_resume = task.task_type == AgentTaskType.RESUME_WITH_ANSWER
-            
-            # Load existing PRD if available
-            existing_prd = None
-            if self.project_files:
-                try:
-                    existing_prd = await self.project_files.load_prd()
-                except Exception as e:
-                    logger.debug(f"[{self.name}] No existing PRD: {e}")
-            
-            # Prepare collected_info based on task type
-            collected_info = {}
-            user_message = task.content
-            
-            if is_resume:
-                collected_info = {
-                    "user_answers": [task.content],
-                    "last_interaction": "answered_questions"
-                }
-                user_message = (
-                    f"User provided answer to previous questions: {task.content}\n\n"
-                    f"Now that we have more information, proceed to generate PRD."
-                )
-            
-            # Prepare initial state
-            initial_state = {
-                "user_message": user_message,
-                "project_id": str(self.project_id),
-                "task_id": str(task.task_id),
-                "user_id": str(task.user_id) if task.user_id else "",
-                "project_path": str(self.project_files.project_path) if self.project_files else "",
-                "collected_info": collected_info,
-                "existing_prd": existing_prd,
-                "intent": "",
-                "reasoning": "",
-                "questions": [],
-                "questions_sent": False,
-                "prd_draft": None,
-                "prd_final": None,
-                "prd_saved": False,
-                "change_summary": "",
-                "stories": [],
-                "stories_saved": False,
-                "analysis_text": "",
-                "error": None,
-                "retry_count": 0,
-                "result": {},
-                "is_complete": False
-            }
-            
-            logger.info(f"[{self.name}] Invoking LangGraph...")
-            final_state = await self.graph_engine.execute(initial_state)
-            
-            # Extract result
-            result_data = final_state.get("result", {})
-            action = final_state.get("intent", "completed")
-            
-            logger.info(f"[{self.name}] Graph completed: action={action}")
-            
-            return TaskResult(
-                success=True,
-                output=str(result_data),
-                structured_data=result_data
-            )
+            return await self._handle_new_task(task)
             
         except Exception as e:
             logger.error(f"[{self.name}] LangGraph error: {e}", exc_info=True)
@@ -135,3 +82,188 @@ class BusinessAnalyst(BaseAgent):
                 output="",
                 error_message=f"Graph execution error: {str(e)}"
             )
+    
+    async def _handle_resume_task(self, task: TaskContext, answer: str) -> TaskResult:
+        """Handle resume task - user answered a question in sequential flow."""
+        logger.info(f"[{self.name}] Handling RESUME task (user answered question)")
+        
+        if not answer:
+            logger.error(f"[{self.name}] Empty answer in RESUME task")
+            return TaskResult(
+                success=False,
+                output="",
+                error_message="Empty answer"
+            )
+        
+        # Load interview state from database
+        interview_state = await self._load_interview_state(task)
+        
+        if not interview_state:
+            logger.warning(f"[{self.name}] No interview state found, treating as new task")
+            return await self._handle_new_task(task)
+        
+        # Load existing PRD if available
+        existing_prd = None
+        if self.project_files:
+            try:
+                existing_prd = await self.project_files.load_prd()
+            except Exception as e:
+                logger.debug(f"[{self.name}] No existing PRD: {e}")
+        
+        # Build state from saved interview state + user answer
+        state = {
+            "user_message": answer,  # Use answer from context, not task.content
+            "project_id": str(self.project_id),
+            "task_id": str(task.task_id),
+            "user_id": str(task.user_id) if task.user_id else "",
+            "project_path": str(self.project_files.project_path) if self.project_files else "",
+            "collected_info": interview_state.get("collected_info", {}),
+            "existing_prd": existing_prd,
+            "intent": "interview",
+            "questions": interview_state.get("questions", []),
+            "current_question_index": interview_state.get("current_question_index", 0),
+            "collected_answers": interview_state.get("collected_answers", []),
+            "waiting_for_answer": False,
+            "all_questions_answered": False,
+        }
+        
+        # Process the answer
+        logger.info(f"[{self.name}] Processing answer for question {state['current_question_index'] + 1}")
+        state = {**state, **(await process_answer(state, agent=self))}
+        
+        # Check if more questions or generate PRD
+        if state.get("all_questions_answered"):
+            logger.info(f"[{self.name}] All questions answered, generating PRD")
+            state = {**state, **(await generate_prd(state, agent=self))}
+            state = {**state, **(await save_artifacts(state, agent=self))}
+            
+            return TaskResult(
+                success=True,
+                output=str(state.get("result", {})),
+                structured_data=state.get("result", {})
+            )
+        else:
+            # Ask next question
+            logger.info(f"[{self.name}] Asking next question {state['current_question_index'] + 1}")
+            state = {**state, **(await ask_one_question(state, agent=self))}
+            
+            # Save state for next resume
+            await self._save_interview_state(task, state)
+            
+            return TaskResult(
+                success=True,
+                output="Question asked, waiting for answer",
+                structured_data={"waiting_for_answer": True}
+            )
+    
+    async def _handle_new_task(self, task: TaskContext) -> TaskResult:
+        """Handle new task - run full LangGraph."""
+        logger.info(f"[{self.name}] Handling NEW task")
+        
+        # Load existing PRD if available
+        existing_prd = None
+        if self.project_files:
+            try:
+                existing_prd = await self.project_files.load_prd()
+            except Exception as e:
+                logger.debug(f"[{self.name}] No existing PRD: {e}")
+        
+        # Prepare initial state
+        initial_state = {
+            "user_message": task.content,
+            "project_id": str(self.project_id),
+            "task_id": str(task.task_id),
+            "user_id": str(task.user_id) if task.user_id else "",
+            "project_path": str(self.project_files.project_path) if self.project_files else "",
+            "collected_info": {},
+            "existing_prd": existing_prd,
+            "intent": "",
+            "reasoning": "",
+            "questions": [],
+            "current_question_index": 0,
+            "collected_answers": [],
+            "waiting_for_answer": False,
+            "all_questions_answered": False,
+            "prd_draft": None,
+            "prd_final": None,
+            "prd_saved": False,
+            "change_summary": "",
+            "stories": [],
+            "stories_saved": False,
+            "analysis_text": "",
+            "error": None,
+            "retry_count": 0,
+            "result": {},
+            "is_complete": False
+        }
+        
+        logger.info(f"[{self.name}] Invoking LangGraph...")
+        final_state = await self.graph_engine.execute(initial_state)
+        
+        # If waiting for answer, save state for resume
+        if final_state.get("waiting_for_answer"):
+            await self._save_interview_state(task, final_state)
+            return TaskResult(
+                success=True,
+                output="Question asked, waiting for answer",
+                structured_data={"waiting_for_answer": True}
+            )
+        
+        # Extract result
+        result_data = final_state.get("result", {})
+        action = final_state.get("intent", "completed")
+        
+        logger.info(f"[{self.name}] Graph completed: action={action}")
+        
+        return TaskResult(
+            success=True,
+            output=str(result_data),
+            structured_data=result_data
+        )
+    
+    async def _load_interview_state(self, task: TaskContext) -> dict | None:
+        """Load interview state from database (via question context)."""
+        try:
+            # First, try to get question_id from task context (passed by QuestionAnswerRouter)
+            question_id = None
+            if task.context:
+                question_id = task.context.get("question_id")
+            
+            with Session(engine) as session:
+                question = None
+                
+                if question_id:
+                    # Direct lookup by question_id from RESUME task context
+                    question = session.get(AgentQuestion, UUID(question_id))
+                    logger.info(f"[{self.name}] Loading interview state from question {question_id}")
+                else:
+                    # Fallback: Find the most recently answered question for this project/agent
+                    question = session.exec(
+                        select(AgentQuestion)
+                        .where(AgentQuestion.project_id == self.project_id)
+                        .where(AgentQuestion.agent_id == self.agent_id)
+                        .where(AgentQuestion.status == QuestionStatus.ANSWERED)
+                        .order_by(AgentQuestion.answered_at.desc())
+                    ).first()
+                
+                if question and question.task_context:
+                    task_context = question.task_context
+                    interview_state = task_context.get("interview_state", {})
+                    
+                    if interview_state:
+                        logger.info(f"[{self.name}] Found interview state from question {question.id}")
+                        return interview_state
+                    
+            return None
+        except Exception as e:
+            logger.error(f"[{self.name}] Failed to load interview state: {e}")
+            return None
+    
+    async def _save_interview_state(self, task: TaskContext, state: dict) -> None:
+        """Save interview state for resume (stored in question's task_context)."""
+        try:
+            # State is already saved when question is created via ask_clarification_question
+            # This method can be used for additional state persistence if needed
+            logger.info(f"[{self.name}] Interview state saved (question index: {state.get('current_question_index', 0)})")
+        except Exception as e:
+            logger.error(f"[{self.name}] Failed to save interview state: {e}")

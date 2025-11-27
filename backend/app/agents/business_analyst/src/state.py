@@ -13,6 +13,9 @@ class BAState(TypedDict, total=False):
     
     # Input
     user_message: str
+    project_id: str
+    task_id: str
+    user_id: str
     project_path: str
     
     # Context
@@ -26,9 +29,12 @@ class BAState(TypedDict, total=False):
     intent: Literal["interview", "prd_create", "prd_update", "extract_stories", "domain_analysis"]
     reasoning: str  # Why this intent was chosen
     
-    # Interview workflow
-    questions: Annotated[list[dict], add]  # Questions to ask (accumulate with add operator)
-    questions_sent: bool
+    # Interview workflow - Sequential questions
+    questions: list[dict]  # All questions to ask
+    current_question_index: int  # Current question being asked (0-based)
+    collected_answers: list[dict]  # Answers collected so far
+    waiting_for_answer: bool  # True if waiting for user to answer
+    all_questions_answered: bool  # True when all questions have been answered
     
     # PRD workflow
     prd_draft: dict | None

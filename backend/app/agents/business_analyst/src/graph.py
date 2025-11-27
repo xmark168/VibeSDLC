@@ -10,7 +10,8 @@ from .state import BAState
 from .nodes import (
     analyze_intent,
     interview_requirements,
-    ask_questions,
+    ask_one_question,
+    process_answer,
     generate_prd,
     update_prd,
     extract_stories,
@@ -51,23 +52,28 @@ def should_ask_questions(state: BAState) -> Literal["ask", "save"]:
         return "save"
 
 
-class BusinessAnalystGraph:
-    """LangGraph-based Business Analyst workflow.
+def should_continue_or_wait(state: BAState) -> Literal["wait", "next_question", "generate_prd"]:
+    """Router: After asking/processing, decide next step.
     
-    Graph structure:
-        START
-          |
-        analyze_intent (classify user request)
-          |
-        ROUTER (conditional edges)
-          |- interview -> ask_questions -> save
-          |- prd_create -> generate_prd -> save
-          |- prd_update -> update_prd -> save
-          |- extract_stories -> save
-          |- domain_analysis -> save
-          |
-        END
+    - wait: Question sent, waiting for user answer (END this run)
+    - next_question: More questions to ask
+    - generate_prd: All questions answered, generate PRD
     """
+    waiting = state.get("waiting_for_answer", False)
+    all_answered = state.get("all_questions_answered", False)
+    
+    if waiting:
+        logger.info("[BA Graph] Waiting for user answer, pausing execution")
+        return "wait"
+    elif all_answered:
+        logger.info("[BA Graph] All questions answered, proceeding to PRD generation")
+        return "generate_prd"
+    else:
+        logger.info("[BA Graph] More questions to ask")
+        return "next_question"
+
+
+class BusinessAnalystGraph:
     
     def __init__(self, agent=None):
         """Initialize graph with reference to agent.
@@ -82,7 +88,8 @@ class BusinessAnalystGraph:
         # Add nodes with agent reference using partial
         graph.add_node("analyze_intent", partial(analyze_intent, agent=agent))
         graph.add_node("interview_requirements", partial(interview_requirements, agent=agent))
-        graph.add_node("ask_questions", partial(ask_questions, agent=agent))
+        graph.add_node("ask_one_question", partial(ask_one_question, agent=agent))
+        graph.add_node("process_answer", partial(process_answer, agent=agent))
         graph.add_node("generate_prd", partial(generate_prd, agent=agent))
         graph.add_node("update_prd", partial(update_prd, agent=agent))
         graph.add_node("extract_stories", partial(extract_stories, agent=agent))
@@ -105,16 +112,37 @@ class BusinessAnalystGraph:
             }
         )
         
-        # Interview flow: generate questions -> ask -> save
+        # Interview flow: generate questions -> ask one at a time
         graph.add_conditional_edges(
             "interview_requirements",
             should_ask_questions,
             {
-                "ask": "ask_questions",
+                "ask": "ask_one_question",
                 "save": "save_artifacts"
             }
         )
-        graph.add_edge("ask_questions", "save_artifacts")
+        
+        # After asking question: wait for answer or continue
+        graph.add_conditional_edges(
+            "ask_one_question",
+            should_continue_or_wait,
+            {
+                "wait": END,  # Pause, wait for user answer (RESUME will call process_answer)
+                "next_question": "ask_one_question",  # Loop to ask next
+                "generate_prd": "generate_prd"  # All answered, generate PRD
+            }
+        )
+        
+        # After processing answer: ask next or generate PRD
+        graph.add_conditional_edges(
+            "process_answer",
+            should_continue_or_wait,
+            {
+                "wait": END,  # Should not happen, but handle it
+                "next_question": "ask_one_question",  # More questions
+                "generate_prd": "generate_prd"  # All answered
+            }
+        )
         
         # PRD flows -> save
         graph.add_edge("generate_prd", "save_artifacts")
