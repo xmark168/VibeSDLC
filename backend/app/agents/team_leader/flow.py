@@ -66,42 +66,7 @@ class TeamLeaderFlow(Flow):
         return routing
     
     @listen(analyze_and_route)
-    async def execute_decision(self, routing: Dict[str, Any]) -> TaskResult:
-        """Execute routing decision."""
-        action = routing.get("action")
-        
-        if action == "DELEGATE":
-            # Delegate to specialist agent
-            from datetime import datetime, timezone
-            from app.agents.team_leader.team_leader import TeamLeader
-            
-            self.current_task.context["delegation_attempted"] = True
-            self.current_task.context["delegation_timestamp"] = datetime.now(timezone.utc).isoformat()
-            
-            team_leader = TeamLeader(agent_model=None)
-            return await team_leader.delegate_to_role(
-                task=self.current_task,
-                target_role=routing["target_role"],
-                delegation_message=routing["message"]
-            )
-        
-        elif action == "RESPOND":
-            # Respond directly to user
-            return TaskResult(
-                success=True,
-                output=routing["message"],
-                structured_data={
-                    "flow_used": True,
-                    "llm_routed": True,
-                    "action": "respond_direct"
-                }
-            )
-        
-        else:
-            # Unknown action
-            logger.warning(f"Unknown routing action: {action}")
-            return TaskResult(
-                success=False,
-                output="",
-                error_message=f"Unknown routing action: {action}"
-            )
+    async def execute_decision(self, routing: Dict[str, Any]) -> Dict[str, Any]:
+        """Return routing decision for TeamLeader to execute."""
+        # Flow just returns decision, TeamLeader handles execution
+        return routing
