@@ -10,6 +10,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import { isLoggedIn } from "@/hooks/useAuth"
+import { InkBrushButton } from "../ui/ink_brush_button"
 
 export function Header() {
   const navigate = useNavigate()
@@ -40,8 +41,8 @@ export function Header() {
   }
 
   return (
-    <header className="w-full py-4 px-6">
-      <div className="max-w-7xl mx-auto flex items-center justify-between">
+    <header className="w-full py-4">
+      <div className=" mx-auto flex items-center justify-between">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-3">
             <span className="text-foreground text-xl font-semibold">
@@ -62,12 +63,15 @@ export function Header() {
           </nav>
         </div>
         <div className="flex items-center gap-4">
-          <Button
+          {/* <Button
             onClick={handleTryClick}
             className="hidden md:block bg-secondary text-secondary-foreground hover:bg-secondary/90 px-6 py-2 rounded-full font-medium shadow-sm"
           >
             Try for Free
-          </Button>
+          </Button> */}
+          <InkBrushButton>
+            Try for Free
+          </InkBrushButton>
           <Sheet>
             <SheetTrigger asChild className="md:hidden">
               <Button variant="ghost" size="icon" className="text-foreground">
@@ -95,12 +99,15 @@ export function Header() {
                     {item.name}
                   </a>
                 ))}
-                <Button
+                <InkBrushButton>
+                  Try for Free
+                </InkBrushButton>
+                {/* <Button
                   onClick={handleTryClick}
                   className="w-full mt-4 bg-secondary text-secondary-foreground hover:bg-secondary/90 px-6 py-2 rounded-full font-medium shadow-sm"
                 >
                   Try for Free
-                </Button>
+                </Button> */}
               </nav>
             </SheetContent>
           </Sheet>

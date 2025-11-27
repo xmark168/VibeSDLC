@@ -15,9 +15,12 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminAgentsRouteImport } from './routes/admin/agents'
 import { Route as UserProjectsRouteImport } from './routes/_user/projects'
+import { Route as UserHihiRouteImport } from './routes/_user/hihi'
 import { Route as AuthVerifyOtpRouteImport } from './routes/_auth/verify-otp'
 import { Route as AuthSignupRouteImport } from './routes/_auth/signup'
 import { Route as AuthResetPasswordRouteImport } from './routes/_auth/reset-password'
+import { Route as AuthOauthSuccessRouteImport } from './routes/_auth/oauth-success'
+import { Route as AuthOauthCallbackRouteImport } from './routes/_auth/oauth-callback'
 import { Route as AuthLoginRouteImport } from './routes/_auth/login'
 import { Route as AuthForgotPasswordRouteImport } from './routes/_auth/forgot-password'
 import { Route as UserWorkspaceWorkspaceIdRouteImport } from './routes/_user/workspace/$workspaceId'
@@ -51,6 +54,11 @@ const UserProjectsRoute = UserProjectsRouteImport.update({
   path: '/projects',
   getParentRoute: () => rootRouteImport,
 } as any)
+const UserHihiRoute = UserHihiRouteImport.update({
+  id: '/_user/hihi',
+  path: '/hihi',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthVerifyOtpRoute = AuthVerifyOtpRouteImport.update({
   id: '/verify-otp',
   path: '/verify-otp',
@@ -64,6 +72,16 @@ const AuthSignupRoute = AuthSignupRouteImport.update({
 const AuthResetPasswordRoute = AuthResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
+  getParentRoute: () => AuthRouteRoute,
+} as any)
+const AuthOauthSuccessRoute = AuthOauthSuccessRouteImport.update({
+  id: '/oauth-success',
+  path: '/oauth-success',
+  getParentRoute: () => AuthRouteRoute,
+} as any)
+const AuthOauthCallbackRoute = AuthOauthCallbackRouteImport.update({
+  id: '/oauth-callback',
+  path: '/oauth-callback',
   getParentRoute: () => AuthRouteRoute,
 } as any)
 const AuthLoginRoute = AuthLoginRouteImport.update({
@@ -92,9 +110,12 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/forgot-password': typeof AuthForgotPasswordRoute
   '/login': typeof AuthLoginRoute
+  '/oauth-callback': typeof AuthOauthCallbackRoute
+  '/oauth-success': typeof AuthOauthSuccessRoute
   '/reset-password': typeof AuthResetPasswordRoute
   '/signup': typeof AuthSignupRoute
   '/verify-otp': typeof AuthVerifyOtpRoute
+  '/hihi': typeof UserHihiRoute
   '/projects': typeof UserProjectsRoute
   '/admin/agents': typeof AdminAgentsRoute
   '/admin': typeof AdminIndexRoute
@@ -105,9 +126,12 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/forgot-password': typeof AuthForgotPasswordRoute
   '/login': typeof AuthLoginRoute
+  '/oauth-callback': typeof AuthOauthCallbackRoute
+  '/oauth-success': typeof AuthOauthSuccessRoute
   '/reset-password': typeof AuthResetPasswordRoute
   '/signup': typeof AuthSignupRoute
   '/verify-otp': typeof AuthVerifyOtpRoute
+  '/hihi': typeof UserHihiRoute
   '/projects': typeof UserProjectsRoute
   '/admin/agents': typeof AdminAgentsRoute
   '/admin': typeof AdminIndexRoute
@@ -121,9 +145,12 @@ export interface FileRoutesById {
   '/_layout': typeof LayoutRoute
   '/_auth/forgot-password': typeof AuthForgotPasswordRoute
   '/_auth/login': typeof AuthLoginRoute
+  '/_auth/oauth-callback': typeof AuthOauthCallbackRoute
+  '/_auth/oauth-success': typeof AuthOauthSuccessRoute
   '/_auth/reset-password': typeof AuthResetPasswordRoute
   '/_auth/signup': typeof AuthSignupRoute
   '/_auth/verify-otp': typeof AuthVerifyOtpRoute
+  '/_user/hihi': typeof UserHihiRoute
   '/_user/projects': typeof UserProjectsRoute
   '/admin/agents': typeof AdminAgentsRoute
   '/admin/': typeof AdminIndexRoute
@@ -136,9 +163,12 @@ export interface FileRouteTypes {
     | '/'
     | '/forgot-password'
     | '/login'
+    | '/oauth-callback'
+    | '/oauth-success'
     | '/reset-password'
     | '/signup'
     | '/verify-otp'
+    | '/hihi'
     | '/projects'
     | '/admin/agents'
     | '/admin'
@@ -149,9 +179,12 @@ export interface FileRouteTypes {
     | '/'
     | '/forgot-password'
     | '/login'
+    | '/oauth-callback'
+    | '/oauth-success'
     | '/reset-password'
     | '/signup'
     | '/verify-otp'
+    | '/hihi'
     | '/projects'
     | '/admin/agents'
     | '/admin'
@@ -164,9 +197,12 @@ export interface FileRouteTypes {
     | '/_layout'
     | '/_auth/forgot-password'
     | '/_auth/login'
+    | '/_auth/oauth-callback'
+    | '/_auth/oauth-success'
     | '/_auth/reset-password'
     | '/_auth/signup'
     | '/_auth/verify-otp'
+    | '/_user/hihi'
     | '/_user/projects'
     | '/admin/agents'
     | '/admin/'
@@ -178,6 +214,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRouteRoute: typeof AuthRouteRouteWithChildren
   LayoutRoute: typeof LayoutRoute
+  UserHihiRoute: typeof UserHihiRoute
   UserProjectsRoute: typeof UserProjectsRoute
   AdminAgentsRoute: typeof AdminAgentsRoute
   AdminIndexRoute: typeof AdminIndexRoute
@@ -229,6 +266,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UserProjectsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_user/hihi': {
+      id: '/_user/hihi'
+      path: '/hihi'
+      fullPath: '/hihi'
+      preLoaderRoute: typeof UserHihiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_auth/verify-otp': {
       id: '/_auth/verify-otp'
       path: '/verify-otp'
@@ -248,6 +292,20 @@ declare module '@tanstack/react-router' {
       path: '/reset-password'
       fullPath: '/reset-password'
       preLoaderRoute: typeof AuthResetPasswordRouteImport
+      parentRoute: typeof AuthRouteRoute
+    }
+    '/_auth/oauth-success': {
+      id: '/_auth/oauth-success'
+      path: '/oauth-success'
+      fullPath: '/oauth-success'
+      preLoaderRoute: typeof AuthOauthSuccessRouteImport
+      parentRoute: typeof AuthRouteRoute
+    }
+    '/_auth/oauth-callback': {
+      id: '/_auth/oauth-callback'
+      path: '/oauth-callback'
+      fullPath: '/oauth-callback'
+      preLoaderRoute: typeof AuthOauthCallbackRouteImport
       parentRoute: typeof AuthRouteRoute
     }
     '/_auth/login': {
@@ -284,6 +342,8 @@ declare module '@tanstack/react-router' {
 interface AuthRouteRouteChildren {
   AuthForgotPasswordRoute: typeof AuthForgotPasswordRoute
   AuthLoginRoute: typeof AuthLoginRoute
+  AuthOauthCallbackRoute: typeof AuthOauthCallbackRoute
+  AuthOauthSuccessRoute: typeof AuthOauthSuccessRoute
   AuthResetPasswordRoute: typeof AuthResetPasswordRoute
   AuthSignupRoute: typeof AuthSignupRoute
   AuthVerifyOtpRoute: typeof AuthVerifyOtpRoute
@@ -292,6 +352,8 @@ interface AuthRouteRouteChildren {
 const AuthRouteRouteChildren: AuthRouteRouteChildren = {
   AuthForgotPasswordRoute: AuthForgotPasswordRoute,
   AuthLoginRoute: AuthLoginRoute,
+  AuthOauthCallbackRoute: AuthOauthCallbackRoute,
+  AuthOauthSuccessRoute: AuthOauthSuccessRoute,
   AuthResetPasswordRoute: AuthResetPasswordRoute,
   AuthSignupRoute: AuthSignupRoute,
   AuthVerifyOtpRoute: AuthVerifyOtpRoute,
@@ -305,6 +367,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRouteRoute: AuthRouteRouteWithChildren,
   LayoutRoute: LayoutRoute,
+  UserHihiRoute: UserHihiRoute,
   UserProjectsRoute: UserProjectsRoute,
   AdminAgentsRoute: AdminAgentsRoute,
   AdminIndexRoute: AdminIndexRoute,

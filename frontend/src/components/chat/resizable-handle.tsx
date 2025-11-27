@@ -63,7 +63,7 @@ export function ResizableHandle({ onResize }: ResizableHandleProps) {
           }}
         />
       </div>
-      <div className="absolute inset-y-0 -left-1 -right-1" />
+
       <GripVertical className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity relative z-10" />
     </div>
   )
