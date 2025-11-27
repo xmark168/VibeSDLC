@@ -4,6 +4,7 @@ NEW ARCHITECTURE:
 - Inherits from BaseAgent (Kafka abstracted)
 - Handles code implementation tasks
 - Integrates CrewAI crew logic directly
+- Manages project workspaces automatically
 """
 
 import asyncio
@@ -11,6 +12,7 @@ import logging
 
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
 from app.agents.developer.crew import DeveloperCrew
+from app.agents.developer.workspace_manager import ProjectWorkspaceManager
 from app.models import Agent as AgentModel
 
 logger = logging.getLogger(__name__)
@@ -32,11 +34,22 @@ class Developer(BaseAgent):
             agent_model: Agent database model
             **kwargs: Additional arguments (heartbeat_interval, max_idle_time)
         """
+        # Initialize workspace manager BEFORE calling super
+        self.workspace_manager = ProjectWorkspaceManager(agent_model.project_id)
+
+        # Get main workspace (creates if doesn't exist)
+        self.main_workspace = self.workspace_manager.get_main_workspace()
+
+        # Now call super() - this will set self.project_id
         super().__init__(agent_model, **kwargs)
 
-        self.crew = DeveloperCrew(project_id="demo", root_dir="../demo")
+        # Initialize crew with correct workspace path
+        self.crew = DeveloperCrew(
+            project_id=str(self.project_id),
+            root_dir=str(self.main_workspace),
+        )
 
-        logger.info(f"Developer initialized: {self.name}")
+        logger.info(f"Developer initialized: {self.name} (workspace: {self.main_workspace.name})")
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
         """Handle task assigned by Router based on task type.
@@ -48,12 +61,19 @@ class Developer(BaseAgent):
             TaskResult with implementation response
         """
         try:
-            project_id = getattr(task, 'project_id', 'default')
-            project_dir = getattr(task, 'project_dir', f'../{project_id}')
+            # Use workspace from workspace manager
+            project_id = str(self.project_id)
+            project_dir = str(self.main_workspace)
+
+            # Override if task has specific project_dir (for compatibility)
+            if hasattr(task, 'project_dir') and task.project_dir:
+                project_dir = task.project_dir
 
             logger.info(
-                f"[{self.name}] Processing {task.task_type.value} task: {task.content[:50]}... (routing_reason: {task.routing_reason})"
+                f"[{self.name}] Processing {task.task_type.value} task: {task.content[:50]}..."
             )
+            logger.info(f"  Project ID: {project_id}")
+            logger.info(f"  Workspace: {project_dir}")
 
             # Route based on task_type (similar to TeamLeader approach)
             task_type = task.task_type.value

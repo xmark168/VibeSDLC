@@ -1,12 +1,15 @@
 
-import { Download, Zap, User, Users, Flag, Calendar, ChevronRight } from "lucide-react"
+import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Textarea } from "@/components/ui/textarea"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import type { KanbanCardData } from "./kanban-card"
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 
 interface TaskDetailModalProps {
   card: KanbanCardData | null
@@ -15,10 +18,97 @@ interface TaskDetailModalProps {
   onDownloadResult: (card: KanbanCardData) => void
 }
 
+// Mock chat messages type
+interface ChatMessage {
+  id: string
+  author: string
+  author_type: 'user' | 'agent'
+  content: string
+  timestamp: string
+  avatar?: string
+}
+
 export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: TaskDetailModalProps) {
   const [selectedChild, setSelectedChild] = useState<KanbanCardData | null>(null)
+  const [activeTab, setActiveTab] = useState<string>("detail")
+  const [chatMessage, setChatMessage] = useState("")
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+    {
+      id: '1',
+      author: 'John Doe',
+      author_type: 'user',
+      content: 'Chúng ta cần làm rõ acceptance criteria cho story này.',
+      timestamp: new Date(Date.now() - 3600000).toISOString(),
+    },
+    {
+      id: '2',
+      author: 'Product Owner Agent',
+      author_type: 'agent',
+      content: 'Tôi đã cập nhật acceptance criteria. Các điểm chính:\n1. User có thể login bằng email/password\n2. Hiển thị error message khi sai thông tin\n3. Redirect về dashboard sau khi login thành công',
+      timestamp: new Date(Date.now() - 3000000).toISOString(),
+    },
+    {
+      id: '3',
+      author: 'Jane Smith',
+      author_type: 'user',
+      content: 'Cảm ơn! Story point 5 có hợp lý không?',
+      timestamp: new Date(Date.now() - 1800000).toISOString(),
+    },
+  ])
+  const chatScrollRef = useRef<HTMLDivElement>(null)
+
+  // Auto scroll to bottom when new messages arrive
+  useEffect(() => {
+    if (chatScrollRef.current && activeTab === 'chat') {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight
+    }
+  }, [chatMessages, activeTab])
 
   if (!card) return null
+
+  const handleSendMessage = () => {
+    if (!chatMessage.trim()) return
+
+    const newMessage: ChatMessage = {
+      id: Date.now().toString(),
+      author: 'Current User',
+      author_type: 'user',
+      content: chatMessage,
+      timestamp: new Date().toISOString(),
+    }
+
+    setChatMessages(prev => [...prev, newMessage])
+    setChatMessage("")
+  }
+
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSendMessage()
+    }
+  }
+
+  const formatTimestamp = (timestamp: string) => {
+    const date = new Date(timestamp)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMs / 3600000)
+    const diffDays = Math.floor(diffMs / 86400000)
+
+    if (diffMins < 1) return 'Vừa xong'
+    if (diffMins < 60) return `${diffMins} phút trước`
+    if (diffHours < 24) return `${diffHours} giờ trước`
+    if (diffDays < 7) return `${diffDays} ngày trước`
+
+    return date.toLocaleDateString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
 
   // Get type badge color - Lean Kanban: UserStory, EnablerStory on board; Epic as parent
   const getTypeBadgeColor = (type?: string) => {
@@ -67,7 +157,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-start justify-between gap-3">
             <div className="flex-1">
@@ -107,7 +197,26 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
 
         <Separator />
 
-        <div className="space-y-4 text-sm">
+        {/* Tabs Navigation */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="detail" className="gap-2">
+              <FileText className="w-4 h-4" />
+              Detail
+            </TabsTrigger>
+            <TabsTrigger value="chat" className="gap-2">
+              <MessageSquare className="w-4 h-4" />
+              Chat
+            </TabsTrigger>
+            <TabsTrigger value="logs" className="gap-2">
+              <ScrollText className="w-4 h-4" />
+              Logs
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Detail Tab */}
+          <TabsContent value="detail" className="flex-1 overflow-y-auto mt-4">
+            <div className="space-y-4 text-sm">
           {/* Description */}
           {card.description && (
             <div>
@@ -259,22 +368,159 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
             </div>
           )}
 
-          {/* Result */}
-          {card.result && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <h4 className="text-sm font-semibold text-foreground">Kết quả</h4>
-                <Button size="sm" variant="outline" onClick={() => onDownloadResult(card)} className="h-7 text-xs">
-                  <Download className="w-3 h-3 mr-1" />
-                  Tải xuống .md
-                </Button>
+              {/* Result */}
+              {card.result && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-semibold text-foreground">Kết quả</h4>
+                    <Button size="sm" variant="outline" onClick={() => onDownloadResult(card)} className="h-7 text-xs">
+                      <Download className="w-3 h-3 mr-1" />
+                      Tải xuống .md
+                    </Button>
+                  </div>
+                  <div className="text-sm text-muted-foreground bg-muted p-3 rounded max-h-48 overflow-y-auto">
+                    <pre className="whitespace-pre-wrap font-mono text-xs">{card.result}</pre>
+                  </div>
+                </div>
+              )}
+            </div>
+          </TabsContent>
+
+          {/* Chat Tab */}
+          <TabsContent value="chat" className="flex-1 flex flex-col mt-4 h-[500px]">
+            {/* Chat Header */}
+            <div className="flex items-center justify-between pb-3 border-b">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold">Story Discussion</h3>
+                <Badge variant="outline" className="text-xs">
+                  {chatMessages.length} messages
+                </Badge>
               </div>
-              <div className="text-sm text-muted-foreground bg-muted p-3 rounded max-h-48 overflow-y-auto">
-                <pre className="whitespace-pre-wrap font-mono text-xs">{card.result}</pre>
+              <div className="text-xs text-muted-foreground">
+                Real-time collaboration
               </div>
             </div>
-          )}
-        </div>
+
+            {/* Messages Area */}
+            <div
+              ref={chatScrollRef}
+              className="flex-1 overflow-y-auto py-4 space-y-4"
+            >
+              {chatMessages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={`flex items-start gap-3 ${
+                    msg.author_type === 'user' ? 'flex-row' : 'flex-row'
+                  }`}
+                >
+                  {/* Avatar */}
+                  <Avatar className="w-8 h-8 shrink-0">
+                    {msg.author_type === 'agent' ? (
+                      <AvatarFallback className="bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs">
+                        🤖
+                      </AvatarFallback>
+                    ) : (
+                      <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                        {msg.author.charAt(0).toUpperCase()}
+                      </AvatarFallback>
+                    )}
+                  </Avatar>
+
+                  {/* Message Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-2 mb-1">
+                      <span className="text-xs font-semibold text-foreground">
+                        {msg.author}
+                      </span>
+                      {msg.author_type === 'agent' && (
+                        <Badge variant="outline" className="text-[10px] h-4 px-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20">
+                          Agent
+                        </Badge>
+                      )}
+                      <span className="text-[10px] text-muted-foreground">
+                        {formatTimestamp(msg.timestamp)}
+                      </span>
+                    </div>
+                    <div className={`
+                      text-sm rounded-lg px-3 py-2 inline-block max-w-full
+                      ${msg.author_type === 'agent'
+                        ? 'bg-blue-500/10 text-foreground border border-blue-500/20'
+                        : 'bg-muted text-foreground'
+                      }
+                    `}>
+                      <p className="whitespace-pre-wrap wrap-break-word">{msg.content}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {/* Empty State */}
+              {chatMessages.length === 0 && (
+                <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground py-12">
+                  <MessageSquare className="w-12 h-12 mb-3 opacity-30" />
+                  <p className="text-sm font-medium">No messages yet</p>
+                  <p className="text-xs mt-1">Start the conversation about this story</p>
+                </div>
+              )}
+            </div>
+
+            {/* Message Input */}
+            <div className="pt-3 border-t">
+              <div className="flex items-end gap-2">
+                <div className="flex-1 relative">
+                  <Textarea
+                    value={chatMessage}
+                    onChange={(e) => setChatMessage(e.target.value)}
+                    onKeyDown={handleKeyPress}
+                    placeholder="Type a message... (Shift+Enter for new line)"
+                    className="min-h-[60px] max-h-[120px] resize-none pr-20 text-sm"
+                  />
+                  <div className="absolute right-2 bottom-2 flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 hover:bg-muted"
+                    >
+                      <Paperclip className="w-4 h-4 text-muted-foreground" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 hover:bg-muted"
+                    >
+                      <Smile className="w-4 h-4 text-muted-foreground" />
+                    </Button>
+                  </div>
+                </div>
+                <Button
+                  onClick={handleSendMessage}
+                  disabled={!chatMessage.trim()}
+                  size="sm"
+                  className="h-[60px] px-4"
+                >
+                  <Send className="w-4 h-4" />
+                </Button>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1.5">
+                Press Enter to send, Shift+Enter for new line
+              </p>
+            </div>
+          </TabsContent>
+
+          {/* Logs Tab */}
+          <TabsContent value="logs" className="flex-1 overflow-y-auto mt-4">
+            <div className="space-y-4">
+              <div className="text-center text-muted-foreground py-8">
+                <ScrollText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p className="text-sm">Activity logs coming soon...</p>
+                <p className="text-xs mt-1">View all activities and changes for this story</p>
+              </div>
+            </div>
+          </TabsContent>
+        </Tabs>
       </DialogContent>
 
       {/* TraDS ============= Kanban Hierarchy: Nested dialog for viewing child items */}
