@@ -27,6 +27,9 @@ from .tools import (
     create_ask_user_question_tool
 )
 
+from pathlib import Path
+import yaml
+
 logger = logging.getLogger(__name__)
 
 
@@ -90,12 +93,8 @@ class BusinessAnalystFlow(Flow[BAFlowState]):
         if not self.state.communication_style:
             self.state.communication_style = communication_style or "professional and clear"
         
-        # Create tools
         self.ask_user_question_tool = create_ask_user_question_tool(agent_context)
         
-        # Load agent configs for creating Agent instances
-        from pathlib import Path
-        import yaml
         config_path = Path(__file__).parent / "config" / "agents.yaml"
         with open(config_path, 'r', encoding='utf-8') as f:
             self.agents_config = yaml.safe_load(f)

@@ -202,7 +202,7 @@ class BusinessAnalyst(BaseAgent):
         
         # Flow.kickoff is sync, so we run it in executor
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, self.flow.kickoff_async)
+        result = await loop.run_in_executor(None, self.flow.kickoff)
         return result
     
     def _parse_flow_result(self, result_str: str) -> dict:
