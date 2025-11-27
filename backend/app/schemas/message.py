@@ -1,9 +1,11 @@
 """Message-related schemas."""
 
-from uuid import UUID
 from datetime import datetime
+from typing import Any, Optional
+from uuid import UUID
+
 from sqlmodel import SQLModel
-from typing import Optional, Any
+
 from app.models import AuthorType
 
 
@@ -15,7 +17,7 @@ class ChatMessageBase(SQLModel):
 class ChatMessageCreate(ChatMessageBase):
     project_id: UUID
     agent_id: Optional[UUID] = None
-    message_type: Optional[str] = "text"  # "text" | "prd" | "business_flows" | "product_backlog"
+    message_type: Optional[str] = "text"
     structured_data: Optional[dict] = None
 
 

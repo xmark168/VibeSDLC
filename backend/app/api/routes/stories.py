@@ -60,13 +60,14 @@ async def create_story(
 
     # Publish story created event to Kafka
     try:
-        from app.kafka import get_kafka_producer, KafkaTopics, StoryCreatedEvent
+        from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
 
         producer = await get_kafka_producer()
 
         await producer.publish(
             topic=KafkaTopics.STORY_EVENTS,
-            event=StoryCreatedEvent(
+            event=StoryEvent(
+                event_type="story.created",
                 project_id=story.project_id,
                 user_id=current_user.id,
                 story_id=story.id,
@@ -319,13 +320,14 @@ async def update_story_status(
 
     # Publish story status changed event to Kafka
     try:
-        from app.kafka import get_kafka_producer, KafkaTopics, StoryStatusChangedEvent
+        from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
 
         producer = await get_kafka_producer()
 
         await producer.publish(
             topic=KafkaTopics.STORY_EVENTS,
-            event=StoryStatusChangedEvent(
+            event=StoryEvent(
+                event_type="story.status.changed",
                 project_id=story.project_id,
                 user_id=current_user.id,
                 story_id=story.id,
@@ -424,13 +426,14 @@ async def update_story(
 
     # Publish story updated event to Kafka
     try:
-        from app.kafka import get_kafka_producer, KafkaTopics, StoryUpdatedEvent
+        from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
 
         producer = await get_kafka_producer()
 
         await producer.publish(
             topic=KafkaTopics.STORY_EVENTS,
-            event=StoryUpdatedEvent(
+            event=StoryEvent(
+                event_type="story.updated",
                 project_id=story.project_id,
                 user_id=current_user.id,
                 story_id=story.id,

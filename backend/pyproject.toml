@@ -37,6 +37,8 @@ dependencies = [
     "psycopg-pool>=3.2.7",
     "langchain-community>=0.4.1",
     "tavily-python>=0.7.13",
+    "aiofiles>=25.1.0",
+    "payos>=0.1.8",
 ]
 
 

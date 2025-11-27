@@ -214,7 +214,7 @@ class AgentPoolManager:
 
         try:
             # 1. Stop agent (stops Kafka consumer)
-            await agent.stop(graceful=graceful)
+            await agent.stop()
 
             # 2. Remove from memory
             del self.agents[agent_id]

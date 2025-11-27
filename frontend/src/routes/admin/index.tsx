@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { requireRole } from "@/utils/auth"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Users, Server, Settings, Activity } from "lucide-react"
+import { Users, Server, Settings, Activity, CreditCard } from "lucide-react"
 
 export const Route = createFileRoute("/admin/")({
   beforeLoad: async () => {
@@ -47,6 +47,32 @@ function RouteComponent() {
           </Card>
         </Link>
 
+        <Link to="/admin/plans">
+          <Card className="hover:bg-accent/50 transition-colors cursor-pointer">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-primary/10 rounded-lg">
+                  <CreditCard className="w-6 h-6 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">Plan Management</CardTitle>
+                  <CardDescription>
+                    Manage subscription plans and pricing
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <ul className="text-sm text-muted-foreground space-y-1">
+                <li>• Create and edit pricing plans</li>
+                <li>• Set credit allocations</li>
+                <li>• Configure plan features</li>
+                <li>• View subscription analytics</li>
+              </ul>
+            </CardContent>
+          </Card>
+        </Link>
+
         <Card className="opacity-50">
           <CardHeader>
             <div className="flex items-center gap-3">
@@ -84,6 +110,7 @@ function RouteComponent() {
             <p className="text-sm text-muted-foreground">Coming soon...</p>
           </CardContent>
         </Card>
+        
       </div>
     </div>
   )

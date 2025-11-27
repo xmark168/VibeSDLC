@@ -1,7 +1,8 @@
 """Authentication and token schemas."""
 
-from sqlmodel import SQLModel
 from typing import Optional
+
+from sqlmodel import SQLModel
 
 
 class Token(SQLModel):
@@ -14,8 +15,8 @@ class TokenData(SQLModel):
 
 
 class TokenPayload(SQLModel):
-    sub: Optional[str] = None  # subject - user ID in JWT standard
-    type: Optional[str] = None  # token type (access/refresh)
+    sub: Optional[str] = None
+    type: Optional[str] = None
 
 
 class RefreshTokenRequest(SQLModel):
@@ -25,7 +26,7 @@ class RefreshTokenRequest(SQLModel):
 class LoginRequest(SQLModel):
     email: str
     password: str
-    full_name: Optional[str] = None
+    fullname: Optional[str] = None
     login_provider: bool = False
 
 

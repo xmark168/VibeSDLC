@@ -17,7 +17,7 @@ from sqlmodel import Session, select, update
 from app.api.deps import get_current_user, get_db, SessionDep
 from app.models import User, Agent, AgentStatus, AgentExecution, AgentExecutionStatus
 from app.agents.core import AgentPoolManager
-from app.utils.name_generator import generate_agent_name, get_display_name
+from app.services.persona_service import PersonaService
 from app.core.config import settings
 from app.schemas import (
     PoolConfigSchema,
@@ -317,31 +317,49 @@ async def spawn_agent(
             detail=f"Invalid role_type. Must be one of: {list(role_class_map.keys())}"
         )
 
-    # Get existing agent names for this project/role to avoid duplicates
+    # Get persona template for this role
+    persona_service = PersonaService(session)
+    agent_service = AgentService(session)
+
+    # Get existing personas used in this project (for diversity)
     existing_agents = session.exec(
         select(Agent).where(
             Agent.project_id == request.project_id,
-            Agent.role_type == request.role_type
+            Agent.role_type == request.role_type,
+            Agent.persona_template_id != None
         )
     ).all()
-    existing_names = [a.human_name for a in existing_agents]
+    used_persona_ids = [a.persona_template_id for a in existing_agents if a.persona_template_id]
 
-    # Generate unique human name
-    human_name = generate_agent_name(request.role_type, existing_names)
-    display_name = get_display_name(human_name, request.role_type)
-
-    # Create agent in database first
-    db_agent = Agent(
-        project_id=request.project_id,
-        name=display_name,
-        human_name=human_name,
+    # Get random persona (prefer unused ones)
+    persona = persona_service.get_random_persona_for_role(
         role_type=request.role_type,
-        agent_type=request.role_type,
-        status=AgentStatus.idle,
+        exclude_ids=used_persona_ids
     )
-    session.add(db_agent)
-    session.commit()
-    session.refresh(db_agent)
+
+    if not persona:
+        # Try again without exclusions (allow duplicates if necessary)
+        persona = persona_service.get_random_persona_for_role(
+            role_type=request.role_type,
+            exclude_ids=[]
+        )
+
+    if not persona:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"No persona templates found for role '{request.role_type}'. Please seed persona templates first by running: python app/db/seed_personas_script.py"
+        )
+
+    # Create agent from template
+    db_agent = agent_service.create_from_template(
+        project_id=request.project_id,
+        persona_template=persona
+    )
+
+    logger.info(
+        f"✓ Spawned {db_agent.human_name} ({request.role_type}) "
+        f"with persona: {persona.communication_style}, traits: {', '.join(persona.personality_traits[:2]) if persona.personality_traits else 'default'}"
+    )
 
     # Get universal pool manager
     pool_name = "universal_pool"

@@ -1,24 +1,26 @@
 """Agent-related schemas (includes pool management)."""
 
-from uuid import UUID
 from datetime import datetime
+from typing import Optional
+from uuid import UUID
+
 from pydantic import BaseModel, Field
 from sqlmodel import SQLModel
-from typing import Optional
+
 from app.models import AgentStatus
 
 
 class AgentBase(SQLModel):
     name: str
     human_name: str
-    role_type: str  # team_leader, business_analyst, developer, tester
+    role_type: str
     agent_type: Optional[str] = None
 
 
 class AgentCreate(SQLModel):
     project_id: UUID
     role_type: str
-    human_name: Optional[str] = None  # Auto-generated if not provided
+    human_name: Optional[str] = None
 
 
 class AgentUpdate(SQLModel):
@@ -34,6 +36,12 @@ class AgentPublic(SQLModel):
     role_type: str
     agent_type: Optional[str] = None
     status: AgentStatus
+    
+    persona_template_id: Optional[UUID] = None
+    personality_traits: list[str] = []
+    communication_style: Optional[str] = None
+    persona_metadata: Optional[dict] = None
+    
     created_at: datetime
     updated_at: datetime
 
@@ -44,32 +52,27 @@ class AgentsPublic(SQLModel):
 
 
 class PoolConfigSchema(BaseModel):
-    """Pool configuration schema."""
     max_agents: int = Field(default=10, ge=1)
 
 
 class CreatePoolRequest(BaseModel):
-    """Request to create agent pool."""
-    role_type: str = Field(..., description="Role type: team_leader, business_analyst, developer, tester")
+    role_type: str
     config: PoolConfigSchema = Field(default_factory=PoolConfigSchema)
 
 
 class SpawnAgentRequest(BaseModel):
-    """Request to spawn agent."""
-    project_id: UUID = Field(..., description="Project ID to assign agent to")
-    pool_name: str = Field(..., description="Pool name")
-    role_type: str = Field(..., description="Agent role type")
-    human_name: Optional[str] = Field(None, description="Optional human-friendly name")
+    project_id: UUID
+    pool_name: str
+    role_type: str
+    human_name: Optional[str] = None
 
 
 class TerminateAgentRequest(BaseModel):
-    """Request to terminate agent."""
-    pool_name: str = Field(..., description="Pool name")
-    agent_id: UUID = Field(..., description="Agent ID to terminate")
+    pool_name: str
+    agent_id: UUID
 
 
 class PoolResponse(BaseModel):
-    """Pool information response."""
     pool_name: str
     role_type: str
     active_agents: int
@@ -77,11 +80,10 @@ class PoolResponse(BaseModel):
     total_spawned: int
     total_terminated: int
     is_running: bool
-    agents: list[dict]  # Basic agent info
+    agents: list[dict]
 
 
 class SystemStatsResponse(BaseModel):
-    """System statistics response."""
     uptime_seconds: float
     total_pools: int
     total_agents: int
