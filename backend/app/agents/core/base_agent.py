@@ -61,6 +61,17 @@ class TaskResult:
     error_message: Optional[str] = None
 
 
+# Cross-agent collaboration exceptions
+class CollaborationError(Exception):
+    """Base exception for collaboration failures."""
+    pass
+
+
+class CollaborationTimeoutError(CollaborationError):
+    """Raised when collaboration request times out."""
+    pass
+
+
 class BaseAgent(ABC):
     """Abstract base class for all agents.
 
@@ -132,6 +143,9 @@ class BaseAgent(ABC):
         # Langfuse tracing
         self.langfuse_client = get_langfuse_client()
         self._current_trace_id: Optional[str] = None
+
+        # Cross-agent collaboration
+        self._pending_collaborations: Dict[UUID, asyncio.Future] = {}
 
         logger.info(
             f"Initialized {self.role_type} agent: {self.name} "
@@ -1005,6 +1019,215 @@ class BaseAgent(ABC):
                 error_message=f"Failed to delegate: {str(e)}"
             )
 
+    # =========================================================================
+    # CROSS-AGENT COLLABORATION
+    # =========================================================================
+
+    async def ask_specialist(
+        self,
+        target_role: str,
+        question: str,
+        request_type: str = "clarification",
+        context: Dict[str, Any] = None,
+        timeout: int = 300,
+    ) -> str:
+        """Ask another specialist agent directly for collaboration.
+        
+        This enables direct agent-to-agent communication for:
+        - Clarification requests (Dev → BA)
+        - Review requests (Tester → Dev)  
+        - Estimation requests (BA → Dev)
+        - Validation requests (any → any)
+        
+        Args:
+            target_role: Target agent role ("business_analyst", "developer", "tester")
+            question: The question or request to send
+            request_type: Type of request ("clarification", "review", "estimation", "validation")
+            context: Additional context (story_id, code_snippet, etc.)
+            timeout: Max wait time in seconds (default: 300 = 5 min)
+            
+        Returns:
+            Response string from the target agent
+            
+        Raises:
+            CollaborationTimeoutError: If target doesn't respond in time
+            CollaborationError: If collaboration fails
+            
+        Example:
+            # Developer asking BA for clarification
+            answer = await self.ask_specialist(
+                target_role="business_analyst",
+                question="What's the expected behavior for login failure?",
+                request_type="clarification",
+                context={"story_id": "123"}
+            )
+        """
+        from app.kafka.event_schemas import AgentCollaborationRequest
+        
+        request_id = uuid4()
+        
+        # Create future to wait for response
+        loop = asyncio.get_event_loop()
+        future = loop.create_future()
+        self._pending_collaborations[request_id] = future
+        
+        try:
+            producer = await self._get_producer()
+            
+            # Build collaboration request
+            request = AgentCollaborationRequest(
+                request_id=request_id,
+                from_agent_id=self.agent_id,
+                from_agent_role=self.role_type,
+                to_agent_role=target_role,
+                request_type=request_type,
+                question=question,
+                context={
+                    "task_id": str(self._current_task_id) if self._current_task_id else None,
+                    "project_id": str(self.project_id),
+                    **(context or {})
+                },
+                project_id=str(self.project_id),
+                user_id=str(self._current_user_id) if self._current_user_id else None,
+            )
+            
+            # Publish request
+            await producer.publish(
+                topic=KafkaTopics.AGENT_COLLABORATION,
+                event=request
+            )
+            
+            logger.info(
+                f"[{self.name}] Sent collaboration request to {target_role}: "
+                f"{question[:50]}..."
+            )
+            
+            # Wait for response with timeout
+            response = await asyncio.wait_for(future, timeout=timeout)
+            
+            logger.info(f"[{self.name}] Received collaboration response from {target_role}")
+            return response
+            
+        except asyncio.TimeoutError:
+            # Clean up pending collaboration
+            self._pending_collaborations.pop(request_id, None)
+            error_msg = f"No response from {target_role} after {timeout}s"
+            logger.warning(f"[{self.name}] Collaboration timeout: {error_msg}")
+            raise CollaborationTimeoutError(error_msg)
+            
+        except Exception as e:
+            self._pending_collaborations.pop(request_id, None)
+            logger.error(f"[{self.name}] Collaboration error: {e}", exc_info=True)
+            raise CollaborationError(f"Collaboration failed: {str(e)}")
+
+    async def handle_collaboration_request(
+        self,
+        request_id: UUID,
+        question: str,
+        request_type: str,
+        from_agent_role: str,
+        context: Dict[str, Any]
+    ) -> str:
+        """Handle incoming collaboration request from another agent.
+        
+        Override this method in subclasses to provide custom handling.
+        Default implementation uses LLM to generate a response based on the agent's expertise.
+        
+        Args:
+            request_id: Unique request identifier
+            question: The question being asked
+            request_type: Type of request (clarification, review, estimation, validation)
+            from_agent_role: Role of the requesting agent
+            context: Additional context provided
+            
+        Returns:
+            Response string to send back
+        """
+        # Default implementation - subclasses can override for custom behavior
+        logger.info(
+            f"[{self.name}] Handling collaboration request from {from_agent_role}: "
+            f"{question[:50]}..."
+        )
+        
+        # Generate response based on agent's expertise
+        prompt = f"""You are a {self.role_type} agent. Another agent ({from_agent_role}) is asking for {request_type}:
+
+Question: {question}
+
+Context: {context}
+
+Provide a helpful, concise response based on your expertise as a {self.role_type}.
+"""
+        
+        # Use LLM to generate response (if available)
+        try:
+            from langchain_openai import ChatOpenAI
+            from langchain_core.messages import HumanMessage
+            
+            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
+            response = await llm.ainvoke([HumanMessage(content=prompt)])
+            return response.content
+        except Exception as e:
+            logger.error(f"[{self.name}] Failed to generate collaboration response: {e}")
+            return f"I apologize, I couldn't process your {request_type} request at this time."
+
+    async def _send_collaboration_response(
+        self,
+        request_id: str,
+        to_agent_id: str,
+        response: str,
+        success: bool = True,
+        error: str = None
+    ) -> None:
+        """Send response to a collaboration request."""
+        from app.kafka.event_schemas import AgentCollaborationResponse
+        
+        producer = await self._get_producer()
+        
+        response_event = AgentCollaborationResponse(
+            request_id=UUID(request_id) if isinstance(request_id, str) else request_id,
+            from_agent_id=self.agent_id,
+            to_agent_id=UUID(to_agent_id) if isinstance(to_agent_id, str) else to_agent_id,
+            response=response,
+            success=success,
+            error=error,
+            project_id=str(self.project_id),
+        )
+        
+        await producer.publish(
+            topic=KafkaTopics.AGENT_COLLABORATION,
+            event=response_event
+        )
+        
+        logger.info(f"[{self.name}] Sent collaboration response for request {request_id}")
+
+    async def _handle_collaboration_response(
+        self,
+        request_id: UUID,
+        response: str,
+        success: bool,
+        error: str = None
+    ) -> None:
+        """Handle incoming collaboration response (resume waiting agent)."""
+        future = self._pending_collaborations.pop(request_id, None)
+        
+        if future is None:
+            logger.warning(
+                f"[{self.name}] Received response for unknown request {request_id}"
+            )
+            return
+        
+        if future.done():
+            logger.warning(
+                f"[{self.name}] Future for request {request_id} already completed"
+            )
+            return
+        
+        if success:
+            future.set_result(response)
+        else:
+            future.set_exception(CollaborationError(error or "Collaboration failed"))
+
     def get_langfuse_callback(
         self,
         trace_name: str,
@@ -1310,10 +1533,57 @@ class BaseAgent(ABC):
             self._current_routing_reason = task_data.get("routing_reason", "")
             self._current_user_id = context.get("user_id")
 
-            # Create TaskContext
+            # Handle collaboration task types separately (don't create full TaskContext)
+            task_type_str = task_data.get("task_type", "message")
+            
+            if task_type_str == "collaboration_request":
+                # Handle incoming collaboration request
+                logger.info(f"[{self.name}] Handling collaboration request")
+                try:
+                    response = await self.handle_collaboration_request(
+                        request_id=UUID(context.get("request_id")),
+                        question=context.get("question", ""),
+                        request_type=context.get("request_type", "clarification"),
+                        from_agent_role=context.get("from_agent_role", "unknown"),
+                        context=context.get("collaboration_context", {})
+                    )
+                    
+                    # Send response back
+                    await self._send_collaboration_response(
+                        request_id=context.get("request_id"),
+                        to_agent_id=context.get("from_agent_id"),
+                        response=response,
+                        success=True
+                    )
+                except Exception as e:
+                    logger.error(f"[{self.name}] Collaboration request handling failed: {e}")
+                    await self._send_collaboration_response(
+                        request_id=context.get("request_id"),
+                        to_agent_id=context.get("from_agent_id"),
+                        response="",
+                        success=False,
+                        error=str(e)
+                    )
+                finally:
+                    self._current_task_id = None
+                return
+            
+            elif task_type_str == "collaboration_response":
+                # Handle incoming collaboration response (resume waiting agent)
+                logger.info(f"[{self.name}] Handling collaboration response")
+                await self._handle_collaboration_response(
+                    request_id=UUID(context.get("request_id")),
+                    response=context.get("response", ""),
+                    success=context.get("success", True),
+                    error=context.get("error")
+                )
+                self._current_task_id = None
+                return
+            
+            # Create TaskContext for normal task processing
             task = TaskContext(
                 task_id=task_id,
-                task_type=AgentTaskType(task_data.get("task_type", "message")),
+                task_type=AgentTaskType(task_type_str),
                 priority=task_data.get("priority", "medium"),
                 routing_reason=task_data.get("routing_reason", ""),
                 message_id=context.get("message_id"),

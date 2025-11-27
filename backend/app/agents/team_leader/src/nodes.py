@@ -28,7 +28,8 @@ async def llm_routing(state: TeamLeaderState, agent=None) -> TeamLeaderState:
         llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
         
         system_prompt = build_system_prompt(agent)
-        user_prompt = build_user_prompt(state["user_message"])
+        agent_name = agent.name if agent else "Team Leader"
+        user_prompt = build_user_prompt(state["user_message"], name=agent_name)
         
         # Get Langfuse callback from agent (BaseAgent provides this)
         callbacks = []

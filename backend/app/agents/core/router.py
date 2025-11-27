@@ -1022,6 +1022,183 @@ class DelegationRouter(BaseEventRouter):
         self.logger.info(f"[DelegationRouter] Delegation failed (no {target_role} found), sent error task back to {delegating_agent_name}")
 
 
+class AgentCollaborationRouter(BaseEventRouter):
+    """Router for cross-agent collaboration requests.
+    
+    Handles direct agent-to-agent communication for:
+    - Clarification requests (Dev → BA)
+    - Review requests (Tester → Dev)
+    - Estimation requests (BA → Dev)
+    """
+    
+    MAX_COLLABORATION_DEPTH = 3  # Prevent infinite loops
+    
+    def should_handle(self, event: BaseKafkaEvent | Dict[str, Any]) -> bool:
+        event_dict = event if isinstance(event, dict) else event.model_dump()
+        event_type = event_dict.get("event_type", "")
+        return event_type in [
+            "agent.collaboration.request",
+            "agent.collaboration.response"
+        ]
+    
+    async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
+        """Route collaboration request/response to appropriate agent."""
+        event_dict = event if isinstance(event, dict) else event.model_dump()
+        event_type = event_dict.get("event_type")
+        
+        if event_type == "agent.collaboration.request":
+            await self._handle_request(event_dict)
+        elif event_type == "agent.collaboration.response":
+            await self._handle_response(event_dict)
+    
+    async def _handle_request(self, event_dict: Dict[str, Any]) -> None:
+        """Route collaboration request to target agent by role."""
+        request_id = event_dict.get("request_id")
+        to_role = event_dict.get("to_agent_role")
+        from_role = event_dict.get("from_agent_role")
+        project_id = event_dict.get("project_id")
+        depth = event_dict.get("depth", 0)
+        question = event_dict.get("question", "")
+        
+        self.logger.info(
+            f"[COLLABORATION] Request from {from_role} → {to_role}: "
+            f"{question[:50]}..."
+        )
+        
+        # Check depth limit to prevent infinite loops
+        if depth >= self.MAX_COLLABORATION_DEPTH:
+            self.logger.warning(
+                f"[COLLABORATION] Max depth ({self.MAX_COLLABORATION_DEPTH}) exceeded, rejecting"
+            )
+            await self._send_error_response(
+                event_dict,
+                f"Max collaboration depth ({self.MAX_COLLABORATION_DEPTH}) exceeded. "
+                "Please simplify your request."
+            )
+            return
+        
+        if not project_id or not to_role:
+            self.logger.error("[COLLABORATION] Missing project_id or to_agent_role")
+            return
+        
+        if isinstance(project_id, str):
+            project_id = UUID(project_id)
+        
+        # Find target agent by role
+        agent = await self._find_agent_by_role(project_id, to_role)
+        
+        if not agent:
+            self.logger.warning(f"[COLLABORATION] No {to_role} agent found in project {project_id}")
+            await self._send_error_response(
+                event_dict,
+                f"No {to_role} agent available in this project."
+            )
+            return
+        
+        # Dispatch task to target agent
+        await self.publish_task(
+            agent_id=agent.id,
+            task_type=AgentTaskType.COLLABORATION_REQUEST,
+            source_event=event_dict,
+            routing_reason=f"collaboration_from_{from_role}",
+            priority="high",
+            additional_context={
+                "request_id": str(request_id),
+                "question": question,
+                "request_type": event_dict.get("request_type", "clarification"),
+                "from_agent_id": event_dict.get("from_agent_id"),
+                "from_agent_role": from_role,
+                "collaboration_context": event_dict.get("context", {}),
+                "depth": depth,
+            }
+        )
+        
+        self.logger.info(
+            f"[COLLABORATION] Dispatched request to {agent.human_name} ({to_role})"
+        )
+    
+    async def _handle_response(self, event_dict: Dict[str, Any]) -> None:
+        """Route collaboration response back to requesting agent."""
+        request_id = event_dict.get("request_id")
+        to_agent_id = event_dict.get("to_agent_id")
+        from_agent_id = event_dict.get("from_agent_id")
+        success = event_dict.get("success", True)
+        
+        if not to_agent_id:
+            self.logger.error("[COLLABORATION] Response missing to_agent_id")
+            return
+        
+        if isinstance(to_agent_id, str):
+            to_agent_id = UUID(to_agent_id)
+        
+        # Publish task to resume the requesting agent
+        await self.publish_task(
+            agent_id=to_agent_id,
+            task_type=AgentTaskType.COLLABORATION_RESPONSE,
+            source_event=event_dict,
+            routing_reason=f"collaboration_response:{request_id}",
+            priority="high",
+            additional_context={
+                "request_id": str(request_id),
+                "response": event_dict.get("response", ""),
+                "success": success,
+                "error": event_dict.get("error"),
+            }
+        )
+        
+        self.logger.info(
+            f"[COLLABORATION] Response for {request_id} dispatched to agent {to_agent_id}"
+        )
+    
+    async def _find_agent_by_role(self, project_id: UUID, role_type: str) -> Optional[Agent]:
+        """Find best agent for role - prefers idle agents (same as DelegationRouter)."""
+        with Session(engine) as session:
+            agents = session.exec(
+                select(Agent).where(
+                    Agent.project_id == project_id,
+                    Agent.role_type == role_type,
+                    Agent.status.not_in(["terminated", "stopped", "error"])
+                )
+            ).all()
+            
+            if not agents:
+                return None
+            
+            # Prefer idle agents
+            idle_agents = [a for a in agents if a.status == "idle"]
+            if idle_agents:
+                return idle_agents[0]
+            
+            return agents[0]
+    
+    async def _send_error_response(self, request: Dict[str, Any], error: str) -> None:
+        """Send error response back to requesting agent."""
+        from_agent_id = request.get("from_agent_id")
+        
+        if not from_agent_id:
+            self.logger.error("[COLLABORATION] Cannot send error: from_agent_id missing")
+            return
+        
+        from app.kafka.event_schemas import AgentCollaborationResponse
+        
+        response = AgentCollaborationResponse(
+            request_id=UUID(request.get("request_id")) if request.get("request_id") else uuid4(),
+            from_agent_id=UUID(request.get("to_agent_id", request.get("project_id"))),
+            to_agent_id=UUID(from_agent_id) if isinstance(from_agent_id, str) else from_agent_id,
+            response="",
+            success=False,
+            error=error,
+            project_id=request.get("project_id"),
+        )
+        
+        await self.producer.publish(
+            KafkaTopics.AGENT_COLLABORATION,
+            response
+        )
+        
+        self.logger.info(f"[COLLABORATION] Sent error response: {error}")
+
+
 # ============================================================================
 # ROUTER SERVICE
 # ============================================================================
@@ -1037,6 +1214,7 @@ class MessageRouterService(BaseKafkaConsumer):
             KafkaTopics.STORY_EVENTS.value,  # Add story events for status change routing
             KafkaTopics.QUESTION_ANSWERS.value,
             KafkaTopics.DELEGATION_REQUESTS.value,
+            KafkaTopics.AGENT_COLLABORATION.value,  # Cross-agent collaboration
         ]
 
         super().__init__(
@@ -1062,6 +1240,7 @@ class MessageRouterService(BaseKafkaConsumer):
             QuestionAnswerRouter(producer),
             BatchAnswersRouter(producer),
             DelegationRouter(producer),
+            AgentCollaborationRouter(producer),
         ]
 
         self.logger.info(f"Initialized {len(self.routers)} routers")
