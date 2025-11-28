@@ -341,6 +341,29 @@ async def websocket_endpoint(
                                     })
                                     continue
                                 
+                                # Update Message in DB to mark as answered
+                                from app.models import Message as DbMessage
+                                from sqlmodel import select
+                                from sqlalchemy.orm.attributes import flag_modified
+                                
+                                # Find the batch message
+                                stmt = select(DbMessage).where(
+                                    DbMessage.project_id == project_id,
+                                    DbMessage.message_type == "agent_question_batch",
+                                ).limit(10)  # Get recent batch messages
+                                
+                                batch_messages = db_session.exec(stmt).all()
+                                for batch_msg in batch_messages:
+                                    if batch_msg.structured_data and batch_msg.structured_data.get("batch_id") == batch_id:
+                                        # Update structured_data to mark as answered
+                                        new_structured_data = {**batch_msg.structured_data, "answered": True}
+                                        batch_msg.structured_data = new_structured_data
+                                        flag_modified(batch_msg, "structured_data")  # Force SQLAlchemy to detect change
+                                        db_session.add(batch_msg)
+                                        db_session.commit()
+                                        logger.info(f"Marked batch message {batch_id} as answered in DB")
+                                        break
+                                
                                 # Publish batch answer event to Kafka
                                 from app.kafka.event_schemas import BatchAnswersEvent
                                 
