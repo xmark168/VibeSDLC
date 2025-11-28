@@ -1,10 +1,9 @@
-"""Tester Agent - LangGraph Implementation.
+"""Tester Agent - Merged Role + Crew Implementation.
 
 NEW ARCHITECTURE:
 - Inherits from BaseAgent (Kafka abstracted)
 - Handles QA and testing tasks
-- Uses LangGraph for integration test generation (replaces CrewAI)
-- Legacy manual mode still uses CrewAI for @Tester mentions
+- Integrates CrewAI crew logic directly
 """
 
 import asyncio
@@ -23,7 +22,6 @@ from app.agents.tester.tasks import (
     create_test_cases_task,
 )
 from app.agents.tester.tools import get_tester_tools
-from app.agents.tester.graph import TesterGraph
 from app.models import Agent as AgentModel
 
 
@@ -54,8 +52,9 @@ class Tester(BaseAgent):
         # Create CrewAI agent (legacy - for manual @Tester mentions)
         self.crew_agent = self._create_crew_agent()
         
-        # Initialize TesterGraph (LangGraph) for integration test generation
-        self.graph = TesterGraph()
+        # Initialize TesterCrew for integration test generation
+        from app.agents.tester.crew import TesterCrew
+        self.crew = TesterCrew()
         
         # Get project path for test file generation
         from app.core.db import engine
@@ -268,8 +267,8 @@ class Tester(BaseAgent):
             )
         
         try:
-            # Use TesterGraph (LangGraph) to generate integration tests
-            result = await self.graph.generate_tests_from_stories(
+            # Use TesterCrew to generate integration tests
+            result = await self.crew.generate_tests_from_stories(
                 project_id=str(self.project_id),
                 story_ids=story_ids,
                 project_path=self.project_path,
@@ -278,12 +277,13 @@ class Tester(BaseAgent):
             
             # Check for errors
             if result.get("error"):
-                logger.error(f"[{self.name}] TesterGraph error: {result['error']}")
+                logger.error(f"[{self.name}] TesterCrew error: {result['error']}")
                 await self.message_user(
                     "response",
                     f"⚠️ **Test generation failed**\n\n"
                     f"**Error:** {result['error']}\n\n"
-                    f"**Story remains in REVIEW status.** Please fix the issue or contact admin."
+                    f"**Story remains in REVIEW status.** Please fix the issue or contact admin.\n\n"
+                    f"Raw output: {result.get('raw_output', 'N/A')[:500]}"
                 )
                 return TaskResult(
                     success=False,

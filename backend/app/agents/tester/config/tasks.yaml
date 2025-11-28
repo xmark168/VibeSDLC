@@ -1,0 +1,216 @@
+analyze_stories_task:
+  description: >
+    Query and analyze user stories with REVIEW status from the project database.
+    
+    **Step 1: Query Stories from Database**
+    Use the query_stories_from_db tool with:
+    - project_id: {project_id}
+    - story_ids: {story_ids} (optional - if empty, get ALL REVIEW stories)
+    
+    **Step 2: Analyze Each Story**
+    For each story retrieved, extract and analyze:
+    1. Story Title and Description (what the user wants to achieve)
+    2. Acceptance Criteria (GIVEN-WHEN-THEN format)
+       - Identify the API endpoint being called (e.g., POST /api/users, GET /api/products)
+       - Identify database operations (CREATE, READ, UPDATE, DELETE)
+       - Extract expected input parameters
+       - Extract expected output/response
+    3. Business logic and validation rules
+    4. Database schema changes or queries mentioned
+    
+    **Step 3: Generate Test Scenarios**
+    For each story, create integration test scenarios covering:
+    - **Happy Path**: Valid inputs → successful API response + correct DB state
+    - **Error Cases**: Invalid inputs → error responses (400, 404, 500)
+    - **Edge Cases**: Boundary values, empty data, concurrent operations
+    - **API + DB Verification**: Always verify BOTH API response AND database state
+    
+    **Output Format**:
+    Return a JSON array of test scenarios:
+    ```json
+    [
+      {
+        "story_id": "uuid",
+        "story_title": "User Story Title",
+        "api_endpoint": "POST /api/users",
+        "scenarios": [
+          {
+            "scenario_id": "S1",
+            "title": "Create user with valid data",
+            "type": "happy_path",
+            "api_test": "Verify API returns 201 with user object",
+            "db_test": "Verify user exists in database with correct fields"
+          }
+        ]
+      }
+    ]
+    ```
+  expected_output: >
+    JSON array of test scenarios for all user stories in REVIEW status.
+    Each scenario must specify both API endpoint testing and database verification steps.
+
+generate_test_cases_task:
+  description: >
+    Based on the test scenarios from the previous task, write detailed integration test cases.
+    
+    **For Each Test Scenario**, create a structured test case with:
+    
+    **Test Case Structure**:
+    - **Test ID**: TC-INT-001, TC-INT-002, etc. (sequential numbering)
+    - **Title**: Clear title describing what is being tested (include API + DB)
+    - **User Story**: Reference to the story ID and title
+    - **API Endpoint**: The API route being tested (e.g., POST /api/users)
+    - **Test Type**: happy_path | error_case | edge_case
+    
+    **Test Steps (AAA Pattern)**:
+    1. **Arrange** (Setup):
+       - Prepare test data
+       - Setup database state (seed data if needed)
+       - Prepare API request (method, headers, body)
+    
+    2. **Act** (Execute):
+       - Call the API endpoint
+       - Capture response
+    
+    3. **Assert** (Verify):
+       - **API Verification**:
+         * Check status code (200, 201, 400, 404, 500)
+         * Check response body structure
+         * Check response data values
+       - **Database Verification**:
+         * Query database for created/updated/deleted records
+         * Verify database state matches expected outcome
+         * Verify data integrity and relationships
+    
+    **Expected Results**:
+    - API Response: Expected status code, response body structure and values
+    - Database State: Expected records, field values, relationships
+    
+    **Output Format**:
+    Return a JSON array of detailed test cases:
+    ```json
+    [
+      {
+        "test_id": "TC-INT-001",
+        "title": "Create user with valid data - verify API response and DB record",
+        "story_id": "uuid",
+        "api_endpoint": "POST /api/users",
+        "test_type": "happy_path",
+        "arrange": {
+          "test_data": {...},
+          "db_setup": "Clean users table"
+        },
+        "act": {
+          "method": "POST",
+          "endpoint": "/api/users",
+          "body": {...}
+        },
+        "assert": {
+          "api": {
+            "status_code": 201,
+            "response_body": {...}
+          },
+          "database": {
+            "query": "SELECT * FROM users WHERE email = ?",
+            "expected_record": {...}
+          }
+        }
+      }
+    ]
+    ```
+  expected_output: >
+    JSON array of detailed test cases in AAA (Arrange-Act-Assert) format.
+    Each test case must include both API and database verification steps.
+
+generate_test_file_task:
+  description: >
+    Convert test cases into executable Next.js integration test code using Jest and Prisma.
+    
+    **Tech Stack**:
+    - Framework: Next.js 14+ (App Router)
+    - Testing: Jest + @testing-library
+    - Database: Prisma Client
+    - Language: TypeScript
+    
+    **Test File Structure**:
+    
+    ```typescript
+    import { NextRequest, NextResponse } from 'next/server';
+    import { PrismaClient } from '@prisma/client';
+    import { POST, GET, PUT, DELETE } from '@/app/api/[endpoint]/route';
+    
+    const prisma = new PrismaClient();
+    
+    describe('Integration Tests - Review Batch {timestamp}', () => {
+      beforeAll(async () => {
+        // Connect to test database
+        await prisma.$connect();
+      });
+      
+      afterAll(async () => {
+        // Cleanup and disconnect
+        await prisma.$disconnect();
+      });
+      
+      beforeEach(async () => {
+        // Clean up test data before each test
+      });
+      
+      describe('Story: [Story Title]', () => {
+        it('TC-INT-001: [Test Title]', async () => {
+          // Arrange (Setup)
+          const testData = {...};
+          await prisma.model.create({ data: testData });
+          
+          // Act (Execute API call)
+          const request = new NextRequest('http://localhost:3000/api/endpoint', {
+            method: 'POST',
+            body: JSON.stringify(testData)
+          });
+          const response = await POST(request);
+          const responseData = await response.json();
+          
+          // Assert - API Response
+          expect(response.status).toBe(201);
+          expect(responseData).toHaveProperty('id');
+          
+          // Assert - Database State
+          const dbRecord = await prisma.model.findUnique({
+            where: { id: responseData.id }
+          });
+          expect(dbRecord).not.toBeNull();
+          expect(dbRecord.field).toBe(expectedValue);
+        });
+      });
+    });
+    ```
+    
+    **Important Rules**:
+    1. Use NextRequest for API testing (not supertest or fetch)
+    2. Import API route handlers directly from app/api/ folders
+    3. Use Prisma Client for database operations
+    4. Include proper TypeScript types
+    5. Add comments for clarity
+    6. Follow AAA pattern with clear separators
+    7. Include both API and DB assertions
+    8. Use descriptive test names
+    
+    **Save the File**:
+    Use the generate_test_file tool with:
+    - project_path: {project_path}
+    - filename: review-batch-{timestamp}.integration.test.ts
+    - test_content: [Generated TypeScript code]
+    
+    **Output Format**:
+    Return JSON object with test file details:
+    ```json
+    {
+      "filename": "review-batch-2025-11-26-123456.integration.test.ts",
+      "test_file": "/full/path/to/tests/integration/review-batch-2025-11-26-123456.integration.test.ts",
+      "test_count": 5,
+      "stories_covered": ["story-uuid-1", "story-uuid-2"]
+    }
+    ```
+  expected_output: >
+    JSON object containing test file information: filename, full path, test count, and stories covered.
+    The test file must be executable with 'npm test tests/integration/' command.
