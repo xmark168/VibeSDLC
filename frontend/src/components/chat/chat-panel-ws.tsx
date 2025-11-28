@@ -160,9 +160,67 @@ export function ChatPanelWS({
   )
 
   // Remove duplicates by ID (simple de-duplication)
-  const uniqueMessages = sortedMessages.filter(
+  const deduplicatedMessages = sortedMessages.filter(
     (msg, index, self) => index === self.findIndex(m => m.id === msg.id)
   );
+
+  // Group batch questions: combine messages with same batch_id into single entry
+  const uniqueMessages = (() => {
+    const processedBatchIds = new Set<string>();
+    const result: Message[] = [];
+
+    for (const msg of deduplicatedMessages) {
+      // If this is a batch question
+      if (msg.message_type === 'agent_question_batch' && msg.structured_data?.batch_id) {
+        const batchId = msg.structured_data.batch_id;
+        
+        // Skip if we already processed this batch
+        if (processedBatchIds.has(batchId)) {
+          continue;
+        }
+        processedBatchIds.add(batchId);
+
+        // Find ALL messages in this batch
+        const batchMessages = deduplicatedMessages.filter(
+          m => m.message_type === 'agent_question_batch' && 
+               m.structured_data?.batch_id === batchId
+        ).sort((a, b) => (a.structured_data?.batch_index || 0) - (b.structured_data?.batch_index || 0));
+
+        // Combine into single message with all questions
+        const combinedQuestions = batchMessages.map(m => ({
+          question_id: m.structured_data?.question_id,
+          question_text: m.content,
+          question_type: m.structured_data?.question_type || 'open',
+          options: m.structured_data?.options,
+          allow_multiple: m.structured_data?.allow_multiple || false,
+        }));
+
+        const combinedQuestionIds = batchMessages.map(m => m.structured_data?.question_id || m.id);
+
+        // Check if ANY question in batch is answered
+        const isAnswered = batchMessages.some(m => m.structured_data?.answered);
+
+        // Create combined message (use first message as base)
+        const combinedMsg: Message = {
+          ...batchMessages[0],
+          structured_data: {
+            ...batchMessages[0].structured_data,
+            batch_id: batchId,
+            questions: combinedQuestions,
+            question_ids: combinedQuestionIds,
+            answered: isAnswered,
+          }
+        };
+
+        result.push(combinedMsg);
+      } else {
+        // Non-batch message, add as-is
+        result.push(msg);
+      }
+    }
+
+    return result;
+  })();
   
   // Detect unanswered questions - show only the LATEST one
   useEffect(() => {

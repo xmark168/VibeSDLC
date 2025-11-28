@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 
 
 class ProjectFiles:
-    """Manage project files (PRD, stories, interviews) - inspired by MetaGPT."""
+    """Manage project files (PRD, stories, interviews)"""
     
     def __init__(self, project_path: Path):
         self.project_path = Path(project_path)
