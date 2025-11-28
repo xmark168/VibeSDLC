@@ -313,10 +313,7 @@ export function BatchQuestionsCard({
                   Đang gửi...
                 </>
               ) : (
-                <>
-                  Submit
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </>
+                'Submit'
               )}
             </Button>
           ) : (
