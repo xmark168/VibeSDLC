@@ -797,12 +797,14 @@ class BaseAgent(ABC):
         }
         
         # Save all questions to database
+        batch_message_id = uuid4()  # Single message ID for the entire batch
+        
         with Session(engine) as session:
+            # 1. Save individual AgentQuestion records (for workflow tracking)
             for idx, q_data in enumerate(questions):
                 question_id = uuid4()
                 question_ids.append(question_id)
                 
-                # 1. Save to agent_questions table (for workflow)
                 db_question = AgentQuestion(
                     id=question_id,
                     project_id=self.project_id,
@@ -825,33 +827,42 @@ class BaseAgent(ABC):
                     expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
                 )
                 session.add(db_question)
-                
-                # 2. Save to messages table (for chat history persistence)
-                question_message = Message(
-                    id=question_id,
-                    project_id=self.project_id,
-                    author_type=AuthorType.AGENT,
-                    agent_id=self.agent_id,
-                    content=q_data["question_text"],
-                    message_type="agent_question_batch",  # NEW type
-                    structured_data={
-                        "question_id": str(question_id),
-                        "question_type": q_data["question_type"],
-                        "options": q_data.get("options"),
-                        "allow_multiple": q_data.get("allow_multiple", False),
-                        "context": q_data.get("context"),
-                        "batch_id": batch_id,
-                        "batch_index": idx,
-                        "batch_total": len(questions),
-                        "status": "waiting_answer"
-                    },
-                    message_metadata={
-                        "agent_name": self.name,
-                        "task_id": str(self._current_task_id),
-                        "execution_id": str(self._current_execution_id) if self._current_execution_id else None,
-                    }
-                )
-                session.add(question_message)
+            
+            # 2. Save ONE combined message for chat history (not per-question)
+            # Build questions array for structured_data
+            combined_questions = [
+                {
+                    "question_id": str(question_ids[idx]),
+                    "question_text": q_data["question_text"],
+                    "question_type": q_data["question_type"],
+                    "options": q_data.get("options"),
+                    "allow_multiple": q_data.get("allow_multiple", False),
+                    "context": q_data.get("context"),
+                }
+                for idx, q_data in enumerate(questions)
+            ]
+            
+            batch_message = Message(
+                id=batch_message_id,
+                project_id=self.project_id,
+                author_type=AuthorType.AGENT,
+                agent_id=self.agent_id,
+                content=f"Batch of {len(questions)} questions",  # Summary text
+                message_type="agent_question_batch",
+                structured_data={
+                    "batch_id": batch_id,
+                    "questions": combined_questions,
+                    "question_ids": [str(qid) for qid in question_ids],
+                    "status": "waiting_answer",
+                    "answered": False,
+                },
+                message_metadata={
+                    "agent_name": self.name,
+                    "task_id": str(self._current_task_id),
+                    "execution_id": str(self._current_execution_id) if self._current_execution_id else None,
+                }
+            )
+            session.add(batch_message)
             
             session.commit()
         
