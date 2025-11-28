@@ -1,152 +1,206 @@
-"""Langfuse client singleton for agent tracing.
+"""Langfuse client for LangChain tracing.
 
-Provides:
-- Singleton client management (Langfuse v3 API)
-- Helper functions for tracing, generations, scoring
-- Session-based conversation tracking
-
-Langfuse v3 uses OpenTelemetry-based API:
-- langfuse.start_as_current_span() for spans
-- langfuse.start_as_current_generation() for LLM generations
-- @observe decorator for automatic tracing
+Simple usage:
+    from langfuse.langchain import CallbackHandler
+    
+    handler = CallbackHandler()
+    response = chain.invoke({"input": "..."}, config={"callbacks": [handler]})
 """
 
 import logging
 from typing import Optional, Dict, Any, List
-from contextlib import contextmanager
-
-try:
-    from langfuse import Langfuse
-    LANGFUSE_AVAILABLE = True
-except ImportError:
-    LANGFUSE_AVAILABLE = False
-    Langfuse = None
-
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-_langfuse_client: Optional[Langfuse] = None
-_langfuse_initialized: bool = False
+# Check if Langfuse is available
+LANGFUSE_AVAILABLE = False
+_CallbackHandler = None
+
+try:
+    from langfuse.langchain import CallbackHandler as _CallbackHandler
+    LANGFUSE_AVAILABLE = True
+    logger.info("Langfuse CallbackHandler loaded")
+except (ImportError, ModuleNotFoundError) as e:
+    logger.warning(f"Langfuse not available: {e}")
 
 
-def get_langfuse_client() -> Optional[Langfuse]:
-    global _langfuse_client, _langfuse_initialized
+# =============================================================================
+# CORE FUNCTIONS
+# =============================================================================
+
+def get_langfuse_client():
+    """Get Langfuse client instance.
     
-    if _langfuse_initialized:
-        return _langfuse_client
+    Returns:
+        Langfuse client or None
+    """
+    if not LANGFUSE_AVAILABLE:
+        return None
     
-    _langfuse_initialized = True
-    
-    if not settings.LANGFUSE_ENABLED:
+    try:
+        from langfuse import get_client
+        return get_client()
+    except Exception as e:
+        logger.debug(f"get_langfuse_client: {e}")
         return None
 
-    try:
-        _langfuse_client = Langfuse(
-            secret_key=settings.LANGFUSE_SECRET_KEY,
-            public_key=settings.LANGFUSE_PUBLIC_KEY,
-            host=settings.LANGFUSE_BASE_URL,
-        )
-        logger.info("Langfuse client initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize Langfuse: {e}")
-        _langfuse_client = None
+
+def get_langfuse_handler():
+    """Get a new Langfuse CallbackHandler for LangChain tracing.
     
-    return _langfuse_client
+    Returns:
+        CallbackHandler or None if not available
+    """
+    if not LANGFUSE_AVAILABLE or _CallbackHandler is None:
+        return None
+    
+    try:
+        return _CallbackHandler()
+    except Exception as e:
+        logger.debug(f"Failed to create CallbackHandler: {e}")
+        return None
+
+
+def get_langchain_callback(
+    trace_name: str = None,
+    user_id: str = None,
+    session_id: str = None,
+    tags: List[str] = None,
+    metadata: Dict[str, Any] = None,
+):
+    """Get LangChain callback handler (alias for get_langfuse_handler).
+    
+    Returns:
+        CallbackHandler or None
+    """
+    return get_langfuse_handler()
 
 
 def flush_langfuse():
     """Flush pending Langfuse events."""
-    if _langfuse_client:
-        try:
-            _langfuse_client.flush()
-        except Exception as e:
-            logger.warning(f"Failed to flush Langfuse: {e}")
+    try:
+        from langfuse import get_client
+        client = get_client()
+        if client:
+            client.flush()
+    except Exception as e:
+        logger.debug(f"Langfuse flush: {e}")
+
+
+def shutdown_langfuse():
+    """Shutdown Langfuse client."""
+    try:
+        from langfuse import get_client
+        client = get_client()
+        if client:
+            client.shutdown()
+    except Exception as e:
+        logger.debug(f"Langfuse shutdown: {e}")
+
+
+# =============================================================================
+# CONTEXT FUNCTIONS (stubs for backward compatibility)
+# =============================================================================
+
+def get_langfuse_context():
+    """Get current Langfuse context (stub).
+    
+    Returns:
+        None - context is managed automatically by CallbackHandler
+    """
+    return None
+
+
+def update_current_trace(
+    name: str = None,
+    user_id: str = None,
+    session_id: str = None,
+    metadata: Dict[str, Any] = None,
+    tags: List[str] = None,
+    **kwargs
+) -> bool:
+    """Update current trace (stub - not needed with CallbackHandler).
+    
+    Returns:
+        False - use metadata in config instead
+    """
+    return False
+
+
+def update_current_observation(
+    output: Any = None,
+    metadata: Dict[str, Any] = None,
+    **kwargs
+) -> bool:
+    """Update current observation (stub - not needed with CallbackHandler).
+    
+    Returns:
+        False - CallbackHandler handles this automatically
+    """
+    return False
+
+
+def score_current(
+    name: str,
+    value: float,
+    comment: str = None,
+    data_type: str = "NUMERIC"
+) -> bool:
+    """Score current trace (stub).
+    
+    Returns:
+        False - use langfuse client directly for scoring
+    """
+    return False
 
 
 def create_session_id(project_id: str, conversation_id: str = None) -> str:
-    """Create a session ID for conversation tracking.
-    
-    Session groups related traces together in Langfuse UI.
+    """Create session ID for grouping traces.
     
     Args:
         project_id: Project UUID string
-        conversation_id: Optional conversation/thread ID
+        conversation_id: Optional conversation ID
         
     Returns:
-        Session ID string (max 200 chars, US-ASCII)
+        Session ID string
     """
     if conversation_id:
         return f"conv_{conversation_id[:50]}"
     return f"proj_{project_id[:50]}"
 
 
-def score_trace(
-    trace_id: str,
-    name: str,
-    value: float,
-    comment: str = None,
-    data_type: str = "NUMERIC"
-) -> bool:
-    """Score a trace for evaluation.
-    """
-    client = get_langfuse_client()
-    if not client:
-        return False
-    
-    try:
-        client.score(
-            trace_id=trace_id,
-            name=name,
-            value=value,
-            comment=comment,
-            data_type=data_type
-        )
-        return True
-    except Exception as e:
-        logger.warning(f"Failed to score trace {trace_id}: {e}")
-        return False
-
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
 
 def format_llm_usage(response) -> Dict[str, Any]:
-    """Extract token usage from LLM response.
-    """
-    usage = {"unit": "TOKENS"}
+    """Extract token usage from LLM response."""
+    usage = {}
     
-    # OpenAI response format
     if hasattr(response, "usage") and response.usage:
         usage["input"] = getattr(response.usage, "prompt_tokens", 0)
         usage["output"] = getattr(response.usage, "completion_tokens", 0)
         usage["total"] = getattr(response.usage, "total_tokens", 0)
-    # LangChain AIMessage format
     elif hasattr(response, "response_metadata"):
         meta = response.response_metadata
         if "token_usage" in meta:
             usage["input"] = meta["token_usage"].get("prompt_tokens", 0)
             usage["output"] = meta["token_usage"].get("completion_tokens", 0)
             usage["total"] = meta["token_usage"].get("total_tokens", 0)
-    # Dict format
-    elif isinstance(response, dict):
-        if "usage" in response:
-            usage["input"] = response["usage"].get("prompt_tokens", 0)
-            usage["output"] = response["usage"].get("completion_tokens", 0)
-            usage["total"] = response["usage"].get("total_tokens", 0)
     
     return usage
 
 
 def format_chat_messages(messages: List[Any]) -> List[Dict[str, str]]:
-    """Format messages for Langfuse generation input.
-    """
+    """Format messages for Langfuse input."""
     formatted = []
     for msg in messages:
         if isinstance(msg, dict):
             formatted.append(msg)
         elif hasattr(msg, "type") and hasattr(msg, "content"):
-            # LangChain message
             role_map = {"human": "user", "ai": "assistant", "system": "system"}
             role = role_map.get(msg.type, msg.type)
-            formatted.append({"role": role, "content": msg.content})
+            formatted.append({"role": role, "content": str(msg.content)})
         elif hasattr(msg, "role") and hasattr(msg, "content"):
-            formatted.append({"role": msg.role, "content": msg.content})
+            formatted.append({"role": msg.role, "content": str(msg.content)})
     return formatted

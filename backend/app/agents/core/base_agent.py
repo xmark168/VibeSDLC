@@ -27,12 +27,17 @@ from app.kafka.event_schemas import (
 from app.models import Agent as AgentModel, AgentStatus
 from datetime import datetime, timezone
 from app.core.langfuse_client import (
-    get_langfuse_client, 
+    get_langfuse_client,
+    get_langfuse_context,
     flush_langfuse, 
     create_session_id,
-    score_trace,
+    score_current,
+    update_current_trace,
+    update_current_observation,
     format_llm_usage,
-    format_chat_messages
+    format_chat_messages,
+    get_langchain_callback,
+    LANGFUSE_AVAILABLE,
 )
 
 logger = logging.getLogger(__name__)
@@ -1247,43 +1252,25 @@ Provide a helpful, concise response based on your expertise as a {self.role_type
         tags: List[str] = None,
         metadata: Dict[str, Any] = None
     ) -> Optional[Any]:
-        """Get Langfuse callback handler for LangChain integration.
+        """Get Langfuse callback handler for LangChain integration (v3 API).
         
         Usage:
-            llm = ChatOpenAI(...)
-            callback = self.get_langfuse_callback("my_llm_call", tags=["routing"])
-            response = await llm.ainvoke(messages, callbacks=[callback] if callback else [])
-        
-        Args:
-            trace_name: Name for the trace
-            tags: Optional list of tags
-            metadata: Optional metadata dict
-            
-        Returns:
-            CallbackHandler instance or None if Langfuse not available
+            callback = self.get_langfuse_callback("my_llm_call")
+            response = await llm.ainvoke(messages, config={"callbacks": [callback]} if callback else {})
         """
-        if not self.langfuse_client:
-            return None
-        
-        try:
-            from langfuse.callback import CallbackHandler
-            
-            return CallbackHandler(
-                trace_name=trace_name,
-                session_id=str(self.project_id),
-                user_id=str(self._current_user_id) if self._current_user_id else None,
-                tags=tags or [self.role_type],
-                metadata={
-                    "agent_id": str(self.agent_id),
-                    "agent_name": self.name,
-                    "agent_role": self.role_type,
-                    "task_id": str(self._current_task_id) if self._current_task_id else None,
-                    **(metadata or {})
-                }
-            )
-        except Exception as e:
-            logger.warning(f"[{self.name}] Failed to create Langfuse callback: {e}")
-            return None
+        return get_langchain_callback(
+            trace_name=trace_name,
+            user_id=str(self._current_user_id) if self._current_user_id else None,
+            session_id=str(self.project_id),
+            tags=tags or [self.role_type],
+            metadata={
+                "agent_id": str(self.agent_id),
+                "agent_name": self.name,
+                "agent_role": self.role_type,
+                "task_id": str(self._current_task_id) if self._current_task_id else None,
+                **(metadata or {})
+            }
+        )
 
     def track_llm_generation(
         self,
@@ -1292,38 +1279,38 @@ Provide a helpful, concise response based on your expertise as a {self.role_type
         input_messages: List[Any],
         response: Any,
         model_parameters: Dict[str, Any] = None,
-        parent_span: Any = None
-    ) -> Optional[Any]:
-        """Track LLM generation with token usage in Langfuse (v3 API).
-        
-        Usage:
-            response = await llm.ainvoke(messages)
-            self.track_llm_generation(
-                name="routing_decision",
-                model="gpt-4o-mini",
-                input_messages=messages,
-                response=response
-            )
+        duration_ms: float = None,
+    ) -> bool:
+        """Track LLM generation with timing.
         
         Args:
-            name: Generation name (e.g., "routing_decision", "prd_generation")
-            model: Model name (e.g., "gpt-4o-mini", "gpt-4o")
+            name: Generation name (e.g., "routing_decision")
+            model: Model name (e.g., "gpt-4o-mini")
             input_messages: List of input messages
-            response: LLM response object (OpenAI or LangChain format)
-            model_parameters: Optional model params (temperature, etc.)
-            parent_span: Optional parent span to nest under
+            response: LLM response object
+            model_parameters: Optional model params
+            duration_ms: Execution time in milliseconds (measure around ainvoke call)
+        
+        Usage:
+            start = time.time()
+            response = await llm.ainvoke(messages)
+            duration_ms = (time.time() - start) * 1000
             
+            agent.track_llm_generation(
+                name="routing",
+                model="gpt-4o-mini", 
+                input_messages=messages,
+                response=response,
+                duration_ms=duration_ms
+            )
+        
         Returns:
-            Generation object or None
+            True if tracked successfully
         """
-        if not self.langfuse_client:
-            logger.debug(f"[{self.name}] track_llm_generation skipped: no langfuse_client")
-            return None
+        if not LANGFUSE_AVAILABLE:
+            return False
         
         try:
-            # Format input messages
-            formatted_input = format_chat_messages(input_messages)
-            
             # Extract output content
             output_content = ""
             if hasattr(response, "content"):
@@ -1336,28 +1323,35 @@ Provide a helpful, concise response based on your expertise as a {self.role_type
             # Extract token usage
             usage = format_llm_usage(response)
             
-            # Langfuse v3: use start_as_current_generation context manager
-            with self.langfuse_client.start_as_current_generation(
-                name=name,
-                model=model,
-                model_parameters=model_parameters or {},
-                input=formatted_input,
-                metadata={
-                    "agent": self.name,
-                    "agent_role": self.role_type
-                }
-            ) as generation:
-                # Update with output and usage
-                generation.update(
-                    output=output_content,
-                    usage=usage if usage.get("total") else None
-                )
+            # Build metadata
+            metadata = {
+                "name": name,
+                "model": model,
+                "model_parameters": model_parameters or {},
+                "input": format_chat_messages(input_messages),
+                "usage": usage,
+                "agent": self.name,
+                "agent_role": self.role_type
+            }
             
-            logger.info(f"[{self.name}] Langfuse generation tracked: {name}, model={model}, tokens={usage.get('total', 'N/A')}")
-            return generation
+            # Add duration if provided
+            if duration_ms is not None:
+                metadata["duration_ms"] = round(duration_ms, 2)
+                metadata["latency_ms"] = round(duration_ms, 2)  # Alias for Langfuse
+            
+            # Update current observation if inside @observe
+            updated = update_current_observation(
+                output=output_content,
+                metadata=metadata
+            )
+            
+            if updated:
+                logger.debug(f"[{self.name}] LLM tracked: {name}, model={model}, duration={duration_ms:.0f}ms" if duration_ms else f"[{self.name}] LLM tracked: {name}, model={model}")
+            return updated
+            
         except Exception as e:
-            logger.warning(f"[{self.name}] Failed to track LLM generation: {e}", exc_info=True)
-            return None
+            logger.debug(f"[{self.name}] track_llm_generation: {e}")
+            return False
 
     def create_span(
         self,
@@ -1365,36 +1359,15 @@ Provide a helpful, concise response based on your expertise as a {self.role_type
         input_data: Dict[str, Any] = None,
         parent_span: Any = None
     ) -> Optional[Any]:
-        """Create a span for tracking operations within a trace (v3 API).
+        """Create a span - simplified for v3 API.
         
-        Usage:
-            span = self.create_span("delegation", {"target": "ba"})
-            # ... do work ...
-            if span:
-                span.end(output={"success": True})
-        
-        Args:
-            name: Span name
-            input_data: Optional input data
-            parent_span: Optional parent span for nesting
-            
-        Returns:
-            Span object or None
+        Note: In v3, prefer using @observe decorator instead.
+        This method logs metadata for debugging purposes.
         """
-        if not self.langfuse_client:
-            return None
-        
-        try:
-            # Langfuse v3: use start_span (not context manager for manual control)
-            span = self.langfuse_client.start_span(
-                name=name,
-                input=input_data,
-                metadata={"agent": self.name}
-            )
-            return span
-        except Exception as e:
-            logger.warning(f"[{self.name}] Failed to create span: {e}")
-            return None
+        # In v3, spans are created via @observe decorator
+        # This method just logs for debugging
+        logger.debug(f"[{self.name}] Span: {name}, input={input_data}")
+        return {"name": name, "input": input_data}  # Return dummy for compatibility
 
     def score_current_task(
         self,
@@ -1402,20 +1375,13 @@ Provide a helpful, concise response based on your expertise as a {self.role_type
         duration_ms: float = None,
         comment: str = None
     ) -> None:
-        """Score the current trace for success and latency.
+        """Score the current task (v3 API).
         
-        Args:
-            success: Whether task completed successfully
-            duration_ms: Optional task duration in milliseconds
-            comment: Optional comment
+        Must be called inside an @observe decorated function.
         """
-        if not self._current_trace_id:
-            return
-        
         try:
             # Score success
-            score_trace(
-                trace_id=self._current_trace_id,
+            score_current(
                 name="task_success",
                 value=1.0 if success else 0.0,
                 comment=comment
@@ -1423,33 +1389,31 @@ Provide a helpful, concise response based on your expertise as a {self.role_type
             
             # Score latency if provided
             if duration_ms is not None:
-                score_trace(
-                    trace_id=self._current_trace_id,
+                score_current(
                     name="latency_ms",
                     value=duration_ms
                 )
         except Exception as e:
-            logger.warning(f"[{self.name}] Failed to score task: {e}")
+            logger.debug(f"[{self.name}] score_current_task: {e}")
 
     def track_event(self, name: str, metadata: Dict[str, Any] = None) -> None:
-        """Track a discrete event within the current trace (v3 API).
+        """Track a discrete event (v3 API).
         
-        Args:
-            name: Event name (e.g., "story_created", "artifact_generated")
-            metadata: Optional event metadata
+        Updates current observation with event metadata.
         """
-        if not self.langfuse_client:
+        if not LANGFUSE_AVAILABLE:
             return
         
         try:
-            # Langfuse v3: create event span
-            with self.langfuse_client.start_as_current_span(
-                name=f"event:{name}",
-                metadata=metadata or {}
-            ):
-                pass  # Event span auto-closes
+            update_current_observation(
+                metadata={
+                    f"event_{name}": metadata or {},
+                    "event_timestamp": datetime.now(timezone.utc).isoformat()
+                }
+            )
+            logger.debug(f"[{self.name}] Event tracked: {name}")
         except Exception as e:
-            logger.warning(f"[{self.name}] Failed to track event: {e}")
+            logger.debug(f"[{self.name}] track_event: {e}")
 
     async def _create_execution_record(self, task: "TaskContext") -> UUID:
         """Create AgentExecution record in database"""
@@ -1673,47 +1637,14 @@ Provide a helpful, concise response based on your expertise as a {self.role_type
         Args:
             task_data: RouterTaskEvent as dict
         """
-        trace = None
-        span = None
-        
         try:
             # Extract task info
             task_id = task_data.get("task_id")
             self._current_task_id = task_id
+            self._current_trace_id = str(task_id)  # Use task_id as trace identifier
             
             # Extract context
             context = task_data.get("context", {})
-            
-            # Start Langfuse trace with session-based tracking (v3 API)
-            if self.langfuse_client:
-                try:
-                    # Use project_id for session grouping
-                    session_id = f"project_{self.project_id}"
-                    
-                    # Langfuse v3: use start_as_current_span instead of trace()
-                    trace = self.langfuse_client.start_as_current_span(
-                        name=f"{self.role_type}_task",
-                        input={"content": context.get("content", "")[:500]},
-                        metadata={
-                            "agent_id": str(self.agent_id),
-                            "agent_name": self.name,
-                            "agent_role": self.role_type,
-                            "project_id": str(self.project_id),
-                            "task_id": str(task_id),
-                            "task_type": task_data.get("task_type"),
-                            "routing_reason": task_data.get("routing_reason"),
-                            "delegated_from": task_data.get("delegated_from"),
-                        },
-                        user_id=str(context.get("user_id", "unknown")),
-                        session_id=session_id,
-                        tags=[self.role_type, task_data.get("task_type", "message")]
-                    )
-                    # Enter the context manager
-                    self._current_trace = trace.__enter__()
-                    self._current_trace_id = getattr(self._current_trace, 'id', None) or str(task_id)
-                    logger.info(f"[{self.name}] Langfuse span started: {self._current_trace_id}")
-                except Exception as e:
-                    logger.warning(f"[{self.name}] Failed to start Langfuse trace: {e}")
             
             # Track task context for clarification questions
             self._current_task_type = task_data.get("task_type", "message")
@@ -1834,32 +1765,8 @@ Provide a helpful, concise response based on your expertise as a {self.role_type
 
             task_failed = False
             try:
-                # Create span for handle_task
-                if trace:
-                    try:
-                        span = trace.span(
-                            name="handle_task",
-                            input={"content": task.content[:200], "task_type": task.task_type.value}
-                        )
-                    except Exception as e:
-                        logger.warning(f"[{self.name}] Failed to create Langfuse span: {e}")
-                
                 # Call agent's implementation
                 result = await self.handle_task(task)
-                
-                # End span with success
-                if span:
-                    try:
-                        span.end(
-                            output={
-                                "success": result.success,
-                                "output": result.output[:200] if result.output else "",
-                                "structured_data": result.structured_data,
-                            },
-                            level="DEFAULT" if result.success else "ERROR"
-                        )
-                    except Exception as e:
-                        logger.warning(f"[{self.name}] Failed to end Langfuse span: {e}")
                 
                 # Record actual token usage
                 actual_tokens = self._extract_token_usage(result)
@@ -1885,16 +1792,6 @@ Provide a helpful, concise response based on your expertise as a {self.role_type
                 
             except Exception as e:
                 task_failed = True
-                
-                # End span with error
-                if span:
-                    try:
-                        span.end(
-                            output={"error": str(e)},
-                            level="ERROR"
-                        )
-                    except Exception as span_error:
-                        logger.warning(f"[{self.name}] Failed to end Langfuse span with error: {span_error}")
                 
                 # Emit error status to frontend
                 await self.message_user("error", f"Task failed: {str(e)}", {
@@ -1937,34 +1834,16 @@ Provide a helpful, concise response based on your expertise as a {self.role_type
                 exc_info=True
             )
         finally:
-            # End Langfuse span (v3 API uses context manager)
-            if self._current_trace:
-                try:
-                    duration_ms = (datetime.now(timezone.utc) - self._execution_start_time).total_seconds() * 1000 if self._execution_start_time else 0
-                    task_success = not task_failed if 'task_failed' in locals() else True
-                    
-                    # Update span output if method exists
-                    if hasattr(self._current_trace, 'update'):
-                        self._current_trace.update(
-                            output={
-                                "agent": self.name,
-                                "execution_id": str(self._current_execution_id) if self._current_execution_id else None,
-                                "duration_ms": duration_ms,
-                                "success": task_success,
-                            }
-                        )
-                    
-                    # End the span context (v3 API)
-                    if hasattr(self._current_trace, 'end'):
-                        self._current_trace.end()
-                    
-                    # Score the trace
-                    self.score_current_task(success=task_success, duration_ms=duration_ms)
-                    
-                    flush_langfuse()
-                except Exception as e:
-                    logger.warning(f"[{self.name}] Failed to end Langfuse span: {e}")
+            # Score task completion (v3 API - non-blocking)
+            try:
+                duration_ms = (datetime.now(timezone.utc) - self._execution_start_time).total_seconds() * 1000 if self._execution_start_time else 0
+                task_success = not task_failed if 'task_failed' in locals() else True
+                self.score_current_task(success=task_success, duration_ms=duration_ms)
+                flush_langfuse()
+            except Exception as e:
+                logger.debug(f"[{self.name}] Langfuse cleanup: {e}")
             
+            # Reset task state
             self._current_task_id = None
             self._current_execution_id = None
             self._current_trace_id = None

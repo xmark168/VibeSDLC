@@ -14,15 +14,84 @@ from app.agents.team_leader.src.prompts import (
     parse_llm_decision,
     get_task_prompts,
 )
+from app.core.langfuse_client import get_langfuse_handler
 
 logger = logging.getLogger(__name__)
 
 
-async def extract_preferences(state: TeamLeaderState, agent=None) -> TeamLeaderState:
-    """Node 0: Use LLM to silently extract and save user preferences from message.
+def create_graph_handler(agent) -> dict:
+    """Create a shared Langfuse handler for the entire graph execution.
     
-    Runs BEFORE routing. Does not change main flow.
-    Uses structured output with hybrid schema (core typed + dynamic additional).
+    Call this once at graph entry point and pass handler via state.
+    
+    Returns:
+        Handler or None
+    """
+    handler = get_langfuse_handler()
+    if not handler:
+        return None
+    
+    # Set trace-level metadata via the handler
+    if agent:
+        try:
+            # These will be applied to the trace
+            handler.user_id = str(agent._current_user_id) if agent._current_user_id else None
+            handler.session_id = str(agent.project_id) if agent.project_id else None
+            handler.tags = [agent.role_type, "team_leader"]
+            handler.metadata = {
+                "agent": agent.name,
+                "agent_role": agent.role_type,
+                "task_id": str(agent._current_task_id) if agent._current_task_id else None,
+            }
+        except Exception:
+            pass  # Some handler versions may not support these
+    
+    return handler
+
+
+def _get_llm_config(state: dict, trace_name: str) -> dict:
+    """Get LangChain config using shared handler from state.
+    
+    Args:
+        state: Graph state containing 'langfuse_handler'
+        trace_name: Name for this specific LLM call (becomes observation name)
+    """
+    handler = state.get("langfuse_handler")
+    if not handler:
+        return {}
+    
+    return {
+        "callbacks": [handler],
+        "run_name": trace_name,
+    }
+
+
+# =============================================================================
+# SHARED LLM CLIENTS (thread-safe, reuse across requests)
+# =============================================================================
+
+# Fast model for quick tasks (routing, preference extraction)
+FAST_MODEL = "gpt-4o-mini"
+# Chat model for conversational responses
+CHAT_MODEL = "gpt-4o-mini"
+
+# Pre-initialized LLM clients (avoid re-creating each request)
+_fast_llm = ChatOpenAI(
+    model=FAST_MODEL,
+    temperature=0.1,
+    timeout=15,
+)
+
+_chat_llm = ChatOpenAI(
+    model=CHAT_MODEL,
+    temperature=0.7,
+    timeout=30,
+)
+
+
+async def extract_preferences(state: TeamLeaderState, agent=None) -> TeamLeaderState:
+    """
+    Node 0: Use LLM to silently extract and save user preferences from message.
     """
     user_message = state.get("user_message", "")
     
@@ -31,9 +100,8 @@ async def extract_preferences(state: TeamLeaderState, agent=None) -> TeamLeaderS
         return state
     
     try:
-        # Use fast model with structured output
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-        structured_llm = llm.with_structured_output(ExtractedPreferences)
+        # Use shared fast LLM with structured output
+        structured_llm = _fast_llm.with_structured_output(ExtractedPreferences)
         
         # Get prompts for preference extraction task
         prompts = get_task_prompts("preference_extraction")
@@ -53,18 +121,11 @@ async def extract_preferences(state: TeamLeaderState, agent=None) -> TeamLeaderS
             HumanMessage(content=f'Analyze this message for preferences: "{user_message}"')
         ]
         
-        # Invoke LLM with structured output - returns ExtractedPreferences directly
-        result: ExtractedPreferences = await structured_llm.ainvoke(messages)
+        # Get Langfuse config for tracing
+        config = _get_llm_config(agent, "preference_extraction") or None
         
-        # Track LLM generation in Langfuse (if agent available)
-        if agent:
-            agent.track_llm_generation(
-                name="preference_extraction",
-                model="gpt-4o-mini",
-                input_messages=messages,
-                response=result.model_dump(),
-                model_parameters={"temperature": 0}
-            )
+        # Invoke LLM with structured output
+        result: ExtractedPreferences = await structured_llm.ainvoke(messages, config=config)
         
         # Convert to dict, filter out None values (exclude 'additional' key for now)
         detected = {
@@ -98,8 +159,6 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
     logger.info("[router] Analyzing intent for routing")
     
     try:
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-        
         system_prompt = build_system_prompt(agent)
         agent_name = agent.name if agent else "Team Leader"
         conversation_history = state.get("conversation_history", "")
@@ -117,18 +176,11 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
             HumanMessage(content=user_prompt)
         ]
         
-        # Invoke LLM
-        response = await llm.ainvoke(messages)
+        # Get Langfuse config for tracing
+        config = _get_llm_config(agent, "routing_decision") or None
         
-        # Track LLM generation with token usage in Langfuse
-        if agent:
-            agent.track_llm_generation(
-                name="routing_decision",
-                model="gpt-4o-mini",
-                input_messages=messages,
-                response=response,
-                model_parameters={"temperature": 0}
-            )
+        # Invoke shared LLM
+        response = await _fast_llm.ainvoke(messages, config=config)
         
         decision = parse_llm_decision(response.content)
         
@@ -161,6 +213,22 @@ async def delegate(state: TeamLeaderState, agent=None) -> TeamLeaderState:
         from app.agents.core.base_agent import TaskContext
         from app.kafka.event_schemas import AgentTaskType
         
+        # Get LLM-generated delegation message (with @mention and personality)
+        # Fallback only if LLM didn't generate message
+        delegation_msg = state.get("message")
+        if not delegation_msg:
+            role_display_names = {
+                "business_analyst": "Business Analyst",
+                "developer": "Developer", 
+                "tester": "Tester",
+                "architect": "Architect",
+            }
+            target_display_name = role_display_names.get(target_role, target_role)
+            delegation_msg = f"Để mình chuyển việc này cho @{target_display_name} nhé! 🚀"
+        
+        # Send delegation message to user
+        await agent.message_user("response", delegation_msg)
+        
         # Create span for delegation tracking
         delegation_span = agent.create_span(
             name="delegation",
@@ -180,7 +248,7 @@ async def delegate(state: TeamLeaderState, agent=None) -> TeamLeaderState:
         await agent.delegate_to_role(
             task=task,
             target_role=target_role,
-            delegation_message=state.get("message", f"Routing to {target_role}"),
+            delegation_message=delegation_msg,
         )
         
         # End delegation span
@@ -213,24 +281,11 @@ async def respond(state: TeamLeaderState, agent=None) -> TeamLeaderState:
 
 
 async def conversational(state: TeamLeaderState, agent=None) -> TeamLeaderState:
-    """Conversational node: Human-like chat with personality + Tavily web search.
-    
-    - Answers general knowledge, life questions
-    - Uses Tavily tool for current information (weather, news, facts)
-    - Responds with agent's personality
-    """
-    from langchain_core.messages import ToolMessage
-    from langchain_community.tools.tavily_search import TavilySearchResults
-    
+    """Conversational node: Human-like chat with personality."""
     user_message = state["user_message"]
     logger.info(f"[conversational] Processing: {user_message[:50]}")
     
     try:
-        # LLM with Tavily tool binding
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
-        tavily_tool = TavilySearchResults(max_results=3)
-        llm_with_tools = llm.bind_tools([tavily_tool])
-        
         # Build prompt with agent personality
         system_prompt = build_system_prompt(agent, task_name="conversational")
         
@@ -244,60 +299,21 @@ async def conversational(state: TeamLeaderState, agent=None) -> TeamLeaderState:
             HumanMessage(content=user_message)
         ]
         
-        # First LLM call - may decide to use Tavily tool
-        response = await llm_with_tools.ainvoke(messages)
+        # Get Langfuse config for tracing
+        config = _get_llm_config(agent, "conversational") or None
         
-        # Handle tool calls if LLM decided to search
-        if response.tool_calls:
-            logger.info(f"[conversational] Tavily search triggered")
-            
-            for tool_call in response.tool_calls:
-                try:
-                    # Execute Tavily search
-                    search_result = await tavily_tool.ainvoke(tool_call["args"])
-                    
-                    # Add tool response to messages
-                    messages.append(response)
-                    messages.append(ToolMessage(
-                        content=str(search_result),
-                        tool_call_id=tool_call["id"]
-                    ))
-                except Exception as e:
-                    logger.warning(f"[conversational] Tavily error: {e}")
-                    messages.append(response)
-                    messages.append(ToolMessage(
-                        content="Search unavailable, please respond based on your knowledge.",
-                        tool_call_id=tool_call["id"]
-                    ))
-            
-            # Second LLM call with search results
-            response = await llm_with_tools.ainvoke(messages)
-        
+        # Invoke shared chat LLM
+        response = await _chat_llm.ainvoke(messages, config=config)
         final_message = response.content
         
-        # Track LLM generation
-        if agent:
-            agent.track_llm_generation(
-                name="conversational",
-                model="gpt-4o-mini",
-                input_messages=messages,
-                response=response,
-                model_parameters={"temperature": 0.7}
-            )
-        
-        # Send response to user
         if agent:
             await agent.message_user("response", final_message)
-        
-        logger.info(f"[conversational] Response sent: {final_message[:50]}")
         
         return {**state, "message": final_message, "action": "CONVERSATION"}
     
     except Exception as e:
         logger.error(f"[conversational] Error: {e}", exc_info=True)
-        
         fallback_message = "Xin lỗi, mình gặp chút trục trặc. Bạn thử hỏi lại được không?"
         if agent:
             await agent.message_user("response", fallback_message)
-        
         return {**state, "message": fallback_message, "action": "CONVERSATION"}

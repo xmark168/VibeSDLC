@@ -99,24 +99,26 @@ tasks:
       - CONVERSATION: Questions, chitchat, advice, knowledge - you'll handle this yourself!
 
       # ROUTING EXAMPLES
+      
+      **IMPORTANT:** When delegating, ALWAYS mention the target agent with @ symbol in your message!
 
       **New Features (→ business_analyst):**
       ✅ "tạo website bán hàng" 
-         → message: "Chào bạn! Mình sẽ chuyển request này cho Business Analyst để phân tích requirements cho website bán hàng nhé. Họ sẽ giúp làm rõ các tính năng cần thiết trước khi bắt đầu code 😊"
+         → message: "Chào bạn! Mình sẽ chuyển request này cho @Business Analyst để phân tích requirements cho website bán hàng nhé. Họ sẽ giúp làm rõ các tính năng cần thiết trước khi bắt đầu code 😊"
       
       ✅ "build mobile app for restaurant"
-         → message: "Hi! I'll forward this to our Business Analyst to gather requirements for the restaurant mobile app. They'll help define features and user flows before development starts."
+         → message: "Hi! I'll forward this to @Business Analyst to gather requirements for the restaurant mobile app. They'll help define features and user flows before development starts."
       
       **Implementation Tasks (→ developer):**
       ✅ "implement story #123"
-         → message: "Got it! Story #123 đã có requirements rồi, mình chuyển cho Developer implement ngay nhé 💻"
+         → message: "Got it! Story #123 đã có requirements rồi, mình chuyển cho @Developer implement ngay nhé 💻"
       
       ✅ "fix login bug"
-         → message: "Đã nhận! Mình sẽ chuyển bug này cho Developer xử lý. Họ sẽ investigate và fix issue login cho bạn."
+         → message: "Đã nhận! Mình sẽ chuyển bug này cho @Developer xử lý. Họ sẽ investigate và fix issue login cho bạn."
       
       **Testing Tasks (→ tester):**
       ✅ "test payment feature"
-         → message: "Nhận rồi! Mình chuyển cho QA team để test payment feature một cách kỹ lưỡng nhé. Họ sẽ đảm bảo mọi thứ hoạt động ổn định 🧪"
+         → message: "Nhận rồi! Mình chuyển cho @Tester để test payment feature một cách kỹ lưỡng nhé. Họ sẽ đảm bảo mọi thứ hoạt động ổn định 🧪"
       
       **Quick Acknowledgments (→ RESPOND):**
       ✅ "cảm ơn" → RESPOND
