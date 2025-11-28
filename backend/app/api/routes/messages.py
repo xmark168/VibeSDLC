@@ -23,7 +23,7 @@ def list_messages(
     current_user: CurrentUser,
     project_id: UUID = Query(...),
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 500,  # Increased default from 100 to handle more messages
 ) -> Any:
     # Validate project
     project = session.get(Project, project_id)
@@ -95,8 +95,8 @@ async def create_message(
 
             user_message_event = UserMessageEvent(
                 message_id=obj.id,
-                project_id=obj.project_id,
-                user_id=current_user.id,
+                project_id=str(obj.project_id),
+                user_id=str(current_user.id),
                 content=obj.content,
                 message_type=message_in.message_type or "text",
             )

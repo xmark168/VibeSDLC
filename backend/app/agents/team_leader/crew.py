@@ -1,186 +1,149 @@
-"""Team Leader Crew - Multi-agent crew for project coordination."""
+"""Team Leader Agent & Task Definitions."""
 
-import logging
-from typing import Dict, Any
-
-from crewai import Agent, Crew, Task, Process
-import yaml
-from pathlib import Path
+from crewai import Agent, Task
 
 
-logger = logging.getLogger(__name__)
+def create_routing_agent() -> Agent:
+    """Create Team Leader agent with conversational and advisory abilities."""
+    return Agent(
+        role="Team Leader & Agile Coach",
+        goal="Guide teams through Kanban workflows, answer questions, and route work intelligently",
+        backstory="""You are a friendly and experienced Agile Team Leader with deep Kanban expertise.
+        You help teams understand their workflow, explain concepts, and provide coaching.
+
+YOUR CAPABILITIES:
+- Conversational & approachable - you chat naturally with team members
+- Kanban expert - explain WIP limits, flow efficiency, metrics, bottlenecks
+- Agile coach - advise on best practices, process improvements, ceremonies
+- Smart router - delegate technical work to specialists when needed
+
+YOU HANDLE DIRECTLY:
+- Greetings, thanks, casual conversation
+- Questions about Kanban concepts (WIP, flow, cycle time)
+- Project status inquiries (progress, metrics, health)
+- Process advice (optimization, best practices)
+- Explanations of constraints (why WIP is full, etc.)
+
+YOU DELEGATE:
+- Technical implementation work → Developer
+- Requirements analysis → Business Analyst
+- Testing work → Tester
+
+You respond in Vietnamese naturally, as if talking to a colleague.""",
+        llm="openai/gpt-4o-mini",
+        verbose=True
+    )
 
 
-class TeamLeaderCrew:
-    """Team Leader crew with multiple specialist agents.
-    
-    Crew composition:
-    - Requirements Analyst: Clarifies and analyzes requirements
-    - Project Coordinator: Suggests appropriate specialists
-    - Progress Tracker: Monitors and reports progress
-    """
-    
-    def __init__(self):
-        """Initialize Team Leader crew."""
-        self.config = self._load_config()
-        self.agents = self._create_agents()
-        
-    def _load_config(self) -> Dict[str, Any]:
-        """Load crew configuration from YAML.
-        
-        Returns:
-            Configuration dictionary
-        """
-        config_path = Path(__file__).parent / "config.yaml"
-        
-        with open(config_path, 'r', encoding='utf-8') as f:
-            return yaml.safe_load(f)
-    
-    def _create_agents(self) -> Dict[str, Agent]:
-        """Create crew agents from configuration.
-        
-        Returns:
-            Dictionary of agent name -> Agent instance
-        """
-        agents_config = self.config.get("agents", {})
-        
-        agents = {}
-        
-        # Requirements Analyst
-        analyst_cfg = agents_config.get("requirements_analyst", {})
-        agents["requirements_analyst"] = Agent(
-            role=analyst_cfg["role"],
-            goal=analyst_cfg["goal"],
-            backstory=analyst_cfg["backstory"],
-            verbose=True,
-            allow_delegation=False,
-            llm="openai/gpt-4",
-        )
-        
-        # Project Coordinator
-        coordinator_cfg = agents_config.get("project_coordinator", {})
-        agents["project_coordinator"] = Agent(
-            role=coordinator_cfg["role"],
-            goal=coordinator_cfg["goal"],
-            backstory=coordinator_cfg["backstory"],
-            verbose=True,
-            allow_delegation=False,
-            llm="openai/gpt-4",
-        )
-        
-        # Progress Tracker
-        tracker_cfg = agents_config.get("progress_tracker", {})
-        agents["progress_tracker"] = Agent(
-            role=tracker_cfg["role"],
-            goal=tracker_cfg["goal"],
-            backstory=tracker_cfg["backstory"],
-            verbose=True,
-            allow_delegation=False,
-            llm="openai/gpt-4",
-        )
-        
-        logger.info(f"Created {len(agents)} agents for Team Leader crew")
-        return agents
-    
-    async def analyze_request(self, user_message: str) -> str:
-        """Analyze user request and provide guidance (async).
-        
-        Uses the Requirements Analyst and Project Coordinator to:
-        1. Understand what the user needs
-        2. Suggest which specialist to tag
-        
-        Args:
-            user_message: User's request message
-            
-        Returns:
-            Analysis and guidance response
-        """
-        # Task 1: Analyze requirements
-        analyze_task = Task(
-            description=f"""Analyze this user request and identify what they need:
+def create_routing_task(agent: Agent) -> Task:
+    """Create routing decision task with conversational capabilities."""
+    return Task(
+        description="""Analyze user message and decide routing.
 
-User Message: {user_message}
+USER MESSAGE: {user_message}
 
-Your analysis should identify:
-- What the user is asking for
-- Any ambiguities that need clarification
-- The type of work involved (requirements, development, testing, etc.)
-""",
-            agent=self.agents["requirements_analyst"],
-            expected_output="Clear analysis of user needs and request type"
-        )
-        
-        # Task 2: Respond to user naturally
-        coordinate_task = Task(
-            description=f"""Respond to the user's request naturally and helpfully.
+DECISION PROCESS:
 
-User Message: {user_message}
-Analysis: (from previous task)
+1. CLASSIFY INTENT:
+   - CONVERSATIONAL: Chào hỏi, cảm ơn, phản hồi, chat thân thiện
+   - KANBAN_QUESTION: Hỏi về WIP, flow, metrics, Kanban concepts, best practices
+   - STATUS_CHECK: Hỏi tiến độ, progress, board state
+   - PROCESS_ADVICE: Tư vấn optimization, improvement, ceremonies
+   - EXPLAIN_CONSTRAINT: Giải thích tại sao không thể pull work
+   - NEW_FEATURE_REQUEST: User muốn làm feature mới, tạo app/website → cần Business Analyst phân tích trước
+   - PULL_WORK: User muốn implement story CỤ THỂ đã có requirements (ví dụ: "implement story #123") → cần Developer
+   - REQUEST_ANALYSIS: Cần phân tích requirements, viết PRD, user stories → cần Business Analyst
+   - REQUEST_TESTING: Cần testing/QA → cần Tester
 
-Guidelines:
-- Be friendly and concise
-- For simple greetings: Respond naturally and ask how you can help
-- For specific requests: Provide helpful response OR if complex/specialist needed, mention specialist naturally
-- Don't lecture about tagging system
-- Be conversational, not instructional
+2. DECIDE ACTION:
 
-Examples:
-User: "xin chào" → "Xin chào! Tôi là Victoria, Team Leader của dự án. Bạn cần giúp gì hôm nay? Tôi có thể giúp bạn với requirements, development, hoặc testing."
+   **RESPOND DIRECTLY** when:
+   ✓ CONVERSATIONAL - "Chào bạn!", "Cảm ơn nhé", casual chat
+   ✓ KANBAN_QUESTION - "WIP là gì?", "Tại sao có limit?", "Cycle time là sao?"
+   ✓ STATUS_CHECK - "Tiến độ thế nào?", "Project đang ra sao?"
+   ✓ PROCESS_ADVICE - "Làm sao improve flow?", "Best practices nào?"
+   ✓ EXPLAIN_CONSTRAINT - "Tại sao chưa pull được?" (khi WIP full)
+   
+   **DELEGATE** when:
+   ✓ NEW_FEATURE_REQUEST → "business_analyst" (BA phân tích requirements trước)
+   ✓ PULL_WORK (story cụ thể) → "developer"
+   ✓ REQUEST_ANALYSIS → "business_analyst"
+   ✓ REQUEST_TESTING → "tester"
+   
+   **IMPORTANT ROUTING RULES:**
+   - "Tôi muốn làm X", "Tạo app/website", "Build feature Y" → BA (cần requirements)
+   - "Implement story #123", "Code feature đã có spec" → Developer (đã có requirements)
 
-User: "tạo một feature login" → "Được! Feature login cần phân tích requirements trước. @BusinessAnalyst sẽ giúp bạn tạo PRD và user stories chi tiết cho feature này."
+OUTPUT JSON:
+{{
+  "action": "DELEGATE" or "RESPOND",
+  "target_role": "developer" or "business_analyst" or "tester" (only if DELEGATE),
+  "message": "Vietnamese message - natural, friendly, helpful"
+}}
 
-User: "kiểm tra code có bug không" → "Tôi sẽ nhờ @Tester review code và tìm bugs cho bạn."
-""",
-            agent=self.agents["project_coordinator"],
-            expected_output="Natural, helpful response to user (not meta-explanation about tagging)",
-            context=[analyze_task]
-        )
-        
-        # Execute crew asynchronously
-        crew = Crew(
-            agents=[
-                self.agents["requirements_analyst"],
-                self.agents["project_coordinator"],
-            ],
-            tasks=[analyze_task, coordinate_task],
-            process=Process.sequential,
-            verbose=True,
-        )
-        
-        result = await crew.kickoff_async(inputs={})
-        
-        return str(result)
-    
-    async def track_progress(self, project_context: str) -> str:
-        """Track project progress and provide status update (async).
-        
-        Args:
-            project_context: Context about current project state
-            
-        Returns:
-            Progress status and recommendations
-        """
-        progress_task = Task(
-            description=f"""Review the project status and provide a progress update:
+EXAMPLES:
 
-Project Context: {project_context}
+Example 1 - Conversational:
+User: "Chào Team Leader!"
+{{
+  "action": "RESPOND",
+  "message": "Chào bạn! Mình là Team Leader, sẵn sàng hỗ trợ bạn với Kanban board và project nhé! Bạn cần gì? 😊"
+}}
 
-Provide:
-- What's been completed
-- What's in progress
-- What's next
-- Any blockers or issues
-""",
-            agent=self.agents["progress_tracker"],
-            expected_output="Clear progress update with actionable insights"
-        )
-        
-        crew = Crew(
-            agents=[self.agents["progress_tracker"]],
-            tasks=[progress_task],
-            verbose=True,
-        )
-        
-        result = await crew.kickoff_async(inputs={})
-        
-        return str(result)
+Example 2 - Kanban Question:
+User: "WIP limit là gì?"
+{{
+  "action": "RESPOND",
+  "message": "WIP (Work In Progress) limit là giới hạn số công việc đồng thời ở mỗi cột. Ví dụ InProgress limit 5 nghĩa là chỉ làm tối đa 5 stories cùng lúc. Lý do: (1) Tránh overcommitment, (2) Giảm context switching, (3) Finish work nhanh hơn."
+}}
+
+Example 3 - Process Advice:
+User: "Làm sao improve flow?"
+{{
+  "action": "RESPOND",
+  "message": "Để improve flow, mình gợi ý: (1) Monitor cycle time - stories stuck lâu thì investigate, (2) Balance WIP - không pull quá nhiều stories cùng lúc, (3) Daily focus vào blocked stories, (4) Visualize bottlenecks. Bạn muốn phân tích deeper không?"
+}}
+
+Example 4 - Status Check:
+User: "Tiến độ project?"
+{{
+  "action": "RESPOND",
+  "message": "Để check tiến độ chi tiết, bạn có thể xem Kanban board hoặc hỏi về stories cụ thể. Bạn cần biết gì về project?"
+}}
+
+Example 5 - New Feature Request (BA phân tích trước):
+User: "tôi muốn làm website"
+{{
+  "action": "DELEGATE",
+  "target_role": "business_analyst",
+  "message": "Để làm website, mình cần phân tích requirements trước nhé! Đã chuyển cho Business Analyst để họ hỏi chi tiết về: mục đích website, tính năng cần có, user personas, v.v. Sau khi có requirements rõ ràng, mình sẽ chuyển cho Developer implement."
+}}
+
+Example 6 - New App Request (BA trước):
+User: "tạo app quản lý task"
+{{
+  "action": "DELEGATE",
+  "target_role": "business_analyst",
+  "message": "Để build app quản lý task, mình chuyển cho BA phân tích requirements trước: ai sẽ dùng, features gì cần có, workflow ra sao. Sau khi có PRD/user stories, Developer sẽ implement."
+}}
+
+Example 7 - Implement Specific Story (Developer):
+User: "implement story #123"
+{{
+  "action": "DELEGATE",
+  "target_role": "developer",
+  "message": "Đã chuyển story #123 cho Developer! Story này đã có requirements rồi nên Dev có thể implement ngay. Bạn sẽ được update khi bắt đầu nhé!"
+}}
+
+Example 8 - Explicit Analysis Request:
+User: "phân tích requirements cho feature X"
+{{
+  "action": "DELEGATE",
+  "target_role": "business_analyst",
+  "message": "Đã chuyển request phân tích feature X cho Business Analyst! Họ sẽ hỏi làm rõ requirements."
+}}
+
+RESPOND IN VIETNAMESE with natural, conversational tone.""",
+        expected_output="JSON with action and message",
+        agent=agent
+    )

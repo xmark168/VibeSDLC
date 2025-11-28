@@ -34,7 +34,15 @@ export type {
   CreatePoolRequest,
   ExecuteAgentRequest,
   ExecuteAgentResponse,
-  ExecuteAgentSyncResponse
+  ExecuteAgentSyncResponse,
+  PoolType,
+  AgentPoolDB,
+  AgentPoolMetrics,
+  PoolResponseExtended,
+  CreatePoolRequestExtended,
+  UpdatePoolConfigRequest,
+  ScalePoolRequest,
+  PoolSuggestion
 } from './agent'
 
 // Backlog types
@@ -45,8 +53,17 @@ export type {
   WIPLimit,
   UpdateWIPLimitParams,
   FlowMetrics,
-  StoryFormData
 } from './backlog'
+
+// Story types
+export type {
+  Story,
+  StoryFormData,
+  CreateStoryResponse,
+  UpdateStoryParams,
+  StoryStatus,
+  StoryType
+} from './story'
 
 // File types
 export type {
@@ -81,3 +98,14 @@ export type {
   ThemeProviderProps,
   ThemeProviderState
 } from './common'
+
+// Persona types
+export type {
+  PersonaTemplate,
+  PersonaCreate,
+  PersonaUpdate,
+  PersonaWithUsageStats,
+  RoleType
+} from './persona'
+
+export { roleTypeLabels, roleTypeColors } from './persona'

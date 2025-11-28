@@ -124,7 +124,6 @@ def verify_password_reset_token(token: str) -> str | None:
 
 
 def generate_verification_code_email(email_to: str, code: str) -> EmailData:
-    """Generate email for verification code"""
     project_name = settings.PROJECT_NAME
     subject = f"{project_name} - Mã xác thực đăng ký"
     html_content = f"""
@@ -144,7 +143,6 @@ def generate_verification_code_email(email_to: str, code: str) -> EmailData:
 
 
 def generate_password_reset_email(email_to: str, reset_link: str) -> EmailData:
-    """Generate email for password reset"""
     project_name = settings.PROJECT_NAME
     subject = f"{project_name} - Đặt lại mật khẩu"
     html_content = f"""

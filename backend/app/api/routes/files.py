@@ -226,7 +226,11 @@ def get_git_status(
         return GitStatusResponse(
             project_id=project_id,
             is_git_repo=False,
+            branch="",
             files={},
+            modified=[],
+            untracked=[],
+            staged=[],
         )
 
     # Get file changes (MetaGPT approach)

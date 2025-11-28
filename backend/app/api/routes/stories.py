@@ -34,10 +34,11 @@ async def create_story(
     # Auto-assign rank if not provided
     story_data = story_in.model_dump()
     if story_data.get("rank") is None:
+        # When creating a new story, default status is TODO
         max_rank = session.exec(
             select(func.max(Story.rank)).where(
                 Story.project_id == story_in.project_id,
-                Story.status == (story_in.status or StoryStatus.TODO)
+                Story.status == StoryStatus.TODO
             )
         ).one()
         story_data["rank"] = (max_rank or 0) + 1
@@ -59,13 +60,14 @@ async def create_story(
 
     # Publish story created event to Kafka
     try:
-        from app.kafka import get_kafka_producer, KafkaTopics, StoryCreatedEvent
+        from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
 
         producer = await get_kafka_producer()
 
         await producer.publish(
             topic=KafkaTopics.STORY_EVENTS,
-            event=StoryCreatedEvent(
+            event=StoryEvent(
+                event_type="story.created",
                 project_id=story.project_id,
                 user_id=current_user.id,
                 story_id=story.id,
@@ -318,13 +320,14 @@ async def update_story_status(
 
     # Publish story status changed event to Kafka
     try:
-        from app.kafka import get_kafka_producer, KafkaTopics, StoryStatusChangedEvent
+        from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
 
         producer = await get_kafka_producer()
 
         await producer.publish(
             topic=KafkaTopics.STORY_EVENTS,
-            event=StoryStatusChangedEvent(
+            event=StoryEvent(
+                event_type="story.status.changed",
                 project_id=story.project_id,
                 user_id=current_user.id,
                 story_id=story.id,
@@ -423,13 +426,14 @@ async def update_story(
 
     # Publish story updated event to Kafka
     try:
-        from app.kafka import get_kafka_producer, KafkaTopics, StoryUpdatedEvent
+        from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
 
         producer = await get_kafka_producer()
 
         await producer.publish(
             topic=KafkaTopics.STORY_EVENTS,
-            event=StoryUpdatedEvent(
+            event=StoryEvent(
+                event_type="story.updated",
                 project_id=story.project_id,
                 user_id=current_user.id,
                 story_id=story.id,

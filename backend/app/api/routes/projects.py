@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api.deps import CurrentUser, SessionDep
 from app.services import ProjectService
+from app.services.agent_service import AgentService
 from app.models import Project, Role, Agent, AgentStatus
 from app.schemas import (
     ProjectCreate,
@@ -17,7 +18,7 @@ from app.schemas import (
     ProjectPublic,
     ProjectsPublic,
 )
-from app.utils.name_generator import generate_agent_name, get_display_name
+from app.services.persona_service import PersonaService
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +111,7 @@ def get_project(
 
 
 @router.post("/", response_model=ProjectPublic, status_code=status.HTTP_201_CREATED)
-def create_project(
+async def create_project(
     project_in: ProjectCreate,
     session: SessionDep,
     current_user: CurrentUser,
@@ -152,22 +153,39 @@ def create_project(
         project_folder.mkdir(parents=True, exist_ok=True)
         logger.info(f"Created project folder: {project_folder}")
 
-        # Auto-create default agents for the project (1 per role type)
+        # Auto-create default agents for the project with diverse personas
+        persona_service = PersonaService(session)
+        agent_service = AgentService(session)
         created_agents = []
+        used_persona_ids = []
+        
         for role_type in DEFAULT_AGENT_ROLES:
-            human_name = generate_agent_name(role_type, existing_names=[])
-            display_name = get_display_name(human_name, role_type)
-
-            agent = Agent(
-                project_id=project.id,
-                name=display_name,
-                human_name=human_name,
+            # Get random persona for this role (avoid duplicates in same project)
+            persona = persona_service.get_random_persona_for_role(
                 role_type=role_type,
-                agent_type=role_type,
-                status=AgentStatus.idle,
+                exclude_ids=used_persona_ids
             )
-            session.add(agent)
+            
+            if not persona:
+                # No fallback - fail fast if personas not seeded
+                session.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"No persona templates found for role '{role_type}'. Please seed persona templates first by running: python app/db/seed_personas_script.py"
+                )
+            
+            # Create agent from persona template
+            agent = agent_service.create_from_template(
+                project_id=project.id,
+                persona_template=persona
+            )
+            used_persona_ids.append(persona.id)
             created_agents.append(agent)
+            
+            logger.info(
+                f"✓ Created {agent.human_name} ({role_type}) "
+                f"with persona: {persona.communication_style}, traits: {', '.join(persona.personality_traits[:2]) if persona.personality_traits else 'default'}"
+            )
 
         # Commit both project and agents in a single transaction
         session.commit()
@@ -177,6 +195,41 @@ def create_project(
             f"Project created successfully: {project.code} (ID: {project.id}) "
             f"with {len(created_agents)} agents"
         )
+        
+        # Auto-spawn agents after project creation
+        from app.api.routes.agent_management import _manager_registry, get_role_class_map
+        
+        universal_pool = _manager_registry.get("universal_pool")
+        
+        if universal_pool:
+            role_class_map = get_role_class_map()
+            spawned_count = 0
+            
+            for agent in created_agents:
+                role_class = role_class_map.get(agent.role_type)
+                if not role_class:
+                    logger.warning(f"No role class found for {agent.role_type}, skipping spawn")
+                    continue
+                
+                try:
+                    success = await universal_pool.spawn_agent(
+                        agent_id=agent.id,
+                        role_class=role_class,
+                        heartbeat_interval=30,
+                        max_idle_time=300,
+                    )
+                    if success:
+                        spawned_count += 1
+                        logger.info(f"✓ Spawned agent {agent.human_name} ({agent.role_type})")
+                    else:
+                        logger.warning(f"Failed to spawn agent {agent.human_name}")
+                except Exception as e:
+                    logger.error(f"Error spawning agent {agent.human_name}: {e}")
+            
+            logger.info(f"Auto-spawned {spawned_count}/{len(created_agents)} agents for project {project.code}")
+        else:
+            logger.warning("Universal pool not found, agents created but not spawned")
+        
         return ProjectPublic.model_validate(project)
 
     except Exception as e:

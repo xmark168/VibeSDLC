@@ -1,9 +1,11 @@
 """Story-related schemas."""
 
+from datetime import datetime
+from typing import Literal, Optional
 from uuid import UUID
-from datetime import datetime, date
+
 from sqlmodel import Field, SQLModel
-from typing import Optional, Literal
+
 from app.models import StoryStatus, StoryType
 
 
@@ -31,12 +33,10 @@ class StoryBase(SQLModel):
 
 
 class StoryCreate(StoryBase):
-    """Schema for creating a new story."""
     project_id: UUID
 
 
 class StoryPublic(StoryBase):
-    """Schema for story response."""
     id: UUID
     project_id: UUID
     status: StoryStatus
@@ -70,5 +70,5 @@ class StoryUpdate(SQLModel):
 
 
 class StoriesPublic(SQLModel):
-    data: list[dict]  # List of story dictionaries
+    data: list[dict]
     count: int

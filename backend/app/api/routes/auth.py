@@ -80,13 +80,13 @@ def login_access_token(
     session: SessionDep,
 ) -> LoginResponse:
     """
-    OAuth2 compatible token login, get an access token for future requests
+    OAuth2 compatible token login, get an access token for future requesloginProviderts
     """
     # Convert OAuth2 form to LoginRequest format
     login_data = LoginRequest(
         email=form_data.username,  # OAuth2 uses 'username' field for email
         password=form_data.password,
-        login_provider=False,
+        login_provider=None,
     )
 
     # Reuse the main login logic
@@ -129,7 +129,7 @@ def login(
                     hashed_password=get_password_hash("admin"),
                     is_active=True,
                     is_locked=False,
-                    login_provider=False,
+                    login_provider=None,
                     role=Role.ADMIN,
                 )
                 session.add(user)
@@ -224,6 +224,11 @@ def register(
     """
     Register API - create new account with credential
     """
+    # Debug: Log received data
+    logger.info(
+        f"Register request received: email={register_data.email}, full_name={register_data.full_name}, has_password={bool(register_data.password)}, has_confirm_password={bool(register_data.confirm_password)}"
+    )
+
     # Validation
     if not validate_email(str(register_data.email)):
         raise HTTPException(
@@ -231,7 +236,9 @@ def register(
             detail="Định dạng email không hợp lệ",
         )
 
-    if register_data.full_name and (len(register_data.full_name) > 50 or not register_data.full_name.strip()):
+    if register_data.full_name and (
+        len(register_data.full_name) > 50 or not register_data.full_name.strip()
+    ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Họ tên không được rỗng và tối đa 50 ký tự",
@@ -395,7 +402,7 @@ def confirm_code(
         hashed_password=registration_data["hashed_password"],
         is_active=True,
         is_locked=False,
-        login_provider=False,
+        login_provider=None,
     )
 
     session.add(user)
@@ -625,7 +632,9 @@ def forgot_password(
         )
 
     return ForgotPasswordResponse(
-        message="Link reset mật khẩu đã được gửi đến email của bạn", expires_in=900
+        message="Link reset mật khẩu đã được gửi đến email của bạn",
+        email=str(forgot_data.email),
+        expires_in=900
     )
 
 

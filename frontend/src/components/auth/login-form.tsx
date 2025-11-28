@@ -2,8 +2,9 @@ import { Link } from "@tanstack/react-router"
 import { OAuthProvider } from "appwrite"
 import { motion } from "framer-motion"
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import useAuth from "@/hooks/useAuth"
@@ -12,10 +13,22 @@ import { withToast } from "@/utils"
 import { Chrome, Facebook, Github } from "lucide-react"
 import { FaGooglePlusG } from "react-icons/fa6";
 
+const REMEMBER_EMAIL_KEY = "vibeSDLC_remembered_email"
+
 export function LoginForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [rememberMe, setRememberMe] = useState(false)
   const { loginMutation } = useAuth()
+
+  // Load remembered email on mount
+  useEffect(() => {
+    const rememberedEmail = localStorage.getItem(REMEMBER_EMAIL_KEY)
+    if (rememberedEmail) {
+      setEmail(rememberedEmail)
+      setRememberMe(true)
+    }
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -31,7 +44,15 @@ export function LoginForm() {
             },
           },
           {
-            onSuccess: resolve,
+            onSuccess: (result) => {
+              // Save or remove email based on remember me checkbox
+              if (rememberMe) {
+                localStorage.setItem(REMEMBER_EMAIL_KEY, email)
+              } else {
+                localStorage.removeItem(REMEMBER_EMAIL_KEY)
+              }
+              resolve(result)
+            },
             onError: reject,
           },
         )
@@ -69,7 +90,7 @@ export function LoginForm() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.3, duration: 0.6 }}
-      className="w-full max-w-md space-y-8"
+      className="w-full max-w-md space-y-2"
     >
       {/* Logo Mobile */}
       <div className="lg:hidden flex items-center gap-2 mb-8">
@@ -79,7 +100,7 @@ export function LoginForm() {
         <span className="text-2xl font-bold">MGX</span>
       </div>
 
-      <div className="space-y-2">
+      <div className="">
         <motion.h2
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -98,15 +119,12 @@ export function LoginForm() {
       >
 
         <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t border-border" />
-          </div>
-          <div className="relative flex justify-center text-sm">
-            <span className="bg-card px-4 text-muted-foreground">
-              Đăng nhập bằng tài khoản đã đăng ký
-            </span>
-          </div>
+          {/* <div className="relative flex justify-center text-sm"> */}
+          <span className="bg-card text-muted-foreground">
+            Đăng nhập để bắt đầu với đội ngũ AI của bạn
+          </span>
         </div>
+        {/* </div> */}
 
         {/* Form Email/Password */}
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -120,7 +138,7 @@ export function LoginForm() {
               placeholder="Email của bạn"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="h-12 bg-secondary/50 border-border text-base"
+              className="h-12"
               required
             />
           </div>
@@ -135,18 +153,31 @@ export function LoginForm() {
               placeholder="Mật khẩu"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="h-12 bg-secondary/50 border-border text-base"
+              className="h-12"
               required
             />
           </div>
 
-          <div className="text-center text-sm text-muted-foreground">
-            {"Chưa có tài khoản? "}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="remember"
+                checked={rememberMe}
+                onCheckedChange={(checked) => setRememberMe(checked as boolean)}
+                className="border-muted-foreground data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+              />
+              <Label
+                htmlFor="remember"
+                className="text-sm text-muted-foreground cursor-pointer select-none"
+              >
+                Ghi nhớ đăng nhập
+              </Label>
+            </div>
             <Link
-              to="/signup"
-              className="text-foreground underline transition-colors"
+              to="/forgot-password"
+              className="text-sm text-muted-foreground transition-colors underline hover:text-foreground"
             >
-              Tạo tài khoản mới
+              Quên mật khẩu?
             </Link>
           </div>
 
@@ -177,21 +208,39 @@ export function LoginForm() {
 
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row gap-3">
-              <Button onClick={handleLoginGoogle} variant="outline" className="flex-1 h-12 border-2 border-[#d1d5db] text-foreground hover:bg-google/10 hover:border-google transition-all duration-300 group" style={{ borderColor: '#d1d5db' }} >
-                <FaGooglePlusG className="mr-2 h-5 w-5 text-google group-hover:scale-110 transition-transform" />
+              <Button
+                onClick={handleLoginGoogle}
+                variant="outline"
+                className="flex-1 h-12 border-2 border-border hover:bg-transparent hover:border-border"
+              >
+                <FaGooglePlusG className="mr-2 h-5 w-5 text-[#EA4335]" />
                 <span className="font-medium">Google</span>
               </Button>
-              <Button onClick={handleLoginGithub} variant="outline" className="flex-1 h-12 border-2 border-[#d1d5db] text-foreground hover:bg-github/10 hover:border-github transition-all duration-300 group" style={{ borderColor: '#d1d5db' }} >
-                <Github className="mr-2 h-5 w-5 text-github group-hover:scale-110 transition-transform" /> <span className="font-medium">GitHub</span> </Button>
-              <Button onClick={handleLoginFacebook} variant="outline" className="flex-1 h-12 border-2 border-[#d1d5db] text-foreground hover:bg-facebook/10 hover:border-facebook transition-all duration-300 group" style={{ borderColor: '#d1d5db' }} >
-                <Facebook className="mr-2 h-5 w-5 text-facebook group-hover:scale-110 transition-transform" /> <span className="font-medium">Facebook</span> </Button> </div> </div>
-
-          <div className="text-center">
+              <Button
+                onClick={handleLoginGithub}
+                variant="outline"
+                className="flex-1 h-12 border-2 border-border hover:bg-transparent hover:border-border"
+              >
+                <Github className="mr-2 h-5 w-5" />
+                <span className="font-medium">GitHub</span>
+              </Button>
+              <Button
+                onClick={handleLoginFacebook}
+                variant="outline"
+                className="flex-1 h-12 border-2 border-border hover:bg-transparent hover:border-border"
+              >
+                <Facebook className="mr-2 h-5 w-5 text-[#1877F2]" />
+                <span className="font-medium">Facebook</span>
+              </Button>
+            </div>
+          </div>
+          <div className="text-center text-sm text-muted-foreground">
+            {"Chưa có tài khoản? "}
             <Link
-              to="/forgot-password"
-              className="text-sm text-muted-foreground transition-colors underline"
+              to="/signup"
+              className="text-foreground underline transition-colors"
             >
-              Quên mật khẩu?
+              Tạo tài khoản mới
             </Link>
           </div>
         </form>

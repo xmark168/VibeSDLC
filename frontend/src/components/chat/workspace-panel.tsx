@@ -1,7 +1,7 @@
 
 import type React from "react"
 
-import { useState, useRef, useEffect, useMemo } from "react"
+import { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { History, Globe, Code2, LayoutGrid, Pencil, ScrollText, PanelLeftOpen, PanelRightOpen, MessageCircle, Loader2 } from "lucide-react"
@@ -30,6 +30,8 @@ interface WorkspacePanelProps {
   projectId?: string
   activeTab?: string | null
   agentStatuses?: Map<string, { status: string; lastUpdate: string }> // Real-time agent statuses from WebSocket
+  selectedArtifactId?: string | null
+  onResize?: (delta: number) => void
 }
 
 // Generate avatar URL from agent human_name using DiceBear API
@@ -55,8 +57,49 @@ const getRoleDesignation = (roleType: string): string => {
   return roleMap[roleType] || roleType
 }
 
-export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projectId, activeTab: wsActiveTab, agentStatuses }: WorkspacePanelProps) {
+export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projectId, activeTab: wsActiveTab, agentStatuses, selectedArtifactId, onResize }: WorkspacePanelProps) {
   const queryClient = useQueryClient()
+
+  // Resize handle state
+  const [isDragging, setIsDragging] = useState(false)
+  const startXRef = useRef(0)
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isDragging && onResize) {
+        e.preventDefault()
+        const delta = e.clientX - startXRef.current
+        startXRef.current = e.clientX
+        onResize(delta)
+      }
+    }
+
+    const handleMouseUp = () => {
+      setIsDragging(false)
+      document.body.style.userSelect = ""
+      document.body.style.cursor = ""
+    }
+
+    if (isDragging) {
+      document.body.style.userSelect = "none"
+      document.body.style.cursor = "col-resize"
+
+      document.addEventListener("mousemove", handleMouseMove)
+      document.addEventListener("mouseup", handleMouseUp)
+    }
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove)
+      document.removeEventListener("mouseup", handleMouseUp)
+    }
+  }, [isDragging, onResize])
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    if (!onResize) return
+    e.preventDefault()
+    setIsDragging(true)
+    startXRef.current = e.clientX
+  }, [onResize])
 
   // Fetch project agents from database
   const { data: projectAgents, isLoading: agentsLoading } = useProjectAgents(projectId || "", {
@@ -136,6 +179,37 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
   const [fileContent, setFileContent] = useState<string>("")
   const [isLoadingFile, setIsLoadingFile] = useState(false)
   const [fileError, setFileError] = useState<string | null>(null)
+
+  // Artifact state
+  const [selectedArtifact, setSelectedArtifact] = useState<any | null>(null)
+  const [isLoadingArtifact, setIsLoadingArtifact] = useState(false)
+
+  // Fetch artifact when selectedArtifactId changes
+  useEffect(() => {
+    if (selectedArtifactId && projectId) {
+      fetchArtifact(selectedArtifactId)
+    } else {
+      setSelectedArtifact(null)
+    }
+  }, [selectedArtifactId, projectId])
+
+  const fetchArtifact = async (artifactId: string) => {
+    if (!projectId) return
+
+    setIsLoadingArtifact(true)
+
+    try {
+      const { artifactsApi } = await import('@/apis/artifacts')
+      const artifact = await artifactsApi.getArtifact(artifactId)
+      setSelectedArtifact(artifact)
+      console.log('[WorkspacePanel] Loaded artifact:', artifact)
+    } catch (err: any) {
+      console.error('Failed to fetch artifact:', err)
+      setSelectedArtifact(null)
+    } finally {
+      setIsLoadingArtifact(false)
+    }
+  }
 
   // Fetch file content when selectedFile changes
   useEffect(() => {
@@ -228,7 +302,24 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
               />
             </div>
             <div className="flex-1">
-              {selectedFile ? (
+              {selectedArtifact ? (
+                isLoadingArtifact ? (
+                  <div className="flex items-center justify-center h-full text-muted-foreground">
+                    <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                    Loading artifact...
+                  </div>
+                ) : (
+                  (() => {
+                    const { ArtifactViewer } = require('./ArtifactViewer')
+                    return (
+                      <ArtifactViewer
+                        artifact={selectedArtifact}
+                        onClose={() => setSelectedArtifact(null)}
+                      />
+                    )
+                  })()
+                )
+              ) : selectedFile ? (
                 isLoadingFile ? (
                   <div className="flex items-center justify-center h-full text-muted-foreground">
                     <Loader2 className="w-6 h-6 animate-spin mr-2" />
@@ -243,7 +334,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
                 )
               ) : (
                 <div className="flex items-center justify-center h-full text-muted-foreground">
-                  Select a file to view
+                  {selectedArtifactId ? 'Loading artifact...' : 'Select a file or artifact to view'}
                 </div>
               )}
             </div>
@@ -262,57 +353,15 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
 
 
   return (
-    <div className="flex flex-col h-full bg-background">
-      <div className="flex flex-col">
+    <div className="flex flex-col h-full bg-background relative">
+      {/* Left resize border */}
+      {onResize && (
+        <div
+          className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 transition-colors z-10"
+          onMouseDown={handleResizeStart}
+        />
+      )}
 
-        {/* Toolbar */}
-        <div className="flex items-center justify-between px-6 py-2 bg-background">
-          <div className="flex items-center gap-3">
-            {chatCollapsed && onExpandChat && (
-              <button
-                onClick={onExpandChat}
-                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-t-lg transition-colors mr-2"
-                title="Show chat panel"
-              >
-                <MessageCircle className="w-4 h-4" /> Chat
-              </button>
-            )}
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <History className="w-4 h-4" />
-            </Button>
-
-            {isEditingName ? (
-              <Input
-                ref={inputRef}
-                value={projectName}
-                onChange={(e) => setProjectName(e.target.value)}
-                onBlur={handleSaveName}
-                onKeyDown={handleKeyDown}
-                className="h-8 text-sm font-medium w-[250px] bg-background border-border"
-              />
-            ) : (
-              <button
-                onClick={() => setIsEditingName(true)}
-                className="text-sm font-medium text-foreground hover:text-foreground/80 transition-colors flex items-center gap-2 group"
-              >
-                {projectName}
-                <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" />
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-10">
-            {agentItems.length > 0 ? (
-              <AnimatedTooltip items={agentItems} />
-            ) : agentsLoading ? (
-              <span className="text-xs text-muted-foreground">Loading agents...</span>
-            ) : null}
-            <Button size="sm" className="h-8 text-xs bg-[#6366f1] hover:bg-[#5558e3]">
-              Share
-            </Button>
-          </div>
-        </div>
-      </div>
       {/* Tab bar */}
       <div className="flex items-center gap-1 px-2 pt-2 bg-background mb-2">
         {tabs.map((tab) => (

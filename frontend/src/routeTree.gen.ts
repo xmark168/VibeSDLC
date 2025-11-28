@@ -13,7 +13,9 @@ import { Route as LayoutRouteImport } from './routes/_layout'
 import { Route as AuthRouteRouteImport } from './routes/_auth/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as AdminPlansRouteImport } from './routes/admin/plans'
 import { Route as AdminAgentsRouteImport } from './routes/admin/agents'
+import { Route as UserUpgradeRouteImport } from './routes/_user/upgrade'
 import { Route as UserProjectsRouteImport } from './routes/_user/projects'
 import { Route as UserHihiRouteImport } from './routes/_user/hihi'
 import { Route as AuthVerifyOtpRouteImport } from './routes/_auth/verify-otp'
@@ -44,9 +46,19 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/admin/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminPlansRoute = AdminPlansRouteImport.update({
+  id: '/admin/plans',
+  path: '/admin/plans',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminAgentsRoute = AdminAgentsRouteImport.update({
   id: '/admin/agents',
   path: '/admin/agents',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UserUpgradeRoute = UserUpgradeRouteImport.update({
+  id: '/_user/upgrade',
+  path: '/upgrade',
   getParentRoute: () => rootRouteImport,
 } as any)
 const UserProjectsRoute = UserProjectsRouteImport.update({
@@ -117,7 +129,9 @@ export interface FileRoutesByFullPath {
   '/verify-otp': typeof AuthVerifyOtpRoute
   '/hihi': typeof UserHihiRoute
   '/projects': typeof UserProjectsRoute
+  '/upgrade': typeof UserUpgradeRoute
   '/admin/agents': typeof AdminAgentsRoute
+  '/admin/plans': typeof AdminPlansRoute
   '/admin': typeof AdminIndexRoute
   '/chat/$chatId': typeof UserChatChatIdRoute
   '/workspace/$workspaceId': typeof UserWorkspaceWorkspaceIdRoute
@@ -133,7 +147,9 @@ export interface FileRoutesByTo {
   '/verify-otp': typeof AuthVerifyOtpRoute
   '/hihi': typeof UserHihiRoute
   '/projects': typeof UserProjectsRoute
+  '/upgrade': typeof UserUpgradeRoute
   '/admin/agents': typeof AdminAgentsRoute
+  '/admin/plans': typeof AdminPlansRoute
   '/admin': typeof AdminIndexRoute
   '/chat/$chatId': typeof UserChatChatIdRoute
   '/workspace/$workspaceId': typeof UserWorkspaceWorkspaceIdRoute
@@ -152,7 +168,9 @@ export interface FileRoutesById {
   '/_auth/verify-otp': typeof AuthVerifyOtpRoute
   '/_user/hihi': typeof UserHihiRoute
   '/_user/projects': typeof UserProjectsRoute
+  '/_user/upgrade': typeof UserUpgradeRoute
   '/admin/agents': typeof AdminAgentsRoute
+  '/admin/plans': typeof AdminPlansRoute
   '/admin/': typeof AdminIndexRoute
   '/_user/chat/$chatId': typeof UserChatChatIdRoute
   '/_user/workspace/$workspaceId': typeof UserWorkspaceWorkspaceIdRoute
@@ -170,7 +188,9 @@ export interface FileRouteTypes {
     | '/verify-otp'
     | '/hihi'
     | '/projects'
+    | '/upgrade'
     | '/admin/agents'
+    | '/admin/plans'
     | '/admin'
     | '/chat/$chatId'
     | '/workspace/$workspaceId'
@@ -186,7 +206,9 @@ export interface FileRouteTypes {
     | '/verify-otp'
     | '/hihi'
     | '/projects'
+    | '/upgrade'
     | '/admin/agents'
+    | '/admin/plans'
     | '/admin'
     | '/chat/$chatId'
     | '/workspace/$workspaceId'
@@ -204,7 +226,9 @@ export interface FileRouteTypes {
     | '/_auth/verify-otp'
     | '/_user/hihi'
     | '/_user/projects'
+    | '/_user/upgrade'
     | '/admin/agents'
+    | '/admin/plans'
     | '/admin/'
     | '/_user/chat/$chatId'
     | '/_user/workspace/$workspaceId'
@@ -216,7 +240,9 @@ export interface RootRouteChildren {
   LayoutRoute: typeof LayoutRoute
   UserHihiRoute: typeof UserHihiRoute
   UserProjectsRoute: typeof UserProjectsRoute
+  UserUpgradeRoute: typeof UserUpgradeRoute
   AdminAgentsRoute: typeof AdminAgentsRoute
+  AdminPlansRoute: typeof AdminPlansRoute
   AdminIndexRoute: typeof AdminIndexRoute
   UserChatChatIdRoute: typeof UserChatChatIdRoute
   UserWorkspaceWorkspaceIdRoute: typeof UserWorkspaceWorkspaceIdRoute
@@ -252,11 +278,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/plans': {
+      id: '/admin/plans'
+      path: '/admin/plans'
+      fullPath: '/admin/plans'
+      preLoaderRoute: typeof AdminPlansRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/agents': {
       id: '/admin/agents'
       path: '/admin/agents'
       fullPath: '/admin/agents'
       preLoaderRoute: typeof AdminAgentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_user/upgrade': {
+      id: '/_user/upgrade'
+      path: '/upgrade'
+      fullPath: '/upgrade'
+      preLoaderRoute: typeof UserUpgradeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_user/projects': {
@@ -369,7 +409,9 @@ const rootRouteChildren: RootRouteChildren = {
   LayoutRoute: LayoutRoute,
   UserHihiRoute: UserHihiRoute,
   UserProjectsRoute: UserProjectsRoute,
+  UserUpgradeRoute: UserUpgradeRoute,
   AdminAgentsRoute: AdminAgentsRoute,
+  AdminPlansRoute: AdminPlansRoute,
   AdminIndexRoute: AdminIndexRoute,
   UserChatChatIdRoute: UserChatChatIdRoute,
   UserWorkspaceWorkspaceIdRoute: UserWorkspaceWorkspaceIdRoute,

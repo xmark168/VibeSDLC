@@ -23,6 +23,8 @@ import {
   PanelLeftClose,
   ChevronsLeft,
   Loader2,
+  Crown,
+  PaperclipIcon,
 } from "lucide-react";
 import { TechStackDialog } from "./tech-stack-dialog";
 import { useTheme } from "@/components/provider/theme-provider";
@@ -31,9 +33,16 @@ import { TypingIndicator } from "./TypingIndicator";
 import { useAuth } from "@/hooks/useAuth";
 import { useMessages } from "@/queries/messages";
 import { AuthorType, type Message } from "@/types/message";
-import { MessagePreviewCard } from "./MessagePreviewCard";
 import { MessageStatusIndicator } from "./message-status-indicator";
+import { AgentQuestionCard } from "./AgentQuestionCard";
+import { BatchQuestionsCard } from "./BatchQuestionsCard";
+import { ConversationOwnerBadge } from "./ConversationOwnerBadge";
+import { AgentHandoffNotification } from "./AgentHandoffNotification";
+import { ArtifactCard } from "./ArtifactCard";
+import { StoriesCreatedCard } from "./StoriesCreatedCard";
 import { useProjectAgents } from "@/queries/agents";
+import { PromptInput, PromptInputButton, PromptInputSubmit, PromptInputTextarea, PromptInputToolbar, PromptInputTools } from "../ui/shadcn-io/ai/prompt-input";
+import { MentionDropdown, type Agent } from "../ui/mention-dropdown";
 
 interface ChatPanelProps {
   sidebarCollapsed: boolean;
@@ -48,6 +57,7 @@ interface ChatPanelProps {
   onKanbanDataChange?: (data: any) => void;
   onActiveTabChange?: (tab: string | null) => void;
   onAgentStatusesChange?: (statuses: Map<string, { status: string; lastUpdate: string }>) => void; // NEW
+  onOpenArtifact?: (artifactId: string) => void;
 }
 
 export function ChatPanelWS({
@@ -61,18 +71,18 @@ export function ChatPanelWS({
   onKanbanDataChange,
   onActiveTabChange,
   onAgentStatusesChange, // NEW
+  onOpenArtifact,
 }: ChatPanelProps) {
   const [message, setMessage] = useState("");
   const [showMentions, setShowMentions] = useState(false);
   const [mentionSearch, setMentionSearch] = useState("");
-  const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [mentionedAgent, setMentionedAgent] = useState<{ id: string; name: string } | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+  const [pendingQuestion, setPendingQuestion] = useState<Message | null>(null);
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const mentionDropdownRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const prevMessagesLengthRef = useRef(0);
 
@@ -84,25 +94,26 @@ export function ChatPanelWS({
     enabled: !!projectId,
   });
 
-  // Map role_type to user-friendly designation and avatar
-  const getRoleInfo = (roleType: string): { role: string; avatar: string } => {
-    const roleMap: Record<string, { role: string; avatar: string }> = {
-      team_leader: { role: "Team Leader", avatar: "👨‍💼" },
-      business_analyst: { role: "Business Analyst", avatar: "👩‍💼" },
-      developer: { role: "Developer", avatar: "👨‍💻" },
-      tester: { role: "Tester", avatar: "🧪" },
+  // Map role_type to user-friendly designation, icon and color
+  const getRoleInfo = (roleType: string): { role: string; icon: string; color: string } => {
+    const roleMap: Record<string, { role: string; icon: string; color: string }> = {
+      team_leader: { role: "Team Leader", icon: "👨‍💼", color: "#6366f1" },
+      business_analyst: { role: "Business Analyst", icon: "👩‍💼", color: "#8b5cf6" },
+      developer: { role: "Developer", icon: "👨‍💻", color: "#10b981" },
+      tester: { role: "Tester", icon: "🧪", color: "#f59e0b" },
     };
-    return roleMap[roleType] || { role: roleType, avatar: "🤖" };
+    return roleMap[roleType] || { role: roleType, icon: "🤖", color: "#6b7280" };
   };
 
   // Transform database agents to dropdown format
-  const AGENTS = (projectAgents || []).map((agent) => {
+  const AGENTS: Agent[] = (projectAgents || []).map((agent) => {
     const roleInfo = getRoleInfo(agent.role_type);
     return {
       id: agent.id,
       name: agent.human_name,
       role: roleInfo.role,
-      avatar: roleInfo.avatar,
+      icon: roleInfo.icon,
+      color: roleInfo.color,
     };
   });
 
@@ -110,8 +121,21 @@ export function ChatPanelWS({
   const { data: messagesData } = useMessages({
     project_id: projectId || "",
     skip: 0,
-    limit: 100,
+    limit: 500,  // Increased from 100 to handle more messages
   });
+
+  // Debug log for API messages
+  useEffect(() => {
+    if (messagesData) {
+      console.log('[ChatPanel] 📊 API messages loaded:', {
+        count: messagesData.count,
+        actual: messagesData.data.length,
+        projectId,
+        firstMessage: messagesData.data[0]?.id,
+        lastMessage: messagesData.data[messagesData.data.length - 1]?.id
+      })
+    }
+  }, [messagesData, projectId])
 
   // WebSocket connection (simplified with 5 message types)
   const {
@@ -119,7 +143,10 @@ export function ChatPanelWS({
     messages: wsMessages,
     agentStatus,
     typingAgents,
+    conversationOwner,
     sendMessage: wsSendMessage,
+    sendQuestionAnswer,
+    sendBatchAnswers,
   } = useChatWebSocket(projectId, token || '');
 
   // Combine existing messages with WebSocket messages
@@ -138,14 +165,79 @@ export function ChatPanelWS({
   const uniqueMessages = sortedMessages.filter(
     (msg, index, self) => index === self.findIndex(m => m.id === msg.id)
   );
-  
+
+  // Detect unanswered questions - show only the LATEST one
+  useEffect(() => {
+    // Find ALL unanswered questions
+    const unansweredQuestions = uniqueMessages.filter(
+      msg => msg.message_type === 'agent_question' && !msg.structured_data?.answered
+    )
+
+    // Get LATEST by timestamp (most recent)
+    const latestUnanswered = unansweredQuestions.sort((a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0]
+
+    setPendingQuestion(latestUnanswered || null)
+
+    // Auto-scroll to question if it appears (only if it's a NEW question)
+    if (latestUnanswered && latestUnanswered.id !== pendingQuestion?.id) {
+      setTimeout(() => {
+        const element = document.getElementById(`question-${latestUnanswered.id}`)
+        element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 100)
+    }
+  }, [uniqueMessages])
+
+  // Initial scroll to bottom on mount
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    // Scroll to bottom immediately on first load (no animation)
+    if (prevMessagesLengthRef.current === 0 && uniqueMessages.length > 0) {
+      setTimeout(() => {
+        container.scrollTop = container.scrollHeight
+      }, 100)
+    }
+  }, [uniqueMessages.length])
+
+  // Auto-scroll to bottom on new messages (smooth)
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    // Check if user is near bottom (within 100px)
+    const isNearBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight < 200
+
+    // Auto-scroll only if:
+    // 1. New message arrived (length changed)
+    // 2. User is near bottom (not actively scrolling up to read old messages)
+    if (uniqueMessages.length > prevMessagesLengthRef.current && isNearBottom) {
+      setTimeout(() => {
+        container.scrollTo({
+          top: container.scrollHeight,
+          behavior: 'smooth'
+        })
+      }, 100)
+    }
+
+    // Update previous length
+    prevMessagesLengthRef.current = uniqueMessages.length
+  }, [uniqueMessages])
+
+  // Determine if chat should be blocked
+  const isMultichoiceQuestion = pendingQuestion?.structured_data?.question_type === 'multichoice'
+  const shouldBlockChat = pendingQuestion && isMultichoiceQuestion
+
   // Note: Kanban, activeTab, and agentStatuses features removed for simplicity
 
   const filteredAgents = AGENTS.filter((agent) =>
     agent.name.toLowerCase().includes(mentionSearch.toLowerCase())
   );
 
-  const insertMention = (agent: { id: string; name: string; role: string; avatar: string }) => {
+  const insertMention = (agent: Agent) => {
     const textarea = textareaRef.current;
     if (!textarea) return;
 
@@ -185,7 +277,6 @@ export function ChatPanelWS({
       const searchTerm = textBeforeCursor.slice(atIndex + 1);
       setMentionSearch(searchTerm);
       setShowMentions(true);
-      setSelectedMentionIndex(0);
     } else {
       setShowMentions(false);
     }
@@ -199,6 +290,18 @@ export function ChatPanelWS({
     }
 
     let finalMessage = message.trim();
+
+    // Check if this is answering an open question
+    if (pendingQuestion && pendingQuestion.structured_data?.question_type === 'open') {
+      // Send as question answer instead of regular message
+      sendQuestionAnswer(
+        pendingQuestion.structured_data.question_id!,
+        finalMessage,
+        undefined
+      )
+      setMessage("");
+      return;
+    }
 
     // Send via WebSocket with agent routing info if agent was mentioned
     wsSendMessage(finalMessage, mentionedAgent?.name);
@@ -228,25 +331,9 @@ export function ChatPanelWS({
   }, [agentStatus]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (showMentions && filteredAgents.length > 0) {
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSelectedMentionIndex((prev) => (prev + 1) % filteredAgents.length);
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSelectedMentionIndex(
-          (prev) => (prev - 1 + filteredAgents.length) % filteredAgents.length
-        );
-      } else if (e.key === "Tab" || e.key === "Enter") {
-        if (showMentions) {
-          e.preventDefault();
-          insertMention(filteredAgents[selectedMentionIndex]);
-        }
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        setShowMentions(false);
-      }
-    } else if (e.key === "Enter" && !e.shiftKey) {
+    // MentionDropdown handles its own keyboard navigation (Arrow, Tab, Enter, Escape)
+    // Only handle Enter to send when dropdown is NOT shown
+    if (!showMentions && e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
@@ -265,39 +352,6 @@ export function ChatPanelWS({
       console.error("Failed to copy:", err);
     }
   };
-
-  // Handle edit message - reopen preview modal with existing data
-  const handleEditMessage = (message: Message) => {
-    if (!message.message_type || !message.structured_data) return
-
-    // Convert Message to AgentPreview format
-    const preview: any = {
-      preview_id: `edit_${message.id}_${Date.now()}`, // New preview ID for edit
-      preview_type: message.message_type,
-      title: `Edit ${message.message_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}`,
-      prompt: 'You can edit or regenerate this preview',
-      options: ['approve', 'edit', 'regenerate'],
-    }
-
-    // Add structured data based on type
-    switch (message.message_type) {
-      case 'product_brief':
-        preview.brief = message.structured_data
-        preview.incomplete_flag = message.metadata?.incomplete_flag
-        break
-      case 'product_vision':
-        preview.vision = message.structured_data
-        preview.quality_score = message.metadata?.quality_score
-        preview.validation_result = message.metadata?.validation_result
-        break
-      case 'product_backlog':
-        preview.backlog = message.structured_data
-        break
-    }
-
-    // Reopen modal
-    reopenPreview(preview)
-  }
 
   const formatTimestamp = (dateStr: string) => {
     try {
@@ -345,7 +399,6 @@ export function ChatPanelWS({
     setMessage(newMessage);
     setShowMentions(true);
     setMentionSearch("");
-    setSelectedMentionIndex(0);
 
     setTimeout(() => {
       textarea.focus();
@@ -362,21 +415,7 @@ export function ChatPanelWS({
     }
   }, [isConnected, onConnectionChange]);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        mentionDropdownRef.current &&
-        !mentionDropdownRef.current.contains(event.target as Node) &&
-        textareaRef.current &&
-        !textareaRef.current.contains(event.target as Node)
-      ) {
-        setShowMentions(false);
-      }
-    };
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   useEffect(() => {
     if (
@@ -402,6 +441,17 @@ export function ChatPanelWS({
           >
             <PanelRightClose className="w-5 h-5" />
           </Button>
+
+          {/* Conversation Owner Display (collapsed sidebar) */}
+          {conversationOwner && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/20">
+              <Crown className="w-3.5 h-3.5 text-yellow-600 dark:text-yellow-400" />
+              <span className="text-xs font-medium text-yellow-700 dark:text-yellow-300">
+                {conversationOwner.agentName} đang tiếp nhận câu hỏi
+              </span>
+            </div>
+          )}
+
           <div className="flex-1" />
           {!isConnected && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -447,6 +497,16 @@ export function ChatPanelWS({
               <div className="flex items-center gap-2 text-xs text-green-600">
                 <div className="w-2 h-2 bg-green-600 rounded-full" />
                 Connected
+              </div>
+            )}
+
+            {/* Conversation Owner Display */}
+            {conversationOwner && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/20">
+                <Crown className="w-3.5 h-3.5 text-yellow-600 dark:text-yellow-400" />
+                <span className="text-xs font-medium text-yellow-700 dark:text-yellow-300">
+                  {conversationOwner.agentName} đang tiếp nhận câu hỏi
+                </span>
               </div>
             )}
           </div>
@@ -524,29 +584,77 @@ export function ChatPanelWS({
             return null;
           }
 
-          // Check if this is a structured message (preview)
-          if (msg.message_type && msg.message_type !== 'text' && msg.structured_data) {
+          // Agent Handoff Notification
+          if (msg.message_type === 'agent_handoff') {
             return (
-              <div key={msg.id} className="flex gap-3">
+              <AgentHandoffNotification
+                key={msg.id}
+                previousAgent={msg.structured_data?.previous_agent_name}
+                newAgent={msg.structured_data?.new_agent_name || ''}
+                reason={msg.structured_data?.reason || ''}
+                timestamp={msg.created_at}
+              />
+            );
+          }
+
+          // Agent Question Handling
+          if (msg.message_type === 'agent_question') {
+            return (
+              <div key={msg.id} id={`question-${msg.id}`} className="flex gap-3">
                 <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
-                  {getAgentAvatar(msg.author_type)}
+                  ❓
                 </div>
-                <div className="flex-1 space-y-2">
-                  <div className="text-xs font-medium text-muted-foreground">
-                    {getAgentName(msg)}
+                <div className="flex-1">
+                  <div className="text-xs font-medium text-muted-foreground mb-2">
+                    {msg.agent_name || 'Agent'}
                   </div>
-                  {/* Show text content if available */}
-                  {msg.content && (
-                    <div className="space-y-1.5">
-                      <div className="rounded-lg px-3 py-2 bg-muted w-fit">
-                        <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
-                          {msg.content}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  {/* Show preview card */}
-                  <MessagePreviewCard message={msg} />
+                  <AgentQuestionCard
+                    question={msg.content}
+                    questionType={msg.structured_data?.question_type || 'open'}
+                    options={msg.structured_data?.options || []}
+                    allowMultiple={msg.structured_data?.allow_multiple || false}
+                    answered={msg.structured_data?.answered || false}
+                    processing={msg.structured_data?.processing || false}
+                    userAnswer={msg.structured_data?.user_answer}
+                    userSelectedOptions={msg.structured_data?.user_selected_options}
+                    agentName={msg.agent_name}
+                    onSubmit={(answer, selectedOptions) => {
+                      sendQuestionAnswer(
+                        msg.structured_data!.question_id!,
+                        answer,
+                        selectedOptions
+                      )
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          }
+
+          // Batch Question Handling
+          if (msg.message_type === 'agent_question_batch') {
+            return (
+              <div key={msg.id} id={`batch-${msg.id}`} className="flex gap-3">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
+                  ❓
+                </div>
+                <div className="flex-1">
+                  <div className="text-xs font-medium text-muted-foreground mb-2">
+                    {msg.agent_name || 'Agent'}
+                  </div>
+                  <BatchQuestionsCard
+                    batchId={msg.structured_data?.batch_id || ''}
+                    questions={msg.structured_data?.questions || []}
+                    questionIds={msg.structured_data?.question_ids || []}
+                    agentName={msg.agent_name}
+                    answered={msg.structured_data?.answered || false}
+                    onSubmit={(answers) => {
+                      sendBatchAnswers(
+                        msg.structured_data!.batch_id!,
+                        answers
+                      )
+                    }}
+                  />
                 </div>
               </div>
             );
@@ -559,8 +667,19 @@ export function ChatPanelWS({
               </div>
 
               <div className="flex-1 space-y-2">
-                <div className="text-xs font-medium text-muted-foreground">
-                  {getAgentName(msg)}
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {getAgentName(msg)}
+                  </span>
+
+                  {/* Conversation Owner Badge */}
+                  {msg.author_type === AuthorType.AGENT && conversationOwner && conversationOwner.agentName === msg.agent_name && conversationOwner.status && (
+                    <ConversationOwnerBadge
+                      agentName={msg.agent_name || ''}
+                      isOwner={true}
+                      status={conversationOwner.status}
+                    />
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
@@ -585,6 +704,38 @@ export function ChatPanelWS({
                       )}
                     </button>
                   </div>
+
+                  {/* Show artifact card if message type is artifact_created */}
+                  {msg.message_type === 'artifact_created' && msg.structured_data?.artifact_id && (
+                    <ArtifactCard
+                      artifact={{
+                        artifact_id: msg.structured_data.artifact_id,
+                        artifact_type: msg.structured_data.artifact_type || 'analysis',
+                        title: msg.structured_data.title || 'Artifact',
+                        description: msg.structured_data.description,
+                        version: msg.structured_data.version || 1,
+                        status: msg.structured_data.status || 'draft',
+                        agent_name: msg.structured_data.agent_name || msg.agent_name || getAgentName(msg),
+                      }}
+                      onClick={() => {
+                        if (onOpenArtifact && msg.structured_data?.artifact_id) {
+                          onOpenArtifact(msg.structured_data.artifact_id)
+                        }
+                      }}
+                    />
+                  )}
+
+                  {/* Show stories created card if message type is stories_created */}
+                  {msg.message_type === 'stories_created' && msg.structured_data?.story_ids && (
+                    <StoriesCreatedCard
+                      stories={{
+                        count: msg.structured_data.count || 0,
+                        story_ids: msg.structured_data.story_ids || [],
+                        prd_artifact_id: msg.structured_data.prd_artifact_id,
+                      }}
+                      projectId={projectId || ''}
+                    />
+                  )}
                 </div>
               </div>
             </div>
@@ -593,7 +744,7 @@ export function ChatPanelWS({
 
         {/* Typing Indicators - ChatGPT style inline indicators */}
         {Array.from(typingAgents.values()).map((typing) => (
-          <TypingIndicator 
+          <TypingIndicator
             key={typing.id}
             agentName={typing.agent_name}
             message={typing.message}
@@ -601,100 +752,137 @@ export function ChatPanelWS({
         ))}
       </div>
 
-      <div className="p-2 m-4 rounded-4xl relative bg-muted">
-        {showMentions && filteredAgents.length > 0 && (
-          <div
-            ref={mentionDropdownRef}
-            className="absolute bottom-full left-0 right-0 mb-2 mx-1 bg-card border border-border rounded-lg shadow-lg overflow-hidden"
-          >
-            <div className="flex items-center justify-between px-4 py-2 border-b border-border">
-              <span className="text-sm font-medium text-foreground">
-                Group Members
-              </span>
-              <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 text-xs bg-accent rounded">
-                  Tab
-                </kbd>
-                to select
-              </span>
-            </div>
-            <div className="max-h-[240px] overflow-y-auto">
-              {filteredAgents.map((agent, index) => (
-                <button
-                  key={agent.name}
-                  onClick={() => insertMention(agent)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors ${index === selectedMentionIndex ? "bg-accent/50" : ""
-                    }`}
+      {/* Sticky Question Bar */}
+      {pendingQuestion && (
+        <div className="mx-4 mb-2 sticky bottom-20 z-10">
+          <div className="p-4 rounded-lg bg-blue-600 text-white shadow-lg border border-blue-700">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-lg">❓</span>
+                  <p className="text-sm font-semibold">
+                    {pendingQuestion.agent_name || 'Agent'} is waiting for your answer
+                  </p>
+                </div>
+                <p className="text-xs opacity-90 line-clamp-2">
+                  {pendingQuestion.content}
+                </p>
+                {isMultichoiceQuestion && (
+                  <p className="text-xs opacity-75 mt-1">
+                    📍 Please select options in the question card above
+                  </p>
+                )}
+                {!isMultichoiceQuestion && (
+                  <p className="text-xs opacity-75 mt-1">
+                    💬 Type your answer in the chat below
+                  </p>
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    const element = document.getElementById(`question-${pendingQuestion.id}`)
+                    element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                  }}
+                  className="text-xs whitespace-nowrap"
                 >
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0 bg-muted">
-                    {agent.avatar}
-                  </div>
-                  <div className="flex-1 text-left">
-                    <div className="text-sm font-medium text-foreground">
-                      {agent.name}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {agent.role}
-                    </div>
-                  </div>
-                </button>
-              ))}
+                  View Question
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    // Skip question by marking it as answered
+                    sendQuestionAnswer(
+                      pendingQuestion.structured_data!.question_id!,
+                      "[SKIPPED]",
+                      []
+                    )
+                  }}
+                  className="text-xs text-white hover:bg-blue-700 hover:text-white whitespace-nowrap"
+                >
+                  Skip
+                </Button>
+              </div>
             </div>
           </div>
+        </div>
+      )}
+
+      <div className="p-2 m-4 rounded-4xl relative ">
+        {showMentions && (
+          <MentionDropdown
+            agents={filteredAgents}
+            onSelect={insertMention}
+            onClose={() => setShowMentions(false)}
+          />
         )}
 
-        <div className="bg-transparent rounded-4xl p-1 border-0">
-          <Textarea
+        {/* <div className="bg-transparent rounded-4xl p-1 border-0"> */}
+        <PromptInput onSubmit={handleSend}
+        >
+          <PromptInputTextarea
             ref={textareaRef}
             value={message}
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
-            className="min-h-[40px] resize-none bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground p-1 focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
-            disabled={!isConnected}
+            placeholder="Type your message..."
           />
-          <div className="flex items-center justify-between pt-3">
-            <div className="flex gap-2">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 hover:bg-accent"
-                      onClick={triggerMention}
-                      disabled={!isConnected}
-                    >
-                      <AtSign className="w-4 h-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Mention an agent</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div>
-                      <TechStackDialog />
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>View tech stack</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
-            <Button
-              size="icon"
-              className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90"
-              onClick={handleSend}
-              disabled={!isConnected || !message.trim()}
-            >
-              <ArrowUp className="w-4 h-4" />
-            </Button>
+          <PromptInputToolbar>
+            <PromptInputTools>
+              <PromptInputButton>
+                <PaperclipIcon size={16} />
+              </PromptInputButton>
+
+            </PromptInputTools>
+            <PromptInputSubmit disabled={!isConnected || shouldBlockChat || !message.trim()} />
+          </PromptInputToolbar>
+        </PromptInput>
+        {/* <div className="flex items-center justify-between pt-3">
+          <div className="flex gap-2">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 hover:bg-accent"
+                    onClick={triggerMention}
+                    disabled={!isConnected || shouldBlockChat}
+                  >
+                    <AtSign className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Mention an agent</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div>
+                    <TechStackDialog />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>View tech stack</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
-        </div>
+          <Button
+            size="icon"
+            className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90"
+            onClick={handleSend}
+            disabled={!isConnected || !message.trim() || shouldBlockChat}
+          >
+            <ArrowUp className="w-4 h-4" />
+          </Button>
+        </div> */}
+
       </div>
 
     </div>

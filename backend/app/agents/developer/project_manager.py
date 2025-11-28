@@ -1,10 +1,12 @@
 import os
+from datetime import timedelta
 
 import cocoindex
 from cocoindex import FlowBuilder
 from cocoindex.functions import DetectProgrammingLanguage, SplitRecursively
 from pgvector.psycopg import register_vector
 
+from pathlib import Path
 from app.agents.developer.flows import code_to_embedding, connection_pool
 
 
@@ -43,6 +45,9 @@ def create_structure_document(project_root):
 def create_project_flow(project_id: str, project_path: str):
     """Dynamically create a cocoindex flow for a specific project."""
 
+    # Sanitize the project_id to create a valid flow name (alphanumeric and underscores only)
+    sanitized_project_id = "".join(c if c.isalnum() else "_" for c in project_id)
+
     # Create and write the project structure file before defining the flow
     structure_file_path = os.path.join(project_path, "PROJECT_STRUCTURE.md")
     if os.path.exists(project_path):
@@ -50,7 +55,7 @@ def create_project_flow(project_id: str, project_path: str):
         with open(structure_file_path, "w", encoding="utf-8") as f:
             f.write(structure_content)
 
-    @cocoindex.flow_def(name=f"code_embeddings_{project_id}")
+    @cocoindex.flow_def(name=f"code_embeddings_{sanitized_project_id}")
     def project_flow(
         flow_builder: FlowBuilder, data_scope: cocoindex.DataScope
     ) -> None:
@@ -81,7 +86,8 @@ def create_project_flow(project_id: str, project_path: str):
                     "pnpm-lock.yaml",
                     "package-lock.json",
                 ],
-            )
+            ),
+            refresh_interval=timedelta(minutes=1)  # 🔥 Auto-refresh every 1 minute!
         )
 
         code_embeddings = data_scope.add_collector()
@@ -123,20 +129,26 @@ def create_project_flow(project_id: str, project_path: str):
 
 class AdvancedProjectManager:
     def __init__(self):
-        self.flows = {}
+        self.flows = {}  # For project-level indexing
+        self.task_flows = {}  # For task-level indexing
 
     def register_project(self, project_id: str, project_path: str):
         """Register and index a new project."""
-        if project_id in self.flows:
+        # Sanitize the project_id to create a valid flow name
+        sanitized_project_id = "".join(c if c.isalnum() else "_" for c in project_id)
+
+        if sanitized_project_id in self.flows:
             return
 
         flow = create_project_flow(project_id, project_path)
-        self.flows[project_id] = flow
+        self.flows[sanitized_project_id] = flow
 
-        print(f"Attempting to index project '{project_id}'...")
+        print(f"Attempting to index project '{project_id}' (sanitized as '{sanitized_project_id}')...")
         try:
+            # 🔥 Use update() with live mode to enable refresh_interval
             stats = flow.update()
             print(f"✅ Indexing completed for '{project_id}': {stats}")
+            print(f"🔄 Live update enabled: Auto-refresh every 1 minute")
         except Exception as e:
             if "not up-to-date" in str(e):
                 print(
@@ -146,24 +158,96 @@ class AdvancedProjectManager:
                 print("✅ Setup complete. Retrying indexing...")
                 stats = flow.update()
                 print(f"✅ Indexing completed for '{project_id}' after setup: {stats}")
+                print(f"🔄 Live update enabled: Auto-refresh every 1 minute")
             else:
                 print(f"❌ An unexpected error during indexing for '{project_id}':")
                 raise e
 
-    def search(self, project_id: str, query: str, top_k: int = 5):
-        """Search in a specific project using the correct table name."""
-        if project_id not in self.flows:
-            project_path = (
-                f"services/ai-agent-service/app/agents/dev/workspaces/{project_id}"
-            )
-            if os.path.exists(project_path):
-                self.register_project(project_id, project_path)
-            else:
-                raise ValueError(
-                    f"Project {project_id} not registered and path not found."
-                )
+    def register_task(self, project_id: str, task_id: str, task_path: str):
+        """Register and index a specific task workspace."""
+        # Create a unique identifier for the task
+        task_identifier = f"{project_id}_task_{task_id}"
+        sanitized_task_id = "".join(c if c.isalnum() else "_" for c in task_identifier)
 
-        flow = self.flows[project_id]
+        if sanitized_task_id in self.task_flows:
+            return
+
+        # Create a flow specific to this task
+        flow = create_project_flow(task_identifier, task_path)
+        self.task_flows[sanitized_task_id] = flow
+
+        print(f"Attempting to index task '{task_identifier}' (sanitized as '{sanitized_task_id}')...")
+        try:
+            stats = flow.update()
+            print(f"✅ Indexing completed for task '{task_identifier}': {stats}")
+        except Exception as e:
+            if "not up-to-date" in str(e):
+                print(
+                    f"🔄 Database setup required for task '{task_identifier}'. Running setup..."
+                )
+                flow.setup()
+                print("✅ Setup complete. Retrying indexing...")
+                stats = flow.update()
+                print(f"✅ Indexing completed for task '{task_identifier}' after setup: {stats}")
+            else:
+                print(f"❌ An unexpected error during indexing for task '{task_identifier}':")
+                raise e
+
+    def search(self, project_id: str, query: str, top_k: int = 5, search_type: str = "project"):
+        """Search in a specific project or task using the correct table name."""
+        if search_type == "task":
+            # For task search, we need both project_id and task_id in the identifier
+            # This method will be called differently for tasks
+            raise ValueError("Use search_task for task-specific searches")
+        else:
+            # Sanitize the project_id to match the stored flow name
+            sanitized_project_id = "".join(c if c.isalnum() else "_" for c in project_id)
+
+            if sanitized_project_id not in self.flows:
+                project_path = (
+                    f"services/ai-agent-service/app/agents/dev/workspaces/{project_id}"
+                )
+                if os.path.exists(project_path):
+                    self.register_project(project_id, project_path)
+                else:
+                    raise ValueError(
+                        f"Project {project_id} not registered and path not found."
+                    )
+
+            flow = self.flows[sanitized_project_id]
+            # Use the official utility to get the correct, mangled table name
+            table_name = cocoindex.utils.get_target_default_name(flow, "code_embedding")
+
+            query_vector = code_to_embedding.eval(query)
+
+            with connection_pool().connection() as conn:
+                register_vector(conn)
+                with conn.cursor() as cur:
+                    # Use quotes around the table name to handle special characters
+                    sql_query = f'SELECT filename, code, embedding <=> %s AS distance, start, "end" FROM "{table_name}" ORDER BY distance LIMIT %s'
+                    cur.execute(sql_query, (query_vector, top_k))
+                    return [
+                        {
+                            "filename": row[0],
+                            "code": row[1],
+                            "score": 1.0 - row[2],
+                            "start": row[3],
+                            "end": row[4],
+                        }
+                        for row in cur.fetchall()
+                    ]
+
+    def search_task(self, project_id: str, task_id: str, query: str, top_k: int = 5):
+        """Search in a specific task workspace using the correct table name."""
+        task_identifier = f"{project_id}_task_{task_id}"
+        sanitized_task_id = "".join(c if c.isalnum() else "_" for c in task_identifier)
+
+        if sanitized_task_id not in self.task_flows:
+            raise ValueError(
+                f"Task {task_identifier} not registered. Call register_task first."
+            )
+
+        flow = self.task_flows[sanitized_task_id]
         # Use the official utility to get the correct, mangled table name
         table_name = cocoindex.utils.get_target_default_name(flow, "code_embedding")
 
@@ -186,32 +270,75 @@ class AdvancedProjectManager:
                     for row in cur.fetchall()
                 ]
 
-    def update_project(self, project_id: str):
+    async def update_task(self, project_id: str, task_id: str):
+        """Re-index a specific task workspace."""
+        task_identifier = f"{project_id}_task_{task_id}"
+        sanitized_task_id = "".join(c if c.isalnum() else "_" for c in task_identifier)
+
+        if sanitized_task_id not in self.task_flows:
+            raise ValueError(f"Task {task_identifier} not registered")
+
+        import concurrent.futures
+        import asyncio
+
+        # Run the synchronous update in a separate thread to avoid blocking the event loop
+        def run_update():
+            return self.task_flows[sanitized_task_id].update()
+
+        # Use run_in_executor to run the blocking operation in a thread pool
+        loop = asyncio.get_event_loop()
+        future = loop.run_in_executor(None, run_update)
+        result = await future
+
+        print(f"Updated task {task_identifier}: {result}")
+        return result
+
+    async def update_project(self, project_id: str):
         """Re-index a specific project."""
-        if project_id not in self.flows:
+        # Sanitize the project_id to match the stored flow name
+        sanitized_project_id = "".join(c if c.isalnum() else "_" for c in project_id)
+
+        if sanitized_project_id not in self.flows:
             raise ValueError(f"Project {project_id} not registered")
 
-        stats = self.flows[project_id].update()
-        print(f"Updated {project_id}: {stats}")
+        import concurrent.futures
+        import asyncio
+
+        # Run the synchronous update in a separate thread to avoid blocking the event loop
+        def run_update():
+            return self.flows[sanitized_project_id].update()
+
+        # Use run_in_executor to run the blocking operation in a thread pool
+        loop = asyncio.get_event_loop()
+        future = loop.run_in_executor(None, run_update)
+        result = await future  # Use await instead of asyncio.run
+
+        print(f"Updated {project_id}: {result}")
+        return result
 
     def delete_project(self, project_id: str):
         """Remove a project and its index table."""
-        if project_id not in self.flows:
+        # Sanitize the project_id to match the stored flow name
+        sanitized_project_id = "".join(c if c.isalnum() else "_" for c in project_id)
+
+        if sanitized_project_id not in self.flows:
             print(
                 f"Project {project_id} not in memory, cannot determine table name for deletion."
             )
             return
 
-        flow = self.flows[project_id]
+        flow = self.flows[sanitized_project_id]
+        # Use the sanitized project_id for flow name
+        sanitized_flow_name = f"code_embeddings_{sanitized_project_id}"
         table_name = cocoindex.utils.get_target_default_name(
-            flow, f"code_embeddings_{project_id}"
+            flow, sanitized_flow_name
         )
 
         with connection_pool().connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(f'DROP TABLE IF EXISTS "{table_name}"')
 
-        del self.flows[project_id]
+        del self.flows[sanitized_project_id]
         print(f"Deleted project {project_id} and its index table '{table_name}'.")
 
 

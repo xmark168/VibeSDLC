@@ -10,14 +10,18 @@ This module provides REST API endpoints for:
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
+import asyncio
+import json
 
 from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select, update
 
 from app.api.deps import get_current_user, get_db, SessionDep
 from app.models import User, Agent, AgentStatus, AgentExecution, AgentExecutionStatus
 from app.agents.core import AgentPoolManager
-from app.utils.name_generator import generate_agent_name, get_display_name
+from app.services.persona_service import PersonaService
+from app.services.pool_service import PoolService
 from app.core.config import settings
 from app.schemas import (
     PoolConfigSchema,
@@ -26,6 +30,12 @@ from app.schemas import (
     TerminateAgentRequest,
     PoolResponse,
     SystemStatsResponse,
+    AgentPoolPublic,
+    UpdatePoolConfigRequest,
+    AgentPoolMetricsPublic,
+    CreatePoolRequestExtended,
+    ScalePoolRequest,
+    PoolSuggestion,
 )
 
 
@@ -89,9 +99,11 @@ async def initialize_default_pools() -> None:
 
 
 async def _initialize_pool(logger, role_class_map) -> None:
-    """Initialize in-memory pool manager."""
+    """Initialize in-memory pool manager from DB."""
     from sqlmodel import Session, select
     from app.core.db import engine
+    from app.services.pool_service import PoolService
+    from app.models import AgentPool, PoolType
 
     pool_name = "universal_pool"
 
@@ -101,11 +113,30 @@ async def _initialize_pool(logger, role_class_map) -> None:
         return
 
     try:
-        # Create manager (no Redis, no multiprocessing)
+        # Get or create pool in DB
+        with Session(engine) as db_session:
+            pool_service = PoolService(db_session)
+            db_pool = pool_service.get_pool_by_name(pool_name)
+            
+            if not db_pool:
+                logger.info(f"Creating default pool '{pool_name}' in database")
+                db_pool = pool_service.create_pool(
+                    pool_name=pool_name,
+                    role_type=None,  # Universal pool
+                    pool_type=PoolType.FREE,
+                    max_agents=100,
+                    health_check_interval=60,
+                    auto_created=True,
+                )
+            else:
+                logger.info(f"Found existing pool '{pool_name}' in database (id={db_pool.id})")
+
+        # Create manager with pool_id from DB
         manager = AgentPoolManager(
             pool_name=pool_name,
-            max_agents=100,  # Higher limit since no process overhead
-            health_check_interval=60,
+            max_agents=db_pool.max_agents,
+            health_check_interval=db_pool.health_check_interval,
+            pool_id=db_pool.id,
         )
 
         # Start manager
@@ -317,31 +348,49 @@ async def spawn_agent(
             detail=f"Invalid role_type. Must be one of: {list(role_class_map.keys())}"
         )
 
-    # Get existing agent names for this project/role to avoid duplicates
+    # Get persona template for this role
+    persona_service = PersonaService(session)
+    agent_service = AgentService(session)
+
+    # Get existing personas used in this project (for diversity)
     existing_agents = session.exec(
         select(Agent).where(
             Agent.project_id == request.project_id,
-            Agent.role_type == request.role_type
+            Agent.role_type == request.role_type,
+            Agent.persona_template_id != None
         )
     ).all()
-    existing_names = [a.human_name for a in existing_agents]
+    used_persona_ids = [a.persona_template_id for a in existing_agents if a.persona_template_id]
 
-    # Generate unique human name
-    human_name = generate_agent_name(request.role_type, existing_names)
-    display_name = get_display_name(human_name, request.role_type)
-
-    # Create agent in database first
-    db_agent = Agent(
-        project_id=request.project_id,
-        name=display_name,
-        human_name=human_name,
+    # Get random persona (prefer unused ones)
+    persona = persona_service.get_random_persona_for_role(
         role_type=request.role_type,
-        agent_type=request.role_type,
-        status=AgentStatus.idle,
+        exclude_ids=used_persona_ids
     )
-    session.add(db_agent)
-    session.commit()
-    session.refresh(db_agent)
+
+    if not persona:
+        # Try again without exclusions (allow duplicates if necessary)
+        persona = persona_service.get_random_persona_for_role(
+            role_type=request.role_type,
+            exclude_ids=[]
+        )
+
+    if not persona:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"No persona templates found for role '{request.role_type}'. Please seed persona templates first by running: python app/db/seed_personas_script.py"
+        )
+
+    # Create agent from template
+    db_agent = agent_service.create_from_template(
+        project_id=request.project_id,
+        persona_template=persona
+    )
+
+    logger.info(
+        f"✓ Spawned {db_agent.human_name} ({request.role_type}) "
+        f"with persona: {persona.communication_style}, traits: {', '.join(persona.personality_traits[:2]) if persona.personality_traits else 'default'}"
+    )
 
     # Get universal pool manager
     pool_name = "universal_pool"
@@ -444,16 +493,23 @@ async def get_system_stats(
 
     # Aggregate stats from all pool managers
     total_agents = 0
-    total_executions = 0
-    successful_executions = 0
-    failed_executions = 0
+    pools_list = []
 
     for pool_name, manager in _manager_registry.items():
         stats = await manager.get_stats()
         total_agents += stats.get("total_agents", 0)
-        total_executions += stats.get("total_executions", 0)
-        successful_executions += stats.get("successful_executions", 0)
-        failed_executions += stats.get("failed_executions", 0)
+        
+        # Build PoolResponse for each pool
+        pools_list.append(PoolResponse(
+            pool_name=stats.get("pool_name", pool_name),
+            role_type=stats.get("role_type", "universal"),
+            active_agents=stats.get("active_agents", 0),
+            max_agents=stats.get("max_agents", 0),
+            total_spawned=stats.get("total_spawned", 0),
+            total_terminated=stats.get("total_terminated", 0),
+            is_running=stats.get("is_running", False),
+            agents=stats.get("agents", []),
+        ))
 
     # Calculate uptime from first manager
     uptime_seconds = 0.0
@@ -466,11 +522,7 @@ async def get_system_stats(
         uptime_seconds=uptime_seconds,
         total_pools=len(_manager_registry),
         total_agents=total_agents,
-        total_executions=total_executions,
-        successful_executions=successful_executions,
-        failed_executions=failed_executions,
-        success_rate=successful_executions / total_executions if total_executions > 0 else 0.0,
-        recent_alerts=0,  # Alerts not implemented yet
+        pools=pools_list,
     )
 
 
@@ -962,3 +1014,355 @@ async def get_execution_detail(
 # ===== Lifecycle Management =====
 # Note: Monitoring is built into AgentPoolManager
 # No separate start/stop needed (starts automatically with pool initialization)
+
+
+# ===== Pool DB Management Endpoints =====
+
+@router.get("/pools/{pool_name}/db", response_model=AgentPoolPublic)
+async def get_pool_db_info(
+    pool_name: str,
+    session: SessionDep,
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Get pool database information.
+    
+    Returns the persistent pool record from database including configuration,
+    counters, and metadata.
+    """
+    pool_service = PoolService(session)
+    pool = pool_service.get_pool_by_name(pool_name)
+    
+    if not pool:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Pool '{pool_name}' not found in database"
+        )
+    
+    return pool
+
+
+@router.put("/pools/{pool_id}/config", response_model=AgentPoolPublic)
+async def update_pool_config(
+    pool_id: UUID,
+    config: UpdatePoolConfigRequest,
+    session: SessionDep,
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Update pool configuration in database.
+    
+    Updates pool settings like max_agents, health_check_interval, model config,
+    and allowed templates. If pool is active, also updates runtime manager.
+    """
+    pool_service = PoolService(session)
+    
+    # Update DB record
+    updated_pool = pool_service.update_pool(
+        pool_id=pool_id,
+        updated_by=current_user.id,
+        **config.model_dump(exclude_unset=True)
+    )
+    
+    if not updated_pool:
+        raise HTTPException(status_code=404, detail="Pool not found")
+    
+    # If pool is active, update runtime manager
+    manager = _manager_registry.get(updated_pool.pool_name)
+    if manager:
+        if config.max_agents is not None:
+            manager.max_agents = config.max_agents
+        if config.health_check_interval is not None:
+            manager.health_check_interval = config.health_check_interval
+        
+        logger.info(
+            f"Updated runtime manager for pool '{updated_pool.pool_name}' "
+            f"(max_agents={manager.max_agents}, health_check={manager.health_check_interval})"
+        )
+    
+    return updated_pool
+
+
+@router.get("/pools/{pool_id}/metrics", response_model=List[AgentPoolMetricsPublic])
+async def get_pool_metrics_history(
+    pool_id: UUID,
+    session: SessionDep,
+    current_user: User = Depends(get_current_user),
+    start_date: Optional[datetime] = Query(default=None),
+    end_date: Optional[datetime] = Query(default=None),
+    limit: int = Query(default=100, le=1000),
+) -> Any:
+    """Get pool metrics history from database.
+    
+    Returns time-series metrics including token usage, requests per model,
+    agent counts, and execution statistics.
+    """
+    from app.models import AgentPool
+    
+    pool_service = PoolService(session)
+    
+    # Verify pool exists
+    pool = session.get(AgentPool, pool_id)
+    if not pool:
+        raise HTTPException(status_code=404, detail="Pool not found")
+    
+    metrics = pool_service.get_pool_metrics(
+        pool_id=pool_id,
+        start_date=start_date,
+        end_date=end_date,
+        limit=limit
+    )
+    
+    return metrics
+
+
+@router.post("/pools/{pool_name}/scale")
+async def scale_pool(
+    pool_name: str,
+    request: ScalePoolRequest,
+    session: SessionDep,
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Scale pool to target agent count.
+    
+    Automatically spawns or terminates agents to reach target count.
+    Spawns idle agents first if available in DB, terminates idle agents first when scaling down.
+    """
+    manager = get_manager(pool_name)
+    current_count = len(manager.agents)
+    target_agents = request.target_agents
+    
+    if target_agents == current_count:
+        return {
+            "message": "Pool already at target",
+            "current_count": current_count,
+            "target_count": target_agents
+        }
+    
+    if target_agents > current_count:
+        # Scale up - spawn more agents
+        to_spawn = target_agents - current_count
+        spawned = 0
+        
+        # Get idle agents from DB that can be spawned
+        idle_agents = session.exec(
+            select(Agent).where(
+                Agent.pool_id == manager.pool_id,
+                Agent.status == AgentStatus.stopped
+            ).limit(to_spawn)
+        ).all()
+        
+        # Get role class map
+        role_class_map = ensure_role_class_map()
+        
+        for agent in idle_agents:
+            role_class = role_class_map.get(agent.role_type)
+            if not role_class:
+                continue
+            
+            try:
+                success = await manager.spawn_agent(
+                    agent_id=agent.id,
+                    role_class=role_class,
+                    heartbeat_interval=30,
+                    max_idle_time=300,
+                )
+                if success:
+                    spawned += 1
+            except Exception as e:
+                logger.error(f"Error spawning agent {agent.id}: {e}")
+        
+        return {
+            "message": f"Spawned {spawned} agents",
+            "current_count": current_count + spawned,
+            "target_count": target_agents,
+            "spawned": spawned
+        }
+    
+    else:
+        # Scale down - terminate excess agents
+        to_terminate = current_count - target_agents
+        terminated = 0
+        
+        # Get idle agents first
+        idle_agent_ids = [
+            agent_id for agent_id, agent in manager.agents.items()
+            if agent.state == AgentStatus.idle
+        ]
+        
+        # Terminate idle agents first
+        for agent_id in idle_agent_ids[:to_terminate]:
+            try:
+                success = await manager.terminate_agent(agent_id, graceful=True)
+                if success:
+                    terminated += 1
+            except Exception as e:
+                logger.error(f"Error terminating agent {agent_id}: {e}")
+        
+        # If still need to terminate more, terminate busy agents
+        if terminated < to_terminate:
+            remaining = to_terminate - terminated
+            all_agent_ids = list(manager.agents.keys())
+            
+            for agent_id in all_agent_ids[:remaining]:
+                if agent_id not in idle_agent_ids:  # Skip already terminated
+                    try:
+                        success = await manager.terminate_agent(agent_id, graceful=True)
+                        if success:
+                            terminated += 1
+                    except Exception as e:
+                        logger.error(f"Error terminating agent {agent_id}: {e}")
+        
+        return {
+            "message": f"Terminated {terminated} agents",
+            "current_count": current_count - terminated,
+            "target_count": target_agents,
+            "terminated": terminated
+        }
+
+
+@router.get("/pools/suggestions", response_model=List[PoolSuggestion])
+async def get_pool_suggestions(
+    session: SessionDep,
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Get pool creation suggestions based on current load.
+    
+    Analyzes current pool loads and suggests creating new pools when:
+    - Existing pools are above 80% capacity
+    - Specific role types need dedicated pools
+    """
+    from app.agents.core.pool_helpers import get_pool_load, should_create_new_pool
+    
+    suggestions = []
+    
+    for manager in _manager_registry.values():
+        load = get_pool_load(manager)
+        
+        # Suggest overflow pool if above threshold
+        if should_create_new_pool(manager, threshold=0.8):
+            suggestions.append(PoolSuggestion(
+                reason=f"Pool '{manager.pool_name}' is at {load*100:.0f}% capacity",
+                recommended_pool_name=f"overflow_pool_{len(_manager_registry) + 1}",
+                role_type=None,  # Universal
+                estimated_agents=30
+            ))
+        
+        # Suggest role-specific pools if load is high
+        if load > 0.7 and manager.pool_name == "universal_pool":
+            # Analyze which role types are most used
+            role_counts: Dict[str, int] = {}
+            for agent in manager.agents.values():
+                role = getattr(agent, 'role_type', None)
+                if role:
+                    role_counts[role] = role_counts.get(role, 0) + 1
+            
+            # Suggest dedicated pool for roles with > 10 agents
+            for role, count in role_counts.items():
+                if count >= 10:
+                    suggestions.append(PoolSuggestion(
+                        reason=f"{count} {role} agents in universal pool - consider dedicated pool",
+                        recommended_pool_name=f"{role}_pool",
+                        role_type=role,
+                        estimated_agents=count + 5
+                    ))
+    
+    return suggestions
+
+
+# ===== Server-Sent Events (SSE) for Real-time Updates =====
+
+@router.get("/pools/events")
+async def pool_events_stream(
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """Server-Sent Events stream for real-time pool updates.
+    
+    Sends updates when:
+    - Pool stats change (agent count, executions, etc.)
+    - Agent health changes
+    - Pool configuration updates
+    - New alerts
+    
+    Event format:
+    ```
+    event: pool_stats
+    data: {"pool_name": "universal_pool", "active_agents": 10, ...}
+    
+    event: agent_health
+    data: {"agent_id": "...", "state": "idle", ...}
+    ```
+    """
+    
+    async def event_generator():
+        """Generate SSE events."""
+        try:
+            # Send initial connection event
+            yield f"event: connected\ndata: {json.dumps({'message': 'Connected to pool events stream'})}\n\n"
+            
+            while True:
+                try:
+                    # Collect all pool stats
+                    pools_data = []
+                    for pool_name, manager in _manager_registry.items():
+                        try:
+                            pool_stats = {
+                                "pool_name": pool_name,
+                                "active_agents": len(manager.agents),
+                                "busy_agents": sum(1 for a in manager.agents.values() if a.state == AgentStatus.busy),
+                                "idle_agents": sum(1 for a in manager.agents.values() if a.state == AgentStatus.idle),
+                                "total_spawned": manager._total_spawned,
+                                "total_terminated": manager._total_terminated,
+                                "is_running": manager.is_running,
+                            }
+                            pools_data.append(pool_stats)
+                        except Exception as e:
+                            logger.error(f"Error collecting stats for pool '{pool_name}': {e}")
+                    
+                    # Send pool stats update
+                    if pools_data:
+                        yield f"event: pool_stats\ndata: {json.dumps(pools_data)}\n\n"
+                    
+                    # Collect all agent health
+                    agents_health = []
+                    for pool_name, manager in _manager_registry.items():
+                        for agent_id, agent in manager.agents.items():
+                            try:
+                                health_data = {
+                                    "agent_id": str(agent_id),
+                                    "pool_name": pool_name,
+                                    "state": agent.state.value if hasattr(agent.state, 'value') else str(agent.state),
+                                    "healthy": True,  # Simplified - add real health check if needed
+                                }
+                                agents_health.append(health_data)
+                            except Exception as e:
+                                logger.error(f"Error collecting health for agent {agent_id}: {e}")
+                    
+                    # Send agent health update
+                    if agents_health:
+                        yield f"event: agent_health\ndata: {json.dumps(agents_health)}\n\n"
+                    
+                    # Send heartbeat to keep connection alive
+                    yield f"event: heartbeat\ndata: {json.dumps({'timestamp': datetime.utcnow().isoformat()})}\n\n"
+                    
+                    # Wait before next update
+                    await asyncio.sleep(5)  # Update every 5 seconds
+                    
+                except asyncio.CancelledError:
+                    logger.info("SSE stream cancelled by client")
+                    break
+                except Exception as e:
+                    logger.error(f"Error in SSE event generator: {e}")
+                    yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+                    await asyncio.sleep(5)
+                    
+        except GeneratorExit:
+            logger.info("SSE stream closed")
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+        }
+    )

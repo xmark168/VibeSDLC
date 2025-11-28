@@ -25,7 +25,7 @@ class LoginRequest(SQLModel):
     email: str
     password: str | None = None
     fullname: str | None = None
-    login_provider: bool = False
+    login_provider: str | None = None
 
 
 class LoginResponse(SQLModel):
@@ -80,6 +80,7 @@ class ForgotPasswordRequest(SQLModel):
 class ForgotPasswordResponse(SQLModel):
     message: str
     email: str
+    expires_in: int
 
 
 class ResetPasswordRequest(SQLModel):

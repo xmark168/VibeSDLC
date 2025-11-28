@@ -1,8 +1,4 @@
-"""
-Story Handler
-
-Handles story-related events (created, updated, status changed)
-"""
+"""Story Handler - Handles Kanban story events."""
 
 import logging
 from .base import BaseEventHandler
@@ -11,10 +7,9 @@ logger = logging.getLogger(__name__)
 
 
 class StoryHandler(BaseEventHandler):
-    """Handles story-related WebSocket events"""
+    """Handles story-related WebSocket events."""
 
     async def handle_story_created(self, event):
-        """Handle story created events"""
         try:
             event_data = self._normalize_event(event)
             project_id = self._to_uuid(event_data.get("project_id"))
@@ -39,7 +34,6 @@ class StoryHandler(BaseEventHandler):
             logger.error(f"Error handling story created: {e}", exc_info=True)
 
     async def handle_story_updated(self, event):
-        """Handle story updated events"""
         try:
             event_data = self._normalize_event(event)
             project_id = self._to_uuid(event_data.get("project_id"))
@@ -62,7 +56,6 @@ class StoryHandler(BaseEventHandler):
             logger.error(f"Error handling story updated: {e}", exc_info=True)
 
     async def handle_story_status_changed(self, event):
-        """Handle story status change events"""
         try:
             event_data = self._normalize_event(event)
             project_id = self._to_uuid(event_data.get("project_id"))

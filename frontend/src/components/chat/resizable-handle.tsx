@@ -41,30 +41,14 @@ export function ResizableHandle({ onResize }: ResizableHandleProps) {
 
   return (
     <div
-      className="w-1 cursor-col-resize flex items-center justify-center group relative transition-colors select-none"
+      className="w-1 invisible pointer-events-auto cursor-col-resize absolute inset-y-0 right-0"
       onMouseDown={(e) => {
-        e.preventDefault()
+        e.preventDefault();
         setIsDragging(true)
         startXRef.current = e.clientX
       }}
-    >
-      <div className="absolute inset-y-0 left-0 right-0 flex items-center justify-center">
-        <div
-          className="w-full h-full relative transition-opacity duration-200 opacity-0 group-hover:opacity-100"
-          style={{
-            background: `linear-gradient(to bottom, 
-              transparent 0%, 
-              hsl(var(--border) / 0.3) 15%, 
-              hsl(var(--border) / 0.6) 35%, 
-              hsl(var(--primary) / 0.8) 50%, 
-              hsl(var(--border) / 0.6) 65%, 
-              hsl(var(--border) / 0.3) 85%, 
-              transparent 100%)`,
-          }}
-        />
-      </div>
+    />
 
-      <GripVertical className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity relative z-10" />
-    </div>
+
   )
 }

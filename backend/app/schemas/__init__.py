@@ -64,6 +64,12 @@ from .agent import (
     TerminateAgentRequest,
     PoolResponse,
     SystemStatsResponse,
+    AgentPoolPublic,
+    UpdatePoolConfigRequest,
+    AgentPoolMetricsPublic,
+    CreatePoolRequestExtended,
+    ScalePoolRequest,
+    PoolSuggestion,
 )
 
 # Story schemas
@@ -109,6 +115,43 @@ from .lean_kanban import (
     StoryFlowMetrics,
     ProjectFlowMetrics,
     WIPViolation,
+)
+
+# Plan schemas
+from .plan import (
+    PlanBase,
+    PlanCreate,
+    PlanUpdate,
+    PlanPublic,
+    PlansPublic,
+)
+
+# Payment schemas
+from .payment import (
+    PaymentItemData,
+    CreatePaymentRequest,
+    CreateCreditPurchaseRequest,
+    PaymentLinkResponse,
+    PaymentStatusResponse,
+    PayOSWebhookData,
+    WebhookRequest,
+)
+
+# Subscription schemas
+from .subscription import (
+    SubscriptionPublic,
+    CreditWalletPublic,
+    UserSubscriptionResponse,
+    UpdateAutoRenew,
+)
+
+# Persona schemas
+from .persona import (
+    PersonaBase,
+    PersonaCreate,
+    PersonaUpdate,
+    PersonaResponse,
+    PersonaWithUsageStats,
 )
 
 __all__ = [
@@ -167,6 +210,12 @@ __all__ = [
     "TerminateAgentRequest",
     "PoolResponse",
     "SystemStatsResponse",
+    "AgentPoolPublic",
+    "UpdatePoolConfigRequest",
+    "AgentPoolMetricsPublic",
+    "CreatePoolRequestExtended",
+    "ScalePoolRequest",
+    "PoolSuggestion",
     
     # Story
     "StoryBase",
@@ -202,4 +251,33 @@ __all__ = [
     "StoryFlowMetrics",
     "ProjectFlowMetrics",
     "WIPViolation",
+
+    # Plan
+    "PlanBase",
+    "PlanCreate",
+    "PlanUpdate",
+    "PlanPublic",
+    "PlansPublic",
+
+    # Payment
+    "PaymentItemData",
+    "CreatePaymentRequest",
+    "CreateCreditPurchaseRequest",
+    "PaymentLinkResponse",
+    "PaymentStatusResponse",
+    "PayOSWebhookData",
+    "WebhookRequest",
+
+    # Subscription
+    "SubscriptionPublic",
+    "CreditWalletPublic",
+    "UserSubscriptionResponse",
+
+    # Persona
+    "PersonaBase",
+    "PersonaCreate",
+    "PersonaUpdate",
+    "PersonaResponse",
+    "PersonaWithUsageStats",
+    "UpdateAutoRenew",
 ]
