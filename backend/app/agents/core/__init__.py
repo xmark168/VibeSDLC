@@ -22,6 +22,14 @@ Total removed: ~2,784 lines of complex multiprocessing code
 from typing import Optional
 from .agent_pool_manager import AgentPoolManager
 from .agent_monitor import AgentMonitor
+from .prompt_utils import (
+    load_prompts_yaml,
+    resolve_shared_context,
+    get_task_prompts,
+    extract_agent_personality,
+    build_system_prompt,
+    build_user_prompt,
+)
 
 # Import AgentStatus from models for convenience
 from app.models import AgentStatus
@@ -52,4 +60,11 @@ __all__ = [
     "AgentPoolManager",
     "AgentMonitor",
     "get_agent_monitor",
+    # Prompt utilities
+    "load_prompts_yaml",
+    "resolve_shared_context",
+    "get_task_prompts",
+    "extract_agent_personality",
+    "build_system_prompt",
+    "build_user_prompt",
 ]

@@ -1,17 +1,4 @@
 """Central Message Router for dispatching tasks to agents.
-
-This module contains the routing logic and service for the VibeSDLC system.
-The Router subscribes to various Kafka events and decides which agent should
-handle each event, then publishes RouterTaskEvent to AGENT_TASKS topic.
-
-Architecture:
-    Events (USER_MESSAGES, AGENT_RESPONSES, etc.)
-        ↓
-    Router (rule-based routing logic)
-        ↓
-    AGENT_TASKS topic (RouterTaskEvent)
-        ↓
-    Agents (consume tasks based on agent_id)
 """
 
 import asyncio
@@ -55,8 +42,6 @@ class BaseEventRouter(ABC):
     @abstractmethod
     async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
         """Route the event to appropriate agent(s).
-
-        Analyzes the event, determines target agent(s), and publishes RouterTaskEvent(s) to AGENT_TASKS topic.
         """
         pass
 
@@ -132,12 +117,8 @@ class BaseEventRouter(ABC):
 
 
 class UserMessageRouter(BaseEventRouter):
-    """Router for USER_MESSAGES events.
-
-    Routing logic:
-    1. Parse message content for @mentions
-    2. If @mention found → route to mentioned agent
-    3. If no @mention → check conversation context → route to active agent or Team Leader
+    """
+    Router for USER_MESSAGES events.
     """
 
     MENTION_PATTERN = re.compile(r"@(\w+)")
