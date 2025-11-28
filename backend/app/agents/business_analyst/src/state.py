@@ -29,12 +29,17 @@ class BAState(TypedDict, total=False):
     intent: Literal["interview", "prd_create", "prd_update", "extract_stories", "domain_analysis"]
     reasoning: str  # Why this intent was chosen
     
-    # Interview workflow - Sequential questions
+    # Interview workflow - Sequential questions (legacy)
     questions: list[dict]  # All questions to ask
     current_question_index: int  # Current question being asked (0-based)
     collected_answers: list[dict]  # Answers collected so far
     waiting_for_answer: bool  # True if waiting for user to answer
     all_questions_answered: bool  # True when all questions have been answered
+    
+    # Interview workflow - Batch mode (preferred)
+    batch_id: str | None  # Batch ID for grouped questions
+    question_ids: list[str]  # List of question IDs in batch
+    batch_answers: list[dict]  # All answers from batch submission
     
     # PRD workflow
     prd_draft: dict | None
