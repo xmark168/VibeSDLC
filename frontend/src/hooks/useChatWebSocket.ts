@@ -405,14 +405,15 @@ export function useChatWebSocket(
     }
     
     // Chat or progress_bar mode: Add to messages
+    // Note: Backend sends 'details' but DB stores as 'structured_data'
     const message: Message = {
       id: msg.id,
       project_id: projectIdRef.current!,
       agent_name: msg.agent_name,
       author_type: AuthorType.AGENT,
       content: msg.content,
-      message_type: msg.message_type,
-      structured_data: msg.structured_data,
+      message_type: msg.details?.message_type || msg.message_type || 'text',
+      structured_data: msg.details || msg.structured_data || {},
       created_at: msg.timestamp,
       updated_at: msg.timestamp,
     }
