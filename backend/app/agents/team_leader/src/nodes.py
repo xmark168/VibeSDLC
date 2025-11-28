@@ -75,6 +75,15 @@ async def extract_preferences(state: TeamLeaderState, agent=None) -> dict:
 async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
     """Route request using structured LLM output."""
     try:
+        # Get actual board state
+        board_state = ""
+        if agent and hasattr(agent, 'context'):
+            try:
+                _, _, wip = agent.context.get_kanban_context()
+                board_state = f"WIP: InProgress={wip.get('InProgress', '?')}, Review={wip.get('Review', '?')}"
+            except Exception:
+                pass
+        
         messages = [
             SystemMessage(content=_sys_prompt(agent)),
             HumanMessage(content=_user_prompt(
@@ -82,14 +91,14 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                 name=agent.name if agent else "Team Leader",
                 conversation_history=state.get("conversation_history", ""),
                 user_preferences=state.get("user_preferences", ""),
-                board_state="",
+                board_state=board_state,
             ))
         ]
+        
         response = await _fast_llm.ainvoke(messages, config=_cfg(state, "router"))
-        logger.info(f"[router] Raw response: {response.content[:300]}")
         clean_json = _clean_json(response.content)
-        logger.info(f"[router] Clean JSON: {clean_json[:300]}")
         decision = RoutingDecision.model_validate_json(clean_json)
+        logger.info(f"[router] Decision: action={decision.action}, target={decision.target_role}")
         result = decision.model_dump()
         
         if result["action"] == "DELEGATE":

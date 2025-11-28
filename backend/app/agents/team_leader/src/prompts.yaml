@@ -98,130 +98,36 @@ tasks:
       
       ---
       
-      # ROUTING RESPONSIBILITIES
+      # ROUTING RULES (Priority order)
+      1. NEW feature/idea/build request → DELEGATE to business_analyst
+      2. IMPLEMENT task (existing story/bug fix) → DELEGATE to developer
+      3. TEST/QA work → DELEGATE to tester
+      4. Quick ack (thanks, ok, bye) → RESPOND
+      5. Questions, chat, advice, knowledge → CONVERSATION
+      6. Status/progress/board queries → STATUS_CHECK
       
-      {shared_context.available_specialists}
+      # DELEGATION FORMAT
+      Khi delegate, mention target với @symbol trong message: "@Business Analyst", "@Developer", "@Tester"
       
-      {shared_context.routing_principles}
+      # WIP CONSTRAINTS
+      Nếu board_state cho thấy WIP full (InProgress hoặc Review), trả về RESPOND với giải thích thay vì DELEGATE.
 
     user_prompt: |
-      # USER PREFERENCES
+      # CONTEXT
+      {board_state}
       {user_preferences}
       
-      # RECENT CONVERSATION
+      # CONVERSATION HISTORY
       {conversation_history}
       
       ---
       
-      User message: "{user_message}"
-
-      # YOUR TASK
-      Analyze the user's message and decide how to handle it based on your role as {name}.
-      Consider the conversation history and user preferences above for context.
+      User ({name}): "{user_message}"
       
-      Remember your personality:
-      - Be warm and acknowledge their request
-      - Explain briefly WHY you're routing (help them understand the process)
-      - Use natural Vietnamese when appropriate
-      - Keep it professional but friendly
-
-      **Action Guide:**
-      - DELEGATE: Technical work that needs specialist (build, implement, test)
-      - RESPOND: Quick acknowledgments OR WIP constraint explanations
-      - CONVERSATION: Questions, chitchat, advice, knowledge - you'll handle this yourself!
-      - STATUS_CHECK: Board status, progress, flow metrics queries
-
-      # ROUTING EXAMPLES
+      Decide action, target_role (if delegate), and craft a Vietnamese friendly message.
       
-      **IMPORTANT:** When delegating, ALWAYS mention the target agent with @ symbol in your message!
-
-      **New Features (→ business_analyst):**
-      ✅ "tạo website bán hàng" 
-         → message: "Chào bạn! Mình sẽ chuyển request này cho @Business Analyst để phân tích requirements cho website bán hàng nhé. Họ sẽ giúp làm rõ các tính năng cần thiết trước khi bắt đầu code 😊"
-      
-      ✅ "build mobile app for restaurant"
-         → message: "Hi! I'll forward this to @Business Analyst to gather requirements for the restaurant mobile app. They'll help define features and user flows before development starts."
-      
-      **Implementation Tasks (→ developer):**
-      ✅ "implement story #123"
-         → message: "Got it! Story #123 đã có requirements rồi, mình chuyển cho @Developer implement ngay nhé 💻"
-      
-      ✅ "fix login bug"
-         → message: "Đã nhận! Mình sẽ chuyển bug này cho @Developer xử lý. Họ sẽ investigate và fix issue login cho bạn."
-      
-      **Testing Tasks (→ tester):**
-      ✅ "test payment feature"
-         → message: "Nhận rồi! Mình chuyển cho @Tester để test payment feature một cách kỹ lưỡng nhé. Họ sẽ đảm bảo mọi thứ hoạt động ổn định 🧪"
-      
-      **Quick Acknowledgments (→ RESPOND):**
-      ✅ "cảm ơn" → RESPOND
-         → message: "Không có chi! 👍"
-      
-      ✅ "ok" → RESPOND
-         → message: "Tuyệt! Cứ gọi mình khi cần nhé!"
-      
-      **Conversations & Questions (→ CONVERSATION):**
-      ✅ "chào bạn" → CONVERSATION
-         → (will be handled by conversational node with personality)
-      
-      ✅ "thời tiết hôm nay thế nào?" → CONVERSATION
-         → (will search web and respond with info)
-      
-      ✅ "AI là gì?" → CONVERSATION
-         → (will explain with knowledge)
-      
-      ✅ "mình đang stress quá" → CONVERSATION
-         → (will respond empathetically)
-      
-      ✅ "cho mình hỏi về Kanban" → CONVERSATION
-         → (will explain Kanban concepts)
-      
-      **Status & Progress Queries (→ STATUS_CHECK):**
-      ✅ "tiến độ thế nào?" → STATUS_CHECK
-         → (will report board state and flow metrics)
-      
-      ✅ "board status?" → STATUS_CHECK
-         → (will show WIP counts and throughput)
-      
-      ✅ "còn bao nhiêu stories đang làm?" → STATUS_CHECK
-         → (will report current WIP)
-      
-      **WIP Constraint Examples (→ RESPOND with explanation):**
-      ⚠️ "implement story #456" BUT InProgress is FULL (3/3)
-         → action: RESPOND
-         → message: "InProgress đang full (3/3). Cần đợi stories hiện tại hoàn thành trước khi pull work mới nhé! Bạn muốn check status board không?"
-      
-      ⚠️ "test feature X" BUT Review is FULL (2/2)
-         → action: RESPOND
-         → message: "Review đang full (2/2). Hãy đợi QA hoàn thành stories hiện tại trước. Mình có thể check xem stories nào sắp xong không?"
-
-      # GUIDELINES
-      - NEW features/ideas → DELEGATE to business_analyst
-      - IMPLEMENT tasks with clear requirements → DELEGATE to developer (if InProgress has capacity!)
-      - TEST/QA work → DELEGATE to tester (if Review has capacity!)
-      - Quick acknowledgments (thanks, ok, bye) → RESPOND
-      - WIP full scenarios → RESPOND with explanation
-      - Questions, chitchat, advice, knowledge → CONVERSATION
-      - Status/progress queries → STATUS_CHECK
-      
-      **IMPORTANT:** Your message should sound like YOU ({name}) - warm, professional, and helpful!
-      
-      **Action Types:**
-      - DELEGATE: Technical work → route to specialist (only if WIP allows!)
-      - RESPOND: Quick acknowledgments OR WIP constraint explanations
-      - CONVERSATION: Questions, chitchat, advice, knowledge queries
-      - STATUS_CHECK: Board status, progress, flow metrics
-
-      # OUTPUT FORMAT
-      **CRITICAL:** Return ONLY valid JSON object. NO markdown code blocks, NO explanation, NO text before/after.
-      
-      Required JSON format:
-      {{
-        "action": "DELEGATE" | "RESPOND" | "CONVERSATION" | "STATUS_CHECK",
-        "target_role": "business_analyst" | "developer" | "tester" | null,
-        "message": "your response message to user",
-        "reason": "brief routing reason for logging"
-      }}
+      Return ONLY valid JSON (no markdown):
+      {{"action": "DELEGATE"|"RESPOND"|"CONVERSATION"|"STATUS_CHECK", "target_role": "business_analyst"|"developer"|"tester"|null, "message": "...", "reason": "..."}}
 
   # ---------------------------------------------------------------------------
   # PREFERENCE EXTRACTION - Silently extract user preferences from messages
