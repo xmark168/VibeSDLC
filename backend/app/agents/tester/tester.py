@@ -4,24 +4,17 @@ ARCHITECTURE:
 - Inherits from BaseAgent (Kafka abstracted)
 - Handles QA and testing tasks
 - Uses LangGraph for integration test generation
+- Langfuse tracing for all LLM calls
 """
 
-import asyncio
 import logging
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from uuid import UUID
 
 import yaml
-from crewai import Agent, Crew, Task
 
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
-from app.agents.tester.tasks import (
-    create_test_plan_task,
-    create_validate_requirements_task,
-    create_test_cases_task,
-)
-from app.agents.tester.tools import get_tester_tools
 from app.models import Agent as AgentModel
 
 
@@ -48,11 +41,8 @@ class Tester(BaseAgent):
 
         # Load configuration
         self.config = self._load_config()
-
-        # Create CrewAI agent (legacy - for manual @Tester mentions)
-        self.crew_agent = self._create_crew_agent()
         
-        # Initialize TesterGraph (LangGraph) for integration test generation
+        # Initialize TesterGraph (LangGraph) for all test generation
         from app.agents.tester.graph import TesterGraph
         self.tester_graph = TesterGraph()
         
@@ -94,32 +84,51 @@ class Tester(BaseAgent):
             }
         }
 
-    def _create_crew_agent(self) -> Agent:
-        """Create CrewAI agent for Tester.
-
+    def _setup_langfuse(self, task: TaskContext, span_name: str) -> tuple[Any, Any, Any]:
+        """Setup Langfuse tracing for graph execution.
+        
+        Args:
+            task: TaskContext for metadata
+            span_name: Name for the trace span
+            
         Returns:
-            Configured CrewAI Agent
+            Tuple of (langfuse_handler, langfuse_span, langfuse_ctx)
         """
-        agent_config = self.config.get("agent", {})
-        tools = get_tester_tools()
-
-        agent = Agent(
-            role=agent_config.get("role", "QA Engineer"),
-            goal=agent_config.get(
-                "goal",
-                "Create comprehensive test plans and ensure software quality"
-            ),
-            backstory=agent_config.get(
-                "backstory",
-                "You are an experienced QA Engineer expert in testing strategies."
-            ),
-            verbose=agent_config.get("verbose", True),
-            allow_delegation=agent_config.get("allow_delegation", False),
-            llm=agent_config.get("model", "openai/gpt-4"),
-            tools=tools if tools else None,
-        )
-
-        return agent
+        langfuse_handler = None
+        langfuse_span = None
+        langfuse_ctx = None
+        
+        try:
+            from langfuse import get_client
+            from langfuse.langchain import CallbackHandler
+            
+            langfuse = get_client()
+            langfuse_ctx = langfuse.start_as_current_observation(
+                as_type="span",
+                name=span_name
+            )
+            langfuse_span = langfuse_ctx.__enter__()
+            langfuse_span.update_trace(
+                user_id=str(task.user_id) if task.user_id else None,
+                session_id=str(self.project_id),
+                input={"message": task.content[:200] if task.content else ""},
+                tags=["tester", self.role_type],
+                metadata={"agent": self.name, "task_id": str(task.task_id)}
+            )
+            langfuse_handler = CallbackHandler()
+        except Exception as e:
+            logger.debug(f"[{self.name}] Langfuse setup: {e}")
+        
+        return langfuse_handler, langfuse_span, langfuse_ctx
+    
+    def _close_langfuse(self, langfuse_span: Any, langfuse_ctx: Any, output: dict) -> None:
+        """Close Langfuse span after execution."""
+        if langfuse_span and langfuse_ctx:
+            try:
+                langfuse_span.update_trace(output=output)
+                langfuse_ctx.__exit__(None, None, None)
+            except Exception:
+                pass
 
     def _determine_task_type(self, content: str) -> str:
         """Determine what type of testing task to perform.
@@ -165,61 +174,96 @@ class Tester(BaseAgent):
             )
     
     async def _handle_manual_request(self, task: TaskContext) -> TaskResult:
-        """Handle manual @Tester mention (legacy flow).
+        """Handle manual @Tester mention - uses LangGraph.
         
         Args:
             task: TaskContext with user message
             
         Returns:
-            TaskResult with test plan text response
+            TaskResult with test generation response
         """
         user_message = task.content
 
         logger.info(f"[{self.name}] Processing manual QA task: {user_message[:50]}...")
 
-        # Determine task type
-        task_type = self._determine_task_type(user_message)
-        logger.info(f"[{self.name}] Task type determined: {task_type}")
-
-        # Create context for task creation
-        context = {
-            "user_message": user_message,
-            "task_description": user_message,
-        }
-
-        # Create appropriate task based on type
-        if task_type == "validate":
-            crew_task = create_validate_requirements_task(self.crew_agent, context)
-        elif task_type == "test_cases":
-            crew_task = create_test_cases_task(self.crew_agent, context)
-        else:
-            crew_task = create_test_plan_task(self.crew_agent, context)
-
-        # Execute crew
-        crew = Crew(
-            agents=[self.crew_agent],
-            tasks=[crew_task],
-            verbose=True,
+        # Setup Langfuse tracing
+        langfuse_handler, langfuse_span, langfuse_ctx = self._setup_langfuse(
+            task, "tester_manual_request"
         )
-
-        # Run CrewAI asynchronously
-        result = await crew.kickoff_async(inputs={})
-
-        # Extract response
-        response = str(result)
-
-        logger.info(f"[{self.name}] Test plan completed: {len(response)} chars")
-
-        return TaskResult(
-            success=True,
-            output=response,
-            structured_data={
-                "task_type": task.task_type.value,
-                "routing_reason": task.routing_reason,
-                "qa_type": task_type,
-            },
-            requires_approval=False,
-        )
+        
+        try:
+            # Check if project path is available
+            if not self.project_path:
+                response = (
+                    "Xin lỗi, mình chưa có thông tin project path nên không thể tạo test file.\n"
+                    "Bạn nhờ admin cấu hình project path giúp mình nhé!"
+                )
+                await self.message_user("response", response)
+                return TaskResult(
+                    success=False,
+                    output=response,
+                    error_message="Project path not configured"
+                )
+            
+            # Use TesterGraph (LangGraph) for test generation
+            result = await self.tester_graph.generate_tests(
+                project_id=str(self.project_id),
+                story_ids=[],  # Empty = all stories in REVIEW
+                project_path=self.project_path,
+                tech_stack=self.tech_stack,
+                langfuse_handler=langfuse_handler,
+                user_message=user_message
+            )
+            
+            # Check for errors
+            if result.get("error"):
+                response = f"Hmm, mình gặp chút vấn đề: {result['error']}"
+                await self.message_user("response", response)
+                return TaskResult(
+                    success=False,
+                    output=response,
+                    error_message=result['error']
+                )
+            
+            # Build response message
+            test_file = result.get("filename", "integration.test.ts")
+            test_count = result.get("test_count", 0)
+            skipped = result.get("skipped_duplicates", 0)
+            
+            if test_count == 0 and skipped > 0:
+                response = (
+                    f"Mình check rồi, {skipped} tests cho stories này đã có sẵn trong file `{test_file}`.\n"
+                    f"Không cần tạo thêm đâu!"
+                )
+            elif skipped > 0:
+                response = (
+                    f"Xong rồi! Mình đã thêm {test_count} test cases mới vào file `{test_file}` "
+                    f"(bỏ qua {skipped} tests đã có)."
+                )
+            else:
+                response = f"Xong rồi! Mình đã tạo {test_count} test cases trong file `{test_file}`."
+            
+            await self.message_user("response", response)
+            
+            logger.info(f"[{self.name}] Manual request completed: {test_count} tests")
+            
+            return TaskResult(
+                success=True,
+                output=response,
+                structured_data={
+                    "task_type": task.task_type.value,
+                    "routing_reason": task.routing_reason,
+                    "test_file": test_file,
+                    "test_count": test_count,
+                },
+                requires_approval=False,
+            )
+            
+        finally:
+            # Close Langfuse
+            self._close_langfuse(langfuse_span, langfuse_ctx, {
+                "test_count": result.get("test_count", 0) if 'result' in dir() else 0
+            })
     
     async def _handle_story_review_testing(self, task: TaskContext) -> TaskResult:
         """Handle auto-triggered integration test generation for stories in REVIEW.
@@ -255,13 +299,19 @@ class Tester(BaseAgent):
                 error_message="Project path not configured"
             )
         
+        # Setup Langfuse tracing
+        langfuse_handler, langfuse_span, langfuse_ctx = self._setup_langfuse(
+            task, "tester_auto_review"
+        )
+        
         try:
             # Use TesterGraph (LangGraph) to generate integration tests
             result = await self.tester_graph.generate_tests(
                 project_id=str(self.project_id),
                 story_ids=story_ids,
                 project_path=self.project_path,
-                tech_stack=self.tech_stack
+                tech_stack=self.tech_stack,
+                langfuse_handler=langfuse_handler
             )
             
             # Check for errors
@@ -303,3 +353,10 @@ class Tester(BaseAgent):
                 success=False,
                 error_message=str(e)
             )
+        
+        finally:
+            # Close Langfuse
+            self._close_langfuse(langfuse_span, langfuse_ctx, {
+                "test_count": result.get("test_count", 0) if 'result' in dir() else 0,
+                "trigger_type": "auto_review"
+            })

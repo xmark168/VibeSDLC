@@ -3,7 +3,7 @@
 import json
 import logging
 from datetime import datetime
-from typing import TypedDict, Annotated, Literal
+from typing import TypedDict, Any
 from uuid import UUID
 
 from langchain_openai import ChatOpenAI
@@ -25,6 +25,7 @@ class TesterState(TypedDict):
     project_path: str
     tech_stack: str
     timestamp: str
+    user_message: str  # For manual @Tester requests
     
     # Processing state
     stories: list[dict]
@@ -32,9 +33,18 @@ class TesterState(TypedDict):
     test_cases: list[dict]
     test_content: str
     
+    # Langfuse tracing
+    langfuse_handler: Any
+    
     # Output
     result: dict
     error: str | None
+
+
+def _cfg(state: dict, name: str) -> dict:
+    """Get LLM config with Langfuse callback from state."""
+    h = state.get("langfuse_handler")
+    return {"callbacks": [h], "run_name": name} if h else {}
 
 
 class TesterGraph:
@@ -141,7 +151,7 @@ Output ONLY valid JSON array of test scenarios:
 ]"""
         
         try:
-            response = self.llm.invoke(prompt)
+            response = self.llm.invoke(prompt, config=_cfg(state, "analyze_stories"))
             content = response.content.strip()
             
             # Parse JSON from response
@@ -195,7 +205,7 @@ Output ONLY valid JSON array:
 ]"""
         
         try:
-            response = self.llm.invoke(prompt)
+            response = self.llm.invoke(prompt, config=_cfg(state, "generate_test_cases"))
             content = response.content.strip()
             
             if "```json" in content:
@@ -354,7 +364,7 @@ import {{ NextRequest }} from 'next/server';
 """
         
         try:
-            response = self.llm.invoke(prompt)
+            response = self.llm.invoke(prompt, config=_cfg(state, "generate_test_file"))
             new_content = response.content.strip()
             
             # Remove markdown code blocks if present
@@ -413,7 +423,9 @@ import {{ NextRequest }} from 'next/server';
         project_id: str,
         story_ids: list[str],
         project_path: str,
-        tech_stack: str = "nodejs-react"
+        tech_stack: str = "nodejs-react",
+        langfuse_handler: Any = None,
+        user_message: str = ""
     ) -> dict:
         """Generate integration tests for stories in REVIEW status.
         
@@ -422,6 +434,8 @@ import {{ NextRequest }} from 'next/server';
             story_ids: List of story UUIDs to test
             project_path: Path to project directory
             tech_stack: Technology stack
+            langfuse_handler: Langfuse callback handler for tracing
+            user_message: Original user message (for manual requests)
             
         Returns:
             Result dict with filename, test_count, stories_covered
@@ -436,10 +450,12 @@ import {{ NextRequest }} from 'next/server';
             "project_path": project_path,
             "tech_stack": tech_stack,
             "timestamp": timestamp,
+            "user_message": user_message,
             "stories": [],
             "test_scenarios": [],
             "test_cases": [],
             "test_content": "",
+            "langfuse_handler": langfuse_handler,
             "result": {},
             "error": None
         }
