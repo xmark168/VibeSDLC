@@ -115,11 +115,11 @@ export function BatchQuestionsCard({
         const ans = answers.get(questionId)!
         let finalOptions = Array.from(ans.selectedOptions)
         
-        if (finalOptions.some(opt => opt.includes('Other') || opt.includes('Khác'))) {
+        if (finalOptions.some(opt => opt.startsWith('Khác') || opt.startsWith('Other'))) {
           const customText = customInputs.get(questionId)
           if (customText?.trim()) {
             finalOptions = finalOptions.map(opt => 
-              (opt.includes('Other') || opt.includes('Khác')) ? customText.trim() : opt
+              (opt.startsWith('Khác') || opt.startsWith('Other')) ? customText.trim() : opt
             )
           }
         }
@@ -145,7 +145,7 @@ export function BatchQuestionsCard({
       return currentAnswer.answer.trim().length > 0
     } else {
       const hasOther = Array.from(currentAnswer.selectedOptions).some(opt => 
-        opt.includes('Other') || opt.includes('Khác')
+        opt.startsWith('Khác') || opt.startsWith('Other')
       )
       const customText = customInputs.get(currentQuestionId)
       return currentAnswer.selectedOptions.size > 0 && (!hasOther || customText?.trim())
@@ -162,7 +162,7 @@ export function BatchQuestionsCard({
       return ans.answer.trim().length > 0
     } else {
       const hasOther = Array.from(ans.selectedOptions).some(opt => 
-        opt.includes('Other') || opt.includes('Khác')
+        opt.startsWith('Khác') || opt.startsWith('Other')
       )
       const customText = customInputs.get(questionId)
       return ans.selectedOptions.size > 0 && (!hasOther || customText?.trim())
@@ -234,8 +234,9 @@ export function BatchQuestionsCard({
     )
   }
   
+  // Check if user selected "Khác" option (must start with "Khác" to avoid matching "Khách")
   const hasOther = currentAnswer ? Array.from(currentAnswer.selectedOptions).some(opt => 
-    opt.includes('Other') || opt.includes('Khác')
+    opt.startsWith('Khác') || opt.startsWith('Other')
   ) : false
   
   return (

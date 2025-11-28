@@ -522,15 +522,27 @@ async def extract_stories(state: BAState, agent=None) -> dict:
             config=_cfg(state, "extract_stories")
         )
         
+        # Debug: log raw response length
+        logger.info(f"[BA] LLM response length: {len(response.content)} chars")
+        logger.debug(f"[BA] LLM response preview: {response.content[:500]}...")
+        
         result = parse_stories_response(response.content)
         epics = result.get("epics", [])
+        
+        # Debug: log parsed result
+        logger.info(f"[BA] Parsed epics count: {len(epics)}")
+        if not epics:
+            logger.warning(f"[BA] No epics parsed! Response preview: {response.content[:1000]}")
         
         # Flatten stories for backward compatibility
         all_stories = []
         for epic in epics:
-            for story in epic.get("stories", []):
+            stories_in_epic = epic.get("stories", [])
+            epic_name = epic.get("name", epic.get("title", "Unknown"))
+            logger.info(f"[BA] Epic '{epic_name}' has {len(stories_in_epic)} stories")
+            for story in stories_in_epic:
                 story["epic_id"] = epic.get("id")
-                story["epic_title"] = epic.get("title")
+                story["epic_name"] = epic_name
                 all_stories.append(story)
         
         total_epics = len(epics)
@@ -680,7 +692,7 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
             if agent:
                 await agent.message_user(
                     event_type="response",
-                    content=f"Epics & User Stories đã được tạo",
+                    content=f"User Stories đã được tạo",
                     details={
                         "message_type": "stories_created",
                         "file_path": "docs/user-stories.md",

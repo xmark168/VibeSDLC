@@ -185,27 +185,34 @@ def parse_stories_response(response: str) -> dict:
     """
     try:
         result = parse_json_response(response)
+        logger.info(f"[parse_stories] Parsed result keys: {list(result.keys()) if isinstance(result, dict) else 'not a dict'}")
         
         # New format: epics with stories
         if "epics" in result:
-            return {"epics": result.get("epics", [])}
+            epics = result.get("epics", [])
+            logger.info(f"[parse_stories] Found {len(epics)} epics in response")
+            return {"epics": epics}
         
         # Legacy format: flat stories list - convert to single epic
         if "stories" in result:
+            stories = result.get("stories", [])
+            logger.info(f"[parse_stories] Found {len(stories)} stories (legacy format)")
             return {
                 "epics": [{
                     "id": "EPIC-001",
                     "title": "User Stories",
                     "description": "Auto-generated epic from legacy format",
                     "domain": "General",
-                    "stories": result.get("stories", []),
+                    "stories": stories,
                     "total_story_points": sum(
-                        s.get("story_points", 0) for s in result.get("stories", [])
+                        s.get("story_points", 0) for s in stories
                     )
                 }]
             }
         
+        logger.warning(f"[parse_stories] No 'epics' or 'stories' key found. Keys: {list(result.keys()) if isinstance(result, dict) else result}")
         return {"epics": []}
     except json.JSONDecodeError as e:
         logger.warning(f"[parse_stories] Parse error: {e}")
+        logger.warning(f"[parse_stories] Raw response: {response[:500]}")
         return {"epics": []}

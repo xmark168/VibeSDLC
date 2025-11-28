@@ -365,7 +365,7 @@ tasks:
       ```
 
   # ---------------------------------------------------------------------------
-  # EXTRACT STORIES - Create Epics with INVEST-compliant user stories from PRD
+  # EXTRACT STORIES - Create Epics and User Stories from PRD
   # ---------------------------------------------------------------------------
   extract_stories:
     system_prompt: |
@@ -373,51 +373,37 @@ tasks:
       
       ---
       
-      # EPIC & USER STORY EXTRACTION (INVEST COMPLIANT)
+      # EPIC & USER STORY EXTRACTION
       
       {shared_context.ba_principles}
       
-      Extract Epics and well-structured user stories following **INVEST** criteria.
+      Extract Epics and user stories from the PRD.
       
-      {shared_context.story_format}
+      **Epic Structure:**
+      - id: Unique identifier (e.g., EPIC-001)
+      - name: Short name describing the feature
+      - description: Overview of the epic and its business value
+      - domain: Feature category (Authentication, Product, Cart, Payment, Admin, Notification, etc.)
       
-      **Epic Guidelines:**
-      - Group related features into Epics by domain/functionality
-      - Each Epic should represent a major feature or user journey
-      - Epic title should be clear and business-oriented
-      - Assign domain: Authentication, Product, Cart, Payment, Admin, Notification, etc.
+      **Story Structure:**
+      - id: Unique identifier (e.g., US-001)
+      - epic_id: Reference to parent epic
+      - title: User story in format "As a [user], I want [goal] so that [benefit]"
+      - description: Detailed description of the story
+      - acceptance_criteria: List of testable criteria (Given/When/Then format)
       
-      **INVEST Validation Checklist for Stories:**
+      **Guidelines (follow INVEST principles):**
+      - **I**ndependent: Each story can be developed separately
+      - **N**egotiable: Details can be discussed, not fixed contracts
+      - **V**aluable: Each story delivers clear user/business value
+      - **E**stimable: Story is clear enough to estimate effort
+      - **S**mall: Completable within 1 sprint, focused scope
+      - **T**estable: Has clear acceptance criteria (Given/When/Then)
       
-      ✅ **Independent**: 
-      - Story can be developed without waiting for other stories
-      - Minimize dependencies; if dependency exists, document clearly
-      - Each story delivers a complete, standalone piece of functionality
-      
-      ✅ **Negotiable**:
-      - Story is not a fixed contract
-      - Details can be discussed with stakeholders
-      - Implementation approach is flexible
-      
-      ✅ **Valuable**:
-      - Story delivers clear business or user value
-      - "So that..." clause explains the benefit
-      - Avoid technical-only stories without user impact
-      
-      ✅ **Estimable**:
-      - Story is clear enough to estimate effort
-      - Use story points: S(1-2), M(3-5), L(6-8)
-      - If > 8 points, break into smaller stories
-      
-      ✅ **Small**:
-      - Completable within 1 sprint (1-2 weeks)
-      - Maximum 8 story points
-      - Split large features into multiple stories
-      
-      ✅ **Testable**:
-      - Has clear acceptance criteria (Given/When/Then format)
-      - QA can verify completion
-      - Include happy path and edge cases
+      **Additional Rules:**
+      - Group related features into Epics by domain
+      - Each Epic should have 2-5 user stories
+      - Use Given/When/Then format for acceptance criteria
 
     user_prompt: |
       PRD:
@@ -426,16 +412,13 @@ tasks:
       ```
       
       # YOUR TASK
-      Extract Epics containing INVEST-compliant user stories from this PRD.
+      Extract Epics and user stories from this PRD.
       
-      **CRITICAL RULES:**
-      1. Group features into logical Epics by domain/functionality
+      **RULES:**
+      1. Group features into logical Epics by domain
       2. Each Epic should have 2-5 user stories
-      3. Each story MUST pass all 6 INVEST criteria
-      4. Break large features into multiple small stories (max 8 points each)
-      5. Use Given/When/Then format for acceptance criteria
-      6. Include invest_check field to verify INVEST compliance
-      7. Calculate total_story_points for each Epic
+      3. Use Given/When/Then format for acceptance criteria
+      4. Keep stories focused and testable
       
       Return ONLY valid JSON:
       ```json
@@ -443,116 +426,61 @@ tasks:
         "epics": [
           {{
             "id": "EPIC-001",
-            "title": "Tên Epic mô tả tính năng chính",
-            "description": "Mô tả tổng quan về Epic và giá trị kinh doanh",
+            "name": "Tên Epic ngắn gọn",
+            "description": "Mô tả tổng quan về Epic",
             "domain": "Authentication|Product|Cart|Payment|Admin|Notification",
             "stories": [
               {{
                 "id": "US-001",
+                "epic_id": "EPIC-001",
                 "title": "As a [user], I want [goal] so that [benefit]",
                 "description": "Mô tả chi tiết story",
                 "acceptance_criteria": [
                   "Given [context] when [action] then [expected result]",
                   "Given [context] when [edge case] then [handling]"
-                ],
-                "priority": "high|medium|low",
-                "story_points": 3,
-                "invest_check": {{
-                  "independent": true,
-                  "negotiable": true,
-                  "valuable": "Giải thích giá trị mang lại",
-                  "estimable": true,
-                  "small": true,
-                  "testable": true
-                }}
+                ]
               }}
-            ],
-            "total_story_points": 10
+            ]
           }}
         ]
       }}
       ```
       
-      **EXAMPLE EPIC WITH INVEST-COMPLIANT STORIES:**
+      **EXAMPLE:**
       ```json
       {{
-        "id": "EPIC-001",
-        "title": "Quản lý giỏ hàng",
-        "description": "Cho phép khách hàng quản lý sản phẩm trong giỏ hàng trước khi thanh toán",
-        "domain": "Cart",
-        "stories": [
+        "epics": [
           {{
-            "id": "US-001",
-            "title": "As a customer, I want to add products to cart so that I can purchase multiple items at once",
-            "description": "Cho phép thêm sản phẩm vào giỏ hàng từ trang chi tiết sản phẩm",
-            "acceptance_criteria": [
-              "Given I am on product detail page when I click 'Add to Cart' then product is added to my cart",
-              "Given product is out of stock when I try to add to cart then I see 'Out of Stock' message",
-              "Given I already have the product in cart when I add again then quantity increases by 1"
-            ],
-            "priority": "high",
-            "story_points": 3,
-            "invest_check": {{
-              "independent": true,
-              "negotiable": true,
-              "valuable": "Cho phép khách hàng mua nhiều sản phẩm cùng lúc, tăng giá trị đơn hàng",
-              "estimable": true,
-              "small": true,
-              "testable": true
-            }}
-          }},
-          {{
-            "id": "US-002",
-            "title": "As a customer, I want to update quantity in cart so that I can buy the exact amount I need",
-            "description": "Cho phép cập nhật số lượng sản phẩm trong giỏ hàng",
-            "acceptance_criteria": [
-              "Given I have items in cart when I change quantity then cart total updates immediately",
-              "Given quantity is set to 0 when I confirm then item is removed from cart",
-              "Given quantity exceeds stock when I try to update then I see error message"
-            ],
-            "priority": "high",
-            "story_points": 2,
-            "invest_check": {{
-              "independent": true,
-              "negotiable": true,
-              "valuable": "Linh hoạt điều chỉnh đơn hàng trước khi thanh toán",
-              "estimable": true,
-              "small": true,
-              "testable": true
-            }}
-          }},
-          {{
-            "id": "US-003",
-            "title": "As a customer, I want to remove items from cart so that I can change my purchase decision",
-            "description": "Cho phép xóa sản phẩm khỏi giỏ hàng",
-            "acceptance_criteria": [
-              "Given I have items in cart when I click remove then item is deleted",
-              "Given I remove last item when confirmed then cart shows empty state",
-              "Given I remove item when I undo within 5s then item is restored"
-            ],
-            "priority": "medium",
-            "story_points": 2,
-            "invest_check": {{
-              "independent": true,
-              "negotiable": true,
-              "valuable": "Cho phép thay đổi quyết định mua hàng dễ dàng",
-              "estimable": true,
-              "small": true,
-              "testable": true
-            }}
+            "id": "EPIC-001",
+            "name": "Quản lý giỏ hàng",
+            "description": "Cho phép khách hàng quản lý sản phẩm trong giỏ hàng",
+            "domain": "Cart",
+            "stories": [
+              {{
+                "id": "US-001",
+                "epic_id": "EPIC-001",
+                "title": "As a customer, I want to add products to cart so that I can purchase multiple items",
+                "description": "Thêm sản phẩm vào giỏ hàng từ trang chi tiết",
+                "acceptance_criteria": [
+                  "Given I am on product page when I click Add to Cart then product is added",
+                  "Given product is out of stock when I click Add then I see error message"
+                ]
+              }},
+              {{
+                "id": "US-002",
+                "epic_id": "EPIC-001",
+                "title": "As a customer, I want to update quantity so that I can buy the amount I need",
+                "description": "Cập nhật số lượng sản phẩm trong giỏ",
+                "acceptance_criteria": [
+                  "Given I have items in cart when I change quantity then total updates",
+                  "Given quantity is 0 when I confirm then item is removed"
+                ]
+              }}
+            ]
           }}
-        ],
-        "total_story_points": 7
+        ]
       }}
       ```
-      
-      **GUIDELINES:**
-      - Cover all features in PRD
-      - Group related features into same Epic
-      - Each Epic should have 2-5 stories (split if more)
-      - High priority for MVP features
-      - Each AC should test one specific behavior
-      - Stories within same Epic can have minimal dependencies
 
   # ---------------------------------------------------------------------------
   # DOMAIN ANALYSIS - Analyze business domain

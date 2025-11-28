@@ -20,9 +20,6 @@ export function StoriesFileCard({ count, filePath, onView }: StoriesFileCardProp
           <h4 className="text-sm font-semibold text-purple-700 dark:text-purple-400">
             ✅ User Stories đã được tạo
           </h4>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {count} stories
-          </p>
         </div>
 
         <Button 
