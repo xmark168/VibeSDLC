@@ -12,289 +12,360 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from sqlmodel import Session, select
 
 from app.core.db import engine
-from app.models import Story, StoryStatus
+from app.models import Story, StoryStatus, Project
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 
 logger = logging.getLogger(__name__)
 
 _llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+_chat_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
 
 
 def _cfg(state: dict, name: str) -> dict:
-    """Get LLM config with Langfuse callback from state."""
+    """Get LLM config with Langfuse callback."""
     h = state.get("langfuse_handler")
     return {"callbacks": [h], "run_name": name} if h else {}
 
 
-async def query_stories(state: TesterState) -> dict:
-    """Query stories from database with REVIEW status."""
-    logger.info(f"[TesterGraph] Querying stories for project {state['project_id']}")
+def _parse_json(content: str) -> list | dict:
+    """Parse JSON from LLM response."""
+    if "```json" in content:
+        content = content.split("```json")[1].split("```")[0]
+    elif "```" in content:
+        content = content.split("```")[1].split("```")[0]
+    return json.loads(content.strip())
+
+
+def _strip_markdown(content: str) -> str:
+    """Remove markdown code blocks."""
+    for prefix in ["```typescript", "```ts", "```"]:
+        if content.startswith(prefix):
+            content = content[len(prefix):]
+    if content.endswith("```"):
+        content = content[:-3]
+    return content.strip()
+
+
+def _should_message_user(state: TesterState) -> bool:
+    """Check if should send message to user - only for user messages."""
+    # Only message when handling user message, otherwise work silently
+    return state.get("task_type") == "message"
+
+
+# ============================================================================
+# SETUP & ROUTING
+# ============================================================================
+
+async def setup_context(state: TesterState, agent=None) -> dict:
+    """Setup project context."""
+    project_id = state.get("project_id")
+    
+    with Session(engine) as session:
+        project = session.get(Project, UUID(project_id))
+        if project:
+            return {
+                "project_path": project.project_path or "",
+                "tech_stack": project.tech_stack or "nodejs-react",
+                "timestamp": datetime.now().strftime("%Y-%m-%d-%H%M%S"),
+            }
+    return {"error": "Project not found"}
+
+
+async def router(state: TesterState, agent=None) -> dict:
+    """Route to appropriate action based on context."""
+    # Auto-triggered → always generate tests
+    if state.get("is_auto"):
+        return {"action": "GENERATE_TESTS"}
+    
+    user_message = state.get("user_message", "")
+    
+    # Empty message with story_ids → generate tests
+    if not user_message and state.get("story_ids"):
+        return {"action": "GENERATE_TESTS"}
+    
+    # Use LLM to decide
+    try:
+        response = await _llm.ainvoke([
+            SystemMessage(content=get_system_prompt("routing")),
+            HumanMessage(content=get_user_prompt("routing", user_message=user_message))
+        ], config=_cfg(state, "router"))
+        
+        result = _parse_json(response.content)
+        action = result.get("action", "CONVERSATION")
+        logger.info(f"[router] Action={action}, reason={result.get('reason')}")
+        return {"action": action}
+    except Exception as e:
+        logger.error(f"[router] {e}")
+        return {"action": "CONVERSATION"}
+
+
+# ============================================================================
+# GENERATE TESTS FLOW
+# ============================================================================
+
+async def query_stories(state: TesterState, agent=None) -> dict:
+    """Query stories with REVIEW status and set agent_state to processing."""
+    project_id = state.get("project_id")
+    story_ids = state.get("story_ids", [])
     
     try:
         with Session(engine) as session:
             query = select(Story).where(
-                Story.project_id == UUID(state['project_id']),
+                Story.project_id == UUID(project_id),
                 Story.status == StoryStatus.REVIEW
             )
-            
-            if state.get('story_ids'):
-                query = query.where(Story.id.in_([UUID(sid) for sid in state['story_ids']]))
+            if story_ids:
+                query = query.where(Story.id.in_([UUID(sid) for sid in story_ids]))
             
             stories = session.exec(query).all()
             
             stories_data = [
                 {
-                    "id": str(story.id),
-                    "title": story.title,
-                    "description": story.description,
-                    "acceptance_criteria": story.acceptance_criteria,
-                    "story_points": story.story_point,
-                    "status": story.status.value,
-                    "priority": story.priority
+                    "id": str(s.id),
+                    "title": s.title,
+                    "description": s.description,
+                    "acceptance_criteria": s.acceptance_criteria,
                 }
-                for story in stories
+                for s in stories
             ]
-            
-            logger.info(f"[TesterGraph] Retrieved {len(stories_data)} stories with REVIEW status")
-            return {"stories": stories_data}
-            
+        
+        # Update agent_state to "processing" for each story
+        if agent and stories_data:
+            for story in stories_data:
+                try:
+                    await agent.update_story_agent_state(
+                        story_id=UUID(story["id"]),
+                        new_state="processing",
+                        progress_message="Đang phân tích và tạo test cases..."
+                    )
+                except Exception as e:
+                    logger.warning(f"[query_stories] Failed to update agent state: {e}")
+        
+        return {"stories": stories_data}
     except Exception as e:
-        logger.error(f"[TesterGraph] Error querying stories: {e}", exc_info=True)
+        logger.error(f"[query_stories] {e}")
         return {"stories": [], "error": str(e)}
 
 
 async def analyze_stories(state: TesterState) -> dict:
-    """Analyze stories and create test scenarios."""
+    """Analyze stories → test scenarios."""
     stories = state.get("stories", [])
-    
     if not stories:
-        logger.warning("[TesterGraph] No stories to analyze")
-        return {"test_scenarios": [], "error": "No stories found"}
-    
-    logger.info(f"[TesterGraph] Analyzing {len(stories)} stories")
-    
-    messages = [
-        SystemMessage(content=get_system_prompt("analyze_stories")),
-        HumanMessage(content=get_user_prompt("analyze_stories", stories=json.dumps(stories, indent=2)))
-    ]
+        return {"test_scenarios": []}
     
     try:
-        response = await _llm.ainvoke(messages, config=_cfg(state, "analyze_stories"))
-        content = response.content.strip()
+        response = await _llm.ainvoke([
+            SystemMessage(content=get_system_prompt("analyze_stories")),
+            HumanMessage(content=get_user_prompt("analyze_stories", stories=json.dumps(stories, indent=2)))
+        ], config=_cfg(state, "analyze_stories"))
         
-        # Parse JSON from response
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
-        
-        test_scenarios = json.loads(content)
-        logger.info(f"[TesterGraph] Generated {len(test_scenarios)} test scenarios")
-        return {"test_scenarios": test_scenarios}
-        
+        return {"test_scenarios": _parse_json(response.content)}
     except Exception as e:
-        logger.error(f"[TesterGraph] Error analyzing stories: {e}", exc_info=True)
+        logger.error(f"[analyze_stories] {e}")
         return {"test_scenarios": [], "error": str(e)}
 
 
 async def generate_test_cases(state: TesterState) -> dict:
-    """Generate detailed test cases from scenarios."""
+    """Convert scenarios → test cases."""
     scenarios = state.get("test_scenarios", [])
-    
     if not scenarios:
-        logger.warning("[TesterGraph] No scenarios to generate test cases")
         return {"test_cases": []}
     
-    logger.info(f"[TesterGraph] Generating test cases from {len(scenarios)} scenarios")
-    
-    messages = [
-        SystemMessage(content=get_system_prompt("generate_test_cases")),
-        HumanMessage(content=get_user_prompt("generate_test_cases", scenarios=json.dumps(scenarios, indent=2)))
-    ]
-    
     try:
-        response = await _llm.ainvoke(messages, config=_cfg(state, "generate_test_cases"))
-        content = response.content.strip()
+        response = await _llm.ainvoke([
+            SystemMessage(content=get_system_prompt("generate_test_cases")),
+            HumanMessage(content=get_user_prompt("generate_test_cases", scenarios=json.dumps(scenarios, indent=2)))
+        ], config=_cfg(state, "generate_test_cases"))
         
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
-        
-        test_cases = json.loads(content)
-        logger.info(f"[TesterGraph] Generated {len(test_cases)} test cases")
-        return {"test_cases": test_cases}
-        
+        return {"test_cases": _parse_json(response.content)}
     except Exception as e:
-        logger.error(f"[TesterGraph] Error generating test cases: {e}", exc_info=True)
+        logger.error(f"[generate_test_cases] {e}")
         return {"test_cases": [], "error": str(e)}
 
 
-def _find_existing_test_file(tests_dir: Path) -> Path | None:
-    """Find existing integration test file to append to."""
-    if not tests_dir.exists():
-        return None
-    
-    # Look for main integration test file
-    main_file = tests_dir / "integration.test.ts"
-    if main_file.exists():
-        return main_file
-    
-    # Or find most recent test file
-    test_files = list(tests_dir.glob("*.integration.test.ts"))
-    if test_files:
-        return max(test_files, key=lambda f: f.stat().st_mtime)
-    
-    return None
-
-
-def _extract_existing_test_titles(content: str) -> set[str]:
-    """Extract test titles from existing test file."""
-    # Match test('title', ...) or it('title', ...)
-    pattern = r"(?:test|it)\s*\(\s*['\"]([^'\"]+)['\"]"
-    matches = re.findall(pattern, content)
-    return set(matches)
-
-
-def _filter_duplicate_tests(test_cases: list[dict], existing_titles: set[str]) -> list[dict]:
-    """Filter out test cases that already exist."""
-    new_tests = []
-    for tc in test_cases:
-        title = tc.get("title", "")
-        # Check if similar test exists (fuzzy match on key words)
-        is_duplicate = False
-        for existing in existing_titles:
-            # Simple duplicate detection: same title or very similar
-            if title.lower() == existing.lower():
-                is_duplicate = True
-                break
-            # Check if key parts match (e.g., "login" + "successful")
-            title_words = set(title.lower().split())
-            existing_words = set(existing.lower().split())
-            common_words = title_words & existing_words
-            if len(common_words) >= 3:  # At least 3 common words
-                is_duplicate = True
-                break
-        
-        if not is_duplicate:
-            new_tests.append(tc)
-        else:
-            logger.info(f"[TesterGraph] Skipping duplicate test: {title}")
-    
-    return new_tests
-
-
 async def generate_test_file(state: TesterState) -> dict:
-    """Generate TypeScript test file - append to existing or create new."""
+    """Generate TypeScript test file."""
     test_cases = state.get("test_cases", [])
     project_path = state.get("project_path", "")
-    timestamp = state.get("timestamp", datetime.now().strftime("%Y-%m-%d-%H%M%S"))
+    timestamp = state.get("timestamp", "")
     stories = state.get("stories", [])
     
-    if not test_cases:
-        logger.warning("[TesterGraph] No test cases to generate file")
-        return {"result": {"error": "No test cases"}}
+    if not test_cases or not project_path:
+        return {"result": {"test_count": 0, "error": "No test cases or project path"}}
     
     tests_dir = Path(project_path) / "tests" / "integration"
     tests_dir.mkdir(parents=True, exist_ok=True)
     
-    # Check for existing test file
-    existing_file = _find_existing_test_file(tests_dir)
-    existing_content = ""
+    # Check existing file
+    existing_file = tests_dir / "integration.test.ts"
     existing_titles = set()
+    existing_content = ""
     
-    if existing_file:
+    if existing_file.exists():
         existing_content = existing_file.read_text(encoding='utf-8')
-        existing_titles = _extract_existing_test_titles(existing_content)
-        logger.info(f"[TesterGraph] Found existing file with {len(existing_titles)} tests: {existing_file.name}")
+        existing_titles = set(re.findall(r"(?:test|it)\s*\(['\"]([^'\"]+)['\"]", existing_content))
     
-    # Filter out duplicate tests
-    new_test_cases = _filter_duplicate_tests(test_cases, existing_titles)
+    # Filter duplicates
+    new_cases = [tc for tc in test_cases if tc.get("title", "").lower() not in {t.lower() for t in existing_titles}]
+    skipped = len(test_cases) - len(new_cases)
     
-    if not new_test_cases:
-        logger.info("[TesterGraph] All test cases already exist, skipping generation")
+    if not new_cases:
         return {"result": {
-            "filename": existing_file.name if existing_file else None,
+            "filename": "integration.test.ts",
             "test_count": 0,
-            "skipped_duplicates": len(test_cases),
-            "stories_covered": [s.get("id") for s in stories],
-            "message": "All tests already exist"
+            "skipped_duplicates": skipped,
+            "stories_covered": [s["id"] for s in stories]
         }}
     
-    logger.info(f"[TesterGraph] Generating {len(new_test_cases)} new test cases ({len(test_cases) - len(new_test_cases)} duplicates skipped)")
-    
-    if existing_file and existing_content:
-        # Append mode - generate only new tests
-        messages = [
-            SystemMessage(content=get_system_prompt("generate_test_file_append")),
-            HumanMessage(content=get_user_prompt(
-                "generate_test_file_append",
-                existing_titles=str(list(existing_titles)[:20]),
-                test_cases=json.dumps(new_test_cases, indent=2)
-            ))
-        ]
-    else:
-        # New file mode - generate complete file
-        messages = [
-            SystemMessage(content=get_system_prompt("generate_test_file_new")),
-            HumanMessage(content=get_user_prompt(
-                "generate_test_file_new",
-                test_cases=json.dumps(new_test_cases, indent=2)
-            ))
-        ]
-    
+    # Generate code
+    task = "generate_test_file_append" if existing_content else "generate_test_file_new"
     try:
-        response = await _llm.ainvoke(messages, config=_cfg(state, "generate_test_file"))
-        new_content = response.content.strip()
+        response = await _llm.ainvoke([
+            SystemMessage(content=get_system_prompt(task)),
+            HumanMessage(content=get_user_prompt(
+                task,
+                test_cases=json.dumps(new_cases, indent=2),
+                existing_titles=str(list(existing_titles)[:20]) if existing_content else ""
+            ))
+        ], config=_cfg(state, "generate_test_file"))
         
-        # Remove markdown code blocks if present
-        if new_content.startswith("```typescript"):
-            new_content = new_content[13:]
-        elif new_content.startswith("```ts"):
-            new_content = new_content[5:]
-        elif new_content.startswith("```"):
-            new_content = new_content[3:]
+        new_content = _strip_markdown(response.content)
         
-        if new_content.endswith("```"):
-            new_content = new_content[:-3]
-        
-        new_content = new_content.strip()
-        
-        if existing_file and existing_content:
-            # Append to existing file - insert before closing });
-            # Find the last }); which closes the describe block
-            insert_pos = existing_content.rfind("});")
-            if insert_pos > 0:
-                final_content = (
-                    existing_content[:insert_pos] + 
-                    "\n\n  // === New tests added " + timestamp + " ===\n" +
-                    new_content + "\n" +
-                    existing_content[insert_pos:]
-                )
+        # Write file
+        if existing_content:
+            pos = existing_content.rfind("});")
+            if pos > 0:
+                final = existing_content[:pos] + f"\n\n  // === Added {timestamp} ===\n" + new_content + "\n" + existing_content[pos:]
             else:
-                final_content = existing_content + "\n\n" + new_content
-            
-            existing_file.write_text(final_content, encoding='utf-8')
-            filename = existing_file.name
-            logger.info(f"[TesterGraph] Appended {len(new_test_cases)} tests to: {existing_file}")
+                final = existing_content + "\n\n" + new_content
+            existing_file.write_text(final, encoding='utf-8')
         else:
-            # Create new file
-            filename = "integration.test.ts"
-            test_file = tests_dir / filename
-            test_file.write_text(new_content, encoding='utf-8')
-            logger.info(f"[TesterGraph] Created new test file: {test_file}")
+            existing_file.write_text(new_content, encoding='utf-8')
         
-        result = {
-            "filename": filename,
-            "path": str(tests_dir / filename),
-            "test_count": len(new_test_cases),
-            "skipped_duplicates": len(test_cases) - len(new_test_cases),
-            "stories_covered": [s.get("id") for s in stories]
-        }
-        
-        return {"test_content": new_content, "result": result}
-        
+        return {"result": {
+            "filename": "integration.test.ts",
+            "test_count": len(new_cases),
+            "skipped_duplicates": skipped,
+            "stories_covered": [s["id"] for s in stories]
+        }}
     except Exception as e:
-        logger.error(f"[TesterGraph] Error generating test file: {e}", exc_info=True)
+        logger.error(f"[generate_test_file] {e}")
         return {"result": {"error": str(e)}}
+
+
+# ============================================================================
+# TEST STATUS (with tools)
+# ============================================================================
+
+async def test_status(state: TesterState, agent=None) -> dict:
+    """Report test status using tools."""
+    try:
+        from langgraph.prebuilt import create_react_agent
+        from app.agents.tester.src.tools import get_tester_tools
+        
+        tools = get_tester_tools()
+        react_agent = create_react_agent(_chat_llm, tools)
+        
+        system_msg = get_system_prompt("conversation")
+        user_msg = f"{state.get('user_message', 'test status')}\n\nproject_id: {state.get('project_id', '')}"
+        
+        result = await react_agent.ainvoke(
+            {"messages": [("system", system_msg), ("user", user_msg)]},
+            config=_cfg(state, "test_status")
+        )
+        
+        msg = result["messages"][-1].content
+        
+        if agent and _should_message_user(state):
+            await agent.message_user("response", msg)
+        
+        return {"message": msg, "result": {"action": "test_status"}}
+    except Exception as e:
+        logger.error(f"[test_status] {e}")
+        msg = f"Lỗi khi kiểm tra test status: {e}"
+        if agent and _should_message_user(state):
+            await agent.message_user("response", msg)
+        return {"message": msg, "error": str(e)}
+
+
+# ============================================================================
+# CONVERSATION (with tools)
+# ============================================================================
+
+async def conversation(state: TesterState, agent=None) -> dict:
+    """Handle conversation about testing using tools."""
+    try:
+        from langgraph.prebuilt import create_react_agent
+        from app.agents.tester.src.tools import get_tester_tools
+        
+        tools = get_tester_tools()
+        react_agent = create_react_agent(_chat_llm, tools)
+        
+        system_msg = get_system_prompt("conversation")
+        user_msg = f"{state.get('user_message', '')}\n\nproject_id: {state.get('project_id', '')}"
+        
+        result = await react_agent.ainvoke(
+            {"messages": [("system", system_msg), ("user", user_msg)]},
+            config=_cfg(state, "conversation")
+        )
+        
+        msg = result["messages"][-1].content
+        
+        if agent and _should_message_user(state):
+            await agent.message_user("response", msg)
+        
+        return {"message": msg, "result": {"action": "conversation"}}
+    except Exception as e:
+        logger.error(f"[conversation] {e}")
+        msg = f"Xin lỗi, có lỗi xảy ra: {e}"
+        if agent and _should_message_user(state):
+            await agent.message_user("response", msg)
+        return {"message": msg, "error": str(e)}
+
+
+# ============================================================================
+# SEND RESPONSE (for generate tests flow)
+# ============================================================================
+
+async def send_response(state: TesterState, agent=None) -> dict:
+    """Send response for generate tests flow."""
+    result = state.get("result", {})
+    stories = state.get("stories", [])
+    error = state.get("error") or result.get("error")
+    
+    # Build message
+    if error:
+        msg = f"Có lỗi xảy ra: {error}"
+    else:
+        test_count = result.get("test_count", 0)
+        skipped = result.get("skipped_duplicates", 0)
+        filename = result.get("filename", "integration.test.ts")
+        
+        if test_count == 0 and skipped > 0:
+            msg = f"Tests đã có sẵn trong `{filename}`, không cần tạo thêm!"
+        elif skipped > 0:
+            msg = f"Đã thêm {test_count} tests vào `{filename}` (bỏ qua {skipped} đã có)."
+        elif test_count > 0:
+            msg = f"Đã tạo {test_count} tests trong `{filename}`."
+        else:
+            msg = "Không có stories nào trong trạng thái Review để tạo test."
+    
+    # Send message to story channels (always, for tracking)
+    if agent and stories and result.get("test_count", 0) > 0:
+        for story in stories:
+            try:
+                await agent.message_story(
+                    story_id=UUID(story["id"]),
+                    content=f"✅ Đã tạo {result['test_count']} integration tests",
+                    message_type="test_result",
+                    details=result,
+                )
+            except Exception as e:
+                logger.warning(f"[send_response] Failed to message story {story['id']}: {e}")
+    
+    # Only message_user if user-initiated
+    if agent and _should_message_user(state):
+        await agent.message_user("response", msg)
+    
+    return {"message": msg}

@@ -183,6 +183,32 @@ class StoryEvent(BaseKafkaEvent):
     assigned_by: Optional[str] = None
 
 
+class StoryMessageEvent(BaseKafkaEvent):
+    """Agent/User message in story channel."""
+    
+    event_type: str = "story.message.created"
+    story_id: UUID
+    message_id: UUID
+    author_type: str  # "agent" | "user" | "system"
+    author_name: str
+    agent_id: Optional[UUID] = None
+    content: str
+    message_type: str = "update"  # "update" | "test_result" | "progress" | "error"
+    structured_data: Optional[Dict[str, Any]] = None
+
+
+class StoryAgentStateEvent(BaseKafkaEvent):
+    """Agent execution state changed on a story."""
+    
+    event_type: str = "story.agent_state.changed"
+    story_id: UUID
+    agent_state: str  # "pending" | "processing" | "canceled" | "finished"
+    old_state: Optional[str] = None
+    agent_id: Optional[UUID] = None
+    agent_name: Optional[str] = None
+    progress_message: Optional[str] = None  # Optional status message
+
+
 class QuestionAskedEvent(BaseKafkaEvent):
     """Agent clarification question."""
     
@@ -385,6 +411,8 @@ EVENT_TYPE_TO_SCHEMA = {
     StoryEventType.STATUS_CHANGED.value: StoryEvent,
     StoryEventType.ASSIGNED.value: StoryEvent,
     StoryEventType.DELETED.value: StoryEvent,
+    "story.message.created": StoryMessageEvent,
+    "story.agent_state.changed": StoryAgentStateEvent,
     "agent.question_asked": QuestionAskedEvent,
     "user.question_answer": QuestionAnswerEvent,
     "agent.question_batch_asked": BatchQuestionsAskedEvent,

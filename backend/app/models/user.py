@@ -11,7 +11,6 @@ from app.models.base import BaseModel, Role
 
 if TYPE_CHECKING:
     from app.models.project import Project
-    from app.models.story import Comment
     from app.models.billing import Subscription
 
 
@@ -36,10 +35,6 @@ class User(BaseModel, table=True):
 
     owned_projects: list["Project"] = Relationship(
         back_populates="owner", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
-    )
-    comments: list["Comment"] = Relationship(
-        back_populates="commenter",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
     user_subscriptions: list["Subscription"] = Relationship(
         back_populates="user",

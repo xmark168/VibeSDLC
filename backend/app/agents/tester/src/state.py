@@ -1,28 +1,37 @@
 """Tester State Schema."""
 
-from typing import TypedDict, Any
+from typing import TypedDict, Any, Literal
+
+Action = Literal["GENERATE_TESTS", "TEST_STATUS", "CONVERSATION"]
 
 
 class TesterState(TypedDict, total=False):
     """State for Tester LangGraph."""
     
-    # Input (required)
+    # Input
+    user_message: str
+    user_id: str
     project_id: str
+    task_id: str
+    task_type: str  # AgentTaskType value
     story_ids: list[str]
+    is_auto: bool  # Auto-triggered (no user message)
+    langfuse_handler: Any
+    
+    # Router output
+    action: Action
+    
+    # Context (from setup)
     project_path: str
     tech_stack: str
     timestamp: str
     
-    # Input (optional)
-    user_message: str  # For manual @Tester requests
-    langfuse_handler: Any
-    
-    # Processing state
+    # Processing
     stories: list[dict]
     test_scenarios: list[dict]
     test_cases: list[dict]
-    test_content: str
     
     # Output
     result: dict
+    message: str
     error: str | None

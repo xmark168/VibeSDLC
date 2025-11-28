@@ -975,6 +975,131 @@ class BaseAgent(ABC):
             self.project_id
         )
 
+    async def message_story(
+        self,
+        story_id: UUID,
+        content: str,
+        message_type: str = "update",
+        details: Optional[Dict[str, Any]] = None,
+    ) -> UUID:
+        """Send message to story channel (visible in story detail view).
+        
+        Args:
+            story_id: UUID of the story to message
+            content: Message content
+            message_type: Type of message ("update", "test_result", "progress", "error")
+            details: Additional structured data
+            
+        Returns:
+            UUID of created StoryMessage
+        """
+        from sqlmodel import Session
+        from app.core.db import engine
+        from app.models import StoryMessage
+        from app.kafka.event_schemas import StoryMessageEvent, KafkaTopics
+        
+        try:
+            # 1. Save to DB
+            with Session(engine) as session:
+                msg = StoryMessage(
+                    story_id=story_id,
+                    author_type="agent",
+                    author_name=self.name,
+                    agent_id=self.agent_id,
+                    content=content,
+                    message_type=message_type,
+                    structured_data=details,
+                )
+                session.add(msg)
+                session.commit()
+                session.refresh(msg)
+                message_id = msg.id
+                created_at = msg.created_at
+            
+            # 2. Publish Kafka event (handler will broadcast WebSocket)
+            producer = await self._get_producer()
+            event = StoryMessageEvent(
+                project_id=str(self.project_id),
+                story_id=story_id,
+                message_id=message_id,
+                author_type="agent",
+                author_name=self.name,
+                agent_id=self.agent_id,
+                content=content,
+                message_type=message_type,
+                structured_data=details,
+                metadata={"timestamp": created_at.isoformat()}
+            )
+            await producer.publish(topic=KafkaTopics.STORY_EVENTS, event=event)
+            
+            logger.info(f"[{self.name}] Story message: {content[:50]}...")
+            return message_id
+                
+        except Exception as e:
+            logger.error(f"[{self.name}] Failed to send story message: {e}")
+            raise
+
+    async def update_story_agent_state(
+        self,
+        story_id: UUID,
+        new_state: str,
+        progress_message: Optional[str] = None,
+    ) -> None:
+        """Update agent execution state on a story.
+        
+        Args:
+            story_id: UUID of the story
+            new_state: New state ("pending", "processing", "canceled", "finished")
+            progress_message: Optional progress message to display
+            
+        Raises:
+            ValueError: If story not found or invalid state
+        """
+        from sqlmodel import Session
+        from app.core.db import engine
+        from app.models import Story, StoryAgentState
+        from app.kafka.event_schemas import StoryAgentStateEvent, KafkaTopics
+        
+        # Validate state
+        try:
+            state_enum = StoryAgentState(new_state)
+        except ValueError:
+            raise ValueError(f"Invalid agent state: {new_state}. Valid: {[s.value for s in StoryAgentState]}")
+        
+        try:
+            # 1. Update DB
+            with Session(engine) as session:
+                story = session.get(Story, story_id)
+                if not story:
+                    raise ValueError(f"Story not found: {story_id}")
+                
+                old_state = story.agent_state.value if story.agent_state else None
+                story.agent_state = state_enum
+                story.assigned_agent_id = self.agent_id
+                session.add(story)
+                session.commit()
+                
+                project_id = str(story.project_id)
+            
+            # 2. Publish Kafka event (handler will broadcast WebSocket)
+            producer = await self._get_producer()
+            event = StoryAgentStateEvent(
+                project_id=project_id,
+                story_id=story_id,
+                agent_state=new_state,
+                old_state=old_state,
+                agent_id=self.agent_id,
+                agent_name=self.name,
+                progress_message=progress_message,
+            )
+            await producer.publish(topic=KafkaTopics.STORY_EVENTS, event=event)
+            
+            logger.info(f"[{self.name}] Story {story_id} state: {old_state} → {new_state}")
+            
+        except Exception as e:
+            logger.error(f"[{self.name}] Failed to update story agent state: {e}")
+            raise
+
     async def delegate_to_role(
         self,
         task: "TaskContext",
