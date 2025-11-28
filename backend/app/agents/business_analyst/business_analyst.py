@@ -131,11 +131,18 @@ class BusinessAnalyst(BaseAgent):
                 logger.debug(f"[{self.name}] No existing PRD: {e}")
         
         # Build state with batch answers
+        # user_message is required for PRD generation - get from interview_state or use default
+        user_message = interview_state.get("user_message", "")
+        if not user_message:
+            # Fallback: extract from collected_info or use generic message
+            user_message = interview_state.get("original_request", "Tạo PRD dựa trên thông tin đã thu thập")
+        
         state = {
             "project_id": str(self.project_id),
             "task_id": str(task.task_id),
             "user_id": str(task.user_id) if task.user_id else "",
             "project_path": str(self.project_files.project_path) if self.project_files else "",
+            "user_message": user_message,  # Required for generate_prd
             "collected_info": interview_state.get("collected_info", {}),
             "existing_prd": existing_prd,
             "intent": "interview",

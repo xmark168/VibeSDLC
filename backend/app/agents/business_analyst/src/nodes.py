@@ -219,6 +219,7 @@ async def ask_one_question(state: BAState, agent=None) -> dict:
                         "current_question_index": current_index,
                         "collected_answers": state.get("collected_answers", []),
                         "collected_info": state.get("collected_info", {}),
+                        "user_message": state.get("user_message", ""),  # Save original request for PRD generation
                     }
                 }
                 question.task_context = new_task_context
@@ -314,6 +315,7 @@ async def ask_batch_questions(state: BAState, agent=None) -> dict:
                         "questions": questions,
                         "question_ids": [str(qid) for qid in question_ids],
                         "collected_info": state.get("collected_info", {}),
+                        "user_message": state.get("user_message", ""),  # Save original request for PRD generation
                     }
                 }
                 first_question.task_context = new_task_context
