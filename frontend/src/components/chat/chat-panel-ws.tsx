@@ -141,6 +141,7 @@ export function ChatPanelWS({
     messages: wsMessages,
     agentStatus,
     typingAgents,
+    answeredBatchIds,  // Track which batches have been answered
     conversationOwner,
     sendMessage: wsSendMessage,
     sendQuestionAnswer,
@@ -160,9 +161,71 @@ export function ChatPanelWS({
   )
 
   // Remove duplicates by ID (simple de-duplication)
-  const uniqueMessages = sortedMessages.filter(
+  const deduplicatedMessages = sortedMessages.filter(
     (msg, index, self) => index === self.findIndex(m => m.id === msg.id)
   );
+
+  // Group batch questions: handle both new format (1 message with all questions) and old format (multiple messages)
+  const uniqueMessages = (() => {
+    const processedBatchIds = new Set<string>();
+    const result: Message[] = [];
+
+    for (const msg of deduplicatedMessages) {
+      // If this is a batch question
+      if (msg.message_type === 'agent_question_batch' && msg.structured_data?.batch_id) {
+        const batchId = msg.structured_data.batch_id;
+        
+        // Skip if we already processed this batch
+        if (processedBatchIds.has(batchId)) {
+          continue;
+        }
+        processedBatchIds.add(batchId);
+
+        // NEW FORMAT: structured_data.questions already contains all questions
+        if (msg.structured_data?.questions && Array.isArray(msg.structured_data.questions) && msg.structured_data.questions.length > 0) {
+          // Use as-is, questions are already in correct format
+          result.push(msg);
+          continue;
+        }
+
+        // OLD FORMAT: Multiple messages per batch - need to combine them
+        const batchMessages = deduplicatedMessages.filter(
+          m => m.message_type === 'agent_question_batch' && 
+               m.structured_data?.batch_id === batchId
+        ).sort((a, b) => (a.structured_data?.batch_index || 0) - (b.structured_data?.batch_index || 0));
+
+        // Combine into single message with all questions (from old format where content = question text)
+        const combinedQuestions = batchMessages.map(m => ({
+          question_id: m.structured_data?.question_id,
+          question_text: m.content,  // Old format: content was the question text
+          question_type: m.structured_data?.question_type || 'open',
+          options: m.structured_data?.options,
+          allow_multiple: m.structured_data?.allow_multiple || false,
+        }));
+
+        const combinedQuestionIds = batchMessages.map(m => m.structured_data?.question_id || m.id);
+        const isAnswered = batchMessages.some(m => m.structured_data?.answered);
+
+        const combinedMsg: Message = {
+          ...batchMessages[0],
+          structured_data: {
+            ...batchMessages[0].structured_data,
+            batch_id: batchId,
+            questions: combinedQuestions,
+            question_ids: combinedQuestionIds,
+            answered: isAnswered,
+          }
+        };
+
+        result.push(combinedMsg);
+      } else {
+        // Non-batch message, add as-is
+        result.push(msg);
+      }
+    }
+
+    return result;
+  })();
   
   // Detect unanswered questions - show only the LATEST one
   useEffect(() => {
@@ -677,7 +740,7 @@ export function ChatPanelWS({
                     questions={msg.structured_data?.questions || []}
                     questionIds={msg.structured_data?.question_ids || []}
                     agentName={msg.agent_name}
-                    answered={msg.structured_data?.answered || false}
+                    answered={msg.structured_data?.answered || answeredBatchIds.has(msg.structured_data?.batch_id || '')}
                     onSubmit={(answers) => {
                       sendBatchAnswers(
                         msg.structured_data!.batch_id!,

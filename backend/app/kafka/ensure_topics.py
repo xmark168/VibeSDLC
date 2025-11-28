@@ -3,9 +3,15 @@ Utility to ensure all Kafka topics are created at startup.
 
 This module provides a robust way to create all required Kafka topics
 with appropriate configurations before the application starts consuming/producing.
+
+Optimized for fast startup:
+- Short timeouts (2s for check, 5s for creation)
+- Background topic creation (non-blocking)
+- Graceful fallback when Kafka unavailable
 """
+import asyncio
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Set
 
 from confluent_kafka.admin import AdminClient, NewTopic
 
@@ -14,6 +20,11 @@ from app.kafka.event_schemas import KafkaTopics
 
 
 logger = logging.getLogger(__name__)
+
+# Timeouts optimized for fast startup
+LIST_TOPICS_TIMEOUT = 2.0  # seconds
+CREATE_TOPICS_TIMEOUT = 5  # seconds
+FUTURE_RESULT_TIMEOUT = 5  # seconds
 
 
 class TopicConfig:
@@ -37,115 +48,133 @@ class TopicConfig:
     DEFAULT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
 
 
+def _get_admin_config() -> dict:
+    """Build Kafka admin client configuration."""
+    admin_config = {
+        "bootstrap.servers": settings.KAFKA_BOOTSTRAP_SERVERS
+    }
+    
+    if settings.KAFKA_SECURITY_PROTOCOL != "PLAINTEXT":
+        admin_config.update({
+            "security.protocol": settings.KAFKA_SECURITY_PROTOCOL,
+            "sasl.mechanism": settings.KAFKA_SASL_MECHANISM,
+            "sasl.username": settings.KAFKA_SASL_USERNAME,
+            "sasl.password": settings.KAFKA_SASL_PASSWORD,
+        })
+    
+    return admin_config
+
+
+def _build_new_topic(topic_name: str) -> NewTopic:
+    """Build NewTopic object with appropriate configuration."""
+    topic_enum = next((t for t in KafkaTopics if t.value == topic_name), None)
+    
+    num_partitions = (
+        TopicConfig.HIGH_TRAFFIC_PARTITIONS
+        if topic_enum and topic_enum in TopicConfig.HIGH_TRAFFIC_TOPICS
+        else TopicConfig.DEFAULT_PARTITIONS
+    )
+    
+    return NewTopic(
+        topic=topic_name,
+        num_partitions=num_partitions,
+        replication_factor=TopicConfig.REPLICATION_FACTOR,
+        config={
+            "retention.ms": str(TopicConfig.DEFAULT_RETENTION_MS),
+            "cleanup.policy": "delete",
+            "compression.type": "lz4",
+        }
+    )
+
+
+async def _create_topics_background(admin_config: dict, missing_topics: Set[str]) -> None:
+    """
+    Create missing topics in background with retry.
+    
+    Non-blocking - runs as background task to not delay startup.
+    """
+    max_attempts = 3
+    
+    for attempt in range(max_attempts):
+        try:
+            admin_client = AdminClient(admin_config)
+            topics_to_create = [_build_new_topic(t) for t in missing_topics]
+            
+            fs = admin_client.create_topics(topics_to_create, operation_timeout=CREATE_TOPICS_TIMEOUT)
+            
+            created = 0
+            failed = 0
+            
+            for topic_name, future in fs.items():
+                try:
+                    future.result(timeout=FUTURE_RESULT_TIMEOUT)
+                    logger.info(f"  ✓ Created topic: {topic_name}")
+                    created += 1
+                except Exception as e:
+                    if "already exists" in str(e).lower():
+                        logger.debug(f"  ✓ Topic already exists: {topic_name}")
+                        created += 1
+                    else:
+                        logger.warning(f"  ✗ Failed to create {topic_name}: {e}")
+                        failed += 1
+            
+            if failed == 0:
+                logger.info(f"✅ Background topic creation complete ({created} topics)")
+                return
+            else:
+                logger.warning(f"⚠️ {failed} topics failed, {created} created")
+                
+        except Exception as e:
+            logger.warning(f"Background topic creation attempt {attempt + 1}/{max_attempts} failed: {e}")
+            if attempt < max_attempts - 1:
+                await asyncio.sleep(2 ** attempt)  # Exponential backoff: 1s, 2s, 4s
+    
+    logger.error("❌ Background topic creation failed after all retries")
+
+
 async def ensure_kafka_topics() -> bool:
     """
     Ensure all required Kafka topics exist.
     
-    Creates topics if they don't exist. Safe to call multiple times.
+    Optimized for fast startup:
+    - Quick check with short timeout (2s)
+    - Background topic creation (non-blocking)
+    - Graceful fallback when Kafka unavailable
     
     Returns:
-        True if all topics exist or were created successfully, False on error
+        True always (doesn't block startup on failure)
     """
     try:
         logger.info("🔍 Checking Kafka topics...")
         
-        # Create admin client
-        admin_config = {
-            "bootstrap.servers": settings.KAFKA_BOOTSTRAP_SERVERS
-        }
-        
-        # Add authentication if configured
-        if settings.KAFKA_SECURITY_PROTOCOL != "PLAINTEXT":
-            admin_config.update({
-                "security.protocol": settings.KAFKA_SECURITY_PROTOCOL,
-                "sasl.mechanism": settings.KAFKA_SASL_MECHANISM,
-                "sasl.username": settings.KAFKA_SASL_USERNAME,
-                "sasl.password": settings.KAFKA_SASL_PASSWORD,
-            })
-        
+        admin_config = _get_admin_config()
         admin_client = AdminClient(admin_config)
         
-        # Get existing topics
-        metadata = admin_client.list_topics(timeout=10)
+        # Quick check with short timeout
+        metadata = admin_client.list_topics(timeout=LIST_TOPICS_TIMEOUT)
         existing_topics = set(metadata.topics.keys())
         
         logger.info(f"Found {len(existing_topics)} existing topics")
         
-        # Determine which topics need to be created
-        topics_to_create = []
-        all_topics = list(KafkaTopics)
+        # Determine missing topics
+        required_topics = {t.value for t in KafkaTopics}
+        missing_topics = required_topics - existing_topics
         
-        for topic in all_topics:
-            if topic.value not in existing_topics:
-                # Determine partition count based on expected traffic
-                num_partitions = (
-                    TopicConfig.HIGH_TRAFFIC_PARTITIONS
-                    if topic in TopicConfig.HIGH_TRAFFIC_TOPICS
-                    else TopicConfig.DEFAULT_PARTITIONS
-                )
-                
-                topics_to_create.append(
-                    NewTopic(
-                        topic=topic.value,
-                        num_partitions=num_partitions,
-                        replication_factor=TopicConfig.REPLICATION_FACTOR,
-                        config={
-                            "retention.ms": str(TopicConfig.DEFAULT_RETENTION_MS),
-                            "cleanup.policy": "delete",
-                            "compression.type": "lz4",  # Better performance
-                        }
-                    )
-                )
-                logger.info(
-                    f"  ⏳ Will create topic: {topic.value} "
-                    f"(partitions={num_partitions}, replication={TopicConfig.REPLICATION_FACTOR})"
-                )
-            else:
-                logger.debug(f"  ✓ Topic exists: {topic.value}")
-        
-        # Create missing topics
-        if topics_to_create:
-            logger.info(f"📝 Creating {len(topics_to_create)} missing topics...")
-            
-            fs = admin_client.create_topics(topics_to_create, operation_timeout=30)
-            
-            # Wait for operations to complete
-            created_count = 0
-            failed_count = 0
-            
-            for topic_name, future in fs.items():
-                try:
-                    future.result()  # Wait for operation to finish
-                    logger.info(f"  ✓ Created topic: {topic_name}")
-                    created_count += 1
-                except Exception as e:
-                    # Topic might already exist (race condition with other instances)
-                    if "already exists" in str(e).lower():
-                        logger.info(f"  ✓ Topic already exists: {topic_name}")
-                        created_count += 1
-                    else:
-                        logger.error(f"  ✗ Failed to create topic {topic_name}: {e}")
-                        failed_count += 1
-            
-            if failed_count > 0:
-                logger.warning(
-                    f"⚠️  Topic creation completed with {failed_count} failures "
-                    f"({created_count} successful)"
-                )
-                return False
-            else:
-                logger.info(f"✅ All {created_count} topics created successfully")
-                return True
-        
-        else:
+        if not missing_topics:
             logger.info("✅ All Kafka topics already exist")
             return True
+        
+        # Create missing topics in background (non-blocking)
+        logger.info(f"⏳ Creating {len(missing_topics)} topics in background...")
+        asyncio.create_task(_create_topics_background(admin_config, missing_topics))
+        
+        return True
             
     except Exception as e:
-        logger.error(f"❌ Error ensuring Kafka topics: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+        # Graceful fallback - don't block startup
+        logger.warning(f"⚠️ Kafka not ready: {e}")
+        logger.warning("Topics will be created on demand by producer")
+        return True
 
 
 def list_all_required_topics() -> List[str]:

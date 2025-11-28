@@ -1,12 +1,13 @@
-"""Agent Events Handler - Handles agent messaging events (start, tool_call, response, finish)."""
+"""Agent Events Handler - Handles agent messaging events (start, tool_call, response, finish).
+
+NOTE: DB saves for agent messages are handled by base_agent._handle_simple_message()
+This handler only broadcasts events to WebSocket clients.
+"""
 
 import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlmodel import Session
-
-from app.models import Message as MessageModel, AuthorType, MessageVisibility
 from .base import BaseEventHandler
 
 logger = logging.getLogger(__name__)
@@ -86,6 +87,11 @@ class AgentEventsHandler(BaseEventHandler):
             logger.error(f"Error in _handle_tool_call: {e}")
     
     async def _handle_response(self, data, project_id):
+        """Broadcast agent response to WebSocket clients.
+        
+        NOTE: DB save is handled by base_agent._handle_simple_message()
+        This handler only broadcasts to WebSocket using the message_id from the event.
+        """
         try:
             content = data.get("content", "")
             details = data.get("details", {})
@@ -94,28 +100,21 @@ class AgentEventsHandler(BaseEventHandler):
             message_type = details.get("message_type", "text")
             structured_data_payload = details.get("data")
             
-            with Session(self.engine) as db_session:
-                from app.services import MessageService
-                message_service = MessageService(db_session)
-                db_message = message_service.create_agent_message(
-                    project_id=project_id,
-                    agent_name=agent_name,
-                    content=content,
-                    execution_id=execution_id,
-                    message_type=message_type,
-                    structured_data=structured_data_payload,
-                )
-                message_id = db_message.id
+            # Use message_id from base_agent (already saved to DB)
+            message_id = details.get("message_id")
+            if not message_id:
+                message_id = str(uuid4())
+                logger.warning(f"[_handle_response] No message_id in event, generated fallback: {message_id}")
             
             ws_message = {
                 "type": "agent.messaging.response",
-                "id": str(message_id),
+                "id": message_id,
                 "execution_id": str(execution_id) if execution_id else "",
                 "agent_name": agent_name,
                 "content": content,
                 "message_type": message_type,
                 "structured_data": structured_data_payload,
-                "timestamp": db_message.created_at.isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
             await self._broadcast(project_id, ws_message)
         

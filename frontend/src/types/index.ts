@@ -88,7 +88,9 @@ export type {
 export type {
   TypingState,
   AgentStatusType,
-  UseChatWebSocketReturn
+  UseChatWebSocketReturn,
+  ExecutionContext,
+  BackgroundTask
 } from './websocket'
 
 // Common types

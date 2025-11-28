@@ -1,68 +1,39 @@
-"""
-Business Analyst Agent
+"""Business Analyst Agent - LangGraph-based Implementation."""
 
-ARCHITECTURE NOTE:
-Refactored to use Flow-based architecture instead of Crew hierarchical process.
-Uses AgentToolContext for dependency injection, allowing tools to access
-agent operations without tight coupling to pool manager.
-"""
-
-import json
 import logging
-from uuid import UUID
 from pathlib import Path
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from uuid import UUID
+
+from sqlmodel import Session, select
 
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
-from app.agents.core.agent_context import AgentToolContext
-from app.agents.business_analyst.flow import BusinessAnalystFlow, BAFlowState
-from app.models import Agent as AgentModel
+from app.models import Agent as AgentModel, Project, AgentQuestion, QuestionStatus
 from app.utils.project_files import ProjectFiles
 from app.kafka.event_schemas import AgentTaskType
+from app.core.db import engine
+from app.agents.business_analyst.src import BusinessAnalystGraph
+from app.agents.business_analyst.src.nodes import (
+    process_answer, ask_one_question, 
+    process_batch_answers,
+    generate_prd, save_artifacts
+)
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class BAConversationState:
-    conversation_id: UUID
-    intent: str = "unknown"
-    phase: str = "initial"
-    collected_info: dict = field(default_factory=dict)
-    questions_asked: list = field(default_factory=list)
-    questions_answered: list = field(default_factory=list)
-    is_info_complete: bool = False
-    existing_prd: dict | None = None
-    editing_story_id: UUID | None = None
-
-
 class BusinessAnalyst(BaseAgent):
-    """Business Analyst agent using Flow-based workflow.
+    """Business Analyst using LangGraph for workflow management.
     
-    ARCHITECTURE: Uses CrewAI Flows instead of hierarchical Crew for:
-    - Explicit control flow with @start, @listen, @router decorators
-    - Better state management with Pydantic models
-    - Improved observability and testing
+    Langfuse tracing is handled by BaseAgent.get_langfuse_callback().
     """
-    
-    INTERVIEW_MODE = "sequential"
 
     def __init__(self, agent_model: AgentModel, **kwargs):
         super().__init__(agent_model, **kwargs)
-
-        # Create tool context for dependency injection
-        tool_context = AgentToolContext(self)
+        logger.info(f"[{self.name}] Initializing Business Analyst LangGraph")
         
         # Initialize project files
         self.project_files = None
-        project_path_str = ""
-        
         if self.project_id:
-            from app.core.db import engine
-            from sqlmodel import Session, select
-            from app.models import Project
-            
             with Session(engine) as session:
                 project = session.exec(
                     select(Project).where(Project.id == self.project_id)
@@ -70,329 +41,351 @@ class BusinessAnalyst(BaseAgent):
                 
                 if project and project.project_path:
                     self.project_files = ProjectFiles(Path(project.project_path))
-                    project_path_str = str(project.project_path)
                 else:
                     default_path = Path("projects") / str(self.project_id)
                     default_path.mkdir(parents=True, exist_ok=True)
                     self.project_files = ProjectFiles(default_path)
-                    project_path_str = str(default_path)
         
-        # Create Flow instead of Crew
-        self.flow = BusinessAnalystFlow(
-            agent_context=tool_context,
-            project_files=self.project_files,
-            agent_name=agent_model.human_name,
-            personality_traits=agent_model.personality_traits or [],
-            communication_style=agent_model.communication_style
-        )
+        # Pass self to graph for Langfuse callback access
+        self.graph_engine = BusinessAnalystGraph(agent=self)
         
-        # Store project path in flow state for tools
-        self.flow.state.project_path = project_path_str
-        
-        self.conversation_states: dict[UUID, BAConversationState] = {}
-
-        logger.info(f"Business Analyst initialized with Flow: {self.name}")
-    
-    def _get_conversation_state(self, user_id: UUID) -> BAConversationState:
-        if user_id not in self.conversation_states:
-            self.conversation_states[user_id] = BAConversationState(
-                conversation_id=user_id,
-                phase="interview"
-            )
-        return self.conversation_states[user_id]
-    
-    def _clear_conversation_state(self, user_id: UUID):
-        if user_id in self.conversation_states:
-            del self.conversation_states[user_id]
+        logger.info(f"[{self.name}] LangGraph initialized successfully")
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
-        """Handle task using CrewAI Flow."""
+        """Handle task using LangGraph.
+        
+        Note: Langfuse tracing is automatically handled by BaseAgent.
+        """
+        # Check if this is a resume task (user answered a question)
+        is_resume = task.task_type == AgentTaskType.RESUME_WITH_ANSWER
+        
+        # For RESUME tasks, answer is in context, not content
+        if is_resume:
+            answer = task.context.get("answer", "") if task.context else ""
+            logger.info(f"[{self.name}] Processing RESUME task with answer: {answer[:50] if answer else 'empty'}")
+            return await self._handle_resume_task(task, answer)
+        
+        logger.info(f"[{self.name}] Processing task with LangGraph: {task.content[:50] if task.content else 'empty'}")
+        
         try:
-            # Handle resume - update flow state with collected info
-            if task.task_type == AgentTaskType.RESUME_WITH_ANSWER:
-                return await self._resume_with_flow(task)
+            # Validate user message (only for non-resume tasks)
+            if not task.content or not task.content.strip():
+                logger.error(f"[{self.name}] Empty task content received")
+                return TaskResult(
+                    success=False,
+                    output="",
+                    error_message="Empty user message"
+                )
             
-            user_message = task.content
-            logger.info(f"[{self.name}] Processing with Flow: {user_message[:80]}...")
+            return await self._handle_new_task(task)
             
-            # Check if we have project files initialized
-            if not self.project_files:
-                logger.warning(f"[{self.name}] No ProjectFiles, using simple analysis")
-                return await self._simple_analysis(user_message)
-            
-            # Get conversation state for context
-            conv_state = self._get_conversation_state(task.user_id)
-            
-            # Update flow state with current context
-            self.flow.state.user_message = user_message
-            self.flow.state.collected_info = conv_state.collected_info
-            
-            # Load existing PRD if available
+        except Exception as e:
+            logger.error(f"[{self.name}] LangGraph error: {e}", exc_info=True)
+            return TaskResult(
+                success=False,
+                output="",
+                error_message=f"Graph execution error: {str(e)}"
+            )
+    
+    async def _handle_resume_task(self, task: TaskContext, answer: str) -> TaskResult:
+        """Handle resume task - user answered question(s).
+        
+        Supports both:
+        - Batch mode: All answers at once (is_batch=True in context)
+        - Sequential mode: One answer at a time (legacy)
+        """
+        # Check if this is batch mode
+        is_batch = task.context.get("is_batch", False) if task.context else False
+        batch_answers = task.context.get("batch_answers", []) if task.context else []
+        
+        if is_batch:
+            logger.info(f"[{self.name}] Handling RESUME task (BATCH mode, {len(batch_answers)} answers)")
+            return await self._handle_batch_resume(task, batch_answers)
+        else:
+            logger.info(f"[{self.name}] Handling RESUME task (sequential mode)")
+            return await self._handle_sequential_resume(task, answer)
+    
+    async def _handle_batch_resume(self, task: TaskContext, batch_answers: list) -> TaskResult:
+        """Handle batch mode resume - all answers at once."""
+        if not batch_answers:
+            logger.error(f"[{self.name}] No batch answers in RESUME task")
+            return TaskResult(
+                success=False,
+                output="",
+                error_message="No answers received"
+            )
+        
+        # Load interview state from database
+        interview_state = await self._load_interview_state(task)
+        
+        if not interview_state:
+            logger.warning(f"[{self.name}] No interview state found for batch, treating as new task")
+            return await self._handle_new_task(task)
+        
+        # Load existing PRD if available
+        existing_prd = None
+        if self.project_files:
             try:
                 existing_prd = await self.project_files.load_prd()
-                if existing_prd:
-                    self.flow.state.existing_prd = existing_prd
-                    logger.info(f"[{self.name}] Loaded existing PRD into flow state")
             except Exception as e:
                 logger.debug(f"[{self.name}] No existing PRD: {e}")
-            
-            # Run flow - it will automatically route through workflow
-            logger.info(f"[{self.name}] Running flow...")
-            result = await self._run_flow_async()
-            
-            # Parse result from flow
-            result_data = result if isinstance(result, dict) else {"raw_result": str(result)}
-            action = result_data.get("action_taken", self.flow.state.intent)
-            output = result_data.get("result", {})
-            summary = result_data.get("summary", "Flow completed")
-            next_steps = result_data.get("next_steps", [])
-            
-            logger.info(f"[{self.name}] Flow completed: action={action}")
-            
-            # Send appropriate response to user based on action
-            await self._send_result_to_user(action, output, summary, next_steps)
-            
-            # Save artifacts if needed
-            if action in ["prd_create", "generated_prd", "prd_update", "updated_prd"]:
-                if self.project_files and isinstance(output, dict):
-                    try:
-                        await self.project_files.save_prd(output)
-                        
-                        # Create artifact
-                        artifact_id = await self.create_artifact(
-                            artifact_type="prd",
-                            title=f"PRD: {output.get('project_name', 'Project')}",
-                            content=output,
-                            description=output.get('overview', '')[:200],
-                            tags=["prd", "business_analysis"]
-                        )
-                        logger.info(f"[{self.name}] Created PRD artifact {artifact_id}")
-                    except Exception as e:
-                        logger.error(f"[{self.name}] Failed to save PRD: {e}")
-            
-            # Update conversation state
-            conv_state.phase = action
-            conv_state.intent = self.flow.state.intent
-            if self.flow.state.collected_info:
-                conv_state.collected_info.update(self.flow.state.collected_info)
-            
-            # Clear state if workflow complete
-            if self.flow.state.is_complete and action not in ["interview", "gather_requirements"]:
-                self._clear_conversation_state(task.user_id)
-            
-            return TaskResult(
-                success=True,
-                output=str(result),
-                structured_data=result_data
-            )
-
-        except Exception as e:
-            logger.error(f"[{self.name}] Flow error: {e}", exc_info=True)
-            return TaskResult(
-                success=False,
-                output="",
-                error_message=str(e),
-            )
-    
-    async def _run_flow_async(self):
-        """Run flow in async context."""
-        import asyncio
-        import nest_asyncio
-        nest_asyncio.apply()
         
-        # Flow.kickoff is sync, so we run it in executor
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, self.flow.kickoff)
-        return result
-    
-    def _parse_flow_result(self, result_str: str) -> dict:
-        """Parse JSON result from flow with fallback."""
-        try:
-            # Extract JSON from markdown code blocks if present
-            if "```json" in result_str:
-                result_str = result_str.split("```json")[1].split("```")[0].strip()
-            elif "```" in result_str:
-                result_str = result_str.split("```")[1].split("```")[0].strip()
-            
-            return json.loads(result_str)
-        except (json.JSONDecodeError, ValueError, IndexError) as e:
-            logger.warning(f"[{self.name}] Could not parse flow result as JSON: {e}")
-            return {
-                "action_taken": "unknown",
-                "result": result_str,
-                "summary": "Flow completed but result format unexpected",
-                "next_steps": []
-            }
-    
-    async def _send_result_to_user(self, action: str, output: any, summary: str, next_steps: list):
-        """Send appropriate message to user based on action type."""
-        # Normalize action names (flow uses different names than old crew)
-        action_map = {
-            "interview": "interviewed",
-            "gather_requirements": "interviewed",
-            "prd_create": "generated_prd",
-            "generate_prd": "generated_prd",
-            "prd_update": "updated_prd",
-            "update_prd": "updated_prd",
-            "stories": "extracted_stories",
-            "extract_stories": "extracted_stories",
-            "domain_analysis": "domain_analysis",
-            "analyze_domain": "domain_analysis"
+        # Build state with batch answers
+        # user_message is required for PRD generation - get from interview_state or use default
+        user_message = interview_state.get("user_message", "")
+        if not user_message:
+            # Fallback: extract from collected_info or use generic message
+            user_message = interview_state.get("original_request", "Tạo PRD dựa trên thông tin đã thu thập")
+        
+        state = {
+            "project_id": str(self.project_id),
+            "task_id": str(task.task_id),
+            "user_id": str(task.user_id) if task.user_id else "",
+            "project_path": str(self.project_files.project_path) if self.project_files else "",
+            "user_message": user_message,  # Required for generate_prd
+            "collected_info": interview_state.get("collected_info", {}),
+            "existing_prd": existing_prd,
+            "intent": "interview",
+            "questions": interview_state.get("questions", []),
+            "batch_answers": batch_answers,
+            "waiting_for_answer": False,
+            "all_questions_answered": False,
         }
         
-        normalized_action = action_map.get(action, action)
+        # Process all batch answers
+        logger.info(f"[{self.name}] Processing {len(batch_answers)} batch answers")
+        state = {**state, **(await process_batch_answers(state, agent=self))}
         
-        if normalized_action == "interviewed":
-            # Questions generated - ask user
-            questions = output.get("questions", []) if isinstance(output, dict) else []
-            if questions:
-                await self.message_user("clarification_question",
-                    f"**Câu hỏi làm rõ:**\n\n{chr(10).join(f'{i+1}. {q}' for i, q in enumerate(questions))}\n\n{summary}",
-                    {"questions": questions, "next_steps": next_steps}
-                )
-            else:
-                await self.message_user("response", summary, {"next_steps": next_steps})
+        # Generate PRD (all answers should be collected now)
+        logger.info(f"[{self.name}] All batch answers processed, generating PRD")
+        state = {**state, **(await generate_prd(state, agent=self))}
+        state = {**state, **(await save_artifacts(state, agent=self))}
         
-        elif normalized_action == "generated_prd":
-            await self.message_user("response",
-                f"✅ **PRD Created Successfully**\n\n{summary}\n\n**Next steps:**\n" +
-                "\n".join(f"- {step}" for step in next_steps),
-                {"prd": output, "next_steps": next_steps}
+        return TaskResult(
+            success=True,
+            output=str(state.get("result", {})),
+            structured_data=state.get("result", {})
+        )
+    
+    async def _handle_sequential_resume(self, task: TaskContext, answer: str) -> TaskResult:
+        """Handle sequential mode resume - one answer at a time (legacy)."""
+        if not answer:
+            logger.error(f"[{self.name}] Empty answer in RESUME task")
+            return TaskResult(
+                success=False,
+                output="",
+                error_message="Empty answer"
             )
         
-        elif normalized_action == "updated_prd":
-            change_summary = output.get("change_summary", "PRD updated") if isinstance(output, dict) else "PRD updated"
-            await self.message_user("response",
-                f"✅ **PRD Updated**\n\n{change_summary}\n\n{summary}",
-                {"prd": output, "next_steps": next_steps}
-            )
+        # Load interview state from database
+        interview_state = await self._load_interview_state(task)
         
-        elif normalized_action == "extracted_stories":
-            stories_count = len(output) if isinstance(output, list) else 0
-            await self.message_user("response",
-                f"✅ **User Stories Extracted** ({stories_count} stories)\n\n{summary}\n\n**Next steps:**\n" +
-                "\n".join(f"- {step}" for step in next_steps),
-                {"stories": output, "next_steps": next_steps}
-            )
+        if not interview_state:
+            logger.warning(f"[{self.name}] No interview state found, treating as new task")
+            return await self._handle_new_task(task)
         
-        elif normalized_action == "domain_analysis":
-            analysis_text = output.get("analysis_text", str(output)) if isinstance(output, dict) else str(output)
-            await self.message_user("response",
-                f"📊 **Domain Analysis Complete**\n\n{analysis_text}\n\n{summary}",
-                {"analysis": output, "next_steps": next_steps}
-            )
+        # Load existing PRD if available
+        existing_prd = None
+        if self.project_files:
+            try:
+                existing_prd = await self.project_files.load_prd()
+            except Exception as e:
+                logger.debug(f"[{self.name}] No existing PRD: {e}")
         
+        # Build state from saved interview state + user answer
+        state = {
+            "user_message": answer,
+            "project_id": str(self.project_id),
+            "task_id": str(task.task_id),
+            "user_id": str(task.user_id) if task.user_id else "",
+            "project_path": str(self.project_files.project_path) if self.project_files else "",
+            "collected_info": interview_state.get("collected_info", {}),
+            "existing_prd": existing_prd,
+            "intent": "interview",
+            "questions": interview_state.get("questions", []),
+            "current_question_index": interview_state.get("current_question_index", 0),
+            "collected_answers": interview_state.get("collected_answers", []),
+            "waiting_for_answer": False,
+            "all_questions_answered": False,
+        }
+        
+        # Process the answer
+        logger.info(f"[{self.name}] Processing answer for question {state['current_question_index'] + 1}")
+        state = {**state, **(await process_answer(state, agent=self))}
+        
+        # Check if more questions or generate PRD
+        if state.get("all_questions_answered"):
+            logger.info(f"[{self.name}] All questions answered, generating PRD")
+            state = {**state, **(await generate_prd(state, agent=self))}
+            state = {**state, **(await save_artifacts(state, agent=self))}
+            
+            return TaskResult(
+                success=True,
+                output=str(state.get("result", {})),
+                structured_data=state.get("result", {})
+            )
         else:
-            # Unknown action - send raw result
-            await self.message_user("response", f"{summary}\n\nResult: {str(output)[:500]}")
-    
-    async def _simple_analysis(self, user_message: str) -> TaskResult:
-        """Fallback: simple analysis without file management."""
-        try:
-            # Update flow state with message
-            self.flow.state.user_message = user_message
+            # Ask next question
+            logger.info(f"[{self.name}] Asking next question {state['current_question_index'] + 1}")
+            state = {**state, **(await ask_one_question(state, agent=self))}
             
-            # Run flow
-            result = await self._run_flow_async()
-            
-            result_str = str(result) if not isinstance(result, dict) else result.get("summary", str(result))
-            await self.message_user("response", result_str[:1000], {
-                "message_type": "requirements_analysis"
-            })
+            # Save state for next resume
+            await self._save_interview_state(task, state)
             
             return TaskResult(
                 success=True,
-                output=result_str,
-                structured_data={"analysis_type": "simple"}
-            )
-        except Exception as e:
-            logger.error(f"[{self.name}] Simple analysis error: {e}")
-            return TaskResult(
-                success=False,
-                output="",
-                error_message=str(e)
+                output="Question asked, waiting for answer",
+                structured_data={"waiting_for_answer": True}
             )
     
-    async def _resume_with_flow(self, task: TaskContext) -> TaskResult:
-        """Resume workflow by updating flow state with collected info."""
+    async def _handle_new_task(self, task: TaskContext) -> TaskResult:
+        """Handle new task - run full LangGraph."""
+        logger.info(f"[{self.name}] Handling NEW task")
+        
+        # Load existing PRD if available
+        existing_prd = None
+        if self.project_files:
+            try:
+                existing_prd = await self.project_files.load_prd()
+            except Exception as e:
+                logger.debug(f"[{self.name}] No existing PRD: {e}")
+        
+        # Prepare initial state
+        initial_state = {
+            "user_message": task.content,
+            "project_id": str(self.project_id),
+            "task_id": str(task.task_id),
+            "user_id": str(task.user_id) if task.user_id else "",
+            "project_path": str(self.project_files.project_path) if self.project_files else "",
+            "collected_info": {},
+            "existing_prd": existing_prd,
+            "intent": "",
+            "reasoning": "",
+            "questions": [],
+            "current_question_index": 0,
+            "collected_answers": [],
+            "waiting_for_answer": False,
+            "all_questions_answered": False,
+            "prd_draft": None,
+            "prd_final": None,
+            "prd_saved": False,
+            "change_summary": "",
+            "stories": [],
+            "stories_saved": False,
+            "analysis_text": "",
+            "error": None,
+            "retry_count": 0,
+            "result": {},
+            "is_complete": False
+        }
+        
+        logger.info(f"[{self.name}] Invoking LangGraph...")
+        final_state = await self.graph_engine.execute(initial_state)
+        
+        # If waiting for answer, save state for resume
+        if final_state.get("waiting_for_answer"):
+            await self._save_interview_state(task, final_state)
+            return TaskResult(
+                success=True,
+                output="Question asked, waiting for answer",
+                structured_data={"waiting_for_answer": True}
+            )
+        
+        # Extract result
+        result_data = final_state.get("result", {})
+        action = final_state.get("intent", "completed")
+        
+        logger.info(f"[{self.name}] Graph completed: action={action}")
+        
+        return TaskResult(
+            success=True,
+            output=str(result_data),
+            structured_data=result_data
+        )
+    
+    async def _load_interview_state(self, task: TaskContext) -> dict | None:
+        """Load interview state from database (via question context).
+        
+        Supports both:
+        - Sequential mode: question_id in context
+        - Batch mode: batch_answers with question_ids, or original_context with interview_state
+        """
         try:
-            # Get conversation state
-            conv_state = self._get_conversation_state(task.user_id)
+            question_id = None
+            is_batch = task.context.get("is_batch", False) if task.context else False
             
-            # Add user's answer to collected info
-            user_answer = task.content
-            conv_state.questions_asked.append({
-                "answer": user_answer,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
+            if task.context:
+                logger.info(f"[{self.name}] Task context keys: {list(task.context.keys())}")
+                
+                # For batch mode, try to get interview_state from original_context first
+                if is_batch:
+                    original_context = task.context.get("original_context", {})
+                    if original_context and original_context.get("interview_state"):
+                        logger.info(f"[{self.name}] Found interview_state in original_context (batch mode)")
+                        return original_context.get("interview_state")
+                    
+                    # Otherwise, try first question from batch_answers
+                    batch_answers = task.context.get("batch_answers", [])
+                    if batch_answers:
+                        question_id = batch_answers[0].get("question_id")
+                        logger.info(f"[{self.name}] Using first question from batch: {question_id}")
+                else:
+                    question_id = task.context.get("question_id")
+                    logger.info(f"[{self.name}] question_id from context: {question_id}")
+            else:
+                logger.warning(f"[{self.name}] Task context is None or empty!")
             
-            # Update collected info with answer
-            conv_state.collected_info["latest_answer"] = user_answer
-            
-            logger.info(f"[{self.name}] Resume with user answer: {user_answer[:80]}...")
-            
-            # Update flow state
-            self.flow.state.user_message = f"User provided answer: {user_answer}. Continue BA workflow based on collected information."
-            self.flow.state.collected_info = conv_state.collected_info
-            
-            # Load existing PRD if available
-            if self.project_files:
-                try:
-                    existing_prd = await self.project_files.load_prd()
-                    if existing_prd:
-                        self.flow.state.existing_prd = existing_prd
-                except Exception as e:
-                    logger.warning(f"[{self.name}] Could not load existing PRD: {e}")
-            
-            # Resume flow
-            logger.info(f"[{self.name}] Resuming flow with collected info...")
-            result = await self._run_flow_async()
-            
-            # Parse and send result
-            result_data = result if isinstance(result, dict) else {"raw_result": str(result)}
-            action = result_data.get("action_taken", self.flow.state.intent)
-            output = result_data.get("result", {})
-            summary = result_data.get("summary", "")
-            next_steps = result_data.get("next_steps", [])
-            
-            await self._send_result_to_user(action, output, summary, next_steps)
-            
-            # Save artifacts if needed
-            if action in ["prd_create", "generated_prd", "prd_update", "updated_prd"]:
-                if self.project_files and isinstance(output, dict):
+            with Session(engine) as session:
+                question = None
+                
+                if question_id:
+                    # Direct lookup by question_id from RESUME task context
                     try:
-                        await self.project_files.save_prd(output)
+                        question = session.get(AgentQuestion, UUID(question_id))
+                        logger.info(f"[{self.name}] Loaded question from DB: {question.id if question else 'NOT FOUND'}")
+                    except Exception as uuid_err:
+                        logger.error(f"[{self.name}] Failed to parse question_id as UUID: {uuid_err}")
+                else:
+                    # Fallback: Find the most recently answered question for this project/agent
+                    logger.info(f"[{self.name}] No question_id in context, using fallback query")
+                    question = session.exec(
+                        select(AgentQuestion)
+                        .where(AgentQuestion.project_id == self.project_id)
+                        .where(AgentQuestion.agent_id == self.agent_id)
+                        .where(AgentQuestion.status == QuestionStatus.ANSWERED)
+                        .order_by(AgentQuestion.answered_at.desc())
+                    ).first()
+                    if question:
+                        logger.info(f"[{self.name}] Fallback found question: {question.id}")
+                
+                if question:
+                    logger.info(f"[{self.name}] Question task_context: {question.task_context}")
+                    if question.task_context:
+                        task_context = question.task_context
+                        interview_state = task_context.get("interview_state", {})
                         
-                        # Create artifact
-                        artifact_id = await self.create_artifact(
-                            artifact_type="prd",
-                            title=f"PRD: {output.get('project_name', 'Project')}",
-                            content=output,
-                            description=output.get('overview', '')[:200],
-                            tags=["prd", "business_analysis"]
-                        )
-                        logger.info(f"[{self.name}] Created PRD artifact {artifact_id}")
-                    except Exception as e:
-                        logger.error(f"[{self.name}] Failed to save PRD: {e}")
-            
-            # Update state
-            conv_state.phase = action
-            conv_state.intent = self.flow.state.intent
-            
-            # Clear state if complete
-            if self.flow.state.is_complete and action not in ["interview", "gather_requirements"]:
-                self._clear_conversation_state(task.user_id)
-            
-            return TaskResult(
-                success=True,
-                output=str(result),
-                structured_data=result_data
-            )
-            
+                        if interview_state:
+                            logger.info(f"[{self.name}] Found interview state from question {question.id}, "
+                                       f"current_question_index={interview_state.get('current_question_index')}, "
+                                       f"questions_count={len(interview_state.get('questions', []))}")
+                            return interview_state
+                        else:
+                            logger.warning(f"[{self.name}] Question {question.id} has task_context but NO interview_state!")
+                    else:
+                        logger.warning(f"[{self.name}] Question {question.id} has NO task_context!")
+                else:
+                    logger.warning(f"[{self.name}] No question found in database")
+                    
+            return None
         except Exception as e:
-            logger.error(f"[{self.name}] Resume error: {e}", exc_info=True)
-            return TaskResult(
-                success=False,
-                output="",
-                error_message=str(e)
-            )
+            logger.error(f"[{self.name}] Failed to load interview state: {e}", exc_info=True)
+            return None
+    
+    async def _save_interview_state(self, task: TaskContext, state: dict) -> None:
+        """Save interview state for resume (stored in question's task_context)."""
+        try:
+            # State is already saved when question is created via ask_clarification_question
+            # This method can be used for additional state persistence if needed
+            logger.info(f"[{self.name}] Interview state saved (question index: {state.get('current_question_index', 0)})")
+        except Exception as e:
+            logger.error(f"[{self.name}] Failed to save interview state: {e}")

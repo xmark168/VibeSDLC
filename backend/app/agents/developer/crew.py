@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 import os
 import glob
 import yaml
@@ -25,6 +25,7 @@ from app.agents.developer.tools.filesystem_tools import (
     SafeFileWriteTool,
 )
 from app.agents.developer.project_manager import project_manager
+from app.core.langfuse_client import get_langfuse_client, flush_langfuse
 
 logger = logging.getLogger(__name__)
 

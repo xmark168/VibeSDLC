@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { KanbanColumn, type KanbanColumnData } from "./kanban-column"
 import { TaskDetailModal } from "./task-detail-modal"
-import { WIPLimitSettingsDialog } from "./wip-limit-settings-dialog"
 import { FlowMetricsDashboard } from "./flow-metrics-dashboard"
 import { PolicyValidationDialog, type PolicyViolation } from "./policy-validation-dialog"
 import { PolicySettingsDialog } from "./policy-settings-dialog"
@@ -30,6 +29,7 @@ const initialColumns: KanbanColumnData[] = [
   { id: "inprogress", title: "InProgress", color: "border-red-500", cards: [] },
   { id: "review", title: "Review", color: "border-blue-500", cards: [] },
   { id: "done", title: "Done", color: "border-cyan-500", cards: [] },
+  { id: "archived", title: "Archived", color: "border-gray-400", cards: [] },
 ]
 
 export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
@@ -37,7 +37,6 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
   const [draggedCard, setDraggedCard] = useState<KanbanCardData | null>(null)
   const [draggedOverColumn, setDraggedOverColumn] = useState<string | null>(null)
   const [selectedCard, setSelectedCard] = useState<KanbanCardData | null>(null)
-  const [showWIPSettings, setShowWIPSettings] = useState(false)
   const [showFlowMetrics, setShowFlowMetrics] = useState(false)
   const [showPolicySettings, setShowPolicySettings] = useState(false)
   const [showCFD, setShowCFD] = useState(false)
@@ -152,6 +151,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         InProgress: dbKanbanData.board.InProgress?.length || 0,
         Review: dbKanbanData.board.Review?.length || 0,
         Done: dbKanbanData.board.Done?.length || 0,
+        Archived: dbKanbanData.board.Archived?.length || 0,
       })
 
       // Debug: Log all story types to identify filtering issues
@@ -160,6 +160,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         ...(dbKanbanData.board.InProgress || []),
         ...(dbKanbanData.board.Review || []),
         ...(dbKanbanData.board.Done || []),
+        ...(dbKanbanData.board.Archived || []),
       ]
       const uniqueTypes = [...new Set(allItems.map((item: any) => item.type))]
       console.log('[KanbanBoard] Story types in database:', uniqueTypes)
@@ -250,6 +251,14 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
           cards: filterItems(dbKanbanData.board.Done || []).map((item: any) => mapItem(item, "done")),
           wipLimit: dbKanbanData.wip_limits?.Done?.wip_limit,
           limitType: dbKanbanData.wip_limits?.Done?.limit_type
+        },
+        {
+          id: "archived",
+          title: "Archived",
+          color: "border-gray-400",
+          cards: filterItems(dbKanbanData.board.Archived || []).map((item: any) => mapItem(item, "archived")),
+          wipLimit: undefined,
+          limitType: undefined
         },
       ]
 
@@ -555,11 +564,12 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
 
     if (projectId && draggedCard.id) {
       try {
-        const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done'> = {
+        const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done' | 'Archived'> = {
           'todo': 'Todo',
           'inprogress': 'InProgress',
           'review': 'Review',
           'done': 'Done',
+          'archived': 'Archived',
         };
 
         const fromStatus = statusMap[draggedCard.columnId.toLowerCase()] || 'Todo';
@@ -653,6 +663,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         'inprogress': 'InProgress',
         'review': 'Review',
         'done': 'Done',
+        'archived': 'Archived',
       }[targetColumnId.toLowerCase()] || 'Todo';
 
       console.log("About to update story status via API:", {
@@ -665,11 +676,12 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
       const { storiesApi } = await import('@/apis/stories');
 
       // Map column IDs to backend status format
-      const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done'> = {
+      const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done' | 'Archived'> = {
         'todo': 'Todo',
         'inprogress': 'InProgress',
         'review': 'Review',
         'done': 'Done',
+        'archived': 'Archived',
       };
 
       await storiesApi.updateStatus(
@@ -775,15 +787,6 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
                 >
                   <Shield className="w-4 h-4" />
                   <span className="font-medium">Policies</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowWIPSettings(true)}
-                  className="gap-2 h-9 px-3.5 rounded-lg hover:bg-muted/80 transition-colors"
-                >
-                  <Settings className="w-4 h-4" />
-                  <span className="font-medium">WIP Limits</span>
                 </Button>
               </div>
             )}
@@ -962,12 +965,6 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         open={!!selectedCard}
         onOpenChange={() => setSelectedCard(null)}
         onDownloadResult={handleDownloadResult}
-      />
-
-      <WIPLimitSettingsDialog
-        projectId={projectId}
-        open={showWIPSettings}
-        onOpenChange={setShowWIPSettings}
       />
 
       <FlowMetricsDashboard

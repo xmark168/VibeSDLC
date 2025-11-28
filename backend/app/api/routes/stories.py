@@ -120,7 +120,8 @@ def get_kanban_board(
         "Todo": [],
         "InProgress": [],
         "Review": [],
-        "Done": []
+        "Done": [],
+        "Archived": []
     }
 
     for story in stories:
@@ -292,6 +293,7 @@ async def update_story_status(
 
     # === STEP 3: Update Status and Flow Timestamps ===
     story.status = new_status
+    story.agent_state = None  # Reset agent_state when moving to new column
     now = datetime.now(timezone.utc)
 
     # Track flow metrics based on new status
