@@ -8,6 +8,7 @@ interface PrdCreatedCardProps {
   title: string
   filePath: string
   status?: 'pending' | 'approved' | 'editing'
+  showActions?: boolean  // Only show buttons on latest PRD card
   onView?: () => void
   onApprove?: () => void
   onEdit?: (feedback: string) => void
@@ -17,6 +18,7 @@ export function PrdCreatedCard({
   title, 
   filePath, 
   status = 'pending',
+  showActions = true,
   onView, 
   onApprove,
   onEdit 
@@ -83,8 +85,15 @@ export function PrdCreatedCard({
           </Button>
         </div>
 
+        {/* Old version - no actions */}
+        {!showActions && (
+          <div className="text-xs text-muted-foreground italic">
+            Phiên bản cũ
+          </div>
+        )}
+
         {/* Submitted state - show after user submits approve/edit */}
-        {isLoading && (
+        {showActions && isLoading && (
           <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
             <Check className="w-4 h-4" />
             <span>Đã gửi yêu cầu</span>
@@ -92,7 +101,7 @@ export function PrdCreatedCard({
         )}
 
         {/* Edit feedback input */}
-        {isEditing && !isLoading && (
+        {showActions && isEditing && !isLoading && (
           <div className="space-y-2">
             <Textarea
               placeholder="Nhập yêu cầu chỉnh sửa PRD..."
@@ -125,7 +134,7 @@ export function PrdCreatedCard({
         )}
 
         {/* Action buttons */}
-        {!isEditing && !isLoading && (
+        {showActions && !isEditing && !isLoading && (
           <div className="flex gap-2">
             <Button 
               size="sm" 

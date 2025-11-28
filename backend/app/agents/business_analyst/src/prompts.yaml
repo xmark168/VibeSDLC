@@ -120,7 +120,7 @@ tasks:
       - "thêm tính năng chat vào PRD" -> prd_update
          Reasoning: "User wants to add feature to existing PRD"
       
-      - "Tôi muốn chỉnh sửa PRD: thêm tính năng export PDF" -> prd_update
+      - "chỉnh sửa PRD: thêm tính năng export PDF" -> prd_update
          Reasoning: "User wants to edit/update existing PRD with specific feedback"
       
       - "tạo user stories từ PRD" -> extract_stories

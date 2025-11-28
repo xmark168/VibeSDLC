@@ -231,6 +231,19 @@ export function ChatPanelWS({
     return result;
   })();
   
+  // Find the latest PRD card ID (only show actions on the latest one)
+  const latestPrdMessageId = (() => {
+    const prdMessages = uniqueMessages.filter(
+      msg => msg.structured_data?.message_type === 'prd_created'
+    )
+    if (prdMessages.length === 0) return null
+    // Get the one with latest timestamp
+    const latest = prdMessages.sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0]
+    return latest?.id || null
+  })()
+
   // Detect unanswered questions - show only the LATEST one
   useEffect(() => {
     // Find ALL unanswered questions
@@ -745,6 +758,7 @@ export function ChatPanelWS({
                     questionIds={msg.structured_data?.question_ids || []}
                     agentName={msg.agent_name}
                     answered={msg.structured_data?.answered || answeredBatchIds.has(msg.structured_data?.batch_id || '')}
+                    submittedAnswers={msg.structured_data?.answers || []}
                     onSubmit={(answers) => {
                       sendBatchAnswers(
                         msg.structured_data!.batch_id!,
@@ -828,6 +842,7 @@ export function ChatPanelWS({
                       title={msg.structured_data.title || 'PRD'}
                       filePath={msg.structured_data.file_path}
                       status={msg.structured_data.status || 'pending'}
+                      showActions={msg.id === latestPrdMessageId}
                       onView={() => {
                         if (onOpenFile) {
                           onOpenFile(msg.structured_data!.file_path)
@@ -837,10 +852,10 @@ export function ChatPanelWS({
                         }
                       }}
                       onApprove={() => {
-                        wsSendMessage("Tôi phê duyệt PRD này, hãy tạo user stories")
+                        wsSendMessage("Phê duyệt PRD này, hãy tạo user stories")
                       }}
                       onEdit={(feedback) => {
-                        wsSendMessage(`Tôi muốn chỉnh sửa PRD: ${feedback}`)
+                        wsSendMessage(`Chỉnh sửa PRD: ${feedback}`)
                       }}
                     />
                   )}
