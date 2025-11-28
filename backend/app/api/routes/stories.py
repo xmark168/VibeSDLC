@@ -216,6 +216,19 @@ async def update_story_status(
     if old_status == new_status:
         return story
 
+    # === Prevent Moving Back to Todo ===
+    # Once a story leaves Todo, it cannot go back (Lean Kanban principle)
+    if new_status == StoryStatus.TODO and old_status != StoryStatus.TODO:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "INVALID_TRANSITION",
+                "message": "Cannot move story back to Todo. Once started, stories can only move forward or back for rework (Review → InProgress).",
+                "from_status": old_status.value,
+                "to_status": new_status.value
+            }
+        )
+
     # Get project for WIP data
     project = session.get(Project, story.project_id)
     if not project:

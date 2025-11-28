@@ -1,4 +1,4 @@
-import { X, Eye, Zap, User, MoreVertical, Copy, Edit, Trash2, MoveRight } from "lucide-react"
+import { X, Eye, Zap, User, MoreVertical, Copy, Edit, Trash2, MoveRight, GitBranch } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -99,6 +99,12 @@ function KanbanCardComponent({
     if (hours < 24) return `${Math.round(hours)}h`
     const days = Math.floor(hours / 24)
     return `${days}d`
+  }
+
+  // Calculate branch name from story ID (12 last chars of UUID)
+  const getBranchName = (id: string): string => {
+    const shortId = id.split('-').pop() || id.slice(0, 8)
+    return `story_${shortId}`
   }
 
   // Get age badge color based on age - Modern & Minimal: Softer warning colors
@@ -252,6 +258,14 @@ function KanbanCardComponent({
           <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
             {card.description}
           </p>
+        )}
+
+        {/* Branch info - only show when not in Todo */}
+        {card.columnId !== "todo" && (
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/30 rounded-md px-2 py-1">
+            <GitBranch className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <code className="font-mono text-emerald-700 dark:text-emerald-300">{getBranchName(card.id)}</code>
+          </div>
         )}
 
         {/* Footer: Task ID, Priority, Assignee - Better separation */}

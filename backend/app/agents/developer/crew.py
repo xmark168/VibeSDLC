@@ -74,9 +74,9 @@ class DeveloperCrew:
             backstory=planner_cfg["backstory"],
             verbose=True,
             llm=LLM(
-                    model="openai/alibaba-qwen3-32b",
+                    model="openai/gpt-4o-mini",
                   temperature=0.1,base_url="https://ai.megallm.io/v1", 
-                  api_key="sk-mega-f2cad3ab748b80af3cc310789c808c7c83efc342729e533067d60d4b8db4cd01"
+                  api_key=""
             ),
             tools=[
                 CodebaseSearchTool(project_id=self.project_id),
@@ -98,10 +98,11 @@ class DeveloperCrew:
             allow_delegation=False,
             use_system_prompt=True,
             respect_context_window=True,
+            max_iter=25,  # Allow up to 25 iterations for complex tasks
             llm=LLM(
-                    model="openai/alibaba-qwen3-32b",
+                    model="openai/gpt-4o-mini",
                   temperature=0.1,base_url="https://ai.megallm.io/v1", 
-                  api_key="sk-mega-f2cad3ab748b80af3cc310789c808c7c83efc342729e533067d60d4b8db4cd01"
+                  api_key=""
             ),
             tools=[
                 ShellCommandTool(root_dir=self.root_dir),
@@ -221,6 +222,7 @@ class DeveloperCrew:
             ),
             agent=self.agents["coder"],
             expected_output=code_task_cfg["expected_output"],
+            context=[plan_task],  # Pass planner output as context to coder
         )
 
         # Load knowledge sources

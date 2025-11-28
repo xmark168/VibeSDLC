@@ -439,7 +439,8 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     }
   }, [projectId])
 
-  const handleDeleteCard = useCallback((columnId: string, cardId: string) => {
+  const handleDeleteCard = useCallback(async (columnId: string, cardId: string) => {
+    // Optimistic UI update
     setColumns((prev) =>
       prev.map((col) => {
         if (col.id === columnId) {
@@ -451,41 +452,119 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         return col
       }),
     )
+
+    // Call API to delete from database
+    try {
+      await storiesApi.delete(cardId)
+      toast.success("Story deleted successfully")
+    } catch (error) {
+      console.error("Failed to delete story:", error)
+      toast.error("Failed to delete story. Please try again.")
+      // Revert optimistic update by refetching data
+      // The useKanbanBoard hook will handle this on next render
+    }
   }, [])
 
-  const handleDuplicateCard = useCallback((cardId: string) => {
-    setColumns((prev) =>
-      prev.map((col) => {
-        const cardIndex = col.cards.findIndex(c => c.id === cardId)
-        if (cardIndex !== -1) {
-          const originalCard = col.cards[cardIndex]
-          const duplicatedCard: KanbanCardData = {
-            ...originalCard,
-            id: `${originalCard.id}-copy-${Date.now()}`,
-            taskId: `${originalCard.taskId}-copy`,
-            content: `${originalCard.content} (Copy)`,
-          }
-          return {
-            ...col,
-            cards: [...col.cards.slice(0, cardIndex + 1), duplicatedCard, ...col.cards.slice(cardIndex + 1)]
-          }
-        }
-        return col
+  const handleDuplicateCard = useCallback(async (cardId: string) => {
+    if (!projectId) {
+      toast.error("Project ID is required to duplicate a story")
+      return
+    }
+
+    // Find the original card
+    let originalCard: KanbanCardData | null = null
+    let originalColumnId: string | null = null
+    
+    for (const col of columns) {
+      const card = col.cards.find(c => c.id === cardId)
+      if (card) {
+        originalCard = card
+        originalColumnId = col.id
+        break
+      }
+    }
+
+    if (!originalCard || !originalColumnId) {
+      toast.error("Card not found")
+      return
+    }
+
+    const toastId = toast.loading("Duplicating story...")
+
+    try {
+      // Create new story in database with copied data
+      const createdStory = await storiesApi.create({
+        project_id: projectId,
+        title: `${originalCard.content} (Copy)`,
+        description: originalCard.description || "",
+        story_type: (originalCard.type as any) || "UserStory",
+        estimated_hours: originalCard.story_point,
+        priority: originalCard.rank || 5,
+        acceptance_criteria: "",
+        tags: [],
+        labels: [],
       })
-    )
-  }, [])
 
-  const handleMoveCard = useCallback((cardId: string, targetColumnId: string) => {
+      // Add the duplicated story to UI
+      setColumns((prev) =>
+        prev.map((col) => {
+          if (col.id === originalColumnId) {
+            const cardIndex = col.cards.findIndex(c => c.id === cardId)
+            const duplicatedCard: KanbanCardData = {
+              id: createdStory.id,
+              content: createdStory.title,
+              description: createdStory.description || "",
+              columnId: originalColumnId!,
+              type: createdStory.type,
+              story_point: createdStory.story_point || undefined,
+              rank: createdStory.priority,
+              taskId: `STORY-${createdStory.id.substring(0, 4).toUpperCase()}`,
+            }
+            return {
+              ...col,
+              cards: [...col.cards.slice(0, cardIndex + 1), duplicatedCard, ...col.cards.slice(cardIndex + 1)]
+            }
+          }
+          return col
+        })
+      )
+
+      toast.success("Story duplicated successfully!")
+    } catch (error) {
+      console.error("Failed to duplicate story:", error)
+      toast.error("Failed to duplicate story. Please try again.")
+    } finally {
+      toast.dismiss(toastId)
+    }
+  }, [projectId, columns])
+
+  const handleMoveCard = useCallback(async (cardId: string, targetColumnId: string) => {
     let cardToMove: KanbanCardData | null = null
     let sourceColumnId: string | null = null
 
-    // Find the card and remove from source column
+    // Find the card first
+    for (const col of columns) {
+      const card = col.cards.find(c => c.id === cardId)
+      if (card) {
+        cardToMove = card
+        sourceColumnId = col.id
+        break
+      }
+    }
+
+    if (!cardToMove || sourceColumnId === targetColumnId) return
+
+    // Prevent moving back to Todo
+    if (targetColumnId === "todo" && sourceColumnId !== "todo") {
+      toast.error("Cannot move story back to Todo. Once started, stories can only move forward or back for rework.")
+      return
+    }
+
+    // Optimistic UI update - Find the card and remove from source column
     setColumns((prev) => {
       const newColumns = prev.map((col) => {
         const cardIndex = col.cards.findIndex(c => c.id === cardId)
         if (cardIndex !== -1) {
-          cardToMove = col.cards[cardIndex]
-          sourceColumnId = col.id
           return {
             ...col,
             cards: col.cards.filter((card) => card.id !== cardId),
@@ -495,20 +574,37 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
       })
 
       // Add to target column
-      if (cardToMove) {
-        return newColumns.map((col) => {
-          if (col.id === targetColumnId) {
-            return {
-              ...col,
-              cards: [...col.cards, { ...cardToMove!, columnId: targetColumnId }],
-            }
+      return newColumns.map((col) => {
+        if (col.id === targetColumnId) {
+          return {
+            ...col,
+            cards: [...col.cards, { ...cardToMove!, columnId: targetColumnId }],
           }
-          return col
-        })
-      }
-      return newColumns
+        }
+        return col
+      })
     })
-  }, [])
+
+    // Call API to update status in database
+    try {
+      const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done'> = {
+        'todo': 'Todo',
+        'inprogress': 'InProgress',
+        'review': 'Review',
+        'done': 'Done',
+      }
+
+      await storiesApi.updateStatus(
+        cardId,
+        statusMap[targetColumnId.toLowerCase()] || 'Todo'
+      )
+      toast.success("Story moved successfully")
+    } catch (error) {
+      console.error("Failed to move story:", error)
+      toast.error("Failed to move story. Please try again.")
+      // Revert optimistic update would require refetching
+    }
+  }, [columns])
 
   const handleEditCard = useCallback((card: KanbanCardData) => {
     // Open the card detail modal for editing
@@ -538,6 +634,15 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
 
     // Skip if dropping in the same column
     if (draggedCard.columnId === targetColumnId) {
+      setDraggedCard(null)
+      setDraggedOverColumn(null)
+      return
+    }
+
+    // ===== Prevent Moving Back to Todo =====
+    // Once a story leaves Todo, it cannot go back
+    if (targetColumnId === "todo" && draggedCard.columnId !== "todo") {
+      toast.error("Cannot move story back to Todo. Once started, stories can only move forward or back for rework.")
       setDraggedCard(null)
       setDraggedOverColumn(null)
       return

@@ -106,37 +106,32 @@ class Developer(BaseAgent):
         """Handle when a task is moved to In Progress status."""
         await self.message_user("thinking", "Task moved to In Progress, preparing development environment...")
 
+        # Get story_id from context (sent by Router), fallback to task_id
+        story_id = task.context.get("story_id") or str(task.task_id)
+        
+        # Calculate branch and worktree info using story_id (matches frontend logic)
+        short_story_id = story_id.split('-')[-1] if '-' in story_id else story_id[:8]
+        branch_name = f"story_{short_story_id}"
+        worktree_name = f"ws_story_{short_story_id}"
+
         # Initialize a new crew instance with project-specific context
         project_crew = DeveloperCrew(project_id=project_id, root_dir=project_dir)
 
         # For task status change, we might want to prepare the development environment
         # This could involve creating a branch, setting up worktree, etc.
-        response = await project_crew.implement_task(user_story=task.content, task_id=str(task.task_id))
+        response = await project_crew.implement_task(user_story=task.content, task_id=story_id)
 
         await self.message_user("thinking", "Development environment prepared")
 
-        # Update story status: InProgress → Review (after completing implementation)
-        story_updated = await self.update_story_status(
-            story_id=task.task_id,
-            new_status="Review",
-            old_status="InProgress",
-            transition_reason="Development completed from InProgress trigger"
+        # Notify completion with branch/worktree info
+        await self.message_user(
+            "progress", 
+            f" Development complete!\n\n"
+            f" **Worktree:** `{worktree_name}`\n"
+            f" **Branch:** `{branch_name}`\n\n"
+            f"Please move story to Review on the Kanban board.", 
+            {"milestone": "completed", "branch": branch_name, "worktree": worktree_name}
         )
-        
-        if story_updated:
-            logger.info(f"[{self.name}] Story {task.task_id} moved to Review")
-            await self.message_user(
-                "progress", 
-                "✅ Development complete! Story moved to Review for QA", 
-                {"milestone": "completed", "story_status": "Review"}
-            )
-        else:
-            logger.warning(f"[{self.name}] Failed to update story {task.task_id} status")
-            await self.message_user(
-                "progress", 
-                "Task started successfully", 
-                {"milestone": "development_started"}
-            )
 
         logger.info(
             f"[{self.name}] Task started for project {project_id}: {len(response)} chars"
@@ -150,7 +145,6 @@ class Developer(BaseAgent):
                 "routing_reason": task.routing_reason,
                 "implementation_type": "task_started",
                 "project_id": project_id,
-                "story_status_updated": story_updated,
             },
             requires_approval=False,
         )
@@ -159,35 +153,30 @@ class Developer(BaseAgent):
         """Handle regular development requests."""
         await self.message_user("thinking", "Analyzing development requirements")
 
+        # Get story_id from context (sent by Router), fallback to task_id
+        story_id = task.context.get("story_id") or str(task.task_id)
+        
+        # Calculate branch and worktree info using story_id (matches frontend logic)
+        short_story_id = story_id.split('-')[-1] if '-' in story_id else story_id[:8]
+        branch_name = f"story_{short_story_id}"
+        worktree_name = f"ws_story_{short_story_id}"
+
         # Initialize a new crew instance with project-specific context
         project_crew = DeveloperCrew(project_id=project_id, root_dir=project_dir)
 
-        response = await project_crew.implement_task(user_story=task.content, task_id=str(task.task_id))
+        response = await project_crew.implement_task(user_story=task.content, task_id=story_id)
 
         await self.message_user("thinking", "Reviewing implementation")
 
-        # Update story status: InProgress → Review
-        story_updated = await self.update_story_status(
-            story_id=task.task_id,
-            new_status="Review",
-            old_status="InProgress",
-            transition_reason="Implementation completed, ready for review"
+        # Notify completion with branch/worktree info
+        await self.message_user(
+            "progress", 
+            f" Implementation complete!\n\n"
+            f" **Worktree:** `{worktree_name}`\n"
+            f" **Branch:** `{branch_name}`\n\n"
+            f"Please move story to Review on the Kanban board.", 
+            {"milestone": "completed", "branch": branch_name, "worktree": worktree_name}
         )
-        
-        if story_updated:
-            logger.info(f"[{self.name}] Story {task.task_id} moved to Review")
-            await self.message_user(
-                "progress", 
-                "✅ Implementation complete! Story moved to Review for QA", 
-                {"milestone": "completed", "story_status": "Review"}
-            )
-        else:
-            logger.warning(f"[{self.name}] Failed to update story {task.task_id} status")
-            await self.message_user(
-                "progress", 
-                "Development task complete", 
-                {"milestone": "completed"}
-            )
 
         logger.info(
             f"[{self.name}] Implementation completed for project {project_id}: {len(response)} chars"
@@ -201,7 +190,6 @@ class Developer(BaseAgent):
                 "routing_reason": task.routing_reason,
                 "implementation_type": "code_development",
                 "project_id": project_id,
-                "story_status_updated": story_updated,
             },
             requires_approval=False,
         )

@@ -588,7 +588,10 @@ class StoryEventRouter(BaseEventRouter):
         """Route task to Developer agent."""
         with Session(engine) as session:
             from app.services import AgentService
+            from app.services.story_service import StoryService
+            
             agent_service = AgentService(session)
+            story_service = StoryService(session)
 
             # Find Developer agent in project
             developer = agent_service.get_by_project_and_role(
@@ -597,18 +600,35 @@ class StoryEventRouter(BaseEventRouter):
             )
 
             if developer:
-                # Create a message for the developer about the status change
-                story_title = event_dict.get('story_title', 'Unknown Story')
-                content = f"Story '{story_title}' has been moved to In Progress. Please start development."
+                # Query story details from database
+                story_id = event_dict.get("story_id")
+                story = story_service.get_by_id(story_id) if story_id else None
+                
+                if story:
+                    # Create detailed content with story information
+                    content_parts = [f"# {story.title}"]
+                    
+                    if story.description:
+                        content_parts.append(f"\n## Description\n{story.description}")
+                    
+                    if story.acceptance_criteria:
+                        content_parts.append(f"\n## Acceptance Criteria\n{story.acceptance_criteria}")
+                    
+                    content = "\n".join(content_parts)
+                else:
+                    # Fallback to generic message if story not found
+                    story_title = event_dict.get('story_title', 'Unknown Story')
+                    content = f"Story '{story_title}' has been moved to In Progress. Please start development."
+                    self.logger.warning(f"Story {story_id} not found in database, using generic content")
 
                 await self.publish_task(
                     agent_id=developer.id,
-                    task_type=AgentTaskType.IMPLEMENT_STORY,  # or other appropriate task type
+                    task_type=AgentTaskType.IMPLEMENT_STORY,
                     source_event=event_dict,
                     routing_reason="story_status_changed_to_in_progress",
                     priority="high",
                     additional_context={
-                        "story_id": event_dict.get("story_id"),
+                        "story_id": story_id,
                         "content": content
                     }
                 )
