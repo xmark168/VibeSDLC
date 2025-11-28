@@ -29,9 +29,14 @@ class TesterState(TypedDict, total=False):
     # Processing
     stories: list[dict]
     test_scenarios: list[dict]
-    test_cases: list[dict]
+    
+    # Test cases - split by type
+    test_cases: dict  # {"integration_tests": [...], "unit_tests": [...]}
+    
+    # Results - split by type
+    result: dict  # {"integration": {...}, "unit": {...}}
+    test_execution: dict  # {"integration": {...}, "unit": {...}}
     
     # Output
-    result: dict
     message: str
     error: str | None

@@ -1,7 +1,10 @@
-"""Tester Tools - LangChain tools for test context."""
+"""Tester Tools - LangChain tools for test context and execution."""
 
+import json
 import logging
+import os
 import re
+import subprocess
 from pathlib import Path
 from uuid import UUID
 
@@ -272,6 +275,183 @@ def get_stories_in_review(project_id: str) -> str:
         return f"Error fetching stories: {str(e)}"
 
 
+# ============================================================================
+# TEST EXECUTION TOOLS
+# ============================================================================
+
+def _detect_test_command(project_path: Path, test_type: str, test_file: str) -> str:
+    """Detect the appropriate test command based on project structure."""
+    # Check for package.json (Node.js project)
+    if (project_path / "package.json").exists():
+        try:
+            pkg = json.loads((project_path / "package.json").read_text())
+            scripts = pkg.get("scripts", {})
+            
+            # Prefer pnpm, then npm
+            runner = "pnpm" if (project_path / "pnpm-lock.yaml").exists() else "npm run"
+            
+            if test_file:
+                # Run specific test file
+                return f"{runner} test -- {test_file}"
+            elif test_type == "integration" and "test:integration" in scripts:
+                return f"{runner} test:integration"
+            elif test_type == "unit" and "test:unit" in scripts:
+                return f"{runner} test:unit"
+            elif "test" in scripts:
+                return f"{runner} test"
+        except:
+            pass
+        return "pnpm test" if (project_path / "pnpm-lock.yaml").exists() else "npm test"
+    
+    # Check for pytest (Python project)
+    if (project_path / "pytest.ini").exists() or (project_path / "pyproject.toml").exists():
+        if test_file:
+            return f"pytest {test_file} -v"
+        elif test_type == "integration":
+            return "pytest tests/integration -v"
+        elif test_type == "unit":
+            return "pytest tests/unit -v"
+        return "pytest -v"
+    
+    return "echo 'No test framework detected'"
+
+
+def _parse_jest_output(stdout: str, stderr: str) -> dict:
+    """Parse Jest test output."""
+    result = {
+        "passed": 0,
+        "failed": 0,
+        "failed_tests": [],
+        "coverage": None,
+    }
+    
+    # Parse test counts
+    # Pattern: "Tests: X failed, Y passed, Z total"
+    match = re.search(r"Tests:\s*(?:(\d+)\s*failed,\s*)?(\d+)\s*passed", stdout + stderr)
+    if match:
+        result["failed"] = int(match.group(1) or 0)
+        result["passed"] = int(match.group(2) or 0)
+    
+    # Parse failed test names
+    # Pattern: "✕ test name (123ms)"
+    failed_matches = re.findall(r"[✕✖]\s+(.+?)\s*\(\d+\s*ms\)", stdout + stderr)
+    result["failed_tests"] = failed_matches[:10]  # Limit to 10
+    
+    # Parse coverage
+    # Pattern: "All files | 85.5 | 80.2 | 90.1 | 85.5"
+    cov_match = re.search(r"All files\s*\|\s*([\d.]+)", stdout + stderr)
+    if cov_match:
+        result["coverage"] = f"{cov_match.group(1)}%"
+    
+    return result
+
+
+@tool
+def run_tests(project_id: str, test_type: str = "all", test_file: str = "") -> str:
+    """Run tests and return structured results.
+    
+    Call this to execute tests in the project and get pass/fail results.
+    
+    Args:
+        project_id: The project UUID
+        test_type: Type of tests to run - "all", "integration", or "unit"
+        test_file: Specific test file to run (optional, relative path)
+        
+    Returns:
+        JSON string with test results including passed/failed counts and coverage
+    """
+    try:
+        project_path = _get_project_path(project_id)
+        if not project_path:
+            return json.dumps({"success": False, "error": "Project path not configured"})
+        
+        # Build test command
+        cmd = _detect_test_command(project_path, test_type, test_file)
+        logger.info(f"[run_tests] Executing: {cmd} in {project_path}")
+        
+        # Execute with timeout
+        try:
+            result = subprocess.run(
+                cmd,
+                shell=True,
+                cwd=str(project_path),
+                capture_output=True,
+                text=True,
+                timeout=180,
+                env={**os.environ, "CI": "true", "FORCE_COLOR": "0"}
+            )
+        except subprocess.TimeoutExpired:
+            return json.dumps({
+                "success": False,
+                "error": "Test execution timed out (180s)",
+                "passed": 0,
+                "failed": 0
+            })
+        
+        # Parse results
+        parsed = _parse_jest_output(result.stdout, result.stderr)
+        
+        return json.dumps({
+            "success": result.returncode == 0,
+            "passed": parsed["passed"],
+            "failed": parsed["failed"],
+            "failed_tests": parsed["failed_tests"],
+            "coverage": parsed["coverage"],
+            "output": (result.stdout + result.stderr)[-2000:],
+            "error": result.stderr[-500:] if result.returncode != 0 else None
+        })
+        
+    except Exception as e:
+        logger.error(f"[run_tests] Error: {e}")
+        return json.dumps({"success": False, "error": str(e)})
+
+
+@tool
+def create_bug_story(
+    project_id: str,
+    title: str,
+    description: str,
+    parent_story_id: str = ""
+) -> str:
+    """Create an Enabler story for bug fix when tests fail.
+    
+    Call this when tests fail to create a bug story for developers to fix.
+    
+    Args:
+        project_id: The project UUID
+        title: Short title describing the bug (e.g., "Login validation failing")
+        description: Detailed description with failing tests and error messages
+        parent_story_id: UUID of the original story (optional, for linking)
+        
+    Returns:
+        Confirmation message with created story ID
+    """
+    try:
+        from sqlmodel import Session
+        from app.core.db import engine
+        from app.models import Story, StoryType, StoryStatus
+        
+        with Session(engine) as session:
+            story = Story(
+                project_id=UUID(project_id),
+                type=StoryType.ENABLER_STORY,
+                title=f"🐛 Fix: {title}",
+                description=description,
+                status=StoryStatus.TODO,
+                parent_id=UUID(parent_story_id) if parent_story_id else None,
+            )
+            session.add(story)
+            session.commit()
+            session.refresh(story)
+            
+            logger.info(f"[create_bug_story] Created bug story: {story.id}")
+            return f"Created bug story '{story.title}' (ID: {story.id}) in Todo"
+            
+    except Exception as e:
+        logger.error(f"[create_bug_story] Error: {e}")
+        return f"Error creating bug story: {str(e)}"
+
+
 # Tool registry
 TESTER_TOOLS = [
     get_test_files,
@@ -281,7 +461,20 @@ TESTER_TOOLS = [
     get_stories_in_review,
 ]
 
+# Extended tools for test execution
+TESTER_EXECUTION_TOOLS = [
+    run_tests,
+    create_bug_story,
+    get_test_files,
+    read_test_file,
+]
+
 
 def get_tester_tools():
-    """Get list of tools available to Tester."""
+    """Get list of tools available to Tester for status/conversation."""
     return TESTER_TOOLS
+
+
+def get_execution_tools():
+    """Get tools for test execution and verification."""
+    return TESTER_EXECUTION_TOOLS

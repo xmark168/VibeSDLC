@@ -11,7 +11,9 @@ from app.agents.tester.src.nodes import (
     query_stories,
     analyze_stories,
     generate_test_cases,
-    generate_test_file,
+    generate_integration_tests,
+    generate_unit_tests,
+    execute_and_verify,
     send_response,
     test_status,
     conversation,
@@ -44,11 +46,13 @@ class TesterGraph:
         graph.add_node("setup_context", partial(setup_context, agent=agent))
         graph.add_node("router", partial(router, agent=agent))
         
-        # Generate tests flow
+        # Generate tests flow - split into integration and unit
         graph.add_node("query_stories", partial(query_stories, agent=agent))
         graph.add_node("analyze_stories", analyze_stories)
         graph.add_node("generate_test_cases", generate_test_cases)
-        graph.add_node("generate_test_file", generate_test_file)
+        graph.add_node("generate_integration_tests", generate_integration_tests)
+        graph.add_node("generate_unit_tests", generate_unit_tests)
+        graph.add_node("execute_and_verify", partial(execute_and_verify, agent=agent))
         graph.add_node("send_response", partial(send_response, agent=agent))
         
         # Tool-based nodes
@@ -66,11 +70,13 @@ class TesterGraph:
             "conversation": "conversation",
         })
         
-        # Generate tests flow
+        # Generate tests flow (sequential: IT → UT)
         graph.add_edge("query_stories", "analyze_stories")
         graph.add_edge("analyze_stories", "generate_test_cases")
-        graph.add_edge("generate_test_cases", "generate_test_file")
-        graph.add_edge("generate_test_file", "send_response")
+        graph.add_edge("generate_test_cases", "generate_integration_tests")
+        graph.add_edge("generate_integration_tests", "generate_unit_tests")
+        graph.add_edge("generate_unit_tests", "execute_and_verify")
+        graph.add_edge("execute_and_verify", "send_response")
         graph.add_edge("send_response", END)
         
         # Tool nodes → END
@@ -78,4 +84,4 @@ class TesterGraph:
         graph.add_edge("conversation", END)
         
         self.graph = graph.compile()
-        logger.info("[TesterGraph] Compiled with routing")
+        logger.info("[TesterGraph] Compiled with IT/UT split")

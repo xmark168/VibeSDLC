@@ -49,7 +49,6 @@ def _strip_markdown(content: str) -> str:
 
 def _should_message_user(state: TesterState) -> bool:
     """Check if should send message to user - only for user messages."""
-    # Only message when handling user message, otherwise work silently
     return state.get("task_type") == "message"
 
 
@@ -74,17 +73,13 @@ async def setup_context(state: TesterState, agent=None) -> dict:
 
 async def router(state: TesterState, agent=None) -> dict:
     """Route to appropriate action based on context."""
-    # Auto-triggered → always generate tests
     if state.get("is_auto"):
         return {"action": "GENERATE_TESTS"}
     
     user_message = state.get("user_message", "")
-    
-    # Empty message with story_ids → generate tests
     if not user_message and state.get("story_ids"):
         return {"action": "GENERATE_TESTS"}
     
-    # Use LLM to decide
     try:
         response = await _llm.ainvoke([
             SystemMessage(content=get_system_prompt("routing")),
@@ -105,7 +100,7 @@ async def router(state: TesterState, agent=None) -> dict:
 # ============================================================================
 
 async def query_stories(state: TesterState, agent=None) -> dict:
-    """Query stories with REVIEW status and set agent_state to processing."""
+    """Query stories with REVIEW status."""
     project_id = state.get("project_id")
     story_ids = state.get("story_ids", [])
     
@@ -119,7 +114,6 @@ async def query_stories(state: TesterState, agent=None) -> dict:
                 query = query.where(Story.id.in_([UUID(sid) for sid in story_ids]))
             
             stories = session.exec(query).all()
-            
             stories_data = [
                 {
                     "id": str(s.id),
@@ -130,7 +124,7 @@ async def query_stories(state: TesterState, agent=None) -> dict:
                 for s in stories
             ]
         
-        # Update agent_state to "processing" for each story
+        # Update agent_state to "processing"
         if agent and stories_data:
             for story in stories_data:
                 try:
@@ -140,7 +134,7 @@ async def query_stories(state: TesterState, agent=None) -> dict:
                         progress_message="Đang phân tích và tạo test cases..."
                     )
                 except Exception as e:
-                    logger.warning(f"[query_stories] Failed to update agent state: {e}")
+                    logger.warning(f"[query_stories] Failed to update state: {e}")
         
         return {"stories": stories_data}
     except Exception as e:
@@ -149,7 +143,7 @@ async def query_stories(state: TesterState, agent=None) -> dict:
 
 
 async def analyze_stories(state: TesterState) -> dict:
-    """Analyze stories → test scenarios."""
+    """Analyze stories → test scenarios for both integration and unit tests."""
     stories = state.get("stories", [])
     if not stories:
         return {"test_scenarios": []}
@@ -167,10 +161,10 @@ async def analyze_stories(state: TesterState) -> dict:
 
 
 async def generate_test_cases(state: TesterState) -> dict:
-    """Convert scenarios → test cases."""
+    """Convert scenarios → test cases (both integration and unit)."""
     scenarios = state.get("test_scenarios", [])
     if not scenarios:
-        return {"test_cases": []}
+        return {"test_cases": {"integration_tests": [], "unit_tests": []}}
     
     try:
         response = await _llm.ainvoke([
@@ -178,21 +172,26 @@ async def generate_test_cases(state: TesterState) -> dict:
             HumanMessage(content=get_user_prompt("generate_test_cases", scenarios=json.dumps(scenarios, indent=2)))
         ], config=_cfg(state, "generate_test_cases"))
         
-        return {"test_cases": _parse_json(response.content)}
+        test_cases = _parse_json(response.content)
+        # Ensure structure
+        if isinstance(test_cases, list):
+            test_cases = {"integration_tests": test_cases, "unit_tests": []}
+        
+        return {"test_cases": test_cases}
     except Exception as e:
         logger.error(f"[generate_test_cases] {e}")
-        return {"test_cases": [], "error": str(e)}
+        return {"test_cases": {"integration_tests": [], "unit_tests": []}, "error": str(e)}
 
 
-async def generate_test_file(state: TesterState) -> dict:
-    """Generate TypeScript test file."""
-    test_cases = state.get("test_cases", [])
+async def generate_integration_tests(state: TesterState) -> dict:
+    """Generate integration test file."""
+    test_cases = state.get("test_cases", {}).get("integration_tests", [])
     project_path = state.get("project_path", "")
     timestamp = state.get("timestamp", "")
     stories = state.get("stories", [])
     
     if not test_cases or not project_path:
-        return {"result": {"test_count": 0, "error": "No test cases or project path"}}
+        return {"result": {"integration": {"test_count": 0}}}
     
     tests_dir = Path(project_path) / "tests" / "integration"
     tests_dir.mkdir(parents=True, exist_ok=True)
@@ -211,15 +210,14 @@ async def generate_test_file(state: TesterState) -> dict:
     skipped = len(test_cases) - len(new_cases)
     
     if not new_cases:
-        return {"result": {
-            "filename": "integration.test.ts",
+        return {"result": {"integration": {
+            "filename": "tests/integration/integration.test.ts",
             "test_count": 0,
             "skipped_duplicates": skipped,
-            "stories_covered": [s["id"] for s in stories]
-        }}
+        }}}
     
     # Generate code
-    task = "generate_test_file_append" if existing_content else "generate_test_file_new"
+    task = "generate_integration_test_append" if existing_content else "generate_integration_test_new"
     try:
         response = await _llm.ainvoke([
             SystemMessage(content=get_system_prompt(task)),
@@ -228,7 +226,7 @@ async def generate_test_file(state: TesterState) -> dict:
                 test_cases=json.dumps(new_cases, indent=2),
                 existing_titles=str(list(existing_titles)[:20]) if existing_content else ""
             ))
-        ], config=_cfg(state, "generate_test_file"))
+        ], config=_cfg(state, "generate_integration_tests"))
         
         new_content = _strip_markdown(response.content)
         
@@ -236,22 +234,199 @@ async def generate_test_file(state: TesterState) -> dict:
         if existing_content:
             pos = existing_content.rfind("});")
             if pos > 0:
-                final = existing_content[:pos] + f"\n\n  // === Added {timestamp} ===\n" + new_content + "\n" + existing_content[pos:]
+                final = existing_content[:pos] + f"\n\n  // === Integration Tests Added {timestamp} ===\n" + new_content + "\n" + existing_content[pos:]
             else:
                 final = existing_content + "\n\n" + new_content
             existing_file.write_text(final, encoding='utf-8')
         else:
             existing_file.write_text(new_content, encoding='utf-8')
         
-        return {"result": {
-            "filename": "integration.test.ts",
+        logger.info(f"[generate_integration_tests] Created {len(new_cases)} tests")
+        return {"result": {"integration": {
+            "filename": "tests/integration/integration.test.ts",
             "test_count": len(new_cases),
             "skipped_duplicates": skipped,
             "stories_covered": [s["id"] for s in stories]
-        }}
+        }}}
     except Exception as e:
-        logger.error(f"[generate_test_file] {e}")
-        return {"result": {"error": str(e)}}
+        logger.error(f"[generate_integration_tests] {e}")
+        return {"result": {"integration": {"error": str(e)}}}
+
+
+async def generate_unit_tests(state: TesterState) -> dict:
+    """Generate unit test files grouped by target file."""
+    test_cases = state.get("test_cases", {}).get("unit_tests", [])
+    project_path = state.get("project_path", "")
+    timestamp = state.get("timestamp", "")
+    current_result = state.get("result", {})
+    
+    if not test_cases or not project_path:
+        return {"result": {**current_result, "unit": {"test_count": 0}}}
+    
+    tests_dir = Path(project_path) / "tests" / "unit"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Group test cases by target file
+    grouped = {}
+    for tc in test_cases:
+        target = tc.get("target_file", "misc")
+        if target not in grouped:
+            grouped[target] = []
+        grouped[target].append(tc)
+    
+    total_created = 0
+    total_skipped = 0
+    files_created = []
+    
+    for target_file, cases in grouped.items():
+        # Create test file name from target
+        test_filename = target_file.replace("/", "_").replace(".ts", ".test.ts").replace(".js", ".test.js")
+        if not test_filename.endswith(".test.ts"):
+            test_filename += ".test.ts"
+        
+        existing_file = tests_dir / test_filename
+        existing_titles = set()
+        existing_content = ""
+        
+        if existing_file.exists():
+            existing_content = existing_file.read_text(encoding='utf-8')
+            existing_titles = set(re.findall(r"(?:test|it)\s*\(['\"]([^'\"]+)['\"]", existing_content))
+        
+        # Filter duplicates
+        new_cases = [tc for tc in cases if tc.get("title", "").lower() not in {t.lower() for t in existing_titles}]
+        total_skipped += len(cases) - len(new_cases)
+        
+        if not new_cases:
+            continue
+        
+        # Generate code
+        task = "generate_unit_test_append" if existing_content else "generate_unit_test_new"
+        try:
+            response = await _llm.ainvoke([
+                SystemMessage(content=get_system_prompt(task)),
+                HumanMessage(content=get_user_prompt(
+                    task,
+                    test_cases=json.dumps(new_cases, indent=2),
+                    target_file=target_file,
+                    existing_titles=str(list(existing_titles)[:20]) if existing_content else ""
+                ))
+            ], config=_cfg(state, f"generate_unit_tests_{target_file}"))
+            
+            new_content = _strip_markdown(response.content)
+            
+            # Write file
+            if existing_content:
+                pos = existing_content.rfind("});")
+                if pos > 0:
+                    final = existing_content[:pos] + f"\n\n  // === Unit Tests Added {timestamp} ===\n" + new_content + "\n" + existing_content[pos:]
+                else:
+                    final = existing_content + "\n\n" + new_content
+                existing_file.write_text(final, encoding='utf-8')
+            else:
+                existing_file.write_text(new_content, encoding='utf-8')
+            
+            total_created += len(new_cases)
+            files_created.append(f"tests/unit/{test_filename}")
+            
+        except Exception as e:
+            logger.error(f"[generate_unit_tests] Error for {target_file}: {e}")
+    
+    logger.info(f"[generate_unit_tests] Created {total_created} tests in {len(files_created)} files")
+    return {"result": {**current_result, "unit": {
+        "filenames": files_created,
+        "test_count": total_created,
+        "skipped_duplicates": total_skipped,
+    }}}
+
+
+# ============================================================================
+# EXECUTE AND VERIFY (React Agent)
+# ============================================================================
+
+EXECUTE_SYSTEM_PROMPT = """You are a QA agent that executes tests and handles failures intelligently.
+
+Your task:
+1. Run integration tests first, then unit tests
+2. Analyze the results for each suite
+3. If ALL tests pass → Report success
+4. If tests FAIL:
+   - Create a bug story using create_bug_story tool
+   - Include failing test names and error messages
+   - Specify which suite (integration/unit) failed
+
+Always respond in Vietnamese with a summary of both test suites."""
+
+
+async def execute_and_verify(state: TesterState, agent=None) -> dict:
+    """Execute tests and handle results using React Agent."""
+    from langgraph.prebuilt import create_react_agent
+    from app.agents.tester.src.tools import get_execution_tools
+    
+    result = state.get("result", {})
+    stories = state.get("stories", [])
+    project_id = state.get("project_id", "")
+    
+    int_count = result.get("integration", {}).get("test_count", 0)
+    unit_count = result.get("unit", {}).get("test_count", 0)
+    
+    # Skip if no tests were generated
+    if int_count == 0 and unit_count == 0:
+        return {"test_execution": {"skipped": True, "reason": "No new tests generated"}}
+    
+    try:
+        tools = get_execution_tools()
+        react_agent = create_react_agent(_llm, tools)
+        
+        # Build context
+        int_file = result.get("integration", {}).get("filename", "")
+        unit_files = result.get("unit", {}).get("filenames", [])
+        story_context = "\n".join([f"- {s['title']} (ID: {s['id']})" for s in stories])
+        first_story_id = stories[0]["id"] if stories else ""
+        
+        user_message = f"""Chạy tests và xử lý kết quả.
+
+Project ID: {project_id}
+
+**Integration Tests:** {int_count} tests
+- File: {int_file}
+
+**Unit Tests:** {unit_count} tests
+- Files: {', '.join(unit_files) if unit_files else 'None'}
+
+Stories được test:
+{story_context}
+
+Hãy:
+1. Chạy integration tests với run_tests(project_id="{project_id}", test_type="integration", test_file="{int_file}") nếu có
+2. Chạy unit tests với run_tests(project_id="{project_id}", test_type="unit") nếu có
+3. Nếu có test fail → tạo bug story với create_bug_story, parent_story_id="{first_story_id}"
+4. Báo cáo tổng hợp kết quả"""
+
+        agent_result = await react_agent.ainvoke(
+            {"messages": [("system", EXECUTE_SYSTEM_PROMPT), ("user", user_message)]},
+            config=_cfg(state, "execute_and_verify")
+        )
+        
+        final_message = agent_result["messages"][-1].content
+        
+        # Update story agent state
+        if agent and stories:
+            for story in stories:
+                try:
+                    tests_passed = "pass" in final_message.lower() or "thành công" in final_message.lower()
+                    await agent.update_story_agent_state(
+                        story_id=UUID(story["id"]),
+                        new_state="finished" if tests_passed else "processing",
+                        progress_message=final_message[:200]
+                    )
+                except Exception as e:
+                    logger.warning(f"[execute_and_verify] Failed to update state: {e}")
+        
+        return {"test_execution": {"completed": True, "message": final_message}}
+        
+    except Exception as e:
+        logger.error(f"[execute_and_verify] Error: {e}")
+        return {"test_execution": {"completed": False, "error": str(e)}}
 
 
 # ============================================================================
@@ -325,56 +500,66 @@ async def conversation(state: TesterState, agent=None) -> dict:
 
 
 # ============================================================================
-# SEND RESPONSE (for generate tests flow)
+# SEND RESPONSE
 # ============================================================================
 
 async def send_response(state: TesterState, agent=None) -> dict:
     """Send response for generate tests flow."""
     result = state.get("result", {})
+    test_execution = state.get("test_execution", {})
     stories = state.get("stories", [])
-    error = state.get("error") or result.get("error")
+    error = state.get("error")
+    
+    int_result = result.get("integration", {})
+    unit_result = result.get("unit", {})
     
     # Build message
     if error:
         msg = f"Có lỗi xảy ra: {error}"
     else:
-        test_count = result.get("test_count", 0)
-        skipped = result.get("skipped_duplicates", 0)
-        filename = result.get("filename", "integration.test.ts")
+        int_count = int_result.get("test_count", 0)
+        unit_count = unit_result.get("test_count", 0)
+        total = int_count + unit_count
         
-        if test_count == 0 and skipped > 0:
-            msg = f"Tests đã có sẵn trong `{filename}`, không cần tạo thêm!"
-        elif skipped > 0:
-            msg = f"Đã thêm {test_count} tests vào `{filename}` (bỏ qua {skipped} đã có)."
-        elif test_count > 0:
-            msg = f"Đã tạo {test_count} tests trong `{filename}`."
+        if total == 0:
+            msg = "Không có tests mới được tạo (có thể đã tồn tại hoặc không có stories trong Review)."
         else:
-            msg = "Không có stories nào trong trạng thái Review để tạo test."
+            parts = []
+            if int_count > 0:
+                parts.append(f"{int_count} integration tests")
+            if unit_count > 0:
+                parts.append(f"{unit_count} unit tests")
+            msg = f"✅ Đã tạo {' và '.join(parts)}."
+        
+        # Append test execution results
+        if test_execution.get("completed"):
+            exec_msg = test_execution.get("message", "")
+            if exec_msg:
+                msg += f"\n\n**Kết quả chạy tests:**\n{exec_msg[:500]}"
     
-    # Update agent_state to "finished" and send message to story channels
+    # Update story states and send messages
     if agent and stories:
         for story in stories:
             story_id = UUID(story["id"])
             try:
-                # Update agent state to finished
                 await agent.update_story_agent_state(
                     story_id=story_id,
                     new_state="finished",
-                    progress_message=msg
+                    progress_message=msg[:200]
                 )
                 
-                # Send message to story channel if tests were created
-                if result.get("test_count", 0) > 0:
+                total = int_result.get("test_count", 0) + unit_result.get("test_count", 0)
+                if total > 0:
                     await agent.message_story(
                         story_id=story_id,
-                        content=f"✅ Đã tạo {result['test_count']} integration tests",
+                        content=f"✅ Đã tạo {total} tests (IT: {int_result.get('test_count', 0)}, UT: {unit_result.get('test_count', 0)})",
                         message_type="test_result",
                         details=result,
                     )
             except Exception as e:
                 logger.warning(f"[send_response] Failed to update story {story['id']}: {e}")
     
-    # Only message_user if user-initiated
+    # Message user if user-initiated
     if agent and _should_message_user(state):
         await agent.message_user("response", msg)
     
