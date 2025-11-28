@@ -419,6 +419,16 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         
         logger.info(f"[implement] Step {current_step + 1}: {code_change.action} {code_change.file_path}")
         
+        # IMPORTANT: Write the generated code to file
+        if workspace_path and code_change.code_snippet:
+            try:
+                file_path = Path(workspace_path) / code_change.file_path
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                file_path.write_text(code_change.code_snippet, encoding='utf-8')
+                logger.info(f"[implement] Wrote {len(code_change.code_snippet)} chars to {code_change.file_path}")
+            except Exception as write_err:
+                logger.warning(f"[implement] Failed to write {code_change.file_path}: {write_err}")
+        
         code_changes = state.get("code_changes", [])
         code_changes.append(code_change.model_dump())
         
