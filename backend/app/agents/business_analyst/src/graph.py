@@ -17,6 +17,8 @@ from .nodes import (
     generate_prd,
     update_prd,
     extract_stories,
+    update_stories,
+    approve_stories,
     analyze_domain,
     save_artifacts,
 )
@@ -24,12 +26,13 @@ from .nodes import (
 logger = logging.getLogger(__name__)
 
 
-def route_by_intent(state: BAState) -> Literal["interview", "prd_create", "prd_update", "extract_stories", "domain_analysis"]:
+def route_by_intent(state: BAState) -> Literal["interview", "prd_create", "prd_update", "extract_stories", "stories_update", "stories_approve", "domain_analysis"]:
     """Router: Direct flow based on classified intent."""
     intent = state.get("intent", "interview")
     reasoning = state.get("reasoning", "")
     collected_info = state.get("collected_info", {})
     existing_prd = state.get("existing_prd")
+    epics = state.get("epics", [])
     
     # FORCE INTERVIEW only for prd_create without collected info
     # prd_update can proceed if we have existing PRD (user wants to edit it)
@@ -47,6 +50,14 @@ def route_by_intent(state: BAState) -> Literal["interview", "prd_create", "prd_u
             f"No existing PRD found, need to create PRD first"
         )
         return "interview"
+    
+    # For stories_update/approve, we need existing epics
+    if intent in ["stories_update", "stories_approve"] and not epics:
+        logger.warning(
+            f"[BA Graph] Overriding '{intent}' -> 'extract_stories': "
+            f"No existing stories found, need to create stories first"
+        )
+        return "extract_stories"
     
     logger.info(f"[BA Graph] Routing to '{intent}': {reasoning[:80] if reasoning else 'no reason'}")
     return intent
@@ -126,6 +137,8 @@ class BusinessAnalystGraph:
         graph.add_node("generate_prd", partial(generate_prd, agent=agent))
         graph.add_node("update_prd", partial(update_prd, agent=agent))
         graph.add_node("extract_stories", partial(extract_stories, agent=agent))
+        graph.add_node("update_stories", partial(update_stories, agent=agent))
+        graph.add_node("approve_stories", partial(approve_stories, agent=agent))
         graph.add_node("analyze_domain", partial(analyze_domain, agent=agent))
         graph.add_node("save_artifacts", partial(save_artifacts, agent=agent))
         
@@ -141,6 +154,8 @@ class BusinessAnalystGraph:
                 "prd_create": "generate_prd",
                 "prd_update": "update_prd",
                 "extract_stories": "extract_stories",
+                "stories_update": "update_stories",
+                "stories_approve": "approve_stories",
                 "domain_analysis": "analyze_domain"
             }
         )
@@ -194,6 +209,12 @@ class BusinessAnalystGraph:
         
         # Story extraction -> save (called when user approves PRD)
         graph.add_edge("extract_stories", "save_artifacts")
+        
+        # Story update -> save
+        graph.add_edge("update_stories", "save_artifacts")
+        
+        # Story approve -> save
+        graph.add_edge("approve_stories", "save_artifacts")
         
         # PRD update -> save (no story extraction needed)
         graph.add_edge("update_prd", "save_artifacts")

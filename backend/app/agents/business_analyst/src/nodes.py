@@ -563,6 +563,74 @@ async def extract_stories(state: BAState, agent=None) -> dict:
         }
 
 
+async def update_stories(state: BAState, agent=None) -> dict:
+    """Node: Update existing Epics and Stories based on user feedback."""
+    logger.info(f"[BA] Updating stories based on user feedback...")
+    
+    epics = state.get("epics", [])
+    if not epics:
+        return {"error": "No existing stories to update"}
+    
+    system_prompt = _sys_prompt(agent, "update_stories")
+    user_prompt = _user_prompt(
+        "update_stories",
+        epics=json.dumps(epics, ensure_ascii=False, indent=2),
+        user_message=state["user_message"]
+    )
+    
+    try:
+        response = await _story_llm.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ],
+            config=_cfg(state, "update_stories")
+        )
+        
+        result = parse_stories_response(response.content)
+        updated_epics = result.get("epics", [])
+        change_summary = result.get("change_summary", "Đã cập nhật stories")
+        
+        # Flatten stories for backward compatibility
+        all_stories = []
+        for epic in updated_epics:
+            stories_in_epic = epic.pop("stories", [])
+            epic_name = epic.get("name", epic.get("title", "Unknown"))
+            for story in stories_in_epic:
+                story["epic_id"] = epic.get("id")
+                story["epic_name"] = epic_name
+                all_stories.append(story)
+        
+        logger.info(f"[BA] Updated {len(updated_epics)} epics with {len(all_stories)} stories")
+        
+        return {
+            "epics": updated_epics,
+            "stories": all_stories,
+            "change_summary": change_summary
+        }
+        
+    except Exception as e:
+        logger.error(f"[BA] Failed to update stories: {e}")
+        return {"error": f"Failed to update stories: {str(e)}"}
+
+
+async def approve_stories(state: BAState, agent=None) -> dict:
+    """Node: Approve stories and prepare them for backlog."""
+    logger.info(f"[BA] Approving stories for backlog...")
+    
+    epics = state.get("epics", [])
+    stories = state.get("stories", [])
+    
+    if not epics and not stories:
+        return {"error": "No stories to approve"}
+    
+    # Mark as approved
+    return {
+        "stories_approved": True,
+        "approval_message": f"Đã phê duyệt {len(epics)} Epics và {len(stories)} Stories. Đã thêm vào backlog dự án."
+    }
+
+
 async def analyze_domain(state: BAState, agent=None) -> dict:
     """Node: Perform domain analysis."""
     logger.info(f"[BA] Analyzing domain...")
@@ -732,6 +800,23 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
     if state.get("change_summary"):
         result["change_summary"] = state["change_summary"]
         # Card is already shown in the PRD save section above
+    
+    # Stories approved - send confirmation message
+    if state.get("stories_approved"):
+        approval_message = state.get("approval_message", "Epics & Stories đã được phê duyệt")
+        result["summary"] = approval_message
+        result["stories_approved"] = True
+        
+        if agent:
+            await agent.message_user(
+                event_type="response",
+                content=f"✅ {approval_message}",
+                details={
+                    "message_type": "stories_approved",
+                    "epics_count": len(state.get("epics", [])),
+                    "stories_count": len(state.get("stories", []))
+                }
+            )
     
     logger.info(f"[BA] Artifacts saved: {result['summary']}")
     

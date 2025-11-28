@@ -243,6 +243,18 @@ export function ChatPanelWS({
     )[0]
     return latest?.id || null
   })()
+  
+  // Find the latest Stories card ID (only show actions on the latest one)
+  const latestStoriesMessageId = (() => {
+    const storiesMessages = uniqueMessages.filter(
+      msg => msg.structured_data?.message_type === 'stories_created'
+    )
+    if (storiesMessages.length === 0) return null
+    const latest = storiesMessages.sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0]
+    return latest?.id || null
+  })()
 
   // Detect unanswered questions - show only the LATEST one
   useEffect(() => {
@@ -863,8 +875,9 @@ export function ChatPanelWS({
                   {/* Show stories file card if structured_data has message_type stories_created */}
                   {msg.structured_data?.message_type === 'stories_created' && msg.structured_data?.file_path && (
                     <StoriesFileCard
-                      count={msg.structured_data.count || 0}
                       filePath={msg.structured_data.file_path}
+                      status={msg.structured_data.status || 'pending'}
+                      showActions={msg.id === latestStoriesMessageId}
                       onView={() => {
                         if (onOpenFile) {
                           onOpenFile(msg.structured_data!.file_path)
@@ -872,6 +885,12 @@ export function ChatPanelWS({
                         if (onActiveTabChange) {
                           onActiveTabChange('file')
                         }
+                      }}
+                      onApprove={() => {
+                        wsSendMessage("Phê duyệt Epics & Stories, thêm vào backlog")
+                      }}
+                      onEdit={(feedback) => {
+                        wsSendMessage(`Chỉnh sửa Epics/Stories: ${feedback}`)
                       }}
                     />
                   )}
