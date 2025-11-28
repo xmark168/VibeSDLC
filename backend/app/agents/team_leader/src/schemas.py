@@ -1,43 +1,27 @@
-"""Pydantic schemas for Team Leader agent."""
+"""Team Leader Pydantic schemas."""
 
 from typing import Optional, List, Literal, Dict, Any
 from pydantic import BaseModel, Field
 
 
+class RoutingDecision(BaseModel):
+    """Structured routing decision from LLM."""
+    action: Literal["DELEGATE", "RESPOND", "CONVERSATION", "STATUS_CHECK"] = Field(
+        description="DELEGATE to specialist, RESPOND directly, CONVERSATION for chat, STATUS_CHECK for board"
+    )
+    target_role: Optional[Literal["business_analyst", "developer", "tester"]] = Field(
+        default=None, description="Target role (required if DELEGATE)"
+    )
+    message: str = Field(description="Response message to user")
+    reason: str = Field(description="Routing reason for logging")
+
+
 class ExtractedPreferences(BaseModel):
-    """Hybrid schema: core typed fields + dynamic dict for flexibility.
-    
-    Used by extract_preferences node for structured LLM output.
-    """
-    
-    # === CORE PREFERENCES (strongly typed) ===
-    preferred_language: Optional[Literal["vi", "en"]] = Field(
-        default=None, 
-        description="User's preferred language: 'vi' for Vietnamese, 'en' for English"
-    )
-    emoji_usage: Optional[bool] = Field(
-        default=None,
-        description="Whether user wants emojis in responses"
-    )
-    expertise_level: Optional[Literal["beginner", "intermediate", "expert"]] = Field(
-        default=None,
-        description="User's technical expertise level"
-    )
-    response_length: Optional[Literal["concise", "detailed"]] = Field(
-        default=None,
-        description="Preferred response length"
-    )
-    tech_stack: Optional[List[str]] = Field(
-        default=None,
-        description="Technologies/frameworks mentioned by user"
-    )
-    communication_style: Optional[Literal["formal", "casual"]] = Field(
-        default=None,
-        description="Preferred communication tone"
-    )
-    
-    # === DYNAMIC PREFERENCES (flexible) ===
-    additional: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Any other preferences detected: timezone, domain_context, custom_instructions, working_hours, notification_preference, etc."
-    )
+    """User preferences schema with typed + dynamic fields."""
+    preferred_language: Optional[Literal["vi", "en"]] = None
+    emoji_usage: Optional[bool] = None
+    expertise_level: Optional[Literal["beginner", "intermediate", "expert"]] = None
+    response_length: Optional[Literal["concise", "detailed"]] = None
+    tech_stack: Optional[List[str]] = None
+    communication_style: Optional[Literal["formal", "casual"]] = None
+    additional: Optional[Dict[str, Any]] = Field(default=None, description="Other detected preferences")
