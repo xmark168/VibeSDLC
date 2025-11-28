@@ -54,7 +54,7 @@ class QueryStoriesFromDBTool(BaseTool):
                         "title": story.title,
                         "description": story.description,
                         "acceptance_criteria": story.acceptance_criteria,
-                        "story_points": story.story_points,
+                        "story_points": story.story_point,
                         "status": story.status.value,
                         "priority": story.priority
                     }

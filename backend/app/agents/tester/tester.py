@@ -1,9 +1,9 @@
-"""Tester Agent - Merged Role + Crew Implementation.
+"""Tester Agent - LangGraph Implementation.
 
-NEW ARCHITECTURE:
+ARCHITECTURE:
 - Inherits from BaseAgent (Kafka abstracted)
 - Handles QA and testing tasks
-- Integrates CrewAI crew logic directly
+- Uses LangGraph for integration test generation
 """
 
 import asyncio
@@ -52,9 +52,9 @@ class Tester(BaseAgent):
         # Create CrewAI agent (legacy - for manual @Tester mentions)
         self.crew_agent = self._create_crew_agent()
         
-        # Initialize TesterCrew for integration test generation
-        from app.agents.tester.crew import TesterCrew
-        self.crew = TesterCrew()
+        # Initialize TesterGraph (LangGraph) for integration test generation
+        from app.agents.tester.graph import TesterGraph
+        self.tester_graph = TesterGraph()
         
         # Get project path for test file generation
         from app.core.db import engine
@@ -250,7 +250,7 @@ class Tester(BaseAgent):
         # Send "working on it" message
         await self.message_user(
             "thinking",
-            f"🧪 Story moved to REVIEW. Generating integration tests (API + DB verification)..."
+            f"Mình thấy có {len(story_ids)} story vừa chuyển sang Review. Để mình viết integration tests cho bạn nhé!"
         )
         
         # Check if project path is available
@@ -258,8 +258,8 @@ class Tester(BaseAgent):
             logger.error(f"[{self.name}] No project_path available for test generation")
             await self.message_user(
                 "response",
-                "❌ **Cannot generate tests:** project path not configured.\n\n"
-                "**Story remains in REVIEW status.** Please contact admin to set up project directory."
+                "Ối, mình chưa biết project nằm ở đâu nên không tạo được test file. "
+                "Bạn nhờ admin cấu hình project path giúp mình nhé!"
             )
             return TaskResult(
                 success=False,
@@ -267,8 +267,8 @@ class Tester(BaseAgent):
             )
         
         try:
-            # Use TesterCrew to generate integration tests
-            result = await self.crew.generate_tests_from_stories(
+            # Use TesterGraph (LangGraph) to generate integration tests
+            result = await self.tester_graph.generate_tests(
                 project_id=str(self.project_id),
                 story_ids=story_ids,
                 project_path=self.project_path,
@@ -277,13 +277,11 @@ class Tester(BaseAgent):
             
             # Check for errors
             if result.get("error"):
-                logger.error(f"[{self.name}] TesterCrew error: {result['error']}")
+                logger.error(f"[{self.name}] TesterGraph error: {result['error']}")
                 await self.message_user(
                     "response",
-                    f"⚠️ **Test generation failed**\n\n"
-                    f"**Error:** {result['error']}\n\n"
-                    f"**Story remains in REVIEW status.** Please fix the issue or contact admin.\n\n"
-                    f"Raw output: {result.get('raw_output', 'N/A')[:500]}"
+                    f"Hmm, mình gặp chút vấn đề khi tạo tests: {result['error']}\n\n"
+                    f"Bạn kiểm tra lại story hoặc báo admin giúp mình nhé!"
                 )
                 return TaskResult(
                     success=False,
@@ -293,17 +291,34 @@ class Tester(BaseAgent):
             # Extract result info
             test_file = result.get("filename") or result.get("test_file")
             test_count = result.get("test_count", 0)
+            skipped = result.get("skipped_duplicates", 0)
             stories_covered = result.get("stories_covered", [])
+            
+            # Build message based on result
+            if test_count == 0 and skipped > 0:
+                # All tests already exist
+                message = (
+                    f"Mình check rồi, {skipped} tests cho stories này đã có sẵn trong file `{test_file}`.\n\n"
+                    f"Không cần tạo thêm đâu, Developer cứ chạy tests hiện có là được!"
+                )
+            elif skipped > 0:
+                # Some new, some duplicates
+                message = (
+                    f"Xong rồi! Mình đã thêm {test_count} test cases mới vào file `{test_file}` "
+                    f"(bỏ qua {skipped} tests đã có).\n\n"
+                    f"Developer sẽ chạy tests này khi implement xong!"
+                )
+            else:
+                # All new tests
+                message = (
+                    f"Xong rồi! Mình đã tạo {test_count} test cases trong file `{test_file}`.\n\n"
+                    f"Developer sẽ chạy tests này khi implement xong. Nếu pass hết thì story sẵn sàng move sang Done!"
+                )
             
             # Send success message to user
             await self.message_user(
                 "response",
-                f"✅ **Integration tests generated successfully!**\n\n"
-                f"📁 **File:** `tests/integration/{test_file}`\n"
-                f"📝 **Tests created:** {test_count} test cases\n"
-                f"📋 **Stories covered:** {len(stories_covered)}\n\n"
-                f"🧪 **Run tests:** `npm test tests/integration/`\n\n"
-                f"**Story remains in REVIEW.** Please review the tests and move to DONE when ready.",
+                message,
                 {
                     "message_type": "tests_generated",
                     "test_file": test_file,
@@ -336,8 +351,8 @@ class Tester(BaseAgent):
             )
             await self.message_user(
                 "response",
-                f"❌ Failed to generate integration tests: {str(e)}\n\n"
-                f"Please check logs or contact admin."
+                f"Úi, có lỗi xảy ra khi mình tạo tests: {str(e)}\n\n"
+                f"Bạn thử lại hoặc báo admin check log giúp mình nhé!"
             )
             return TaskResult(
                 success=False,

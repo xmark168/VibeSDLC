@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class KafkaTopics(str, Enum):
@@ -32,6 +32,14 @@ class BaseKafkaEvent(BaseModel):
     project_id: Optional[str] = None
     user_id: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    
+    @field_validator('event_id', 'project_id', 'user_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v):
+        """Auto-convert UUID to string."""
+        if isinstance(v, UUID):
+            return str(v)
+        return v
 
 
 class UserMessageEvent(BaseKafkaEvent):

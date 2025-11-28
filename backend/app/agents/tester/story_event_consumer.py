@@ -4,9 +4,9 @@ import asyncio
 import json
 import logging
 from typing import Dict, Any, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 from app.kafka.consumer import BaseKafkaConsumer
-from app.kafka.event_schemas import BaseKafkaEvent, KafkaTopics, DelegationRequestEvent, AgentTaskType
+from app.kafka.event_schemas import BaseKafkaEvent, KafkaTopics, RouterTaskEvent, AgentTaskType
 
 logger = logging.getLogger(__name__)
 
@@ -77,48 +77,58 @@ class TesterStoryEventConsumer(BaseKafkaConsumer):
                 self.logger.warning(f"No REVIEW stories found for project {project_id}")
                 return
             
+            # Find Tester agent in project (like Developer flow)
+            from sqlmodel import Session
+            from app.services import AgentService
+            from app.core.db import engine
+            from app.kafka.producer import get_kafka_producer
+            
+            with Session(engine) as session:
+                agent_service = AgentService(session)
+                tester = agent_service.get_by_project_and_role(
+                    project_id=UUID(project_id),
+                    role_type="tester"
+                )
+            
+            if not tester:
+                self.logger.warning(f"[TesterConsumer] No Tester agent found in project {project_id}")
+                return
+            
             self.logger.info(
                 f"[TesterConsumer] Found {len(story_ids)} stories in REVIEW. "
-                f"Sending delegation request to Router for Tester agent..."
+                f"Dispatching task to Tester: {tester.human_name} ({tester.id})"
             )
             
-            # Send delegation request to Router (Router will find Tester agent in project)
-            from app.kafka.producer import get_kafka_producer
-            from uuid import uuid4
-            
+            # Dispatch directly to Tester agent using RouterTaskEvent (like Developer)
             producer = await get_kafka_producer()
             
-            delegation_event = DelegationRequestEvent(
-                event_type="delegation.request",
-                event_id=uuid4(),
-                project_id=UUID(project_id),
-                user_id=UUID(raw_data.get("user_id", "00000000-0000-0000-0000-000000000000")),
-                original_task_id=str(uuid4()),
-                delegating_agent_id="system",
-                delegating_agent_name="TesterStoryConsumer",
-                target_role="tester",
-                priority="high",
+            task_event = RouterTaskEvent(
+                event_type="router.task.dispatched",
+                task_id=uuid4(),
                 task_type=AgentTaskType.WRITE_TESTS,
-                content=f"Auto-generate integration tests for {len(story_ids)} stories in REVIEW status",
+                agent_id=tester.id,  # UUID - same as Developer
+                agent_role="tester",
+                source_event_type="story.status.changed",
+                source_event_id=str(raw_data.get("event_id", uuid4())),
+                routing_reason="story_status_changed_to_review",
+                priority="high",
                 context={
                     "trigger_type": "status_review",
                     "story_ids": story_ids,
                     "triggered_by_story": story_id,
-                    "auto_generated": True
-                },
-                delegation_message=f"Story {story_id} moved to REVIEW - auto-triggering test generation",
-                source_event_type="story.status.changed",
-                source_event_id=str(uuid4())
+                    "auto_generated": True,
+                    "content": f"Auto-generate integration tests for {len(story_ids)} stories in REVIEW status"
+                }
             )
             
             await producer.publish(
-                topic=KafkaTopics.DELEGATION_REQUESTS,
-                event=delegation_event
+                topic=KafkaTopics.AGENT_TASKS,
+                event=task_event
             )
             
             self.logger.info(
-                f"[TesterConsumer] Delegation request sent to Router. "
-                f"Tester will generate integration tests for project {project_id}"
+                f"[TesterConsumer] Task dispatched to {tester.human_name}. "
+                f"Generating integration tests for project {project_id}"
             )
             
         except Exception as e:
