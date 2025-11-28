@@ -202,6 +202,7 @@ async def ask_one_question(state: BAState, agent=None) -> dict:
         
         # Save interview state to question's task_context for resume
         from sqlmodel import Session
+        from sqlalchemy.orm.attributes import flag_modified
         from app.core.db import engine
         from app.models import AgentQuestion
         
@@ -209,17 +210,34 @@ async def ask_one_question(state: BAState, agent=None) -> dict:
             question = session.get(AgentQuestion, question_id)
             if question:
                 # Update task_context with interview state
-                task_context = question.task_context or {}
-                task_context["interview_state"] = {
-                    "questions": questions,
-                    "current_question_index": current_index,
-                    "collected_answers": state.get("collected_answers", []),
-                    "collected_info": state.get("collected_info", {}),
+                # IMPORTANT: Create new dict to ensure SQLAlchemy detects the change
+                existing_context = question.task_context or {}
+                new_task_context = {
+                    **existing_context,
+                    "interview_state": {
+                        "questions": questions,
+                        "current_question_index": current_index,
+                        "collected_answers": state.get("collected_answers", []),
+                        "collected_info": state.get("collected_info", {}),
+                    }
                 }
-                question.task_context = task_context
+                question.task_context = new_task_context
+                # Explicitly mark the JSON field as modified so SQLAlchemy persists it
+                flag_modified(question, "task_context")
                 session.add(question)
                 session.commit()
-                logger.info(f"[BA] Saved interview state to question {question_id}")
+                
+                # Verify the save was successful by re-reading from DB
+                session.refresh(question)
+                saved_state = question.task_context.get("interview_state") if question.task_context else None
+                if saved_state:
+                    logger.info(f"[BA] Verified interview state saved to question {question_id} "
+                               f"(current_index={saved_state.get('current_question_index')}, "
+                               f"questions_count={len(saved_state.get('questions', []))})")
+                else:
+                    logger.error(f"[BA] Interview state NOT saved to question {question_id}! task_context={question.task_context}")
+            else:
+                logger.error(f"[BA] Failed to find question {question_id} in database to save interview state!")
         
         logger.info(f"[BA] Question {current_index + 1} sent, waiting for answer...")
         

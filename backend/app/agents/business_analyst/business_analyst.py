@@ -228,16 +228,24 @@ class BusinessAnalyst(BaseAgent):
             question_id = None
             if task.context:
                 question_id = task.context.get("question_id")
+                logger.info(f"[{self.name}] Task context keys: {list(task.context.keys())}")
+                logger.info(f"[{self.name}] question_id from context: {question_id}")
+            else:
+                logger.warning(f"[{self.name}] Task context is None or empty!")
             
             with Session(engine) as session:
                 question = None
                 
                 if question_id:
                     # Direct lookup by question_id from RESUME task context
-                    question = session.get(AgentQuestion, UUID(question_id))
-                    logger.info(f"[{self.name}] Loading interview state from question {question_id}")
+                    try:
+                        question = session.get(AgentQuestion, UUID(question_id))
+                        logger.info(f"[{self.name}] Loaded question from DB: {question.id if question else 'NOT FOUND'}")
+                    except Exception as uuid_err:
+                        logger.error(f"[{self.name}] Failed to parse question_id as UUID: {uuid_err}")
                 else:
                     # Fallback: Find the most recently answered question for this project/agent
+                    logger.info(f"[{self.name}] No question_id in context, using fallback query")
                     question = session.exec(
                         select(AgentQuestion)
                         .where(AgentQuestion.project_id == self.project_id)
@@ -245,18 +253,30 @@ class BusinessAnalyst(BaseAgent):
                         .where(AgentQuestion.status == QuestionStatus.ANSWERED)
                         .order_by(AgentQuestion.answered_at.desc())
                     ).first()
+                    if question:
+                        logger.info(f"[{self.name}] Fallback found question: {question.id}")
                 
-                if question and question.task_context:
-                    task_context = question.task_context
-                    interview_state = task_context.get("interview_state", {})
-                    
-                    if interview_state:
-                        logger.info(f"[{self.name}] Found interview state from question {question.id}")
-                        return interview_state
+                if question:
+                    logger.info(f"[{self.name}] Question task_context: {question.task_context}")
+                    if question.task_context:
+                        task_context = question.task_context
+                        interview_state = task_context.get("interview_state", {})
+                        
+                        if interview_state:
+                            logger.info(f"[{self.name}] Found interview state from question {question.id}, "
+                                       f"current_question_index={interview_state.get('current_question_index')}, "
+                                       f"questions_count={len(interview_state.get('questions', []))}")
+                            return interview_state
+                        else:
+                            logger.warning(f"[{self.name}] Question {question.id} has task_context but NO interview_state!")
+                    else:
+                        logger.warning(f"[{self.name}] Question {question.id} has NO task_context!")
+                else:
+                    logger.warning(f"[{self.name}] No question found in database")
                     
             return None
         except Exception as e:
-            logger.error(f"[{self.name}] Failed to load interview state: {e}")
+            logger.error(f"[{self.name}] Failed to load interview state: {e}", exc_info=True)
             return None
     
     async def _save_interview_state(self, task: TaskContext, state: dict) -> None:
