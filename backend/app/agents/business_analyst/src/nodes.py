@@ -631,7 +631,7 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
             if agent:
                 await agent.message_user(
                     event_type="response",
-                    content=f"Tôi đã tạo thành công PRD",
+                    content=f"PRD được tạo thành công",
                     details={
                         "message_type": "prd_created",
                         "file_path": "docs/prd.md",
@@ -660,13 +660,16 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
                 "Estimate effort for each story"
             ])
             
-            # Send success message to user
+            # Send success message with View button
             if agent:
                 await agent.message_user(
                     event_type="response",
-                    content=f"✅ User Stories Extracted ({stories_count} stories)\n\nNext steps:\n" +
-                            "\n".join(f"  • {step}" for step in result["next_steps"]),
-                    details={"stories": stories_data}
+                    content=f"User Stories đã được tạo",
+                    details={
+                        "message_type": "stories_created",
+                        "file_path": "docs/user-stories.md",
+                        "count": stories_count
+                    }
                 )
             
             logger.info(f"[BA] Saved {stories_count} user stories")

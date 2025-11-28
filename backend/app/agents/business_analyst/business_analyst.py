@@ -15,7 +15,7 @@ from app.agents.business_analyst.src import BusinessAnalystGraph
 from app.agents.business_analyst.src.nodes import (
     process_answer, ask_one_question, 
     process_batch_answers,
-    generate_prd, save_artifacts
+    generate_prd, extract_stories, save_artifacts
 )
 
 logger = logging.getLogger(__name__)
@@ -159,6 +159,11 @@ class BusinessAnalyst(BaseAgent):
         # Generate PRD (all answers should be collected now)
         logger.info(f"[{self.name}] All batch answers processed, generating PRD")
         state = {**state, **(await generate_prd(state, agent=self))}
+        
+        # Extract user stories from PRD
+        logger.info(f"[{self.name}] Extracting user stories from PRD")
+        state = {**state, **(await extract_stories(state, agent=self))}
+        
         state = {**state, **(await save_artifacts(state, agent=self))}
         
         return TaskResult(
@@ -217,6 +222,11 @@ class BusinessAnalyst(BaseAgent):
         if state.get("all_questions_answered"):
             logger.info(f"[{self.name}] All questions answered, generating PRD")
             state = {**state, **(await generate_prd(state, agent=self))}
+            
+            # Extract user stories from PRD
+            logger.info(f"[{self.name}] Extracting user stories from PRD")
+            state = {**state, **(await extract_stories(state, agent=self))}
+            
             state = {**state, **(await save_artifacts(state, agent=self))}
             
             return TaskResult(

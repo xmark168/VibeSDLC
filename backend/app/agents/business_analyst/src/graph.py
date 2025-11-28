@@ -179,12 +179,12 @@ class BusinessAnalystGraph:
             }
         )
         
-        # PRD flows -> save
-        graph.add_edge("generate_prd", "save_artifacts")
-        graph.add_edge("update_prd", "save_artifacts")
-        
-        # Stories flow -> save
+        # PRD creation -> extract stories -> save
+        graph.add_edge("generate_prd", "extract_stories")
         graph.add_edge("extract_stories", "save_artifacts")
+        
+        # PRD update -> save (no story extraction needed)
+        graph.add_edge("update_prd", "save_artifacts")
         
         # Domain analysis -> save
         graph.add_edge("analyze_domain", "save_artifacts")
