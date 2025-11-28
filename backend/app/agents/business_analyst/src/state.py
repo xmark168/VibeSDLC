@@ -1,6 +1,6 @@
 """LangGraph State Schema for Business Analyst"""
 
-from typing import TypedDict, Literal, Annotated
+from typing import TypedDict, Literal, Annotated, Any
 from operator import add
 
 
@@ -57,6 +57,9 @@ class BAState(TypedDict, total=False):
     # Error handling
     error: str | None
     retry_count: int
+    
+    # Langfuse tracing (same pattern as Team Leader)
+    langfuse_handler: Any  # CallbackHandler instance passed from agent
     
     # Result
     result: dict
