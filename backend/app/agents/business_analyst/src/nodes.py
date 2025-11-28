@@ -601,45 +601,73 @@ async def analyze_domain(state: BAState, agent=None) -> dict:
 
 
 async def save_artifacts(state: BAState, agent=None) -> dict:
-    """Node: Save PRD/stories to file system and create artifacts."""
+    """Node: Save PRD/stories to database and file system."""
     logger.info(f"[BA] Saving artifacts...")
     
     result = {
         "action_taken": state.get("intent", "unknown"),
         "summary": "",
-        "next_steps": []
+        "next_steps": [],
+        "prd_artifact_id": None
     }
     
     project_files = agent.project_files if agent else None
     
     # Save PRD if exists
-    if state.get("prd_draft") and project_files:
+    if state.get("prd_draft") and agent:
         try:
-            prd_data = state["prd_draft"]
-            await project_files.save_prd(prd_data)
-            result["prd_saved"] = True
+            from sqlmodel import Session
+            from app.core.db import engine
+            from app.services.artifact_service import ArtifactService
+            from app.models import ArtifactType
             
+            prd_data = state["prd_draft"]
             project_name = prd_data.get("project_name", "Project")
+            
+            # Save to Artifact table
+            with Session(engine) as session:
+                service = ArtifactService(session)
+                artifact = service.create_artifact(
+                    project_id=agent.project_id,
+                    agent_id=agent.agent_id,
+                    agent_name=agent.name,
+                    artifact_type=ArtifactType.PRD,
+                    title=project_name,
+                    content=prd_data,
+                    description=f"PRD for {project_name}",
+                    save_to_file=False  # We save our own markdown
+                )
+                result["prd_artifact_id"] = str(artifact.id)
+            
+            # Also save markdown for human reading
+            if project_files:
+                await project_files.save_prd(prd_data)
+            
+            result["prd_saved"] = True
             result["summary"] = f"PRD '{project_name}' saved successfully"
             result["next_steps"].extend([
                 "Review PRD document",
-                "Extract user stories if needed",
-                "Share with stakeholders"
+                "Approve to create user stories",
+                "Or request edits"
             ])
             
-            # Send simple message with View button to open prd.md file
+            # Send message with View button (different text for create vs update)
+            is_update = bool(state.get("change_summary"))
+            message_content = "PRD đã được cập nhật" if is_update else "PRD được tạo thành công"
+            
             if agent:
                 await agent.message_user(
                     event_type="response",
-                    content=f"Tôi đã tạo thành công PRD",
+                    content=message_content,
                     details={
                         "message_type": "prd_created",
                         "file_path": "docs/prd.md",
-                        "title": project_name
+                        "title": project_name,
+                        "artifact_id": result["prd_artifact_id"]
                     }
                 )
             
-            logger.info(f"[BA] PRD saved: {project_name}")
+            logger.info(f"[BA] PRD saved: {project_name} (artifact_id={result['prd_artifact_id']}")
             
         except Exception as e:
             logger.error(f"[BA] Failed to save PRD: {e}", exc_info=True)
@@ -660,13 +688,16 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
                 "Estimate effort for each story"
             ])
             
-            # Send success message to user
+            # Send success message with View button
             if agent:
                 await agent.message_user(
                     event_type="response",
-                    content=f"✅ User Stories Extracted ({stories_count} stories)\n\nNext steps:\n" +
-                            "\n".join(f"  • {step}" for step in result["next_steps"]),
-                    details={"stories": stories_data}
+                    content=f"User Stories đã được tạo",
+                    details={
+                        "message_type": "stories_created",
+                        "file_path": "docs/user-stories.md",
+                        "count": stories_count
+                    }
                 )
             
             logger.info(f"[BA] Saved {stories_count} user stories")
@@ -695,16 +726,10 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
                 details={"analysis": state["analysis_text"]}
             )
     
-    # PRD update
+    # PRD update - show updated PRD card (same as create, no extra text message)
     if state.get("change_summary"):
         result["change_summary"] = state["change_summary"]
-        
-        if agent:
-            await agent.message_user(
-                event_type="response",
-                content=f"✅ PRD Updated\n\n{state['change_summary']}",
-                details={"prd": state.get("prd_draft")}
-            )
+        # Card is already shown in the PRD save section above
     
     logger.info(f"[BA] Artifacts saved: {result['summary']}")
     

@@ -40,6 +40,7 @@ import { AgentHandoffNotification } from "./AgentHandoffNotification";
 import { ArtifactCard } from "./ArtifactCard";
 import { StoriesCreatedCard } from "./StoriesCreatedCard";
 import { PrdCreatedCard } from "./PrdCreatedCard";
+import { StoriesFileCard } from "./StoriesFileCard";
 import { useProjectAgents } from "@/queries/agents";
 
 interface ChatPanelProps {
@@ -826,6 +827,29 @@ export function ChatPanelWS({
                     <PrdCreatedCard
                       title={msg.structured_data.title || 'PRD'}
                       filePath={msg.structured_data.file_path}
+                      status={msg.structured_data.status || 'pending'}
+                      onView={() => {
+                        if (onOpenFile) {
+                          onOpenFile(msg.structured_data!.file_path)
+                        }
+                        if (onActiveTabChange) {
+                          onActiveTabChange('file')
+                        }
+                      }}
+                      onApprove={() => {
+                        wsSendMessage("Tôi phê duyệt PRD này, hãy tạo user stories")
+                      }}
+                      onEdit={(feedback) => {
+                        wsSendMessage(`Tôi muốn chỉnh sửa PRD: ${feedback}`)
+                      }}
+                    />
+                  )}
+                  
+                  {/* Show stories file card if structured_data has message_type stories_created */}
+                  {msg.structured_data?.message_type === 'stories_created' && msg.structured_data?.file_path && (
+                    <StoriesFileCard
+                      count={msg.structured_data.count || 0}
+                      filePath={msg.structured_data.file_path}
                       onView={() => {
                         if (onOpenFile) {
                           onOpenFile(msg.structured_data!.file_path)
@@ -837,7 +861,7 @@ export function ChatPanelWS({
                     />
                   )}
                   
-                  {/* Show stories created card if message type is stories_created */}
+                  {/* Show stories created card if message type is stories_created (legacy) */}
                   {msg.message_type === 'stories_created' && msg.structured_data?.story_ids && (
                     <StoriesCreatedCard
                       stories={{

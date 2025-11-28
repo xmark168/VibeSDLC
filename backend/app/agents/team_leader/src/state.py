@@ -1,4 +1,4 @@
-"""Team Leader State Schema."""
+"""Team Leader State."""
 
 from typing import TypedDict, Literal, Any
 
@@ -6,22 +6,17 @@ Action = Literal["DELEGATE", "RESPOND", "CONVERSATION", "STATUS_CHECK"]
 
 
 class TeamLeaderState(TypedDict, total=False):
-    """State for Team Leader graph."""
-    
-    # Input (required)
+    # Input
     user_message: str
     user_id: str
     project_id: str
     task_id: str
-    
-    # Input (optional)
     conversation_history: str
     user_preferences: str
     langfuse_handler: Any
-    
     # Output
     action: Action
-    target_role: str  # developer, tester, business_analyst
+    target_role: str
     message: str
     reason: str
     confidence: float

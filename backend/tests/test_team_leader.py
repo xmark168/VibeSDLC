@@ -17,16 +17,11 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
-from app.agents.team_leader.src.prompts import (
-    parse_llm_decision,
-    extract_role,
-    build_system_prompt,
-    build_user_prompt,
-)
+from app.agents.team_leader.src.schemas import RoutingDecision
 from app.agents.team_leader.src.state import TeamLeaderState
 from app.agents.team_leader.src.nodes import (
     router, delegate, respond, conversational, status_check,
-    _execute_tool_calls, ROLE_TO_WIP_COLUMN
+    ROLE_TO_WIP_COLUMN, build_system_prompt, build_user_prompt,
 )
 
 # Delay between API calls to avoid rate limiting (RPM)
@@ -143,136 +138,98 @@ WIP_BLOCKED_SCENARIOS = [
 
 
 # =============================================================================
-# UNIT TESTS - parse_llm_decision
+# UNIT TESTS - RoutingDecision Schema
 # =============================================================================
 
-class TestParseLLMDecision:
-    """Test LLM response parsing."""
+class TestRoutingDecisionSchema:
+    """Test RoutingDecision Pydantic schema validation."""
     
-    def test_parse_valid_delegate_json(self):
-        """Test parsing valid DELEGATE JSON response."""
-        response = '''
-        {
-            "action": "DELEGATE",
-            "target_role": "business_analyst",
-            "message": "Mình sẽ chuyển cho @Business Analyst nhé!",
-            "reason": "new_feature_request"
-        }
-        '''
-        result = parse_llm_decision(response)
+    def test_valid_delegate_decision(self):
+        """Test valid DELEGATE decision."""
+        decision = RoutingDecision(
+            action="DELEGATE",
+            target_role="business_analyst",
+            message="Mình sẽ chuyển cho @Business Analyst nhé!",
+            reason="new_feature_request"
+        )
         
-        assert result["action"] == "DELEGATE"
-        assert result["target_role"] == "business_analyst"
-        assert "@Business Analyst" in result["message"]
-        assert result["reason"] == "new_feature_request"
+        assert decision.action == "DELEGATE"
+        assert decision.target_role == "business_analyst"
+        assert "@Business Analyst" in decision.message
+        assert decision.reason == "new_feature_request"
     
-    def test_parse_valid_respond_json(self):
-        """Test parsing valid RESPOND JSON response."""
-        response = '''
-        {
-            "action": "RESPOND",
-            "message": "Không có chi! 👍",
-            "reason": "acknowledgment"
-        }
-        '''
-        result = parse_llm_decision(response)
+    def test_valid_respond_decision(self):
+        """Test valid RESPOND decision."""
+        decision = RoutingDecision(
+            action="RESPOND",
+            message="Không có chi! 👍",
+            reason="acknowledgment"
+        )
         
-        assert result["action"] == "RESPOND"
-        assert "👍" in result["message"]
+        assert decision.action == "RESPOND"
+        assert decision.target_role is None
+        assert "👍" in decision.message
     
-    def test_parse_valid_conversation_json(self):
-        """Test parsing valid CONVERSATION JSON response."""
-        response = '''
-        {
-            "action": "CONVERSATION",
-            "message": "",
-            "reason": "greeting_detected"
-        }
-        '''
-        result = parse_llm_decision(response)
+    def test_valid_conversation_decision(self):
+        """Test valid CONVERSATION decision."""
+        decision = RoutingDecision(
+            action="CONVERSATION",
+            message="",
+            reason="greeting_detected"
+        )
         
-        assert result["action"] == "CONVERSATION"
+        assert decision.action == "CONVERSATION"
     
-    def test_parse_valid_status_check_json(self):
-        """Test parsing valid STATUS_CHECK JSON response."""
-        response = '''
-        {
-            "action": "STATUS_CHECK",
-            "message": "Đây là trạng thái board hiện tại",
-            "reason": "status_query"
-        }
-        '''
-        result = parse_llm_decision(response)
+    def test_valid_status_check_decision(self):
+        """Test valid STATUS_CHECK decision."""
+        decision = RoutingDecision(
+            action="STATUS_CHECK",
+            message="Đây là trạng thái board hiện tại",
+            reason="status_query"
+        )
         
-        assert result["action"] == "STATUS_CHECK"
+        assert decision.action == "STATUS_CHECK"
     
-    def test_parse_json_with_nested_content(self):
-        """Test parsing JSON with nested structures."""
-        response = '''
-        Here's my analysis:
-        {
-            "action": "DELEGATE",
-            "target_role": "developer",
-            "message": "Chuyển cho @Developer implement",
-            "reason": "implementation_task",
-            "metadata": {"priority": "high"}
-        }
-        '''
-        result = parse_llm_decision(response)
+    def test_invalid_action_raises_error(self):
+        """Test invalid action raises validation error."""
+        import pytest
+        from pydantic import ValidationError
+        
+        with pytest.raises(ValidationError):
+            RoutingDecision(
+                action="INVALID_ACTION",
+                message="test",
+                reason="test"
+            )
+    
+    def test_invalid_target_role_raises_error(self):
+        """Test invalid target_role raises validation error."""
+        import pytest
+        from pydantic import ValidationError
+        
+        with pytest.raises(ValidationError):
+            RoutingDecision(
+                action="DELEGATE",
+                target_role="invalid_role",
+                message="test",
+                reason="test"
+            )
+    
+    def test_model_dump(self):
+        """Test model_dump returns correct dict."""
+        decision = RoutingDecision(
+            action="DELEGATE",
+            target_role="developer",
+            message="Chuyển cho @Developer",
+            reason="implementation_task"
+        )
+        
+        result = decision.model_dump()
         
         assert result["action"] == "DELEGATE"
         assert result["target_role"] == "developer"
-    
-    def test_parse_fallback_delegate(self):
-        """Test fallback parsing when DELEGATE keyword found."""
-        response = "I think we should DELEGATE this to the business analyst"
-        result = parse_llm_decision(response)
-        
-        assert result["action"] == "DELEGATE"
-        assert "fallback" in result["reason"]
-    
-    def test_parse_fallback_conversation(self):
-        """Test fallback parsing when CONVERSATION keyword found."""
-        response = "This seems like a CONVERSATION topic"
-        result = parse_llm_decision(response)
-        
-        assert result["action"] == "CONVERSATION"
-    
-    def test_parse_fallback_respond(self):
-        """Test fallback to RESPOND when no keywords found."""
-        response = "Sure, I can help with that!"
-        result = parse_llm_decision(response)
-        
-        assert result["action"] == "RESPOND"
-    
-    def test_parse_malformed_json(self):
-        """Test handling of malformed JSON."""
-        response = '{"action": "DELEGATE", broken json'
-        result = parse_llm_decision(response)
-        
-        # Should fallback gracefully
-        assert "action" in result
-        assert "message" in result
-
-
-class TestExtractRole:
-    """Test role extraction from text."""
-    
-    def test_extract_business_analyst(self):
-        assert extract_role("send to business_analyst") == "business_analyst"
-        assert extract_role("Business Analyst will handle") == "business_analyst"
-    
-    def test_extract_developer(self):
-        assert extract_role("developer should implement") == "developer"
-        assert extract_role("assign to Developer") == "developer"
-    
-    def test_extract_tester(self):
-        assert extract_role("tester needs to QA") == "tester"
-        assert extract_role("send to Tester") == "tester"
-    
-    def test_extract_default(self):
-        """Default to business_analyst when no role found."""
-        assert extract_role("unknown role here") == "business_analyst"
+        assert result["message"] == "Chuyển cho @Developer"
+        assert result["reason"] == "implementation_task"
 
 
 # =============================================================================
@@ -597,16 +554,6 @@ class TestRespondNode:
 class TestEdgeCases:
     """Test edge cases and error handling."""
     
-    def test_parse_empty_response(self):
-        """Test parsing empty response."""
-        result = parse_llm_decision("")
-        assert "action" in result
-    
-    def test_parse_none_response(self):
-        """Test parsing None-like response."""
-        result = parse_llm_decision("null")
-        assert "action" in result
-    
     @pytest.mark.asyncio
     async def test_router_handles_llm_error(self):
         """Test router handles LLM errors gracefully."""
@@ -666,15 +613,6 @@ class TestTools:
         assert ROLE_TO_WIP_COLUMN["developer"] == "InProgress"
         assert ROLE_TO_WIP_COLUMN["tester"] == "Review"
         assert ROLE_TO_WIP_COLUMN["business_analyst"] is None
-    
-    @pytest.mark.asyncio
-    async def test_execute_tool_calls_unknown_tool(self):
-        """Test execute_tool_calls with unknown tool."""
-        tool_calls = [{"name": "unknown_tool", "args": {}, "id": "123"}]
-        results = await _execute_tool_calls(tool_calls, str(uuid4()))
-        
-        assert len(results) == 1
-        assert "Unknown tool" in results[0].content
 
 
 class TestStatusCheckNode:
@@ -857,44 +795,6 @@ class TestRouterWithTools:
             assert result["action"] == "CONVERSATION"
             assert result["wip_blocked"] == False
     
-    @pytest.mark.asyncio
-    async def test_router_calls_tools_for_delegation(self, base_state, mock_agent):
-        """Test router calls tools when delegating."""
-        delay_for_rate_limit()
-        base_state["user_message"] = "implement story #123"
-        
-        # First response with tool call
-        mock_response_with_tools = MagicMock()
-        mock_response_with_tools.tool_calls = [
-            {"name": "get_board_status", "args": {}, "id": "tool_1"}
-        ]
-        mock_response_with_tools.content = ""
-        
-        # Second response after tools
-        mock_final_response = MagicMock()
-        mock_final_response.content = '''
-        {
-            "action": "DELEGATE",
-            "target_role": "developer",
-            "message": "Chuyển cho @Developer",
-            "reason": "implementation"
-        }
-        '''
-        
-        with patch('app.agents.team_leader.src.nodes._fast_llm') as mock_llm, \
-             patch('app.agents.team_leader.src.nodes._execute_tool_calls') as mock_exec:
-            
-            mock_llm.bind_tools.return_value.ainvoke = AsyncMock(return_value=mock_response_with_tools)
-            mock_llm.ainvoke = AsyncMock(return_value=mock_final_response)
-            mock_exec.return_value = [MagicMock(content="Board: InProgress 2/5")]
-            
-            result = await router(base_state, mock_agent)
-            
-            # Tools should have been called
-            mock_exec.assert_called_once()
-            assert result["action"] == "DELEGATE"
-
-
 # =============================================================================
 # INTEGRATION TESTS WITH DELAY
 # =============================================================================
