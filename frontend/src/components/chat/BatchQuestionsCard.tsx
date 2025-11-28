@@ -115,12 +115,15 @@ export function BatchQuestionsCard({
         const ans = answers.get(questionId)!
         let finalOptions = Array.from(ans.selectedOptions)
         
-        if (finalOptions.some(opt => opt.includes('Other') || opt.includes('Khác'))) {
+        const isOther = (o: string) => 
+          o.startsWith('Khác (') || o.startsWith('Khác(') || 
+          o.startsWith('Other (') || o.startsWith('Other(') ||
+          o === 'Khác' || o === 'Other'
+        
+        if (finalOptions.some(isOther)) {
           const customText = customInputs.get(questionId)
           if (customText?.trim()) {
-            finalOptions = finalOptions.map(opt => 
-              (opt.includes('Other') || opt.includes('Khác')) ? customText.trim() : opt
-            )
+            finalOptions = finalOptions.map(opt => isOther(opt) ? customText.trim() : opt)
           }
         }
         
@@ -144,11 +147,13 @@ export function BatchQuestionsCard({
     if (currentQuestion.question_type === 'open') {
       return currentAnswer.answer.trim().length > 0
     } else {
-      const hasOther = Array.from(currentAnswer.selectedOptions).some(opt => 
-        opt.includes('Other') || opt.includes('Khác')
-      )
+      const isOther = (o: string) => 
+        o.startsWith('Khác (') || o.startsWith('Khác(') || 
+        o.startsWith('Other (') || o.startsWith('Other(') ||
+        o === 'Khác' || o === 'Other'
+      const hasOtherSelected = Array.from(currentAnswer.selectedOptions).some(isOther)
       const customText = customInputs.get(currentQuestionId)
-      return currentAnswer.selectedOptions.size > 0 && (!hasOther || customText?.trim())
+      return currentAnswer.selectedOptions.size > 0 && (!hasOtherSelected || customText?.trim())
     }
   }
   
@@ -161,11 +166,13 @@ export function BatchQuestionsCard({
     if (q.question_type === 'open') {
       return ans.answer.trim().length > 0
     } else {
-      const hasOther = Array.from(ans.selectedOptions).some(opt => 
-        opt.includes('Other') || opt.includes('Khác')
-      )
+      const isOther = (o: string) => 
+        o.startsWith('Khác (') || o.startsWith('Khác(') || 
+        o.startsWith('Other (') || o.startsWith('Other(') ||
+        o === 'Khác' || o === 'Other'
+      const hasOtherSelected = Array.from(ans.selectedOptions).some(isOther)
       const customText = customInputs.get(questionId)
-      return ans.selectedOptions.size > 0 && (!hasOther || customText?.trim())
+      return ans.selectedOptions.size > 0 && (!hasOtherSelected || customText?.trim())
     }
   })
   
@@ -234,9 +241,14 @@ export function BatchQuestionsCard({
     )
   }
   
-  const hasOther = currentAnswer ? Array.from(currentAnswer.selectedOptions).some(opt => 
-    opt.includes('Other') || opt.includes('Khác')
-  ) : false
+  // Check if user selected "Khác" option
+  // Must check for "Khác (" or "Khác(" to avoid matching "Khách" (Khách starts with Khác!)
+  const isOtherOption = (opt: string) => 
+    opt.startsWith('Khác (') || opt.startsWith('Khác(') || 
+    opt.startsWith('Other (') || opt.startsWith('Other(') ||
+    opt === 'Khác' || opt === 'Other'
+  
+  const hasOther = currentAnswer ? Array.from(currentAnswer.selectedOptions).some(isOtherOption) : false
   
   return (
     <Card className="border-blue-200 bg-blue-50/50 dark:bg-blue-950/20">
