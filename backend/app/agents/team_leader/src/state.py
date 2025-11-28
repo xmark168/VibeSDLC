@@ -2,7 +2,7 @@
 
 from typing import TypedDict, Literal, Any
 
-Action = Literal["DELEGATE", "RESPOND", "CONVERSATION", "STATUS_CHECK"]
+Action = Literal["DELEGATE", "RESPOND", "CONVERSATION", "STATUS_CHECK", "CLARIFY"]
 
 
 class TeamLeaderState(TypedDict, total=False):
@@ -21,3 +21,4 @@ class TeamLeaderState(TypedDict, total=False):
     reason: str
     confidence: float
     wip_blocked: bool
+    clarification_question: str

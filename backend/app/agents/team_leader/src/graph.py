@@ -6,10 +6,10 @@ from typing import Literal
 from langgraph.graph import StateGraph, END
 
 from app.agents.team_leader.src.state import TeamLeaderState
-from app.agents.team_leader.src.nodes import router, delegate, respond, conversational, status_check, extract_preferences
+from app.agents.team_leader.src.nodes import router, delegate, respond, clarify, conversational, status_check, extract_preferences
 
 
-def route(state: TeamLeaderState) -> Literal["delegate", "extract_preferences", "conversational", "status_check"]:
+def route(state: TeamLeaderState) -> Literal["delegate", "extract_preferences", "conversational", "status_check", "clarify"]:
     """Route to action node. RESPOND goes through extract_preferences first."""
     action = state.get("action")
     if action == "DELEGATE":
@@ -18,6 +18,8 @@ def route(state: TeamLeaderState) -> Literal["delegate", "extract_preferences", 
         return "conversational"
     if action == "STATUS_CHECK":
         return "status_check"
+    if action == "CLARIFY":
+        return "clarify"
     return "extract_preferences"
 
 
@@ -32,6 +34,7 @@ class TeamLeaderGraph:
         g.add_node("extract_preferences", partial(extract_preferences, agent=agent))
         g.add_node("delegate", partial(delegate, agent=agent))
         g.add_node("respond", partial(respond, agent=agent))
+        g.add_node("clarify", partial(clarify, agent=agent))
         g.add_node("conversational", partial(conversational, agent=agent))
         g.add_node("status_check", partial(status_check, agent=agent))
         
@@ -39,7 +42,7 @@ class TeamLeaderGraph:
         g.add_conditional_edges("router", route)
         g.add_edge("extract_preferences", "respond")
         
-        for node in ["delegate", "respond", "conversational", "status_check"]:
+        for node in ["delegate", "respond", "clarify", "conversational", "status_check"]:
             g.add_edge(node, END)
         
         self.graph = g.compile()
