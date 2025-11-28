@@ -74,38 +74,18 @@ shared_context:
     - Epic: Large feature/initiative that spans multiple sprints
     - Story: Small, deliverable unit of work within an Epic (follows INVEST)
     
-    **Output Structure:**
-    ```json
-    {{
-      "epics": [
-        {{
-          "id": "EPIC-001",
-          "title": "Epic title describing major feature",
-          "description": "Overview of the epic and its business value",
-          "domain": "Authentication|Product|Cart|Payment|Admin|...",
-          "stories": [
-            {{
-              "id": "US-001",
-              "title": "As a [user], I want [goal] so that [benefit]",
-              "description": "Detailed description of the story",
-              "acceptance_criteria": ["Given X when Y then Z"],
-              "priority": "high|medium|low",
-              "story_points": 3,
-              "invest_check": {{
-                "independent": true,
-                "negotiable": true,
-                "valuable": "Giá trị mang lại",
-                "estimable": true,
-                "small": true,
-                "testable": true
-              }}
-            }}
-          ],
-          "total_story_points": 10
-        }}
-      ]
-    }}
-    ```
+    **Epic Structure:**
+    - id: Unique identifier (EPIC-001, EPIC-002, ...)
+    - name: Short name describing the feature
+    - description: Overview of the epic
+    - domain: Feature category (Authentication, Product, Cart, Payment, Admin, Notification)
+    
+    **Story Structure:**
+    - id: Unique identifier (US-001, US-002, ...)
+    - epic_id: Reference to parent epic
+    - title: "As a [user], I want [goal] so that [benefit]"
+    - description: Detailed description
+    - acceptance_criteria: List of Given/When/Then criteria
 
 # ============================================================================
 # TASKS - Specific prompts for each LLM call type
