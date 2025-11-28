@@ -31,10 +31,6 @@ _langfuse_initialized: bool = False
 
 
 def get_langfuse_client() -> Optional[Langfuse]:
-    """Get or create Langfuse client singleton (v3 API).
-    
-    Returns None if Langfuse is disabled or not configured.
-    """
     global _langfuse_client, _langfuse_initialized
     
     if _langfuse_initialized:
@@ -42,29 +38,16 @@ def get_langfuse_client() -> Optional[Langfuse]:
     
     _langfuse_initialized = True
     
-    if not LANGFUSE_AVAILABLE:
-        logger.warning("Langfuse package not installed, tracing disabled")
-        return None
-    
     if not settings.LANGFUSE_ENABLED:
-        logger.debug("Langfuse is disabled (LANGFUSE_ENABLED=False)")
         return None
-    
-    if not settings.LANGFUSE_SECRET_KEY or not settings.LANGFUSE_PUBLIC_KEY:
-        logger.warning(
-            f"Langfuse keys not configured, tracing disabled. "
-            f"SECRET_KEY={'set' if settings.LANGFUSE_SECRET_KEY else 'missing'}, "
-            f"PUBLIC_KEY={'set' if settings.LANGFUSE_PUBLIC_KEY else 'missing'}"
-        )
-        return None
-    
+
     try:
         _langfuse_client = Langfuse(
             secret_key=settings.LANGFUSE_SECRET_KEY,
             public_key=settings.LANGFUSE_PUBLIC_KEY,
             host=settings.LANGFUSE_BASE_URL,
         )
-        logger.info("Langfuse client initialized successfully (v3 API)")
+        logger.info("Langfuse client initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize Langfuse: {e}")
         _langfuse_client = None
@@ -106,16 +89,6 @@ def score_trace(
     data_type: str = "NUMERIC"
 ) -> bool:
     """Score a trace for evaluation.
-    
-    Args:
-        trace_id: The trace ID to score
-        name: Score name (e.g., "task_success", "latency_ms", "user_rating")
-        value: Numeric value (0-1 for boolean, any for numeric)
-        comment: Optional comment
-        data_type: "NUMERIC" or "BOOLEAN"
-        
-    Returns:
-        True if scoring succeeded
     """
     client = get_langfuse_client()
     if not client:
@@ -137,14 +110,6 @@ def score_trace(
 
 def format_llm_usage(response) -> Dict[str, Any]:
     """Extract token usage from LLM response.
-    
-    Works with OpenAI, LangChain responses.
-    
-    Args:
-        response: LLM response object
-        
-    Returns:
-        Dict with input, output, total, unit keys
     """
     usage = {"unit": "TOKENS"}
     
@@ -172,14 +137,6 @@ def format_llm_usage(response) -> Dict[str, Any]:
 
 def format_chat_messages(messages: List[Any]) -> List[Dict[str, str]]:
     """Format messages for Langfuse generation input.
-    
-    Converts LangChain messages to standard format.
-    
-    Args:
-        messages: List of message objects or dicts
-        
-    Returns:
-        List of {"role": str, "content": str} dicts
     """
     formatted = []
     for msg in messages:

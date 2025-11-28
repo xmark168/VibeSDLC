@@ -151,18 +151,25 @@ def parse_llm_decision(response: str) -> dict:
                 return decision
         
         # Fallback: detect action from text
-        if "DELEGATE" in response.upper():
+        response_upper = response.upper()
+        if "DELEGATE" in response_upper:
             return {
                 "action": "DELEGATE",
                 "target_role": extract_role(response),
                 "message": "Processing your request",
-                "reason": "llm_delegate"
+                "reason": "fallback_delegate"
+            }
+        elif "CONVERSATION" in response_upper:
+            return {
+                "action": "CONVERSATION",
+                "message": "",
+                "reason": "fallback_conversation"
             }
         else:
             return {
                 "action": "RESPOND",
                 "message": response[:200],
-                "reason": "llm_respond"
+                "reason": "fallback_respond"
             }
     
     except Exception as e:

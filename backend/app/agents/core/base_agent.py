@@ -290,6 +290,12 @@ class BaseAgent(ABC):
         if display_mode is None:
             display_mode = self._get_default_display_mode(event_type)
         
+        # Save to DB first for response/completed events (single source of truth)
+        message_id = None
+        if save_to_db and event_type in ["response", "completed"]:
+            message_type = (details or {}).get("message_type", "text")
+            message_id = await self._save_message_to_db(content, message_type, details, **kwargs)
+        
         event = AgentEvent(
             event_type=f"agent.{event_type}",
             agent_name=self.name,
@@ -298,8 +304,11 @@ class BaseAgent(ABC):
             execution_id=str(self._current_execution_id) if self._current_execution_id else None,
             task_id=str(self._current_task_id) if self._current_task_id else None,
             content=content,
-            details=details or {},
-            execution_context={  # NEW: Add execution context
+            details={
+                **(details or {}),
+                "message_id": str(message_id) if message_id else None,  # Include DB message_id
+            },
+            execution_context={
                 "mode": self._current_execution_mode,
                 "task_id": str(self._current_task_id) if self._current_task_id else None,
                 "task_type": self._current_task_type or "unknown",
@@ -313,10 +322,6 @@ class BaseAgent(ABC):
         )
         
         await producer.publish(topic=KafkaTopics.AGENT_EVENTS, event=event)
-        
-        # Optionally save to messages table
-        if save_to_db and event_type in ["response", "completed"]:
-            await self._save_message_to_db(content, "text", details, **kwargs)
         
         logger.info(f"[{self.name}] {event_type}: {content[:100]}")
     
@@ -569,15 +574,21 @@ class BaseAgent(ABC):
         message_type: str,
         structured_data: Optional[Dict[str, Any]] = None,
         **metadata
-    ) -> None:
-        """Save message to messages table for persistence."""
+    ) -> UUID:
+        """Save message to messages table for persistence.
+        
+        Returns:
+            UUID: The message ID that was created
+        """
         from sqlmodel import Session
         from app.core.db import engine
         from app.models import Message, AuthorType
         
+        message_id = uuid4()
+        
         with Session(engine) as session:
             message = Message(
-                id=uuid4(),
+                id=message_id,
                 project_id=self.project_id,
                 author_type=AuthorType.AGENT,
                 agent_id=self.agent_id,
@@ -593,6 +604,8 @@ class BaseAgent(ABC):
             )
             session.add(message)
             session.commit()
+        
+        return message_id
     
     async def start_execution(self) -> None:
         """Emit: agent.messaging.start - Notify that agent began execution"""
@@ -1001,15 +1014,7 @@ class BaseAgent(ABC):
                 topic=KafkaTopics.DELEGATION_REQUESTS,
                 event=delegation_event
             )
-            
-            logger.info(f"[{self.name}] Published delegation request to role: {target_role}")
-            
-            # Send notification to user
-            await self.message_user("response", delegation_message, {
-                "message_type": "text",
-                "delegation_to_role": target_role,
-            })
-            
+                        
             return TaskResult(
                 success=True,
                 output="",  # Empty output - message already sent above
@@ -1861,8 +1866,6 @@ Provide a helpful, concise response based on your expertise as a {self.role_type
                 if actual_tokens > 0:
                     await self._record_token_usage(actual_tokens)
                 
-                # NOTE: Agents should send their own response via message_user("response", ...)
-                # inside handle_task(). Don't auto-send here to avoid duplicates.
                 
                 # Update execution record with success
                 await self._complete_execution_record(result=result, success=True)
