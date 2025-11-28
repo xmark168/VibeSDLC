@@ -250,6 +250,34 @@ class BusinessAnalyst(BaseAgent):
             except Exception as e:
                 logger.debug(f"[{self.name}] No existing PRD: {e}")
         
+        # Setup Langfuse tracing (1 trace for entire graph - same as Team Leader)
+        langfuse_handler = None
+        langfuse_span = None
+        langfuse_ctx = None
+        try:
+            from langfuse import get_client
+            from langfuse.langchain import CallbackHandler
+            langfuse = get_client()
+            # Create parent span for entire graph execution
+            langfuse_ctx = langfuse.start_as_current_observation(
+                as_type="span",
+                name="business_analyst_graph"
+            )
+            # Enter context and get span object
+            langfuse_span = langfuse_ctx.__enter__()
+            # Update trace with metadata
+            langfuse_span.update_trace(
+                user_id=str(task.user_id) if task.user_id else None,
+                session_id=str(self.project_id),
+                input={"message": task.content[:200] if task.content else ""},
+                tags=["business_analyst", self.role_type],
+                metadata={"agent": self.name, "task_id": str(task.task_id)}
+            )
+            # Handler inherits trace context automatically
+            langfuse_handler = CallbackHandler()
+        except Exception as e:
+            logger.debug(f"[{self.name}] Langfuse setup: {e}")
+        
         # Prepare initial state
         initial_state = {
             "user_message": task.content,
@@ -276,11 +304,23 @@ class BusinessAnalyst(BaseAgent):
             "error": None,
             "retry_count": 0,
             "result": {},
-            "is_complete": False
+            "is_complete": False,
+            "langfuse_handler": langfuse_handler,  # Pass to nodes for LLM tracing
         }
         
         logger.info(f"[{self.name}] Invoking LangGraph...")
         final_state = await self.graph_engine.execute(initial_state)
+        
+        # Close Langfuse span
+        if langfuse_span and langfuse_ctx:
+            try:
+                langfuse_span.update_trace(output={
+                    "intent": final_state.get("intent"),
+                    "waiting_for_answer": final_state.get("waiting_for_answer"),
+                })
+                langfuse_ctx.__exit__(None, None, None)
+            except Exception:
+                pass
         
         # If waiting for answer, save state for resume
         if final_state.get("waiting_for_answer"):

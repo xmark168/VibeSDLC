@@ -19,22 +19,15 @@ from .prompts import (
 
 logger = logging.getLogger(__name__)
 
+# LLM instances (shared, like Team Leader)
+_fast_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1, timeout=15)
+_default_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7, timeout=30)
 
-def _get_llm_with_callback(agent, trace_name: str, tags: list = None, metadata: dict = None):
-    """Create LLM instance with Langfuse callback from agent."""
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
-    
-    callbacks = []
-    if agent:
-        callback = agent.get_langfuse_callback(
-            trace_name=trace_name,
-            tags=tags or ["ba"],
-            metadata=metadata or {}
-        )
-        if callback:
-            callbacks.append(callback)
-    
-    return llm, callbacks
+
+def _cfg(state: dict, name: str) -> dict:
+    """Get LLM config with Langfuse callback from state (same pattern as Team Leader)."""
+    h = state.get("langfuse_handler")
+    return {"callbacks": [h], "run_name": name} if h else {}
 
 
 def _get_agent_info(agent):
@@ -53,23 +46,10 @@ def _get_agent_info(agent):
 
 
 async def analyze_intent(state: BAState, agent=None) -> dict:
-    """Node: Analyze user intent and classify task.
-    
-    Uses BaseAgent's get_langfuse_callback() for LLM tracing.
-    """
+    """Node: Analyze user intent and classify task."""
     logger.info(f"[BA] Analyzing intent: {state['user_message'][:80]}...")
     
     agent_info = _get_agent_info(agent)
-    llm, callbacks = _get_llm_with_callback(
-        agent,
-        trace_name="ba_analyze_intent",
-        tags=["ba", "intent"],
-        metadata={
-            "project_id": state.get("project_id"),
-            "task_id": state.get("task_id"),
-        }
-    )
-    
     system_prompt = build_system_prompt(
         agent_name=agent_info["name"],
         personality_traits=agent_info["traits"],
@@ -85,12 +65,12 @@ async def analyze_intent(state: BAState, agent=None) -> dict:
     )
     
     try:
-        response = await llm.ainvoke(
+        response = await _fast_llm.ainvoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt)
             ],
-            config={"callbacks": callbacks} if callbacks else None
+            config=_cfg(state, "analyze_intent")
         )
         
         result = parse_intent_response(response.content)
@@ -111,16 +91,6 @@ async def interview_requirements(state: BAState, agent=None) -> dict:
     logger.info(f"[BA] Generating interview questions...")
     
     agent_info = _get_agent_info(agent)
-    llm, callbacks = _get_llm_with_callback(
-        agent,
-        trace_name="ba_interview",
-        tags=["ba", "interview"],
-        metadata={
-            "project_id": state.get("project_id"),
-            "task_id": state.get("task_id"),
-        }
-    )
-    
     system_prompt = build_system_prompt(
         agent_name=agent_info["name"],
         personality_traits=agent_info["traits"],
@@ -136,12 +106,12 @@ async def interview_requirements(state: BAState, agent=None) -> dict:
     )
     
     try:
-        response = await llm.ainvoke(
+        response = await _default_llm.ainvoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt)
             ],
-            config={"callbacks": callbacks} if callbacks else None
+            config=_cfg(state, "interview_requirements")
         )
         
         questions = parse_questions_response(response.content)
@@ -194,7 +164,7 @@ async def ask_one_question(state: BAState, agent=None) -> dict:
         
         # Send single question using ask_clarification_question
         question_id = await agent.ask_clarification_question(
-            question=f"**Câu hỏi {current_index + 1}/{len(questions)}:**\n\n{question_text}",
+            question=f"Câu hỏi {current_index + 1}/{len(questions)}:\n{question_text}",
             question_type=question_type,
             options=options,
             allow_multiple=current_question.get("allow_multiple", False)
@@ -450,16 +420,6 @@ async def generate_prd(state: BAState, agent=None) -> dict:
     logger.info(f"[BA] Generating PRD...")
     
     agent_info = _get_agent_info(agent)
-    llm, callbacks = _get_llm_with_callback(
-        agent,
-        trace_name="ba_generate_prd",
-        tags=["ba", "prd", "generate"],
-        metadata={
-            "project_id": state.get("project_id"),
-            "task_id": state.get("task_id"),
-        }
-    )
-    
     system_prompt = build_system_prompt(
         agent_name=agent_info["name"],
         personality_traits=agent_info["traits"],
@@ -474,12 +434,12 @@ async def generate_prd(state: BAState, agent=None) -> dict:
     )
     
     try:
-        response = await llm.ainvoke(
+        response = await _default_llm.ainvoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt)
             ],
-            config={"callbacks": callbacks} if callbacks else None
+            config=_cfg(state, "generate_prd")
         )
         
         prd = parse_prd_response(response.content)
@@ -510,16 +470,6 @@ async def update_prd(state: BAState, agent=None) -> dict:
         return await generate_prd(state, agent)
     
     agent_info = _get_agent_info(agent)
-    llm, callbacks = _get_llm_with_callback(
-        agent,
-        trace_name="ba_update_prd",
-        tags=["ba", "prd", "update"],
-        metadata={
-            "project_id": state.get("project_id"),
-            "task_id": state.get("task_id"),
-        }
-    )
-    
     system_prompt = build_system_prompt(
         agent_name=agent_info["name"],
         personality_traits=agent_info["traits"],
@@ -534,12 +484,12 @@ async def update_prd(state: BAState, agent=None) -> dict:
     )
     
     try:
-        response = await llm.ainvoke(
+        response = await _default_llm.ainvoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt)
             ],
-            config={"callbacks": callbacks} if callbacks else None
+            config=_cfg(state, "update_prd")
         )
         
         result = parse_prd_update_response(response.content)
@@ -578,16 +528,6 @@ async def extract_stories(state: BAState, agent=None) -> dict:
         }
     
     agent_info = _get_agent_info(agent)
-    llm, callbacks = _get_llm_with_callback(
-        agent,
-        trace_name="ba_extract_stories",
-        tags=["ba", "stories"],
-        metadata={
-            "project_id": state.get("project_id"),
-            "task_id": state.get("task_id"),
-        }
-    )
-    
     system_prompt = build_system_prompt(
         agent_name=agent_info["name"],
         personality_traits=agent_info["traits"],
@@ -601,12 +541,12 @@ async def extract_stories(state: BAState, agent=None) -> dict:
     )
     
     try:
-        response = await llm.ainvoke(
+        response = await _default_llm.ainvoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt)
             ],
-            config={"callbacks": callbacks} if callbacks else None
+            config=_cfg(state, "extract_stories")
         )
         
         stories = parse_stories_response(response.content)
@@ -627,16 +567,6 @@ async def analyze_domain(state: BAState, agent=None) -> dict:
     logger.info(f"[BA] Analyzing domain...")
     
     agent_info = _get_agent_info(agent)
-    llm, callbacks = _get_llm_with_callback(
-        agent,
-        trace_name="ba_domain_analysis",
-        tags=["ba", "domain"],
-        metadata={
-            "project_id": state.get("project_id"),
-            "task_id": state.get("task_id"),
-        }
-    )
-    
     system_prompt = build_system_prompt(
         agent_name=agent_info["name"],
         personality_traits=agent_info["traits"],
@@ -651,12 +581,12 @@ async def analyze_domain(state: BAState, agent=None) -> dict:
     )
     
     try:
-        response = await llm.ainvoke(
+        response = await _default_llm.ainvoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt)
             ],
-            config={"callbacks": callbacks} if callbacks else None
+            config=_cfg(state, "analyze_domain")
         )
         
         logger.info(f"[BA] Domain analysis completed ({len(response.content)} chars)")
@@ -697,13 +627,16 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
                 "Share with stakeholders"
             ])
             
-            # Send success message to user
+            # Send simple message with View button to open prd.md file
             if agent:
                 await agent.message_user(
                     event_type="response",
-                    content=f"✅ **PRD Created Successfully**\n\n**Project:** {project_name}\n\n**Next steps:**\n" +
-                            "\n".join(f"- {step}" for step in result["next_steps"]),
-                    details={"prd": prd_data}
+                    content=f"Tôi đã tạo thành công PRD",
+                    details={
+                        "message_type": "prd_created",
+                        "file_path": "docs/prd.md",
+                        "title": project_name
+                    }
                 )
             
             logger.info(f"[BA] PRD saved: {project_name}")
@@ -731,8 +664,8 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
             if agent:
                 await agent.message_user(
                     event_type="response",
-                    content=f"✅ **User Stories Extracted** ({stories_count} stories)\n\n**Next steps:**\n" +
-                            "\n".join(f"- {step}" for step in result["next_steps"]),
+                    content=f"✅ User Stories Extracted ({stories_count} stories)\n\nNext steps:\n" +
+                            "\n".join(f"  • {step}" for step in result["next_steps"]),
                     details={"stories": stories_data}
                 )
             
@@ -758,7 +691,7 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
         if agent:
             await agent.message_user(
                 event_type="response",
-                content=f"📊 **Domain Analysis Complete**\n\n{state['analysis_text'][:2000]}",
+                content=f"📊 Domain Analysis Complete\n\n{state['analysis_text'][:2000]}",
                 details={"analysis": state["analysis_text"]}
             )
     
@@ -769,7 +702,7 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
         if agent:
             await agent.message_user(
                 event_type="response",
-                content=f"✅ **PRD Updated**\n\n{state['change_summary']}",
+                content=f"✅ PRD Updated\n\n{state['change_summary']}",
                 details={"prd": state.get("prd_draft")}
             )
     

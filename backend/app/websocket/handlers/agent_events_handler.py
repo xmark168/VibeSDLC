@@ -98,7 +98,8 @@ class AgentEventsHandler(BaseEventHandler):
             agent_name = data.get("agent_name", "Agent")
             execution_id = data.get("execution_id")
             message_type = details.get("message_type", "text")
-            structured_data_payload = details.get("data")
+            # Pass full details as structured_data (excluding message_id which is used separately)
+            structured_data_payload = {k: v for k, v in details.items() if k != "message_id"}
             
             # Use message_id from base_agent (already saved to DB)
             message_id = details.get("message_id")
