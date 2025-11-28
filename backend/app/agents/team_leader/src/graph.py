@@ -7,20 +7,28 @@ from typing import Literal
 from langgraph.graph import StateGraph, END
 
 from app.agents.team_leader.src.state import TeamLeaderState
-from app.agents.team_leader.src.nodes import extract_preferences, llm_routing, delegate, respond
+from app.agents.team_leader.src.nodes import (
+    extract_preferences, router, delegate, respond, conversational
+)
 
 logger = logging.getLogger(__name__)
 
 
-def route_after_llm(state: TeamLeaderState) -> Literal["delegate", "respond"]:
-    """Conditional edge: Route after LLM decision."""
-    if state.get("action") == "DELEGATE":
+def route(state: TeamLeaderState) -> Literal["delegate", "respond", "conversational"]:
+    """Route based on action decision."""
+    action = state.get("action")
+    if action == "DELEGATE":
         return "delegate"
+    elif action == "CONVERSATION":
+        return "conversational"
     return "respond"
 
 
 class TeamLeaderGraph:
-    """LangGraph-based Team Leader routing graph."""
+    """LangGraph-based Team Leader graph.
+    
+    Flow: extract_preferences → router → delegate/respond/conversational
+    """
     
     def __init__(self, agent=None):
         """Initialize graph with reference to agent.
@@ -32,31 +40,27 @@ class TeamLeaderGraph:
         
         graph = StateGraph(TeamLeaderState)
         
-        # Node 0: Silent preference extraction (runs first)
+        # Nodes
         graph.add_node("extract_preferences", partial(extract_preferences, agent=agent))
-        # Node 1: LLM routing decision
-        graph.add_node("llm_routing", partial(llm_routing, agent=agent))
-        # Node 2: Delegate to specialist
+        graph.add_node("router", partial(router, agent=agent))
         graph.add_node("delegate", partial(delegate, agent=agent))
-        # Node 3: Respond directly
         graph.add_node("respond", partial(respond, agent=agent))
+        graph.add_node("conversational", partial(conversational, agent=agent))
         
-        # Flow: extract_preferences → llm_routing → delegate/respond
+        # Flow: extract_preferences → router → delegate/respond/conversational
         graph.set_entry_point("extract_preferences")
-        graph.add_edge("extract_preferences", "llm_routing")
+        graph.add_edge("extract_preferences", "router")
         
-        graph.add_conditional_edges(
-            "llm_routing",
-            route_after_llm,
-            {
-                "delegate": "delegate",
-                "respond": "respond",
-            }
-        )
+        graph.add_conditional_edges("router", route, {
+            "delegate": "delegate",
+            "respond": "respond",
+            "conversational": "conversational",
+        })
         
         graph.add_edge("delegate", END)
         graph.add_edge("respond", END)
+        graph.add_edge("conversational", END)
         
         self.graph = graph.compile()
         
-        logger.info("[TeamLeaderGraph] LLM-only routing graph compiled")
+        logger.info("[TeamLeaderGraph] Graph compiled with conversational node")
