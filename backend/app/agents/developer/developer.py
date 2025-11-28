@@ -115,9 +115,28 @@ class Developer(BaseAgent):
 
         await self.message_user("thinking", "Development environment prepared")
 
-        await self.message_user(
-            "progress", "Task started successfully", {"milestone": "development_started"}
+        # Update story status: InProgress → Review (after completing implementation)
+        story_updated = await self.update_story_status(
+            story_id=task.task_id,
+            new_status="Review",
+            old_status="InProgress",
+            transition_reason="Development completed from InProgress trigger"
         )
+        
+        if story_updated:
+            logger.info(f"[{self.name}] Story {task.task_id} moved to Review")
+            await self.message_user(
+                "progress", 
+                "✅ Development complete! Story moved to Review for QA", 
+                {"milestone": "completed", "story_status": "Review"}
+            )
+        else:
+            logger.warning(f"[{self.name}] Failed to update story {task.task_id} status")
+            await self.message_user(
+                "progress", 
+                "Task started successfully", 
+                {"milestone": "development_started"}
+            )
 
         logger.info(
             f"[{self.name}] Task started for project {project_id}: {len(response)} chars"
@@ -131,6 +150,7 @@ class Developer(BaseAgent):
                 "routing_reason": task.routing_reason,
                 "implementation_type": "task_started",
                 "project_id": project_id,
+                "story_status_updated": story_updated,
             },
             requires_approval=False,
         )
@@ -146,9 +166,28 @@ class Developer(BaseAgent):
 
         await self.message_user("thinking", "Reviewing implementation")
 
-        await self.message_user(
-            "progress", "Development task complete", {"milestone": "completed"}
+        # Update story status: InProgress → Review
+        story_updated = await self.update_story_status(
+            story_id=task.task_id,
+            new_status="Review",
+            old_status="InProgress",
+            transition_reason="Implementation completed, ready for review"
         )
+        
+        if story_updated:
+            logger.info(f"[{self.name}] Story {task.task_id} moved to Review")
+            await self.message_user(
+                "progress", 
+                "✅ Implementation complete! Story moved to Review for QA", 
+                {"milestone": "completed", "story_status": "Review"}
+            )
+        else:
+            logger.warning(f"[{self.name}] Failed to update story {task.task_id} status")
+            await self.message_user(
+                "progress", 
+                "Development task complete", 
+                {"milestone": "completed"}
+            )
 
         logger.info(
             f"[{self.name}] Implementation completed for project {project_id}: {len(response)} chars"
@@ -162,6 +201,7 @@ class Developer(BaseAgent):
                 "routing_reason": task.routing_reason,
                 "implementation_type": "code_development",
                 "project_id": project_id,
+                "story_status_updated": story_updated,
             },
             requires_approval=False,
         )

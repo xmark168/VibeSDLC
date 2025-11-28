@@ -92,7 +92,6 @@ class ProjectWorkspaceManager:
                 '.cache',
                 'coverage',
                 '.swc',
-                '.git',
                 '__pycache__',
                 '.pytest_cache',
                 '.venv',
