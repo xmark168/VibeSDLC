@@ -1,27 +1,36 @@
-"""LangGraph Node Functions for Business Analyst"""
+"""LangGraph Node Functions for Business Analyst
+
+Uses shared prompt_utils from core (same pattern as Team Leader).
+"""
 
 import json
 import logging
+from pathlib import Path
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from .state import BAState
 from .prompts import (
-    build_system_prompt,
-    build_user_prompt,
+    PROMPTS,
+    BA_DEFAULTS,
     parse_intent_response,
     parse_questions_response,
     parse_prd_response,
     parse_prd_update_response,
     parse_stories_response,
 )
+from app.agents.core.prompt_utils import (
+    build_system_prompt as _build_system_prompt,
+    build_user_prompt as _build_user_prompt,
+)
 
 logger = logging.getLogger(__name__)
 
 # LLM instances (shared, like Team Leader)
-_fast_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1, timeout=15)
-_default_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7, timeout=30)
+_fast_llm = ChatOpenAI(model="gpt-4.1", temperature=0.1, timeout=30)
+_default_llm = ChatOpenAI(model="gpt-4.1", temperature=0.7, timeout=90)  # 90s for complex prompts
+_story_llm = ChatOpenAI(model="gpt-4.1", temperature=0.7, timeout=180)  # 180s for story extraction
 
 
 def _cfg(state: dict, name: str) -> dict:
@@ -30,35 +39,25 @@ def _cfg(state: dict, name: str) -> dict:
     return {"callbacks": [h], "run_name": name} if h else {}
 
 
-def _get_agent_info(agent):
-    """Get agent personality info."""
-    if agent:
-        return {
-            "name": agent.name,
-            "traits": agent.agent_model.personality_traits or [],
-            "style": agent.agent_model.communication_style or "professional and clear"
-        }
-    return {
-        "name": "Business Analyst",
-        "traits": [],
-        "style": "professional and clear"
-    }
+def _sys_prompt(agent, task: str) -> str:
+    """Build system prompt with agent personality (same pattern as Team Leader)."""
+    return _build_system_prompt(PROMPTS, task, agent, BA_DEFAULTS)
+
+
+def _user_prompt(task: str, **kwargs) -> str:
+    """Build user prompt for LLM."""
+    # Extract user_message from kwargs if present, otherwise use empty string
+    user_message = kwargs.pop("user_message", "")
+    return _build_user_prompt(PROMPTS, task, user_message, **kwargs)
 
 
 async def analyze_intent(state: BAState, agent=None) -> dict:
     """Node: Analyze user intent and classify task."""
     logger.info(f"[BA] Analyzing intent: {state['user_message'][:80]}...")
     
-    agent_info = _get_agent_info(agent)
-    system_prompt = build_system_prompt(
-        agent_name=agent_info["name"],
-        personality_traits=agent_info["traits"],
-        communication_style=agent_info["style"],
-        task_name="analyze_intent"
-    )
-    
-    user_prompt = build_user_prompt(
-        task_name="analyze_intent",
+    system_prompt = _sys_prompt(agent, "analyze_intent")
+    user_prompt = _user_prompt(
+        "analyze_intent",
         user_message=state["user_message"],
         has_prd="Yes" if state.get("existing_prd") else "No",
         has_info="Yes" if state.get("collected_info") else "No"
@@ -90,16 +89,9 @@ async def interview_requirements(state: BAState, agent=None) -> dict:
     """Node: Generate clarification questions."""
     logger.info(f"[BA] Generating interview questions...")
     
-    agent_info = _get_agent_info(agent)
-    system_prompt = build_system_prompt(
-        agent_name=agent_info["name"],
-        personality_traits=agent_info["traits"],
-        communication_style=agent_info["style"],
-        task_name="interview_requirements"
-    )
-    
-    user_prompt = build_user_prompt(
-        task_name="interview_requirements",
+    system_prompt = _sys_prompt(agent, "interview_requirements")
+    user_prompt = _user_prompt(
+        "interview_requirements",
         user_message=state["user_message"],
         collected_info=json.dumps(state.get("collected_info", {}), ensure_ascii=False),
         has_prd="Yes" if state.get("existing_prd") else "No"
@@ -419,16 +411,9 @@ async def generate_prd(state: BAState, agent=None) -> dict:
     """Node: Generate PRD document."""
     logger.info(f"[BA] Generating PRD...")
     
-    agent_info = _get_agent_info(agent)
-    system_prompt = build_system_prompt(
-        agent_name=agent_info["name"],
-        personality_traits=agent_info["traits"],
-        communication_style=agent_info["style"],
-        task_name="generate_prd"
-    )
-    
-    user_prompt = build_user_prompt(
-        task_name="generate_prd",
+    system_prompt = _sys_prompt(agent, "generate_prd")
+    user_prompt = _user_prompt(
+        "generate_prd",
         user_message=state["user_message"],
         collected_info=json.dumps(state.get("collected_info", {}), ensure_ascii=False)
     )
@@ -469,16 +454,9 @@ async def update_prd(state: BAState, agent=None) -> dict:
         logger.warning("[BA] No existing PRD to update, creating new one")
         return await generate_prd(state, agent)
     
-    agent_info = _get_agent_info(agent)
-    system_prompt = build_system_prompt(
-        agent_name=agent_info["name"],
-        personality_traits=agent_info["traits"],
-        communication_style=agent_info["style"],
-        task_name="update_prd"
-    )
-    
-    user_prompt = build_user_prompt(
-        task_name="update_prd",
+    system_prompt = _sys_prompt(agent, "update_prd")
+    user_prompt = _user_prompt(
+        "update_prd",
         existing_prd=json.dumps(existing_prd, ensure_ascii=False, indent=2),
         user_message=state["user_message"]
     )
@@ -515,33 +493,28 @@ async def update_prd(state: BAState, agent=None) -> dict:
 
 
 async def extract_stories(state: BAState, agent=None) -> dict:
-    """Node: Extract user stories from PRD."""
-    logger.info(f"[BA] Extracting user stories...")
+    """Node: Extract epics with INVEST-compliant user stories from PRD."""
+    logger.info(f"[BA] Extracting epics and user stories...")
     
     prd = state.get("prd_draft") or state.get("existing_prd", {})
     
     if not prd:
         logger.error("[BA] No PRD available to extract stories from")
         return {
+            "epics": [],
             "stories": [],
             "error": "No PRD available. Please create a PRD first."
         }
     
-    agent_info = _get_agent_info(agent)
-    system_prompt = build_system_prompt(
-        agent_name=agent_info["name"],
-        personality_traits=agent_info["traits"],
-        communication_style=agent_info["style"],
-        task_name="extract_stories"
-    )
-    
-    user_prompt = build_user_prompt(
-        task_name="extract_stories",
+    system_prompt = _sys_prompt(agent, "extract_stories")
+    user_prompt = _user_prompt(
+        "extract_stories",
         prd=json.dumps(prd, ensure_ascii=False, indent=2)
     )
     
     try:
-        response = await _default_llm.ainvoke(
+        # Use _story_llm with longer timeout for complex story extraction
+        response = await _story_llm.ainvoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt)
@@ -549,14 +522,30 @@ async def extract_stories(state: BAState, agent=None) -> dict:
             config=_cfg(state, "extract_stories")
         )
         
-        stories = parse_stories_response(response.content)
-        logger.info(f"[BA] Extracted {len(stories)} user stories")
+        result = parse_stories_response(response.content)
+        epics = result.get("epics", [])
         
-        return {"stories": stories}
+        # Flatten stories for backward compatibility
+        all_stories = []
+        for epic in epics:
+            for story in epic.get("stories", []):
+                story["epic_id"] = epic.get("id")
+                story["epic_title"] = epic.get("title")
+                all_stories.append(story)
+        
+        total_epics = len(epics)
+        total_stories = len(all_stories)
+        logger.info(f"[BA] Extracted {total_epics} epics with {total_stories} user stories")
+        
+        return {
+            "epics": epics,
+            "stories": all_stories
+        }
         
     except Exception as e:
         logger.error(f"[BA] Failed to extract stories: {e}")
         return {
+            "epics": [],
             "stories": [],
             "error": f"Failed to extract stories: {str(e)}"
         }
@@ -566,16 +555,9 @@ async def analyze_domain(state: BAState, agent=None) -> dict:
     """Node: Perform domain analysis."""
     logger.info(f"[BA] Analyzing domain...")
     
-    agent_info = _get_agent_info(agent)
-    system_prompt = build_system_prompt(
-        agent_name=agent_info["name"],
-        personality_traits=agent_info["traits"],
-        communication_style=agent_info["style"],
-        task_name="domain_analysis"
-    )
-    
-    user_prompt = build_user_prompt(
-        task_name="domain_analysis",
+    system_prompt = _sys_prompt(agent, "domain_analysis")
+    user_prompt = _user_prompt(
+        "domain_analysis",
         user_message=state["user_message"],
         collected_info=json.dumps(state.get("collected_info", {}), ensure_ascii=False)
     )
@@ -673,17 +655,23 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
             logger.error(f"[BA] Failed to save PRD: {e}", exc_info=True)
             result["error"] = f"Failed to save PRD: {str(e)}"
     
-    # Save stories if exist
-    if state.get("stories") and project_files:
+    # Save epics and stories if exist
+    epics_data = state.get("epics", [])
+    stories_data = state.get("stories", [])
+    
+    if (epics_data or stories_data) and project_files:
         try:
-            stories_data = state["stories"]
-            await project_files.save_user_stories(stories_data)
+            # Save with epic structure
+            await project_files.save_user_stories(epics_data, stories_data)
             result["stories_saved"] = True
             
+            epics_count = len(epics_data)
             stories_count = len(stories_data)
-            result["summary"] = f"Extracted {stories_count} user stories"
+            total_points = sum(epic.get("total_story_points", 0) for epic in epics_data)
+            
+            result["summary"] = f"Extracted {epics_count} epics with {stories_count} INVEST-compliant stories"
             result["next_steps"].extend([
-                "Review and prioritize stories",
+                "Review epics and prioritize stories",
                 "Add stories to backlog",
                 "Estimate effort for each story"
             ])
@@ -692,15 +680,17 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
             if agent:
                 await agent.message_user(
                     event_type="response",
-                    content=f"User Stories đã được tạo",
+                    content=f"Epics & User Stories đã được tạo",
                     details={
                         "message_type": "stories_created",
                         "file_path": "docs/user-stories.md",
-                        "count": stories_count
+                        "epics_count": epics_count,
+                        "stories_count": stories_count,
+                        "total_story_points": total_points
                     }
                 )
             
-            logger.info(f"[BA] Saved {stories_count} user stories")
+            logger.info(f"[BA] Saved {epics_count} epics with {stories_count} user stories")
             
         except Exception as e:
             logger.error(f"[BA] Failed to save stories: {e}", exc_info=True)

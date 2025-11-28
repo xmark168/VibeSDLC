@@ -55,16 +55,23 @@ class ProjectFiles:
         
         return self.prd_path
     
-    async def save_user_stories(self, stories_data: list[dict]) -> Path:
-        """Save all user stories to a single markdown file.
+    async def save_user_stories(self, epics_data: list[dict] = None, stories_data: list[dict] = None) -> Path:
+        """Save epics and user stories to a single markdown file.
         
         Args:
-            stories_data: List of story dictionaries
+            epics_data: List of epic dictionaries (each containing stories)
+            stories_data: Flat list of story dictionaries (for backward compatibility)
             
         Returns:
             Path to the saved user stories file
         """
-        md_content = self._stories_to_markdown(stories_data)
+        # Handle backward compatibility
+        if epics_data is None:
+            epics_data = []
+        if stories_data is None:
+            stories_data = []
+            
+        md_content = self._epics_to_markdown(epics_data, stories_data)
         
         async with aiofiles.open(self.user_stories_path, 'w', encoding='utf-8') as f:
             await f.write(md_content)
@@ -162,8 +169,122 @@ class ProjectFiles:
 """
         return md
     
+    def _epics_to_markdown(self, epics_data: list[dict], stories_data: list[dict] = None) -> str:
+        """Convert epics and user stories to markdown format.
+        
+        Args:
+            epics_data: List of epic data dictionaries (each containing stories)
+            stories_data: Flat list for backward compatibility
+            
+        Returns:
+            Markdown formatted string with all epics and stories
+        """
+        if not epics_data and not stories_data:
+            return """# Epics & User Stories
+
+*No epics or user stories yet. They will appear here after PRD approval.*
+"""
+        
+        # Calculate totals
+        total_epics = len(epics_data)
+        total_stories = sum(len(epic.get('stories', [])) for epic in epics_data)
+        total_points = sum(epic.get('total_story_points', 0) for epic in epics_data)
+        
+        md = f"""# Epics & User Stories (INVEST Compliant)
+
+**Total Epics:** {total_epics}  
+**Total Stories:** {total_stories}  
+**Total Story Points:** {total_points}  
+**Last Updated:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}
+
+---
+
+## INVEST Criteria
+- **I**ndependent: Story can be developed independently
+- **N**egotiable: Details can be discussed and refined
+- **V**aluable: Delivers clear value to user or business
+- **E**stimable: Clear enough to estimate effort
+- **S**mall: Completable within 1 sprint (1-8 story points)
+- **T**estable: Has clear, verifiable acceptance criteria
+
+---
+
+"""
+        
+        for epic_idx, epic in enumerate(epics_data, 1):
+            epic_id = epic.get('id', f'EPIC-{epic_idx:03d}')
+            epic_title = epic.get('title', 'Untitled Epic')
+            epic_desc = epic.get('description', '')
+            epic_domain = epic.get('domain', 'General')
+            epic_points = epic.get('total_story_points', 0)
+            stories = epic.get('stories', [])
+            
+            md += f"""# Epic {epic_idx}: {epic_title}
+
+**ID:** `{epic_id}`  
+**Domain:** {epic_domain}  
+**Total Story Points:** {epic_points}  
+**Stories Count:** {len(stories)}
+
+{epic_desc}
+
+---
+
+"""
+            
+            for story_idx, story in enumerate(stories, 1):
+                story_id = story.get('id', f'US-{epic_idx:02d}{story_idx:02d}')
+                story_title = story.get('title', 'Untitled Story')
+                story_desc = story.get('description', '')
+                priority = story.get('priority', 'medium')
+                story_points = story.get('story_points', 0)
+                
+                # Priority emoji
+                priority_emoji = "🔴" if priority == "high" else "🟡" if priority == "medium" else "🟢"
+                
+                md += f"""## {epic_idx}.{story_idx} {story_title}
+
+**ID:** `{story_id}`  
+**Priority:** {priority_emoji} {priority.capitalize()}  
+**Story Points:** {story_points}
+
+### Description
+{story_desc}
+
+### Acceptance Criteria (Given/When/Then)
+"""
+                
+                # Format acceptance criteria
+                ac_list = story.get('acceptance_criteria', [])
+                if isinstance(ac_list, list) and ac_list:
+                    for ac in ac_list:
+                        md += f"- {ac}\n"
+                else:
+                    md += "_No acceptance criteria defined._\n"
+                
+                # INVEST Check
+                invest_check = story.get('invest_check', {})
+                if invest_check:
+                    md += f"""
+### INVEST Validation
+| Criteria | Status | Notes |
+|----------|--------|-------|
+| Independent | {'✅' if invest_check.get('independent') else '❌'} | - |
+| Negotiable | {'✅' if invest_check.get('negotiable') else '❌'} | - |
+| Valuable | {'✅' if invest_check.get('valuable') else '❌'} | {invest_check.get('valuable', '-') if isinstance(invest_check.get('valuable'), str) else '-'} |
+| Estimable | {'✅' if invest_check.get('estimable') else '❌'} | - |
+| Small | {'✅' if invest_check.get('small') else '❌'} | {story_points} story points |
+| Testable | {'✅' if invest_check.get('testable') else '❌'} | {len(ac_list)} acceptance criteria |
+
+"""
+                
+                md += "---\n\n"
+        
+        md += "\n*Generated by Business Analyst agent - INVEST compliant*\n"
+        return md
+    
     def _stories_to_markdown(self, stories_data: list[dict]) -> str:
-        """Convert all user stories to markdown format.
+        """Convert flat list of user stories to markdown format (legacy support).
         
         Args:
             stories_data: List of story data dictionaries

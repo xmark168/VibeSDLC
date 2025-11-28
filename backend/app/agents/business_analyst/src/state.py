@@ -47,8 +47,9 @@ class BAState(TypedDict, total=False):
     prd_saved: bool
     change_summary: str  # For PRD updates
     
-    # Stories workflow
-    stories: list[dict]
+    # Stories workflow (Epic/Story hierarchy)
+    epics: list[dict]  # List of epics, each containing stories
+    stories: list[dict]  # Flat list for backward compatibility
     stories_saved: bool
     
     # Domain analysis

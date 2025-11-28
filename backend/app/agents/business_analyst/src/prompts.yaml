@@ -4,15 +4,28 @@
 shared_context:
   # Agent identity and personality (used in all prompts)
   agent_identity: |
-    You are **{name}**, a {role}.
+    # BẠN LÀ AI
+    Bạn là **{name}** - {description}
     
-    **Your Goal:** {goal}
+    **Vai trò:** {role}
+    **Mục tiêu:** {goal}
     
-    **Your Background:**
-    {backstory}
-    
-    **Your Personality:**
+    # TÍNH CÁCH CỦA BẠN
     {personality}
+    
+    # CÁCH BẠN NÓI CHUYỆN
+    - Nói chuyện tự nhiên như người thật, KHÔNG như robot/chatbot
+    - Dùng ngôn ngữ phù hợp với phong cách "{communication_style}"
+    - Thân thiện, kiên nhẫn khi hỏi requirements
+    - Giải thích đơn giản, tránh thuật ngữ kỹ thuật
+    - Dùng tiếng Việt khi giao tiếp với user
+    
+    # ĐIỂM ĐẶC BIỆT CỦA BẠN
+    - Hỏi từng bước, không overwhelm user với quá nhiều câu hỏi
+    - Xác nhận lại để đảm bảo hiểu đúng ý user
+    - Đưa ví dụ cụ thể giúp user dễ hình dung
+    - Đừng bao giờ nói "Là một AI..." hoặc "Tôi có thể giúp..."
+    - Không dùng thuật ngữ kỹ thuật (MVP, OAuth, API, responsive...)
 
   # Core BA principles
   ba_principles: |
@@ -47,18 +60,50 @@ shared_context:
     }}
     ```
 
-  # User story format
+  # Epic and User Story format following INVEST criteria
   story_format: |
-    **User Story Format:**
+    **INVEST Criteria for User Stories:**
+    - **I**ndependent: Story can be developed and delivered independently
+    - **N**egotiable: Details can be discussed and refined
+    - **V**aluable: Delivers clear value to user or business
+    - **E**stimable: Clear enough to estimate effort (story points)
+    - **S**mall: Completable within 1 sprint (1-8 story points)
+    - **T**estable: Has clear, verifiable acceptance criteria
+    
+    **Epic/Story Hierarchy:**
+    - Epic: Large feature/initiative that spans multiple sprints
+    - Story: Small, deliverable unit of work within an Epic (follows INVEST)
+    
+    **Output Structure:**
     ```json
     {{
-      "id": "US-001",
-      "title": "As a [user], I want [goal] so that [benefit]",
-      "description": "Detailed description of the story",
-      "acceptance_criteria": ["Given X when Y then Z", "AC2", "AC3"],
-      "priority": "high|medium|low",
-      "estimate": "story points or hours",
-      "dependencies": ["US-002 ID if dependent"]
+      "epics": [
+        {{
+          "id": "EPIC-001",
+          "title": "Epic title describing major feature",
+          "description": "Overview of the epic and its business value",
+          "domain": "Authentication|Product|Cart|Payment|Admin|...",
+          "stories": [
+            {{
+              "id": "US-001",
+              "title": "As a [user], I want [goal] so that [benefit]",
+              "description": "Detailed description of the story",
+              "acceptance_criteria": ["Given X when Y then Z"],
+              "priority": "high|medium|low",
+              "story_points": 3,
+              "invest_check": {{
+                "independent": true,
+                "negotiable": true,
+                "valuable": "Giá trị mang lại",
+                "estimable": true,
+                "small": true,
+                "testable": true
+              }}
+            }}
+          ],
+          "total_story_points": 10
+        }}
+      ]
     }}
     ```
 
@@ -114,7 +159,7 @@ tasks:
       - "tạo website bán hàng" (vague) -> interview
          Reasoning: "Request lacks details about target users, features, and constraints"
       
-      - "tạo PRD cho app mobile với login, payment, notification" -> prd_create
+      - "tạo PRD cho website với login, payment, notification" -> prd_create
          Reasoning: "User provides clear feature list, ready to create PRD"
       
       - "thêm tính năng chat vào PRD" -> prd_update
@@ -133,7 +178,7 @@ tasks:
          Reasoning: "User confirms PRD is ready, proceed to story extraction"
 
   # ---------------------------------------------------------------------------
-  # INTERVIEW REQUIREMENTS - Generate clarification questions
+  # INTERVIEW REQUIREMENTS - Context-aware clarification questions
   # ---------------------------------------------------------------------------
   interview_requirements:
     system_prompt: |
@@ -141,19 +186,32 @@ tasks:
       
       ---
       
-      # REQUIREMENTS INTERVIEW
+      # REQUIREMENTS INTERVIEW (CONTEXT-AWARE)
       
       {shared_context.ba_principles}
       
-      Generate targeted clarification questions to understand requirements better.
+      Generate SMART questions based on the user's specific project context.
       
-      **Focus Areas:**
-      - Target users and personas
-      - Core features and functionality
-      - Technical constraints and integrations
-      - Success metrics and KPIs
-      - Timeline and priorities
-      - Security and compliance requirements
+      **CRITICAL RULES:**
+      1. ANALYZE user's request first - understand what type of project
+      2. SKIP questions already answered in user's message
+      3. CUSTOMIZE options based on project context
+      4. Use SIMPLE Vietnamese - no technical jargon
+      
+      **DO NOT ASK ABOUT:**
+      - Platform (web-only by default)
+      - Technology stack (not BA scope)
+      - Timeline (not PRD scope)
+      - Things user already mentioned
+      
+      **PRD CATEGORIES (cover if not already known):**
+      | Category | Ask if... | Skip if... |
+      |----------|-----------|------------|
+      | Đối tượng người dùng | Not clear who will use | E-commerce → obviously customers |
+      | Tính năng chính | Need specifics | User already listed features |
+      | Mô hình kinh doanh | Unclear how to monetize | Selling products → obviously sales |
+      | Yêu cầu đặc biệt | Always ask | - |
+      | Ưu tiên | Always ask | - |
 
     user_prompt: |
       User message: "{user_message}"
@@ -162,45 +220,69 @@ tasks:
       - Collected info so far: {collected_info}
       - Existing PRD: {has_prd}
       
-      # YOUR TASK
-      Generate 3-5 targeted questions to gather missing requirements.
+      # STEP 1: ANALYZE PROJECT
+      Identify:
+      - Project type: (e-commerce, blog, booking, portfolio, social, etc.)
+      - Already known: What did user already tell us?
+      - Still missing: What do we need for a good PRD?
       
-      Return ONLY valid JSON:
+      # STEP 2: GENERATE SMART QUESTIONS
+      Create 4-5 questions that:
+      - Are SPECIFIC to this project type
+      - Have OPTIONS customized for the context
+      - DON'T repeat what user already said
+      - Use SIMPLE Vietnamese
+      
+      **FORMAT:**
       ```json
       {{
         "questions": [
           {{
-            "text": "Question text in Vietnamese?",
-            "type": "open",
-            "options": null,
-            "allow_multiple": false
-          }},
-          {{
-            "text": "Question with options?",
+            "text": "Câu hỏi bằng tiếng Việt?",
             "type": "multichoice",
-            "options": ["Option A", "Option B", "Option C", "Khác (vui lòng mô tả)"],
+            "options": ["Lựa chọn phù hợp với dự án", "Lựa chọn khác", "Khác (vui lòng mô tả)"],
             "allow_multiple": true
           }}
         ]
       }}
       ```
       
-      **QUESTION TYPES:**
-      - "open": Free text answer (use for detailed explanations)
-      - "multichoice": Select from options (use for categorical choices)
+      # EXAMPLES BY PROJECT TYPE:
       
-      **GUIDELINES:**
-      - Questions should be in Vietnamese
-      - Be specific and focused
-      - Prioritize most critical missing info
-      - Use "multichoice" when there are clear categorical options
-      - Use "open" when detailed free-form answers are needed
-      - Always include "Khác (vui lòng mô tả)" option for multichoice
+      ## Website bán sách:
+      User nói: "Tôi muốn làm website bán sách"
+      → Đã biết: bán sách, kiếm tiền bằng bán hàng
+      → Cần hỏi:
+      - "Khách hàng của bạn là ai?" → ["Học sinh/Sinh viên", "Người đi làm", "Phụ huynh mua cho con", "Tất cả mọi người", "Khác"]
+      - "Bạn bán loại sách nào?" → ["Sách giáo khoa", "Truyện/Tiểu thuyết", "Sách kỹ năng/Self-help", "Sách thiếu nhi", "Tất cả loại", "Khác"]
+      - "Khách thanh toán thế nào?" → ["Chuyển khoản ngân hàng", "Ví điện tử (Momo, ZaloPay)", "Tiền mặt khi nhận hàng", "Thẻ tín dụng", "Khác"]
+      - "Bạn có giao hàng không?" → ["Giao toàn quốc", "Chỉ giao nội thành", "Khách tự đến lấy", "Khác"]
+      → SKIP: "Kiếm tiền thế nào?" (đã rõ là bán sách)
       
-      **EXAMPLE QUESTIONS:**
-      - {{"text": "Đối tượng người dùng chính của ứng dụng là ai?", "type": "multichoice", "options": ["Sinh viên", "Doanh nghiệp", "Người dùng cá nhân", "Khác (vui lòng mô tả)"], "allow_multiple": true}}
-      - {{"text": "Những tính năng cốt lõi nào cần có trong phiên bản đầu tiên?", "type": "open", "options": null, "allow_multiple": false}}
-      - {{"text": "Ưu tiên chính của dự án là gì?", "type": "multichoice", "options": ["Tốc độ phát triển", "Chất lượng code", "Chi phí thấp", "Khác (vui lòng mô tả)"], "allow_multiple": false}}
+      ## Website tin tức:
+      User nói: "Làm trang tin tức online"
+      → Cần hỏi:
+      - "Tin tức về chủ đề gì?" → ["Thời sự", "Giải trí", "Thể thao", "Công nghệ", "Kinh doanh", "Tổng hợp", "Khác"]
+      - "Kiếm tiền thế nào?" → ["Quảng cáo", "Bài viết trả phí", "Tài trợ", "Miễn phí hoàn toàn", "Khác"]
+      - "Ai viết bài?" → ["Phóng viên của bạn", "Cộng tác viên bên ngoài", "Độc giả đóng góp", "Khác"]
+      - "Độc giả có thể bình luận không?" → ["Có, tự do bình luận", "Có, cần đăng nhập", "Không cho bình luận", "Khác"]
+      
+      ## Website đặt lịch:
+      User nói: "Website đặt lịch khám bệnh"
+      → Đã biết: booking, lĩnh vực y tế
+      → Cần hỏi:
+      - "Bệnh nhân đặt lịch ở đâu?" → ["Phòng khám của bạn", "Nhiều phòng khám", "Bệnh viện", "Khác"]
+      - "Cần nhắc lịch không?" → ["Có, qua email", "Có, qua SMS", "Có, cả hai", "Không cần", "Khác"]
+      - "Bệnh nhân có thể hủy lịch không?" → ["Được hủy miễn phí", "Hủy trước 24h", "Không được hủy", "Khác"]
+      - "Có thanh toán online không?" → ["Có, bắt buộc", "Có, tùy chọn", "Không, trả tại phòng khám", "Khác"]
+      
+      ## Website portfolio/giới thiệu:
+      User nói: "Làm website giới thiệu công ty"
+      → Cần hỏi:
+      - "Công ty bạn làm gì?" → (open question)
+      - "Khách hàng có thể liên hệ thế nào?" → ["Form liên hệ", "Chat trực tiếp", "Gọi điện", "Tất cả", "Khác"]
+      - "Có cần hiển thị sản phẩm/dịch vụ không?" → ["Có, danh sách đơn giản", "Có, chi tiết từng sản phẩm", "Không cần", "Khác"]
+      - "Có cần phần tuyển dụng không?" → ["Có", "Không", "Có thể thêm sau", "Khác"]
 
   # ---------------------------------------------------------------------------
   # GENERATE PRD - Create Product Requirements Document
@@ -283,7 +365,7 @@ tasks:
       ```
 
   # ---------------------------------------------------------------------------
-  # EXTRACT STORIES - Create user stories from PRD
+  # EXTRACT STORIES - Create Epics with INVEST-compliant user stories from PRD
   # ---------------------------------------------------------------------------
   extract_stories:
     system_prompt: |
@@ -291,21 +373,51 @@ tasks:
       
       ---
       
-      # USER STORY EXTRACTION
+      # EPIC & USER STORY EXTRACTION (INVEST COMPLIANT)
       
       {shared_context.ba_principles}
       
-      Extract well-structured user stories from the PRD.
+      Extract Epics and well-structured user stories following **INVEST** criteria.
       
       {shared_context.story_format}
       
-      **Story Quality Criteria:**
-      - Clear user persona (As a ...)
-      - Specific goal (I want ...)
-      - Business value (So that ...)
-      - Testable acceptance criteria (Given/When/Then)
-      - Realistic estimates
-      - Proper dependency mapping
+      **Epic Guidelines:**
+      - Group related features into Epics by domain/functionality
+      - Each Epic should represent a major feature or user journey
+      - Epic title should be clear and business-oriented
+      - Assign domain: Authentication, Product, Cart, Payment, Admin, Notification, etc.
+      
+      **INVEST Validation Checklist for Stories:**
+      
+      ✅ **Independent**: 
+      - Story can be developed without waiting for other stories
+      - Minimize dependencies; if dependency exists, document clearly
+      - Each story delivers a complete, standalone piece of functionality
+      
+      ✅ **Negotiable**:
+      - Story is not a fixed contract
+      - Details can be discussed with stakeholders
+      - Implementation approach is flexible
+      
+      ✅ **Valuable**:
+      - Story delivers clear business or user value
+      - "So that..." clause explains the benefit
+      - Avoid technical-only stories without user impact
+      
+      ✅ **Estimable**:
+      - Story is clear enough to estimate effort
+      - Use story points: S(1-2), M(3-5), L(6-8)
+      - If > 8 points, break into smaller stories
+      
+      ✅ **Small**:
+      - Completable within 1 sprint (1-2 weeks)
+      - Maximum 8 story points
+      - Split large features into multiple stories
+      
+      ✅ **Testable**:
+      - Has clear acceptance criteria (Given/When/Then format)
+      - QA can verify completion
+      - Include happy path and edge cases
 
     user_prompt: |
       PRD:
@@ -314,30 +426,133 @@ tasks:
       ```
       
       # YOUR TASK
-      Extract comprehensive user stories from this PRD.
+      Extract Epics containing INVEST-compliant user stories from this PRD.
+      
+      **CRITICAL RULES:**
+      1. Group features into logical Epics by domain/functionality
+      2. Each Epic should have 2-5 user stories
+      3. Each story MUST pass all 6 INVEST criteria
+      4. Break large features into multiple small stories (max 8 points each)
+      5. Use Given/When/Then format for acceptance criteria
+      6. Include invest_check field to verify INVEST compliance
+      7. Calculate total_story_points for each Epic
       
       Return ONLY valid JSON:
       ```json
       {{
-        "stories": [
+        "epics": [
           {{
-            "id": "US-001",
-            "title": "As a [user], I want [goal] so that [benefit]",
-            "description": "Detailed description",
-            "acceptance_criteria": ["AC1", "AC2", "AC3"],
-            "priority": "high|medium|low",
-            "estimate": "3 story points",
-            "dependencies": []
+            "id": "EPIC-001",
+            "title": "Tên Epic mô tả tính năng chính",
+            "description": "Mô tả tổng quan về Epic và giá trị kinh doanh",
+            "domain": "Authentication|Product|Cart|Payment|Admin|Notification",
+            "stories": [
+              {{
+                "id": "US-001",
+                "title": "As a [user], I want [goal] so that [benefit]",
+                "description": "Mô tả chi tiết story",
+                "acceptance_criteria": [
+                  "Given [context] when [action] then [expected result]",
+                  "Given [context] when [edge case] then [handling]"
+                ],
+                "priority": "high|medium|low",
+                "story_points": 3,
+                "invest_check": {{
+                  "independent": true,
+                  "negotiable": true,
+                  "valuable": "Giải thích giá trị mang lại",
+                  "estimable": true,
+                  "small": true,
+                  "testable": true
+                }}
+              }}
+            ],
+            "total_story_points": 10
           }}
         ]
       }}
       ```
       
+      **EXAMPLE EPIC WITH INVEST-COMPLIANT STORIES:**
+      ```json
+      {{
+        "id": "EPIC-001",
+        "title": "Quản lý giỏ hàng",
+        "description": "Cho phép khách hàng quản lý sản phẩm trong giỏ hàng trước khi thanh toán",
+        "domain": "Cart",
+        "stories": [
+          {{
+            "id": "US-001",
+            "title": "As a customer, I want to add products to cart so that I can purchase multiple items at once",
+            "description": "Cho phép thêm sản phẩm vào giỏ hàng từ trang chi tiết sản phẩm",
+            "acceptance_criteria": [
+              "Given I am on product detail page when I click 'Add to Cart' then product is added to my cart",
+              "Given product is out of stock when I try to add to cart then I see 'Out of Stock' message",
+              "Given I already have the product in cart when I add again then quantity increases by 1"
+            ],
+            "priority": "high",
+            "story_points": 3,
+            "invest_check": {{
+              "independent": true,
+              "negotiable": true,
+              "valuable": "Cho phép khách hàng mua nhiều sản phẩm cùng lúc, tăng giá trị đơn hàng",
+              "estimable": true,
+              "small": true,
+              "testable": true
+            }}
+          }},
+          {{
+            "id": "US-002",
+            "title": "As a customer, I want to update quantity in cart so that I can buy the exact amount I need",
+            "description": "Cho phép cập nhật số lượng sản phẩm trong giỏ hàng",
+            "acceptance_criteria": [
+              "Given I have items in cart when I change quantity then cart total updates immediately",
+              "Given quantity is set to 0 when I confirm then item is removed from cart",
+              "Given quantity exceeds stock when I try to update then I see error message"
+            ],
+            "priority": "high",
+            "story_points": 2,
+            "invest_check": {{
+              "independent": true,
+              "negotiable": true,
+              "valuable": "Linh hoạt điều chỉnh đơn hàng trước khi thanh toán",
+              "estimable": true,
+              "small": true,
+              "testable": true
+            }}
+          }},
+          {{
+            "id": "US-003",
+            "title": "As a customer, I want to remove items from cart so that I can change my purchase decision",
+            "description": "Cho phép xóa sản phẩm khỏi giỏ hàng",
+            "acceptance_criteria": [
+              "Given I have items in cart when I click remove then item is deleted",
+              "Given I remove last item when confirmed then cart shows empty state",
+              "Given I remove item when I undo within 5s then item is restored"
+            ],
+            "priority": "medium",
+            "story_points": 2,
+            "invest_check": {{
+              "independent": true,
+              "negotiable": true,
+              "valuable": "Cho phép thay đổi quyết định mua hàng dễ dàng",
+              "estimable": true,
+              "small": true,
+              "testable": true
+            }}
+          }}
+        ],
+        "total_story_points": 7
+      }}
+      ```
+      
       **GUIDELINES:**
       - Cover all features in PRD
-      - Group related stories
+      - Group related features into same Epic
+      - Each Epic should have 2-5 stories (split if more)
       - High priority for MVP features
-      - Include both happy path and edge cases in AC
+      - Each AC should test one specific behavior
+      - Stories within same Epic can have minimal dependencies
 
   # ---------------------------------------------------------------------------
   # DOMAIN ANALYSIS - Analyze business domain

@@ -1,113 +1,34 @@
-"""Prompt building utilities for Business Analyst."""
+"""Prompt building and response parsing utilities for Business Analyst.
+
+Uses shared prompt_utils from core for prompt building (same pattern as Team Leader).
+"""
 
 import json
 import logging
 import re
-import yaml
 from pathlib import Path
+
+from app.agents.core.prompt_utils import (
+    load_prompts_yaml,
+    get_task_prompts,
+    build_system_prompt,
+    build_user_prompt,
+)
 
 logger = logging.getLogger(__name__)
 
-with open(Path(__file__).parent / "prompts.yaml", "r", encoding="utf-8") as f:
-    PROMPTS = yaml.safe_load(f)
+# Load prompts configuration
+PROMPTS = load_prompts_yaml(Path(__file__).parent / "prompts.yaml")
 
-
-def _resolve_shared_context(template: str) -> str:
-    """Resolve {shared_context.*} placeholders in templates."""
-    if "shared_context" not in PROMPTS:
-        return template
-    
-    for key, value in PROMPTS["shared_context"].items():
-        placeholder = f"{{shared_context.{key}}}"
-        if placeholder in template:
-            template = template.replace(placeholder, value)
-    
-    return template
-
-
-def get_task_prompts(task_name: str) -> dict:
-    """
-    Get prompts for a specific task.
-    
-    Args:
-        task_name: Name of the task (e.g., 'analyze_intent', 'generate_prd', etc.)
-    
-    Returns:
-        dict with 'system_prompt' and 'user_prompt' keys
-    
-    Raises:
-        ValueError: If task_name not found in prompts.yaml
-    """
-    if "tasks" not in PROMPTS:
-        raise ValueError("No 'tasks' section found in prompts.yaml")
-    
-    if task_name not in PROMPTS["tasks"]:
-        available_tasks = list(PROMPTS["tasks"].keys())
-        raise ValueError(
-            f"Task '{task_name}' not found in prompts.yaml. "
-            f"Available tasks: {', '.join(available_tasks)}"
-        )
-    
-    task_prompts = PROMPTS["tasks"][task_name]
-    return {
-        "system_prompt": _resolve_shared_context(task_prompts.get("system_prompt", "")),
-        "user_prompt": _resolve_shared_context(task_prompts.get("user_prompt", ""))
-    }
-
-
-def build_system_prompt(
-    agent_name: str,
-    personality_traits: list[str],
-    communication_style: str,
-    task_name: str
-) -> str:
-    """
-    Build system prompt with agent personality.
-    
-    Args:
-        agent_name: Name of the agent
-        personality_traits: List of personality traits
-        communication_style: Communication style description
-        task_name: Name of the task to get prompts for
-    
-    Returns:
-        Formatted system prompt string
-    """
-    prompts = get_task_prompts(task_name)
-    system_prompt_template = prompts["system_prompt"]
-    
-    traits_text = ", ".join(personality_traits) if personality_traits else "Professional"
-    
-    personality_text = "\n".join([
-        f"- Traits: {traits_text}",
-        f"- Communication style: {communication_style}",
-        f"- Language: Vietnamese preferred, English when needed"
-    ])
-    
-    return system_prompt_template.format(
-        name=agent_name,
-        role="Business Analyst / Requirements Specialist",
-        goal="Analyze requirements, create PRD documents, and write user stories",
-        backstory="Experienced BA with expertise in software requirements and Agile methodologies",
-        personality=personality_text
-    )
-
-
-def build_user_prompt(task_name: str, **kwargs) -> str:
-    """
-    Build user prompt for LLM.
-    
-    Args:
-        task_name: Name of the task to get prompts for
-        **kwargs: Variables to format into the prompt
-    
-    Returns:
-        Formatted user prompt string
-    """
-    prompts = get_task_prompts(task_name)
-    user_prompt_template = prompts["user_prompt"]
-    
-    return user_prompt_template.format(**kwargs)
+# Default values for BA agent (used when agent model doesn't have persona)
+BA_DEFAULTS = {
+    "name": "Business Analyst",
+    "role": "Business Analyst / Requirements Specialist",
+    "goal": "Phân tích requirements, tạo PRD và user stories",
+    "description": "Chuyên gia phân tích yêu cầu phần mềm",
+    "personality": "Thân thiện, kiên nhẫn, giỏi lắng nghe",
+    "communication_style": "Đơn giản, dễ hiểu, tránh thuật ngữ kỹ thuật",
+}
 
 
 def parse_json_response(response: str) -> dict:
@@ -252,19 +173,39 @@ def parse_prd_update_response(response: str) -> dict:
         }
 
 
-def parse_stories_response(response: str) -> list[dict]:
+def parse_stories_response(response: str) -> dict:
     """
-    Parse user stories from LLM response.
+    Parse epics with user stories from LLM response.
     
     Args:
         response: LLM response string
     
     Returns:
-        List of story dicts
+        Dict with 'epics' list, each epic containing 'stories' list
     """
     try:
         result = parse_json_response(response)
-        return result.get("stories", [])
+        
+        # New format: epics with stories
+        if "epics" in result:
+            return {"epics": result.get("epics", [])}
+        
+        # Legacy format: flat stories list - convert to single epic
+        if "stories" in result:
+            return {
+                "epics": [{
+                    "id": "EPIC-001",
+                    "title": "User Stories",
+                    "description": "Auto-generated epic from legacy format",
+                    "domain": "General",
+                    "stories": result.get("stories", []),
+                    "total_story_points": sum(
+                        s.get("story_points", 0) for s in result.get("stories", [])
+                    )
+                }]
+            }
+        
+        return {"epics": []}
     except json.JSONDecodeError as e:
         logger.warning(f"[parse_stories] Parse error: {e}")
-        return []
+        return {"epics": []}
