@@ -176,13 +176,32 @@ def parse_questions_response(response: str) -> list[dict]:
         response: LLM response string
     
     Returns:
-        List of question dicts with 'text' and 'type' keys
+        List of question dicts with 'text', 'type', 'options', 'allow_multiple' keys
     """
     try:
         result = parse_json_response(response)
         questions_list = result.get("questions", [])
         
-        return [{"text": q, "type": "open"} for q in questions_list]
+        parsed_questions = []
+        for q in questions_list:
+            if isinstance(q, str):
+                # Old format: just string
+                parsed_questions.append({
+                    "text": q,
+                    "type": "open",
+                    "options": None,
+                    "allow_multiple": False
+                })
+            elif isinstance(q, dict):
+                # New format: dict with text, type, options
+                parsed_questions.append({
+                    "text": q.get("text", ""),
+                    "type": q.get("type", "open"),
+                    "options": q.get("options"),
+                    "allow_multiple": q.get("allow_multiple", False)
+                })
+        
+        return parsed_questions
     except (json.JSONDecodeError, KeyError) as e:
         logger.warning(f"[parse_questions] Parse error: {e}")
         return []

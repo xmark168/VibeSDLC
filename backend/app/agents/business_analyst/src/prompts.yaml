@@ -165,23 +165,38 @@ tasks:
       ```json
       {{
         "questions": [
-          "Question 1 in Vietnamese?",
-          "Question 2 in Vietnamese?",
-          "Question 3 in Vietnamese?"
+          {{
+            "text": "Question text in Vietnamese?",
+            "type": "open",
+            "options": null,
+            "allow_multiple": false
+          }},
+          {{
+            "text": "Question with options?",
+            "type": "multichoice",
+            "options": ["Option A", "Option B", "Option C", "Khác (vui lòng mô tả)"],
+            "allow_multiple": true
+          }}
         ]
       }}
       ```
+      
+      **QUESTION TYPES:**
+      - "open": Free text answer (use for detailed explanations)
+      - "multichoice": Select from options (use for categorical choices)
       
       **GUIDELINES:**
       - Questions should be in Vietnamese
       - Be specific and focused
       - Prioritize most critical missing info
-      - Avoid yes/no questions - ask open-ended
+      - Use "multichoice" when there are clear categorical options
+      - Use "open" when detailed free-form answers are needed
+      - Always include "Khác (vui lòng mô tả)" option for multichoice
       
       **EXAMPLE QUESTIONS:**
-      - "Đối tượng người dùng chính của ứng dụng là ai? (sinh viên, doanh nghiệp, ...)"
-      - "Những tính năng cốt lõi nào cần có trong phiên bản đầu tiên?"
-      - "Có yêu cầu đặc biệt nào về bảo mật hoặc tích hợp với hệ thống khác không?"
+      - {{"text": "Đối tượng người dùng chính của ứng dụng là ai?", "type": "multichoice", "options": ["Sinh viên", "Doanh nghiệp", "Người dùng cá nhân", "Khác (vui lòng mô tả)"], "allow_multiple": true}}
+      - {{"text": "Những tính năng cốt lõi nào cần có trong phiên bản đầu tiên?", "type": "open", "options": null, "allow_multiple": false}}
+      - {{"text": "Ưu tiên chính của dự án là gì?", "type": "multichoice", "options": ["Tốc độ phát triển", "Chất lượng code", "Chi phí thấp", "Khác (vui lòng mô tả)"], "allow_multiple": false}}
 
   # ---------------------------------------------------------------------------
   # GENERATE PRD - Create Product Requirements Document
