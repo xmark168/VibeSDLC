@@ -827,6 +827,7 @@ export function ChatPanelWS({
                     <PrdCreatedCard
                       title={msg.structured_data.title || 'PRD'}
                       filePath={msg.structured_data.file_path}
+                      status={msg.structured_data.status || 'pending'}
                       onView={() => {
                         if (onOpenFile) {
                           onOpenFile(msg.structured_data!.file_path)
@@ -834,6 +835,12 @@ export function ChatPanelWS({
                         if (onActiveTabChange) {
                           onActiveTabChange('file')
                         }
+                      }}
+                      onApprove={() => {
+                        wsSendMessage("Tôi phê duyệt PRD này, hãy tạo user stories")
+                      }}
+                      onEdit={(feedback) => {
+                        wsSendMessage(`Tôi muốn chỉnh sửa PRD: ${feedback}`)
                       }}
                     />
                   )}

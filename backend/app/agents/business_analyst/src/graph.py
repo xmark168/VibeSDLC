@@ -29,12 +29,22 @@ def route_by_intent(state: BAState) -> Literal["interview", "prd_create", "prd_u
     intent = state.get("intent", "interview")
     reasoning = state.get("reasoning", "")
     collected_info = state.get("collected_info", {})
+    existing_prd = state.get("existing_prd")
     
-    # FORCE INTERVIEW if trying to create/update PRD without collected info
-    if intent in ["prd_create", "prd_update"] and not collected_info:
+    # FORCE INTERVIEW only for prd_create without collected info
+    # prd_update can proceed if we have existing PRD (user wants to edit it)
+    if intent == "prd_create" and not collected_info:
         logger.warning(
-            f"[BA Graph] Overriding '{intent}' -> 'interview': "
+            f"[BA Graph] Overriding 'prd_create' -> 'interview': "
             f"No collected info yet, need to gather requirements first"
+        )
+        return "interview"
+    
+    # For prd_update, we need existing PRD
+    if intent == "prd_update" and not existing_prd:
+        logger.warning(
+            f"[BA Graph] Overriding 'prd_update' -> 'interview': "
+            f"No existing PRD found, need to create PRD first"
         )
         return "interview"
     
@@ -179,8 +189,10 @@ class BusinessAnalystGraph:
             }
         )
         
-        # PRD creation -> extract stories -> save
-        graph.add_edge("generate_prd", "extract_stories")
+        # PRD creation -> save (wait for user approval before extracting stories)
+        graph.add_edge("generate_prd", "save_artifacts")
+        
+        # Story extraction -> save (called when user approves PRD)
         graph.add_edge("extract_stories", "save_artifacts")
         
         # PRD update -> save (no story extraction needed)

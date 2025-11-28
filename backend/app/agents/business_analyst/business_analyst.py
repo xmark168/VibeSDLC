@@ -50,6 +50,26 @@ class BusinessAnalyst(BaseAgent):
         self.graph_engine = BusinessAnalystGraph(agent=self)
         
         logger.info(f"[{self.name}] LangGraph initialized successfully")
+    
+    def _load_existing_prd(self) -> dict | None:
+        """Load existing PRD from Artifact table."""
+        try:
+            from app.services.artifact_service import ArtifactService
+            from app.models import ArtifactType
+            
+            with Session(engine) as session:
+                service = ArtifactService(session)
+                artifact = service.get_latest_version(
+                    project_id=self.project_id,
+                    artifact_type=ArtifactType.PRD
+                )
+                if artifact:
+                    logger.info(f"[{self.name}] Loaded existing PRD: {artifact.title} (v{artifact.version})")
+                    return artifact.content
+                return None
+        except Exception as e:
+            logger.debug(f"[{self.name}] No existing PRD: {e}")
+            return None
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
         """Handle task using LangGraph.
@@ -122,13 +142,8 @@ class BusinessAnalyst(BaseAgent):
             logger.warning(f"[{self.name}] No interview state found for batch, treating as new task")
             return await self._handle_new_task(task)
         
-        # Load existing PRD if available
-        existing_prd = None
-        if self.project_files:
-            try:
-                existing_prd = await self.project_files.load_prd()
-            except Exception as e:
-                logger.debug(f"[{self.name}] No existing PRD: {e}")
+        # Load existing PRD from database
+        existing_prd = self._load_existing_prd()
         
         # Build state with batch answers
         # user_message is required for PRD generation - get from interview_state or use default
@@ -160,10 +175,7 @@ class BusinessAnalyst(BaseAgent):
         logger.info(f"[{self.name}] All batch answers processed, generating PRD")
         state = {**state, **(await generate_prd(state, agent=self))}
         
-        # Extract user stories from PRD
-        logger.info(f"[{self.name}] Extracting user stories from PRD")
-        state = {**state, **(await extract_stories(state, agent=self))}
-        
+        # Save PRD and wait for user approval before extracting stories
         state = {**state, **(await save_artifacts(state, agent=self))}
         
         return TaskResult(
@@ -189,13 +201,8 @@ class BusinessAnalyst(BaseAgent):
             logger.warning(f"[{self.name}] No interview state found, treating as new task")
             return await self._handle_new_task(task)
         
-        # Load existing PRD if available
-        existing_prd = None
-        if self.project_files:
-            try:
-                existing_prd = await self.project_files.load_prd()
-            except Exception as e:
-                logger.debug(f"[{self.name}] No existing PRD: {e}")
+        # Load existing PRD from database
+        existing_prd = self._load_existing_prd()
         
         # Build state from saved interview state + user answer
         state = {
@@ -223,10 +230,7 @@ class BusinessAnalyst(BaseAgent):
             logger.info(f"[{self.name}] All questions answered, generating PRD")
             state = {**state, **(await generate_prd(state, agent=self))}
             
-            # Extract user stories from PRD
-            logger.info(f"[{self.name}] Extracting user stories from PRD")
-            state = {**state, **(await extract_stories(state, agent=self))}
-            
+            # Save PRD and wait for user approval before extracting stories
             state = {**state, **(await save_artifacts(state, agent=self))}
             
             return TaskResult(
@@ -252,13 +256,8 @@ class BusinessAnalyst(BaseAgent):
         """Handle new task - run full LangGraph."""
         logger.info(f"[{self.name}] Handling NEW task")
         
-        # Load existing PRD if available
-        existing_prd = None
-        if self.project_files:
-            try:
-                existing_prd = await self.project_files.load_prd()
-            except Exception as e:
-                logger.debug(f"[{self.name}] No existing PRD: {e}")
+        # Load existing PRD from database
+        existing_prd = self._load_existing_prd()
         
         # Setup Langfuse tracing (1 trace for entire graph - same as Team Leader)
         langfuse_handler = None
