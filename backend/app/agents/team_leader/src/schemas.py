@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field
 
 class RoutingDecision(BaseModel):
     """Structured routing decision from LLM."""
-    action: Literal["DELEGATE", "RESPOND", "CONVERSATION", "STATUS_CHECK"] = Field(
-        description="DELEGATE=technical work, RESPOND=quick ack, CONVERSATION=chat/questions, STATUS_CHECK=board queries"
+    action: Literal["DELEGATE", "RESPOND", "CONVERSATION", "STATUS_CHECK", "CLARIFY"] = Field(
+        description="DELEGATE=technical work, RESPOND=quick ack, CONVERSATION=chat/questions, STATUS_CHECK=board queries, CLARIFY=need more info"
     )
     target_role: Optional[Literal["business_analyst", "developer", "tester"]] = Field(
         default=None,
@@ -17,6 +17,14 @@ class RoutingDecision(BaseModel):
         description="Vietnamese response mentioning @Role when delegating"
     )
     reason: str = Field(description="1-line routing reason")
+    clarification_question: Optional[str] = Field(
+        default=None,
+        description="Question to ask when action=CLARIFY"
+    )
+    confidence: float = Field(
+        default=0.8,
+        description="Routing confidence 0.0-1.0"
+    )
 
 
 class ExtractedPreferences(BaseModel):

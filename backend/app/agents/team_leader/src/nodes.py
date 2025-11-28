@@ -109,7 +109,7 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                     return {**state, "action": "RESPOND", "wip_blocked": True,
                             "message": f"Hiện tại {wip_col} đang full. Cần đợi stories hoàn thành.", "confidence": 0.95}
         
-        return {**state, **result, "confidence": 0.85, "wip_blocked": False}
+        return {**state, **result, "wip_blocked": False}
     except Exception as e:
         logger.error(f"[router] {e}", exc_info=True)
         return {**state, "action": "RESPOND", "message": "Xin lỗi, có lỗi xảy ra.", "confidence": 0.0, "wip_blocked": False}
@@ -140,6 +140,37 @@ async def respond(state: TeamLeaderState, agent=None) -> TeamLeaderState:
     if agent:
         await agent.message_user("response", msg)
     return {**state, "action": "RESPOND"}
+
+
+async def clarify(state: TeamLeaderState, agent=None) -> TeamLeaderState:
+    """Ask clarification question using LLM with persona."""
+    try:
+        reason = state.get("reason", "need more details")
+        hint = state.get("clarification_question", "")
+        
+        sys_prompt = _sys_prompt(agent, "conversational")
+        user_prompt = f"""User vừa nói: "{state['user_message']}"
+
+Mình cần hỏi clarification vì: {reason}
+{f'Gợi ý câu hỏi: {hint}' if hint else ''}
+
+Hãy viết MỘT câu hỏi clarification thân thiện, tự nhiên để hiểu rõ hơn user muốn gì.
+- Giải thích ngắn gọn tại sao cần thêm info
+- Gợi ý cụ thể user cần cung cấp gì (feature name, error message, steps...)
+- Dùng emoji phù hợp"""
+
+        response = await _chat_llm.ainvoke(
+            [SystemMessage(content=sys_prompt), HumanMessage(content=user_prompt)],
+            config=_cfg(state, "clarify")
+        )
+        question = response.content
+    except Exception as e:
+        logger.error(f"[clarify] LLM error: {e}")
+        question = state.get("message") or "Hmm, mình cần biết rõ hơn chút! 🤔 Bạn có thể mô tả chi tiết hơn không?"
+    
+    if agent:
+        await agent.message_user("response", question)
+    return {**state, "message": question, "action": "CLARIFY"}
 
 
 async def conversational(state: TeamLeaderState, agent=None) -> TeamLeaderState:

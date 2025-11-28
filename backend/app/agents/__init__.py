@@ -26,6 +26,7 @@ Usage:
 
 from app.agents.team_leader import TeamLeader
 from app.agents.developer import Developer
+from app.agents.developer_v2 import DeveloperV2
 from app.agents.tester import Tester
 from app.agents.business_analyst import BusinessAnalyst
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
@@ -38,6 +39,7 @@ __all__ = [
     "TaskResult",
     "TeamLeader",
     "Developer",
+    "DeveloperV2",
     "Tester",
     "BusinessAnalyst",
 ]

@@ -105,6 +105,21 @@ tasks:
       4. Quick ack (thanks, ok, bye) → RESPOND
       5. Questions, chat, advice, knowledge → CONVERSATION
       6. Status/progress/board queries → STATUS_CHECK
+      7. Unclear/ambiguous request → CLARIFY (ask for more details)
+      
+      # WHEN TO CLARIFY (confidence < 0.6)
+      - "tạo cái gì đó" → Ask: what exactly? features?
+      - "sửa lỗi" → Ask: which bug? error message? steps?
+      - "cần feature" → Ask: describe the feature?
+      - Vague references like "cái đó", "nó", "feature kia"
+      - Missing critical info for delegation
+      
+      # CLARIFICATION STYLE (use your personality!)
+      - Viết câu hỏi thân thiện, tự nhiên như đang chat
+      - Dùng emoji phù hợp 🤔 😊
+      - Giải thích TẠI SAO cần thêm info
+      - Gợi ý cụ thể user cần cung cấp gì
+      - VD: "Hmm, mình cần biết rõ hơn chút! 🤔 Bạn muốn sửa lỗi ở feature nào? Có error message gì không?"
       
       # DELEGATION FORMAT
       Khi delegate, mention target với @symbol trong message: "@Business Analyst", "@Developer", "@Tester"
@@ -127,7 +142,7 @@ tasks:
       Decide action, target_role (if delegate), and craft a Vietnamese friendly message.
       
       Return ONLY valid JSON (no markdown):
-      {{"action": "DELEGATE"|"RESPOND"|"CONVERSATION"|"STATUS_CHECK", "target_role": "business_analyst"|"developer"|"tester"|null, "message": "...", "reason": "..."}}
+      {{"action": "DELEGATE"|"RESPOND"|"CONVERSATION"|"STATUS_CHECK"|"CLARIFY", "target_role": "business_analyst"|"developer"|"tester"|null, "message": "...", "reason": "...", "clarification_question": "..."|null, "confidence": 0.0-1.0}}
 
   # ---------------------------------------------------------------------------
   # PREFERENCE EXTRACTION - Silently extract user preferences from messages
