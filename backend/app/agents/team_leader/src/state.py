@@ -1,32 +1,28 @@
-"""Team Leader State Schema for LangGraph."""
+"""Team Leader State Schema."""
 
-from typing import TypedDict, Optional, List, Literal, Annotated, Any
-from langgraph.graph.message import add_messages
+from typing import TypedDict, Literal, Any
+
+Action = Literal["DELEGATE", "RESPOND", "CONVERSATION", "STATUS_CHECK"]
 
 
-class TeamLeaderState(TypedDict):
-    """State for Team Leader graph.
+class TeamLeaderState(TypedDict, total=False):
+    """State for Team Leader graph."""
     
-    Actions:
-    - DELEGATE: Route to specialist agent (developer, tester, business_analyst)
-    - RESPOND: Quick response (greetings, acknowledgments)
-    - CONVERSATION: Full conversational response with personality + web search
-    """
-    
-    messages: Annotated[List[dict], add_messages]
+    # Input (required)
     user_message: str
     user_id: str
     project_id: str
     task_id: str
-    conversation_history: Optional[str]  # Recent conversation for context
-    user_preferences: Optional[str]  # Project preferences for personalization
     
-    # Routing decision
-    action: Optional[Literal["DELEGATE", "RESPOND", "CONVERSATION"]]
-    target_role: Optional[str]  # For DELEGATE: developer, tester, business_analyst
-    message: Optional[str]
-    reason: Optional[str]
-    confidence: Optional[float]
+    # Input (optional)
+    conversation_history: str
+    user_preferences: str
+    langfuse_handler: Any
     
-    # Langfuse tracing (shared handler for entire graph)
-    langfuse_handler: Optional[Any]
+    # Output
+    action: Action
+    target_role: str  # developer, tester, business_analyst
+    message: str
+    reason: str
+    confidence: float
+    wip_blocked: bool

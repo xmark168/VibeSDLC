@@ -43,11 +43,6 @@ shared_context:
       ],
       "constraints": ["Technical constraint 1", "Business constraint 2"],
       "success_metrics": ["Metric 1", "Metric 2"],
-      "timeline": {{
-        "phases": [
-          {{"phase": "Phase 1", "duration": "2 weeks", "deliverables": ["..."]}}
-        ]
-      }},
       "risks": ["Risk 1", "Risk 2"]
     }}
     ```

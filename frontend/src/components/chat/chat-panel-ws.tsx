@@ -39,6 +39,7 @@ import { ConversationOwnerBadge } from "./ConversationOwnerBadge";
 import { AgentHandoffNotification } from "./AgentHandoffNotification";
 import { ArtifactCard } from "./ArtifactCard";
 import { StoriesCreatedCard } from "./StoriesCreatedCard";
+import { PrdCreatedCard } from "./PrdCreatedCard";
 import { useProjectAgents } from "@/queries/agents";
 
 interface ChatPanelProps {
@@ -55,6 +56,7 @@ interface ChatPanelProps {
   onActiveTabChange?: (tab: string | null) => void;
   onAgentStatusesChange?: (statuses: Map<string, { status: string; lastUpdate: string }>) => void; // NEW
   onOpenArtifact?: (artifactId: string) => void;
+  onOpenFile?: (filePath: string) => void;
 }
 
 export function ChatPanelWS({
@@ -69,6 +71,7 @@ export function ChatPanelWS({
   onActiveTabChange,
   onAgentStatusesChange, // NEW
   onOpenArtifact,
+  onOpenFile,
 }: ChatPanelProps) {
   const [message, setMessage] = useState("");
   const [showMentions, setShowMentions] = useState(false);
@@ -813,6 +816,22 @@ export function ChatPanelWS({
                       onClick={() => {
                         if (onOpenArtifact && msg.structured_data?.artifact_id) {
                           onOpenArtifact(msg.structured_data.artifact_id)
+                        }
+                      }}
+                    />
+                  )}
+                  
+                  {/* Show PRD created card if structured_data has message_type prd_created */}
+                  {msg.structured_data?.message_type === 'prd_created' && msg.structured_data?.file_path && (
+                    <PrdCreatedCard
+                      title={msg.structured_data.title || 'PRD'}
+                      filePath={msg.structured_data.file_path}
+                      onView={() => {
+                        if (onOpenFile) {
+                          onOpenFile(msg.structured_data!.file_path)
+                        }
+                        if (onActiveTabChange) {
+                          onActiveTabChange('file')
                         }
                       }}
                     />

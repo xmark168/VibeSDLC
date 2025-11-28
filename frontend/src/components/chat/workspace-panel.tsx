@@ -31,6 +31,7 @@ interface WorkspacePanelProps {
   activeTab?: string | null
   agentStatuses?: Map<string, { status: string; lastUpdate: string }> // Real-time agent statuses from WebSocket
   selectedArtifactId?: string | null
+  initialSelectedFile?: string | null
 }
 
 // Generate avatar URL from agent human_name using DiceBear API
@@ -56,7 +57,7 @@ const getRoleDesignation = (roleType: string): string => {
   return roleMap[roleType] || roleType
 }
 
-export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projectId, activeTab: wsActiveTab, agentStatuses, selectedArtifactId }: WorkspacePanelProps) {
+export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projectId, activeTab: wsActiveTab, agentStatuses, selectedArtifactId, initialSelectedFile }: WorkspacePanelProps) {
   const queryClient = useQueryClient()
 
   // Fetch project agents from database
@@ -132,6 +133,13 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
   const [isEditingName, setIsEditingName] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
+
+  // Update selectedFile when initialSelectedFile changes from parent
+  useEffect(() => {
+    if (initialSelectedFile) {
+      setSelectedFile(initialSelectedFile)
+    }
+  }, [initialSelectedFile])
 
   // File content state
   const [fileContent, setFileContent] = useState<string>("")
