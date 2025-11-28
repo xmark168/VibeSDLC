@@ -35,7 +35,9 @@ class ProjectFiles:
         self.docs_path.mkdir(parents=True, exist_ok=True)
     
     async def save_prd(self, prd_data: dict) -> Path:
-        """Save PRD to Markdown file.
+        """Save PRD to Markdown file (for human reading).
+        
+        Note: PRD data is stored in Artifact table for programmatic access.
         
         Args:
             prd_data: Dictionary containing PRD content
@@ -46,20 +48,12 @@ class ProjectFiles:
         # Add metadata
         prd_data['updated_at'] = datetime.now(timezone.utc).isoformat()
         
-        # Save Markdown only
+        # Save Markdown only (data is in Artifact table)
         md_content = self._prd_to_markdown(prd_data)
         async with aiofiles.open(self.prd_path, 'w', encoding='utf-8') as f:
             await f.write(md_content)
         
         return self.prd_path
-    
-    async def load_prd(self) -> Optional[dict]:
-        """Load existing PRD - returns None as we only save markdown now.
-        
-        Returns:
-            None (PRD is stored as markdown only)
-        """
-        return None
     
     async def save_user_stories(self, stories_data: list[dict]) -> Path:
         """Save all user stories to a single markdown file.

@@ -120,8 +120,17 @@ tasks:
       - "thêm tính năng chat vào PRD" -> prd_update
          Reasoning: "User wants to add feature to existing PRD"
       
+      - "chỉnh sửa PRD: thêm tính năng export PDF" -> prd_update
+         Reasoning: "User wants to edit/update existing PRD with specific feedback"
+      
       - "tạo user stories từ PRD" -> extract_stories
          Reasoning: "User explicitly asks for user story extraction"
+      
+      - "Tôi phê duyệt PRD này, hãy tạo user stories" -> extract_stories
+         Reasoning: "User approves PRD and wants to create user stories"
+      
+      - "PRD ok rồi, tạo stories đi" -> extract_stories
+         Reasoning: "User confirms PRD is ready, proceed to story extraction"
 
   # ---------------------------------------------------------------------------
   # INTERVIEW REQUIREMENTS - Generate clarification questions

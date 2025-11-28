@@ -355,8 +355,12 @@ async def websocket_endpoint(
                                 batch_messages = db_session.exec(stmt).all()
                                 for batch_msg in batch_messages:
                                     if batch_msg.structured_data and batch_msg.structured_data.get("batch_id") == batch_id:
-                                        # Update structured_data to mark as answered
-                                        new_structured_data = {**batch_msg.structured_data, "answered": True}
+                                        # Update structured_data to mark as answered and store answers
+                                        new_structured_data = {
+                                            **batch_msg.structured_data, 
+                                            "answered": True,
+                                            "answers": answers  # Store user's answers for display
+                                        }
                                         batch_msg.structured_data = new_structured_data
                                         flag_modified(batch_msg, "structured_data")  # Force SQLAlchemy to detect change
                                         db_session.add(batch_msg)
