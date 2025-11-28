@@ -154,43 +154,137 @@ async def interview_requirements(state: BAState, agent=None) -> dict:
         return {"questions": [], "error": f"Failed to generate questions: {str(e)}"}
 
 
-async def ask_questions(state: BAState, agent=None) -> dict:
-    """Node: Send questions to user via agent."""
-    logger.info(f"[BA] Sending questions to user...")
+async def ask_one_question(state: BAState, agent=None) -> dict:
+    """Node: Send ONE question to user (sequential mode).
+    
+    This node sends the current question (at current_question_index) and waits.
+    When user answers, the task will be resumed and this node checks if more questions.
+    """
+    logger.info(f"[BA] Asking one question (sequential mode)...")
     
     questions = state.get("questions", [])
+    current_index = state.get("current_question_index", 0)
     
     if not questions:
         logger.warning("[BA] No questions to send")
-        return {"questions_sent": False}
+        return {
+            "waiting_for_answer": False,
+            "all_questions_answered": True
+        }
+    
+    if current_index >= len(questions):
+        logger.info("[BA] All questions have been asked")
+        return {
+            "waiting_for_answer": False,
+            "all_questions_answered": True
+        }
     
     if not agent:
-        logger.error("[BA] No agent available to send questions")
-        return {"questions_sent": False, "error": "No agent available"}
+        logger.error("[BA] No agent available to send question")
+        return {"error": "No agent available"}
     
     try:
-        # Format questions as single message
-        questions_text = "\n".join([f"{i+1}. {q['text']}" for i, q in enumerate(questions)])
+        # Get current question
+        current_question = questions[current_index]
+        question_text = current_question["text"]
+        question_type = current_question.get("type", "open")
+        options = current_question.get("options")
         
-        await agent.message_user(
-            event_type="question",
-            content=f"**Câu hỏi làm rõ yêu cầu:**\n\n{questions_text}\n\nVui lòng trả lời các câu hỏi trên để mình có thể hiểu rõ hơn về yêu cầu của bạn.",
-            question_config={
-                "question_type": "open",
-                "options": None,
-                "allow_multiple": False
-            },
-            details={"questions": [q["text"] for q in questions], "type": "clarification_questions"}
+        logger.info(f"[BA] Sending question {current_index + 1}/{len(questions)}: {question_text[:50]}...")
+        
+        # Send single question using ask_clarification_question
+        question_id = await agent.ask_clarification_question(
+            question=f"**Câu hỏi {current_index + 1}/{len(questions)}:**\n\n{question_text}",
+            question_type=question_type,
+            options=options,
+            allow_multiple=current_question.get("allow_multiple", False)
         )
         
-        logger.info(f"[BA] Sent {len(questions)} questions to user")
-        return {"questions_sent": True}
+        # Save interview state to question's task_context for resume
+        from sqlmodel import Session
+        from app.core.db import engine
+        from app.models import AgentQuestion
+        
+        with Session(engine) as session:
+            question = session.get(AgentQuestion, question_id)
+            if question:
+                # Update task_context with interview state
+                task_context = question.task_context or {}
+                task_context["interview_state"] = {
+                    "questions": questions,
+                    "current_question_index": current_index,
+                    "collected_answers": state.get("collected_answers", []),
+                    "collected_info": state.get("collected_info", {}),
+                }
+                question.task_context = task_context
+                session.add(question)
+                session.commit()
+                logger.info(f"[BA] Saved interview state to question {question_id}")
+        
+        logger.info(f"[BA] Question {current_index + 1} sent, waiting for answer...")
+        
+        return {
+            "waiting_for_answer": True,
+            "all_questions_answered": False,
+            "current_question_id": str(question_id)
+        }
         
     except Exception as e:
-        logger.error(f"[BA] Failed to send questions: {e}", exc_info=True)
+        logger.error(f"[BA] Failed to send question: {e}", exc_info=True)
         return {
-            "questions_sent": False,
-            "error": f"Failed to send questions: {str(e)}"
+            "waiting_for_answer": False,
+            "error": f"Failed to send question: {str(e)}"
+        }
+
+
+async def process_answer(state: BAState, agent=None) -> dict:
+    """Node: Process user's answer and prepare for next question or continue.
+    
+    This node is called when user answers a question (via RESUME task).
+    It records the answer and increments the question index.
+    """
+    logger.info(f"[BA] Processing user answer...")
+    
+    questions = state.get("questions", [])
+    current_index = state.get("current_question_index", 0)
+    collected_answers = state.get("collected_answers", [])
+    user_message = state.get("user_message", "")
+    
+    # Record the answer
+    if current_index < len(questions):
+        answer_record = {
+            "question_index": current_index,
+            "question_text": questions[current_index]["text"],
+            "answer": user_message
+        }
+        collected_answers = collected_answers + [answer_record]
+        logger.info(f"[BA] Recorded answer for question {current_index + 1}: {user_message[:50]}...")
+    
+    # Move to next question
+    next_index = current_index + 1
+    all_answered = next_index >= len(questions)
+    
+    if all_answered:
+        logger.info(f"[BA] All {len(questions)} questions answered!")
+        # Build collected_info from answers
+        collected_info = state.get("collected_info", {})
+        collected_info["interview_answers"] = collected_answers
+        collected_info["interview_completed"] = True
+        
+        return {
+            "current_question_index": next_index,
+            "collected_answers": collected_answers,
+            "collected_info": collected_info,
+            "waiting_for_answer": False,
+            "all_questions_answered": True
+        }
+    else:
+        logger.info(f"[BA] Moving to question {next_index + 1}/{len(questions)}")
+        return {
+            "current_question_index": next_index,
+            "collected_answers": collected_answers,
+            "waiting_for_answer": False,
+            "all_questions_answered": False
         }
 
 

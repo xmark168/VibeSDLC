@@ -708,6 +708,7 @@ class QuestionAnswerRouter(BaseEventRouter):
             
             session.commit()
             original_task_context = question.task_context
+            project_id = question.project_id  # Get project_id from question
         
         context_data = {
             "question_id": str(question_id),
@@ -740,12 +741,20 @@ class QuestionAnswerRouter(BaseEventRouter):
         )
         
         from app.websocket.connection_manager import connection_manager
+        
+        # Get agent name from database
+        agent_name = "Agent"
+        with Session(engine) as session:
+            agent = session.get(Agent, agent_id)
+            if agent:
+                agent_name = agent.human_name or agent.name or "Agent"
+        
         await connection_manager.broadcast_to_project(
             {
                 "type": "agent.resumed",
                 "question_id": str(question_id),
                 "agent_id": str(agent_id),
-                "agent_name": question.agent.human_name if question.agent else "Agent",
+                "agent_name": agent_name,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
             project_id
@@ -840,12 +849,20 @@ class BatchAnswersRouter(BaseEventRouter):
         self.logger.info(f"Published RESUME_WITH_ANSWER task to agent {agent_id} with {len(answers)} batch answers")
         
         from app.websocket.connection_manager import connection_manager
+        
+        # Get agent name from database
+        agent_name = "Agent"
+        with Session(engine) as session:
+            agent = session.get(Agent, agent_id)
+            if agent:
+                agent_name = agent.human_name or agent.name or "Agent"
+        
         await connection_manager.broadcast_to_project(
             {
                 "type": "agent.resumed_batch",
                 "batch_id": batch_id,
                 "agent_id": str(agent_id),
-                "agent_name": first_question.agent.human_name if first_question and first_question.agent else "Agent",
+                "agent_name": agent_name,
                 "answer_count": len(answers),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
