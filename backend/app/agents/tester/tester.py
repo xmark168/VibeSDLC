@@ -247,20 +247,9 @@ class Tester(BaseAgent):
             f"{len(story_ids)} story(ies) in REVIEW status"
         )
         
-        # Send "working on it" message
-        await self.message_user(
-            "thinking",
-            f"Mình thấy có {len(story_ids)} story vừa chuyển sang Review. Để mình viết integration tests cho bạn nhé!"
-        )
-        
         # Check if project path is available
         if not self.project_path:
             logger.error(f"[{self.name}] No project_path available for test generation")
-            await self.message_user(
-                "response",
-                "Ối, mình chưa biết project nằm ở đâu nên không tạo được test file. "
-                "Bạn nhờ admin cấu hình project path giúp mình nhé!"
-            )
             return TaskResult(
                 success=False,
                 error_message="Project path not configured"
@@ -278,11 +267,6 @@ class Tester(BaseAgent):
             # Check for errors
             if result.get("error"):
                 logger.error(f"[{self.name}] TesterGraph error: {result['error']}")
-                await self.message_user(
-                    "response",
-                    f"Hmm, mình gặp chút vấn đề khi tạo tests: {result['error']}\n\n"
-                    f"Bạn kiểm tra lại story hoặc báo admin giúp mình nhé!"
-                )
                 return TaskResult(
                     success=False,
                     error_message=result['error']
@@ -293,40 +277,6 @@ class Tester(BaseAgent):
             test_count = result.get("test_count", 0)
             skipped = result.get("skipped_duplicates", 0)
             stories_covered = result.get("stories_covered", [])
-            
-            # Build message based on result
-            if test_count == 0 and skipped > 0:
-                # All tests already exist
-                message = (
-                    f"Mình check rồi, {skipped} tests cho stories này đã có sẵn trong file `{test_file}`.\n\n"
-                    f"Không cần tạo thêm đâu, Developer cứ chạy tests hiện có là được!"
-                )
-            elif skipped > 0:
-                # Some new, some duplicates
-                message = (
-                    f"Xong rồi! Mình đã thêm {test_count} test cases mới vào file `{test_file}` "
-                    f"(bỏ qua {skipped} tests đã có).\n\n"
-                    f"Developer sẽ chạy tests này khi implement xong!"
-                )
-            else:
-                # All new tests
-                message = (
-                    f"Xong rồi! Mình đã tạo {test_count} test cases trong file `{test_file}`.\n\n"
-                    f"Developer sẽ chạy tests này khi implement xong. Nếu pass hết thì story sẵn sàng move sang Done!"
-                )
-            
-            # Send success message to user
-            await self.message_user(
-                "response",
-                message,
-                {
-                    "message_type": "tests_generated",
-                    "test_file": test_file,
-                    "test_count": test_count,
-                    "story_ids": story_ids,
-                    "stories_covered": stories_covered
-                }
-            )
             
             logger.info(
                 f"[{self.name}] Successfully generated {test_count} integration tests "
@@ -348,11 +298,6 @@ class Tester(BaseAgent):
             logger.error(
                 f"[{self.name}] Error generating integration tests: {e}",
                 exc_info=True
-            )
-            await self.message_user(
-                "response",
-                f"Úi, có lỗi xảy ra khi mình tạo tests: {str(e)}\n\n"
-                f"Bạn thử lại hoặc báo admin check log giúp mình nhé!"
             )
             return TaskResult(
                 success=False,
