@@ -12,7 +12,11 @@ from app.utils.project_files import ProjectFiles
 from app.kafka.event_schemas import AgentTaskType
 from app.core.db import engine
 from app.agents.business_analyst.src import BusinessAnalystGraph
-from app.agents.business_analyst.src.nodes import process_answer, ask_one_question, generate_prd, save_artifacts
+from app.agents.business_analyst.src.nodes import (
+    process_answer, ask_one_question, 
+    process_batch_answers,
+    generate_prd, save_artifacts
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,9 +88,80 @@ class BusinessAnalyst(BaseAgent):
             )
     
     async def _handle_resume_task(self, task: TaskContext, answer: str) -> TaskResult:
-        """Handle resume task - user answered a question in sequential flow."""
-        logger.info(f"[{self.name}] Handling RESUME task (user answered question)")
+        """Handle resume task - user answered question(s).
         
+        Supports both:
+        - Batch mode: All answers at once (is_batch=True in context)
+        - Sequential mode: One answer at a time (legacy)
+        """
+        # Check if this is batch mode
+        is_batch = task.context.get("is_batch", False) if task.context else False
+        batch_answers = task.context.get("batch_answers", []) if task.context else []
+        
+        if is_batch:
+            logger.info(f"[{self.name}] Handling RESUME task (BATCH mode, {len(batch_answers)} answers)")
+            return await self._handle_batch_resume(task, batch_answers)
+        else:
+            logger.info(f"[{self.name}] Handling RESUME task (sequential mode)")
+            return await self._handle_sequential_resume(task, answer)
+    
+    async def _handle_batch_resume(self, task: TaskContext, batch_answers: list) -> TaskResult:
+        """Handle batch mode resume - all answers at once."""
+        if not batch_answers:
+            logger.error(f"[{self.name}] No batch answers in RESUME task")
+            return TaskResult(
+                success=False,
+                output="",
+                error_message="No answers received"
+            )
+        
+        # Load interview state from database
+        interview_state = await self._load_interview_state(task)
+        
+        if not interview_state:
+            logger.warning(f"[{self.name}] No interview state found for batch, treating as new task")
+            return await self._handle_new_task(task)
+        
+        # Load existing PRD if available
+        existing_prd = None
+        if self.project_files:
+            try:
+                existing_prd = await self.project_files.load_prd()
+            except Exception as e:
+                logger.debug(f"[{self.name}] No existing PRD: {e}")
+        
+        # Build state with batch answers
+        state = {
+            "project_id": str(self.project_id),
+            "task_id": str(task.task_id),
+            "user_id": str(task.user_id) if task.user_id else "",
+            "project_path": str(self.project_files.project_path) if self.project_files else "",
+            "collected_info": interview_state.get("collected_info", {}),
+            "existing_prd": existing_prd,
+            "intent": "interview",
+            "questions": interview_state.get("questions", []),
+            "batch_answers": batch_answers,
+            "waiting_for_answer": False,
+            "all_questions_answered": False,
+        }
+        
+        # Process all batch answers
+        logger.info(f"[{self.name}] Processing {len(batch_answers)} batch answers")
+        state = {**state, **(await process_batch_answers(state, agent=self))}
+        
+        # Generate PRD (all answers should be collected now)
+        logger.info(f"[{self.name}] All batch answers processed, generating PRD")
+        state = {**state, **(await generate_prd(state, agent=self))}
+        state = {**state, **(await save_artifacts(state, agent=self))}
+        
+        return TaskResult(
+            success=True,
+            output=str(state.get("result", {})),
+            structured_data=state.get("result", {})
+        )
+    
+    async def _handle_sequential_resume(self, task: TaskContext, answer: str) -> TaskResult:
+        """Handle sequential mode resume - one answer at a time (legacy)."""
         if not answer:
             logger.error(f"[{self.name}] Empty answer in RESUME task")
             return TaskResult(
@@ -112,7 +187,7 @@ class BusinessAnalyst(BaseAgent):
         
         # Build state from saved interview state + user answer
         state = {
-            "user_message": answer,  # Use answer from context, not task.content
+            "user_message": answer,
             "project_id": str(self.project_id),
             "task_id": str(task.task_id),
             "user_id": str(task.user_id) if task.user_id else "",
@@ -222,22 +297,50 @@ class BusinessAnalyst(BaseAgent):
         )
     
     async def _load_interview_state(self, task: TaskContext) -> dict | None:
-        """Load interview state from database (via question context)."""
+        """Load interview state from database (via question context).
+        
+        Supports both:
+        - Sequential mode: question_id in context
+        - Batch mode: batch_answers with question_ids, or original_context with interview_state
+        """
         try:
-            # First, try to get question_id from task context (passed by QuestionAnswerRouter)
             question_id = None
+            is_batch = task.context.get("is_batch", False) if task.context else False
+            
             if task.context:
-                question_id = task.context.get("question_id")
+                logger.info(f"[{self.name}] Task context keys: {list(task.context.keys())}")
+                
+                # For batch mode, try to get interview_state from original_context first
+                if is_batch:
+                    original_context = task.context.get("original_context", {})
+                    if original_context and original_context.get("interview_state"):
+                        logger.info(f"[{self.name}] Found interview_state in original_context (batch mode)")
+                        return original_context.get("interview_state")
+                    
+                    # Otherwise, try first question from batch_answers
+                    batch_answers = task.context.get("batch_answers", [])
+                    if batch_answers:
+                        question_id = batch_answers[0].get("question_id")
+                        logger.info(f"[{self.name}] Using first question from batch: {question_id}")
+                else:
+                    question_id = task.context.get("question_id")
+                    logger.info(f"[{self.name}] question_id from context: {question_id}")
+            else:
+                logger.warning(f"[{self.name}] Task context is None or empty!")
             
             with Session(engine) as session:
                 question = None
                 
                 if question_id:
                     # Direct lookup by question_id from RESUME task context
-                    question = session.get(AgentQuestion, UUID(question_id))
-                    logger.info(f"[{self.name}] Loading interview state from question {question_id}")
+                    try:
+                        question = session.get(AgentQuestion, UUID(question_id))
+                        logger.info(f"[{self.name}] Loaded question from DB: {question.id if question else 'NOT FOUND'}")
+                    except Exception as uuid_err:
+                        logger.error(f"[{self.name}] Failed to parse question_id as UUID: {uuid_err}")
                 else:
                     # Fallback: Find the most recently answered question for this project/agent
+                    logger.info(f"[{self.name}] No question_id in context, using fallback query")
                     question = session.exec(
                         select(AgentQuestion)
                         .where(AgentQuestion.project_id == self.project_id)
@@ -245,18 +348,30 @@ class BusinessAnalyst(BaseAgent):
                         .where(AgentQuestion.status == QuestionStatus.ANSWERED)
                         .order_by(AgentQuestion.answered_at.desc())
                     ).first()
+                    if question:
+                        logger.info(f"[{self.name}] Fallback found question: {question.id}")
                 
-                if question and question.task_context:
-                    task_context = question.task_context
-                    interview_state = task_context.get("interview_state", {})
-                    
-                    if interview_state:
-                        logger.info(f"[{self.name}] Found interview state from question {question.id}")
-                        return interview_state
+                if question:
+                    logger.info(f"[{self.name}] Question task_context: {question.task_context}")
+                    if question.task_context:
+                        task_context = question.task_context
+                        interview_state = task_context.get("interview_state", {})
+                        
+                        if interview_state:
+                            logger.info(f"[{self.name}] Found interview state from question {question.id}, "
+                                       f"current_question_index={interview_state.get('current_question_index')}, "
+                                       f"questions_count={len(interview_state.get('questions', []))}")
+                            return interview_state
+                        else:
+                            logger.warning(f"[{self.name}] Question {question.id} has task_context but NO interview_state!")
+                    else:
+                        logger.warning(f"[{self.name}] Question {question.id} has NO task_context!")
+                else:
+                    logger.warning(f"[{self.name}] No question found in database")
                     
             return None
         except Exception as e:
-            logger.error(f"[{self.name}] Failed to load interview state: {e}")
+            logger.error(f"[{self.name}] Failed to load interview state: {e}", exc_info=True)
             return None
     
     async def _save_interview_state(self, task: TaskContext, state: dict) -> None:

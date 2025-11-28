@@ -202,6 +202,7 @@ async def ask_one_question(state: BAState, agent=None) -> dict:
         
         # Save interview state to question's task_context for resume
         from sqlmodel import Session
+        from sqlalchemy.orm.attributes import flag_modified
         from app.core.db import engine
         from app.models import AgentQuestion
         
@@ -209,17 +210,34 @@ async def ask_one_question(state: BAState, agent=None) -> dict:
             question = session.get(AgentQuestion, question_id)
             if question:
                 # Update task_context with interview state
-                task_context = question.task_context or {}
-                task_context["interview_state"] = {
-                    "questions": questions,
-                    "current_question_index": current_index,
-                    "collected_answers": state.get("collected_answers", []),
-                    "collected_info": state.get("collected_info", {}),
+                # IMPORTANT: Create new dict to ensure SQLAlchemy detects the change
+                existing_context = question.task_context or {}
+                new_task_context = {
+                    **existing_context,
+                    "interview_state": {
+                        "questions": questions,
+                        "current_question_index": current_index,
+                        "collected_answers": state.get("collected_answers", []),
+                        "collected_info": state.get("collected_info", {}),
+                    }
                 }
-                question.task_context = task_context
+                question.task_context = new_task_context
+                # Explicitly mark the JSON field as modified so SQLAlchemy persists it
+                flag_modified(question, "task_context")
                 session.add(question)
                 session.commit()
-                logger.info(f"[BA] Saved interview state to question {question_id}")
+                
+                # Verify the save was successful by re-reading from DB
+                session.refresh(question)
+                saved_state = question.task_context.get("interview_state") if question.task_context else None
+                if saved_state:
+                    logger.info(f"[BA] Verified interview state saved to question {question_id} "
+                               f"(current_index={saved_state.get('current_question_index')}, "
+                               f"questions_count={len(saved_state.get('questions', []))})")
+                else:
+                    logger.error(f"[BA] Interview state NOT saved to question {question_id}! task_context={question.task_context}")
+            else:
+                logger.error(f"[BA] Failed to find question {question_id} in database to save interview state!")
         
         logger.info(f"[BA] Question {current_index + 1} sent, waiting for answer...")
         
@@ -235,6 +253,143 @@ async def ask_one_question(state: BAState, agent=None) -> dict:
             "waiting_for_answer": False,
             "error": f"Failed to send question: {str(e)}"
         }
+
+
+async def ask_batch_questions(state: BAState, agent=None) -> dict:
+    """Node: Send ALL questions to user at once (batch mode).
+    
+    This node sends all questions in a single batch.
+    User answers all questions, then submits all at once.
+    """
+    logger.info(f"[BA] Asking all questions at once (batch mode)...")
+    
+    questions = state.get("questions", [])
+    
+    if not questions:
+        logger.warning("[BA] No questions to send")
+        return {
+            "waiting_for_answer": False,
+            "all_questions_answered": True
+        }
+    
+    if not agent:
+        logger.error("[BA] No agent available to send questions")
+        return {"error": "No agent available"}
+    
+    try:
+        # Format questions for batch API
+        batch_questions = [
+            {
+                "question_text": q["text"],
+                "question_type": q.get("type", "open"),
+                "options": q.get("options"),
+                "allow_multiple": q.get("allow_multiple", False),
+                "context": q.get("context"),
+            }
+            for q in questions
+        ]
+        
+        logger.info(f"[BA] Sending {len(batch_questions)} questions in batch...")
+        
+        # Send all questions at once
+        question_ids = await agent.ask_multiple_clarification_questions(batch_questions)
+        
+        # Save interview state to the FIRST question's task_context for resume
+        from sqlmodel import Session
+        from sqlalchemy.orm.attributes import flag_modified
+        from app.core.db import engine
+        from app.models import AgentQuestion
+        
+        batch_id = None
+        with Session(engine) as session:
+            first_question = session.get(AgentQuestion, question_ids[0])
+            if first_question and first_question.task_context:
+                batch_id = first_question.task_context.get("batch_id")
+                
+                # Update task_context with interview state
+                existing_context = first_question.task_context or {}
+                new_task_context = {
+                    **existing_context,
+                    "interview_state": {
+                        "questions": questions,
+                        "question_ids": [str(qid) for qid in question_ids],
+                        "collected_info": state.get("collected_info", {}),
+                    }
+                }
+                first_question.task_context = new_task_context
+                flag_modified(first_question, "task_context")
+                session.add(first_question)
+                session.commit()
+                
+                logger.info(f"[BA] Saved interview state to batch (batch_id={batch_id}, questions={len(questions)})")
+        
+        logger.info(f"[BA] All {len(questions)} questions sent in batch, waiting for answers...")
+        
+        return {
+            "waiting_for_answer": True,
+            "all_questions_answered": False,
+            "batch_id": batch_id,
+            "question_ids": [str(qid) for qid in question_ids]
+        }
+        
+    except Exception as e:
+        logger.error(f"[BA] Failed to send batch questions: {e}", exc_info=True)
+        return {
+            "waiting_for_answer": False,
+            "error": f"Failed to send questions: {str(e)}"
+        }
+
+
+async def process_batch_answers(state: BAState, agent=None) -> dict:
+    """Node: Process ALL user answers from batch mode.
+    
+    This node is called when user answers all questions at once (via RESUME task with is_batch=True).
+    """
+    logger.info(f"[BA] Processing batch answers...")
+    
+    questions = state.get("questions", [])
+    batch_answers = state.get("batch_answers", [])
+    
+    if not batch_answers:
+        logger.warning("[BA] No batch answers received")
+        return {
+            "error": "No answers received",
+            "all_questions_answered": False
+        }
+    
+    # Build collected_answers from batch_answers
+    collected_answers = []
+    for ans in batch_answers:
+        # Find matching question by index or question_id
+        q_idx = ans.get("question_index", len(collected_answers))
+        if q_idx < len(questions):
+            answer_text = ans.get("answer", "")
+            selected_options = ans.get("selected_options", [])
+            
+            # If multichoice, join selected options
+            if selected_options:
+                answer_text = ", ".join(selected_options)
+            
+            collected_answers.append({
+                "question_index": q_idx,
+                "question_text": questions[q_idx]["text"],
+                "answer": answer_text,
+                "selected_options": selected_options
+            })
+    
+    logger.info(f"[BA] Processed {len(collected_answers)} answers from batch")
+    
+    # Build collected_info
+    collected_info = state.get("collected_info", {})
+    collected_info["interview_answers"] = collected_answers
+    collected_info["interview_completed"] = True
+    
+    return {
+        "collected_answers": collected_answers,
+        "collected_info": collected_info,
+        "waiting_for_answer": False,
+        "all_questions_answered": True
+    }
 
 
 async def process_answer(state: BAState, agent=None) -> dict:
