@@ -194,3 +194,6 @@ def extract_role(response: str) -> str:
         return "tester"
     else:
         return "business_analyst"
+
+
+

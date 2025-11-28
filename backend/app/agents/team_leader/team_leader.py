@@ -99,7 +99,6 @@ class TeamLeader(BaseAgent):
             
             # 3. Build state
             initial_state = {
-                "messages": [],
                 "user_message": task.content,
                 "user_id": str(task.user_id) if task.user_id else "",
                 "project_id": str(self.project_id),
@@ -111,6 +110,7 @@ class TeamLeader(BaseAgent):
                 "message": None,
                 "reason": None,
                 "confidence": None,
+                "wip_blocked": None,
                 "langfuse_handler": langfuse_handler,
             }
             
@@ -132,6 +132,7 @@ class TeamLeader(BaseAgent):
             action = final_state.get("action")
             confidence = final_state.get("confidence")
             target_role = final_state.get("target_role")
+            wip_blocked = final_state.get("wip_blocked", False)
             response_msg = final_state.get("message", "")
             
             # 6. Add response to shared memory
@@ -140,7 +141,7 @@ class TeamLeader(BaseAgent):
             
             logger.info(
                 f"[{self.name}] Graph completed: action={action}, "
-                f"confidence={confidence}"
+                f"confidence={confidence}, wip_blocked={wip_blocked}"
             )
             
             return TaskResult(
@@ -151,6 +152,7 @@ class TeamLeader(BaseAgent):
                     "target_role": target_role,
                     "reason": final_state.get("reason"),
                     "confidence": confidence,
+                    "wip_blocked": wip_blocked,
                 }
             )
             
