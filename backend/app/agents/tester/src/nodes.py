@@ -351,18 +351,28 @@ async def send_response(state: TesterState, agent=None) -> dict:
         else:
             msg = "Không có stories nào trong trạng thái Review để tạo test."
     
-    # Send message to story channels (always, for tracking)
-    if agent and stories and result.get("test_count", 0) > 0:
+    # Update agent_state to "finished" and send message to story channels
+    if agent and stories:
         for story in stories:
+            story_id = UUID(story["id"])
             try:
-                await agent.message_story(
-                    story_id=UUID(story["id"]),
-                    content=f"✅ Đã tạo {result['test_count']} integration tests",
-                    message_type="test_result",
-                    details=result,
+                # Update agent state to finished
+                await agent.update_story_agent_state(
+                    story_id=story_id,
+                    new_state="finished",
+                    progress_message=msg
                 )
+                
+                # Send message to story channel if tests were created
+                if result.get("test_count", 0) > 0:
+                    await agent.message_story(
+                        story_id=story_id,
+                        content=f"✅ Đã tạo {result['test_count']} integration tests",
+                        message_type="test_result",
+                        details=result,
+                    )
             except Exception as e:
-                logger.warning(f"[send_response] Failed to message story {story['id']}: {e}")
+                logger.warning(f"[send_response] Failed to update story {story['id']}: {e}")
     
     # Only message_user if user-initiated
     if agent and _should_message_user(state):

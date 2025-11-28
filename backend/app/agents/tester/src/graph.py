@@ -45,7 +45,7 @@ class TesterGraph:
         graph.add_node("router", partial(router, agent=agent))
         
         # Generate tests flow
-        graph.add_node("query_stories", query_stories)
+        graph.add_node("query_stories", partial(query_stories, agent=agent))
         graph.add_node("analyze_stories", analyze_stories)
         graph.add_node("generate_test_cases", generate_test_cases)
         graph.add_node("generate_test_file", generate_test_file)
