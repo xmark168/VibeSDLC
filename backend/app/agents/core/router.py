@@ -555,21 +555,19 @@ class AgentResponseRouter(BaseEventRouter):
 class StoryEventRouter(BaseEventRouter):
     """Router for STORY_EVENTS events.
 
-    Handles story status changes (e.g., Todo → In Progress).
-    For example: Story moves to In Progress → route to Developer
+    Handles story status changes:
+    - Todo → InProgress: Route to Developer
+    - InProgress → Review: Route to Tester (auto-generate integration tests)
     """
 
     def should_handle(self, event: BaseKafkaEvent | Dict[str, Any]) -> bool:
-        """Check if event is a story event."""
+        """Check if event is a story status change event."""
         event_dict = event if isinstance(event, dict) else event.model_dump()
         event_type = event_dict.get("event_type", "")
-        return event_type.startswith("story.")
+        return event_type == "story.status.changed"
 
     async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
-        """Route based on story status change.
-
-        Logic: If story moves to In Progress → route to Developer
-        """
+        """Route based on story status change."""
         event_dict = event if isinstance(event, dict) else event.model_dump()
         story_id = event_dict.get("story_id")
         project_id = event_dict.get("project_id")
@@ -580,30 +578,30 @@ class StoryEventRouter(BaseEventRouter):
             f"Story {story_id} moved from {old_status} to {new_status} in project {project_id}"
         )
 
-        # If story moves to In Progress, route to Developer agent
-        if new_status == "InProgress" and old_status == "Todo":
+        # Route based on new status
+        if new_status == "InProgress":
             await self._route_to_developer(event_dict, project_id)
+        elif new_status == "Review":
+            await self._route_to_tester(event_dict, project_id)
 
     async def _route_to_developer(self, event_dict: Dict[str, Any], project_id: UUID) -> None:
-        """Route task to Developer agent."""
+        """Route task to Developer agent when story moves to InProgress."""
         with Session(engine) as session:
             from app.services import AgentService
             agent_service = AgentService(session)
 
-            # Find Developer agent in project
             developer = agent_service.get_by_project_and_role(
                 project_id=project_id,
                 role_type="developer"
             )
 
             if developer:
-                # Create a message for the developer about the status change
                 story_title = event_dict.get('story_title', 'Unknown Story')
                 content = f"Story '{story_title}' has been moved to In Progress. Please start development."
 
                 await self.publish_task(
                     agent_id=developer.id,
-                    task_type=AgentTaskType.IMPLEMENT_STORY,  # or other appropriate task type
+                    task_type=AgentTaskType.IMPLEMENT_STORY,
                     source_event=event_dict,
                     routing_reason="story_status_changed_to_in_progress",
                     priority="high",
@@ -619,6 +617,47 @@ class StoryEventRouter(BaseEventRouter):
             else:
                 self.logger.warning(
                     f"No Developer found in project {project_id} for story status change"
+                )
+
+    async def _route_to_tester(self, event_dict: Dict[str, Any], project_id: UUID) -> None:
+        """Route task to Tester agent when story moves to Review.
+        
+        This triggers auto-generation of integration tests for the story.
+        """
+        with Session(engine) as session:
+            from app.services import AgentService
+            agent_service = AgentService(session)
+
+            tester = agent_service.get_by_project_and_role(
+                project_id=project_id,
+                role_type="tester"
+            )
+
+            if tester:
+                story_id = event_dict.get("story_id")
+                story_title = event_dict.get('story_title', 'Unknown Story')
+                
+                await self.publish_task(
+                    agent_id=tester.id,
+                    task_type=AgentTaskType.WRITE_TESTS,
+                    source_event=event_dict,
+                    routing_reason="story_status_changed_to_review",
+                    priority="high",
+                    additional_context={
+                        "trigger_type": "status_review",
+                        "story_ids": [str(story_id)],
+                        "auto_generated": True,
+                        "content": f"Auto-generate integration tests for story '{story_title}'"
+                    }
+                )
+
+                self.logger.info(
+                    f"Routed story status change to Tester: {tester.name} ({tester.id}) "
+                    f"for integration test generation"
+                )
+            else:
+                self.logger.warning(
+                    f"No Tester found in project {project_id} for story review testing"
                 )
 
 
