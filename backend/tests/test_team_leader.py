@@ -1,15 +1,18 @@
 """Test Team Leader Agent with various contexts and scenarios.
 
 Tests cover:
-1. Routing decisions (DELEGATE, RESPOND, CONVERSATION)
+1. Routing decisions (DELEGATE, RESPOND, CONVERSATION, STATUS_CHECK)
 2. Delegation to different specialists (BA, Developer, Tester)
 3. Vietnamese and English messages
 4. Quick responses (greetings, acknowledgments)
 5. Conversational scenarios (questions, chitchat)
-6. Edge cases and error handling
+6. Tool calling (get_board_status, get_active_stories, etc.)
+7. WIP limit enforcement
+8. Edge cases and error handling
 """
 
 import asyncio
+import time
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -21,7 +24,18 @@ from app.agents.team_leader.src.prompts import (
     build_user_prompt,
 )
 from app.agents.team_leader.src.state import TeamLeaderState
-from app.agents.team_leader.src.nodes import router, delegate, respond, conversational
+from app.agents.team_leader.src.nodes import (
+    router, delegate, respond, conversational, status_check,
+    _execute_tool_calls, ROLE_TO_WIP_COLUMN
+)
+
+# Delay between API calls to avoid rate limiting (RPM)
+API_DELAY = 0.5  # seconds
+
+
+def delay_for_rate_limit():
+    """Add delay between tests to avoid rate limiting."""
+    time.sleep(API_DELAY)
 
 
 # =============================================================================
@@ -105,6 +119,28 @@ CONVERSATION_CASES = [
     "cho mình biết về microservices",
 ]
 
+# Status check scenarios - should call tools and report metrics
+STATUS_CHECK_CASES = [
+    # Vietnamese
+    "tiến độ thế nào?",
+    "board status?",
+    "còn bao nhiêu stories đang làm?",
+    "cho xem WIP hiện tại",
+    "throughput tuần này?",
+    "có story nào bị block không?",
+    # English
+    "what's the board status?",
+    "how many stories in progress?",
+    "show me flow metrics",
+    "any blocked items?",
+]
+
+# WIP blocked scenarios - should be detected and reported
+WIP_BLOCKED_SCENARIOS = [
+    ("implement story #123", "developer", "InProgress"),
+    ("test feature login", "tester", "Review"),
+]
+
 
 # =============================================================================
 # UNIT TESTS - parse_llm_decision
@@ -156,6 +192,19 @@ class TestParseLLMDecision:
         result = parse_llm_decision(response)
         
         assert result["action"] == "CONVERSATION"
+    
+    def test_parse_valid_status_check_json(self):
+        """Test parsing valid STATUS_CHECK JSON response."""
+        response = '''
+        {
+            "action": "STATUS_CHECK",
+            "message": "Đây là trạng thái board hiện tại",
+            "reason": "status_query"
+        }
+        '''
+        result = parse_llm_decision(response)
+        
+        assert result["action"] == "STATUS_CHECK"
     
     def test_parse_json_with_nested_content(self):
         """Test parsing JSON with nested structures."""
@@ -281,9 +330,8 @@ class TestRouterNode:
     
     @pytest.fixture
     def base_state(self):
-        """Create base state for testing."""
+        """Create base state for testing (simplified state)."""
         return {
-            "messages": [],
             "user_message": "",
             "user_id": str(uuid4()),
             "project_id": str(uuid4()),
@@ -295,11 +343,13 @@ class TestRouterNode:
             "message": None,
             "reason": None,
             "confidence": None,
+            "wip_blocked": None,
+            "langfuse_handler": None,
         }
     
     @pytest.fixture
     def mock_agent(self):
-        """Create mock agent."""
+        """Create mock agent with context for WIP checks."""
         agent = MagicMock()
         agent.name = "TestLeader"
         agent.agent_model.human_name = "Test"
@@ -308,6 +358,12 @@ class TestRouterNode:
         agent.agent_model.communication_style = "professional"
         agent.agent_model.persona_metadata = {}
         agent.track_llm_generation = MagicMock()
+        # Mock context for WIP checks
+        agent.context.get_kanban_context = MagicMock(return_value=(
+            {"InProgress": {"limit": 5, "current_stories": 2, "available": 3}},
+            {"throughput_per_week": 10},
+            {"InProgress": 3, "Review": 2}
+        ))
         return agent
     
     @pytest.mark.asyncio
@@ -415,7 +471,6 @@ class TestDelegateNode:
     def delegate_state(self):
         """Create state for delegation testing."""
         return {
-            "messages": [],
             "user_message": "tạo website bán hàng",
             "user_id": str(uuid4()),
             "project_id": str(uuid4()),
@@ -556,13 +611,13 @@ class TestEdgeCases:
     async def test_router_handles_llm_error(self):
         """Test router handles LLM errors gracefully."""
         state = {
-            "messages": [],
             "user_message": "test message",
             "user_id": str(uuid4()),
             "project_id": str(uuid4()),
             "task_id": str(uuid4()),
             "conversation_history": "",
             "user_preferences": "",
+            "langfuse_handler": None,
         }
         
         mock_agent = MagicMock()
@@ -572,6 +627,7 @@ class TestEdgeCases:
         mock_agent.agent_model.personality_traits = []
         mock_agent.agent_model.communication_style = ""
         mock_agent.agent_model.persona_metadata = {}
+        mock_agent.context.get_kanban_context = MagicMock(return_value=({}, {}, {}))
         
         with patch('app.agents.team_leader.src.nodes.ChatOpenAI') as mock_llm:
             mock_llm.return_value.ainvoke = AsyncMock(side_effect=Exception("LLM Error"))
@@ -599,8 +655,307 @@ class TestEdgeCases:
 
 
 # =============================================================================
+# TOOL TESTS
+# =============================================================================
+
+class TestTools:
+    """Test Team Leader tools."""
+    
+    def test_role_to_wip_column_mapping(self):
+        """Test role to WIP column mapping."""
+        assert ROLE_TO_WIP_COLUMN["developer"] == "InProgress"
+        assert ROLE_TO_WIP_COLUMN["tester"] == "Review"
+        assert ROLE_TO_WIP_COLUMN["business_analyst"] is None
+    
+    @pytest.mark.asyncio
+    async def test_execute_tool_calls_unknown_tool(self):
+        """Test execute_tool_calls with unknown tool."""
+        tool_calls = [{"name": "unknown_tool", "args": {}, "id": "123"}]
+        results = await _execute_tool_calls(tool_calls, str(uuid4()))
+        
+        assert len(results) == 1
+        assert "Unknown tool" in results[0].content
+
+
+class TestStatusCheckNode:
+    """Test status_check node functionality."""
+    
+    @pytest.fixture
+    def status_state(self):
+        """Create state for status check testing."""
+        return {
+            "user_message": "tiến độ thế nào?",
+            "user_id": str(uuid4()),
+            "project_id": str(uuid4()),
+            "task_id": str(uuid4()),
+            "action": "STATUS_CHECK",
+            "message": None,
+        }
+    
+    @pytest.mark.asyncio
+    async def test_status_check_calls_tools(self, status_state):
+        """Test status_check node calls board tools."""
+        mock_agent = MagicMock()
+        mock_agent.message_user = AsyncMock()
+        
+        with patch('app.agents.team_leader.src.nodes.get_board_status') as mock_board, \
+             patch('app.agents.team_leader.src.nodes.get_flow_metrics') as mock_flow, \
+             patch('app.agents.team_leader.src.nodes.get_active_stories') as mock_stories:
+            
+            mock_board.invoke.return_value = "Board Status: InProgress 2/5"
+            mock_flow.invoke.return_value = "Flow Metrics: Throughput 10/week"
+            mock_stories.invoke.return_value = "Active: Story #1, Story #2"
+            
+            result = await status_check(status_state, mock_agent)
+            
+            assert result["action"] == "STATUS_CHECK"
+            mock_agent.message_user.assert_called_once()
+    
+    @pytest.mark.asyncio
+    async def test_status_check_handles_error(self, status_state):
+        """Test status_check handles errors gracefully."""
+        mock_agent = MagicMock()
+        mock_agent.message_user = AsyncMock()
+        
+        with patch('app.agents.team_leader.src.nodes.get_board_status') as mock_board:
+            mock_board.invoke.side_effect = Exception("DB Error")
+            
+            result = await status_check(status_state, mock_agent)
+            
+            assert result["action"] == "STATUS_CHECK"
+            assert "Không thể lấy status" in result["message"]
+
+
+class TestWIPBlocking:
+    """Test WIP limit enforcement."""
+    
+    @pytest.fixture
+    def wip_full_agent(self):
+        """Create mock agent with WIP full."""
+        agent = MagicMock()
+        agent.name = "TestLeader"
+        agent.agent_model.human_name = "Test"
+        agent.agent_model.role_type = "team_leader"
+        agent.agent_model.personality_traits = ["friendly"]
+        agent.agent_model.communication_style = "professional"
+        agent.agent_model.persona_metadata = {}
+        # WIP is FULL
+        agent.context.get_kanban_context = MagicMock(return_value=(
+            {"InProgress": {"limit": 3, "current_stories": 3, "available": 0}},
+            {},
+            {"InProgress": 0, "Review": 0}  # No available slots
+        ))
+        return agent
+    
+    @pytest.fixture
+    def delegate_state(self):
+        """Create state for delegation."""
+        return {
+            "user_message": "implement story #123",
+            "user_id": str(uuid4()),
+            "project_id": str(uuid4()),
+            "task_id": str(uuid4()),
+            "conversation_history": "",
+            "user_preferences": "",
+            "action": None,
+            "target_role": None,
+            "message": None,
+            "reason": None,
+            "confidence": None,
+            "wip_blocked": None,
+            "langfuse_handler": None,
+        }
+    
+    @pytest.mark.asyncio
+    async def test_wip_blocked_returns_respond(self, delegate_state, wip_full_agent):
+        """Test router blocks delegation when WIP is full."""
+        delay_for_rate_limit()
+        
+        # Mock LLM to return DELEGATE action
+        mock_response = MagicMock()
+        mock_response.content = '''
+        {
+            "action": "DELEGATE",
+            "target_role": "developer",
+            "message": "Chuyển cho @Developer",
+            "reason": "implementation"
+        }
+        '''
+        mock_response.tool_calls = None
+        
+        with patch('app.agents.team_leader.src.nodes._fast_llm') as mock_llm:
+            mock_llm.bind_tools.return_value.ainvoke = AsyncMock(return_value=mock_response)
+            
+            result = await router(delegate_state, wip_full_agent)
+            
+            # Should be blocked and return RESPOND
+            assert result["action"] == "RESPOND"
+            assert result["wip_blocked"] == True
+            assert "full" in result["message"].lower()
+
+
+class TestRouterWithTools:
+    """Test router with tool calling."""
+    
+    @pytest.fixture
+    def base_state(self):
+        """Create base state."""
+        return {
+            "user_message": "",
+            "user_id": str(uuid4()),
+            "project_id": str(uuid4()),
+            "task_id": str(uuid4()),
+            "conversation_history": "",
+            "user_preferences": "",
+            "action": None,
+            "target_role": None,
+            "message": None,
+            "reason": None,
+            "confidence": None,
+            "wip_blocked": None,
+            "langfuse_handler": None,
+        }
+    
+    @pytest.fixture
+    def mock_agent(self):
+        """Create mock agent."""
+        agent = MagicMock()
+        agent.name = "TestLeader"
+        agent.agent_model.human_name = "Test"
+        agent.agent_model.role_type = "team_leader"
+        agent.agent_model.personality_traits = ["friendly"]
+        agent.agent_model.communication_style = "professional"
+        agent.agent_model.persona_metadata = {}
+        agent.context.get_kanban_context = MagicMock(return_value=(
+            {"InProgress": {"limit": 5, "available": 3}},
+            {},
+            {"InProgress": 3, "Review": 2}
+        ))
+        return agent
+    
+    @pytest.mark.asyncio
+    async def test_router_fast_path_no_tools(self, base_state, mock_agent):
+        """Test router takes fast path for greetings (no tools)."""
+        delay_for_rate_limit()
+        base_state["user_message"] = "xin chào"
+        
+        mock_response = MagicMock()
+        mock_response.content = '''
+        {
+            "action": "CONVERSATION",
+            "message": "",
+            "reason": "greeting"
+        }
+        '''
+        mock_response.tool_calls = None  # No tool calls
+        
+        with patch('app.agents.team_leader.src.nodes._fast_llm') as mock_llm:
+            mock_llm.bind_tools.return_value.ainvoke = AsyncMock(return_value=mock_response)
+            
+            result = await router(base_state, mock_agent)
+            
+            assert result["action"] == "CONVERSATION"
+            assert result["wip_blocked"] == False
+    
+    @pytest.mark.asyncio
+    async def test_router_calls_tools_for_delegation(self, base_state, mock_agent):
+        """Test router calls tools when delegating."""
+        delay_for_rate_limit()
+        base_state["user_message"] = "implement story #123"
+        
+        # First response with tool call
+        mock_response_with_tools = MagicMock()
+        mock_response_with_tools.tool_calls = [
+            {"name": "get_board_status", "args": {}, "id": "tool_1"}
+        ]
+        mock_response_with_tools.content = ""
+        
+        # Second response after tools
+        mock_final_response = MagicMock()
+        mock_final_response.content = '''
+        {
+            "action": "DELEGATE",
+            "target_role": "developer",
+            "message": "Chuyển cho @Developer",
+            "reason": "implementation"
+        }
+        '''
+        
+        with patch('app.agents.team_leader.src.nodes._fast_llm') as mock_llm, \
+             patch('app.agents.team_leader.src.nodes._execute_tool_calls') as mock_exec:
+            
+            mock_llm.bind_tools.return_value.ainvoke = AsyncMock(return_value=mock_response_with_tools)
+            mock_llm.ainvoke = AsyncMock(return_value=mock_final_response)
+            mock_exec.return_value = [MagicMock(content="Board: InProgress 2/5")]
+            
+            result = await router(base_state, mock_agent)
+            
+            # Tools should have been called
+            mock_exec.assert_called_once()
+            assert result["action"] == "DELEGATE"
+
+
+# =============================================================================
+# INTEGRATION TESTS WITH DELAY
+# =============================================================================
+
+class TestIntegrationWithDelay:
+    """Integration tests with rate limit delay."""
+    
+    @pytest.fixture
+    def base_state(self):
+        return {
+            "user_message": "",
+            "user_id": str(uuid4()),
+            "project_id": str(uuid4()),
+            "task_id": str(uuid4()),
+            "conversation_history": "",
+            "user_preferences": "",
+            "action": None,
+            "target_role": None,
+            "message": None,
+            "reason": None,
+            "confidence": None,
+            "wip_blocked": None,
+            "langfuse_handler": None,
+        }
+    
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("user_message", STATUS_CHECK_CASES[:3])  # Limit to avoid rate limits
+    async def test_status_check_routing(self, base_state, user_message):
+        """Test STATUS_CHECK messages are routed correctly."""
+        delay_for_rate_limit()
+        base_state["user_message"] = user_message
+        
+        mock_response = MagicMock()
+        mock_response.content = '''
+        {
+            "action": "STATUS_CHECK",
+            "message": "Checking board status...",
+            "reason": "status_query"
+        }
+        '''
+        mock_response.tool_calls = None
+        
+        mock_agent = MagicMock()
+        mock_agent.name = "Test"
+        mock_agent.agent_model.human_name = "Test"
+        mock_agent.agent_model.role_type = "team_leader"
+        mock_agent.agent_model.personality_traits = []
+        mock_agent.agent_model.communication_style = ""
+        mock_agent.agent_model.persona_metadata = {}
+        
+        with patch('app.agents.team_leader.src.nodes._fast_llm') as mock_llm:
+            mock_llm.bind_tools.return_value.ainvoke = AsyncMock(return_value=mock_response)
+            
+            result = await router(base_state, mock_agent)
+            
+            assert result["action"] == "STATUS_CHECK"
+
+
+# =============================================================================
 # RUN TESTS
 # =============================================================================
 
 if __name__ == "__main__":
-    pytest.main([__file__, "-v", "--tb=short"])
+    pytest.main([__file__, "-v", "--tb=short", "-x"])

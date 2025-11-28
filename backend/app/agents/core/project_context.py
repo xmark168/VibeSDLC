@@ -2,7 +2,8 @@
 
 import asyncio
 import logging
-from typing import Dict, List
+import time
+from typing import Dict, List, Optional
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
@@ -18,9 +19,12 @@ PREF_LABELS = {
     "custom_instructions": "Special instructions",
 }
 
+# Kanban cache TTL (seconds) - shorter than preferences since board changes more often
+KANBAN_CACHE_TTL = 30
+
 
 class ProjectContext:
-    """Singleton per project_id - shared memory + preferences cache."""
+    """Singleton per project_id - shared memory + preferences + Kanban cache."""
     
     _instances: Dict[UUID, "ProjectContext"] = {}
     
@@ -31,6 +35,12 @@ class ProjectContext:
         self._loaded = False
         self._lock = asyncio.Lock()
         self._max_memory = 20
+        
+        # Kanban context cache (lazy loaded, with TTL)
+        self._kanban_board_state: Optional[dict] = None
+        self._kanban_flow_metrics: Optional[dict] = None
+        self._kanban_wip_available: Optional[dict] = None
+        self._kanban_loaded_at: float = 0
     
     @classmethod
     def get(cls, project_id: UUID) -> "ProjectContext":
@@ -102,6 +112,50 @@ class ProjectContext:
     
     def invalidate(self):
         self._loaded = False
+    
+    def invalidate_kanban(self):
+        """Force refresh Kanban cache on next access."""
+        self._kanban_loaded_at = 0
+    
+    def get_kanban_context(self) -> tuple[dict, dict, dict]:
+        """Get cached Kanban context, refresh if TTL expired.
+        
+        Returns:
+            (board_state, flow_metrics, wip_available)
+        """
+        now = time.time()
+        if now - self._kanban_loaded_at > KANBAN_CACHE_TTL:
+            self._load_kanban_context()
+        
+        return (
+            self._kanban_board_state or {},
+            self._kanban_flow_metrics or {},
+            self._kanban_wip_available or {},
+        )
+    
+    def _load_kanban_context(self):
+        """Load Kanban context from DB."""
+        try:
+            from sqlmodel import Session
+            from app.core.db import engine
+            from app.services import KanbanService
+            
+            with Session(engine) as session:
+                kanban_service = KanbanService(session)
+                self._kanban_board_state = kanban_service.get_dynamic_wip_with_usage(self.project_id)
+                self._kanban_flow_metrics = kanban_service.get_project_flow_metrics(self.project_id)
+                self._kanban_wip_available = {
+                    col: data.get("available", 0) 
+                    for col, data in self._kanban_board_state.items()
+                }
+                self._kanban_loaded_at = time.time()
+                
+                logger.debug(f"[ProjectContext] Kanban loaded: WIP={self._kanban_wip_available}")
+        except Exception as e:
+            logger.warning(f"[ProjectContext] Load Kanban failed: {e}")
+            self._kanban_board_state = {}
+            self._kanban_flow_metrics = {}
+            self._kanban_wip_available = {}
     
     def format_memory(self, exclude_last: bool = True) -> str:
         if not self.memory:
