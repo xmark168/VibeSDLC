@@ -191,25 +191,45 @@ class TeamLeader(BaseAgent):
             return False
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
-        """Handle task using LangGraph with conversation memory.
+        """Handle task using LangGraph with conversation memory."""
+        logger.info(f"[{self.name}] Processing task: {task.content[:50]}")
         
-        Note: Langfuse tracing is automatically handled by BaseAgent.
-        """
-        logger.info(f"[{self.name}] Processing task with LangGraph: {task.content[:50]}")
-        
-        # Restore memory and preferences from DB on first task
+        # Restore memory and preferences from DB
         await self._restore_memory_from_db()
         await self._load_preferences_from_db()
         
         try:
             # 1. Add user message to memory
-            self._memory.append({
-                "role": "user",
-                "content": task.content[:500]
-            })
+            self._memory.append({"role": "user", "content": task.content[:500]})
             self._trim_memory()
             
-            # 2. Build state with conversation history and preferences
+            # 2. Setup Langfuse tracing (1 trace for entire graph)
+            langfuse_handler = None
+            langfuse_context = None
+            try:
+                from langfuse import get_client
+                from langfuse.langchain import CallbackHandler
+                langfuse = get_client()
+                # Create parent span for entire graph execution
+                langfuse_context = langfuse.start_as_current_observation(
+                    as_type="span",
+                    name="team_leader_graph"
+                )
+                langfuse_context.__enter__()
+                # Update trace with metadata
+                langfuse_context.update_trace(
+                    user_id=str(task.user_id) if task.user_id else None,
+                    session_id=str(self.project_id),
+                    input={"message": task.content[:200]},
+                    tags=["team_leader", self.role_type],
+                    metadata={"agent": self.name, "task_id": str(task.task_id)}
+                )
+                # Handler inherits trace context automatically
+                langfuse_handler = CallbackHandler()
+            except Exception as e:
+                logger.debug(f"Langfuse setup: {e}")
+            
+            # 3. Build state
             initial_state = {
                 "messages": [],
                 "user_message": task.content,
@@ -223,10 +243,23 @@ class TeamLeader(BaseAgent):
                 "message": None,
                 "reason": None,
                 "confidence": None,
+                "langfuse_handler": langfuse_handler,
             }
             
-            logger.info(f"[{self.name}] Invoking LangGraph with {len(self._memory)} messages in memory...")
+            # 4. Execute graph
+            logger.info(f"[{self.name}] Invoking LangGraph...")
             final_state = await self.graph_engine.graph.ainvoke(initial_state)
+            
+            # 5. Update trace output
+            if langfuse_context:
+                try:
+                    langfuse_context.update_trace(output={
+                        "action": final_state.get("action"),
+                        "target_role": final_state.get("target_role"),
+                    })
+                    langfuse_context.__exit__(None, None, None)
+                except Exception:
+                    pass
             
             action = final_state.get("action")
             confidence = final_state.get("confidence")
@@ -259,6 +292,12 @@ class TeamLeader(BaseAgent):
             
         except Exception as e:
             logger.error(f"[{self.name}] LangGraph error: {e}", exc_info=True)
+            # Cleanup langfuse on error
+            if langfuse_context:
+                try:
+                    langfuse_context.__exit__(type(e), e, e.__traceback__)
+                except Exception:
+                    pass
             return TaskResult(
                 success=False,
                 output="",

@@ -1,6 +1,6 @@
 """Team Leader State Schema for LangGraph."""
 
-from typing import TypedDict, Optional, List, Literal, Annotated
+from typing import TypedDict, Optional, List, Literal, Annotated, Any
 from langgraph.graph.message import add_messages
 
 
@@ -27,3 +27,6 @@ class TeamLeaderState(TypedDict):
     message: Optional[str]
     reason: Optional[str]
     confidence: Optional[float]
+    
+    # Langfuse tracing (shared handler for entire graph)
+    langfuse_handler: Optional[Any]

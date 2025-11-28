@@ -37,7 +37,6 @@ from app.core.langfuse_client import (
     format_llm_usage,
     format_chat_messages,
     get_langchain_callback,
-    LANGFUSE_AVAILABLE,
 )
 
 logger = logging.getLogger(__name__)
