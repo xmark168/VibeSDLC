@@ -1,37 +1,31 @@
 """Project Files Manager - Inspired by MetaGPT's file-based approach.
 
-Manages project files like PRD, user stories, and interview transcripts.
+Manages project files like PRD and user stories.
 All files are stored in the project workspace for version control and team collaboration.
 
 File Structure:
     projects/{project_id}/
     ├── docs/
-    │   ├── prd.md              # Product Requirements Document (human-readable)
-    │   ├── prd.json            # PRD structured data
-    │   ├── user-stories.md     # All user stories in one file
-    │   └── interviews/
-    │       └── {session_id}.md # Interview transcripts
+    │   ├── prd.md              # Product Requirements Document
+    │   └── user-stories.md     # All user stories in one file
     └── src/
         └── ... (source code)
 """
 
 from pathlib import Path
 from typing import Optional
-import json
 import aiofiles
 from datetime import datetime, timezone
 
 
 class ProjectFiles:
-    """Manage project files (PRD, stories, interviews)"""
+    """Manage project files (PRD, stories)"""
     
     def __init__(self, project_path: Path):
         self.project_path = Path(project_path)
         self.docs_path = self.project_path / "docs"
         self.prd_path = self.docs_path / "prd.md"
-        self.prd_json_path = self.docs_path / "prd.json"
         self.user_stories_path = self.docs_path / "user-stories.md"
-        self.interviews_path = self.docs_path / "interviews"
         
         # Ensure directories exist
         self._ensure_directories()
@@ -39,10 +33,9 @@ class ProjectFiles:
     def _ensure_directories(self):
         """Create necessary directories if they don't exist."""
         self.docs_path.mkdir(parents=True, exist_ok=True)
-        self.interviews_path.mkdir(parents=True, exist_ok=True)
     
     async def save_prd(self, prd_data: dict) -> Path:
-        """Save PRD to both JSON and Markdown.
+        """Save PRD to Markdown file.
         
         Args:
             prd_data: Dictionary containing PRD content
@@ -53,11 +46,7 @@ class ProjectFiles:
         # Add metadata
         prd_data['updated_at'] = datetime.now(timezone.utc).isoformat()
         
-        # Save JSON (structured data)
-        async with aiofiles.open(self.prd_json_path, 'w', encoding='utf-8') as f:
-            await f.write(json.dumps(prd_data, indent=2, ensure_ascii=False))
-        
-        # Save Markdown (human-readable)
+        # Save Markdown only
         md_content = self._prd_to_markdown(prd_data)
         async with aiofiles.open(self.prd_path, 'w', encoding='utf-8') as f:
             await f.write(md_content)
@@ -65,20 +54,12 @@ class ProjectFiles:
         return self.prd_path
     
     async def load_prd(self) -> Optional[dict]:
-        """Load existing PRD from JSON file.
+        """Load existing PRD - returns None as we only save markdown now.
         
         Returns:
-            PRD data dictionary or None if not found
+            None (PRD is stored as markdown only)
         """
-        if not self.prd_json_path.exists():
-            return None
-        
-        try:
-            async with aiofiles.open(self.prd_json_path, 'r', encoding='utf-8') as f:
-                content = await f.read()
-                return json.loads(content)
-        except Exception:
-            return None
+        return None
     
     async def save_user_stories(self, stories_data: list[dict]) -> Path:
         """Save all user stories to a single markdown file.
@@ -124,22 +105,7 @@ class ProjectFiles:
         # In practice, stories should be loaded from database, not parsed from file
         return []
     
-    async def save_interview(self, session_id: str, transcript: str) -> Path:
-        """Save interview transcript to markdown file.
-        
-        Args:
-            session_id: Interview session identifier
-            transcript: Interview transcript content
-            
-        Returns:
-            Path to the saved interview file
-        """
-        interview_file = self.interviews_path / f"{session_id}.md"
-        
-        async with aiofiles.open(interview_file, 'w', encoding='utf-8') as f:
-            await f.write(transcript)
-        
-        return interview_file
+
     
     def _prd_to_markdown(self, prd_data: dict) -> str:
         """Convert PRD JSON to Markdown format.
@@ -166,9 +132,9 @@ class ProjectFiles:
 
 ---
 
-## 2. Goals & Objectives
+## 2. Objectives
 
-{self._list_to_md(prd_data.get('goals', []))}
+{self._list_to_md(prd_data.get('objectives', []))}
 
 ---
 
@@ -184,37 +150,21 @@ class ProjectFiles:
 
 ---
 
-## 5. User Stories Summary
-
-{self._stories_summary_to_md(prd_data.get('user_stories', []))}
-
----
-
-## 6. Acceptance Criteria
-
-{self._list_to_md(prd_data.get('acceptance_criteria', []))}
-
----
-
-## 7. Technical Constraints
+## 5. Technical Constraints
 
 {self._list_to_md(prd_data.get('constraints', []))}
 
 ---
 
-## 8. Success Metrics
+## 6. Success Metrics
 
 {self._list_to_md(prd_data.get('success_metrics', []))}
 
 ---
 
-## 9. Next Steps
+## 7. Risks
 
-{self._list_to_md(prd_data.get('next_steps', []))}
-
----
-
-*This document was generated by the Business Analyst agent.*
+{self._list_to_md(prd_data.get('risks', []))}
 """
         return md
     
@@ -286,12 +236,25 @@ class ProjectFiles:
         
         md = ""
         for i, feature in enumerate(features, 1):
-            name = feature.get('name', 'Unnamed Feature') if isinstance(feature, dict) else str(feature)
-            desc = feature.get('description', '') if isinstance(feature, dict) else ''
-            
-            md += f"### {i}. {name}\n\n"
-            if desc:
-                md += f"{desc}\n\n"
+            if isinstance(feature, dict):
+                name = feature.get('name', 'Unnamed Feature')
+                desc = feature.get('description', '')
+                priority = feature.get('priority', 'medium')
+                requirements = feature.get('requirements', [])
+                
+                priority_label = "🔴 High" if priority == "high" else "🟡 Medium" if priority == "medium" else "🟢 Low"
+                
+                md += f"### {i}. {name}\n\n"
+                md += f"**Priority:** {priority_label}\n\n"
+                if desc:
+                    md += f"{desc}\n\n"
+                if requirements:
+                    md += "**Requirements:**\n"
+                    for req in requirements:
+                        md += f"- {req}\n"
+                    md += "\n"
+            else:
+                md += f"### {i}. {feature}\n\n"
         
         return md
     

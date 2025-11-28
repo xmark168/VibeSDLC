@@ -164,7 +164,7 @@ async def ask_one_question(state: BAState, agent=None) -> dict:
         
         # Send single question using ask_clarification_question
         question_id = await agent.ask_clarification_question(
-            question=f"**Câu hỏi {current_index + 1}/{len(questions)}:**\n\n{question_text}",
+            question=f"Câu hỏi {current_index + 1}/{len(questions)}:\n{question_text}",
             question_type=question_type,
             options=options,
             allow_multiple=current_question.get("allow_multiple", False)
@@ -627,12 +627,105 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
                 "Share with stakeholders"
             ])
             
-            # Send success message to user
+            # Send success message to user with full PRD content (no markdown formatting)
             if agent:
+                # Build full PRD message matching prd_structure
+                version = prd_data.get("version", "1.0")
+                overview = prd_data.get("overview", "")
+                objectives = prd_data.get("objectives", [])
+                target_users = prd_data.get("target_users", [])
+                features = prd_data.get("features", [])
+                constraints = prd_data.get("constraints", [])
+                success_metrics = prd_data.get("success_metrics", [])
+                risks = prd_data.get("risks", [])
+                
+                prd_msg = f"✅ PRD Created Successfully\n\n"
+                prd_msg += f"📋 {project_name}\n"
+                prd_msg += f"Version: {version}\n\n"
+                
+                # 1. Overview
+                prd_msg += "━━━━━━━━━━━━━━━━━━━━\n"
+                prd_msg += "1. Tổng quan\n"
+                prd_msg += f"{overview}\n\n" if overview else "Chưa có thông tin\n\n"
+                
+                # 2. Objectives
+                prd_msg += "2. Mục tiêu\n"
+                if objectives:
+                    for obj in objectives:
+                        prd_msg += f"  • {obj}\n"
+                else:
+                    prd_msg += "  Chưa có thông tin\n"
+                prd_msg += "\n"
+                
+                # 3. Target Users
+                prd_msg += "3. Đối tượng người dùng\n"
+                if target_users:
+                    for user in target_users:
+                        prd_msg += f"  • {user}\n"
+                else:
+                    prd_msg += "  Chưa có thông tin\n"
+                prd_msg += "\n"
+                
+                # 4. Features
+                prd_msg += "4. Tính năng\n"
+                if features:
+                    for feat in features:
+                        if isinstance(feat, dict):
+                            feat_name = feat.get("name", "Feature")
+                            feat_desc = feat.get("description", "")
+                            feat_priority = feat.get("priority", "medium")
+                            priority_icon = "🔴" if feat_priority == "high" else "🟡" if feat_priority == "medium" else "🟢"
+                            prd_msg += f"  {priority_icon} {feat_name}\n"
+                            if feat_desc:
+                                prd_msg += f"     {feat_desc}\n"
+                            reqs = feat.get("requirements", [])
+                            if reqs:
+                                prd_msg += "     Requirements:\n"
+                                for req in reqs:
+                                    prd_msg += f"       - {req}\n"
+                            prd_msg += "\n"
+                        else:
+                            prd_msg += f"  • {feat}\n"
+                else:
+                    prd_msg += "  Chưa có thông tin\n"
+                prd_msg += "\n"
+                
+                # 5. Constraints
+                prd_msg += "5. Ràng buộc kỹ thuật\n"
+                if constraints:
+                    for c in constraints:
+                        prd_msg += f"  • {c}\n"
+                else:
+                    prd_msg += "  Chưa có thông tin\n"
+                prd_msg += "\n"
+                
+                # 6. Success Metrics
+                prd_msg += "6. Tiêu chí thành công\n"
+                if success_metrics:
+                    for m in success_metrics:
+                        prd_msg += f"  • {m}\n"
+                else:
+                    prd_msg += "  Chưa có thông tin\n"
+                prd_msg += "\n"
+                
+                # 7. Risks
+                prd_msg += "7. Rủi ro\n"
+                if risks:
+                    for r in risks:
+                        prd_msg += f"  ⚠️ {r}\n"
+                else:
+                    prd_msg += "  Chưa có thông tin\n"
+                prd_msg += "\n"
+                
+                # Next steps
+                prd_msg += "━━━━━━━━━━━━━━━━━━━━\n"
+                prd_msg += "📌 Next steps:\n"
+                for step in result["next_steps"]:
+                    prd_msg += f"  • {step}\n"
+                
                 await agent.message_user(
                     event_type="response",
-                    content=f"✅ **PRD Created Successfully**\n\n**Project:** {project_name}\n\n**Next steps:**\n" +
-                            "\n".join(f"- {step}" for step in result["next_steps"]),
+                    content=prd_msg,
                     details={"prd": prd_data}
                 )
             
@@ -661,8 +754,8 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
             if agent:
                 await agent.message_user(
                     event_type="response",
-                    content=f"✅ **User Stories Extracted** ({stories_count} stories)\n\n**Next steps:**\n" +
-                            "\n".join(f"- {step}" for step in result["next_steps"]),
+                    content=f"✅ User Stories Extracted ({stories_count} stories)\n\nNext steps:\n" +
+                            "\n".join(f"  • {step}" for step in result["next_steps"]),
                     details={"stories": stories_data}
                 )
             
@@ -688,7 +781,7 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
         if agent:
             await agent.message_user(
                 event_type="response",
-                content=f"📊 **Domain Analysis Complete**\n\n{state['analysis_text'][:2000]}",
+                content=f"📊 Domain Analysis Complete\n\n{state['analysis_text'][:2000]}",
                 details={"analysis": state["analysis_text"]}
             )
     
@@ -699,7 +792,7 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
         if agent:
             await agent.message_user(
                 event_type="response",
-                content=f"✅ **PRD Updated**\n\n{state['change_summary']}",
+                content=f"✅ PRD Updated\n\n{state['change_summary']}",
                 details={"prd": state.get("prd_draft")}
             )
     
