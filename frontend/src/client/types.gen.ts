@@ -7,13 +7,13 @@ export type AgentCreate = {
 };
 
 export type AgentPublic = {
+    id: string;
+    project_id: string;
     name: string;
     human_name: string;
     role_type: string;
     agent_type?: (string | null);
-    id: string;
-    project_id: string;
-    status: string;
+    status: AgentStatus;
     created_at: string;
     updated_at: string;
 };
@@ -23,41 +23,17 @@ export type AgentsPublic = {
     count: number;
 };
 
-export type AgentUpdate = {
-    name?: (string | null);
-    human_name?: (string | null);
-    status?: (string | null);
-};
-
 /**
- * Request to approve or refine phase output
+ * Runtime status of an agent (unified for runtime and database)
  */
-export type ApproveRequest = {
-    approved: boolean;
-    feedback?: (string | null);
+export type AgentStatus = 'created' | 'starting' | 'running' | 'idle' | 'busy' | 'stopping' | 'stopped' | 'error' | 'terminated';
+
+export type AgentUpdate = {
+    human_name?: (string | null);
+    status?: (AgentStatus | null);
 };
 
 export type AuthorType = 'user' | 'agent';
-
-export type BlockerCreate = {
-    backlog_item_id: string;
-    blocker_type: string;
-    description: string;
-};
-
-export type BlockerPublic = {
-    id: string;
-    backlog_item_id: string;
-    reported_by_user_id: string;
-    blocker_type: string;
-    description: string;
-    created_at: string;
-};
-
-export type BlockersPublic = {
-    data: Array<BlockerPublic>;
-    count: number;
-};
 
 export type Body_authentication_login_access_token = {
     grant_type?: (string | null);
@@ -87,9 +63,7 @@ export type ChatMessagePublic = {
     agent_id?: (string | null);
     content: string;
     message_type?: (string | null);
-    structured_data?: ({
-    [key: string]: unknown;
-} | null);
+    structured_data?: (unknown | null);
     message_metadata?: ({
     [key: string]: unknown;
 } | null);
@@ -108,31 +82,52 @@ export type ChatMessageUpdate = {
 
 export type ConfirmCodeRequest = {
     email: string;
-    /**
-     * 6-digit verification code
-     */
     code: string;
 };
 
 export type ConfirmCodeResponse = {
     message: string;
-    user_id: string;
 };
 
 /**
- * Request to create a new BA session
+ * Request to create agent pool.
  */
-export type CreateSessionRequest = {
+export type CreatePoolRequest = {
+    /**
+     * Role type: team_leader, business_analyst, developer, tester
+     */
+    role_type: string;
+    config?: PoolConfigSchema;
+};
+
+/**
+ * Response containing file content
+ */
+export type FileContentResponse = {
+    path: string;
+    content: string;
+    encoding?: string;
+    size: number;
+};
+
+/**
+ * Single file or folder node
+ */
+export type FileNode = {
+    name: string;
+    type: string;
+    path: string;
+    size?: (number | null);
+    modified?: (string | null);
+    children?: (Array<FileNode> | null);
+};
+
+/**
+ * Response containing the file tree
+ */
+export type FileTreeResponse = {
     project_id: string;
-};
-
-/**
- * Response with created session info
- */
-export type CreateSessionResponse = {
-    session_id: string;
-    status: string;
-    current_phase: string;
+    root: FileNode;
 };
 
 export type ForgotPasswordRequest = {
@@ -141,7 +136,18 @@ export type ForgotPasswordRequest = {
 
 export type ForgotPasswordResponse = {
     message: string;
-    expires_in: number;
+    email: string;
+};
+
+/**
+ * Response containing git status of files
+ */
+export type GitStatusResponse = {
+    project_id: string;
+    branch: string;
+    modified: Array<string>;
+    untracked: Array<string>;
+    staged: Array<string>;
 };
 
 export type HTTPValidationError = {
@@ -152,70 +158,54 @@ export type LoginRequest = {
     email: string;
     password?: (string | null);
     fullname?: (string | null);
-    /**
-     * false = credential login, true = OAuth provider login
-     */
-    login_provider: boolean;
+    login_provider?: boolean;
 };
 
 export type LoginResponse = {
-    user_id: string;
     access_token: string;
     refresh_token: string;
+    token_type?: string;
 };
 
 export type LogoutResponse = {
     message: string;
 };
 
+/**
+ * Generic message response.
+ */
 export type Message = {
     message: string;
 };
 
 /**
- * Request to execute a phase (with optional revision feedback)
+ * Pool configuration schema.
  */
-export type PhaseExecutionRequest = {
-    revision_feedback?: (string | null);
+export type PoolConfigSchema = {
+    max_agents?: number;
 };
 
 /**
- * Response from phase execution
+ * Pool information response.
  */
-export type PhaseExecutionResponse = {
-    success: boolean;
-    phase: string;
-    output: string;
-    message: string;
+export type PoolResponse = {
+    pool_name: string;
+    role_type: string;
+    active_agents: number;
+    max_agents: number;
+    total_spawned: number;
+    total_terminated: number;
+    is_running: boolean;
+    agents: Array<{
+        [key: string]: unknown;
+    }>;
 };
 
-export type PrivateUserCreate = {
-    email: string;
-    password: string;
-    full_name: string;
-    is_verified?: boolean;
-};
-
-/**
- * Response with PRD
- */
-export type ProductBriefResponse = {
-    product_summary: string;
-    problem_statement: string;
-    target_users: string;
-    product_goals: string;
-    scope: string;
-    revision_count: number;
-};
-
-/**
- * Schema for creating a new project. Code is auto-generated.
- */
 export type ProjectCreate = {
     name: string;
-    is_private?: boolean;
-    tech_stack?: string;
+    description?: (string | null);
     repository_url?: (string | null);
+    tech_stack?: (Array<string> | null);
 };
 
 /**
@@ -235,17 +225,15 @@ export type ProjectFlowMetrics = {
     };
 };
 
-/**
- * Schema for project response with all fields from model.
- */
 export type ProjectPublic = {
     id: string;
     code: string;
     name: string;
+    description?: (string | null);
+    repository_url?: (string | null);
+    tech_stack?: (Array<string> | null);
     owner_id: string;
     is_init: boolean;
-    is_private: boolean;
-    tech_stack: string;
     created_at: string;
     updated_at: string;
 };
@@ -273,23 +261,16 @@ export type ProjectRulesUpdate = {
     tester_prompt?: (string | null);
 };
 
-/**
- * Schema for list of projects response.
- */
 export type ProjectsPublic = {
     data: Array<ProjectPublic>;
     count: number;
 };
 
-/**
- * Schema for updating a project. All fields are optional.
- */
 export type ProjectUpdate = {
     name?: (string | null);
-    is_init?: (boolean | null);
-    is_private?: (boolean | null);
-    tech_stack?: (string | null);
+    description?: (string | null);
     repository_url?: (string | null);
+    tech_stack?: (Array<string> | null);
 };
 
 export type RefreshTokenRequest = {
@@ -297,44 +278,20 @@ export type RefreshTokenRequest = {
 };
 
 export type RefreshTokenResponse = {
-    user_id: string;
     access_token: string;
-    refresh_token: string;
+    token_type?: string;
 };
 
 export type RegisterRequest = {
-    /**
-     * Email address
-     */
     email: string;
-    /**
-     * Full name
-     */
-    fullname: string;
-    /**
-     * Password (min 8 chars, must contain letter and number)
-     */
     password: string;
-    /**
-     * Password confirmation
-     */
     confirm_password: string;
+    full_name?: (string | null);
 };
 
 export type RegisterResponse = {
     message: string;
     email: string;
-    expires_in: number;
-};
-
-/**
- * Response with requirements list
- */
-export type RequirementsResponse = {
-    problem_goals: Array<string>;
-    users_stakeholders: Array<string>;
-    features_scope: Array<string>;
-    total: number;
 };
 
 export type ResendCodeRequest = {
@@ -344,7 +301,6 @@ export type ResendCodeRequest = {
 export type ResendCodeResponse = {
     message: string;
     email: string;
-    expires_in: number;
 };
 
 export type ResetPasswordRequest = {
@@ -360,68 +316,58 @@ export type ResetPasswordResponse = {
 export type Role = 'admin' | 'user';
 
 /**
- * Request to send a message in analysis phase
+ * Request to spawn agent.
  */
-export type SendMessageRequest = {
-    message: string;
+export type SpawnAgentRequest = {
+    /**
+     * Project ID to assign agent to
+     */
+    project_id: string;
+    /**
+     * Pool name
+     */
+    pool_name: string;
+    /**
+     * Agent role type
+     */
+    role_type: string;
+    /**
+     * Optional human-friendly name
+     */
+    human_name?: (string | null);
 };
 
-/**
- * Response with extracted requirements and assistant response
- */
-export type SendMessageResponse = {
-    success: boolean;
-    assistant_response: string;
-    extracted_requirements: {
-        [key: string]: unknown;
-    };
-    turn_count: number;
-    total_requirements: number;
-};
-
-/**
- * Response with session status and progress
- */
-export type SessionStatusResponse = {
-    session_id: string;
-    status: string;
-    current_phase: string;
-    turn_count: number;
-    requirements_count: number;
-    has_brief: boolean;
-    flows_count: number;
-    epics_count: number;
-    stories_count: number;
-};
-
-/**
- * List of stories response
- */
 export type StoriesPublic = {
-    data: Array<StoryPublic>;
+    data: Array<{
+        [key: string]: unknown;
+    }>;
     count: number;
 };
 
 /**
- * Schema for creating a new story (BA agent)
+ * Schema for creating a new story.
  */
 export type StoryCreate = {
     title: string;
     description?: (string | null);
-    type?: StoryType;
-    status?: StoryStatus;
+    story_type?: StoryType;
+    priority?: number;
+    estimated_hours?: (number | null);
+    actual_hours?: (number | null);
+    assigned_to?: (string | null);
+    sprint_id?: (string | null);
     epic_id?: (string | null);
+    parent_story_id?: (string | null);
+    tags?: (Array<string> | null);
     acceptance_criteria?: (string | null);
-    rank?: (number | null);
-    estimate_value?: (number | null);
-    story_point?: (number | null);
-    priority?: (number | null);
-    pause?: boolean;
-    deadline?: (string | null);
-    assignee_id?: (string | null);
-    reviewer_id?: (string | null);
-    parent_id?: (string | null);
-    token_used?: (number | null);
+    business_value?: (number | null);
+    risk_level?: ('low' | 'medium' | 'high' | 'critical' | null);
+    target_release?: (string | null);
+    dependencies?: (Array<string> | null);
+    blocked_by?: (string | null);
+    blocking?: (Array<string> | null);
+    attachments?: (Array<string> | null);
+    labels?: (Array<string> | null);
     project_id: string;
 };
 
@@ -433,96 +379,96 @@ export type StoryFlowMetrics = {
     title: string;
     status: string;
     created_at: string;
-    started_at?: (string | null);
-    review_started_at?: (string | null);
-    testing_started_at?: (string | null);
-    completed_at?: (string | null);
     cycle_time_hours?: (number | null);
     lead_time_hours?: (number | null);
     age_in_current_status_hours: number;
+    age_in_current_status_days: number;
+    blocked?: boolean;
+    blocker_count?: number;
 };
 
 /**
- * Full story schema with relationships for Kanban display
+ * Schema for story response.
  */
 export type StoryPublic = {
     title: string;
     description?: (string | null);
-    type?: StoryType;
-    status?: StoryStatus;
+    story_type?: StoryType;
+    priority?: number;
+    estimated_hours?: (number | null);
+    actual_hours?: (number | null);
+    assigned_to?: (string | null);
+    sprint_id?: (string | null);
     epic_id?: (string | null);
+    parent_story_id?: (string | null);
+    tags?: (Array<string> | null);
     acceptance_criteria?: (string | null);
-    rank?: (number | null);
-    estimate_value?: (number | null);
-    story_point?: (number | null);
-    priority?: (number | null);
-    pause?: boolean;
-    deadline?: (string | null);
-    assignee_id?: (string | null);
-    reviewer_id?: (string | null);
-    parent_id?: (string | null);
-    token_used?: (number | null);
+    business_value?: (number | null);
+    risk_level?: ('low' | 'medium' | 'high' | 'critical' | null);
+    target_release?: (string | null);
+    dependencies?: (Array<string> | null);
+    blocked_by?: (string | null);
+    blocking?: (Array<string> | null);
+    attachments?: (Array<string> | null);
+    labels?: (Array<string> | null);
     id: string;
     project_id: string;
-    completed_at?: (string | null);
+    status: StoryStatus;
     created_at: string;
     updated_at: string;
-    parent?: (StorySimple | null);
-    children?: Array<StorySimple>;
-};
-
-/**
- * Simple story schema without nested relationships
- */
-export type StorySimple = {
-    title: string;
-    description?: (string | null);
-    type?: StoryType;
-    status?: StoryStatus;
-    epic_id?: (string | null);
-    acceptance_criteria?: (string | null);
-    rank?: (number | null);
-    estimate_value?: (number | null);
-    story_point?: (number | null);
-    priority?: (number | null);
-    pause?: boolean;
-    deadline?: (string | null);
-    assignee_id?: (string | null);
-    reviewer_id?: (string | null);
-    parent_id?: (string | null);
-    token_used?: (number | null);
-    id: string;
-    project_id: string;
     completed_at?: (string | null);
-    created_at: string;
-    updated_at: string;
 };
 
 export type StoryStatus = 'Todo' | 'InProgress' | 'Review' | 'Done';
 
 export type StoryType = 'UserStory' | 'EnablerStory';
 
-/**
- * Schema for updating story fields (BA/TL/Dev/Tester)
- */
 export type StoryUpdate = {
     title?: (string | null);
     description?: (string | null);
-    type?: (StoryType | null);
     status?: (StoryStatus | null);
-    epic_id?: (string | null);
-    acceptance_criteria?: (string | null);
-    rank?: (number | null);
-    estimate_value?: (number | null);
-    story_point?: (number | null);
+    story_type?: (StoryType | null);
     priority?: (number | null);
-    pause?: (boolean | null);
-    deadline?: (string | null);
-    completed_at?: (string | null);
-    assignee_id?: (string | null);
-    reviewer_id?: (string | null);
-    parent_id?: (string | null);
-    token_used?: (number | null);
+    estimated_hours?: (number | null);
+    actual_hours?: (number | null);
+    assigned_to?: (string | null);
+    sprint_id?: (string | null);
+    epic_id?: (string | null);
+    parent_story_id?: (string | null);
+    tags?: (Array<string> | null);
+    acceptance_criteria?: (string | null);
+    business_value?: (number | null);
+    risk_level?: ('low' | 'medium' | 'high' | 'critical' | null);
+    target_release?: (string | null);
+    dependencies?: (Array<string> | null);
+    blocked_by?: (string | null);
+    blocking?: (Array<string> | null);
+    attachments?: (Array<string> | null);
+    labels?: (Array<string> | null);
+};
+
+/**
+ * System statistics response.
+ */
+export type SystemStatsResponse = {
+    uptime_seconds: number;
+    total_pools: number;
+    total_agents: number;
+    pools: Array<PoolResponse>;
+};
+
+/**
+ * Request to terminate agent.
+ */
+export type TerminateAgentRequest = {
+    /**
+     * Pool name
+     */
+    pool_name: string;
+    /**
+     * Agent ID to terminate
+     */
+    agent_id: string;
 };
 
 export type UpdatePassword = {
@@ -604,8 +550,9 @@ export type WorkflowPolicyPublic = {
     criteria?: ({
     [key: string]: unknown;
 } | null);
-    required_role?: (string | null);
     is_active: boolean;
+    definition_of_ready?: (Array<string> | null);
+    definition_of_done?: (Array<string> | null);
     created_at: string;
     updated_at: string;
 };
@@ -614,9 +561,138 @@ export type WorkflowPolicyUpdate = {
     criteria?: ({
     [key: string]: unknown;
 } | null);
-    required_role?: (string | null);
     is_active?: (boolean | null);
+    definition_of_ready?: (Array<string> | null);
+    definition_of_done?: (Array<string> | null);
 };
+
+export type AgentManagementListPoolsResponse = (Array<PoolResponse>);
+
+export type AgentManagementCreatePoolData = {
+    requestBody: CreatePoolRequest;
+};
+
+export type AgentManagementCreatePoolResponse = (PoolResponse);
+
+export type AgentManagementGetPoolStatsData = {
+    poolName: string;
+};
+
+export type AgentManagementGetPoolStatsResponse = (PoolResponse);
+
+export type AgentManagementDeletePoolData = {
+    graceful?: boolean;
+    poolName: string;
+};
+
+export type AgentManagementDeletePoolResponse = (unknown);
+
+export type AgentManagementSpawnAgentData = {
+    requestBody: SpawnAgentRequest;
+};
+
+export type AgentManagementSpawnAgentResponse = (unknown);
+
+export type AgentManagementTerminateAgentData = {
+    requestBody: TerminateAgentRequest;
+};
+
+export type AgentManagementTerminateAgentResponse = (unknown);
+
+export type AgentManagementGetSystemStatsResponse = (SystemStatsResponse);
+
+export type AgentManagementGetDashboardDataResponse = (unknown);
+
+export type AgentManagementGetAlertsData = {
+    limit?: number;
+};
+
+export type AgentManagementGetAlertsResponse = (unknown);
+
+export type AgentManagementGetMetricsTimeseriesData = {
+    /**
+     * Data point interval: auto, 5m, 15m, 1h, 1d
+     */
+    interval?: string;
+    /**
+     * Metric type: utilization, executions, tokens, success_rate
+     */
+    metricType: string;
+    /**
+     * Filter by pool name
+     */
+    poolName?: (string | null);
+    /**
+     * Time range: 1h, 6h, 24h, 7d, 30d
+     */
+    timeRange?: string;
+};
+
+export type AgentManagementGetMetricsTimeseriesResponse = (unknown);
+
+export type AgentManagementGetMetricsAggregatedData = {
+    /**
+     * Group by: pool, hour, day
+     */
+    groupBy?: string;
+    /**
+     * Time range: 1h, 6h, 24h, 7d, 30d
+     */
+    timeRange?: string;
+};
+
+export type AgentManagementGetMetricsAggregatedResponse = (unknown);
+
+export type AgentManagementGetTokenMetricsData = {
+    /**
+     * Group by: pool, agent_type
+     */
+    groupBy?: string;
+    /**
+     * Time range: 1h, 6h, 24h, 7d, 30d
+     */
+    timeRange?: string;
+};
+
+export type AgentManagementGetTokenMetricsResponse = (unknown);
+
+export type AgentManagementGetAllAgentHealthResponse = (unknown);
+
+export type AgentManagementGetExecutionsData = {
+    /**
+     * Filter by agent type
+     */
+    agentType?: (string | null);
+    limit?: number;
+    /**
+     * Filter by project ID
+     */
+    projectId?: (string | null);
+    /**
+     * Filter by status: pending, running, completed, failed, cancelled
+     */
+    status?: (string | null);
+};
+
+export type AgentManagementGetExecutionsResponse = (unknown);
+
+export type AgentManagementGetExecutionStatsData = {
+    projectId?: (string | null);
+};
+
+export type AgentManagementGetExecutionStatsResponse = (unknown);
+
+export type AgentManagementGetExecutionDetailData = {
+    executionId: string;
+};
+
+export type AgentManagementGetExecutionDetailResponse = (unknown);
+
+export type AgentsGetProjectAgentsData = {
+    projectId: string;
+};
+
+export type AgentsGetProjectAgentsResponse = (AgentsPublic);
 
 export type AgentsListAgentsData = {
     agentType?: (string | null);
@@ -632,12 +708,6 @@ export type AgentsCreateAgentData = {
 };
 
 export type AgentsCreateAgentResponse = (AgentPublic);
-
-export type AgentsGetProjectAgentsData = {
-    projectId: string;
-};
-
-export type AgentsGetProjectAgentsResponse = (AgentsPublic);
 
 export type AgentsGetAgentData = {
     agentId: string;
@@ -709,96 +779,33 @@ export type AuthenticationResetPasswordResponse = (ResetPasswordResponse);
 
 export type AuthenticationLogoutResponse = (LogoutResponse);
 
-export type BlockersCreateBlockerData = {
-    requestBody: BlockerCreate;
-};
-
-export type BlockersCreateBlockerResponse = (BlockerPublic);
-
-export type BlockersGetBlockersByStoryData = {
-    storyId: string;
-};
-
-export type BlockersGetBlockersByStoryResponse = (BlockersPublic);
-
-export type BlockersGetBlockersByProjectData = {
-    projectId: string;
-};
-
-export type BlockersGetBlockersByProjectResponse = (BlockersPublic);
-
-export type BusinessAnalystCreateBaSessionData = {
-    requestBody: CreateSessionRequest;
-};
-
-export type BusinessAnalystCreateBaSessionResponse = (CreateSessionResponse);
-
-export type BusinessAnalystGetSessionStatusData = {
-    sessionId: string;
-};
-
-export type BusinessAnalystGetSessionStatusResponse = (SessionStatusResponse);
-
-export type BusinessAnalystSendMessageData = {
-    requestBody: SendMessageRequest;
-    sessionId: string;
-};
-
-export type BusinessAnalystSendMessageResponse = (SendMessageResponse);
-
-export type BusinessAnalystGetRequirementsData = {
-    sessionId: string;
-};
-
-export type BusinessAnalystGetRequirementsResponse = (RequirementsResponse);
-
-export type BusinessAnalystCreateProductBriefData = {
-    requestBody: PhaseExecutionRequest;
-    sessionId: string;
-};
-
-export type BusinessAnalystCreateProductBriefResponse = (PhaseExecutionResponse);
-
-export type BusinessAnalystGetProductBriefData = {
-    sessionId: string;
-};
-
-export type BusinessAnalystGetProductBriefResponse = (ProductBriefResponse);
-
-export type BusinessAnalystDesignSolutionData = {
-    requestBody: PhaseExecutionRequest;
-    sessionId: string;
-};
-
-export type BusinessAnalystDesignSolutionResponse = (PhaseExecutionResponse);
-
-export type BusinessAnalystCreateBacklogData = {
-    requestBody: PhaseExecutionRequest;
-    sessionId: string;
-};
-
-export type BusinessAnalystCreateBacklogResponse = (PhaseExecutionResponse);
-
-export type BusinessAnalystApproveBriefData = {
-    requestBody: ApproveRequest;
-    sessionId: string;
-};
-
-export type BusinessAnalystApproveBriefResponse = (unknown);
-
-export type BusinessAnalystCancelSessionData = {
-    sessionId: string;
-};
-
-export type BusinessAnalystCancelSessionResponse = (unknown);
-
-export type BusinessAnalystListProjectSessionsData = {
-    projectId: string;
-};
-
-export type BusinessAnalystListProjectSessionsResponse = (unknown);
-
 export type ChatChatHealthResponse = (unknown);
+
+export type FilesListProjectFilesData = {
+    /**
+     * Maximum depth to traverse
+     */
+    depth?: number;
+    projectId: string;
+};
+
+export type FilesListProjectFilesResponse = (FileTreeResponse);
+
+export type FilesGetFileContentData = {
+    /**
+     * Relative path to the file
+     */
+    path: string;
+    projectId: string;
+};
+
+export type FilesGetFileContentResponse = (FileContentResponse);
+
+export type FilesGetGitStatusData = {
+    projectId: string;
+};
+
+export type FilesGetGitStatusResponse = (GitStatusResponse);
 
 export type LeanKanbanGetWipLimitsData = {
     projectId: string;
@@ -904,11 +911,18 @@ export type MessagesDeleteAllMessagesByProjectData = {
 
 export type MessagesDeleteAllMessagesByProjectResponse = (Message);
 
-export type PrivateCreateUserData = {
-    requestBody: PrivateUserCreate;
+export type OauthGoogleLoginResponse = (unknown);
+
+export type OauthGithubLoginResponse = (unknown);
+
+export type OauthFacebookLoginResponse = (unknown);
+
+export type OauthOauthCallbackData = {
+    code: string;
+    state: string;
 };
 
-export type PrivateCreateUserResponse = (UserPublic);
+export type OauthOauthCallbackResponse = (unknown);
 
 export type ProjectRulesCreateProjectRulesData = {
     requestBody: ProjectRulesCreate;

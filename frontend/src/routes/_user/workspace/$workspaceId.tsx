@@ -1,9 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { useRef, useState } from "react"
 import { ChatPanelWS } from "@/components/chat/chat-panel-ws"
-import { ResizableHandle } from "@/components/chat/resizable-handle"
 import { Sidebar } from "@/components/chat/sidebar"
-
 import { WorkspacePanel } from "@/components/chat/workspace-panel"
 import { requireRole } from "@/utils/auth"
 
@@ -68,12 +66,6 @@ function WorkspacePage() {
                 />
               </div>
 
-              <ResizableHandle
-                onResize={(delta) => {
-                  const newWidth = chatWidth + (delta / window.innerWidth) * 100
-                  setChatWidth(Math.max(20, Math.min(80, newWidth)))
-                }}
-              />
             </>
           )}
 
@@ -86,6 +78,10 @@ function WorkspacePage() {
               activeTab={activeTab}
               agentStatuses={agentStatuses}
               selectedArtifactId={selectedArtifactId}
+              onResize={(delta) => {
+                const newWidth = chatWidth + (delta / window.innerWidth) * 100
+                setChatWidth(Math.max(20, Math.min(80, newWidth)))
+              }}
             />
           </div>
         </div>

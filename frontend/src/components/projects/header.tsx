@@ -61,11 +61,11 @@ export const HeaderProject = ({
       }}
       className="sticky top-0 z-50 w-full flex items-center border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
     >
-      <div className="container flex h-16 items-center justify-between px-4">
+      <div className="container flex h-16 items-center justify-between px-6">
         {/* Left side - Logo/Brand */}
-        <div className="flex items-center gap-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--gradient-primary)]">
-            <span className="text-lg font-bold text-white">VibeSDLC</span>
+        <div className="flex items-center gap-2 ml-2">
+          <div className="flex items-center justify-center rounded-lg px-3 py-2">
+            <span className="text-xl font-bold">VibeSDLC</span>
           </div>
         </div>
 
@@ -77,7 +77,7 @@ export const HeaderProject = ({
               className="flex items-center gap-3 hover:bg-accent transition-colors"
             >
               <Avatar className="h-8 w-8 ring-2 ring-primary/20">
-                <AvatarFallback className="bg-[var(--gradient-primary)] text-white text-sm font-semibold">
+                <AvatarFallback className="bg-[var(--gradient-primary)] text-sm font-semibold">
                   {getInitials(user?.full_name || "")}
                 </AvatarFallback>
               </Avatar>

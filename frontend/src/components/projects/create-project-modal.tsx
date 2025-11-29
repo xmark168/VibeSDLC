@@ -21,7 +21,7 @@ const TECH_STACK_OPTIONS = [
   {
     value: "nodejs-react",
     label: "Node.js + Express + React Vite",
-    icon: "🟢⚛️",
+    icon: "/assets/images/icon/1.png",
     description: "Fast development with modern tooling",
     template_owner: "trong03",
     template_repo: "boilerplate-vibe-sdlc"
@@ -298,7 +298,11 @@ export function CreateProjectModal({
                         className="cursor-pointer flex-1"
                       >
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-lg">{option.icon}</span>
+                          <img
+                            src={option.icon}
+                            alt={option.label}
+                            className="h-6 w-6"
+                          />
                           <span className="text-sm font-semibold">{option.label}</span>
                         </div>
                         <p className="text-xs text-muted-foreground">{option.description}</p>

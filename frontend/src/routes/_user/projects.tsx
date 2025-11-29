@@ -61,68 +61,74 @@ function ProjectsPage() {
 
   return (
     <>
-            <div className="min-h-screen">
-              <HeaderProject />
-              <div className="container mx-auto px-6 py-8">
-                <motion.div
-                  variants={containerVariants}
-                  initial="hidden"
-                  animate="visible"
-                >
-                  {/* Header */}
-                  <motion.div
-                    variants={itemVariants}
-                    className="flex items-center justify-between mb-8"
+      <div className="min-h-screen">
+        <HeaderProject />
+        <div className="container mx-auto px-6 py-8">
+          <motion.div
+            variants={containerVariants}
+            initial="hidden"
+            animate="visible"
+          >
+            {/* Header */}
+            <motion.div
+              variants={itemVariants}
+              className="flex items-center justify-between mb-8"
+            >
+              <div>
+                <h1 className="text-4xl font-bold mb-2">
+                  Your{" "}
+                  <span 
+                    className="text-transparent bg-clip-text"
+                    style={{ backgroundImage: "linear-gradient(to right, #c96442, #3d3929)" }}
                   >
-                    <div>
-                      <h1 className="text-4xl font-bold text-white mb-2">
-                        Your{" "}
-                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-purple-600">
-                          Projects
-                        </span>
-                      </h1>
-                      <p className="text-slate-400">
-                        Manage your AI-powered development projects
-                      </p>
-                    </div>
-
-                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                      <Button
-                        onClick={handleNewProjectClick}
-                        className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-semibold gap-2"
-                      >
-                        <Plus className="h-5 w-5" />
-                        New Project
-                      </Button>
-                    </motion.div>
-                  </motion.div>
-
-                  {/* Projects List */}
-                  <motion.div variants={itemVariants}>
-                    {isLoading ? (
-                      <div className="flex items-center justify-center py-20">
-                        <Loader2 className="h-8 w-8 animate-spin text-purple-400" />
-                      </div>
-                    ) : (
-                      <ProjectList
-                        projects={listProjectPublic?.data || []}
-                      />
-                    )}
-                  </motion.div>
-                </motion.div>
+                    Projects
+                  </span>
+                </h1>
+                <p className="text-slate-400">
+                  Manage your AI-powered development projects
+                </p>
               </div>
 
-              {/* Modals */}
-              <AnimatePresence>
-                {showCreateModal && (
-                  <CreateProjectModal
-                    isOpen={showCreateModal}
-                    onClose={() => setShowCreateModal(false)}
-                    setIsOpen={setShowCreateModal}
-                  />
-                )}
-              </AnimatePresence>
-            </div>
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                <Button
+                  onClick={handleNewProjectClick}
+                  className="font-semibold gap-2 text-[#e9e6dc]"
+                  style={{
+                    background: "linear-gradient(135deg, #c96442 0%, #b55638 100%)",
+                  }}
+                >
+                  <Plus className="h-5 w-5" />
+                  New Project
+                </Button>
+              </motion.div>
+            </motion.div>
+
+            {/* Projects List */}
+            <motion.div variants={itemVariants}>
+              {isLoading ? (
+                <div className="flex items-center justify-center py-20">
+                  <Loader2 className="h-8 w-8 animate-spin text-purple-400" />
+                </div>
+              ) : (
+                <ProjectList
+                  projects={listProjectPublic?.data || []}
+                />
+              )}
+            </motion.div>
+          </motion.div>
+        </div>
+
+        {/* Modals */}
+        <AnimatePresence>
+          {showCreateModal && (
+            <CreateProjectModal
+              isOpen={showCreateModal}
+              onClose={() => setShowCreateModal(false)}
+              setIsOpen={setShowCreateModal}
+            />
+          )}
+        </AnimatePresence>
+      </div>
     </>
   )
 }
