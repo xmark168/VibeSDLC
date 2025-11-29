@@ -5,7 +5,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Label } from '@/components/ui/label'
-import { Loader2, ArrowLeft, ArrowRight } from 'lucide-react'
+import { Loader2, ArrowLeft, ArrowRight, ChevronDown, ChevronUp } from 'lucide-react'
 
 interface BatchQuestion {
   question_id?: string
@@ -16,6 +16,12 @@ interface BatchQuestion {
   context?: string
 }
 
+interface SubmittedAnswer {
+  question_id: string
+  answer?: string
+  selected_options?: string[]
+}
+
 interface BatchQuestionsCardProps {
   batchId: string
   questions: BatchQuestion[]
@@ -23,6 +29,7 @@ interface BatchQuestionsCardProps {
   onSubmit: (answers: Array<{ question_id: string; answer: string; selected_options?: string[] }>) => void
   agentName?: string
   answered?: boolean
+  submittedAnswers?: SubmittedAnswer[]  // Answers that were submitted
 }
 
 export function BatchQuestionsCard({ 
@@ -31,7 +38,8 @@ export function BatchQuestionsCard({
   questionIds,
   onSubmit, 
   agentName,
-  answered = false 
+  answered = false,
+  submittedAnswers = []
 }: BatchQuestionsCardProps) {
   // Current question index
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -107,12 +115,15 @@ export function BatchQuestionsCard({
         const ans = answers.get(questionId)!
         let finalOptions = Array.from(ans.selectedOptions)
         
-        if (finalOptions.some(opt => opt.includes('Other') || opt.includes('Khác'))) {
+        const isOther = (o: string) => 
+          o.startsWith('Khác (') || o.startsWith('Khác(') || 
+          o.startsWith('Other (') || o.startsWith('Other(') ||
+          o === 'Khác' || o === 'Other'
+        
+        if (finalOptions.some(isOther)) {
           const customText = customInputs.get(questionId)
           if (customText?.trim()) {
-            finalOptions = finalOptions.map(opt => 
-              (opt.includes('Other') || opt.includes('Khác')) ? customText.trim() : opt
-            )
+            finalOptions = finalOptions.map(opt => isOther(opt) ? customText.trim() : opt)
           }
         }
         
@@ -136,11 +147,13 @@ export function BatchQuestionsCard({
     if (currentQuestion.question_type === 'open') {
       return currentAnswer.answer.trim().length > 0
     } else {
-      const hasOther = Array.from(currentAnswer.selectedOptions).some(opt => 
-        opt.includes('Other') || opt.includes('Khác')
-      )
+      const isOther = (o: string) => 
+        o.startsWith('Khác (') || o.startsWith('Khác(') || 
+        o.startsWith('Other (') || o.startsWith('Other(') ||
+        o === 'Khác' || o === 'Other'
+      const hasOtherSelected = Array.from(currentAnswer.selectedOptions).some(isOther)
       const customText = customInputs.get(currentQuestionId)
-      return currentAnswer.selectedOptions.size > 0 && (!hasOther || customText?.trim())
+      return currentAnswer.selectedOptions.size > 0 && (!hasOtherSelected || customText?.trim())
     }
   }
   
@@ -153,37 +166,89 @@ export function BatchQuestionsCard({
     if (q.question_type === 'open') {
       return ans.answer.trim().length > 0
     } else {
-      const hasOther = Array.from(ans.selectedOptions).some(opt => 
-        opt.includes('Other') || opt.includes('Khác')
-      )
+      const isOther = (o: string) => 
+        o.startsWith('Khác (') || o.startsWith('Khác(') || 
+        o.startsWith('Other (') || o.startsWith('Other(') ||
+        o === 'Khác' || o === 'Other'
+      const hasOtherSelected = Array.from(ans.selectedOptions).some(isOther)
       const customText = customInputs.get(questionId)
-      return ans.selectedOptions.size > 0 && (!hasOther || customText?.trim())
+      return ans.selectedOptions.size > 0 && (!hasOtherSelected || customText?.trim())
     }
   })
   
+  // State for showing/hiding Q&A in answered view
+  const [showQA, setShowQA] = useState(false)
+  
   if (answered) {
+    // Build a map of answers by question_id for quick lookup
+    const answersMap = new Map(submittedAnswers.map(a => [a.question_id, a]))
+    
     return (
       <Card className="border-green-200 bg-green-50/50 dark:bg-green-950/20">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-2">
-            <div className="text-2xl">✅</div>
-            <div>
-              <h3 className="text-sm font-semibold text-green-700 dark:text-green-400">
-                Đã trả lời {questions.length} câu hỏi
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                {agentName || 'Agent'} đang xử lý câu trả lời của bạn...
-              </p>
+        <CardContent className="p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="text-2xl">✅</div>
+              <div>
+                <h3 className="text-sm font-semibold text-green-700 dark:text-green-400">
+                  Đã trả lời {questions.length} câu hỏi
+                </h3>
+              </div>
             </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowQA(!showQA)}
+              className="text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900"
+            >
+              {showQA ? (
+                <>
+                  Ẩn <ChevronUp className="w-4 h-4 ml-1" />
+                </>
+              ) : (
+                <>
+                  Xem <ChevronDown className="w-4 h-4 ml-1" />
+                </>
+              )}
+            </Button>
           </div>
+          
+          {/* Show all Q&A - collapsible */}
+          {showQA && (
+            <div className="space-y-2 mt-3">
+              {questions.map((q, idx) => {
+                const questionId = questionIds[idx]
+                const ans = answersMap.get(questionId)
+                const answerText = ans?.selected_options?.length 
+                  ? ans.selected_options.join(', ')
+                  : ans?.answer || ''
+                
+                return (
+                  <div key={questionId} className="text-sm border-l-2 border-green-300 pl-3 py-1">
+                    <p className="text-muted-foreground">
+                      <span className="font-medium text-green-700 dark:text-green-400">Q{idx + 1}:</span> {q.question_text}
+                    </p>
+                    <p className="text-foreground mt-0.5">
+                      <span className="font-medium">→</span> {answerText || <span className="italic text-muted-foreground">Không có câu trả lời</span>}
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
     )
   }
   
-  const hasOther = currentAnswer ? Array.from(currentAnswer.selectedOptions).some(opt => 
-    opt.includes('Other') || opt.includes('Khác')
-  ) : false
+  // Check if user selected "Khác" option
+  // Must check for "Khác (" or "Khác(" to avoid matching "Khách" (Khách starts with Khác!)
+  const isOtherOption = (opt: string) => 
+    opt.startsWith('Khác (') || opt.startsWith('Khác(') || 
+    opt.startsWith('Other (') || opt.startsWith('Other(') ||
+    opt === 'Khác' || opt === 'Other'
+  
+  const hasOther = currentAnswer ? Array.from(currentAnswer.selectedOptions).some(isOtherOption) : false
   
   return (
     <Card className="border-blue-200 bg-blue-50/50 dark:bg-blue-950/20">

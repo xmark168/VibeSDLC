@@ -268,7 +268,10 @@ class ArtifactService:
         if title:
             query = query.where(Artifact.title == title)
         
-        query = query.order_by(Artifact.version.desc()).limit(1)
+        # Order by created_at desc to get the truly latest artifact
+        query = query.order_by(Artifact.created_at.desc()).limit(1)
         
         result = self.session.exec(query).first()
+        if result:
+            logger.info(f"[ArtifactService] get_latest_version: found {artifact_type.value} artifact {result.id} (created_at={result.created_at})")
         return result

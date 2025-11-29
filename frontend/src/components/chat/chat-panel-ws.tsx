@@ -1,5 +1,6 @@
 import type React from "react";
 import { useState, useRef, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -84,6 +85,7 @@ export function ChatPanelWS({
   const [pendingQuestion, setPendingQuestion] = useState<Message | null>(null);
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mentionDropdownRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -231,6 +233,31 @@ export function ChatPanelWS({
     return result;
   })();
   
+  // Find the latest PRD card ID (only show actions on the latest one)
+  const latestPrdMessageId = (() => {
+    const prdMessages = uniqueMessages.filter(
+      msg => msg.structured_data?.message_type === 'prd_created'
+    )
+    if (prdMessages.length === 0) return null
+    // Get the one with latest timestamp
+    const latest = prdMessages.sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0]
+    return latest?.id || null
+  })()
+  
+  // Find the latest Stories card ID (only show actions on the latest one)
+  const latestStoriesMessageId = (() => {
+    const storiesMessages = uniqueMessages.filter(
+      msg => msg.structured_data?.message_type === 'stories_created'
+    )
+    if (storiesMessages.length === 0) return null
+    const latest = storiesMessages.sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0]
+    return latest?.id || null
+  })()
+
   // Detect unanswered questions - show only the LATEST one
   useEffect(() => {
     // Find ALL unanswered questions
@@ -253,6 +280,21 @@ export function ChatPanelWS({
       }, 100)
     }
   }, [uniqueMessages])
+
+  // Detect stories_approved message and refresh Kanban board
+  const lastApprovedMsgIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const latestApproved = uniqueMessages.find(
+      msg => msg.structured_data?.message_type === 'stories_approved'
+    )
+    
+    // Only refresh if it's a NEW approval message we haven't processed yet
+    if (latestApproved && latestApproved.id !== lastApprovedMsgIdRef.current && projectId) {
+      console.log('[ChatPanel] Stories approved, refreshing Kanban board...')
+      lastApprovedMsgIdRef.current = latestApproved.id
+      queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+    }
+  }, [uniqueMessages, projectId, queryClient])
 
   // Initial scroll to bottom on mount
   useEffect(() => {
@@ -745,6 +787,7 @@ export function ChatPanelWS({
                     questionIds={msg.structured_data?.question_ids || []}
                     agentName={msg.agent_name}
                     answered={msg.structured_data?.answered || answeredBatchIds.has(msg.structured_data?.batch_id || '')}
+                    submittedAnswers={msg.structured_data?.answers || []}
                     onSubmit={(answers) => {
                       sendBatchAnswers(
                         msg.structured_data!.batch_id!,
@@ -828,6 +871,7 @@ export function ChatPanelWS({
                       title={msg.structured_data.title || 'PRD'}
                       filePath={msg.structured_data.file_path}
                       status={msg.structured_data.status || 'pending'}
+                      showActions={msg.id === latestPrdMessageId}
                       onView={() => {
                         if (onOpenFile) {
                           onOpenFile(msg.structured_data!.file_path)
@@ -837,10 +881,10 @@ export function ChatPanelWS({
                         }
                       }}
                       onApprove={() => {
-                        wsSendMessage("Tôi phê duyệt PRD này, hãy tạo user stories")
+                        wsSendMessage("Phê duyệt PRD này, hãy tạo user stories")
                       }}
                       onEdit={(feedback) => {
-                        wsSendMessage(`Tôi muốn chỉnh sửa PRD: ${feedback}`)
+                        wsSendMessage(`Chỉnh sửa PRD: ${feedback}`)
                       }}
                     />
                   )}
@@ -848,8 +892,9 @@ export function ChatPanelWS({
                   {/* Show stories file card if structured_data has message_type stories_created */}
                   {msg.structured_data?.message_type === 'stories_created' && msg.structured_data?.file_path && (
                     <StoriesFileCard
-                      count={msg.structured_data.count || 0}
                       filePath={msg.structured_data.file_path}
+                      status={msg.structured_data.status || 'pending'}
+                      showActions={msg.id === latestStoriesMessageId}
                       onView={() => {
                         if (onOpenFile) {
                           onOpenFile(msg.structured_data!.file_path)
@@ -857,6 +902,12 @@ export function ChatPanelWS({
                         if (onActiveTabChange) {
                           onActiveTabChange('file')
                         }
+                      }}
+                      onApprove={() => {
+                        wsSendMessage("Phê duyệt Stories")
+                      }}
+                      onEdit={(feedback) => {
+                        wsSendMessage(`Chỉnh sửa Stories: ${feedback}`)
                       }}
                     />
                   )}

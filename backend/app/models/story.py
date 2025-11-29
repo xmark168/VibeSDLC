@@ -9,7 +9,7 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlmodel import Field, Relationship, Column
 
 from app.models.base import (
-    BaseModel, StoryStatus, StoryType, StoryPriority, StoryAgentState, EpicStatus
+    BaseModel, StoryStatus, StoryType, StoryAgentState, EpicStatus
 )
 
 if TYPE_CHECKING:
@@ -65,15 +65,10 @@ class Story(BaseModel, table=True):
     )
 
     rank: int | None = Field(default=None)
-    estimate_value: int | None = Field(default=None)
     story_point: int | None = Field(default=None)
     priority: int | None = Field(default=None)
 
-    story_priority: StoryPriority | None = Field(default=None)
     dependencies: list = Field(default_factory=list, sa_column=Column(JSON))
-
-    pause: bool = Field(default=False)
-    deadline: datetime | None = Field(default=None)
     completed_at: datetime | None = Field(default=None)
 
     started_at: datetime | None = Field(default=None)

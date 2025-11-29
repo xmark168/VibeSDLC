@@ -5,12 +5,15 @@ from pathlib import Path
 from uuid import UUID
 
 from sqlmodel import Session, select
+from langfuse import get_client
+from langfuse.langchain import CallbackHandler
 
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
-from app.models import Agent as AgentModel, Project, AgentQuestion, QuestionStatus
+from app.models import Agent as AgentModel, Project, AgentQuestion, QuestionStatus, ArtifactType
 from app.utils.project_files import ProjectFiles
 from app.kafka.event_schemas import AgentTaskType
 from app.core.db import engine
+from app.services.artifact_service import ArtifactService
 from app.agents.business_analyst.src import BusinessAnalystGraph
 from app.agents.business_analyst.src.nodes import (
     process_answer, ask_one_question, 
@@ -54,9 +57,6 @@ class BusinessAnalyst(BaseAgent):
     def _load_existing_prd(self) -> dict | None:
         """Load existing PRD from Artifact table."""
         try:
-            from app.services.artifact_service import ArtifactService
-            from app.models import ArtifactType
-            
             with Session(engine) as session:
                 service = ArtifactService(session)
                 artifact = service.get_latest_version(
@@ -70,6 +70,32 @@ class BusinessAnalyst(BaseAgent):
         except Exception as e:
             logger.debug(f"[{self.name}] No existing PRD: {e}")
             return None
+    
+    def _load_existing_epics_and_stories(self) -> tuple[list, list]:
+        """Load existing epics and stories from Artifact table (for approval flow).
+        
+        Returns:
+            Tuple of (epics_list, stories_list)
+        """
+        try:
+            with Session(engine) as session:
+                service = ArtifactService(session)
+                artifact = service.get_latest_version(
+                    project_id=self.project_id,
+                    artifact_type=ArtifactType.USER_STORIES
+                )
+                if artifact and artifact.content:
+                    content = artifact.content
+                    epics = content.get("epics", [])
+                    stories = content.get("stories", [])
+                    logger.info(f"[{self.name}] Loaded existing epics/stories from artifact {artifact.id}: {len(epics)} epics, {len(stories)} stories")
+                    return epics, stories
+                else:
+                    logger.info(f"[{self.name}] No USER_STORIES artifact found for project {self.project_id}")
+                return [], []
+        except Exception as e:
+            logger.warning(f"[{self.name}] Error loading epics/stories: {e}", exc_info=True)
+            return [], []
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
         """Handle task using LangGraph.
@@ -254,18 +280,20 @@ class BusinessAnalyst(BaseAgent):
     
     async def _handle_new_task(self, task: TaskContext) -> TaskResult:
         """Handle new task - run full LangGraph."""
-        logger.info(f"[{self.name}] Handling NEW task")
+        logger.info(f"[{self.name}] Handling NEW task for project_id={self.project_id}, message: {task.content[:100] if task.content else 'empty'}")
         
         # Load existing PRD from database
         existing_prd = self._load_existing_prd()
+        
+        # Load existing epics/stories from database (for approval flow)
+        existing_epics, existing_stories = self._load_existing_epics_and_stories()
+        logger.info(f"[{self.name}] Initial state: existing_epics={len(existing_epics)}, existing_stories={len(existing_stories)}")
         
         # Setup Langfuse tracing (1 trace for entire graph - same as Team Leader)
         langfuse_handler = None
         langfuse_span = None
         langfuse_ctx = None
         try:
-            from langfuse import get_client
-            from langfuse.langchain import CallbackHandler
             langfuse = get_client()
             # Create parent span for entire graph execution
             langfuse_ctx = langfuse.start_as_current_observation(
@@ -307,7 +335,8 @@ class BusinessAnalyst(BaseAgent):
             "prd_final": None,
             "prd_saved": False,
             "change_summary": "",
-            "stories": [],
+            "epics": existing_epics,  # Load existing epics for approval flow
+            "stories": existing_stories,  # Load existing stories for approval flow
             "stories_saved": False,
             "analysis_text": "",
             "error": None,

@@ -1,27 +1,41 @@
-"""LangGraph Node Functions for Business Analyst"""
+"""LangGraph Node Functions for Business Analyst
+
+Uses shared prompt_utils from core (same pattern as Team Leader).
+"""
 
 import json
 import logging
+from pathlib import Path
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
+from sqlmodel import Session, func, select
+from sqlalchemy.orm.attributes import flag_modified
 
 from .state import BAState
 from .prompts import (
-    build_system_prompt,
-    build_user_prompt,
+    PROMPTS,
+    BA_DEFAULTS,
     parse_intent_response,
     parse_questions_response,
     parse_prd_response,
     parse_prd_update_response,
     parse_stories_response,
 )
+from app.agents.core.prompt_utils import (
+    build_system_prompt as _build_system_prompt,
+    build_user_prompt as _build_user_prompt,
+)
+from app.core.db import engine
+from app.models import AgentQuestion, Epic, Story, StoryStatus, StoryType, EpicStatus, ArtifactType
+from app.services.artifact_service import ArtifactService
 
 logger = logging.getLogger(__name__)
 
 # LLM instances (shared, like Team Leader)
-_fast_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1, timeout=15)
-_default_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7, timeout=30)
+_fast_llm = ChatOpenAI(model="gpt-4.1", temperature=0.1, timeout=30)
+_default_llm = ChatOpenAI(model="gpt-4.1", temperature=0.7, timeout=90)  # 90s for complex prompts
+_story_llm = ChatOpenAI(model="gpt-4.1", temperature=0.7, timeout=180)  # 180s for story extraction
 
 
 def _cfg(state: dict, name: str) -> dict:
@@ -30,35 +44,25 @@ def _cfg(state: dict, name: str) -> dict:
     return {"callbacks": [h], "run_name": name} if h else {}
 
 
-def _get_agent_info(agent):
-    """Get agent personality info."""
-    if agent:
-        return {
-            "name": agent.name,
-            "traits": agent.agent_model.personality_traits or [],
-            "style": agent.agent_model.communication_style or "professional and clear"
-        }
-    return {
-        "name": "Business Analyst",
-        "traits": [],
-        "style": "professional and clear"
-    }
+def _sys_prompt(agent, task: str) -> str:
+    """Build system prompt with agent personality (same pattern as Team Leader)."""
+    return _build_system_prompt(PROMPTS, task, agent, BA_DEFAULTS)
+
+
+def _user_prompt(task: str, **kwargs) -> str:
+    """Build user prompt for LLM."""
+    # Extract user_message from kwargs if present, otherwise use empty string
+    user_message = kwargs.pop("user_message", "")
+    return _build_user_prompt(PROMPTS, task, user_message, **kwargs)
 
 
 async def analyze_intent(state: BAState, agent=None) -> dict:
     """Node: Analyze user intent and classify task."""
     logger.info(f"[BA] Analyzing intent: {state['user_message'][:80]}...")
     
-    agent_info = _get_agent_info(agent)
-    system_prompt = build_system_prompt(
-        agent_name=agent_info["name"],
-        personality_traits=agent_info["traits"],
-        communication_style=agent_info["style"],
-        task_name="analyze_intent"
-    )
-    
-    user_prompt = build_user_prompt(
-        task_name="analyze_intent",
+    system_prompt = _sys_prompt(agent, "analyze_intent")
+    user_prompt = _user_prompt(
+        "analyze_intent",
         user_message=state["user_message"],
         has_prd="Yes" if state.get("existing_prd") else "No",
         has_info="Yes" if state.get("collected_info") else "No"
@@ -90,16 +94,9 @@ async def interview_requirements(state: BAState, agent=None) -> dict:
     """Node: Generate clarification questions."""
     logger.info(f"[BA] Generating interview questions...")
     
-    agent_info = _get_agent_info(agent)
-    system_prompt = build_system_prompt(
-        agent_name=agent_info["name"],
-        personality_traits=agent_info["traits"],
-        communication_style=agent_info["style"],
-        task_name="interview_requirements"
-    )
-    
-    user_prompt = build_user_prompt(
-        task_name="interview_requirements",
+    system_prompt = _sys_prompt(agent, "interview_requirements")
+    user_prompt = _user_prompt(
+        "interview_requirements",
         user_message=state["user_message"],
         collected_info=json.dumps(state.get("collected_info", {}), ensure_ascii=False),
         has_prd="Yes" if state.get("existing_prd") else "No"
@@ -171,11 +168,6 @@ async def ask_one_question(state: BAState, agent=None) -> dict:
         )
         
         # Save interview state to question's task_context for resume
-        from sqlmodel import Session
-        from sqlalchemy.orm.attributes import flag_modified
-        from app.core.db import engine
-        from app.models import AgentQuestion
-        
         with Session(engine) as session:
             question = session.get(AgentQuestion, question_id)
             if question:
@@ -266,11 +258,6 @@ async def ask_batch_questions(state: BAState, agent=None) -> dict:
         question_ids = await agent.ask_multiple_clarification_questions(batch_questions)
         
         # Save interview state to the FIRST question's task_context for resume
-        from sqlmodel import Session
-        from sqlalchemy.orm.attributes import flag_modified
-        from app.core.db import engine
-        from app.models import AgentQuestion
-        
         batch_id = None
         with Session(engine) as session:
             first_question = session.get(AgentQuestion, question_ids[0])
@@ -419,16 +406,9 @@ async def generate_prd(state: BAState, agent=None) -> dict:
     """Node: Generate PRD document."""
     logger.info(f"[BA] Generating PRD...")
     
-    agent_info = _get_agent_info(agent)
-    system_prompt = build_system_prompt(
-        agent_name=agent_info["name"],
-        personality_traits=agent_info["traits"],
-        communication_style=agent_info["style"],
-        task_name="generate_prd"
-    )
-    
-    user_prompt = build_user_prompt(
-        task_name="generate_prd",
+    system_prompt = _sys_prompt(agent, "generate_prd")
+    user_prompt = _user_prompt(
+        "generate_prd",
         user_message=state["user_message"],
         collected_info=json.dumps(state.get("collected_info", {}), ensure_ascii=False)
     )
@@ -469,16 +449,9 @@ async def update_prd(state: BAState, agent=None) -> dict:
         logger.warning("[BA] No existing PRD to update, creating new one")
         return await generate_prd(state, agent)
     
-    agent_info = _get_agent_info(agent)
-    system_prompt = build_system_prompt(
-        agent_name=agent_info["name"],
-        personality_traits=agent_info["traits"],
-        communication_style=agent_info["style"],
-        task_name="update_prd"
-    )
-    
-    user_prompt = build_user_prompt(
-        task_name="update_prd",
+    system_prompt = _sys_prompt(agent, "update_prd")
+    user_prompt = _user_prompt(
+        "update_prd",
         existing_prd=json.dumps(existing_prd, ensure_ascii=False, indent=2),
         user_message=state["user_message"]
     )
@@ -515,33 +488,28 @@ async def update_prd(state: BAState, agent=None) -> dict:
 
 
 async def extract_stories(state: BAState, agent=None) -> dict:
-    """Node: Extract user stories from PRD."""
-    logger.info(f"[BA] Extracting user stories...")
+    """Node: Extract epics with INVEST-compliant user stories from PRD."""
+    logger.info(f"[BA] Extracting epics and user stories...")
     
     prd = state.get("prd_draft") or state.get("existing_prd", {})
     
     if not prd:
         logger.error("[BA] No PRD available to extract stories from")
         return {
+            "epics": [],
             "stories": [],
             "error": "No PRD available. Please create a PRD first."
         }
     
-    agent_info = _get_agent_info(agent)
-    system_prompt = build_system_prompt(
-        agent_name=agent_info["name"],
-        personality_traits=agent_info["traits"],
-        communication_style=agent_info["style"],
-        task_name="extract_stories"
-    )
-    
-    user_prompt = build_user_prompt(
-        task_name="extract_stories",
+    system_prompt = _sys_prompt(agent, "extract_stories")
+    user_prompt = _user_prompt(
+        "extract_stories",
         prd=json.dumps(prd, ensure_ascii=False, indent=2)
     )
     
     try:
-        response = await _default_llm.ainvoke(
+        # Use _story_llm with longer timeout for complex story extraction
+        response = await _story_llm.ainvoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt)
@@ -549,33 +517,216 @@ async def extract_stories(state: BAState, agent=None) -> dict:
             config=_cfg(state, "extract_stories")
         )
         
-        stories = parse_stories_response(response.content)
-        logger.info(f"[BA] Extracted {len(stories)} user stories")
+        # Debug: log raw response length
+        logger.info(f"[BA] LLM response length: {len(response.content)} chars")
+        logger.debug(f"[BA] LLM response preview: {response.content[:500]}...")
         
-        return {"stories": stories}
+        result = parse_stories_response(response.content)
+        epics = result.get("epics", [])
+        
+        # Debug: log parsed result
+        logger.info(f"[BA] Parsed epics count: {len(epics)}")
+        if not epics:
+            logger.warning(f"[BA] No epics parsed! Response preview: {response.content[:1000]}")
+        
+        # Flatten stories for backward compatibility
+        all_stories = []
+        for epic in epics:
+            stories_in_epic = epic.get("stories", [])
+            epic_title = epic.get("title", epic.get("name", "Unknown"))
+            logger.info(f"[BA] Epic '{epic_title}' has {len(stories_in_epic)} stories")
+            for story in stories_in_epic:
+                story["epic_id"] = epic.get("id")
+                story["epic_title"] = epic_title
+                # Log story details including priority and story_point
+                logger.info(f"[BA] Extracted story: '{story.get('title', '')[:50]}' - priority={story.get('priority')}, story_point={story.get('story_point')}")
+                logger.info(f"[BA] Story keys from LLM: {list(story.keys())}")
+                all_stories.append(story)
+        
+        total_epics = len(epics)
+        total_stories = len(all_stories)
+        logger.info(f"[BA] Extracted {total_epics} epics with {total_stories} user stories")
+        
+        return {
+            "epics": epics,
+            "stories": all_stories
+        }
         
     except Exception as e:
         logger.error(f"[BA] Failed to extract stories: {e}")
         return {
+            "epics": [],
             "stories": [],
             "error": f"Failed to extract stories: {str(e)}"
         }
+
+
+async def update_stories(state: BAState, agent=None) -> dict:
+    """Node: Update existing Epics and Stories based on user feedback."""
+    logger.info(f"[BA] Updating stories based on user feedback...")
+    
+    epics = state.get("epics", [])
+    if not epics:
+        return {"error": "No existing stories to update"}
+    
+    system_prompt = _sys_prompt(agent, "update_stories")
+    user_prompt = _user_prompt(
+        "update_stories",
+        epics=json.dumps(epics, ensure_ascii=False, indent=2),
+        user_message=state["user_message"]
+    )
+    
+    try:
+        response = await _story_llm.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ],
+            config=_cfg(state, "update_stories")
+        )
+        
+        result = parse_stories_response(response.content)
+        updated_epics = result.get("epics", [])
+        change_summary = result.get("change_summary", "Đã cập nhật stories")
+        
+        # Flatten stories for backward compatibility (use get, NOT pop - to keep stories in epics)
+        all_stories = []
+        for epic in updated_epics:
+            stories_in_epic = epic.get("stories", [])  # IMPORTANT: use get() not pop() to keep stories in epic
+            epic_title = epic.get("title", epic.get("name", "Unknown"))
+            for story in stories_in_epic:
+                story["epic_id"] = epic.get("id")
+                story["epic_title"] = epic_title
+                all_stories.append(story)
+        
+        logger.info(f"[BA] Updated {len(updated_epics)} epics with {len(all_stories)} stories")
+        
+        return {
+            "epics": updated_epics,
+            "stories": all_stories,
+            "change_summary": change_summary
+        }
+        
+    except Exception as e:
+        logger.error(f"[BA] Failed to update stories: {e}")
+        return {"error": f"Failed to update stories: {str(e)}"}
+
+
+async def approve_stories(state: BAState, agent=None) -> dict:
+    """Node: Approve stories and save them to database."""
+    logger.info(f"[BA] Approving stories and saving to database...")
+    
+    epics_data = state.get("epics", [])
+    stories_data = state.get("stories", [])
+    
+    if not epics_data and not stories_data:
+        return {"error": "No stories to approve"}
+    
+    if not agent:
+        return {"error": "No agent context for saving to database"}
+    
+    try:
+        created_epics = []
+        created_stories = []
+        epic_id_map = {}  # Map string ID (EPIC-001) to UUID
+        
+        with Session(engine) as session:
+            # 1. Create Epics first
+            for epic_data in epics_data:
+                epic = Epic(
+                    title=epic_data.get("title", epic_data.get("name", "Unknown Epic")),
+                    description=epic_data.get("description"),
+                    domain=epic_data.get("domain"),
+                    project_id=agent.project_id,
+                    epic_status=EpicStatus.PLANNED
+                )
+                session.add(epic)
+                session.flush()  # Get the UUID
+                
+                # Map string ID to UUID
+                string_id = epic_data.get("id", "")
+                epic_id_map[string_id] = epic.id
+                created_epics.append({
+                    "id": str(epic.id),
+                    "title": epic.title,
+                    "domain": epic.domain
+                })
+                logger.info(f"[BA] Created Epic: {epic.title} (id={epic.id})")
+            
+            # 2. Create Stories linked to their Epics
+            # Get current max rank for TODO stories
+            max_rank_result = session.exec(
+                select(func.max(Story.rank)).where(
+                    Story.project_id == agent.project_id,
+                    Story.status == StoryStatus.TODO
+                )
+            ).one()
+            current_rank = (max_rank_result or 0)
+            
+            for story_data in stories_data:
+                # Get the epic UUID from the string ID
+                epic_string_id = story_data.get("epic_id", "")
+                epic_uuid = epic_id_map.get(epic_string_id)
+                
+                # Parse acceptance criteria
+                acceptance_criteria = story_data.get("acceptance_criteria", [])
+                if isinstance(acceptance_criteria, list):
+                    acceptance_criteria = "\n".join(f"- {ac}" for ac in acceptance_criteria)
+                
+                # Auto-increment rank for ordering
+                current_rank += 1
+                
+                # Get priority and story_point from LLM
+                priority = story_data.get("priority")
+                story_point = story_data.get("story_point")
+                logger.info(f"[BA] Creating story: '{story_data.get('title', '')[:50]}' - priority={priority}, story_point={story_point}, epic_id={epic_string_id}")
+                logger.info(f"[BA] Story data keys: {list(story_data.keys())}")
+                
+                story = Story(
+                    title=story_data.get("title", "Unknown Story"),
+                    description=story_data.get("description"),
+                    acceptance_criteria=acceptance_criteria,
+                    project_id=agent.project_id,
+                    epic_id=epic_uuid,
+                    status=StoryStatus.TODO,
+                    type=StoryType.USER_STORY,
+                    priority=priority,
+                    story_point=story_point,
+                    rank=current_rank,
+                )
+                session.add(story)
+                session.flush()
+                
+                created_stories.append({
+                    "id": str(story.id),
+                    "title": story.title,
+                    "epic_id": str(epic_uuid) if epic_uuid else None
+                })
+                logger.info(f"[BA] Created Story: {story.title} (id={story.id})")
+            
+            session.commit()
+        
+        logger.info(f"[BA] Saved {len(created_epics)} epics and {len(created_stories)} stories to database")
+        
+        return {
+            "stories_approved": True,
+            "created_epics": created_epics,
+            "created_stories": created_stories,
+            "approval_message": f"Đã phê duyệt và thêm {len(created_epics)} Epics, {len(created_stories)} Stories vào backlog."
+        }
+        
+    except Exception as e:
+        logger.error(f"[BA] Failed to save stories to database: {e}", exc_info=True)
+        return {"error": f"Failed to save stories: {str(e)}"}
 
 
 async def analyze_domain(state: BAState, agent=None) -> dict:
     """Node: Perform domain analysis."""
     logger.info(f"[BA] Analyzing domain...")
     
-    agent_info = _get_agent_info(agent)
-    system_prompt = build_system_prompt(
-        agent_name=agent_info["name"],
-        personality_traits=agent_info["traits"],
-        communication_style=agent_info["style"],
-        task_name="domain_analysis"
-    )
-    
-    user_prompt = build_user_prompt(
-        task_name="domain_analysis",
+    system_prompt = _sys_prompt(agent, "domain_analysis")
+    user_prompt = _user_prompt(
+        "domain_analysis",
         user_message=state["user_message"],
         collected_info=json.dumps(state.get("collected_info", {}), ensure_ascii=False)
     )
@@ -616,11 +767,6 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
     # Save PRD if exists
     if state.get("prd_draft") and agent:
         try:
-            from sqlmodel import Session
-            from app.core.db import engine
-            from app.services.artifact_service import ArtifactService
-            from app.models import ArtifactType
-            
             prd_data = state["prd_draft"]
             project_name = prd_data.get("project_name", "Project")
             
@@ -673,34 +819,81 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
             logger.error(f"[BA] Failed to save PRD: {e}", exc_info=True)
             result["error"] = f"Failed to save PRD: {str(e)}"
     
-    # Save stories if exist
-    if state.get("stories") and project_files:
+    # Save epics and stories if exist (only for extract_stories/update_stories, not approve or prd_update)
+    epics_data = state.get("epics", [])
+    stories_data = state.get("stories", [])
+    # Check if stories were approved (either by stories_approved flag or by presence of created_epics)
+    is_stories_approved = state.get("stories_approved", False) or bool(state.get("created_epics"))
+    # Only process stories for story-related intents (not prd_create, prd_update, etc.)
+    intent = state.get("intent", "")
+    is_story_intent = intent in ["extract_stories", "stories_update", "update_stories"]
+    
+    logger.info(f"[BA] save_artifacts: epics_count={len(epics_data)}, stories_count={len(stories_data)}, is_approved={is_stories_approved}, intent={intent}")
+    
+    # Only save markdown and send stories_created message for extract_stories/update_stories (not approve or prd_update)
+    if (epics_data or stories_data) and project_files and not is_stories_approved and is_story_intent:
         try:
-            stories_data = state["stories"]
-            await project_files.save_user_stories(stories_data)
+            # Save with epic structure to markdown
+            await project_files.save_user_stories(epics_data, stories_data)
             result["stories_saved"] = True
             
+            epics_count = len(epics_data)
             stories_count = len(stories_data)
-            result["summary"] = f"Extracted {stories_count} user stories"
+            
+            # Also save to Artifact table for later retrieval (for approval flow)
+            if agent:
+                try:
+                    logger.info(f"[BA] Saving stories artifact for project_id={agent.project_id}")
+                    with Session(engine) as session:
+                        service = ArtifactService(session)
+                        # Store epics with their stories inside
+                        artifact_content = {
+                            "epics": epics_data,
+                            "stories": stories_data,
+                            "epics_count": epics_count,
+                            "stories_count": stories_count
+                        }
+                        # Log first story to verify priority/story_point
+                        if stories_data:
+                            first_story = stories_data[0]
+                            logger.info(f"[BA] Saving artifact - first story keys: {list(first_story.keys())}")
+                            logger.info(f"[BA] Saving artifact - first story priority={first_story.get('priority')}, story_point={first_story.get('story_point')}")
+                        artifact = service.create_artifact(
+                            project_id=agent.project_id,
+                            agent_id=agent.agent_id,
+                            agent_name=agent.name,
+                            artifact_type=ArtifactType.USER_STORIES,
+                            title="User Stories",
+                            content=artifact_content,
+                            description=f"{epics_count} epics with {stories_count} stories",
+                            save_to_file=False
+                        )
+                        result["stories_artifact_id"] = str(artifact.id)
+                        logger.info(f"[BA] Saved stories artifact: {artifact.id} for project {agent.project_id}")
+                except Exception as artifact_err:
+                    logger.error(f"[BA] Failed to save stories artifact: {artifact_err}", exc_info=True)
+            
+            result["summary"] = f"Extracted {epics_count} epics with {stories_count} INVEST-compliant stories"
             result["next_steps"].extend([
-                "Review and prioritize stories",
-                "Add stories to backlog",
-                "Estimate effort for each story"
+                "Review epics and prioritize stories",
+                "Approve to add to backlog"
             ])
             
-            # Send success message with View button
+            # Send success message with View button (pending approval)
             if agent:
                 await agent.message_user(
                     event_type="response",
-                    content=f"User Stories đã được tạo",
+                    content=f"Stories đã được tạo",
                     details={
                         "message_type": "stories_created",
                         "file_path": "docs/user-stories.md",
-                        "count": stories_count
+                        "epics_count": epics_count,
+                        "stories_count": stories_count,
+                        "status": "pending"  # Important: pending status
                     }
                 )
             
-            logger.info(f"[BA] Saved {stories_count} user stories")
+            logger.info(f"[BA] Saved {epics_count} epics with {stories_count} user stories (pending approval)")
             
         except Exception as e:
             logger.error(f"[BA] Failed to save stories: {e}", exc_info=True)
@@ -730,6 +923,30 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
     if state.get("change_summary"):
         result["change_summary"] = state["change_summary"]
         # Card is already shown in the PRD save section above
+    
+    # Stories approved - only save to DB, notify Kanban to refresh (no card)
+    stories_approved_flag = state.get("stories_approved", False)
+    created_epics_list = state.get("created_epics", [])
+    logger.info(f"[BA] Checking stories_approved: flag={stories_approved_flag}, created_epics={len(created_epics_list)}")
+    
+    if stories_approved_flag or created_epics_list:
+        approval_message = state.get("approval_message", "Epics & Stories đã được phê duyệt")
+        
+        result["summary"] = approval_message
+        result["stories_approved"] = True
+        result["created_epics"] = created_epics_list
+        result["created_stories"] = state.get("created_stories", [])
+        
+        # Send simple notification to trigger Kanban refresh (no card displayed)
+        if agent:
+            logger.info(f"[BA] Sending stories_approved message to frontend")
+            await agent.message_user(
+                event_type="response",
+                content=f"✅ {approval_message}",
+                details={
+                    "message_type": "stories_approved"  # Frontend will refresh Kanban, no card
+                }
+            )
     
     logger.info(f"[BA] Artifacts saved: {result['summary']}")
     

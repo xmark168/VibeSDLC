@@ -47,9 +47,14 @@ class BAState(TypedDict, total=False):
     prd_saved: bool
     change_summary: str  # For PRD updates
     
-    # Stories workflow
-    stories: list[dict]
+    # Stories workflow (Epic/Story hierarchy)
+    epics: list[dict]  # List of epics, each containing stories
+    stories: list[dict]  # Flat list for backward compatibility
     stories_saved: bool
+    stories_approved: bool  # True after user approves stories
+    created_epics: list[dict]  # Epics created in DB after approval
+    created_stories: list[dict]  # Stories created in DB after approval
+    approval_message: str  # Message after approval
     
     # Domain analysis
     analysis_text: str

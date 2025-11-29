@@ -1,0 +1,159 @@
+"""Developer V2 State Definition."""
+
+from typing import TypedDict, Literal, Any, List, Optional, Dict
+
+
+Action = Literal["ANALYZE", "DESIGN", "PLAN", "IMPLEMENT", "VALIDATE", "CLARIFY", "RESPOND", "CODE_PLAN", "SUMMARIZE"]
+TaskType = Literal["feature", "bugfix", "refactor", "enhancement", "documentation"]
+Complexity = Literal["low", "medium", "high"]
+
+
+class DeveloperState(TypedDict, total=False):
+    # Input from story event
+    story_id: str
+    story_content: str
+    story_title: str
+    acceptance_criteria: List[str]
+    project_id: str
+    task_id: str
+    user_id: str
+    langfuse_handler: Any
+    
+    # Router output
+    action: Action
+    task_type: TaskType
+    complexity: Complexity
+    
+    # Analysis results
+    analysis_result: dict
+    affected_files: List[str]
+    dependencies: List[str]
+    risks: List[str]
+    estimated_hours: float
+    
+    # Planning results
+    implementation_plan: List[dict]
+    current_step: int
+    total_steps: int
+    
+    # Implementation results
+    code_changes: List[dict]
+    files_created: List[str]
+    files_modified: List[str]
+    
+    # Validation results
+    validation_result: dict
+    tests_passed: bool
+    lint_passed: bool
+    ac_verified: List[str]
+    
+    # Workspace context
+    workspace_path: str
+    branch_name: str
+    main_workspace: str
+    workspace_ready: bool
+    index_ready: bool  # CocoIndex semantic search ready
+    merged: bool  # Branch merged to main
+    
+    # Output
+    message: str
+    reason: str
+    confidence: float
+    error: Optional[str]
+    
+    # ==========================================================================
+    # MetaGPT-inspired fields
+    # ==========================================================================
+    
+    # Code Plan & Change document (strategic guidance before coding)
+    code_plan_doc: Optional[str]
+    development_plan: Optional[List[str]]
+    incremental_changes: Optional[List[Dict[str, str]]]
+    
+    # Related code context for implementation
+    related_code_context: Optional[str]
+    legacy_code: Optional[str]
+    
+    # Web research context (Tavily search results)
+    research_context: Optional[str]  # Framework best practices from web search
+    
+    # Project context (AGENTS.md + framework info)
+    project_context: Optional[str]  # Loaded from AGENTS.md in workspace
+    agents_md: Optional[str]  # Raw AGENTS.md content
+    
+    # Debug and feedback logs
+    error_logs: Optional[str]
+    bug_feedback: Optional[str]
+    
+    # Summarization and validation (IS_PASS check) - MetaGPT SummarizeCode pattern
+    code_summary: Optional[Dict[str, Any]]
+    is_pass: Optional[bool]
+    needs_revision: bool
+    revision_count: int
+    max_revisions: int
+    summarize_feedback: Optional[str]  # Feedback from summarize for next implement iteration
+    summarize_count: int  # Number of summarize iterations
+    max_summarize: int  # Max summarize iterations (default: 3)
+    
+    # ==========================================================================
+    # System Design (MetaGPT Architect pattern)
+    # ==========================================================================
+    system_design: Optional[Dict[str, Any]]  # Full design document
+    data_structures: Optional[str]  # Class/interface definitions (mermaid)
+    api_interfaces: Optional[str]  # API design
+    call_flow: Optional[str]  # Sequence diagram (mermaid)
+    design_doc: Optional[str]  # Rendered design doc
+    task_doc: Optional[str]
+    
+    # ==========================================================================
+    # Code Review (LGTM/LBTM pattern from MetaGPT)
+    # ==========================================================================
+    code_review_k: int  # Max review iterations (default: 2)
+    code_review_passed: bool
+    code_review_results: Optional[List[Dict[str, Any]]]
+    code_review_iteration: int
+    
+    # ==========================================================================
+    # Run Code (Execute tests to verify)
+    # ==========================================================================
+    run_result: Optional[Dict[str, Any]]  # RunCodeResult
+    test_command: Optional[List[str]]
+    run_stdout: Optional[str]
+    run_stderr: Optional[str]
+    run_status: Optional[str]  # "PASS" or "FAIL"
+    
+    # ==========================================================================
+    # Debug Error (Fix bugs based on test output)
+    # ==========================================================================
+    debug_count: int
+    max_debug: int  # Max debug attempts (default: 5, MetaGPT pattern)
+    last_debug_file: Optional[str]
+    debug_history: Optional[List[Dict[str, Any]]]
+    
+    # ==========================================================================
+    # React Loop Mode (MetaGPT Engineer2 pattern)
+    # ==========================================================================
+    react_loop_count: int  # Current iteration in react loop
+    max_react_loop: int  # Max iterations (default: 40, MetaGPT Engineer2 pattern)
+    react_mode: bool  # Whether in react mode
+    
+    # ==========================================================================
+    # Editor State (MetaGPT Editor pattern)
+    # ==========================================================================
+    editor_current_file: Optional[str]
+    editor_current_line: int
+    editor_working_dir: Optional[str]
+    
+    # ==========================================================================
+    # Enhanced Context (MetaGPT WriteCode pattern)
+    # ==========================================================================
+    file_to_rewrite: Optional[str]  # Current file being implemented
+    existing_files_context: Optional[str]  # Related files for context
+    code_plan_and_change: Optional[str]  # Git diff style changes
+    
+    # ==========================================================================
+    # Send To (MetaGPT RunCode analysis)
+    # ==========================================================================
+    send_to: Optional[str]  # "NoOne", "Engineer", "QaEngineer"
+    file_to_fix: Optional[str]  # File that needs fixing
+    fix_instructions: Optional[str]  # How to fix the error

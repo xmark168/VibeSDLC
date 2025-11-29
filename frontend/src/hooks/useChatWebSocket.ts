@@ -726,6 +726,26 @@ export function useChatWebSocket(
       })
       
       console.log('[WS] 📨📨📨 Sent batch answers:', { batch_id, count: answers.length })
+      
+      // Immediately update local state with answers (don't wait for server confirmation)
+      setMessages(prev => prev.map(m => {
+        if (m.structured_data?.batch_id === batch_id) {
+          return {
+            ...m,
+            structured_data: {
+              ...m.structured_data,
+              answered: true,
+              status: 'answered',
+              answers: answers,  // Save answers locally
+            }
+          }
+        }
+        return m
+      }))
+      
+      // Also mark as answered
+      setAnsweredBatchIds(prev => new Set([...prev, batch_id]))
+      
       return true
     } catch (error) {
       console.error('[WS] Failed to send batch answers:', error)

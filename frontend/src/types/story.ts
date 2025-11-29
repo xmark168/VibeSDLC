@@ -16,13 +16,9 @@ export interface Story {
   reviewer_id?: string | null;
   acceptance_criteria?: string;
   rank?: number | null;
-  estimate_value?: number | null;
   story_point?: number | null;
-  priority?: number;
-  story_priority?: 'High' | 'Medium' | 'Low';
+  priority?: number | null;
   dependencies: string[];
-  pause: boolean;
-  deadline?: string | null;
   completed_at?: string | null;
   started_at?: string | null;
   review_started_at?: string | null;

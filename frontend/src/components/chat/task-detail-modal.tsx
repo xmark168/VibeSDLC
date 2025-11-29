@@ -225,6 +225,14 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
             </div>
           )}
 
+          {/* Acceptance Criteria */}
+          {card.acceptance_criteria && (
+            <div>
+              <h4 className="text-sm font-semibold text-foreground mb-2">Acceptance Criteria</h4>
+              <p className="text-sm text-muted-foreground whitespace-pre-wrap">{card.acceptance_criteria}</p>
+            </div>
+          )}
+
           {/* Metadata Grid */}
           <div className="grid grid-cols-2 gap-4">
             {/* Story Points / Estimate */}
@@ -238,12 +246,17 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
               </div>
             )}
 
-            {(card.estimate_value !== undefined && card.estimate_value !== null) && (
+            {(card.priority !== undefined && card.priority !== null) && (
               <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-muted-foreground" />
+                <Flag className="w-4 h-4 text-muted-foreground" />
                 <div>
-                  <div className="text-xs text-muted-foreground">Ước lượng</div>
-                  <div className="text-sm font-medium">{card.estimate_value} giờ</div>
+                  <div className="text-xs text-muted-foreground">Priority</div>
+                  <div className="text-sm font-medium">
+                    {card.priority === 1 ? 'Critical' : 
+                     card.priority === 2 ? 'High' : 
+                     card.priority === 3 ? 'Medium' : 
+                     card.priority === 4 ? 'Low' : 'Nice-to-have'}
+                  </div>
                 </div>
               </div>
             )}
@@ -274,6 +287,41 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
                     {card.reviewer_id.slice(0, 8)}
                   </div>
                   <div className="text-xs text-muted-foreground">Tester</div>
+                </div>
+              </div>
+            )}
+
+            {/* Rank */}
+            {(card.rank !== undefined && card.rank !== null) && (
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-muted-foreground" />
+                <div>
+                  <div className="text-xs text-muted-foreground">Rank</div>
+                  <div className="text-sm font-medium">{card.rank}</div>
+                </div>
+              </div>
+            )}
+
+            {/* Epic ID */}
+            {card.epic_id && (
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-muted-foreground" />
+                <div>
+                  <div className="text-xs text-muted-foreground">Epic ID</div>
+                  <div className="text-sm font-medium font-mono">{card.epic_id.slice(0, 8)}</div>
+                </div>
+              </div>
+            )}
+
+            {/* Created at */}
+            {card.created_at && (
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-muted-foreground" />
+                <div>
+                  <div className="text-xs text-muted-foreground">Ngày tạo</div>
+                  <div className="text-sm font-medium">
+                    {new Date(card.created_at).toLocaleDateString('vi-VN')}
+                  </div>
                 </div>
               </div>
             )}
