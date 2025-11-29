@@ -242,11 +242,17 @@ class SimpleDeveloperRunner:
             "code_changes": [],
             "files_created": [],
             "files_modified": [],
+            "affected_files": [],
             "current_step": 0,
             "total_steps": 0,
             "validation_result": None,
             "message": None,
             "confidence": None,
+            "reason": None,
+            
+            # Design document
+            "design_doc": None,
+            "code_plan_doc": None,
             
             # Code review - reduce iterations for faster completion
             "code_review_k": 1,  # Only 1 review iteration
@@ -260,6 +266,7 @@ class SimpleDeveloperRunner:
             "run_stdout": "",
             "run_stderr": "",
             "test_command": None,  # Auto-detect test framework (pnpm/npm/jest/pytest)
+            "error_logs": "",
             
             # Debug
             "debug_count": 0,
@@ -277,9 +284,16 @@ class SimpleDeveloperRunner:
             "summarize_count": 0,
             "max_summarize": 3,
             
+            # Revision tracking
+            "revision_count": 0,
+            "max_revisions": 3,
+            
             # Project context
             "project_context": None,
+            "project_structure": {},
             "agents_md": None,
+            "related_code_context": "",
+            "research_context": "",
         }
         
         logger.info(f"[{self.name}] Starting story: {story.get('title', 'Untitled')}")
@@ -545,6 +559,8 @@ async def main():
         print(f"Files Modified: {len(result.get('files_modified', []))}")
         print(f"Code Review: {'PASSED' if result.get('code_review_passed') else 'PENDING'}")
         print(f"Tests: {result.get('run_status', 'N/A')}")
+        print(f"Debug Iterations: {result.get('debug_count', 0)}")
+        print(f"React Loops: {result.get('react_loop_count', 0)}")
         
         # Show created files
         files_created = result.get('files_created', [])
