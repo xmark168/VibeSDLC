@@ -156,6 +156,76 @@ def _save_design_docs(workspace_path: str, design_result: dict, design_doc: str,
         logger.warning(f"[design] Failed to save design docs: {e}")
 
 
+def _extract_plan_from_raw(raw_content: str, state: dict) -> "ImplementationPlan":
+    """Extract implementation plan from raw LLM response when JSON parsing fails.
+    
+    Creates a basic plan from diff content or file mentions in the response.
+    """
+    import re
+    
+    # Extract file paths from diff headers or mentions
+    file_patterns = [
+        r'---\s*(?:Old/)?([a-zA-Z0-9_/.-]+\.[a-zA-Z]+)',  # --- Old/file.py
+        r'\+\+\+\s*(?:New/)?([a-zA-Z0-9_/.-]+\.[a-zA-Z]+)',  # +++ New/file.py
+        r'##\s*(?:Code:)?\s*([a-zA-Z0-9_/.-]+\.[a-zA-Z]+)',  # ## Code: file.py
+        r'`([a-zA-Z0-9_/.-]+\.[a-zA-Z]+)`',  # `file.py`
+    ]
+    
+    files_found = set()
+    for pattern in file_patterns:
+        matches = re.findall(pattern, raw_content)
+        files_found.update(matches)
+    
+    # Filter to likely source files
+    source_exts = {'.py', '.js', '.ts', '.tsx', '.jsx', '.css', '.html', '.json', '.yaml', '.yml'}
+    files_found = [f for f in files_found if any(f.endswith(ext) for ext in source_exts)]
+    
+    # Use affected_files from state if no files found
+    if not files_found:
+        files_found = state.get("affected_files", [])
+    
+    # Create steps from files
+    steps = []
+    for i, file_path in enumerate(files_found[:10], 1):  # Limit to 10 files
+        # Determine if create or modify based on workspace
+        workspace_path = state.get("workspace_path", "")
+        action = "modify"
+        if workspace_path:
+            full_path = Path(workspace_path) / file_path
+            if not full_path.exists():
+                action = "create"
+        
+        steps.append(ImplementationStep(
+            order=i,
+            description=f"Implement {file_path}",
+            file_path=file_path,
+            action=action,
+            estimated_minutes=15,
+            dependencies=[]
+        ))
+    
+    # If still no steps, create a generic one
+    if not steps:
+        steps.append(ImplementationStep(
+            order=1,
+            description="Implement required changes based on requirements",
+            file_path="main.py",
+            action="create",
+            estimated_minutes=30,
+            dependencies=[]
+        ))
+    
+    return ImplementationPlan(
+        story_summary=state.get("story_title", "Implementation"),
+        steps=steps,
+        development_plan=[f"Step {s.order}: {s.description}" for s in steps],
+        incremental_changes=[raw_content[:2000]] if raw_content else [],
+        total_estimated_hours=sum(s.estimated_minutes for s in steps) / 60,
+        critical_path=list(range(1, len(steps) + 1)),
+        rollback_plan="Revert changes if issues found"
+    )
+
+
 async def router(state: DeveloperState, agent=None) -> DeveloperState:
     """Route story to appropriate processing node."""
     try:
@@ -512,8 +582,23 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
         ]
         
         response = await _code_llm.ainvoke(messages, config=_cfg(state, "plan"))
-        clean_json = _clean_json(response.content)
-        plan_result = ImplementationPlan.model_validate_json(clean_json)
+        raw_content = response.content
+        clean_json = _clean_json(raw_content)
+        
+        plan_result = None
+        
+        # Try JSON parsing first
+        if clean_json and clean_json.strip():
+            try:
+                plan_result = ImplementationPlan.model_validate_json(clean_json)
+                logger.info(f"[plan] Parsed JSON successfully")
+            except Exception as je:
+                logger.warning(f"[plan] JSON parse failed: {je}")
+        
+        # Fallback: Extract plan from raw response
+        if not plan_result:
+            plan_result = _extract_plan_from_raw(raw_content, state)
+            logger.info(f"[plan] Extracted plan from raw response")
         
         logger.info(f"[plan] Created {len(plan_result.steps)} steps, estimated {plan_result.total_estimated_hours}h")
         
@@ -589,17 +674,31 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             # await agent.message_user("status", f"⚙️ Step {current_step + 1}/{len(plan_steps)}: {step.get('description', '')} [workspace: {workspace_path}]")  # Disabled for Kafka mode
             pass
         
-        # Gather related code context using CocoIndex semantic search (preferred)
-        # Falls back to file import if CocoIndex is not available
+        # Gather related code context using MetaGPT pattern
+        # Mark current file as "file to rewrite" and others as "existing files"
         related_context = state.get("related_code_context", "")
         if workspace_path and not related_context:
+            task_files = state.get("affected_files", [])
             index_ready = state.get("index_ready", False)
             project_id = state.get("project_id", "default")
             task_id = state.get("task_id") or state.get("story_id", "")
             step_description = step.get("description", "")
             
-            if index_ready:
-                # Use CocoIndex semantic search (efficient, relevant results only)
+            # Use MetaGPT-style context with "file to rewrite" marking
+            try:
+                from app.agents.developer_v2.tools import get_code_context_for_file
+                related_context = get_code_context_for_file(
+                    workspace_path=workspace_path,
+                    target_file=current_file,
+                    task_files=task_files if task_files else [],
+                    max_context_lines=500
+                )
+                logger.info(f"[implement] Using MetaGPT-style context for {current_file}")
+            except Exception as e:
+                logger.warning(f"[implement] Context gathering failed: {e}")
+            
+            # Fallback: CocoIndex semantic search if available
+            if (not related_context or related_context == "No existing code files found.") and index_ready:
                 try:
                     from app.agents.developer_v2.tools import get_related_code_indexed
                     related_context = get_related_code_indexed(
@@ -612,12 +711,10 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
                     logger.info(f"[implement] Using CocoIndex for context")
                 except Exception as e:
                     logger.warning(f"[implement] CocoIndex search failed: {e}")
-                    related_context = ""
             
-            # Fallback to file import if CocoIndex not available or failed
-            if not related_context or related_context.startswith("Search error"):
+            # Final fallback: get_related_code_context
+            if not related_context or related_context.startswith("Search error") or related_context == "No existing code files found.":
                 from app.agents.developer_v2.tools import get_related_code_context
-                task_files = state.get("affected_files", [])
                 related_context = get_related_code_context(
                     workspace_path=workspace_path,
                     current_file=current_file,

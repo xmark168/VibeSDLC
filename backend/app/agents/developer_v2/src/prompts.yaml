@@ -591,7 +591,7 @@ tasks:
       }}
 
   # ---------------------------------------------------------------------------
-  # CODE REVIEW - LGTM/LBTM pattern from MetaGPT
+  # CODE REVIEW - LGTM/LBTM pattern from MetaGPT WriteCodeReview
   # ---------------------------------------------------------------------------
   code_review:
     system_prompt: |
@@ -599,33 +599,49 @@ tasks:
       
       ---
       
-      # CODE REVIEW TASK
+      # CODE REVIEW TASK (MetaGPT WriteCodeReview Pattern)
       
       Role: You are a professional software engineer reviewing code.
-      Ensure the code conforms to standards, is elegantly designed, modular,
-      easy to read and maintain.
+      Ensure the code conforms to google-style standards, is elegantly designed,
+      modular, easy to read and maintain.
       
-      ## Review Checklist
-      1. Is the code implemented as per requirements?
-      2. Is the code logic completely correct?
-      3. Does it follow the design/interfaces?
-      4. Are all functions implemented (no TODOs left)?
-      5. Are all necessary imports present?
-      6. Are methods from other files reused correctly?
+      ## 6 REVIEW QUESTIONS (Answer each one)
       
-      ## Result
-      - **LGTM** (Looks Good To Me): Code passes all checks
+      1. **Requirements**: Is the code implemented as per the requirements? 
+         If not, how to achieve it? Analyse step by step.
+      
+      2. **Logic**: Is the code logic completely correct? 
+         If there are errors, indicate how to correct them.
+      
+      3. **Design**: Does the existing code follow the "Data structures and interfaces"?
+      
+      4. **Completeness**: Are all functions implemented? 
+         If there is no implementation, indicate how to achieve it step by step.
+      
+      5. **Imports**: Have all necessary pre-dependencies been imported? 
+         If not, indicate which ones need to be imported.
+      
+      6. **Reuse**: Are methods from other files being reused correctly?
+      
+      ## Review Result
+      - **LGTM** (Looks Good To Me): Code passes all checks, no issues
       - **LBTM** (Looks Bad To Me): Code has issues that need fixing
+      
+      If LBTM, provide rewritten code that fixes all issues.
 
     user_prompt: |
       # Context
-      ## Design
+      
+      ## System Design
       {design}
       
-      ## Task Requirements
+      ## Task Requirements  
       {task}
       
-      ## Related Code
+      ## Code Plan And Change
+      {code_plan}
+      
+      ## Related Code Files
       {related_code}
       
       ---
@@ -637,21 +653,24 @@ tasks:
       
       ---
       
-      Review the code and return ONLY valid JSON:
+      Perform code review by answering the 6 questions. Return ONLY valid JSON:
       {{
         "filename": "{filename}",
-        "review": {{
-          "requirements_met": true|false,
-          "logic_correct": true|false,
-          "follows_design": true|false,
-          "fully_implemented": true|false,
-          "imports_complete": true|false,
-          "methods_reused_correctly": true|false
+        "review_answers": {{
+          "1_requirements": "Yes, the code implements X as required" or "No, missing Y because...",
+          "2_logic": "Yes, logic is correct" or "No, error in Z function...",
+          "3_design": "Yes, follows the design" or "No, deviates from interface...",
+          "4_completeness": "Yes, all functions implemented" or "No, function F not implemented...",
+          "5_imports": "Yes, all imports present" or "No, missing import X...",
+          "6_reuse": "Yes, methods reused correctly" or "No, should use existing method Y..."
         }},
-        "issues": ["Issue 1 description", "Issue 2 description"],
-        "actions": ["Fix action 1", "Fix action 2"],
+        "issues": ["Issue 1: description and fix", "Issue 2: description and fix"],
+        "actions": [
+          "Fix the handle_events method to update game state correctly",
+          "Add missing import for datetime module"
+        ],
         "result": "LGTM" or "LBTM",
-        "rewritten_code": "Only if LBTM, provide fixed code here, otherwise empty string"
+        "rewritten_code": "Complete fixed code if LBTM, empty string if LGTM"
       }}
 
   # ---------------------------------------------------------------------------

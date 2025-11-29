@@ -883,3 +883,369 @@ def get_workspace_tools(workspace_path: str):
         GitPythonTool(root_dir=workspace_path),
         ShellCommandTool(root_dir=workspace_path),
     ]
+
+
+# =============================================================================
+# DEVELOPER EDITOR (MetaGPT-inspired)
+# =============================================================================
+
+class DeveloperEditor:
+    """Editor tool for file operations (inspired by MetaGPT Editor).
+    
+    Provides file editing capabilities with line-number awareness,
+    search, and auto-lint support.
+    """
+    
+    def __init__(self, workspace_path: str, enable_auto_lint: bool = True):
+        self.workspace_path = Path(workspace_path)
+        self.current_file: Optional[Path] = None
+        self.current_line: int = 1
+        self.window: int = 100  # Lines to show
+        self.enable_auto_lint = enable_auto_lint
+    
+    def open_file(self, path: str, line_number: int = 1) -> str:
+        """Open a file and show content around specified line.
+        
+        Args:
+            path: File path (relative to workspace or absolute)
+            line_number: Line to center the view on (default: 1)
+            
+        Returns:
+            File content with line numbers
+        """
+        file_path = self._resolve_path(path)
+        
+        if not file_path.exists():
+            return f"Error: File not found: {path}"
+        
+        self.current_file = file_path
+        self.current_line = line_number
+        
+        return self._print_window(file_path, line_number)
+    
+    def read_file(self, path: str) -> str:
+        """Read entire file content.
+        
+        Args:
+            path: File path
+            
+        Returns:
+            File content with line numbers
+        """
+        file_path = self._resolve_path(path)
+        
+        if not file_path.exists():
+            return f"Error: File not found: {path}"
+        
+        try:
+            content = file_path.read_text(encoding='utf-8')
+            lines = content.splitlines()
+            numbered = [f"{i+1:03d}|{line}" for i, line in enumerate(lines)]
+            return f"[File: {file_path} ({len(lines)} lines)]\n" + "\n".join(numbered)
+        except Exception as e:
+            return f"Error reading file: {e}"
+    
+    def edit_file_by_replace(
+        self,
+        file_path: str,
+        start_line: int,
+        end_line: int,
+        new_content: str
+    ) -> str:
+        """Replace lines in a file (MetaGPT pattern).
+        
+        Args:
+            file_path: Path to file
+            start_line: First line to replace (1-indexed)
+            end_line: Last line to replace (inclusive)
+            new_content: New content to insert
+            
+        Returns:
+            Success message or error
+        """
+        path = self._resolve_path(file_path)
+        
+        if not path.exists():
+            return f"Error: File not found: {file_path}"
+        
+        try:
+            lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
+            total_lines = len(lines)
+            
+            # Validate line numbers
+            if start_line < 1 or start_line > total_lines:
+                return f"Error: start_line {start_line} out of range (1-{total_lines})"
+            if end_line < start_line or end_line > total_lines:
+                return f"Error: end_line {end_line} invalid"
+            
+            # Prepare new content
+            if not new_content.endswith('\n'):
+                new_content += '\n'
+            new_lines = new_content.splitlines(keepends=True)
+            
+            # Replace lines
+            result_lines = lines[:start_line-1] + new_lines + lines[end_line:]
+            
+            # Write back
+            path.write_text(''.join(result_lines), encoding='utf-8')
+            
+            # Auto-lint if enabled
+            lint_result = ""
+            if self.enable_auto_lint:
+                lint_errors = self._lint_file(path)
+                if lint_errors:
+                    lint_result = f"\n[Lint warnings: {lint_errors}]"
+            
+            new_total = len(result_lines)
+            return f"[File: {path} ({new_total} lines after edit)]\n{self._print_window(path, start_line)}{lint_result}"
+            
+        except Exception as e:
+            return f"Error editing file: {e}"
+    
+    def insert_content_at_line(self, file_path: str, line_number: int, content: str) -> str:
+        """Insert content at specified line.
+        
+        Args:
+            file_path: Path to file
+            line_number: Line number to insert at (1-indexed)
+            content: Content to insert
+            
+        Returns:
+            Success message or error
+        """
+        path = self._resolve_path(file_path)
+        
+        if not path.exists():
+            return f"Error: File not found: {file_path}"
+        
+        try:
+            lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
+            
+            if not content.endswith('\n'):
+                content += '\n'
+            
+            # Insert at line
+            insert_idx = max(0, min(line_number - 1, len(lines)))
+            lines.insert(insert_idx, content)
+            
+            path.write_text(''.join(lines), encoding='utf-8')
+            
+            return f"[Inserted at line {line_number}]\n{self._print_window(path, line_number)}"
+            
+        except Exception as e:
+            return f"Error inserting content: {e}"
+    
+    def search_file(self, search_term: str, file_path: Optional[str] = None) -> str:
+        """Search for term in file.
+        
+        Args:
+            search_term: Text to search for
+            file_path: Optional file path (uses current file if not provided)
+            
+        Returns:
+            Search results with line numbers
+        """
+        if file_path:
+            path = self._resolve_path(file_path)
+        elif self.current_file:
+            path = self.current_file
+        else:
+            return "Error: No file specified or open"
+        
+        if not path.exists():
+            return f"Error: File not found"
+        
+        try:
+            matches = []
+            lines = path.read_text(encoding='utf-8').splitlines()
+            for i, line in enumerate(lines, 1):
+                if search_term in line:
+                    matches.append(f"Line {i}: {line.strip()}")
+            
+            if matches:
+                return f'[Found {len(matches)} matches for "{search_term}"]\n' + "\n".join(matches)
+            else:
+                return f'[No matches found for "{search_term}"]'
+                
+        except Exception as e:
+            return f"Error searching: {e}"
+    
+    def search_dir(self, search_term: str, dir_path: str = ".") -> str:
+        """Search for term in all files in directory.
+        
+        Args:
+            search_term: Text to search for
+            dir_path: Directory to search in
+            
+        Returns:
+            Search results with file paths and line numbers
+        """
+        path = self._resolve_path(dir_path)
+        
+        if not path.is_dir():
+            return f"Error: Directory not found: {dir_path}"
+        
+        matches = []
+        skip_dirs = {'node_modules', '.git', '__pycache__', 'venv', '.venv', 'dist', 'build'}
+        
+        for file_path in path.rglob('*'):
+            if file_path.is_file() and not any(p in file_path.parts for p in skip_dirs):
+                try:
+                    content = file_path.read_text(encoding='utf-8', errors='ignore')
+                    for i, line in enumerate(content.splitlines(), 1):
+                        if search_term in line:
+                            rel_path = file_path.relative_to(self.workspace_path)
+                            matches.append(f"{rel_path}:{i}: {line.strip()[:100]}")
+                except Exception:
+                    continue
+        
+        if matches:
+            return f'[Found {len(matches)} matches for "{search_term}"]\n' + "\n".join(matches[:50])
+        else:
+            return f'[No matches found for "{search_term}"]'
+    
+    def find_file(self, file_name: str, dir_path: str = ".") -> str:
+        """Find files by name.
+        
+        Args:
+            file_name: Name or pattern to find
+            dir_path: Directory to search in
+            
+        Returns:
+            List of matching file paths
+        """
+        path = self._resolve_path(dir_path)
+        
+        if not path.is_dir():
+            return f"Error: Directory not found: {dir_path}"
+        
+        matches = []
+        skip_dirs = {'node_modules', '.git', '__pycache__', 'venv', '.venv'}
+        
+        for file_path in path.rglob('*'):
+            if file_path.is_file() and file_name in file_path.name:
+                if not any(p in file_path.parts for p in skip_dirs):
+                    rel_path = file_path.relative_to(self.workspace_path)
+                    matches.append(str(rel_path))
+        
+        if matches:
+            return f'[Found {len(matches)} files matching "{file_name}"]\n' + "\n".join(matches)
+        else:
+            return f'[No files found matching "{file_name}"]'
+    
+    def _resolve_path(self, path: str) -> Path:
+        """Resolve path relative to workspace."""
+        p = Path(path)
+        if not p.is_absolute():
+            p = self.workspace_path / p
+        return p
+    
+    def _print_window(self, file_path: Path, center_line: int) -> str:
+        """Print file content window centered on line."""
+        try:
+            lines = file_path.read_text(encoding='utf-8').splitlines()
+            total = len(lines)
+            
+            half = self.window // 2
+            start = max(0, center_line - half - 1)
+            end = min(total, center_line + half)
+            
+            output = []
+            if start > 0:
+                output.append(f"({start} more lines above)")
+            
+            for i in range(start, end):
+                output.append(f"{i+1:03d}|{lines[i]}")
+            
+            if end < total:
+                output.append(f"({total - end} more lines below)")
+            
+            return "\n".join(output)
+            
+        except Exception as e:
+            return f"Error reading file: {e}"
+    
+    def _lint_file(self, file_path: Path) -> Optional[str]:
+        """Run linter on file (Python only for now)."""
+        if file_path.suffix != '.py':
+            return None
+        
+        try:
+            import subprocess
+            result = subprocess.run(
+                ['python', '-m', 'py_compile', str(file_path)],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode != 0:
+                return result.stderr
+            return None
+        except Exception:
+            return None
+
+
+def get_code_context_for_file(
+    workspace_path: str,
+    target_file: str,
+    task_files: List[str],
+    max_context_lines: int = 500
+) -> str:
+    """Get code context for implementing a file (MetaGPT pattern).
+    
+    Marks target file as "file to rewrite" and other files as "existing files".
+    This provides better context for the LLM.
+    
+    Args:
+        workspace_path: Path to workspace
+        target_file: File being implemented
+        task_files: All files in the task
+        max_context_lines: Maximum lines of context
+        
+    Returns:
+        Formatted code context
+    """
+    workspace = Path(workspace_path)
+    context_parts = []
+    lines_used = 0
+    
+    for filename in task_files:
+        if lines_used >= max_context_lines:
+            break
+        
+        file_path = workspace / filename
+        if not file_path.exists():
+            continue
+        
+        try:
+            content = file_path.read_text(encoding='utf-8')
+            file_lines = len(content.splitlines())
+            
+            if lines_used + file_lines > max_context_lines:
+                # Truncate if needed
+                lines = content.splitlines()[:max_context_lines - lines_used]
+                content = '\n'.join(lines) + '\n... (truncated)'
+            
+            code_type = get_markdown_code_block_type(filename)
+            
+            if filename == target_file:
+                # Mark as file to rewrite
+                context_parts.insert(0, 
+                    f"### File to rewrite: `{filename}`\n```{code_type}\n{content}\n```\n"
+                )
+            else:
+                # Existing file
+                context_parts.append(
+                    f"### Existing file: `{filename}`\n```{code_type}\n{content}\n```\n"
+                )
+            
+            lines_used += file_lines
+            
+        except Exception as e:
+            logger.warning(f"Failed to read {filename}: {e}")
+            continue
+    
+    if not context_parts:
+        return "No existing code files found."
+    
+    return "\n".join(context_parts)

@@ -119,3 +119,31 @@ class DeveloperState(TypedDict, total=False):
     max_debug: int  # Max debug attempts (default: 3)
     last_debug_file: Optional[str]
     debug_history: Optional[List[Dict[str, Any]]]
+    
+    # ==========================================================================
+    # React Loop Mode (MetaGPT Engineer2 pattern)
+    # ==========================================================================
+    react_loop_count: int  # Current iteration in react loop
+    max_react_loop: int  # Max iterations (default: 10)
+    react_mode: bool  # Whether in react mode
+    
+    # ==========================================================================
+    # Editor State (MetaGPT Editor pattern)
+    # ==========================================================================
+    editor_current_file: Optional[str]
+    editor_current_line: int
+    editor_working_dir: Optional[str]
+    
+    # ==========================================================================
+    # Enhanced Context (MetaGPT WriteCode pattern)
+    # ==========================================================================
+    file_to_rewrite: Optional[str]  # Current file being implemented
+    existing_files_context: Optional[str]  # Related files for context
+    code_plan_and_change: Optional[str]  # Git diff style changes
+    
+    # ==========================================================================
+    # Send To (MetaGPT RunCode analysis)
+    # ==========================================================================
+    send_to: Optional[str]  # "NoOne", "Engineer", "QaEngineer"
+    file_to_fix: Optional[str]  # File that needs fixing
+    fix_instructions: Optional[str]  # How to fix the error
