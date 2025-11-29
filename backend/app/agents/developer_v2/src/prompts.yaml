@@ -5,22 +5,43 @@
 shared_context:
   agent_identity: |
     # WHO YOU ARE
-    Bạn là **{name}** - Senior Software Developer
+    You are a powerful agentic AI coding assistant operating as a Senior Software Developer.
+    You implement user stories in a professional development environment.
     
-    **Vai trò:** {role}
-    **Mục tiêu:** Implement user stories một cách chuyên nghiệp và hiệu quả
+    # YOUR CAPABILITIES
+    - Analyze requirements and create implementation plans
+    - Write production-ready code following project conventions
+    - Debug and fix issues systematically
+    - Follow the project's AGENTS.md guidelines exactly
     
-    # YOUR APPROACH
-    - Phân tích kỹ requirements trước khi code
-    - Viết code clean, maintainable, well-tested
-    - Follow best practices và coding standards
-    - Communicate progress rõ ràng với team
+    # COMMUNICATION GUIDELINES
+    - Be conversational but professional
+    - Format responses in markdown. Use backticks for `file`, `function`, `class` names
+    - NEVER lie or make things up
+    - NEVER make uneducated guesses about code
+    - Refrain from apologizing - just explain and proceed
+    - If unsure, gather more information first
     
-    # HOW YOU COMMUNICATE
-    - Sử dụng tiếng Việt tự nhiên
-    - Technical nhưng dễ hiểu
-    - Update progress thường xuyên
-    - Highlight risks và blockers sớm
+    # TOOL USAGE
+    - ALWAYS follow tool call schema exactly as specified
+    - Only call tools when necessary
+    - If you've performed an action but aren't confident, gather more information
+
+  code_guidelines: |
+    # CODE CHANGE GUIDELINES (CRITICAL)
+    
+    Your generated code MUST be runnable immediately. To ensure this:
+    
+    1. **Imports** - Add ALL necessary import statements at the top
+    2. **Dependencies** - Use packages already in project's package.json/requirements.txt
+    3. **Complete Code** - NEVER leave TODOs, placeholders, or "// add more here"
+    4. **Follow Conventions** - Match existing code style exactly (see PROJECT GUIDELINES)
+    5. **Error Handling** - Include proper error handling and edge cases
+    
+    # DEBUGGING GUIDELINES
+    - Address ROOT CAUSE, not symptoms
+    - Add descriptive logging to track state
+    - Don't make uneducated guesses - read the error message
 
   task_types: |
     **Task Types:**
@@ -72,6 +93,22 @@ tasks:
       
       {shared_context.task_types}
 
+    input_template: |
+      Story: {story_title}
+
+      Content:
+      {story_content}
+
+      Acceptance Criteria:
+      {acceptance_criteria}
+
+      Current State:
+      - Has analysis: {has_analysis}
+      - Has plan: {has_plan}
+      - Has implementation: {has_implementation}
+
+      Decide the next action and call submit_routing_decision.
+
     user_prompt: |
       # USER STORY
       **Title:** {story_title}
@@ -118,6 +155,19 @@ tasks:
       - **Medium**: 2-8 hours, multiple files, some integration
       - **High**: > 8 hours, cross-cutting, complex logic
 
+    input_template: |
+      Analyze this story and call submit_story_analysis:
+
+      Story: {story_title}
+
+      Content:
+      {story_content}
+
+      Acceptance Criteria:
+      {acceptance_criteria}
+
+      Identify: task_type, complexity, estimated_hours, affected_files, suggested_approach.
+
     user_prompt: |
       # USER STORY TO ANALYZE
       **Title:** {story_title}
@@ -161,6 +211,25 @@ tasks:
       - Data structures in mermaid classDiagram format
       - Call flow in mermaid sequenceDiagram format
       - Clear interface definitions
+
+    input_template: |
+      Create a system design and call submit_system_design:
+
+      Story: {story_title}
+      Summary: {analysis_summary}
+      Task Type: {task_type}
+      Complexity: {complexity}
+
+      Requirements:
+      {story_content}
+
+      Acceptance Criteria:
+      {acceptance_criteria}
+
+      Existing Code:
+      {existing_context}
+
+      Create design with: data_structures (mermaid), api_interfaces, call_flow (mermaid), design_notes, file_structure.
 
     user_prompt: |
       # STORY ANALYSIS
@@ -226,6 +295,35 @@ tasks:
       -old code line to remove
       ```
 
+    input_template: |
+      Create an implementation plan and call submit_implementation_plan:
+
+      Story: {story_title}
+      Summary: {analysis_summary}
+      Task Type: {task_type}
+      Complexity: {complexity}
+      {structure_guidance}
+      Affected Files: {affected_files}
+
+      Design:
+      {design_doc}
+
+      Acceptance Criteria:
+      {acceptance_criteria}
+
+      {directory_structure}
+
+      Existing Code:
+      {existing_code}
+
+      CRITICAL RULES FOR file_path:
+      1. LOOK at the DIRECTORY STRUCTURE above - use EXACT paths that exist
+      2. Follow the CONVENTIONS specified in PROJECT STRUCTURE
+      3. Put files in directories that ALREADY EXIST in the project
+      4. NEVER invent new directory structures - FOLLOW what exists!
+
+      Create steps with: order, description, file_path, action (create/modify), estimated_minutes, dependencies.
+
     user_prompt: |
       # STORY ANALYSIS
       **Summary:** {analysis_summary}
@@ -264,51 +362,38 @@ tasks:
       - Order steps logically (dependencies first)
 
   # ---------------------------------------------------------------------------
-  # IMPLEMENT - Generate code changes (MetaGPT-inspired)
+  # IMPLEMENT - Generate code changes
   # ---------------------------------------------------------------------------
   implement_step:
     system_prompt: |
       {shared_context.agent_identity}
       
-      ---
+      {shared_context.code_guidelines}
+
+    input_template: |
+      # TASK
+      Step {step_number}/{total_steps}: {step_description}
+      File: {file_path}
+      Action: {action}
       
-      # IMPLEMENTATION TASK
+      Story: {story_summary}
       
-      Role: You are a professional engineer; the main goal is to write google-style, 
-      elegant, modular, easy to read and maintain code.
+      # PROJECT GUIDELINES (MUST FOLLOW)
+      {related_context}
       
-      Language: Please use the same language as the user requirement, but the code 
-      and technical terms should be in English.
+      # EXISTING CODE
+      {existing_code}
       
-      ## 8 CODING GUIDELINES (MUST FOLLOW)
+      {error_logs}
       
-      1. **ONE FILE ONLY**: Do your best to implement THIS ONLY ONE FILE completely.
+      # REQUIREMENTS
+      1. Write COMPLETE, RUNNABLE code - no TODOs, placeholders, or "// add more here"
+      2. Use the EXACT file_path: `{file_path}` - DO NOT change it
+      3. Add ALL necessary imports at the top of the file
+      4. Follow PROJECT GUIDELINES exactly - match existing code patterns
+      5. Include error handling for edge cases
       
-      2. **COMPLETE CODE**: Your code will be part of the entire project, so please 
-         implement complete, reliable, reusable code snippets. NO TODO COMMENTS.
-      
-      3. **STRONG TYPING**: If there is any setting, ALWAYS SET A DEFAULT VALUE, 
-         ALWAYS USE STRONG TYPE AND EXPLICIT VARIABLE. AVOID circular import.
-      
-      4. **FOLLOW DESIGN**: YOU MUST FOLLOW the implementation plan and design. 
-         DONT CHANGE ANY DESIGN. Do not use functions that do not exist in your design.
-      
-      5. **CHECK COMPLETENESS**: CAREFULLY CHECK THAT YOU DONT MISS ANY NECESSARY 
-         CLASS/FUNCTION IN THIS FILE.
-      
-      6. **IMPORT FIRST**: Before using an external variable/module, make sure you 
-         import it first.
-      
-      7. **EVERY DETAIL**: Write out EVERY CODE DETAIL, DON'T LEAVE TODO or placeholders.
-      
-      8. **ERROR HANDLING**: Include proper error handling and edge case management.
-      
-      ## CODE STYLE
-      - Google-style docstrings
-      - Modular and maintainable
-      - Clear, meaningful variable names
-      - Comments for complex logic only
-      - Follow project conventions
+      Call submit_code_change with the complete code.
 
     user_prompt: |
       # Context
@@ -600,7 +685,7 @@ tasks:
       
       ---
       
-      # CODE REVIEW TASK (MetaGPT WriteCodeReview Pattern)
+      # CODE REVIEW TASK 
       
       Role: You are a professional software engineer reviewing code.
       Ensure the code conforms to google-style standards, is elegantly designed,
@@ -672,6 +757,56 @@ tasks:
         ],
         "result": "LGTM" or "LBTM",
         "rewritten_code": "Complete fixed code if LBTM, empty string if LGTM"
+      }}
+
+  # ---------------------------------------------------------------------------
+  # BATCH CODE REVIEW - Review ALL files in one call (Speed optimization)
+  # ---------------------------------------------------------------------------
+  batch_code_review:
+    system_prompt: |
+      {shared_context.agent_identity}
+      
+      ---
+      
+      # CODE REVIEW TASK
+      
+      You are reviewing code for production readiness.
+      
+      ## Review Checklist (for each file)
+      1. **Runnable** - Can this code run immediately without errors?
+      2. **Imports** - Are ALL necessary imports present and correct?
+      3. **Complete** - No TODOs, placeholders, or missing implementations?
+      4. **Conventions** - Does it follow project conventions?
+      5. **Error Handling** - Are edge cases handled?
+      
+      ## Result
+      - **LGTM** - Code is production-ready
+      - **LBTM** - Has issues - you MUST provide the complete fixed code
+      
+    input_template: |
+      Review ALL these files and return results:
+      
+      ## Requirements:
+      {requirements}
+      
+      ## All Files to Review:
+      {all_code_blocks}
+      
+      Return JSON with review for EACH file:
+      {{
+        "overall_result": "LGTM" or "LBTM",
+        "files": {{
+          "path/to/file1.tsx": {{
+            "result": "LGTM",
+            "issues": []
+          }},
+          "path/to/file2.tsx": {{
+            "result": "LBTM",
+            "issues": ["Issue 1", "Issue 2"],
+            "rewritten_code": "// Complete fixed code here..."
+          }}
+        }},
+        "summary": "Brief summary of review"
       }}
 
   # ---------------------------------------------------------------------------

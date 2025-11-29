@@ -1,13 +1,337 @@
-"""Developer V2 Tools for code operations."""
+"""Developer V2 Tools - LangChain tools and utility functions."""
 
 import logging
 import os
+import asyncio
 from pathlib import Path
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Literal, Callable
+from functools import partial
 
-from langchain_core.tools import tool
+from pydantic import BaseModel, Field
+from langchain_core.tools import tool, StructuredTool
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# INPUT SCHEMAS (Pydantic models for LangChain tool validation)
+# =============================================================================
+
+class RoutingDecisionInput(BaseModel):
+    """Input schema for routing decision."""
+    action: Literal["ANALYZE", "PLAN", "IMPLEMENT", "CLARIFY", "RESPOND"] = Field(
+        description="Action to take: ANALYZE, PLAN, IMPLEMENT, CLARIFY, or RESPOND"
+    )
+    task_type: Literal["feature", "bugfix", "refactor", "enhancement", "documentation"] = Field(
+        description="Type of task"
+    )
+    complexity: Literal["low", "medium", "high"] = Field(
+        description="Complexity level"
+    )
+    message: str = Field(description="Vietnamese status message for user")
+    reason: str = Field(description="1-line reasoning for decision")
+    confidence: float = Field(default=0.8, ge=0.0, le=1.0, description="Confidence score 0.0-1.0")
+
+
+class StoryAnalysisInput(BaseModel):
+    """Input schema for story analysis."""
+    task_type: Literal["feature", "bugfix", "refactor", "enhancement", "documentation"] = Field(
+        description="Type of task"
+    )
+    complexity: Literal["low", "medium", "high"] = Field(description="Complexity level")
+    estimated_hours: float = Field(ge=0.5, le=100, description="Estimated hours (0.5-100)")
+    summary: str = Field(description="Brief summary of what needs to be done")
+    affected_files: List[str] = Field(description="Files likely to be modified")
+    suggested_approach: str = Field(description="Recommended implementation approach")
+    dependencies: Optional[List[str]] = Field(default=None, description="External dependencies or blockers")
+    risks: Optional[List[str]] = Field(default=None, description="Potential risks or concerns")
+
+
+class PlanStep(BaseModel):
+    """Single step in implementation plan."""
+    order: int = Field(description="Step order number")
+    description: str = Field(description="What this step does")
+    file_path: str = Field(description="File to create/modify")
+    action: Literal["create", "modify", "delete"] = Field(description="Action type")
+    estimated_minutes: int = Field(default=30, description="Estimated minutes")
+    dependencies: List[int] = Field(default_factory=list, description="List of step orders this depends on")
+
+
+class ImplementationPlanInput(BaseModel):
+    """Input schema for implementation plan."""
+    story_summary: str = Field(description="Brief summary of the implementation")
+    steps: List[PlanStep] = Field(description="List of implementation steps")
+    total_estimated_hours: float = Field(description="Total estimated hours")
+    critical_path: Optional[List[int]] = Field(default=None, description="Step orders on critical path")
+    rollback_plan: Optional[str] = Field(default=None, description="How to rollback if needed")
+
+
+class CodeChangeInput(BaseModel):
+    """Input schema for code change."""
+    file_path: str = Field(description="Path to the file (e.g., 'src/app/page.tsx')")
+    action: Literal["create", "modify", "delete"] = Field(description="Action type")
+    description: str = Field(description="What the change does")
+    code_snippet: str = Field(description="The COMPLETE code content for the file")
+    line_start: Optional[int] = Field(default=None, description="Starting line for modify")
+    line_end: Optional[int] = Field(default=None, description="Ending line for modify")
+
+
+class SystemDesignInput(BaseModel):
+    """Input schema for system design."""
+    data_structures: str = Field(description="Class/interface definitions in mermaid classDiagram format")
+    api_interfaces: str = Field(description="API method signatures and interfaces")
+    call_flow: str = Field(description="Sequence diagram in mermaid sequenceDiagram format")
+    design_notes: str = Field(description="Key design decisions and rationale")
+    file_structure: List[str] = Field(description="List of files to be created")
+
+
+# =============================================================================
+# LANGCHAIN TOOLS (for agent function calling)
+# =============================================================================
+
+@tool("submit_routing_decision", args_schema=RoutingDecisionInput)
+def submit_routing_decision(
+    action: str,
+    task_type: str,
+    complexity: str,
+    message: str,
+    reason: str,
+    confidence: float = 0.8
+) -> str:
+    """Submit routing decision for the story. You MUST call this tool with your decision."""
+    return f"Decision submitted: {action}"
+
+
+@tool("submit_story_analysis", args_schema=StoryAnalysisInput)
+def submit_story_analysis(
+    task_type: str,
+    complexity: str,
+    estimated_hours: float,
+    summary: str,
+    affected_files: List[str],
+    suggested_approach: str,
+    dependencies: Optional[List[str]] = None,
+    risks: Optional[List[str]] = None
+) -> str:
+    """Submit story analysis result. You MUST call this tool with your analysis."""
+    return f"Analysis submitted: {task_type}, {complexity}, {estimated_hours}h"
+
+
+@tool("submit_implementation_plan", args_schema=ImplementationPlanInput)
+def submit_implementation_plan(
+    story_summary: str,
+    steps: List[dict],
+    total_estimated_hours: float,
+    critical_path: Optional[List[int]] = None,
+    rollback_plan: Optional[str] = None
+) -> str:
+    """Submit implementation plan. You MUST call this tool with your plan."""
+    return f"Plan submitted: {len(steps)} steps, {total_estimated_hours}h"
+
+
+@tool("submit_code_change", args_schema=CodeChangeInput)
+def submit_code_change(
+    file_path: str,
+    action: str,
+    description: str,
+    code_snippet: str,
+    line_start: Optional[int] = None,
+    line_end: Optional[int] = None
+) -> str:
+    """Submit code change. You MUST call this tool with the complete code."""
+    return f"Code submitted: {action} {file_path}"
+
+
+@tool("submit_system_design", args_schema=SystemDesignInput)
+def submit_system_design(
+    data_structures: str,
+    api_interfaces: str,
+    call_flow: str,
+    design_notes: str,
+    file_structure: List[str]
+) -> str:
+    """Submit system design. You MUST call this tool with your design."""
+    return f"Design submitted: {len(file_structure)} files"
+
+
+# =============================================================================
+# REACT AGENT TOOL FACTORIES
+# Creates tools with workspace context injected for ReAct agents
+# =============================================================================
+
+def create_search_codebase_tool(project_id: str, task_id: str = None) -> StructuredTool:
+    """Create a search_codebase tool with project context injected."""
+    
+    def _search(query: str, top_k: int = 5) -> str:
+        """Search codebase using semantic search.
+        
+        Args:
+            query: Natural language query (e.g., "authentication logic", "user model")
+            top_k: Number of results to return (default: 5)
+        """
+        return search_codebase(project_id, query, top_k, task_id)
+    
+    return StructuredTool.from_function(
+        func=_search,
+        name="search_codebase",
+        description="Search codebase using semantic search. Use this to find relevant code, patterns, and examples."
+    )
+
+
+def create_read_file_tool(workspace_path: str) -> StructuredTool:
+    """Create a read_file tool scoped to workspace."""
+    
+    def _read(file_path: str) -> str:
+        """Read contents of a file in the workspace.
+        
+        Args:
+            file_path: Relative path from workspace root (e.g., 'src/app/page.tsx')
+        """
+        full_path = os.path.join(workspace_path, file_path)
+        return read_file(full_path)
+    
+    return StructuredTool.from_function(
+        func=_read,
+        name="read_file",
+        description="Read contents of a file. Use relative paths from project root."
+    )
+
+
+def create_write_file_tool(workspace_path: str) -> StructuredTool:
+    """Create a write_file tool scoped to workspace."""
+    
+    def _write(file_path: str, content: str) -> str:
+        """Write content to a file in the workspace.
+        
+        Args:
+            file_path: Relative path from workspace root
+            content: Content to write
+        """
+        full_path = os.path.join(workspace_path, file_path)
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        return write_file(full_path, content)
+    
+    return StructuredTool.from_function(
+        func=_write,
+        name="write_file",
+        description="Write content to a file. Creates directories if needed."
+    )
+
+
+def create_list_directory_tool(workspace_path: str) -> StructuredTool:
+    """Create a list_directory tool scoped to workspace."""
+    
+    def _list(directory_path: str = ".") -> str:
+        """List contents of a directory in the workspace.
+        
+        Args:
+            directory_path: Relative path from workspace root (default: root)
+        """
+        full_path = os.path.join(workspace_path, directory_path)
+        return list_directory(full_path)
+    
+    return StructuredTool.from_function(
+        func=_list,
+        name="list_directory",
+        description="List files and folders in a directory. Use '.' for root."
+    )
+
+
+def create_run_command_tool(workspace_path: str) -> StructuredTool:
+    """Create a run_command tool scoped to workspace."""
+    
+    def _run(command: str) -> str:
+        """Run a shell command in the workspace.
+        
+        Args:
+            command: Shell command to execute
+        """
+        return run_command(command, cwd=workspace_path)
+    
+    return StructuredTool.from_function(
+        func=_run,
+        name="run_command",
+        description="Run a shell command. Use for testing, building, or checking status."
+    )
+
+
+
+
+
+def get_react_tools_for_node(
+    node_name: str,
+    workspace_path: str = None,
+    project_id: str = None,
+    task_id: str = None
+) -> List:
+    """Get list of tools for a specific ReAct agent node.
+    
+    Args:
+        node_name: Name of the node (router, analyze, design, plan, implement, debug)
+        workspace_path: Path to workspace
+        project_id: Project ID for CocoIndex
+        task_id: Task ID for CocoIndex
+        
+    Returns:
+        List of tools for the node
+    """
+    tools = []
+    
+    # Common tools based on node
+    if node_name == "router":
+        if project_id:
+            tools.append(create_search_codebase_tool(project_id, task_id))
+        tools.append(submit_routing_decision)
+        
+    elif node_name == "analyze":
+        if workspace_path:
+            tools.append(create_read_file_tool(workspace_path))
+        if project_id:
+            tools.append(create_search_codebase_tool(project_id, task_id))
+        # Add TavilySearch for web research
+        try:
+            from langchain_tavily import TavilySearch
+            tools.append(TavilySearch(max_results=3, include_answer=True))
+        except ImportError:
+            pass
+        tools.append(submit_story_analysis)
+        
+    elif node_name == "design":
+        if workspace_path:
+            tools.append(create_read_file_tool(workspace_path))
+            tools.append(create_list_directory_tool(workspace_path))
+        if project_id:
+            tools.append(create_search_codebase_tool(project_id, task_id))
+        tools.append(submit_system_design)
+        
+    elif node_name == "plan":
+        if workspace_path:
+            tools.append(create_read_file_tool(workspace_path))
+            tools.append(create_list_directory_tool(workspace_path))
+        if project_id:
+            tools.append(create_search_codebase_tool(project_id, task_id))
+        tools.append(submit_implementation_plan)
+        
+    elif node_name == "implement":
+        if workspace_path:
+            tools.append(create_read_file_tool(workspace_path))
+            tools.append(create_list_directory_tool(workspace_path))
+            tools.append(create_write_file_tool(workspace_path))
+            tools.append(create_run_command_tool(workspace_path))
+        if project_id:
+            tools.append(create_search_codebase_tool(project_id, task_id))
+        tools.append(submit_code_change)
+        
+    elif node_name == "debug":
+        if workspace_path:
+            tools.append(create_read_file_tool(workspace_path))
+            tools.append(create_write_file_tool(workspace_path))
+            tools.append(create_run_command_tool(workspace_path))
+        if project_id:
+            tools.append(create_search_codebase_tool(project_id, task_id))
+    
+    return tools
 
 
 # =============================================================================
@@ -160,6 +484,357 @@ def get_related_code_indexed(
         top_k=top_k,
         task_id=task_id
     )
+
+
+# =============================================================================
+# PROJECT STRUCTURE DETECTION (Smart context for agent)
+# =============================================================================
+
+def detect_project_structure(workspace_path: str) -> dict:
+    """Detect project structure and conventions automatically.
+    
+    Analyzes the workspace to determine framework, router type, and conventions.
+    This allows the agent to generate code that follows existing patterns.
+    
+    Args:
+        workspace_path: Path to the workspace directory
+        
+    Returns:
+        Dict with framework info, router type, key directories, and conventions
+    """
+    import json
+    workspace = Path(workspace_path)
+    
+    result = {
+        "framework": "unknown",
+        "router_type": None,
+        "key_dirs": [],
+        "existing_pages": [],
+        "conventions": "",
+        "directory_tree": ""
+    }
+    
+    if not workspace.exists():
+        return result
+    
+    # Detect framework from package.json
+    package_json = workspace / "package.json"
+    if package_json.exists():
+        try:
+            data = json.loads(package_json.read_text(encoding='utf-8'))
+            deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
+            
+            # NextJS detection
+            if "next" in deps:
+                result["framework"] = "nextjs"
+                version = deps.get("next", "").replace("^", "").replace("~", "")
+                
+                # Detect App Router vs Pages Router
+                app_dir = workspace / "app"
+                pages_dir = workspace / "pages"
+                src_app_dir = workspace / "src" / "app"
+                src_pages_dir = workspace / "src" / "pages"
+                
+                if app_dir.exists() or src_app_dir.exists():
+                    result["router_type"] = "app"
+                    base_dir = app_dir if app_dir.exists() else src_app_dir
+                    base_path = str(base_dir.relative_to(workspace))
+                    result["conventions"] = f"App Router - pages in {base_path}/ (see AGENTS.md for details)"
+                    
+                    # Find existing pages
+                    for page_file in base_dir.rglob("page.tsx"):
+                        result["existing_pages"].append(str(page_file.relative_to(workspace)))
+                    for page_file in base_dir.rglob("page.jsx"):
+                        result["existing_pages"].append(str(page_file.relative_to(workspace)))
+                        
+                elif pages_dir.exists() or src_pages_dir.exists():
+                    result["router_type"] = "pages"
+                    base_dir = pages_dir if pages_dir.exists() else src_pages_dir
+                    result["conventions"] = f"Pages Router - pages in {base_dir.relative_to(workspace)}/ (see AGENTS.md)"
+                else:
+                    result["router_type"] = "app"
+                    result["conventions"] = "See AGENTS.md for conventions"
+                    
+            # React detection
+            elif "react" in deps and "next" not in deps:
+                result["framework"] = "react"
+                result["conventions"] = "See AGENTS.md for conventions"
+                
+            # Vue detection
+            elif "vue" in deps:
+                result["framework"] = "vue"
+                result["conventions"] = "See AGENTS.md for conventions"
+                
+        except Exception:
+            pass
+    
+    # Python project detection
+    pyproject = workspace / "pyproject.toml"
+    requirements = workspace / "requirements.txt"
+    if pyproject.exists() or requirements.exists():
+        if result["framework"] == "unknown":
+            result["framework"] = "python"
+            result["conventions"] = "See AGENTS.md for conventions"
+    
+    # Detect key directories
+    key_dirs_to_check = ["app", "src", "components", "lib", "utils", "pages", "styles", "public", "api"]
+    for dir_name in key_dirs_to_check:
+        dir_path = workspace / dir_name
+        if dir_path.exists() and dir_path.is_dir():
+            result["key_dirs"].append(dir_name)
+        # Also check in src/
+        src_dir_path = workspace / "src" / dir_name
+        if src_dir_path.exists() and src_dir_path.is_dir():
+            result["key_dirs"].append(f"src/{dir_name}")
+    
+    # Generate directory tree (limited depth)
+    result["directory_tree"] = _generate_directory_tree(workspace, max_depth=3)
+    
+    return result
+
+
+def _generate_directory_tree(directory: Path, max_depth: int = 3, prefix: str = "") -> str:
+    """Generate a directory tree string.
+    
+    Args:
+        directory: Root directory
+        max_depth: Maximum depth to traverse
+        prefix: Prefix for formatting
+        
+    Returns:
+        Formatted directory tree string
+    """
+    if max_depth <= 0:
+        return ""
+    
+    skip_dirs = {"node_modules", ".git", "__pycache__", "dist", "build", ".next", "venv", ".venv", ".cache"}
+    
+    lines = []
+    try:
+        items = sorted(directory.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower()))
+        
+        for i, item in enumerate(items):
+            if item.name.startswith('.') and item.name not in ['.env.example']:
+                continue
+            if item.name in skip_dirs:
+                continue
+                
+            is_last = i == len(items) - 1
+            connector = "└── " if is_last else "├── "
+            
+            if item.is_dir():
+                lines.append(f"{prefix}{connector}{item.name}/")
+                extension = "    " if is_last else "│   "
+                subtree = _generate_directory_tree(item, max_depth - 1, prefix + extension)
+                if subtree:
+                    lines.append(subtree)
+            else:
+                # Only show important files at top level
+                if max_depth >= 2 or item.suffix in ['.tsx', '.ts', '.jsx', '.js', '.py', '.json']:
+                    lines.append(f"{prefix}{connector}{item.name}")
+    except PermissionError:
+        pass
+    
+    return "\n".join(lines)
+
+
+def get_agents_md(workspace_path: str) -> str:
+    """Read AGENTS.md from workspace if it exists.
+    
+    Args:
+        workspace_path: Path to the workspace directory
+        
+    Returns:
+        Content of AGENTS.md or empty string
+    """
+    workspace = Path(workspace_path)
+    agents_md = workspace / "AGENTS.md"
+    
+    if agents_md.exists():
+        try:
+            return agents_md.read_text(encoding='utf-8')
+        except Exception:
+            pass
+    
+    return ""
+
+
+def get_project_context(workspace_path: str) -> str:
+    """Get comprehensive project context including structure and guidelines.
+    
+    Combines project structure detection, AGENTS.md, and directory tree
+    to provide full context for the agent.
+    
+    Args:
+        workspace_path: Path to the workspace directory
+        
+    Returns:
+        Formatted project context string
+    """
+    structure = detect_project_structure(workspace_path)
+    agents_md = get_agents_md(workspace_path)
+    
+    context_parts = []
+    
+    # Project structure info
+    if structure["framework"] != "unknown":
+        context_parts.append(f"FRAMEWORK: {structure['framework']}")
+        if structure["router_type"]:
+            context_parts.append(f"ROUTER TYPE: {structure['router_type']}")
+        if structure["conventions"]:
+            context_parts.append(f"CONVENTIONS: {structure['conventions']}")
+    
+    # Key directories
+    if structure["key_dirs"]:
+        context_parts.append(f"KEY DIRECTORIES: {', '.join(structure['key_dirs'])}")
+    
+    # Existing pages (important for NextJS)
+    if structure["existing_pages"]:
+        context_parts.append(f"EXISTING PAGES: {', '.join(structure['existing_pages'][:10])}")
+    
+    # Directory tree
+    if structure["directory_tree"]:
+        context_parts.append(f"\nDIRECTORY STRUCTURE:\n{structure['directory_tree']}")
+    
+    # AGENTS.md content (full - contains important conventions, examples, structure)
+    if agents_md:
+        context_parts.append(f"\nPROJECT GUIDELINES (AGENTS.md - MUST FOLLOW):\n{agents_md}")
+    
+    return "\n".join(context_parts)
+
+
+def get_boilerplate_examples(workspace_path: str, task_type: str = "page") -> str:
+    """Get existing code examples from the project as boilerplate reference.
+    
+    Finds existing pages/components in the project and returns them as examples
+    for the agent to follow when generating new code.
+    
+    Args:
+        workspace_path: Path to the workspace directory
+        task_type: Type of code to find examples for ("page", "component", "api")
+        
+    Returns:
+        Markdown-formatted code examples from the project
+    """
+    workspace = Path(workspace_path)
+    examples = []
+    
+    if not workspace.exists():
+        return ""
+    
+    # Define patterns based on task type
+    patterns = {
+        "page": ["**/page.tsx", "**/page.jsx", "**/pages/*.tsx", "**/pages/*.jsx"],
+        "component": ["**/components/*.tsx", "**/components/*.jsx", "**/src/components/*.tsx"],
+        "api": ["**/api/**/route.ts", "**/api/**/route.js", "**/pages/api/*.ts"],
+        "layout": ["**/layout.tsx", "**/layout.jsx"],
+    }
+    
+    skip_dirs = {"node_modules", ".git", "__pycache__", "dist", "build", ".next", "venv", ".venv"}
+    
+    # Get patterns for the task type
+    search_patterns = patterns.get(task_type, patterns["page"])
+    
+    for pattern in search_patterns:
+        for file_path in workspace.glob(pattern):
+            # Skip excluded directories
+            if any(part in file_path.parts for part in skip_dirs):
+                continue
+            
+            # Limit to 2 examples
+            if len(examples) >= 2:
+                break
+            
+            try:
+                content = file_path.read_text(encoding='utf-8')
+                # Truncate large files
+                if len(content) > 1500:
+                    content = content[:1500] + "\n// ... (truncated)"
+                
+                rel_path = file_path.relative_to(workspace)
+                code_type = "tsx" if file_path.suffix in [".tsx", ".ts"] else "jsx"
+                examples.append(f"### Example: {rel_path}\n```{code_type}\n{content}\n```")
+            except Exception:
+                continue
+    
+    if examples:
+        return "## EXISTING CODE EXAMPLES (Follow this style!):\n" + "\n\n".join(examples)
+    
+    return ""
+
+
+def validate_plan_file_paths(steps: list, project_structure: dict) -> list:
+    """Validate and fix file paths in implementation plan based on project structure.
+    
+    Ensures generated file paths match the project's conventions.
+    For example, converts wrong paths like 'src/pages/about.tsx' to correct 
+    paths like 'app/about/page.tsx' for NextJS App Router.
+    
+    Args:
+        steps: List of implementation plan steps
+        project_structure: Dict from detect_project_structure()
+        
+    Returns:
+        Corrected list of steps with valid file paths
+    """
+    framework = project_structure.get("framework", "unknown")
+    router_type = project_structure.get("router_type")
+    key_dirs = project_structure.get("key_dirs", [])
+    existing_pages = project_structure.get("existing_pages", [])
+    
+    # Determine the base directory for pages
+    page_base_dir = None
+    if "app" in key_dirs:
+        page_base_dir = "app"
+    elif "src/app" in key_dirs:
+        page_base_dir = "src/app"
+    elif "pages" in key_dirs:
+        page_base_dir = "pages"
+    elif "src/pages" in key_dirs:
+        page_base_dir = "src/pages"
+    
+    # Determine component base directory
+    component_base_dir = None
+    if "components" in key_dirs:
+        component_base_dir = "components"
+    elif "src/components" in key_dirs:
+        component_base_dir = "src/components"
+    
+    for step in steps:
+        file_path = step.get("file_path", "")
+        if not file_path:
+            continue
+        
+        original_path = file_path
+        
+        # Fix page paths for App Router projects
+        if framework == "nextjs" and router_type == "app" and page_base_dir:
+            # Wrong: src/pages/about.tsx or pages/about.tsx -> Correct: app/about/page.tsx
+            if file_path.startswith("src/pages/") or file_path.startswith("pages/"):
+                page_name = file_path.replace("src/pages/", "").replace("pages/", "")
+                page_name = page_name.replace(".tsx", "").replace(".jsx", "").replace(".ts", "").replace(".js", "")
+                
+                if page_name in ["index", "_app", "_document"]:
+                    step["file_path"] = f"{page_base_dir}/page.tsx"
+                else:
+                    step["file_path"] = f"{page_base_dir}/{page_name}/page.tsx"
+                    
+            # Wrong: pages/api/... -> Correct: app/api/.../route.ts
+            elif file_path.startswith("pages/api/") or file_path.startswith("src/pages/api/"):
+                api_path = file_path.replace("src/pages/api/", "").replace("pages/api/", "")
+                api_path = api_path.replace(".ts", "").replace(".js", "")
+                step["file_path"] = f"{page_base_dir}/api/{api_path}/route.ts"
+        
+        # Ensure components go to the right place
+        if "component" in file_path.lower() and component_base_dir:
+            if not file_path.startswith(component_base_dir):
+                component_name = Path(file_path).name
+                step["file_path"] = f"{component_base_dir}/{component_name}"
+        
+        if step["file_path"] != original_path:
+            logger.info(f"[validate_plan] Fixed path: {original_path} -> {step['file_path']}")
+    
+    return steps
 
 
 # =============================================================================
@@ -618,6 +1293,56 @@ async def install_dependencies(workspace_path: str) -> bool:
             logger.warning(f"Failed to install npm dependencies: {e}")
     
     return installed
+
+
+
+
+
+def detect_framework_from_package_json(workspace_path: str) -> dict:
+    """Detect framework info from package.json.
+    
+    Args:
+        workspace_path: Path to the workspace
+        
+    Returns:
+        Dict with name, version, router info
+    """
+    import json
+    workspace = Path(workspace_path)
+    package_json = workspace / "package.json"
+    
+    result = {"name": "unknown", "version": "", "router": ""}
+    
+    if not package_json.exists():
+        return result
+    
+    try:
+        data = json.loads(package_json.read_text(encoding='utf-8'))
+        deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
+        
+        # Detect framework
+        if "next" in deps:
+            result["name"] = "nextjs"
+            result["version"] = deps.get("next", "").replace("^", "").replace("~", "")
+            # Check for App Router (Next.js 13+)
+            app_dir = workspace / "app"
+            if app_dir.exists():
+                result["router"] = "app"
+            else:
+                result["router"] = "pages"
+        elif "react" in deps:
+            result["name"] = "react"
+            result["version"] = deps.get("react", "").replace("^", "").replace("~", "")
+        elif "vue" in deps:
+            result["name"] = "vue"
+            result["version"] = deps.get("vue", "").replace("^", "").replace("~", "")
+        elif "angular" in deps or "@angular/core" in deps:
+            result["name"] = "angular"
+            result["version"] = deps.get("@angular/core", "").replace("^", "").replace("~", "")
+    except Exception:
+        pass
+    
+    return result
 
 
 def detect_test_command(workspace_path: str) -> List[str]:

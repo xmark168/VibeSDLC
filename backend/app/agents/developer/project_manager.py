@@ -311,6 +311,17 @@ class AdvancedProjectManager:
         print(f"Updated {project_id}: {result}")
         return result
 
+    def unregister_task(self, project_id: str, task_id: str):
+        """Remove a task from memory (does not delete database table)."""
+        task_identifier = f"{project_id}_task_{task_id}"
+        sanitized_task_id = "".join(c if c.isalnum() else "_" for c in task_identifier)
+        
+        if sanitized_task_id in self.task_flows:
+            del self.task_flows[sanitized_task_id]
+            print(f"Unregistered task {task_identifier} from memory.")
+        else:
+            print(f"Task {task_identifier} was not registered.")
+
     def delete_project(self, project_id: str):
         """Remove a project and its index table."""
         # Sanitize the project_id to match the stored flow name

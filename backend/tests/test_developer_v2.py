@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.tools import (
+from app.agents.developer_v2.src.tools import (
     get_markdown_code_block_type,
     get_related_code_context,
     detect_test_command,

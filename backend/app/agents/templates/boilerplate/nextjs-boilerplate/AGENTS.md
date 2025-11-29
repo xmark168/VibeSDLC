@@ -1,260 +1,286 @@
-# AGENTS.md
-
 ## Project Overview
 
-This is a Next.js 16 boilerplate project built with TypeScript, using App Router and fully integrated with modern tools:
+Next.js 16 boilerplate with TypeScript, App Router, Prisma, NextAuth v5, Tailwind CSS 4, and shadcn/ui components. Uses bun as package manager.
 
-- **Framework**: Next.js 16.0.3 with React 19.2.0
-- **Styling**: Tailwind CSS 4 with shadcn/ui components
-- **Database**: Prisma ORM with PostgreSQL
-- **Form handling**: React Hook Form + Zod validation
-- **State management**: Zustand
-- **Testing**: Jest 30 with React Testing Library
-- **UI Components**: Radix UI primitives with shadcn/ui
-- **Icons**: Lucide React
-- **Package manager**: pnpm
+**Key Stack:**
+- Next.js 16.0.3 + React 19.2.0
+- NextAuth v5 (beta) with Credentials provider + Prisma adapter
+- Prisma ORM + PostgreSQL
+- Tailwind CSS 4 + 50+ shadcn/ui components (Radix UI)
+- React Hook Form + Zod validation
+- Zustand for state management
+- Jest 30 + React Testing Library
 
-## Directory Structure
-
-```
-src/
-├── app/              # Next.js App Router pages and layouts
-│   ├── api/         # API routes
-│   ├── layout.tsx   # Root layout
-│   └── page.tsx     # Home page
-├── components/       # React components
-│   └── ui/          # shadcn/ui components (50+ components)
-├── hooks/           # Custom React hooks
-├── lib/             # Utility functions and helpers
-│   ├── api-response.ts  # API response helpers
-│   └── utils.ts         # General utilities (cn function)
-├── services/        # Business logic and external services
-├── store/           # Zustand state management
-└── types/           # TypeScript type definitions
-    └── api.types.ts # API response types
-```
-
-## Setup Commands
+## Common Commands
 
 ```bash
-# Install dependencies
-pnpm install
+# Development
+bun dev                  # Start dev server with Turbopack
+bun dev:webpack          # Start dev server with Webpack (fallback)
 
-# Run development server with Turbopack
-pnpm dev
+# Build & Deploy
+bun run build            # Production build
+bun start                # Start production server
 
-# Run development server with Webpack (fallback)
-pnpm dev:webpack
+# Testing
+bun test                 # Run all tests
+bun test:watch           # Run tests in watch mode
+bun test:coverage        # Run tests with coverage report
 
-# Build production
-pnpm build
+# Linting
+bun lint                 # Run ESLint
 
-# Start production server
-pnpm start
-
-# Lint code
-pnpm lint
-
-# Run tests
-pnpm test
-
-# Run tests in watch mode
-pnpm test:watch
-
-# Run tests with coverage
-pnpm test:coverage
+# Database (Prisma)
+npx prisma generate      # Generate Prisma Client (after schema changes)
+npx prisma db push       # Push schema changes to database (dev)
+npx prisma migrate dev   # Create and apply migrations (production-ready)
+npx prisma studio        # Open Prisma Studio GUI
 ```
 
-## Database Setup
+## Architecture & Development Flow
 
-```bash
-# Generate Prisma Client
-npx prisma generate
+### Layered Architecture (MANDATORY)
 
-# Run migrations
-npx prisma migrate dev
-
-# Open Prisma Studio
-npx prisma studio
+```
+Prisma Schema → Types → API Routes → Services → Components → Pages
 ```
 
-## Code Style and Conventions
+Always follow this flow when implementing features:
+
+1. **Database Schema** (`prisma/schema.prisma`)
+   - Define models, run `npx prisma generate && npx prisma db push`
+   - Use camelCase for field names
+
+2. **Type Definitions** (`src/types/api.types.ts`)
+   - Define API request/response types
+   - Create Zod schemas for validation
+
+3. **API Routes** (`src/app/api/[resource]/route.ts`)
+   - Use type-safe response helpers from `@/lib/api-response.ts`
+   - Always validate input with Zod schemas
+   - See "API Response Patterns" below
+
+4. **Services** (`src/services/`) - Optional
+   - Extract complex business logic from API routes
+   - Keep API routes thin
+
+5. **Components** (`src/components/`)
+   - Server Components by default
+   - Add `'use client'` directive only when needed (interactivity, hooks, browser APIs)
+   - Use existing shadcn/ui components before creating custom ones
+
+6. **Pages** (`src/app/[route]/page.tsx`)
+   - Server Components by default for data fetching
+   - Pass data down to Client Components via props
+
+### API Response Patterns
+
+**Always use these helpers from `@/lib/api-response.ts`:**
+
+```typescript
+import { successResponse, errorResponse, handleError, ApiErrors } from '@/lib/api-response';
+
+// Success response
+return successResponse(data, 'Optional message', HttpStatus.OK);
+
+// Error responses
+throw ApiErrors.notFound('User');
+throw ApiErrors.unauthorized();
+throw ApiErrors.forbidden();
+throw ApiErrors.validation('Invalid input', { field: 'email' });
+
+// Generic error handling in catch blocks
+try {
+  // ... your code
+} catch (error) {
+  return handleError(error); // Handles Zod, ApiException, and generic errors
+}
+```
+
+### Authentication Architecture (NextAuth v5)
+
+**Key Files:**
+- `src/auth.ts` - NextAuth configuration with Credentials provider
+- `src/middleware.ts` - Route protection middleware
+- `prisma/schema.prisma` - User, Account, Session, VerificationToken models
+
+**Authentication Flow:**
+- JWT-based sessions (`strategy: "jwt"`)
+- Passwords hashed with bcryptjs
+- Custom login page at `/login`
+- Middleware protects all routes except `/api`, `/_next/static`, `/_next/image`, `/favicon.ico`
+
+**Usage in Server Components:**
+```typescript
+import { auth } from '@/auth';
+
+const session = await auth();
+if (!session) {
+  // User not authenticated
+}
+```
+
+**Usage in Client Components:**
+```typescript
+'use client';
+import { useSession } from 'next-auth/react';
+
+const { data: session, status } = useSession();
+```
+
+## Code Conventions
 
 ### TypeScript
-- **Strict mode** is enabled in tsconfig.json
+- Strict mode enabled - no implicit `any`
 - Use `unknown` instead of `any` for type safety
-- Target: ES2017
-- Always define types explicitly, avoid implicit any
+- Always define explicit types for function parameters and return values
 
 ### Import Paths
-- Use alias `@/*` for imports from `src/`
-- Example: `import { Button } from '@/components/ui/button'`
+Use `@/*` alias for all imports from `src/`:
+```typescript
+import { Button } from '@/components/ui/button';
+import { prisma } from '@/lib/prisma';
+import { successResponse } from '@/lib/api-response';
+```
 
 ### Component Patterns
-- **Server Components** are the default (Next.js App Router)
-- Add `"use client"` directive for Client Components
-- Functional components with TypeScript
-- Props interface should be clearly defined
+```typescript
+// Server Component (default) - no 'use client'
+export default async function Page() {
+  const data = await prisma.user.findMany();
+  return <ClientComponent data={data} />;
+}
+
+// Client Component - requires 'use client'
+'use client';
+export function ClientComponent({ data }: { data: User[] }) {
+  const [state, setState] = useState();
+  return <div>...</div>;
+}
+```
+
+### Form Handling Pattern
+```typescript
+'use client';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+
+const schema = z.object({
+  username: z.string().min(3),
+  password: z.string().min(6),
+});
+
+type FormData = z.infer<typeof schema>;
+
+export function MyForm() {
+  const form = useForm<FormData>({
+    resolver: zodResolver(schema),
+  });
+
+  async function onSubmit(data: FormData) {
+    const response = await fetch('/api/endpoint', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    // handle response
+  }
+}
+```
 
 ### Styling
-- Use Tailwind CSS utility classes
-- Use `cn()` helper from `@/lib/utils` to merge classes
-- shadcn/ui components are configured with "new-york" style
-- CSS variables for theming
+- Use Tailwind utility classes
+- Use `cn()` from `@/lib/utils` to merge classes conditionally
+- shadcn/ui components use "new-york" style variant
+- Theme via CSS variables (supports dark mode with next-themes)
 
-### API Routes
-- Use type-safe API responses from `@/types/api.types.ts`
-- Always use helper functions from `@/lib/api-response.ts`:
-  - `successResponse()` for success responses
-  - `errorResponse()` for error responses
-  - `handleError()` for error handling
-  - `handleZodError()` for validation errors
-- Validate input with Zod schemas
-- Use `ApiException` class for custom errors
+## Testing Guidelines
 
-### Form Handling
-- Use React Hook Form with Zod resolver
-- Validate schemas with Zod
-- UI components from shadcn/ui form components
+**Test Location:**
+- Place tests in `__tests__/` folders or co-locate with source files
+- Naming: `*.test.ts`, `*.test.tsx`, `*.spec.ts`, `*.spec.tsx`
 
-### State Management
-- Zustand for global state
-- React hooks for local state
-- Server state should be managed via React Query (if needed)
-
-## Testing Instructions
-
-### Jest Setup
-The project is configured with Jest 30 and React Testing Library:
-
-- **Test framework**: Jest 30.2.0
-- **Testing library**: @testing-library/react 16.3.0
-- **Environment**: jsdom
-- **TypeScript support**: ts-jest 29.4.5
-
-### Running Tests
-
-```bash
-# Run all tests
-pnpm test
-
-# Run tests in watch mode (auto re-run on changes)
-pnpm test:watch
-
-# Run tests with coverage report
-pnpm test:coverage
-```
-
-### Test File Conventions
-
-- Place test files in `__tests__` folder or co-locate with the file being tested
-- Naming convention: `*.test.ts`, `*.test.tsx`, `*.spec.ts`, `*.spec.tsx`
-- Examples:
-  - `src/components/ui/__tests__/button.test.tsx`
-  - `src/lib/__tests__/utils.test.ts`
-  - `src/components/MyComponent.test.tsx`
-
-### Writing Tests
-
-**Component tests:**
-```typescript
-import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { MyComponent } from './MyComponent';
-
-describe('MyComponent', () => {
-  it('renders correctly', () => {
-    render(<MyComponent />);
-    expect(screen.getByText('Hello')).toBeInTheDocument();
-  });
-
-  it('handles user interactions', async () => {
-    const user = userEvent.setup();
-    const handleClick = jest.fn();
-
-    render(<MyComponent onClick={handleClick} />);
-    await user.click(screen.getByRole('button'));
-
-    expect(handleClick).toHaveBeenCalledTimes(1);
-  });
-});
-```
-
-**Utility function tests:**
-```typescript
-import { myFunction } from './myFunction';
-
-describe('myFunction', () => {
-  it('returns expected result', () => {
-    expect(myFunction('input')).toBe('expected output');
-  });
-});
-```
-
-### Test Best Practices
-
-- Always write tests for new code
-- Test both happy path and edge cases
-- Use `describe` to group related tests
-- Use descriptive test names
-- Mock external dependencies (API calls, database, etc.)
-- Aim for high coverage but focus on meaningful tests
-- Test behavior, not implementation details
-
-### Mocked Modules
-
-Jest setup has pre-mocked:
+**Pre-mocked Modules:**
 - `next/navigation` (useRouter, usePathname, useSearchParams)
 - `window.matchMedia`
 - `IntersectionObserver`
 - `ResizeObserver`
 
-### Coverage Thresholds
-
-Currently coverage thresholds are set at 0% to not block development. Should be increased gradually as codebase matures:
-
+**Component Testing:**
 ```typescript
-// jest.config.ts
-coverageThreshold: {
-  global: {
-    branches: 0,
-    functions: 0,
-    lines: 0,
-    statements: 0,
-  },
-}
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+
+describe('MyComponent', () => {
+  it('handles interactions', async () => {
+    const user = userEvent.setup();
+    render(<MyComponent />);
+
+    await user.click(screen.getByRole('button'));
+    expect(screen.getByText('Result')).toBeInTheDocument();
+  });
+});
 ```
 
-## Prisma Conventions
+**Run tests before committing** - Test coverage thresholds are currently at 0% but aim for meaningful test coverage on new code.
 
-- Models should be defined in `prisma/schema.prisma`
-- Use camelCase for field names
-- Always run `prisma generate` after changing schema
-- Migrations should have descriptive names
+## Database Workflow
+
+1. Edit `prisma/schema.prisma`
+2. Generate client: `npx prisma generate`
+3. Push changes: `npx prisma db push` (dev) or `npx prisma migrate dev` (prod)
+4. Access Prisma Client via `@/lib/prisma`:
+
+```typescript
+import { prisma } from '@/lib/prisma';
+
+const users = await prisma.user.findMany();
+```
 
 ## Environment Variables
 
-Create a `.env` file with the following variables:
-
+Required `.env` file:
 ```env
 DATABASE_URL="postgresql://user:password@localhost:5432/dbname"
 NODE_ENV="development"
+AUTH_SECRET="your-secret-key"  # For NextAuth
 ```
 
-## Deployment
+## Project Structure
 
-- Build with `pnpm build`
-- Deploy to Vercel (recommended) or any platform that supports Next.js
-- Ensure environment variables are set correctly
-- Database migrations should run before deploy
+```
+src/
+├── app/
+│   ├── api/              # API routes
+│   ├── layout.tsx        # Root layout with SessionProvider
+│   └── page.tsx          # Home page
+├── components/
+│   ├── ui/               # 50+ shadcn/ui components
+│   └── [custom]/         # Custom components
+├── lib/
+│   ├── api-response.ts   # API response helpers (ALWAYS use these)
+│   ├── auth-helpers.ts   # Auth utility functions
+│   ├── prisma.ts         # Prisma client instance
+│   └── utils.ts          # cn() and other utils
+├── types/
+│   ├── api.types.ts      # API types, Zod schemas
+│   └── next-auth.d.ts    # NextAuth type extensions
+├── auth.ts               # NextAuth configuration
+└── middleware.ts         # Route protection
+```
 
-## Notes for AI Agents
+## Critical Patterns
 
-- When creating new API routes, always use type-safe response helpers
-- When creating forms, use React Hook Form + Zod
-- When adding UI components, prioritize using existing shadcn/ui components
-- When working with database, always update Prisma schema and run migrations
-- Follow Next.js App Router conventions (Server Components by default)
-- Avoid using `any` type - use `unknown` or define specific types
-- Always write tests for new code and run `pnpm test` before committing
+1. **Never skip Prisma generation** - Always run `npx prisma generate` after schema changes
+2. **Always use API response helpers** - Never manually construct NextResponse for API routes
+3. **Validate all API inputs** - Use Zod schemas defined in `@/types/api.types.ts`
+4. **Server-first approach** - Default to Server Components, only use Client Components when necessary
+5. **Type safety** - Leverage Prisma-generated types, avoid `any`
+6. **Test new code** - Write tests for new features before committing
 
+## Additional Notes
+
+- This is a boilerplate template - adapt patterns as needed for specific use cases
+- The project uses Vietnamese comments in some files (api-response.ts) - maintain consistency or update as preferred
+- Package manager is **bun** - use `bun` instead of `npm` or `yarn`
+- Turbopack is enabled by default (`bun dev`) for faster development

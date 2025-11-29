@@ -1317,8 +1317,7 @@ Provide a helpful, concise response based on your expertise as a {self.role_type
         Returns:
             True if tracked successfully
         """
-        if not LANGFUSE_AVAILABLE:
-            return False
+
         
         try:
             # Extract output content
