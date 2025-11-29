@@ -228,16 +228,16 @@ class SimpleDeveloperRunner:
             "code_review_iteration": 0,
             "code_review_results": [],
             
-            # Run code - skip tests for React (no test framework)
+            # Run code - let detect_test_command figure out the right command
             "run_status": None,
             "run_result": None,
             "run_stdout": "",
             "run_stderr": "",
-            "test_command": ["echo", "Skipping tests"],  # Skip actual tests
+            "test_command": None,  # Auto-detect test framework (pnpm/npm/jest/pytest)
             
-            # Debug - reduce attempts
+            # Debug
             "debug_count": 0,
-            "max_debug": 1,  # Only 1 debug attempt
+            "max_debug": 3,  # Allow 3 debug attempts
             "debug_history": [],
             "last_debug_file": None,
         }

@@ -3,14 +3,18 @@
 import logging
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, List, Optional
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.tools import tool
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain.agents import AgentExecutor, create_tool_calling_agent
+from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import (
-    RoutingDecision, StoryAnalysis, ImplementationPlan, 
+    RoutingDecision, StoryAnalysis, ImplementationPlan, PlanStep,
     CodeChange, ValidationResult
 )
 from app.agents.core.prompt_utils import load_prompts_yaml
@@ -18,14 +22,213 @@ from app.agents.core.prompt_utils import load_prompts_yaml
 logger = logging.getLogger(__name__)
 
 _PROMPTS = load_prompts_yaml(Path(__file__).parent / "prompts.yaml")
-_fast_llm = ChatOpenAI(model="claude-haiku-4-5-20251001", temperature=0.1, timeout=30)
-_code_llm = ChatOpenAI(model="claude-sonnet-4-20250514", temperature=0.2, timeout=60)
+
+# GPT-4.1 models
+_fast_llm = ChatOpenAI(model="gpt-4.1", temperature=0.1, timeout=30)
+_code_llm = ChatOpenAI(model="gpt-4.1", temperature=0.2, timeout=120)
+
+
+# =============================================================================
+# TOOLS - Force structured JSON output via tool calling
+# =============================================================================
+
+@tool
+def submit_routing_decision(
+    action: str,
+    task_type: str,
+    complexity: str,
+    message: str,
+    reason: str,
+    confidence: float = 0.8
+) -> str:
+    """Submit routing decision for the story. MUST be called with your decision.
+    
+    Args:
+        action: One of ANALYZE, PLAN, IMPLEMENT, VALIDATE, CLARIFY, RESPOND
+        task_type: One of feature, bugfix, refactor, enhancement, documentation
+        complexity: One of low, medium, high
+        message: Vietnamese status message for user
+        reason: 1-line reasoning for decision
+        confidence: Confidence score 0.0-1.0
+    """
+    return f"ROUTING_RESULT:{action}|{task_type}|{complexity}|{message}|{reason}|{confidence}"
+
+
+@tool
+def submit_story_analysis(
+    task_type: str,
+    complexity: str,
+    estimated_hours: float,
+    summary: str,
+    affected_files: List[str],
+    suggested_approach: str,
+    dependencies: Optional[List[str]] = None,
+    risks: Optional[List[str]] = None
+) -> str:
+    """Submit story analysis result. MUST be called with your analysis.
+    
+    Args:
+        task_type: One of feature, bugfix, refactor, enhancement, documentation
+        complexity: One of low, medium, high
+        estimated_hours: Estimated hours (0.5-100)
+        summary: Brief summary of what needs to be done
+        affected_files: Files likely to be modified (e.g., ["app/page.tsx", "src/components/Button.tsx"])
+        suggested_approach: Recommended implementation approach
+        dependencies: External dependencies or blockers (optional)
+        risks: Potential risks or concerns (optional)
+    """
+    files_str = ",".join(affected_files) if affected_files else ""
+    return f"ANALYSIS_RESULT:{task_type}|{complexity}|{estimated_hours}|{summary}|{files_str}|{suggested_approach}"
+
+
+@tool
+def submit_implementation_plan(
+    story_summary: str,
+    steps: List[dict],
+    total_estimated_hours: float,
+    critical_path: Optional[List[int]] = None,
+    rollback_plan: Optional[str] = None
+) -> str:
+    """Submit implementation plan. MUST be called with your plan.
+    
+    Args:
+        story_summary: Brief summary of the implementation
+        steps: List of steps. Each step MUST have: order (int), description (str), file_path (str), action (create/modify), estimated_minutes (int), dependencies (list of int)
+        total_estimated_hours: Total estimated hours for all steps
+        critical_path: List of step order numbers on critical path (optional)
+        rollback_plan: How to rollback if needed (optional)
+    
+    Example steps:
+        [
+            {"order": 1, "description": "Create main page", "file_path": "app/page.tsx", "action": "create", "estimated_minutes": 30, "dependencies": []},
+            {"order": 2, "description": "Add button component", "file_path": "app/components/Button.tsx", "action": "create", "estimated_minutes": 20, "dependencies": [1]}
+        ]
+    """
+    return f"PLAN_RESULT:{len(steps)} steps|{total_estimated_hours}h"
+
+
+@tool
+def submit_code_change(
+    file_path: str,
+    action: str,
+    description: str,
+    code_snippet: str,
+    line_start: Optional[int] = None,
+    line_end: Optional[int] = None
+) -> str:
+    """Submit code change. MUST be called with the complete code.
+    
+    Args:
+        file_path: Path to the file (e.g., "app/page.tsx", "src/utils/helpers.ts")
+        action: One of create, modify, delete
+        description: What the change does
+        code_snippet: The COMPLETE code content for the file. Must be valid, working code.
+        line_start: Starting line number for modify (optional)
+        line_end: Ending line number for modify (optional)
+    """
+    return f"CODE_RESULT:{action}|{file_path}|{len(code_snippet)} chars"
+
+
+# =============================================================================
+# AGENT EXECUTORS - Create agents with forced tool calling
+# =============================================================================
+
+def _create_agent_executor(llm, tools: list, system_prompt: str) -> AgentExecutor:
+    """Create an agent executor that forces tool calling."""
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt + "\n\nIMPORTANT: You MUST call the provided tool to submit your result. Do not respond with plain text."),
+        ("human", "{input}"),
+        MessagesPlaceholder(variable_name="agent_scratchpad"),
+    ])
+    
+    agent = create_tool_calling_agent(llm, tools, prompt)
+    return AgentExecutor(
+        agent=agent,
+        tools=tools,
+        verbose=False,
+        max_iterations=3,
+        return_intermediate_steps=True,
+        handle_parsing_errors=True
+    )
+
+
+# Lazy initialization of agents
+_routing_agent: Optional[AgentExecutor] = None
+_analysis_agent: Optional[AgentExecutor] = None
+_plan_agent: Optional[AgentExecutor] = None
+_code_agent: Optional[AgentExecutor] = None
+
+
+def _get_routing_agent() -> AgentExecutor:
+    global _routing_agent
+    if _routing_agent is None:
+        system_prompt = _build_system_prompt("routing_decision")
+        _routing_agent = _create_agent_executor(
+            _fast_llm,
+            [submit_routing_decision],
+            system_prompt
+        )
+    return _routing_agent
+
+
+def _get_analysis_agent() -> AgentExecutor:
+    global _analysis_agent
+    if _analysis_agent is None:
+        system_prompt = _build_system_prompt("analyze_story")
+        _analysis_agent = _create_agent_executor(
+            _code_llm,
+            [submit_story_analysis],
+            system_prompt
+        )
+    return _analysis_agent
+
+
+def _get_plan_agent() -> AgentExecutor:
+    global _plan_agent
+    if _plan_agent is None:
+        system_prompt = _build_system_prompt("create_plan")
+        _plan_agent = _create_agent_executor(
+            _code_llm,
+            [submit_implementation_plan],
+            system_prompt
+        )
+    return _plan_agent
+
+
+def _get_code_agent() -> AgentExecutor:
+    global _code_agent
+    if _code_agent is None:
+        system_prompt = _build_system_prompt("implement_step")
+        _code_agent = _create_agent_executor(
+            _code_llm,
+            [submit_code_change],
+            system_prompt
+        )
+    return _code_agent
+
+
+# MetaGPT Pattern: Retry with exponential backoff for LLM calls
+@retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
+async def _llm_call_with_retry(llm, messages, config=None):
+    """Call LLM with retry on failure (MetaGPT pattern)."""
+    return await llm.ainvoke(messages, config=config)
 
 
 def _clean_json(text: str) -> str:
     """Strip markdown code blocks from LLM response."""
     match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
     return match.group(1).strip() if match else text.strip()
+
+
+def _normalize_newlines(content: str) -> str:
+    """Convert escaped newlines to actual newlines.
+    
+    Fixes issue where LLM returns \\n as literal string instead of newline.
+    """
+    if not content:
+        return content
+    # Replace literal \n with actual newlines
+    return content.replace('\\n', '\n').replace('\\r', '\r')
 
 
 def _cfg(state: dict, name: str) -> dict | None:
@@ -107,6 +310,12 @@ def _extract_design_from_raw(raw_content: str) -> dict:
         if notes_match:
             design_result["design_notes"] = notes_match.group(1).strip()[:500]
     
+    # Normalize escaped newlines in all content
+    design_result["data_structures"] = _normalize_newlines(design_result["data_structures"])
+    design_result["call_flow"] = _normalize_newlines(design_result["call_flow"])
+    design_result["api_interfaces"] = _normalize_newlines(design_result["api_interfaces"])
+    design_result["design_notes"] = _normalize_newlines(design_result["design_notes"])
+    
     return design_result
 
 
@@ -156,46 +365,124 @@ def _save_design_docs(workspace_path: str, design_result: dict, design_doc: str,
         logger.warning(f"[design] Failed to save design docs: {e}")
 
 
+async def _extract_plan_with_llm(raw_content: str, state: dict) -> list:
+    """Use LLM to extract file paths from raw response (more flexible than regex)."""
+    try:
+        extract_prompt = f"""Extract all file paths that need to be created or modified from the following text.
+Return ONLY a JSON array of file paths, nothing else. Example: ["src/App.tsx", "src/pages/Home.tsx"]
+
+Text:
+{raw_content[:3000]}
+
+JSON array of file paths:"""
+        
+        messages = [HumanMessage(content=extract_prompt)]
+        response = await _fast_llm.ainvoke(messages)
+        
+        # Parse JSON array from response
+        import json
+        content = response.content.strip()
+        # Try to find JSON array in response
+        if '[' in content:
+            start = content.index('[')
+            end = content.rindex(']') + 1
+            files = json.loads(content[start:end])
+            if isinstance(files, list) and files:
+                logger.info(f"[_extract_plan_with_llm] Extracted {len(files)} files via LLM")
+                return files
+    except Exception as e:
+        logger.warning(f"[_extract_plan_with_llm] LLM extraction failed: {e}")
+    
+    return []
+
+
+def _extract_files_with_regex(raw_content: str) -> list:
+    """Extract file paths using comprehensive regex patterns."""
+    import re
+    
+    # Generic pattern: Match any path-like string with common extensions
+    # This is more flexible than specific patterns
+    generic_pattern = r'(?:^|[\s\'"`,\[\(])([a-zA-Z0-9_.-]+(?:/[a-zA-Z0-9_.-]+)*\.[a-zA-Z]{2,4})(?:[\s\'"`,\]\)]|$)'
+    
+    # Common source file extensions
+    source_exts = {'.py', '.js', '.ts', '.tsx', '.jsx', '.vue', '.svelte',
+                   '.css', '.scss', '.sass', '.less', 
+                   '.html', '.htm', '.json', '.yaml', '.yml', '.xml',
+                   '.md', '.mdx', '.txt', '.env', '.config'}
+    
+    files_found = set()
+    
+    # Try generic pattern first
+    matches = re.findall(generic_pattern, raw_content, re.MULTILINE)
+    files_found.update(matches)
+    
+    # Also try to find paths in code blocks
+    code_block_pattern = r'```[a-z]*\s*\n(?:.*?(?:file|path|name).*?)?([a-zA-Z0-9_/.-]+\.[a-z]{2,4})'
+    matches = re.findall(code_block_pattern, raw_content, re.IGNORECASE)
+    files_found.update(matches)
+    
+    # Find paths that look like: src/..., app/..., pages/..., components/..., etc.
+    dir_pattern = r'(?:src|app|pages|components|lib|utils|hooks|styles|public|assets)/[a-zA-Z0-9_/.-]+\.[a-z]{2,4}'
+    matches = re.findall(dir_pattern, raw_content)
+    files_found.update(matches)
+    
+    # Filter to valid source files and dedupe while preserving order
+    seen = set()
+    valid_files = []
+    for f in files_found:
+        ext = '.' + f.split('.')[-1].lower() if '.' in f else ''
+        if ext in source_exts:
+            # Clean up the path
+            f = f.strip('`"\'')
+            # Normalize path (remove leading ./)
+            if f.startswith('./'):
+                f = f[2:]
+            if f and not f.startswith('.') and ('/' in f or '.' in f):
+                # Dedupe: only add if not seen
+                if f not in seen:
+                    seen.add(f)
+                    valid_files.append(f)
+    
+    return valid_files
+
+
 def _extract_plan_from_raw(raw_content: str, state: dict) -> "ImplementationPlan":
     """Extract implementation plan from raw LLM response when JSON parsing fails.
     
-    Creates a basic plan from diff content or file mentions in the response.
+    Uses multiple strategies:
+    1. Regex-based file extraction (fast)
+    2. Falls back to affected_files from state
+    3. Falls back to design file_structure
     """
-    import re
+    # Strategy 1: Regex extraction
+    files_found = _extract_files_with_regex(raw_content)
+    logger.info(f"[_extract_plan_from_raw] Regex found {len(files_found)} files: {files_found[:5]}")
     
-    # Extract file paths from diff headers or mentions
-    file_patterns = [
-        r'---\s*(?:Old/)?([a-zA-Z0-9_/.-]+\.[a-zA-Z]+)',  # --- Old/file.py
-        r'\+\+\+\s*(?:New/)?([a-zA-Z0-9_/.-]+\.[a-zA-Z]+)',  # +++ New/file.py
-        r'##\s*(?:Code:)?\s*([a-zA-Z0-9_/.-]+\.[a-zA-Z]+)',  # ## Code: file.py
-        r'`([a-zA-Z0-9_/.-]+\.[a-zA-Z]+)`',  # `file.py`
-    ]
-    
-    files_found = set()
-    for pattern in file_patterns:
-        matches = re.findall(pattern, raw_content)
-        files_found.update(matches)
-    
-    # Filter to likely source files
-    source_exts = {'.py', '.js', '.ts', '.tsx', '.jsx', '.css', '.html', '.json', '.yaml', '.yml'}
-    files_found = [f for f in files_found if any(f.endswith(ext) for ext in source_exts)]
-    
-    # Use affected_files from state if no files found
+    # Strategy 2: Use affected_files from state
     if not files_found:
         files_found = state.get("affected_files", [])
+        logger.info(f"[_extract_plan_from_raw] Using affected_files: {files_found}")
+    
+    # Strategy 3: Use design file_structure
+    if not files_found:
+        design = state.get("system_design", {})
+        if design:
+            files_found = design.get("file_structure", [])
+            logger.info(f"[_extract_plan_from_raw] Using design file_structure: {files_found}")
     
     # Create steps from files
     steps = []
-    for i, file_path in enumerate(files_found[:10], 1):  # Limit to 10 files
+    workspace_path = state.get("workspace_path", "")
+    
+    for i, file_path in enumerate(files_found[:15], 1):  # Limit to 15 files
         # Determine if create or modify based on workspace
-        workspace_path = state.get("workspace_path", "")
-        action = "modify"
+        action = "create"
         if workspace_path:
             full_path = Path(workspace_path) / file_path
-            if not full_path.exists():
-                action = "create"
+            if full_path.exists():
+                action = "modify"
         
-        steps.append(ImplementationStep(
+        steps.append(PlanStep(
             order=i,
             description=f"Implement {file_path}",
             file_path=file_path,
@@ -204,16 +491,51 @@ def _extract_plan_from_raw(raw_content: str, state: dict) -> "ImplementationPlan
             dependencies=[]
         ))
     
-    # If still no steps, create a generic one
+    # If still no steps, create generic ones based on story type and framework
     if not steps:
-        steps.append(ImplementationStep(
-            order=1,
-            description="Implement required changes based on requirements",
-            file_path="main.py",
-            action="create",
-            estimated_minutes=30,
-            dependencies=[]
-        ))
+        story_title = state.get("story_title", "").lower()
+        workspace_path = state.get("workspace_path", "")
+        
+        # Try to detect framework from package.json
+        framework_info = {"name": "unknown", "router": "unknown"}
+        if workspace_path:
+            from app.agents.developer_v2.tools import detect_framework_from_package_json
+            framework_info = detect_framework_from_package_json(workspace_path)
+            logger.info(f"[_extract_plan_from_raw] Detected framework: {framework_info}")
+        
+        # Detect project type from story or existing files
+        if framework_info.get("name") == "nextjs" or any(kw in story_title for kw in ['next']):
+            # NextJS 13+ uses App Router by default
+            if framework_info.get("router") == "app" or "app" in story_title:
+                # App Router structure
+                default_files = [
+                    "app/page.tsx",
+                    "app/layout.tsx", 
+                    "app/components/Main.tsx",
+                    "app/globals.css"
+                ]
+            else:
+                # Pages Router (legacy)
+                default_files = ["pages/index.tsx", "pages/_app.tsx", "components/Main.tsx"]
+        elif any(kw in story_title for kw in ['react', 'frontend', 'web', 'ui']):
+            # Standard React (Vite/CRA)
+            default_files = ["src/App.tsx", "src/main.tsx", "src/components/Main.tsx"]
+        elif any(kw in story_title for kw in ['api', 'backend', 'server']):
+            default_files = ["src/main.py", "src/api/routes.py", "src/models.py"]
+        else:
+            default_files = ["src/main.py", "src/app.py"]
+        
+        for i, file_path in enumerate(default_files, 1):
+            steps.append(PlanStep(
+                order=i,
+                description=f"Implement {file_path}",
+                file_path=file_path,
+                action="create",
+                estimated_minutes=20,
+                dependencies=[]
+            ))
+        
+        logger.warning(f"[_extract_plan_from_raw] Using default files: {default_files}")
     
     return ImplementationPlan(
         story_summary=state.get("story_title", "Implementation"),
@@ -226,8 +548,57 @@ def _extract_plan_from_raw(raw_content: str, state: dict) -> "ImplementationPlan
     )
 
 
+def _extract_code_change_from_raw(raw_content: str, step: dict) -> "CodeChange":
+    """Extract code change from raw LLM response when JSON parsing fails.
+    
+    Looks for code blocks and extracts the code snippet.
+    """
+    import re
+    
+    file_path = step.get("file_path", "main.py")
+    action = step.get("action", "create")
+    description = step.get("description", "Implement code")
+    
+    # Try to extract code from markdown code blocks
+    code_patterns = [
+        r'```(?:python|javascript|typescript|jsx|tsx|css|html|json|yaml)\s*([\s\S]*?)```',
+        r'```\s*([\s\S]*?)```',
+    ]
+    
+    code_snippet = ""
+    for pattern in code_patterns:
+        matches = re.findall(pattern, raw_content)
+        if matches:
+            # Get the longest code block (usually the main implementation)
+            code_snippet = max(matches, key=len).strip()
+            break
+    
+    # If no code block found, use the raw content (might be plain code)
+    if not code_snippet:
+        # Try to extract content after common headers
+        content_match = re.search(r'(?:Here is|Here\'s|The code|Code:)\s*[\n\r]+([\s\S]+)', raw_content, re.IGNORECASE)
+        if content_match:
+            code_snippet = content_match.group(1).strip()
+        else:
+            code_snippet = raw_content.strip()
+    
+    # Clean up the code (remove common LLM artifacts)
+    code_snippet = re.sub(r'^(Here is|Here\'s|The following|Below is).*\n', '', code_snippet, flags=re.IGNORECASE)
+    code_snippet = code_snippet.strip()
+    
+    return CodeChange(
+        file_path=file_path,
+        action=action,
+        code_snippet=code_snippet,
+        description=description,
+        imports_added=[],
+        functions_modified=[],
+        tests_needed=[]
+    )
+
+
 async def router(state: DeveloperState, agent=None) -> DeveloperState:
-    """Route story to appropriate processing node."""
+    """Route story to appropriate processing node using agent with tool calling."""
     try:
         has_analysis = bool(state.get("analysis_result"))
         has_plan = bool(state.get("implementation_plan"))
@@ -237,42 +608,62 @@ async def router(state: DeveloperState, agent=None) -> DeveloperState:
         story_content = state.get("story_content", "")
         is_story_task = len(story_content) > 50  # Story with sufficient detail
         
-        sys_prompt = _build_system_prompt("routing_decision", agent)
-        user_prompt = _get_prompt("routing_decision", "user_prompt").format(
-            story_title=state.get("story_title", "Untitled"),
-            story_content=story_content,
-            acceptance_criteria="\n".join(state.get("acceptance_criteria", [])),
-            has_analysis=has_analysis,
-            has_plan=has_plan,
-            has_implementation=has_implementation,
-        )
+        # Build input for agent
+        input_text = f"""Story: {state.get("story_title", "Untitled")}
+
+Content:
+{story_content}
+
+Acceptance Criteria:
+{chr(10).join(state.get("acceptance_criteria", []))}
+
+Current State:
+- Has analysis: {has_analysis}
+- Has plan: {has_plan}
+- Has implementation: {has_implementation}
+
+Decide the next action and call submit_routing_decision."""
+
+        # Use agent with tool calling
+        routing_agent = _get_routing_agent()
+        result = await routing_agent.ainvoke({"input": input_text})
         
-        messages = [
-            SystemMessage(content=sys_prompt),
-            HumanMessage(content=user_prompt)
-        ]
+        # Extract tool call arguments from intermediate steps
+        action = "ANALYZE"
+        task_type = "feature"
+        complexity = "medium"
+        message = "Bắt đầu phân tích story..."
+        reason = "New story needs analysis"
+        confidence = 0.8
         
-        response = await _fast_llm.ainvoke(messages, config=_cfg(state, "router"))
-        clean_json = _clean_json(response.content)
-        decision = RoutingDecision.model_validate_json(clean_json)
+        intermediate_steps = result.get("intermediate_steps", [])
+        if intermediate_steps:
+            # Get the last tool call
+            for action_obj, _ in intermediate_steps:
+                if hasattr(action_obj, 'tool_input'):
+                    tool_input = action_obj.tool_input
+                    action = tool_input.get("action", action)
+                    task_type = tool_input.get("task_type", task_type)
+                    complexity = tool_input.get("complexity", complexity)
+                    message = tool_input.get("message", message)
+                    reason = tool_input.get("reason", reason)
+                    confidence = tool_input.get("confidence", confidence)
         
         # IMPORTANT: For story tasks, never return RESPOND or CLARIFY
-        # Always proceed with implementation flow (MetaGPT pattern)
-        action = decision.action
         if is_story_task and action in ("RESPOND", "CLARIFY"):
             logger.info(f"[router] Story task detected, forcing ANALYZE instead of {action}")
             action = "ANALYZE"
         
-        logger.info(f"[router] Decision: action={action}, type={decision.task_type}, complexity={decision.complexity}")
+        logger.info(f"[router] Decision: action={action}, type={task_type}, complexity={complexity}")
         
         return {
             **state,
             "action": action,
-            "task_type": decision.task_type,
-            "complexity": decision.complexity,
-            "message": decision.message if action == decision.action else "Bắt đầu phân tích story...",
-            "reason": decision.reason,
-            "confidence": decision.confidence,
+            "task_type": task_type,
+            "complexity": complexity,
+            "message": message,
+            "reason": reason,
+            "confidence": confidence,
         }
         
     except Exception as e:
@@ -316,7 +707,6 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         if hasattr(agent, '_setup_workspace'):
             workspace_info = agent._setup_workspace(story_id)
             
-            # await agent.message_user("status", f"🔧 Workspace ready: branch `{workspace_info['branch_name']}`")  # Disabled for Kafka mode
             
             # Index workspace with CocoIndex for semantic search
             index_ready = False
@@ -325,15 +715,24 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             task_id = state.get("task_id") or story_id
             
             if workspace_path:
+                from app.agents.developer_v2.tools import index_workspace
+                index_ready = index_workspace(project_id, workspace_path, task_id)
+                if not index_ready:
+                    raise RuntimeError(f"CocoIndex indexing failed for workspace: {workspace_path}")
+                logger.info(f"[setup_workspace] Indexed workspace with CocoIndex")
+            
+            # Load AGENTS.md and project context
+            project_context = ""
+            agents_md = ""
+            if workspace_path:
                 try:
-                    from app.agents.developer_v2.tools import index_workspace
-                    index_ready = index_workspace(project_id, workspace_path, task_id)
-                    if index_ready:
-                        logger.info(f"[setup_workspace] Indexed workspace with CocoIndex")
-                        # await agent.message_user("status", "📚 Codebase indexed for semantic search")  # Disabled for Kafka mode
-                except Exception as idx_err:
-                    logger.warning(f"[setup_workspace] CocoIndex indexing failed: {idx_err}")
-                    index_ready = False
+                    from app.agents.developer_v2.tools import get_agents_md, get_project_context
+                    agents_md = get_agents_md(workspace_path)
+                    project_context = get_project_context(workspace_path)
+                    if agents_md:
+                        logger.info(f"[setup_workspace] Loaded AGENTS.md: {len(agents_md)} chars")
+                except Exception as ctx_err:
+                    logger.warning(f"[setup_workspace] Failed to load project context: {ctx_err}")
             
             return {
                 **state,
@@ -342,6 +741,8 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                 "main_workspace": workspace_info["main_workspace"],
                 "workspace_ready": workspace_info["workspace_ready"],
                 "index_ready": index_ready,
+                "agents_md": agents_md,
+                "project_context": project_context,
             }
         else:
             logger.warning("[setup_workspace] Agent has no _setup_workspace method")
@@ -349,7 +750,6 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         
     except Exception as e:
         logger.error(f"[setup_workspace] Error: {e}", exc_info=True)
-        # await agent.message_user("status", f"⚠️ Không thể tạo workspace: {str(e)}")  # Disabled for Kafka mode
         return {
             **state,
             "workspace_ready": False,
@@ -358,30 +758,90 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
 
 
 async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
-    """Analyze user story to understand scope and requirements."""
+    """Analyze user story using agent with tool calling."""
     try:
         if agent:
-            # await agent.message_user("status", f"🔍 Đang phân tích story: {state.get('story_title', 'Story')}...")  # Disabled for Kafka mode
             pass
         
-        sys_prompt = _build_system_prompt("analyze_story", agent)
-        user_prompt = _get_prompt("analyze_story", "user_prompt").format(
-            story_title=state.get("story_title", "Untitled"),
-            story_content=state.get("story_content", ""),
-            acceptance_criteria="\n".join(f"- {ac}" for ac in state.get("acceptance_criteria", [])),
-            project_context="",
+        # Build input for agent
+        input_text = f"""Analyze this story and call submit_story_analysis:
+
+Story: {state.get("story_title", "Untitled")}
+
+Content:
+{state.get("story_content", "")}
+
+Acceptance Criteria:
+{chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", []))}
+
+Identify: task_type, complexity, estimated_hours, affected_files, suggested_approach."""
+
+        # Use agent with tool calling
+        analysis_agent = _get_analysis_agent()
+        result = await analysis_agent.ainvoke({"input": input_text})
+        
+        # Extract tool call arguments
+        task_type = "feature"
+        complexity = "medium"
+        estimated_hours = 4.0
+        summary = state.get("story_title", "Implementation")
+        affected_files = []
+        suggested_approach = "Standard implementation approach"
+        dependencies = []
+        risks = []
+        
+        intermediate_steps = result.get("intermediate_steps", [])
+        if intermediate_steps:
+            for action_obj, _ in intermediate_steps:
+                if hasattr(action_obj, 'tool_input'):
+                    tool_input = action_obj.tool_input
+                    task_type = tool_input.get("task_type", task_type)
+                    complexity = tool_input.get("complexity", complexity)
+                    estimated_hours = tool_input.get("estimated_hours", estimated_hours)
+                    summary = tool_input.get("summary", summary)
+                    affected_files = tool_input.get("affected_files", affected_files)
+                    suggested_approach = tool_input.get("suggested_approach", suggested_approach)
+                    dependencies = tool_input.get("dependencies", dependencies) or []
+                    risks = tool_input.get("risks", risks) or []
+        
+        # Create analysis object for compatibility
+        analysis = StoryAnalysis(
+            task_type=task_type,
+            complexity=complexity,
+            estimated_hours=estimated_hours,
+            summary=summary,
+            affected_files=affected_files,
+            dependencies=dependencies,
+            risks=risks,
+            suggested_approach=suggested_approach
         )
+        logger.info(f"[analyze] Completed: type={task_type}, complexity={complexity}, hours={estimated_hours}")
         
-        messages = [
-            SystemMessage(content=sys_prompt),
-            HumanMessage(content=user_prompt)
-        ]
-        
-        response = await _code_llm.ainvoke(messages, config=_cfg(state, "analyze"))
-        clean_json = _clean_json(response.content)
-        analysis = StoryAnalysis.model_validate_json(clean_json)
-        
-        logger.info(f"[analyze] Completed: type={analysis.task_type}, complexity={analysis.complexity}, hours={analysis.estimated_hours}")
+        # Research best practices with Tavily (if available)
+        research_context = ""
+        workspace_path = state.get("workspace_path", "")
+        if workspace_path:
+            try:
+                from app.agents.developer_v2.tools import (
+                    detect_framework_from_package_json,
+                    tavily_search
+                )
+                framework_info = detect_framework_from_package_json(workspace_path)
+                
+                if framework_info.get("name") != "unknown":
+                    framework_name = framework_info.get("name", "")
+                    framework_version = framework_info.get("version", "")
+                    router_type = framework_info.get("router", "")
+                    
+                    # Build search query based on story and framework
+                    story_title = state.get("story_title", "")
+                    search_query = f"{framework_name} {framework_version} {router_type} router {story_title} best practices 2024"
+                    
+                    logger.info(f"[analyze] Researching: {search_query}")
+                    research_context = await tavily_search(search_query, max_results=3)
+                    logger.info(f"[analyze] Research completed: {len(research_context)} chars")
+            except Exception as research_err:
+                logger.warning(f"[analyze] Research failed (continuing): {research_err}")
         
         msg = f"""✅ **Phân tích hoàn tất!**
 
@@ -396,7 +856,6 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
 💡 **Approach:** {analysis.suggested_approach}"""
         
         if agent:
-            # await agent.message_user("response", msg)  # Disabled for Kafka mode
             pass
         
         return {
@@ -408,6 +867,7 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
             "affected_files": analysis.affected_files,
             "dependencies": analysis.dependencies,
             "risks": analysis.risks,
+            "research_context": research_context,  # Tavily research results
             "message": msg,
             "action": "PLAN",
         }
@@ -417,6 +877,7 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
         return {
             **state,
             "error": str(e),
+            "research_context": "",
             "message": f"❌ Lỗi khi phân tích: {str(e)}",
             "action": "RESPOND",
         }
@@ -438,7 +899,6 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
             }
         
         if agent:
-            # await agent.message_user("status", "🏗️ Đang thiết kế system architecture...")  # Disabled for Kafka mode
             pass
         
         # Get existing code context
@@ -479,6 +939,12 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
             try:
                 design_result = json.loads(clean_json)
                 logger.info(f"[design] Parsed JSON successfully")
+                
+                # Normalize escaped newlines in JSON result
+                for key in ["data_structures", "call_flow", "api_interfaces", "design_notes"]:
+                    if key in design_result and isinstance(design_result[key], str):
+                        design_result[key] = _normalize_newlines(design_result[key])
+                        
             except json.JSONDecodeError:
                 logger.warning(f"[design] JSON parse failed, extracting from raw response")
         
@@ -522,7 +988,6 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
 💡 **Notes:** {design_result.get('design_notes', '')[:200]}..."""
         
         if agent:
-            # await agent.message_user("response", msg)  # Disabled for Kafka mode
             pass
         
         return {
@@ -547,60 +1012,108 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
 
 
 async def plan(state: DeveloperState, agent=None) -> DeveloperState:
-    """Create implementation plan from analysis (MetaGPT WriteCodePlanAndChange pattern)."""
+    """Create implementation plan using agent with tool calling."""
     try:
         analysis = state.get("analysis_result", {})
         
         if agent:
-            # await agent.message_user("status", "📝 Đang tạo implementation plan với incremental changes...")  # Disabled for Kafka mode
             pass
         
-        # Get existing code context for better planning
+        # Get existing code context for better planning (CocoIndex required)
         workspace_path = state.get("workspace_path", "")
-        existing_code = ""
-        if workspace_path:
-            try:
-                from app.agents.developer_v2.tools import get_all_workspace_files
-                existing_code = get_all_workspace_files(workspace_path, max_files=10)
-            except Exception:
-                existing_code = "No existing code"
+        index_ready = state.get("index_ready", False)
+        project_id = state.get("project_id", "default")
+        task_id = state.get("task_id") or state.get("story_id", "")
+        task_description = state.get("story_title", "") + " " + analysis.get("summary", "")
         
-        sys_prompt = _build_system_prompt("create_plan", agent)
-        user_prompt = _get_prompt("create_plan", "user_prompt").format(
-            analysis_summary=analysis.get("summary", ""),
-            task_type=state.get("task_type", "feature"),
-            complexity=state.get("complexity", "medium"),
-            affected_files=", ".join(state.get("affected_files", [])),
-            design_doc=state.get("design_doc", "No design document"),
-            acceptance_criteria="\n".join(f"- {ac}" for ac in state.get("acceptance_criteria", [])),
-            existing_code=existing_code or "No existing code",
+        existing_code = ""
+        
+        # CocoIndex semantic search (required)
+        if workspace_path and index_ready:
+            from app.agents.developer_v2.tools import search_codebase
+            existing_code = search_codebase(
+                project_id=project_id,
+                query=task_description,
+                top_k=10,
+                task_id=task_id
+            )
+            logger.info(f"[plan] Using CocoIndex for context: {len(existing_code)} chars")
+        
+        # Get project context (AGENTS.md)
+        project_context = state.get("project_context", "")
+        
+        # Build input for agent
+        input_text = f"""Create an implementation plan and call submit_implementation_plan:
+
+Story: {state.get("story_title", "Untitled")}
+Summary: {analysis.get("summary", "")}
+Task Type: {state.get("task_type", "feature")}
+Complexity: {state.get("complexity", "medium")}
+
+Affected Files: {", ".join(state.get("affected_files", []))}
+
+Design:
+{state.get("design_doc", "No design document")}
+
+Acceptance Criteria:
+{chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", []))}
+
+{f"PROJECT GUIDELINES (IMPORTANT - Follow these conventions):{chr(10)}{project_context[:4000]}" if project_context else ""}
+
+Existing Code:
+{existing_code[:2000] if existing_code else "No existing code"}
+
+Create steps with: order, description, file_path, action (create/modify), estimated_minutes, dependencies.
+IMPORTANT: Follow the project guidelines above for file paths and conventions."""
+
+        # Use agent with tool calling
+        plan_agent = _get_plan_agent()
+        result = await plan_agent.ainvoke({"input": input_text})
+        
+        # Extract tool call arguments
+        story_summary = state.get("story_title", "Implementation")
+        steps = []
+        total_estimated_hours = 0
+        critical_path = []
+        rollback_plan = None
+        
+        intermediate_steps = result.get("intermediate_steps", [])
+        if intermediate_steps:
+            for action_obj, _ in intermediate_steps:
+                if hasattr(action_obj, 'tool_input'):
+                    tool_input = action_obj.tool_input
+                    story_summary = tool_input.get("story_summary", story_summary)
+                    steps = tool_input.get("steps", steps)
+                    total_estimated_hours = tool_input.get("total_estimated_hours", total_estimated_hours)
+                    critical_path = tool_input.get("critical_path", critical_path) or []
+                    rollback_plan = tool_input.get("rollback_plan", rollback_plan)
+        
+        # Convert steps to PlanStep objects
+        plan_steps = []
+        for s in steps:
+            plan_steps.append(PlanStep(
+                order=s.get("order", len(plan_steps) + 1),
+                description=s.get("description", ""),
+                file_path=s.get("file_path", ""),
+                action=s.get("action", "create"),
+                estimated_minutes=s.get("estimated_minutes", 30),
+                dependencies=s.get("dependencies", [])
+            ))
+        
+        # Create plan_result for compatibility
+        plan_result = ImplementationPlan(
+            story_summary=story_summary,
+            steps=plan_steps,
+            total_estimated_hours=total_estimated_hours,
+            critical_path=critical_path,
+            rollback_plan=rollback_plan
         )
         
-        messages = [
-            SystemMessage(content=sys_prompt),
-            HumanMessage(content=user_prompt)
-        ]
-        
-        response = await _code_llm.ainvoke(messages, config=_cfg(state, "plan"))
-        raw_content = response.content
-        clean_json = _clean_json(raw_content)
-        
-        plan_result = None
-        
-        # Try JSON parsing first
-        if clean_json and clean_json.strip():
-            try:
-                plan_result = ImplementationPlan.model_validate_json(clean_json)
-                logger.info(f"[plan] Parsed JSON successfully")
-            except Exception as je:
-                logger.warning(f"[plan] JSON parse failed: {je}")
-        
-        # Fallback: Extract plan from raw response
-        if not plan_result:
-            plan_result = _extract_plan_from_raw(raw_content, state)
-            logger.info(f"[plan] Extracted plan from raw response")
-        
-        logger.info(f"[plan] Created {len(plan_result.steps)} steps, estimated {plan_result.total_estimated_hours}h")
+        # Warning if no steps
+        if not plan_result.steps:
+            logger.warning(f"[plan] No steps in plan! affected_files: {state.get('affected_files', [])}")
+        else:
+            logger.info(f"[plan] Created {len(plan_result.steps)} steps, estimated {plan_result.total_estimated_hours}h")
         
         steps_text = "\n".join(
             f"  {s.order}. [{s.action}] {s.description} ({s.estimated_minutes}m)"
@@ -618,7 +1131,6 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
 🔄 **Rollback Plan:** {plan_result.rollback_plan or 'N/A'}"""
         
         if agent:
-            # await agent.message_user("response", msg)  # Disabled for Kafka mode
             pass
         
         return {
@@ -648,18 +1160,11 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         workspace_path = state.get("workspace_path", "")
         
         if not plan_steps:
-            return {
-                **state,
-                "message": "❌ Không có implementation plan",
-                "action": "PLAN",
-            }
-        
-        if not workspace_path:
-            logger.warning("[implement] No workspace_path configured")
+            logger.error("[implement] No implementation plan")
+            return {**state, "error": "No implementation plan", "action": "RESPOND"}
         
         if current_step >= len(plan_steps):
             if agent:
-                # await agent.message_user("response", f"✅ Implementation hoàn tất! Branch: `{state.get('branch_name', 'unknown')}`")  # Disabled for Kafka mode
                 pass
             return {
                 **state,
@@ -671,57 +1176,28 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         current_file = step.get("file_path", "")
         
         if agent:
-            # await agent.message_user("status", f"⚙️ Step {current_step + 1}/{len(plan_steps)}: {step.get('description', '')} [workspace: {workspace_path}]")  # Disabled for Kafka mode
             pass
         
         # Gather related code context using MetaGPT pattern
-        # Mark current file as "file to rewrite" and others as "existing files"
+        # Get code context using CocoIndex (required)
         related_context = state.get("related_code_context", "")
         if workspace_path and not related_context:
-            task_files = state.get("affected_files", [])
             index_ready = state.get("index_ready", False)
             project_id = state.get("project_id", "default")
             task_id = state.get("task_id") or state.get("story_id", "")
             step_description = step.get("description", "")
             
-            # Use MetaGPT-style context with "file to rewrite" marking
-            try:
-                from app.agents.developer_v2.tools import get_code_context_for_file
-                related_context = get_code_context_for_file(
-                    workspace_path=workspace_path,
-                    target_file=current_file,
-                    task_files=task_files if task_files else [],
-                    max_context_lines=500
-                )
-                logger.info(f"[implement] Using MetaGPT-style context for {current_file}")
-            except Exception as e:
-                logger.warning(f"[implement] Context gathering failed: {e}")
-            
-            # Fallback: CocoIndex semantic search if available
-            if (not related_context or related_context == "No existing code files found.") and index_ready:
-                try:
-                    from app.agents.developer_v2.tools import get_related_code_indexed
-                    related_context = get_related_code_indexed(
-                        project_id=project_id,
-                        current_file=current_file,
-                        task_description=step_description,
-                        top_k=5,
-                        task_id=task_id
-                    )
-                    logger.info(f"[implement] Using CocoIndex for context")
-                except Exception as e:
-                    logger.warning(f"[implement] CocoIndex search failed: {e}")
-            
-            # Final fallback: get_related_code_context
-            if not related_context or related_context.startswith("Search error") or related_context == "No existing code files found.":
-                from app.agents.developer_v2.tools import get_related_code_context
-                related_context = get_related_code_context(
-                    workspace_path=workspace_path,
+            # CocoIndex semantic search (required)
+            if index_ready:
+                from app.agents.developer_v2.tools import get_related_code_indexed
+                related_context = get_related_code_indexed(
+                    project_id=project_id,
                     current_file=current_file,
-                    task_files=task_files,
-                    include_all_src=state.get("needs_revision", False)
+                    task_description=step_description,
+                    top_k=8,
+                    task_id=task_id
                 )
-                logger.info(f"[implement] Using file import fallback for context")
+                logger.info(f"[implement] Using CocoIndex for context")
         
         # Get existing code if modifying
         existing_code = ""
@@ -742,29 +1218,83 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
                 for i, s in enumerate(plan_steps)
             )
         
-        sys_prompt = _build_system_prompt("implement_step", agent)
-        user_prompt = _get_prompt("implement_step", "user_prompt").format(
-            implementation_plan=implementation_plan,
-            step_number=current_step + 1,
-            total_steps=len(plan_steps),
-            step_description=step.get("description", ""),
-            file_path=current_file,
-            action=step.get("action", "modify"),
-            story_summary=state.get("analysis_result", {}).get("summary", ""),
-            related_code_context=related_context or "No related files",
-            existing_code=existing_code or "No existing code (new file)",
-            error_logs=state.get("error_logs", "") or "No previous errors",
-            completed_steps=current_step,
-        )
+        # Build full context including AGENTS.md, research results, and summarize feedback
+        research_context = state.get("research_context", "")
+        project_context = state.get("project_context", "")
+        summarize_feedback = state.get("summarize_feedback", "")
         
-        messages = [
-            SystemMessage(content=sys_prompt),
-            HumanMessage(content=user_prompt)
-        ]
+        full_related_context = related_context or "No related files"
         
-        response = await _code_llm.ainvoke(messages, config=_cfg(state, "implement"))
-        clean_json = _clean_json(response.content)
-        code_change = CodeChange.model_validate_json(clean_json)
+        # Add project guidelines (AGENTS.md) - MOST IMPORTANT
+        if project_context:
+            full_related_context = f"## PROJECT GUIDELINES (MUST FOLLOW)\n{project_context[:3000]}\n\n---\n\n{full_related_context}"
+        
+        # Add research results
+        if research_context:
+            full_related_context += f"\n\n## Best Practices (from web research)\n{research_context[:1500]}"
+        
+        # Add feedback from previous summarize iteration (if looping)
+        if summarize_feedback:
+            full_related_context += f"\n\n## FEEDBACK FROM PREVIOUS ATTEMPT (MUST ADDRESS)\n{summarize_feedback}"
+        
+        # Build input for code agent
+        input_text = f"""Write code for this step and call submit_code_change:
+
+Step {current_step + 1}/{len(plan_steps)}: {step.get("description", "")}
+File: {current_file}
+Action: {step.get("action", "modify")}
+
+Story: {state.get("analysis_result", {}).get("summary", "")}
+
+{full_related_context[:6000]}
+
+Existing Code:
+{existing_code[:3000] if existing_code else "No existing code (new file)"}
+
+{f"Previous Errors:{chr(10)}{state.get('error_logs', '')}" if state.get('error_logs') else ""}
+
+IMPORTANT:
+- Write COMPLETE code - no TODOs, no placeholders
+- Follow the PROJECT GUIDELINES above
+- Include all necessary imports
+- Call submit_code_change with the complete code"""
+
+        # Use agent with tool calling
+        code_agent = _get_code_agent()
+        result = await code_agent.ainvoke({"input": input_text})
+        
+        code_change = None
+        
+        # Extract from tool call
+        intermediate_steps = result.get("intermediate_steps", [])
+        if intermediate_steps:
+            for action_obj, _ in intermediate_steps:
+                if hasattr(action_obj, 'tool') and action_obj.tool == "submit_code_change":
+                    tool_input = action_obj.tool_input
+                    code_change = CodeChange(
+                        file_path=tool_input.get("file_path", current_file),
+                        action=tool_input.get("action", step.get("action", "create")),
+                        code_snippet=tool_input.get("code_snippet", ""),
+                        description=tool_input.get("description", step.get("description", ""))
+                    )
+                    logger.info(f"[implement] Got code from agent tool call")
+                    break
+        
+        # Fallback: parse from output
+        if not code_change:
+            raw_content = result.get("output", "")
+            clean_json = _clean_json(raw_content)
+            
+            if clean_json and clean_json.strip():
+                try:
+                    code_change = CodeChange.model_validate_json(clean_json)
+                    logger.info(f"[implement] Parsed JSON from output")
+                except Exception as je:
+                    logger.warning(f"[implement] JSON parse failed: {je}")
+            
+            if not code_change:
+                code_change = _extract_code_change_from_raw(raw_content, step)
+                logger.info(f"[implement] Extracted code from raw response")
         
         logger.info(f"[implement] Step {current_step + 1}: {code_change.action} {code_change.file_path}")
         
@@ -791,7 +1321,6 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         
         msg = f"✅ Step {current_step + 1}: {code_change.description}"
         if agent:
-            # await agent.message_user("response", msg)  # Disabled for Kafka mode
             pass
         
         return {
@@ -818,7 +1347,6 @@ async def validate(state: DeveloperState, agent=None) -> DeveloperState:
     """Validate implementation against acceptance criteria."""
     try:
         if agent:
-            # await agent.message_user("status", "🧪 Đang validate implementation...")  # Disabled for Kafka mode
             pass
         
         sys_prompt = _build_system_prompt("validate_implementation", agent)
@@ -856,7 +1384,6 @@ async def validate(state: DeveloperState, agent=None) -> DeveloperState:
 **Recommendations:** {', '.join(validation.recommendations) if validation.recommendations else 'None'}"""
         
         if agent:
-            # await agent.message_user("response", msg)  # Disabled for Kafka mode
             pass
         
         return {
@@ -891,16 +1418,18 @@ async def create_code_plan(state: DeveloperState, agent=None) -> DeveloperState:
     """
     try:
         if agent:
-            # await agent.message_user("status", "📝 Đang tạo code plan chi tiết...")  # Disabled for Kafka mode
             pass
         
-        # Gather legacy code context
+        # Get code context via CocoIndex
         workspace_path = state.get("workspace_path", "")
-        legacy_code = ""
+        index_ready = state.get("index_ready", False)
+        project_id = state.get("project_id", "default")
+        task_id = state.get("task_id") or state.get("story_id", "")
         
-        if workspace_path:
-            from app.agents.developer_v2.tools import get_legacy_code
-            legacy_code = get_legacy_code(workspace_path)
+        existing_code = ""
+        if workspace_path and index_ready:
+            from app.agents.developer_v2.tools import search_codebase
+            existing_code = search_codebase(project_id, state.get("story_title", ""), top_k=10, task_id=task_id)
         
         sys_prompt = _build_system_prompt("create_code_plan", agent)
         user_prompt = _get_prompt("create_code_plan", "user_prompt").format(
@@ -909,7 +1438,7 @@ async def create_code_plan(state: DeveloperState, agent=None) -> DeveloperState:
             acceptance_criteria="\n".join(f"- {ac}" for ac in state.get("acceptance_criteria", [])),
             design_doc=state.get("design_doc") or state.get("analysis_result", {}).get("summary", ""),
             task_list="\n".join(f"- {f}" for f in state.get("affected_files", [])),
-            legacy_code=legacy_code or "No existing code",
+            legacy_code=existing_code or "No existing code",
         )
         
         messages = [
@@ -942,7 +1471,6 @@ async def create_code_plan(state: DeveloperState, agent=None) -> DeveloperState:
 **Critical Path:** {' → '.join(plan_data.get('critical_path', []))}"""
         
         if agent:
-            # await agent.message_user("response", msg)  # Disabled for Kafka mode
             pass
         
         return {
@@ -972,19 +1500,18 @@ async def summarize_code(state: DeveloperState, agent=None) -> DeveloperState:
     """
     try:
         if agent:
-            # await agent.message_user("status", "🔍 Đang review code implementation...")  # Disabled for Kafka mode
             pass
         
-        # Gather implemented code blocks
+        # Get implemented code via CocoIndex
         workspace_path = state.get("workspace_path", "")
-        code_blocks = ""
+        index_ready = state.get("index_ready", False)
+        project_id = state.get("project_id", "default")
+        task_id = state.get("task_id") or state.get("story_id", "")
         
-        if workspace_path:
-            from app.agents.developer_v2.tools import get_legacy_code
-            files_created = state.get("files_created", [])
-            files_modified = state.get("files_modified", [])
-            all_files = files_created + files_modified
-            code_blocks = get_legacy_code(workspace_path)
+        code_blocks = ""
+        if workspace_path and index_ready:
+            from app.agents.developer_v2.tools import search_codebase
+            code_blocks = search_codebase(project_id, "implementation code", top_k=15, task_id=task_id)
         
         sys_prompt = _build_system_prompt("summarize_code", agent)
         user_prompt = _get_prompt("summarize_code", "user_prompt").format(
@@ -1022,7 +1549,6 @@ async def summarize_code(state: DeveloperState, agent=None) -> DeveloperState:
 **Reason:** {summary_data.get('reason', 'All checks passed')}"""
             
             if agent:
-                # await agent.message_user("response", msg)  # Disabled for Kafka mode
                 pass
             
             return {
@@ -1045,7 +1571,6 @@ async def summarize_code(state: DeveloperState, agent=None) -> DeveloperState:
 Proceeding with current implementation."""
                 
                 if agent:
-                    # await agent.message_user("response", msg)  # Disabled for Kafka mode
                     pass
                 
                 return {
@@ -1071,7 +1596,6 @@ Proceeding with current implementation."""
 Returning to implementation for fixes..."""
             
             if agent:
-                # await agent.message_user("response", msg)  # Disabled for Kafka mode
                 pass
             
             # Store error logs for next implementation round
@@ -1122,7 +1646,6 @@ async def clarify(state: DeveloperState, agent=None) -> DeveloperState:
         logger.info(f"[clarify] Asking for clarification")
         
         if agent:
-            # await agent.message_user("response", question)  # Disabled for Kafka mode
             pass
         
         return {
@@ -1135,7 +1658,6 @@ async def clarify(state: DeveloperState, agent=None) -> DeveloperState:
         logger.error(f"[clarify] Error: {e}", exc_info=True)
         default_msg = "🤔 Mình cần thêm thông tin về story này. Bạn có thể mô tả chi tiết hơn không?"
         if agent:
-            # await agent.message_user("response", default_msg)  # Disabled for Kafka mode
             pass
         return {
             **state,
@@ -1151,7 +1673,6 @@ async def respond(state: DeveloperState, agent=None) -> DeveloperState:
         existing_msg = state.get("message", "")
         if existing_msg and len(existing_msg) > 100:
             if agent:
-                # await agent.message_user("response", existing_msg)  # Disabled for Kafka mode
                 pass
             return {**state, "action": "RESPOND"}
         
@@ -1174,7 +1695,6 @@ async def respond(state: DeveloperState, agent=None) -> DeveloperState:
         logger.info(f"[respond] Generated response: {msg[:100]}...")
         
         if agent:
-            # await agent.message_user("response", msg)  # Disabled for Kafka mode
             pass
         
         return {**state, "message": msg, "action": "RESPOND"}
@@ -1183,7 +1703,6 @@ async def respond(state: DeveloperState, agent=None) -> DeveloperState:
         logger.error(f"[respond] Error: {e}", exc_info=True)
         fallback_msg = state.get("message") or "Mình đã nhận được tin nhắn của bạn! 👋"
         if agent:
-            # await agent.message_user("response", fallback_msg)  # Disabled for Kafka mode
             pass
         return {**state, "message": fallback_msg, "action": "RESPOND"}
 
@@ -1192,17 +1711,31 @@ async def merge_to_main(state: DeveloperState, agent=None) -> DeveloperState:
     """Merge feature branch to main after successful validation.
     
     This node is called after validate passes (is_pass=True).
-    It merges the story branch into main branch.
+    It commits all changes and merges the story branch into main branch.
+    (Following Developer V1 pattern: auto-commit after implementation)
     """
     try:
         branch_name = state.get("branch_name")
         main_workspace = state.get("main_workspace")
+        workspace_path = state.get("workspace_path")
+        story_title = state.get("story_title", "Implementation")
         
         if not branch_name or not main_workspace:
             logger.warning("[merge_to_main] Missing branch_name or main_workspace")
             return {**state, "merged": False}
         
         from app.agents.developer.tools.git_python_tool import GitPythonTool
+        
+        # Auto-commit changes in workspace before merge (Dev V1 pattern)
+        if workspace_path and Path(workspace_path).exists():
+            workspace_git = GitPythonTool(root_dir=workspace_path)
+            
+            # Stage all changes
+            status_result = workspace_git._run("status")
+            if "nothing to commit" not in status_result:
+                commit_msg = f"feat: {story_title[:50]}... [auto-commit by Developer V2]"
+                commit_result = workspace_git._run("commit", message=commit_msg, files=["."])
+                logger.info(f"[merge_to_main] Auto-commit: {commit_result}")
         
         main_git = GitPythonTool(root_dir=main_workspace)
         
@@ -1221,7 +1754,6 @@ async def merge_to_main(state: DeveloperState, agent=None) -> DeveloperState:
         
         if "conflict" in merge_result.lower() or "error" in merge_result.lower():
             if agent:
-                # await agent.message_user("status", f"⚠️ Merge conflict: {merge_result}")  # Disabled for Kafka mode
                 pass
             return {
                 **state,
@@ -1230,7 +1762,6 @@ async def merge_to_main(state: DeveloperState, agent=None) -> DeveloperState:
             }
         
         if agent:
-            # await agent.message_user("status", f"✅ Merged `{branch_name}` vào main")  # Disabled for Kafka mode
             pass
         
         return {
@@ -1241,7 +1772,6 @@ async def merge_to_main(state: DeveloperState, agent=None) -> DeveloperState:
     except Exception as e:
         logger.error(f"[merge_to_main] Error: {e}", exc_info=True)
         if agent:
-            # await agent.message_user("status", f"⚠️ Merge failed: {str(e)}")  # Disabled for Kafka mode
             pass
         return {
             **state,
@@ -1292,7 +1822,6 @@ async def cleanup_workspace(state: DeveloperState, agent=None) -> DeveloperState
                 logger.warning(f"[cleanup_workspace] CocoIndex cleanup failed: {idx_err}")
         
         if agent:
-            # await agent.message_user("status", "🧹 Workspace đã được dọn dẹp")  # Disabled for Kafka mode
             pass
         
         return {
@@ -1304,6 +1833,177 @@ async def cleanup_workspace(state: DeveloperState, agent=None) -> DeveloperState
     except Exception as e:
         logger.error(f"[cleanup_workspace] Error: {e}", exc_info=True)
         return state
+
+
+# =============================================================================
+# SUMMARIZE CODE (MetaGPT SummarizeCode + IS_PASS pattern)
+# =============================================================================
+
+IS_PASS_PROMPT = """
+## Code Summary
+{summary}
+
+## Original Requirements
+{requirements}
+
+## Acceptance Criteria
+{acceptance_criteria}
+
+## Files Implemented
+{files_list}
+
+---
+Analyze if this implementation meets ALL requirements and acceptance criteria.
+
+Consider:
+1. Are all acceptance criteria addressed?
+2. Is the code complete (no TODOs, no placeholders)?
+3. Are all required files created?
+4. Is the implementation functionally correct?
+
+Respond with JSON:
+- If complete: {{"is_pass": true, "reason": "All requirements met"}}
+- If incomplete: {{"is_pass": false, "reason": "Specific issues: ..."}}
+"""
+
+
+async def _summarize_all_code(code_changes: list, workspace_path: str = "") -> str:
+    """Summarize all code changes into a single summary."""
+    if not code_changes:
+        return "No code changes to summarize."
+    
+    summary_parts = []
+    for change in code_changes:
+        file_path = change.get("file_path", "unknown")
+        action = change.get("action", "unknown")
+        description = change.get("description", "")
+        code = change.get("code_snippet", "")
+        
+        # Truncate code for summary
+        code_preview = code[:500] + "..." if len(code) > 500 else code
+        
+        summary_parts.append(f"""
+### {file_path} ({action})
+{description}
+
+```
+{code_preview}
+```
+""")
+    
+    return "\n".join(summary_parts)
+
+
+async def _check_is_pass(summary: str, state: dict) -> tuple:
+    """Check if implementation is complete using LLM (MetaGPT IS_PASS pattern).
+    
+    Returns:
+        (is_pass: bool, reason: str)
+    """
+    requirements = state.get("story_content", "")
+    acceptance_criteria = "\n".join(f"- {ac}" for ac in state.get("acceptance_criteria", []))
+    files_created = state.get("files_created", [])
+    files_modified = state.get("files_modified", [])
+    files_list = "\n".join(f"- {f}" for f in files_created + files_modified)
+    
+    prompt = IS_PASS_PROMPT.format(
+        summary=summary,
+        requirements=requirements,
+        acceptance_criteria=acceptance_criteria or "No specific criteria",
+        files_list=files_list or "No files"
+    )
+    
+    messages = [
+        SystemMessage(content="You are a code reviewer checking if implementation is complete."),
+        HumanMessage(content=prompt)
+    ]
+    
+    try:
+        response = await _fast_llm.ainvoke(messages)
+        clean_json = _clean_json(response.content)
+        
+        import json
+        result = json.loads(clean_json)
+        is_pass = result.get("is_pass", False)
+        reason = result.get("reason", "Unknown")
+        
+        return is_pass, reason
+    except Exception as e:
+        logger.warning(f"[_check_is_pass] Error: {e}, defaulting to PASS")
+        return True, "Check failed, proceeding"
+
+
+async def summarize_code(state: DeveloperState, agent=None) -> DeveloperState:
+    """Summarize code and check IS_PASS (MetaGPT SummarizeCode pattern).
+    
+    This node:
+    1. Summarizes all implemented code
+    2. Checks if implementation meets requirements (IS_PASS)
+    3. If not pass: loops back to implement with feedback
+    4. If pass: proceeds to code_review
+    """
+    try:
+        code_changes = state.get("code_changes", [])
+        workspace_path = state.get("workspace_path", "")
+        summarize_count = state.get("summarize_count", 0)
+        max_summarize = state.get("max_summarize", 3)
+        
+        if not code_changes:
+            logger.info("[summarize_code] No code changes, passing through")
+            return {**state, "is_pass": True, "action": "CODE_REVIEW"}
+        
+        if agent:
+            # await agent.message_user("status", f"📝 Summarizing code (iteration {summarize_count + 1}/{max_summarize})...")
+            pass
+        
+        # 1. Summarize all code
+        summary = await _summarize_all_code(code_changes, workspace_path)
+        logger.info(f"[summarize_code] Generated summary: {len(summary)} chars")
+        
+        # 2. Check IS_PASS
+        is_pass, reason = await _check_is_pass(summary, state)
+        logger.info(f"[summarize_code] IS_PASS: {is_pass}, reason: {reason[:100]}...")
+        
+        new_summarize_count = summarize_count + 1
+        
+        if is_pass:
+            logger.info("[summarize_code] PASS - proceeding to code_review")
+            return {
+                **state,
+                "is_pass": True,
+                "code_summary": {"summary": summary, "is_pass": True, "reason": reason},
+                "summarize_count": new_summarize_count,
+                "summarize_feedback": "",
+                "action": "CODE_REVIEW",
+            }
+        
+        # Not pass - check if we should retry
+        if new_summarize_count >= max_summarize:
+            logger.warning(f"[summarize_code] Max iterations ({max_summarize}) reached, proceeding anyway")
+            return {
+                **state,
+                "is_pass": False,
+                "code_summary": {"summary": summary, "is_pass": False, "reason": reason},
+                "summarize_count": new_summarize_count,
+                "summarize_feedback": reason,
+                "action": "CODE_REVIEW",  # Proceed to review even if not pass
+            }
+        
+        # Loop back to implement with feedback
+        logger.info(f"[summarize_code] NOT PASS - looping back to implement with feedback")
+        return {
+            **state,
+            "is_pass": False,
+            "code_summary": {"summary": summary, "is_pass": False, "reason": reason},
+            "summarize_count": new_summarize_count,
+            "summarize_feedback": reason,
+            "current_step": 0,  # Reset to re-implement
+            "action": "IMPLEMENT",
+        }
+        
+    except Exception as e:
+        logger.error(f"[summarize_code] Error: {e}", exc_info=True)
+        return {**state, "is_pass": True, "action": "CODE_REVIEW"}  # Pass on error
 
 
 # =============================================================================
@@ -1332,7 +2032,6 @@ async def code_review(state: DeveloperState, agent=None) -> DeveloperState:
             return {**state, "code_review_passed": True}
         
         if agent:
-            # await agent.message_user("status", f"🔍 Code Review (iteration {iteration + 1}/{k})")  # Disabled for Kafka mode
             pass
         
         review_results = []
@@ -1353,7 +2052,8 @@ async def code_review(state: DeveloperState, agent=None) -> DeveloperState:
             sys_prompt = _build_system_prompt("code_review", agent)
             user_prompt = _get_prompt("code_review", "user_prompt").format(
                 design=state.get("design_doc", ""),
-                task=state.get("task_doc", ""),
+                task=state.get("task_doc", state.get("story_description", "")),
+                code_plan=state.get("code_plan_doc", ""),
                 related_code=state.get("related_code_context", ""),
                 filename=file_path,
                 language=language,
@@ -1395,11 +2095,9 @@ async def code_review(state: DeveloperState, agent=None) -> DeveloperState:
                 
                 issues = review.get("issues", [])
                 if agent and issues:
-                    # await agent.message_user("status", f"⚠️ Review issues in {file_path}: {', '.join(issues[:2])}")  # Disabled for Kafka mode
                     pass
             else:
                 if agent:
-                    # await agent.message_user("status", f"✅ {file_path}: LGTM")  # Disabled for Kafka mode
                     pass
         
         new_iteration = iteration + 1
@@ -1416,10 +2114,8 @@ async def code_review(state: DeveloperState, agent=None) -> DeveloperState:
         
         if agent:
             if all_passed:
-                # await agent.message_user("response", "✅ Code review passed! All files LGTM")  # Disabled for Kafka mode
                 pass
             else:
-                # await agent.message_user("response", f"⚠️ Code review completed after {new_iteration} iterations")  # Disabled for Kafka mode
                 pass
         
         return {
@@ -1456,7 +2152,6 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
             }
         
         if agent:
-            # await agent.message_user("status", "🧪 Running tests...")  # Disabled for Kafka mode
             pass
         
         from app.agents.developer_v2.tools import (
@@ -1471,7 +2166,6 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         try:
             deps_result = await install_dependencies(workspace_path)
             if deps_result and agent:
-                # await agent.message_user("status", "📦 Dependencies installed")  # Disabled for Kafka mode
                 pass
         except Exception as deps_err:
             logger.warning(f"[run_code] Dependency install failed: {deps_err}")
@@ -1515,6 +2209,12 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         
         language = get_markdown_code_block_type(code_filename) if code_filename else "python"
         
+        # MetaGPT RunCode pattern: Truncate outputs to avoid token overflow
+        # stdout might be long but not important - truncate to 500 chars
+        # stderr is more important - truncate to 10000 chars
+        stdout_truncated = (result.stdout or "")[:500]
+        stderr_truncated = (result.stderr or "")[:10000]
+        
         # Analyze with LLM
         sys_prompt = _build_system_prompt("run_code_analysis", agent)
         user_prompt = _get_prompt("run_code_analysis", "user_prompt").format(
@@ -1524,8 +2224,8 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
             test_filename=test_filename or "unknown",
             test_code=test_content or "No test code available",
             command=" ".join(test_cmd),
-            stdout=result.stdout[:5000] if result.stdout else "No output",
-            stderr=result.stderr[:5000] if result.stderr else "No errors",
+            stdout=stdout_truncated or "No output",
+            stderr=stderr_truncated or "No errors",
         )
         
         messages = [
@@ -1551,10 +2251,8 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         
         if agent:
             if run_status == "PASS":
-                # await agent.message_user("response", f"✅ Tests passed! {analysis.get('summary', '')}")  # Disabled for Kafka mode
                 pass
             else:
-                # await agent.message_user("status", f"❌ Tests failed: {analysis.get('summary', '')[:100]}")  # Disabled for Kafka mode
                 pass
         
         return {
@@ -1595,16 +2293,22 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
         run_result = state.get("run_result", {})
         workspace_path = state.get("workspace_path", "")
         debug_count = state.get("debug_count", 0)
-        max_debug = state.get("max_debug", 3)
+        max_debug = state.get("max_debug", 5)  # MetaGPT pattern
         
         if run_result.get("status") == "PASS":
             logger.info("[debug_error] No errors to debug")
             return state
         
+        # MetaGPT DebugError pattern: Check if tests already pass via "OK" pattern
+        stderr = state.get("run_stderr", "") or run_result.get("stderr", "")
+        ok_pattern = r"Ran (\d+) tests? in ([\d.]+)s\s*\n\s*OK"
+        if re.search(ok_pattern, stderr):
+            logger.info("[debug_error] Tests already pass (OK pattern detected), skipping")
+            return {**state, "run_result": {"status": "PASS", "summary": "All tests passed"}}
+        
         if debug_count >= max_debug:
             logger.warning(f"[debug_error] Max debug attempts ({max_debug}) reached")
             if agent:
-                # await agent.message_user("status", f"⚠️ Reached max debug attempts ({max_debug})")  # Disabled for Kafka mode
                 pass
             return state
         
@@ -1619,7 +2323,6 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
             return {**state, "debug_count": debug_count + 1}
         
         if agent:
-            # await agent.message_user("status", f"🔧 Debugging {file_to_fix} (attempt {debug_count + 1}/{max_debug})")  # Disabled for Kafka mode
             pass
         
         from app.agents.developer_v2.tools import get_markdown_code_block_type, find_test_file
@@ -1686,7 +2389,6 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
                 logger.info(f"[debug_error] Wrote fixed code to {file_to_fix}")
                 
                 if agent:
-                    # await agent.message_user("status", f"✏️ Fixed {file_to_fix}: {debug_result.get('fix_description', '')[:50]}")  # Disabled for Kafka mode
                     pass
             except Exception as e:
                 logger.error(f"[debug_error] Failed to write fixed code: {e}")

@@ -74,16 +74,26 @@ class DeveloperState(TypedDict, total=False):
     related_code_context: Optional[str]
     legacy_code: Optional[str]
     
+    # Web research context (Tavily search results)
+    research_context: Optional[str]  # Framework best practices from web search
+    
+    # Project context (AGENTS.md + framework info)
+    project_context: Optional[str]  # Loaded from AGENTS.md in workspace
+    agents_md: Optional[str]  # Raw AGENTS.md content
+    
     # Debug and feedback logs
     error_logs: Optional[str]
     bug_feedback: Optional[str]
     
-    # Summarization and validation (IS_PASS check)
+    # Summarization and validation (IS_PASS check) - MetaGPT SummarizeCode pattern
     code_summary: Optional[Dict[str, Any]]
     is_pass: Optional[bool]
     needs_revision: bool
     revision_count: int
     max_revisions: int
+    summarize_feedback: Optional[str]  # Feedback from summarize for next implement iteration
+    summarize_count: int  # Number of summarize iterations
+    max_summarize: int  # Max summarize iterations (default: 3)
     
     # ==========================================================================
     # System Design (MetaGPT Architect pattern)
@@ -116,7 +126,7 @@ class DeveloperState(TypedDict, total=False):
     # Debug Error (Fix bugs based on test output)
     # ==========================================================================
     debug_count: int
-    max_debug: int  # Max debug attempts (default: 3)
+    max_debug: int  # Max debug attempts (default: 5, MetaGPT pattern)
     last_debug_file: Optional[str]
     debug_history: Optional[List[Dict[str, Any]]]
     
@@ -124,7 +134,7 @@ class DeveloperState(TypedDict, total=False):
     # React Loop Mode (MetaGPT Engineer2 pattern)
     # ==========================================================================
     react_loop_count: int  # Current iteration in react loop
-    max_react_loop: int  # Max iterations (default: 10)
+    max_react_loop: int  # Max iterations (default: 40, MetaGPT Engineer2 pattern)
     react_mode: bool  # Whether in react mode
     
     # ==========================================================================
