@@ -198,9 +198,8 @@ tasks:
       | Category | Ask if... | Skip if... |
       |----------|-----------|------------|
       | Đối tượng người dùng | Not clear who will use | E-commerce → obviously customers |
-      | Tính năng chính | Need specifics | User already listed features |
+      | Tính năng chính | Always ask - cần biết user muốn website có những gì | User đã liệt kê chi tiết features |
       | Mô hình kinh doanh | Unclear how to monetize | Selling products → obviously sales |
-      | Yêu cầu đặc biệt | Always ask | - |
       | Ưu tiên | Always ask | - |
 
     user_prompt: |
@@ -243,36 +242,40 @@ tasks:
       User nói: "Tôi muốn làm website bán sách"
       → Đã biết: bán sách, kiếm tiền bằng bán hàng
       → Cần hỏi:
-      - "Khách hàng của bạn là ai?" → ["Học sinh/Sinh viên", "Người đi làm", "Phụ huynh mua cho con", "Tất cả mọi người", "Khác"]
-      - "Bạn bán loại sách nào?" → ["Sách giáo khoa", "Truyện/Tiểu thuyết", "Sách kỹ năng/Self-help", "Sách thiếu nhi", "Tất cả loại", "Khác"]
-      - "Khách thanh toán thế nào?" → ["Chuyển khoản ngân hàng", "Ví điện tử (Momo, ZaloPay)", "Tiền mặt khi nhận hàng", "Thẻ tín dụng", "Khác"]
-      - "Bạn có giao hàng không?" → ["Giao toàn quốc", "Chỉ giao nội thành", "Khách tự đến lấy", "Khác"]
+      - "Khách hàng của bạn là ai?" → ["Học sinh/Sinh viên", "Người đi làm", "Phụ huynh mua cho con", "Tất cả mọi người", "Khác (vui lòng mô tả)"]
+      - "Bạn bán loại sách nào?" → ["Sách giáo khoa", "Truyện/Tiểu thuyết", "Sách kỹ năng/Self-help", "Sách thiếu nhi", "Tất cả các loại trên", "Khác (vui lòng mô tả)"]
+      - "Website cần có những tính năng gì?" → ["Tìm kiếm sách", "Giỏ hàng & thanh toán", "Đánh giá/bình luận sách", "Gợi ý sách theo sở thích", "Theo dõi đơn hàng", "Tài khoản thành viên", "Khác (vui lòng mô tả)"]
+      - "Khách thanh toán thế nào?" → ["Chuyển khoản ngân hàng", "Ví điện tử (Momo, ZaloPay...)", "Tiền mặt khi nhận hàng", "Thẻ tín dụng/ghi nợ", "Khác (vui lòng mô tả)"]
+      - "Bạn có hỗ trợ giao hàng không?" → ["Giao toàn quốc", "Chỉ giao nội thành", "Khách tự đến lấy tại cửa hàng", "Khác (vui lòng mô tả)"]
       → SKIP: "Kiếm tiền thế nào?" (đã rõ là bán sách)
       
       ## Website tin tức:
       User nói: "Làm trang tin tức online"
       → Cần hỏi:
-      - "Tin tức về chủ đề gì?" → ["Thời sự", "Giải trí", "Thể thao", "Công nghệ", "Kinh doanh", "Tổng hợp", "Khác"]
-      - "Kiếm tiền thế nào?" → ["Quảng cáo", "Bài viết trả phí", "Tài trợ", "Miễn phí hoàn toàn", "Khác"]
-      - "Ai viết bài?" → ["Phóng viên của bạn", "Cộng tác viên bên ngoài", "Độc giả đóng góp", "Khác"]
-      - "Độc giả có thể bình luận không?" → ["Có, tự do bình luận", "Có, cần đăng nhập", "Không cho bình luận", "Khác"]
+      - "Tin tức về chủ đề gì?" → ["Thời sự", "Giải trí", "Thể thao", "Công nghệ", "Kinh doanh", "Tổng hợp", "Khác (vui lòng mô tả)"]
+      - "Website cần có những tính năng gì?" → ["Tìm kiếm bài viết", "Phân loại theo chuyên mục", "Bình luận bài viết", "Chia sẻ lên mạng xã hội", "Đăng ký nhận tin", "Lưu bài viết yêu thích", "Khác (vui lòng mô tả)"]
+      - "Kiếm tiền thế nào?" → ["Quảng cáo", "Bài viết trả phí", "Tài trợ", "Miễn phí hoàn toàn", "Khác (vui lòng mô tả)"]
+      - "Ai viết bài?" → ["Phóng viên của bạn", "Cộng tác viên bên ngoài", "Độc giả đóng góp", "Khác (vui lòng mô tả)"]
+      - "Độc giả có thể bình luận không?" → ["Có, tự do bình luận", "Có, cần đăng nhập", "Không cho bình luận", "Khác (vui lòng mô tả)"]
       
       ## Website đặt lịch:
       User nói: "Website đặt lịch khám bệnh"
       → Đã biết: booking, lĩnh vực y tế
       → Cần hỏi:
-      - "Bệnh nhân đặt lịch ở đâu?" → ["Phòng khám của bạn", "Nhiều phòng khám", "Bệnh viện", "Khác"]
-      - "Cần nhắc lịch không?" → ["Có, qua email", "Có, qua SMS", "Có, cả hai", "Không cần", "Khác"]
-      - "Bệnh nhân có thể hủy lịch không?" → ["Được hủy miễn phí", "Hủy trước 24h", "Không được hủy", "Khác"]
-      - "Có thanh toán online không?" → ["Có, bắt buộc", "Có, tùy chọn", "Không, trả tại phòng khám", "Khác"]
+      - "Bệnh nhân đặt lịch ở đâu?" → ["Phòng khám của bạn", "Nhiều phòng khám", "Bệnh viện", "Khác (vui lòng mô tả)"]
+      - "Website cần có những tính năng gì?" → ["Đặt lịch hẹn", "Xem thông tin bác sĩ", "Lịch sử khám bệnh", "Nhắc lịch hẹn", "Đánh giá bác sĩ", "Tư vấn online", "Khác (vui lòng mô tả)"]
+      - "Cần nhắc lịch không?" → ["Có, qua email", "Có, qua SMS", "Có, cả hai", "Không cần", "Khác (vui lòng mô tả)"]
+      - "Bệnh nhân có thể hủy lịch không?" → ["Được hủy miễn phí", "Hủy trước 24h", "Không được hủy", "Khác (vui lòng mô tả)"]
+      - "Có thanh toán online không?" → ["Có, bắt buộc", "Có, tùy chọn", "Không, trả tại phòng khám", "Khác (vui lòng mô tả)"]
       
       ## Website portfolio/giới thiệu:
       User nói: "Làm website giới thiệu công ty"
       → Cần hỏi:
       - "Công ty bạn làm gì?" → (open question)
-      - "Khách hàng có thể liên hệ thế nào?" → ["Form liên hệ", "Chat trực tiếp", "Gọi điện", "Tất cả", "Khác"]
-      - "Có cần hiển thị sản phẩm/dịch vụ không?" → ["Có, danh sách đơn giản", "Có, chi tiết từng sản phẩm", "Không cần", "Khác"]
-      - "Có cần phần tuyển dụng không?" → ["Có", "Không", "Có thể thêm sau", "Khác"]
+      - "Website cần có những tính năng gì?" → ["Giới thiệu công ty", "Danh sách sản phẩm/dịch vụ", "Form liên hệ", "Tin tức/Blog", "Tuyển dụng", "Đối tác/Khách hàng", "Khác (vui lòng mô tả)"]
+      - "Khách hàng có thể liên hệ thế nào?" → ["Form liên hệ", "Chat trực tiếp", "Gọi điện", "Tất cả", "Khác (vui lòng mô tả)"]
+      - "Có cần hiển thị sản phẩm/dịch vụ không?" → ["Có, danh sách đơn giản", "Có, chi tiết từng sản phẩm", "Không cần", "Khác (vui lòng mô tả)"]
+      - "Có cần phần tuyển dụng không?" → ["Có", "Không", "Có thể thêm sau", "Khác (vui lòng mô tả)"]
 
   # ---------------------------------------------------------------------------
   # GENERATE PRD - Create Product Requirements Document

@@ -33,9 +33,10 @@ from app.services.artifact_service import ArtifactService
 logger = logging.getLogger(__name__)
 
 # LLM instances (shared, like Team Leader)
+# Using same model naming as team_leader (claude-haiku/sonnet without prefix)
 _fast_llm = ChatOpenAI(model="gpt-4.1", temperature=0.1, timeout=30)
-_default_llm = ChatOpenAI(model="gpt-4.1", temperature=0.7, timeout=90)  # 90s for complex prompts
-_story_llm = ChatOpenAI(model="gpt-4.1", temperature=0.7, timeout=180)  # 180s for story extraction
+_default_llm = ChatOpenAI(model="gpt-4.1", temperature=0.7, timeout=90)
+_story_llm = ChatOpenAI(model="gpt-4.1", temperature=0.7, timeout=180)
 
 
 def _cfg(state: dict, name: str) -> dict:
@@ -589,10 +590,10 @@ async def update_stories(state: BAState, agent=None) -> dict:
         updated_epics = result.get("epics", [])
         change_summary = result.get("change_summary", "Đã cập nhật stories")
         
-        # Flatten stories for backward compatibility
+        # Flatten stories for backward compatibility (use get, NOT pop - to keep stories in epics)
         all_stories = []
         for epic in updated_epics:
-            stories_in_epic = epic.pop("stories", [])
+            stories_in_epic = epic.get("stories", [])  # IMPORTANT: use get() not pop() to keep stories in epic
             epic_title = epic.get("title", epic.get("name", "Unknown"))
             for story in stories_in_epic:
                 story["epic_id"] = epic.get("id")
@@ -819,16 +820,19 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
             logger.error(f"[BA] Failed to save PRD: {e}", exc_info=True)
             result["error"] = f"Failed to save PRD: {str(e)}"
     
-    # Save epics and stories if exist (only for extract_stories, not approve)
+    # Save epics and stories if exist (only for extract_stories/update_stories, not approve or prd_update)
     epics_data = state.get("epics", [])
     stories_data = state.get("stories", [])
     # Check if stories were approved (either by stories_approved flag or by presence of created_epics)
     is_stories_approved = state.get("stories_approved", False) or bool(state.get("created_epics"))
+    # Only process stories for story-related intents (not prd_create, prd_update, etc.)
+    intent = state.get("intent", "")
+    is_story_intent = intent in ["extract_stories", "stories_update", "update_stories"]
     
-    logger.info(f"[BA] save_artifacts: epics_count={len(epics_data)}, stories_count={len(stories_data)}, is_approved={is_stories_approved}")
+    logger.info(f"[BA] save_artifacts: epics_count={len(epics_data)}, stories_count={len(stories_data)}, is_approved={is_stories_approved}, intent={intent}")
     
-    # Only save markdown and send stories_created message for extract_stories (not approve)
-    if (epics_data or stories_data) and project_files and not is_stories_approved:
+    # Only save markdown and send stories_created message for extract_stories/update_stories (not approve or prd_update)
+    if (epics_data or stories_data) and project_files and not is_stories_approved and is_story_intent:
         try:
             # Save with epic structure to markdown
             await project_files.save_user_stories(epics_data, stories_data)
@@ -895,6 +899,20 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
         except Exception as e:
             logger.error(f"[BA] Failed to save stories: {e}", exc_info=True)
             result["error"] = f"Failed to save stories: {str(e)}"
+    
+    # Handle case where story extraction failed (no stories returned)
+    elif is_story_intent and not epics_data and not stories_data and agent:
+        error_msg = state.get("error", "Không thể tạo stories từ PRD. Vui lòng kiểm tra lại PRD hoặc thử lại.")
+        logger.warning(f"[BA] Story extraction failed: {error_msg}")
+        result["error"] = error_msg
+        await agent.message_user(
+            event_type="response",
+            content=f"⚠️ {error_msg}",
+            details={
+                "message_type": "error",
+                "error": error_msg
+            }
+        )
     
     # Interview questions sent
     if state.get("questions_sent"):
