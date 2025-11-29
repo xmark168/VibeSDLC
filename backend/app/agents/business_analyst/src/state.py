@@ -56,8 +56,12 @@ class BAState(TypedDict, total=False):
     created_stories: list[dict]  # Stories created in DB after approval
     approval_message: str  # Message after approval
     
-    # Domain analysis
+    # Domain analysis & Research loop
     analysis_text: str
+    research_loop_count: int  # Track how many times we've done research (max 2)
+    research_done: bool  # Flag to indicate research has been done
+    missing_categories: list[str]  # Categories that need more info
+    domain_research: dict  # Web search results to enrich PRD
     
     # Error handling
     error: str | None
