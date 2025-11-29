@@ -89,9 +89,8 @@ def _build_system_prompt(task: str, agent=None) -> str:
 
 
 async def router(state: DeveloperState, agent=None) -> DeveloperState:
-    """Route story to appropriate processing node.
-    
-    Refactored: Uses with_structured_output for reliable response.
+    """
+    Route story to appropriate processing node.
     """
     print("[NODE] router - Analyzing story intent...")
     try:
@@ -123,14 +122,13 @@ async def router(state: DeveloperState, agent=None) -> DeveloperState:
         structured_llm = _fast_llm.with_structured_output(RoutingDecision)
         result = await structured_llm.ainvoke(messages, config=_cfg(state, "router"))
         
-        action = result.action
-        task_type = result.task_type
-        complexity = result.complexity
-        message = result.message
-        reason = result.reason
-        confidence = result.confidence
+        action = result['action']
+        task_type = result['task_type']
+        complexity = result['complexity']
+        message = result['message']
+        reason = result['reason']
+        confidence = result['confidence']
         
-        # IMPORTANT: For story tasks, ensure proper flow
         if is_story_task:
             # Never return RESPOND or CLARIFY for story tasks
             if action in ("RESPOND", "CLARIFY"):
@@ -142,7 +140,6 @@ async def router(state: DeveloperState, agent=None) -> DeveloperState:
                 action = "ANALYZE"
         
         logger.info(f"[router] Decision: action={action}, type={task_type}, complexity={complexity}")
-        print(f"[NODE] router - Decision: {action} (type={task_type}, complexity={complexity})")
         
         return {
             **state,
@@ -168,15 +165,12 @@ async def router(state: DeveloperState, agent=None) -> DeveloperState:
 
 
 async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
-    """Setup git workspace/branch only when code modification is needed.
+    """
+    Setup git workspace/branch only when code modification is needed.
     """
     print("[NODE] setup_workspace - Setting up workspace...")
     try:
         story_id = state.get("story_id", state.get("task_id", "unknown"))
-        
-        if not agent:
-            logger.warning("[setup_workspace] No agent, skipping workspace setup")
-            return {**state, "workspace_ready": False}
         
         # Check if workspace already setup
         if state.get("workspace_ready"):
