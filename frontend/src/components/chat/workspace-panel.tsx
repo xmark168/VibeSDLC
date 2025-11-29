@@ -361,7 +361,6 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
           onMouseDown={handleResizeStart}
         />
       )}
-
       {/* Tab bar */}
       <div className="flex items-center gap-1 px-2 pt-2 bg-background mb-2">
         {tabs.map((tab) => (
