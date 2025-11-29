@@ -33,9 +33,10 @@ from app.services.artifact_service import ArtifactService
 logger = logging.getLogger(__name__)
 
 # LLM instances (shared, like Team Leader)
+# Using same model naming as team_leader (claude-haiku/sonnet without prefix)
 _fast_llm = ChatOpenAI(model="gpt-4.1", temperature=0.1, timeout=30)
-_default_llm = ChatOpenAI(model="gpt-4.1", temperature=0.7, timeout=90)  # 90s for complex prompts
-_story_llm = ChatOpenAI(model="gpt-4.1", temperature=0.7, timeout=180)  # 180s for story extraction
+_default_llm = ChatOpenAI(model="gpt-4.1", temperature=0.7, timeout=90)
+_story_llm = ChatOpenAI(model="gpt-4.1", temperature=0.7, timeout=180)
 
 
 def _cfg(state: dict, name: str) -> dict:
@@ -898,6 +899,20 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
         except Exception as e:
             logger.error(f"[BA] Failed to save stories: {e}", exc_info=True)
             result["error"] = f"Failed to save stories: {str(e)}"
+    
+    # Handle case where story extraction failed (no stories returned)
+    elif is_story_intent and not epics_data and not stories_data and agent:
+        error_msg = state.get("error", "Không thể tạo stories từ PRD. Vui lòng kiểm tra lại PRD hoặc thử lại.")
+        logger.warning(f"[BA] Story extraction failed: {error_msg}")
+        result["error"] = error_msg
+        await agent.message_user(
+            event_type="response",
+            content=f"⚠️ {error_msg}",
+            details={
+                "message_type": "error",
+                "error": error_msg
+            }
+        )
     
     # Interview questions sent
     if state.get("questions_sent"):
