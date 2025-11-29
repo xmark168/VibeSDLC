@@ -819,16 +819,19 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
             logger.error(f"[BA] Failed to save PRD: {e}", exc_info=True)
             result["error"] = f"Failed to save PRD: {str(e)}"
     
-    # Save epics and stories if exist (only for extract_stories, not approve)
+    # Save epics and stories if exist (only for extract_stories/update_stories, not approve or prd_update)
     epics_data = state.get("epics", [])
     stories_data = state.get("stories", [])
     # Check if stories were approved (either by stories_approved flag or by presence of created_epics)
     is_stories_approved = state.get("stories_approved", False) or bool(state.get("created_epics"))
+    # Only process stories for story-related intents (not prd_create, prd_update, etc.)
+    intent = state.get("intent", "")
+    is_story_intent = intent in ["extract_stories", "stories_update", "update_stories"]
     
-    logger.info(f"[BA] save_artifacts: epics_count={len(epics_data)}, stories_count={len(stories_data)}, is_approved={is_stories_approved}")
+    logger.info(f"[BA] save_artifacts: epics_count={len(epics_data)}, stories_count={len(stories_data)}, is_approved={is_stories_approved}, intent={intent}")
     
-    # Only save markdown and send stories_created message for extract_stories (not approve)
-    if (epics_data or stories_data) and project_files and not is_stories_approved:
+    # Only save markdown and send stories_created message for extract_stories/update_stories (not approve or prd_update)
+    if (epics_data or stories_data) and project_files and not is_stories_approved and is_story_intent:
         try:
             # Save with epic structure to markdown
             await project_files.save_user_stories(epics_data, stories_data)
