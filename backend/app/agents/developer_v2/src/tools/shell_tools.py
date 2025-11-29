@@ -194,7 +194,7 @@ def semantic_code_search(query: str, top_k: int = 5) -> str:
     """
     try:
         from app.agents.developer.project_manager import project_manager
-        from app.agents.developer_v2.src.tools import _tool_context
+        from app.agents.developer_v2.src.tools.cocoindex_tools import _tool_context
         
         project_id = _tool_context.get("project_id")
         task_id = _tool_context.get("task_id")

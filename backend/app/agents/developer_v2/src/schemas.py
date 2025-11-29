@@ -80,3 +80,4 @@ class ValidationResult(BaseModel):
     ac_failed: List[str] = Field(default_factory=list, description="Acceptance criteria that failed")
     issues: List[str] = Field(default_factory=list)
     recommendations: List[str] = Field(default_factory=list)
+

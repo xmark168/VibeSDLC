@@ -13,10 +13,7 @@ from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import (
     StoryAnalysis, ImplementationPlan, PlanStep, CodeChange
 )
-from app.agents.developer_v2.src.tools import (
-    submit_routing_decision, submit_story_analysis, submit_implementation_plan,
-    submit_code_change, submit_system_design, set_tool_context
-)
+from app.agents.developer_v2.src.tools import set_tool_context
 from app.agents.developer_v2.src.tools.filesystem_tools import (
     set_fs_context, read_file_safe, write_file_safe, list_directory_safe
 )
@@ -153,7 +150,7 @@ def _save_design_docs(workspace_path: str, design_result: dict, design_doc: str,
 async def router(state: DeveloperState, agent=None) -> DeveloperState:
     """Route story to appropriate processing node using ReAct agent.
     
-    Tools: [search_codebase (optional), submit_routing_decision]
+    Tools: [search_codebase (optional)]
     """
     try:
         has_analysis = bool(state.get("analysis_result"))
@@ -181,7 +178,7 @@ async def router(state: DeveloperState, agent=None) -> DeveloperState:
         workspace_path = state.get("workspace_path")
         _setup_tool_context(workspace_path, project_id, task_id)
         
-        tools = [semantic_code_search, submit_routing_decision]
+        tools = [semantic_code_search]
         
         # Create agent
         agent = create_agent(
@@ -320,7 +317,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
 async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
     """Analyze user story using ReAct agent.
     
-    Tools: [read_file, search_codebase, web_search, submit_story_analysis]
+    Tools: [read_file, search_codebase, web_search]
     """
     try:
         workspace_path = state.get("workspace_path")
@@ -338,7 +335,7 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
         # Setup tool context and build tools
         _setup_tool_context(workspace_path, project_id, task_id)
         
-        tools = [read_file_safe, semantic_code_search, TavilySearch(max_results=3), submit_story_analysis]
+        tools = [read_file_safe, semantic_code_search, TavilySearch(max_results=3)]
         
         # Create agent
         agent = create_agent(
@@ -387,7 +384,7 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
 async def design(state: DeveloperState, agent=None) -> DeveloperState:
     """Generate system design using ReAct agent (MetaGPT Architect pattern).
     
-    Tools: [read_file, list_directory, search_codebase, submit_system_design]
+    Tools: [read_file, list_directory, search_codebase]
     """
     try:
         analysis = state.get("analysis_result", {})
@@ -416,7 +413,7 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
         task_id = state.get("task_id") or state.get("story_id")
         _setup_tool_context(workspace_path, project_id, task_id)
         
-        tools = [read_file_safe, list_directory_safe, semantic_code_search, submit_system_design]
+        tools = [read_file_safe, list_directory_safe, semantic_code_search]
         
         # Create agent
         agent = create_agent(
@@ -490,7 +487,7 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
 async def plan(state: DeveloperState, agent=None) -> DeveloperState:
     """Create implementation plan using ReAct agent.
     
-    Tools: [read_file, list_directory, search_codebase, submit_implementation_plan]
+    Tools: [read_file, list_directory, search_codebase]
     """
     try:
         analysis = state.get("analysis_result", {})
@@ -545,7 +542,7 @@ IMPORTANT: Generate file_path values that match the existing project structure a
         # Setup tool context and build tools
         _setup_tool_context(workspace_path, project_id, task_id)
         
-        tools = [read_file_safe, list_directory_safe, semantic_code_search, submit_implementation_plan]
+        tools = [read_file_safe, list_directory_safe, semantic_code_search]
         
         # Create agent
         agent = create_agent(
@@ -652,7 +649,7 @@ IMPORTANT: Generate file_path values that match the existing project structure a
 async def implement(state: DeveloperState, agent=None) -> DeveloperState:
     """Execute implementation based on plan using ReAct agent.
     
-    Tools: [read_file, list_directory, search_codebase, write_file, run_command, submit_code_change]
+    Tools: [read_file, list_directory, search_codebase, write_file, run_command]
     """
     try:
         plan_steps = state.get("implementation_plan", [])
@@ -796,7 +793,7 @@ Conventions: {project_structure.get('conventions', '')}
         
         tools = [
             read_file_safe, list_directory_safe, write_file_safe, 
-            execute_shell, semantic_code_search, submit_code_change
+            execute_shell, semantic_code_search
         ]
         
         # Create agent
