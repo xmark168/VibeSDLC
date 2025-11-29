@@ -6,7 +6,7 @@ from cocoindex.functions import DetectProgrammingLanguage, SplitRecursively
 from pgvector.psycopg import register_vector
 
 from pathlib import Path
-from app.agents.developer.flows import code_to_embedding, connection_pool
+from app.agents.developer_v2.flows import code_to_embedding, connection_pool
 
 
 def create_structure_document(project_root):

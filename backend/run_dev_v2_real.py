@@ -8,6 +8,10 @@ Usage:
     python run_dev_v2_real.py
 """
 
+# Load environment variables FIRST
+from dotenv import load_dotenv
+load_dotenv()
+
 import asyncio
 import json
 import logging
@@ -148,16 +152,20 @@ def detect_template_type(story: dict) -> str:
 class SimpleDeveloperRunner:
     """Simple runner for DeveloperV2 without full agent infrastructure.
     
+    This runner provides the `_setup_workspace` method that the graph's
+    `setup_workspace` node expects. It handles:
+    - Git init and branch creation
+    - CocoIndex indexing for semantic search
+    
     Note: message_user calls in nodes.py are disabled for this mode.
     """
     
     def __init__(self, workspace_path: str = None, template: str = None):
         self.name = "DeveloperV2"
         self.role_type = "developer"
-        self.project_id = uuid4()
+        self.project_id = str(uuid4())
         self.template = template
         self.template_applied = False
-        self.git_initialized = False
         
         # Create workspace if not provided
         if workspace_path:
@@ -165,7 +173,7 @@ class SimpleDeveloperRunner:
         else:
             self.workspace_path = Path(__file__).parent / "projects" / f"project_{self.project_id}"
         
-        # Apply boilerplate template if specified
+        # Apply boilerplate template if specified (workspace_ready stays False)
         if template:
             self.template_applied = copy_boilerplate(template, self.workspace_path)
             if self.template_applied:
@@ -173,35 +181,70 @@ class SimpleDeveloperRunner:
         else:
             self.workspace_path.mkdir(parents=True, exist_ok=True)
         
-        # Initialize git repository in workspace
-        self._init_git()
-        
-        # Initialize graph (agent=self but message_user is no-op)
+        # Initialize graph (agent=self, setup_workspace node will call _setup_workspace)
         self.graph = DeveloperGraph(agent=self)
         
         logger.info(f"[{self.name}] Initialized with workspace: {self.workspace_path}")
+        logger.info(f"[{self.name}] Workspace ready: False (will be setup by graph)")
     
-    def _init_git(self):
-        """Initialize git repository in workspace."""
+    def _setup_workspace(self, story_id: str) -> dict:
+        """Setup workspace for the graph's setup_workspace node.
+        
+        This method is called by the setup_workspace node in graph.py.
+        It handles:
+        1. Git init (if not already)
+        2. Create and checkout feature branch
+        3. Initial commit of boilerplate (if any)
+        
+        Args:
+            story_id: Story ID for branch naming
+            
+        Returns:
+            dict with workspace_path, branch_name, main_workspace, workspace_ready
+        """
+        short_id = story_id.split('-')[-1][:8] if '-' in story_id else story_id[:8]
+        branch_name = f"story_{short_id}"
+        
+        workspace_ready = False
+        
         try:
             from app.agents.developer.tools.git_python_tool import GitPythonTool
             
             git_tool = GitPythonTool(root_dir=str(self.workspace_path))
-            result = git_tool._run("init")
-            logger.info(f"[{self.name}] Git init: {result}")
             
-            # Check if git is ready
+            # 1. Initialize git if needed
             git_dir = self.workspace_path / ".git"
-            self.git_initialized = git_dir.exists()
+            if not git_dir.exists():
+                result = git_tool._run("init")
+                logger.info(f"[{self.name}] Git init: {result}")
             
-            if self.git_initialized:
-                logger.info(f"[{self.name}] Git repository initialized successfully")
-            else:
-                logger.warning(f"[{self.name}] Git initialization may have failed")
-                
+            # 2. Initial commit if there are files (from boilerplate)
+            status = git_tool._run("status")
+            if "nothing to commit" not in status.lower() and "untracked files" in status.lower():
+                # Stage all files
+                commit_result = git_tool._run("commit", message="Initial boilerplate", files=["."])
+                logger.info(f"[{self.name}] Initial commit: {commit_result}")
+            
+            # 3. Create and checkout feature branch
+            create_result = git_tool._run("create_branch", branch_name=branch_name)
+            logger.info(f"[{self.name}] Create branch '{branch_name}': {create_result}")
+            
+            checkout_result = git_tool._run("checkout_branch", branch_name=branch_name)
+            logger.info(f"[{self.name}] Checkout branch '{branch_name}': {checkout_result}")
+            
+            workspace_ready = True
+            logger.info(f"[{self.name}] Workspace setup complete: branch={branch_name}")
+            
         except Exception as e:
-            logger.warning(f"[{self.name}] Git init failed: {e}")
-            self.git_initialized = False
+            logger.warning(f"[{self.name}] Git setup failed: {e}")
+            workspace_ready = False
+        
+        return {
+            "workspace_path": str(self.workspace_path),
+            "branch_name": branch_name,
+            "main_workspace": str(self.workspace_path),
+            "workspace_ready": workspace_ready,
+        }
     
     async def message_user(self, msg_type: str, message: str):
         """No-op - message_user calls in nodes.py are disabled."""
@@ -212,60 +255,73 @@ class SimpleDeveloperRunner:
         
         # Setup Langfuse tracing (controlled by ENABLE_LANGFUSE env var)
         langfuse_handler = None
-        langfuse_trace = None
-        langfuse_client = None
-        
+        langfuse_span = None
+        langfuse_ctx = None
         enable_langfuse = os.getenv("ENABLE_LANGFUSE", "false").lower() == "true"
         
         if enable_langfuse:
             try:
-                from langfuse import Langfuse
+                from langfuse import get_client
                 from langfuse.langchain import CallbackHandler
                 
-                # Initialize Langfuse client with moderate batch size
-                langfuse_client = Langfuse(
-                    flush_at=10,
-                    flush_interval=10,
+                # Create parent span for entire graph execution (Team Leader pattern)
+                langfuse = get_client()
+                langfuse_ctx = langfuse.start_as_current_observation(
+                    as_type="span",
+                    name="developer_v2_story_execution"
                 )
                 
-                # Create parent trace
-                langfuse_trace = langfuse_client.trace(
-                    name="developer_v2_graph",
+                # Enter context and get span object
+                langfuse_span = langfuse_ctx.__enter__()
+                
+                # Update trace with metadata
+                langfuse_span.update_trace(
                     user_id=str(uuid4()),
                     session_id=str(self.project_id),
-                    input={"story_title": story.get("title", "")[:200]},
-                    metadata={"agent": self.name, "template": self.template}
+                    input={
+                        "story_id": story.get("story_id", "unknown"),
+                        "title": story.get("title", "Untitled"),
+                        "content": story.get("content", "")[:200]
+                    },
+                    tags=["developer_v2", "story_execution", self.template or "no_template"],
+                    metadata={
+                        "agent": self.name,
+                        "template": self.template,
+                        "template_applied": self.template_applied
+                    }
                 )
                 
-                # Create callback handler linked to trace
-                langfuse_handler = CallbackHandler(
-                    trace_id=langfuse_trace.id,
-                    session_id=str(self.project_id),
-                )
+                # Handler inherits trace context automatically
+                langfuse_handler = CallbackHandler()
                 
-                logger.info(f"[{self.name}] Langfuse tracing enabled")
+                logger.info(f"[{self.name}] Langfuse tracing enabled (session={self.project_id})")
             except Exception as e:
-                logger.debug(f"Langfuse setup error: {e}")
+                logger.error(f"Langfuse setup error: {e}")
         else:
             logger.info(f"[{self.name}] Langfuse disabled (set ENABLE_LANGFUSE=true to enable)")
         
         # Build initial state
+        # Note: workspace_path is provided but workspace_ready=False
+        # The setup_workspace node will call agent._setup_workspace() to:
+        # - Initialize git
+        # - Create and checkout feature branch
+        # - Index codebase with CocoIndex
         initial_state = {
             "story_id": story.get("story_id", str(uuid4())),
             "story_title": story.get("title", "Untitled"),
             "story_content": story.get("content", ""),
             "acceptance_criteria": story.get("acceptance_criteria", []),
-            "project_id": str(self.project_id),
+            "project_id": self.project_id,
             "task_id": str(uuid4()),
             "user_id": str(uuid4()),
             "langfuse_handler": langfuse_handler,
             
-            # Workspace
-            "workspace_path": str(self.workspace_path),
-            "branch_name": f"story_{story.get('story_id', 'main')[:8]}",
+            # Workspace - setup_workspace node will handle git/branch/indexing
+            "workspace_path": str(self.workspace_path),  # Pre-set path (may have boilerplate)
+            "branch_name": None,  # Will be set by setup_workspace node
             "main_workspace": str(self.workspace_path),
-            "workspace_ready": self.git_initialized,  # Only True if git init succeeded
-            "index_ready": False,
+            "workspace_ready": False,  # Will be set to True by setup_workspace node
+            "index_ready": False,  # Will be set to True after CocoIndex indexing
             "merged": False,
             
             # Workflow state
@@ -347,51 +403,38 @@ class SimpleDeveloperRunner:
             )
             print("\n[*] Graph completed!")
             
-            # Update Langfuse trace output
-            if langfuse_trace:
+            # Update trace output and close span (Team Leader pattern)
+            if langfuse_span and langfuse_ctx:
                 try:
-                    langfuse_trace.update(
-                        output={
-                            "action": final_state.get("action"),
-                            "files_created": final_state.get("files_created", []),
-                            "run_status": final_state.get("run_status"),
-                            "code_review_passed": final_state.get("code_review_passed"),
-                        },
-                        metadata={
-                            "complexity": final_state.get("complexity"),
-                            "debug_count": final_state.get("debug_count", 0),
-                            "react_loop_count": final_state.get("react_loop_count", 0),
-                        }
-                    )
-                except Exception:
-                    pass
-            
-            # Flush all pending events
-            if langfuse_client:
-                try:
-                    langfuse_client.flush()
-                except Exception:
-                    pass
+                    langfuse_span.update_trace(output={
+                        "action": final_state.get("action"),
+                        "task_type": final_state.get("task_type"),
+                        "complexity": final_state.get("complexity"),
+                        "files_created": len(final_state.get("files_created", [])),
+                        "files_modified": len(final_state.get("files_modified", [])),
+                        "code_review_passed": final_state.get("code_review_passed"),
+                        "run_status": final_state.get("run_status"),
+                        "debug_count": final_state.get("debug_count", 0),
+                        "react_loop_count": final_state.get("react_loop_count", 0)
+                    })
+                    langfuse_ctx.__exit__(None, None, None)
+                    logger.info(f"[{self.name}] Langfuse span closed successfully")
+                except Exception as e:
+                    logger.error(f"Langfuse span close error: {e}")
             
             return final_state
             
         except Exception as e:
             logger.error(f"[{self.name}] Graph error: {e}", exc_info=True)
-            # Update Langfuse trace with error
-            if langfuse_trace:
+            
+            # Cleanup langfuse span on error (Team Leader pattern)
+            if langfuse_ctx:
                 try:
-                    langfuse_trace.update(
-                        output={"error": str(e)[:1000]},
-                        level="ERROR"
-                    )
-                except Exception:
-                    pass
-            # Flush on error too
-            if langfuse_client:
-                try:
-                    langfuse_client.flush()
-                except Exception:
-                    pass
+                    langfuse_ctx.__exit__(type(e), e, e.__traceback__)
+                    logger.info(f"[{self.name}] Langfuse span closed (on error)")
+                except Exception as cleanup_err:
+                    logger.error(f"Langfuse cleanup error: {cleanup_err}")
+            
             raise
 
 

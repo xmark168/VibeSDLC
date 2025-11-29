@@ -10,11 +10,12 @@ from langchain_tavily import TavilySearch
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import (
-    StoryAnalysis, ImplementationPlan, PlanStep, CodeChange
+    StoryAnalysis, ImplementationPlan, PlanStep, CodeChange,
+    RoutingDecision, SystemDesign, DebugResult
 )
 from app.agents.developer_v2.src.tools import set_tool_context
 from app.agents.developer_v2.src.tools.filesystem_tools import (
-    set_fs_context, read_file_safe, write_file_safe, list_directory_safe
+    set_fs_context, read_file_safe, write_file_safe, list_directory_safe, edit_file
 )
 from app.agents.developer_v2.src.tools.shell_tools import (
     set_shell_context, execute_shell, semantic_code_search
@@ -177,7 +178,7 @@ def _build_system_prompt(task: str, agent=None) -> str:
 async def router(state: DeveloperState, agent=None) -> DeveloperState:
     """Route story to appropriate processing node.
     
-    Refactored: Direct LLM call instead of ReAct agent for speed.
+    Refactored: Uses with_structured_output for reliable response.
     """
     print("[NODE] router - Analyzing story intent...")
     try:
@@ -200,31 +201,32 @@ async def router(state: DeveloperState, agent=None) -> DeveloperState:
             has_implementation=has_implementation
         )
 
-        # Direct LLM call (no ReAct agent needed for routing decision)
+        # Use with_structured_output for reliable response
         messages = [
             SystemMessage(content=_build_system_prompt("routing_decision")),
             HumanMessage(content=input_text)
         ]
         
-        response = await _fast_llm.ainvoke(messages, config=_cfg(state, "router"))
+        structured_llm = _fast_llm.with_structured_output(RoutingDecision)
+        result = await structured_llm.ainvoke(messages, config=_cfg(state, "router"))
         
-        # Parse JSON response
-        try:
-            args = json.loads(_clean_json(response.content))
-        except json.JSONDecodeError:
-            args = {}
+        action = result.action
+        task_type = result.task_type
+        complexity = result.complexity
+        message = result.message
+        reason = result.reason
+        confidence = result.confidence
         
-        action = args.get("action", "ANALYZE")
-        task_type = args.get("task_type", "feature")
-        complexity = args.get("complexity", "medium")
-        message = args.get("message", "Bắt đầu phân tích story...")
-        reason = args.get("reason", "New story needs analysis")
-        confidence = args.get("confidence", 0.8)
-        
-        # IMPORTANT: For story tasks, never return RESPOND or CLARIFY
-        if is_story_task and action in ("RESPOND", "CLARIFY"):
-            logger.info(f"[router] Story task detected, forcing ANALYZE instead of {action}")
-            action = "ANALYZE"
+        # IMPORTANT: For story tasks, ensure proper flow
+        if is_story_task:
+            # Never return RESPOND or CLARIFY for story tasks
+            if action in ("RESPOND", "CLARIFY"):
+                logger.info(f"[router] Story task detected, forcing ANALYZE instead of {action}")
+                action = "ANALYZE"
+            # Must analyze before plan/implement
+            elif action in ("PLAN", "IMPLEMENT") and not has_analysis:
+                logger.info(f"[router] No analysis yet, forcing ANALYZE instead of {action}")
+                action = "ANALYZE"
         
         logger.info(f"[router] Decision: action={action}, type={task_type}, complexity={complexity}")
         print(f"[NODE] router - Decision: {action} (type={task_type}, complexity={complexity})")
@@ -335,7 +337,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
 async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
     """Analyze user story requirements.
     
-    Refactored: Direct LLM call with bind_tools for file exploration.
+    Refactored: Tools for exploration + with_structured_output for response.
     """
     print("[NODE] analyze - Analyzing story requirements...")
     try:
@@ -357,37 +359,25 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
         # Tools for exploration
         tools = [read_file_safe, list_directory_safe, semantic_code_search]
         
-        # LLM with tools
+        # Step 1: Explore with tools
         messages = [
             SystemMessage(content=_build_system_prompt("analyze_story")),
             HumanMessage(content=input_text)
         ]
         
-        response_content = await _llm_with_tools(
+        exploration = await _llm_with_tools(
             llm=_code_llm,
             tools=tools,
             messages=messages,
             state=state,
-            name="analyze",
-            max_iterations=3
+            name="analyze_explore",
+            max_iterations=2
         )
         
-        # Parse JSON response
-        try:
-            args = json.loads(_clean_json(response_content))
-        except json.JSONDecodeError:
-            args = {}
-        
-        analysis = StoryAnalysis(
-            task_type=args.get("task_type", "feature"),
-            complexity=args.get("complexity", "medium"),
-            estimated_hours=args.get("estimated_hours", 4.0),
-            summary=args.get("summary", state.get("story_title", "")),
-            affected_files=args.get("affected_files", []),
-            suggested_approach=args.get("suggested_approach", ""),
-            dependencies=args.get("dependencies") or [],
-            risks=args.get("risks") or [],
-        )
+        # Step 2: Get structured response
+        messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:3000]}\n\nNow provide your final analysis."))
+        structured_llm = _code_llm.with_structured_output(StoryAnalysis)
+        analysis = await structured_llm.ainvoke(messages, config=_cfg(state, "analyze"))
         
         logger.info(f"[analyze] Done: {analysis.task_type}, {analysis.complexity}")
         
@@ -411,7 +401,7 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
 async def design(state: DeveloperState, agent=None) -> DeveloperState:
     """Generate system design.
     
-    Refactored: Direct LLM call with bind_tools for exploration.
+    Refactored: Tools for exploration + with_structured_output for response.
     """
     print("[NODE] design - Creating system design...")
     try:
@@ -444,63 +434,53 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
         # Tools for exploration
         tools = [read_file_safe, list_directory_safe, semantic_code_search]
         
-        # LLM with tools
+        # Step 1: Explore with tools
         messages = [
             SystemMessage(content=_build_system_prompt("system_design")),
             HumanMessage(content=input_text)
         ]
         
-        response_content = await _llm_with_tools(
+        exploration = await _llm_with_tools(
             llm=_code_llm,
             tools=tools,
             messages=messages,
             state=state,
-            name="design",
-            max_iterations=3
+            name="design_explore",
+            max_iterations=2
         )
         
-        # Parse JSON response
-        try:
-            args = json.loads(_clean_json(response_content))
-        except json.JSONDecodeError:
-            args = {}
+        # Step 2: Get structured response
+        messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:3000]}\n\nNow provide your final system design."))
+        structured_llm = _code_llm.with_structured_output(SystemDesign)
+        design_result = await structured_llm.ainvoke(messages, config=_cfg(state, "design"))
         
-        design_result = {
-            "data_structures": args.get("data_structures", ""),
-            "api_interfaces": args.get("api_interfaces", ""),
-            "call_flow": args.get("call_flow", ""),
-            "design_notes": args.get("design_notes", ""),
-            "file_structure": args.get("file_structure", []),
-        }
-        logger.info(f"[design] Got design from agent: {len(design_result.get('file_structure', []))} files")
+        logger.info(f"[design] Got design: {len(design_result.file_structure)} files")
         
         # Build design document
         design_doc = f"""# System Design
 
 ## Data Structures & Interfaces
-{design_result.get('data_structures', 'N/A')}
+{design_result.data_structures or 'N/A'}
 
 ## API Interfaces
-{design_result.get('api_interfaces', 'N/A')}
+{design_result.api_interfaces or 'N/A'}
 
 ## Call Flow
-{design_result.get('call_flow', 'N/A')}
+{design_result.call_flow or 'N/A'}
 
 ## Design Notes
-{design_result.get('design_notes', 'N/A')}
+{design_result.design_notes or 'N/A'}
 
 ## File Structure
-{chr(10).join(f'- {f}' for f in design_result.get('file_structure', []))}
+{chr(10).join(f'- {f}' for f in design_result.file_structure)}
 """
-        
-
         
         return {
             **state,
-            "system_design": design_result,
-            "data_structures": design_result.get("data_structures"),
-            "api_interfaces": design_result.get("api_interfaces"),
-            "call_flow": design_result.get("call_flow"),
+            "system_design": design_result.model_dump(),
+            "data_structures": design_result.data_structures,
+            "api_interfaces": design_result.api_interfaces,
+            "call_flow": design_result.call_flow,
             "design_doc": design_doc,
             "action": "PLAN",
         }
@@ -517,11 +497,11 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
 async def plan(state: DeveloperState, agent=None) -> DeveloperState:
     """Create implementation plan.
     
-    Refactored: Direct LLM call with pre-fetched context for speed.
+    Refactored: Uses with_structured_output for reliable response.
     """
     print("[NODE] plan - Creating implementation plan...")
     try:
-        analysis = state.get("analysis_result", {})
+        analysis = state.get("analysis_result") or {}
         
         # Get workspace context
         workspace_path = state.get("workspace_path", "")
@@ -565,45 +545,14 @@ IMPORTANT: Generate file_path values that match the existing project structure a
             existing_code="Use search_codebase and read_file tools to explore existing code"
         )
 
-        # Direct LLM call (no ReAct agent needed - context already in input)
+        # Use with_structured_output for reliable response
         messages = [
             SystemMessage(content=_build_system_prompt("create_plan")),
             HumanMessage(content=input_text)
         ]
         
-        response = await _code_llm.ainvoke(messages, config=_cfg(state, "plan"))
-        
-        # Parse JSON response
-        try:
-            args = json.loads(_clean_json(response.content))
-        except json.JSONDecodeError:
-            args = {}
-        story_summary = args.get("story_summary", state.get("story_title", "Implementation"))
-        steps = args.get("steps", [])
-        total_estimated_hours = args.get("total_estimated_hours", 0)
-        critical_path = args.get("critical_path") or []
-        rollback_plan = args.get("rollback_plan")
-        
-        # Convert steps to PlanStep objects
-        plan_steps = []
-        for s in steps:
-            plan_steps.append(PlanStep(
-                order=s.get("order", len(plan_steps) + 1),
-                description=s.get("description", ""),
-                file_path=s.get("file_path", ""),
-                action=s.get("action", "create"),
-                estimated_minutes=s.get("estimated_minutes", 30),
-                dependencies=s.get("dependencies", [])
-            ))
-        
-        # Create plan_result for compatibility
-        plan_result = ImplementationPlan(
-            story_summary=story_summary,
-            steps=plan_steps,
-            total_estimated_hours=total_estimated_hours,
-            critical_path=critical_path,
-            rollback_plan=rollback_plan
-        )
+        structured_llm = _code_llm.with_structured_output(ImplementationPlan)
+        plan_result = await structured_llm.ainvoke(messages, config=_cfg(state, "plan"))
         
         # Validate and fix file paths based on project structure
         if project_structure and plan_result.steps:
@@ -614,11 +563,11 @@ IMPORTANT: Generate file_path values that match the existing project structure a
             )
             # Update plan_result with validated paths
             plan_result = ImplementationPlan(
-                story_summary=story_summary,
+                story_summary=plan_result.story_summary,
                 steps=[PlanStep(**s) for s in validated_steps],
-                total_estimated_hours=total_estimated_hours,
-                critical_path=critical_path,
-                rollback_plan=rollback_plan
+                total_estimated_hours=plan_result.total_estimated_hours,
+                critical_path=plan_result.critical_path,
+                rollback_plan=plan_result.rollback_plan
             )
             logger.info(f"[plan] Validated {len(plan_result.steps)} file paths")
         
@@ -668,7 +617,7 @@ IMPORTANT: Generate file_path values that match the existing project structure a
 async def implement(state: DeveloperState, agent=None) -> DeveloperState:
     """Execute implementation based on plan.
     
-    Refactored: Direct LLM call with bind_tools for exploration + manual file writing.
+    Refactored: Tools for exploration + with_structured_output for response.
     """
     current_step = state.get("current_step", 0)
     total_steps = state.get("total_steps", 0)
@@ -705,7 +654,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             }
         
         step = plan_steps[current_step]
-        current_file = step.get("file_path", "")
+        current_file = step.get("file_path") or ""
         
         if agent:
             pass
@@ -731,15 +680,19 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
                 )
                 logger.info(f"[implement] Using CocoIndex for context")
         
-        # Get existing code if modifying
+        # Get existing code if modifying (using read_file_safe tool)
         existing_code = ""
         if workspace_path and current_file and step.get("action") == "modify":
-            file_path = Path(workspace_path) / current_file
-            if file_path.exists():
-                try:
-                    existing_code = file_path.read_text(encoding='utf-8')
-                except Exception:
-                    pass
+            try:
+                result = read_file_safe.invoke({"file_path": current_file})
+                if result and not result.startswith("Error:"):
+                    # Extract content after "Content of {file_path}:\n\n"
+                    if "\n\n" in result:
+                        existing_code = result.split("\n\n", 1)[1]
+                    else:
+                        existing_code = result
+            except Exception:
+                pass
         
         # Build implementation plan context
         implementation_plan = state.get("code_plan_doc") or ""
@@ -816,54 +769,51 @@ Conventions: {project_structure.get('conventions', '')}
         # Tools for exploration (read-only, writing is manual)
         tools = [read_file_safe, list_directory_safe, semantic_code_search]
         
-        # LLM with tools
+        # Step 1: Explore with tools
         messages = [
             SystemMessage(content=_build_system_prompt("implement_step")),
             HumanMessage(content=input_text)
         ]
         
-        response_content = await _llm_with_tools(
+        exploration = await _llm_with_tools(
             llm=_code_llm,
             tools=tools,
             messages=messages,
             state=state,
-            name="implement",
-            max_iterations=3
+            name="implement_explore",
+            max_iterations=2
         )
         
-        # Parse JSON response
-        try:
-            args = json.loads(_clean_json(response_content))
-        except json.JSONDecodeError:
-            # Try to extract code from markdown code block
-            code_match = re.search(r'```(?:\w+)?\n([\s\S]*?)\n```', response_content)
-            if code_match:
-                args = {
-                    "file_path": current_file,
-                    "action": step.get("action", "create"),
-                    "code_snippet": code_match.group(1),
-                    "description": step.get("description", "")
-                }
-            else:
-                args = {}
+        # Step 2: Get structured response
+        messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:3000]}\n\nNow provide the code implementation."))
+        structured_llm = _code_llm.with_structured_output(CodeChange)
+        code_change = await structured_llm.ainvoke(messages, config=_cfg(state, "implement"))
         
-        code_change = CodeChange(
-            file_path=args.get("file_path", current_file),
-            action=args.get("action", step.get("action", "create")),
-            code_snippet=args.get("code_snippet", ""),
-            description=args.get("description", step.get("description", ""))
-        )
-        logger.info(f"[implement] Got code from agent tool call")
+        # Fill defaults if missing
+        if not code_change.file_path:
+            code_change = CodeChange(
+                file_path=current_file,
+                action=code_change.action or step.get("action", "create"),
+                code_snippet=code_change.code_snippet,
+                description=code_change.description or step.get("description", "")
+            )
+        logger.info(f"[implement] Got code from structured output")
         
         logger.info(f"[implement] Step {current_step + 1}: {code_change.action} {code_change.file_path}")
         
-        # IMPORTANT: Write the generated code to file
+        # IMPORTANT: Write the generated code to file using write_file_safe tool
         if workspace_path and code_change.code_snippet:
             try:
-                file_path = Path(workspace_path) / code_change.file_path
-                file_path.parent.mkdir(parents=True, exist_ok=True)
-                file_path.write_text(code_change.code_snippet, encoding='utf-8')
-                logger.info(f"[implement] Wrote {len(code_change.code_snippet)} chars to {code_change.file_path}")
+                result = write_file_safe.invoke({
+                    "file_path": code_change.file_path,
+                    "content": code_change.code_snippet,
+                    "mode": "w"
+                })
+                logger.info(f"[implement] {result}")
+                
+                # Incremental update index (fast - only changed file)
+                from app.agents.developer_v2.src.tools import incremental_update_index
+                incremental_update_index(project_id, task_id)
             except Exception as write_err:
                 logger.warning(f"[implement] Failed to write {code_change.file_path}: {write_err}")
         
@@ -1395,11 +1345,11 @@ async def _summarize_all_code(code_changes: list, workspace_path: str = "") -> s
     for change in code_changes:
         file_path = change.get("file_path", "unknown")
         action = change.get("action", "unknown")
-        description = change.get("description", "")
-        code = change.get("code_snippet", "")
+        description = change.get("description", "") or ""
+        code = change.get("code_snippet", "") or ""
         
         # Truncate code for summary
-        code_preview = code[:500] + "..." if len(code) > 500 else code
+        code_preview = code[:500] + "..." if code and len(code) > 500 else (code or "")
         
         summary_parts.append(f"""
 ### {file_path} ({action})
@@ -1555,7 +1505,7 @@ async def code_review(state: DeveloperState, agent=None) -> DeveloperState:
         file_map = {}  # Map file_path to code_change for updates
         
         for change in code_changes:
-            file_path = change.get("file_path", "")
+            file_path = change.get("file_path") or ""
             code = change.get("code_snippet", "")
             
             if not code:
@@ -1627,16 +1577,18 @@ async def code_review(state: DeveloperState, agent=None) -> DeveloperState:
                     for issue in issues:
                         error_logs_parts.append(f"  - {issue}")
                 
-                # If rewritten code provided, update the file
+                # If rewritten code provided, update the file using write_file_safe tool
                 if rewritten and rewritten.strip() and file_path in file_map:
                     file_map[file_path]["code_snippet"] = rewritten
                     
                     if workspace_path:
-                        full_path = Path(workspace_path) / file_path
                         try:
-                            full_path.parent.mkdir(parents=True, exist_ok=True)
-                            full_path.write_text(rewritten, encoding='utf-8')
-                            logger.info(f"[code_review] Rewrote {file_path} based on review")
+                            result = write_file_safe.invoke({
+                                "file_path": file_path,
+                                "content": rewritten,
+                                "mode": "w"
+                            })
+                            logger.info(f"[code_review] {result}")
                         except Exception as e:
                             logger.warning(f"[code_review] Failed to write {file_path}: {e}")
         
@@ -1730,21 +1682,29 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         test_content = ""
         
         if code_filename and workspace_path:
-            code_path = Path(workspace_path) / code_filename
-            if code_path.exists():
-                try:
-                    code_content = code_path.read_text(encoding='utf-8')[:5000]
-                except Exception:
-                    pass
+            # Read code file using read_file_safe tool
+            try:
+                result = read_file_safe.invoke({"file_path": code_filename})
+                if result and not result.startswith("Error:"):
+                    if "\n\n" in result:
+                        code_content = result.split("\n\n", 1)[1][:5000]
+                    else:
+                        code_content = result[:5000]
+            except Exception:
+                pass
             
             test_filename = find_test_file(workspace_path, code_filename) or ""
             if test_filename:
-                test_path = Path(workspace_path) / test_filename
-                if test_path.exists():
-                    try:
-                        test_content = test_path.read_text(encoding='utf-8')[:5000]
-                    except Exception:
-                        pass
+                # Read test file using read_file_safe tool
+                try:
+                    result = read_file_safe.invoke({"file_path": test_filename})
+                    if result and not result.startswith("Error:"):
+                        if "\n\n" in result:
+                            test_content = result.split("\n\n", 1)[1][:5000]
+                        else:
+                            test_content = result[:5000]
+                except Exception:
+                    pass
         
         language = get_markdown_code_block_type(code_filename) if code_filename else "python"
         
@@ -1826,7 +1786,7 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
 async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
     """Debug and fix errors.
     
-    Refactored: Direct LLM call with bind_tools + manual file writing.
+    Refactored: Tools for exploration + with_structured_output for response.
     """
     print("[NODE] debug_error - Fixing errors...")
     try:
@@ -1869,26 +1829,32 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
         
         from app.agents.developer_v2.src.tools import get_markdown_code_block_type, find_test_file
         
-        # Read the file to fix
+        # Read the file to fix using read_file_safe tool
         code_content = ""
         if workspace_path:
-            code_path = Path(workspace_path) / file_to_fix
-            if code_path.exists():
-                try:
-                    code_content = code_path.read_text(encoding='utf-8')
-                except Exception:
-                    pass
+            try:
+                result = read_file_safe.invoke({"file_path": file_to_fix})
+                if result and not result.startswith("Error:"):
+                    if "\n\n" in result:
+                        code_content = result.split("\n\n", 1)[1]
+                    else:
+                        code_content = result
+            except Exception:
+                pass
         
-        # Find and read test file
+        # Find and read test file using read_file_safe tool
         test_filename = find_test_file(workspace_path, file_to_fix) if workspace_path else ""
         test_content = ""
         if test_filename and workspace_path:
-            test_path = Path(workspace_path) / test_filename
-            if test_path.exists():
-                try:
-                    test_content = test_path.read_text(encoding='utf-8')
-                except Exception:
-                    pass
+            try:
+                result = read_file_safe.invoke({"file_path": test_filename})
+                if result and not result.startswith("Error:"):
+                    if "\n\n" in result:
+                        test_content = result.split("\n\n", 1)[1]
+                    else:
+                        test_content = result
+            except Exception:
+                pass
         
         language = get_markdown_code_block_type(file_to_fix)
         
@@ -1911,40 +1877,39 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
         # Tools for debugging exploration
         tools = [read_file_safe, list_directory_safe, semantic_code_search, execute_shell]
         
-        # LLM with tools
+        # Step 1: Explore with tools
         messages = [
             SystemMessage(content=sys_prompt),
             HumanMessage(content=user_prompt)
         ]
         
-        response_content = await _llm_with_tools(
+        exploration = await _llm_with_tools(
             llm=_code_llm,
             tools=tools,
             messages=messages,
             state=state,
-            name="debug_error",
-            max_iterations=3
+            name="debug_explore",
+            max_iterations=2
         )
         
-        # Parse JSON response
-        try:
-            debug_result = json.loads(_clean_json(response_content))
-        except json.JSONDecodeError:
-            logger.warning("[debug_error] Failed to parse debug response")
-            return {**state, "debug_count": debug_count + 1}
+        # Step 2: Get structured response
+        messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:3000]}\n\nNow provide your debug analysis and fixed code."))
+        structured_llm = _code_llm.with_structured_output(DebugResult)
+        debug_result = await structured_llm.ainvoke(messages, config=_cfg(state, "debug_error"))
         
-        fixed_code = debug_result.get("fixed_code", "")
-        
-        if fixed_code and workspace_path:
-            # Write fixed code
-            fix_path = Path(workspace_path) / file_to_fix
+        if debug_result.fixed_code and workspace_path:
+            # Write fixed code using write_file_safe tool
             try:
-                fix_path.parent.mkdir(parents=True, exist_ok=True)
-                fix_path.write_text(fixed_code, encoding='utf-8')
-                logger.info(f"[debug_error] Wrote fixed code to {file_to_fix}")
+                result = write_file_safe.invoke({
+                    "file_path": file_to_fix,
+                    "content": debug_result.fixed_code,
+                    "mode": "w"
+                })
+                logger.info(f"[debug_error] {result}")
                 
-                if agent:
-                    pass
+                # Incremental update index (fast - only changed file)
+                from app.agents.developer_v2.src.tools import incremental_update_index
+                incremental_update_index(project_id, task_id)
             except Exception as e:
                 logger.error(f"[debug_error] Failed to write fixed code: {e}")
         
@@ -1953,9 +1918,9 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
         debug_history.append({
             "iteration": debug_count + 1,
             "file": file_to_fix,
-            "analysis": debug_result.get("analysis", ""),
-            "root_cause": debug_result.get("root_cause", ""),
-            "fix_description": debug_result.get("fix_description", ""),
+            "analysis": debug_result.analysis,
+            "root_cause": debug_result.root_cause,
+            "fix_description": debug_result.fix_description,
         })
         
         return {

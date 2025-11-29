@@ -191,13 +191,18 @@ class DeveloperV2(BaseAgent):
                 langfuse_span.update_trace(
                     user_id=str(task.user_id) if task.user_id else None,
                     session_id=str(self.project_id),
-                    input={"story": story_data.get("title", "")[:200]},
+                    input={
+                        "story_id": story_data.get("story_id", "unknown"),
+                        "title": story_data.get("title", "")[:200],
+                        "content": story_data.get("content", "")[:300]
+                    },
                     tags=["developer_v2", self.role_type],
                     metadata={"agent": self.name, "task_id": str(task.task_id)}
                 )
                 langfuse_handler = CallbackHandler()
             except Exception as e:
                 logger.debug(f"Langfuse setup: {e}")
+                langfuse_span = None
             
             # Initial state - workspace will be set up by setup_workspace node if needed
             initial_state = {
@@ -235,11 +240,21 @@ class DeveloperV2(BaseAgent):
             logger.info(f"[{self.name}] Invoking LangGraph for story: {story_data.get('title', 'Untitled')}")
             final_state = await self.graph_engine.graph.ainvoke(initial_state)
             
-            if langfuse_ctx:
+            # Update trace output and close span (Team Leader pattern)
+            if langfuse_span and langfuse_ctx:
                 try:
+                    langfuse_span.update_trace(output={
+                        "action": final_state.get("action"),
+                        "task_type": final_state.get("task_type"),
+                        "complexity": final_state.get("complexity"),
+                        "files_created": final_state.get("files_created", []),
+                        "files_modified": final_state.get("files_modified", []),
+                        "branch_name": final_state.get("branch_name"),
+                    })
                     langfuse_ctx.__exit__(None, None, None)
-                except Exception:
-                    pass
+                    logger.info(f"[{self.name}] Langfuse span closed successfully")
+                except Exception as e:
+                    logger.error(f"[{self.name}] Langfuse span close error: {e}")
             
             # Commit changes if workspace was setup and has changes
             if final_state.get("workspace_ready"):
@@ -276,11 +291,15 @@ class DeveloperV2(BaseAgent):
             
         except Exception as e:
             logger.error(f"[{self.name}] Graph execution error: {e}", exc_info=True)
+            
+            # Cleanup langfuse span on error (Team Leader pattern)
             if langfuse_ctx:
                 try:
                     langfuse_ctx.__exit__(type(e), e, e.__traceback__)
-                except Exception:
-                    pass
+                    logger.info(f"[{self.name}] Langfuse span closed (on error)")
+                except Exception as cleanup_err:
+                    logger.error(f"[{self.name}] Langfuse cleanup error: {cleanup_err}")
+            
             return TaskResult(
                 success=False,
                 output="",

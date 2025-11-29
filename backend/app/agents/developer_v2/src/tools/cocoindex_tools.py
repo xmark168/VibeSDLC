@@ -128,26 +128,46 @@ def index_workspace(project_id: str, workspace_path: str, task_id: str = None) -
     Returns:
         True if indexing successful, False otherwise
     """
+    import os
+    
+    # Check prerequisites
+    db_url = os.environ.get("COCOINDEX_DATABASE_URL")
+    if not db_url:
+        logger.error("COCOINDEX_DATABASE_URL environment variable not set!")
+        logger.error("Please set it in .env file, e.g.: COCOINDEX_DATABASE_URL=postgresql://user:pass@localhost:5432/cocoindex")
+        return False
+    
+    workspace = Path(workspace_path)
+    if not workspace.exists():
+        logger.error(f"Workspace path does not exist: {workspace_path}")
+        return False
+    
+    # Count source files
+    source_files = list(workspace.rglob("*.py")) + list(workspace.rglob("*.ts")) + list(workspace.rglob("*.tsx"))
+    logger.info(f"[CocoIndex] Found {len(source_files)} source files in {workspace_path}")
+    
     try:
         from app.agents.developer.project_manager import project_manager
         
         if task_id:
+            logger.info(f"[CocoIndex] Registering task: {project_id}/{task_id}")
             project_manager.register_task(project_id, task_id, workspace_path)
-            logger.info(f"Indexed task workspace: {project_id}/{task_id}")
+            logger.info(f"[CocoIndex] Indexed task workspace: {project_id}/{task_id}")
         else:
+            logger.info(f"[CocoIndex] Registering project: {project_id}")
             project_manager.register_project(project_id, workspace_path)
-            logger.info(f"Indexed project workspace: {project_id}")
+            logger.info(f"[CocoIndex] Indexed project workspace: {project_id}")
         return True
     except ImportError as e:
-        logger.warning(f"CocoIndex not available: {e}")
+        logger.error(f"[CocoIndex] Import error - CocoIndex not available: {e}")
         return False
     except Exception as e:
-        logger.error(f"Indexing error: {e}")
+        logger.error(f"[CocoIndex] Indexing error: {e}", exc_info=True)
         return False
 
 
 async def update_workspace_index(project_id: str, task_id: str = None) -> bool:
-    """Re-index workspace after code changes.
+    """Re-index workspace after code changes (async version).
     
     Should be called after implementing code changes to keep
     the search index up-to-date.
@@ -174,6 +194,36 @@ async def update_workspace_index(project_id: str, task_id: str = None) -> bool:
         return False
     except Exception as e:
         logger.error(f"Index update error: {e}")
+        return False
+
+
+def incremental_update_index(project_id: str, task_id: str = None) -> bool:
+    """Perform incremental index update (sync, fast).
+    
+    Only reprocesses files that changed since last update.
+    Much faster than full re-index. Call this after writing files.
+    
+    Args:
+        project_id: Project identifier
+        task_id: Optional task ID for task-specific update
+        
+    Returns:
+        True if update successful, False otherwise
+    """
+    try:
+        from app.agents.developer.project_manager import project_manager
+        
+        if task_id:
+            result = project_manager.incremental_update_task(project_id, task_id)
+        else:
+            result = project_manager.incremental_update_project(project_id)
+        
+        return result is not None
+    except ImportError as e:
+        logger.warning(f"CocoIndex not available: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Incremental update error: {e}")
         return False
 
 
