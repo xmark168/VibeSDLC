@@ -1,19 +1,24 @@
-"""Team Leader State Schema for LangGraph (LLM-only routing)."""
+"""Team Leader State."""
 
-from typing import TypedDict, Optional, List, Literal, Annotated
-from langgraph.graph.message import add_messages
+from typing import TypedDict, Literal, Any
+
+Action = Literal["DELEGATE", "RESPOND", "CONVERSATION", "STATUS_CHECK", "CLARIFY"]
 
 
-class TeamLeaderState(TypedDict):
-    """State for Team Leader graph (LLM-only routing)."""
-    
-    messages: Annotated[List[dict], add_messages]
+class TeamLeaderState(TypedDict, total=False):
+    # Input
     user_message: str
     user_id: str
     project_id: str
     task_id: str
-    action: Optional[Literal["DELEGATE", "RESPOND"]]
-    target_role: Optional[str]
-    message: Optional[str]
-    reason: Optional[str]
-    confidence: Optional[float]
+    conversation_history: str
+    user_preferences: str
+    langfuse_handler: Any
+    # Output
+    action: Action
+    target_role: str
+    message: str
+    reason: str
+    confidence: float
+    wip_blocked: bool
+    clarification_question: str

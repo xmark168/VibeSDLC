@@ -39,6 +39,7 @@ export interface UseChatWebSocketReturn {
   agentStatus: AgentStatusType
   typingAgents: Map<string, TypingState>
   backgroundTasks: Map<string, BackgroundTask>  // NEW
+  answeredBatchIds: Set<string>  // Track answered batch question IDs
   conversationOwner: {
     agentId: string
     agentName: string

@@ -1,37 +1,31 @@
 """Project Files Manager - Inspired by MetaGPT's file-based approach.
 
-Manages project files like PRD, user stories, and interview transcripts.
+Manages project files like PRD and user stories.
 All files are stored in the project workspace for version control and team collaboration.
 
 File Structure:
     projects/{project_id}/
     ├── docs/
-    │   ├── prd.md              # Product Requirements Document (human-readable)
-    │   ├── prd.json            # PRD structured data
-    │   ├── user-stories.md     # All user stories in one file
-    │   └── interviews/
-    │       └── {session_id}.md # Interview transcripts
+    │   ├── prd.md              # Product Requirements Document
+    │   └── user-stories.md     # All user stories in one file
     └── src/
         └── ... (source code)
 """
 
 from pathlib import Path
 from typing import Optional
-import json
 import aiofiles
 from datetime import datetime, timezone
 
 
 class ProjectFiles:
-    """Manage project files (PRD, stories, interviews) - inspired by MetaGPT."""
+    """Manage project files (PRD, stories)"""
     
     def __init__(self, project_path: Path):
         self.project_path = Path(project_path)
         self.docs_path = self.project_path / "docs"
         self.prd_path = self.docs_path / "prd.md"
-        self.prd_json_path = self.docs_path / "prd.json"
         self.user_stories_path = self.docs_path / "user-stories.md"
-        self.interviews_path = self.docs_path / "interviews"
         
         # Ensure directories exist
         self._ensure_directories()
@@ -39,10 +33,11 @@ class ProjectFiles:
     def _ensure_directories(self):
         """Create necessary directories if they don't exist."""
         self.docs_path.mkdir(parents=True, exist_ok=True)
-        self.interviews_path.mkdir(parents=True, exist_ok=True)
     
     async def save_prd(self, prd_data: dict) -> Path:
-        """Save PRD to both JSON and Markdown.
+        """Save PRD to Markdown file (for human reading).
+        
+        Note: PRD data is stored in Artifact table for programmatic access.
         
         Args:
             prd_data: Dictionary containing PRD content
@@ -53,43 +48,30 @@ class ProjectFiles:
         # Add metadata
         prd_data['updated_at'] = datetime.now(timezone.utc).isoformat()
         
-        # Save JSON (structured data)
-        async with aiofiles.open(self.prd_json_path, 'w', encoding='utf-8') as f:
-            await f.write(json.dumps(prd_data, indent=2, ensure_ascii=False))
-        
-        # Save Markdown (human-readable)
+        # Save Markdown only (data is in Artifact table)
         md_content = self._prd_to_markdown(prd_data)
         async with aiofiles.open(self.prd_path, 'w', encoding='utf-8') as f:
             await f.write(md_content)
         
         return self.prd_path
     
-    async def load_prd(self) -> Optional[dict]:
-        """Load existing PRD from JSON file.
-        
-        Returns:
-            PRD data dictionary or None if not found
-        """
-        if not self.prd_json_path.exists():
-            return None
-        
-        try:
-            async with aiofiles.open(self.prd_json_path, 'r', encoding='utf-8') as f:
-                content = await f.read()
-                return json.loads(content)
-        except Exception:
-            return None
-    
-    async def save_user_stories(self, stories_data: list[dict]) -> Path:
-        """Save all user stories to a single markdown file.
+    async def save_user_stories(self, epics_data: list[dict] = None, stories_data: list[dict] = None) -> Path:
+        """Save epics and user stories to a single markdown file.
         
         Args:
-            stories_data: List of story dictionaries
+            epics_data: List of epic dictionaries (each containing stories)
+            stories_data: Flat list of story dictionaries (for backward compatibility)
             
         Returns:
             Path to the saved user stories file
         """
-        md_content = self._stories_to_markdown(stories_data)
+        # Handle backward compatibility
+        if epics_data is None:
+            epics_data = []
+        if stories_data is None:
+            stories_data = []
+            
+        md_content = self._epics_to_markdown(epics_data, stories_data)
         
         async with aiofiles.open(self.user_stories_path, 'w', encoding='utf-8') as f:
             await f.write(md_content)
@@ -124,22 +106,7 @@ class ProjectFiles:
         # In practice, stories should be loaded from database, not parsed from file
         return []
     
-    async def save_interview(self, session_id: str, transcript: str) -> Path:
-        """Save interview transcript to markdown file.
-        
-        Args:
-            session_id: Interview session identifier
-            transcript: Interview transcript content
-            
-        Returns:
-            Path to the saved interview file
-        """
-        interview_file = self.interviews_path / f"{session_id}.md"
-        
-        async with aiofiles.open(interview_file, 'w', encoding='utf-8') as f:
-            await f.write(transcript)
-        
-        return interview_file
+
     
     def _prd_to_markdown(self, prd_data: dict) -> str:
         """Convert PRD JSON to Markdown format.
@@ -166,9 +133,9 @@ class ProjectFiles:
 
 ---
 
-## 2. Goals & Objectives
+## 2. Objectives
 
-{self._list_to_md(prd_data.get('goals', []))}
+{self._list_to_md(prd_data.get('objectives', []))}
 
 ---
 
@@ -184,42 +151,103 @@ class ProjectFiles:
 
 ---
 
-## 5. User Stories Summary
-
-{self._stories_summary_to_md(prd_data.get('user_stories', []))}
-
----
-
-## 6. Acceptance Criteria
-
-{self._list_to_md(prd_data.get('acceptance_criteria', []))}
-
----
-
-## 7. Technical Constraints
+## 5. Technical Constraints
 
 {self._list_to_md(prd_data.get('constraints', []))}
 
 ---
 
-## 8. Success Metrics
+## 6. Success Metrics
 
 {self._list_to_md(prd_data.get('success_metrics', []))}
 
 ---
 
-## 9. Next Steps
+## 7. Risks
 
-{self._list_to_md(prd_data.get('next_steps', []))}
-
----
-
-*This document was generated by the Business Analyst agent.*
+{self._list_to_md(prd_data.get('risks', []))}
 """
         return md
     
+    def _epics_to_markdown(self, epics_data: list[dict], stories_data: list[dict] = None) -> str:
+        """Convert epics and user stories to markdown format.
+        
+        Args:
+            epics_data: List of epic data dictionaries (each containing stories)
+            stories_data: Flat list for backward compatibility
+            
+        Returns:
+            Markdown formatted string with all epics and stories
+        """
+        if not epics_data and not stories_data:
+            return """# Epics & User Stories
+
+*No epics or user stories yet. They will appear here after PRD approval.*
+"""
+        
+        # Calculate totals
+        total_epics = len(epics_data)
+        total_stories = sum(len(epic.get('stories', [])) for epic in epics_data)
+        
+        md = f"""# Epics & User Stories
+
+**Total Epics:** {total_epics}  
+**Total Stories:** {total_stories}  
+**Last Updated:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}
+
+---
+
+"""
+        
+        for epic_idx, epic in enumerate(epics_data, 1):
+            epic_id = epic.get('id', f'EPIC-{epic_idx:03d}')
+            epic_name = epic.get('name', epic.get('title', 'Untitled Epic'))
+            epic_desc = epic.get('description', '')
+            epic_domain = epic.get('domain', 'General')
+            stories = epic.get('stories', [])
+            
+            md += f"""# Epic: {epic_name}
+
+**ID:** `{epic_id}`  
+**Domain:** {epic_domain}  
+**Stories:** {len(stories)}
+
+{epic_desc}
+
+---
+
+"""
+            
+            for story_idx, story in enumerate(stories, 1):
+                story_id = story.get('id', f'US-{epic_idx:02d}{story_idx:02d}')
+                story_title = story.get('title', 'Untitled Story')
+                story_desc = story.get('description', '')
+                
+                md += f"""## {story_title}
+
+**ID:** `{story_id}`  
+**Epic:** `{epic_id}`
+
+### Description
+{story_desc}
+
+### Acceptance Criteria
+"""
+                
+                # Format acceptance criteria
+                ac_list = story.get('acceptance_criteria', [])
+                if isinstance(ac_list, list) and ac_list:
+                    for ac in ac_list:
+                        md += f"- {ac}\n"
+                else:
+                    md += "_No acceptance criteria defined._\n"
+                
+                md += "\n---\n\n"
+
+        return md
+    
     def _stories_to_markdown(self, stories_data: list[dict]) -> str:
-        """Convert all user stories to markdown format.
+        """Convert flat list of user stories to markdown format (legacy support).
         
         Args:
             stories_data: List of story data dictionaries
@@ -269,8 +297,7 @@ class ProjectFiles:
 ---
 
 """
-        
-        md += "\n*Generated by Business Analyst agent*\n"
+            
         return md
     
     def _list_to_md(self, items: list) -> str:
@@ -286,12 +313,25 @@ class ProjectFiles:
         
         md = ""
         for i, feature in enumerate(features, 1):
-            name = feature.get('name', 'Unnamed Feature') if isinstance(feature, dict) else str(feature)
-            desc = feature.get('description', '') if isinstance(feature, dict) else ''
-            
-            md += f"### {i}. {name}\n\n"
-            if desc:
-                md += f"{desc}\n\n"
+            if isinstance(feature, dict):
+                name = feature.get('name', 'Unnamed Feature')
+                desc = feature.get('description', '')
+                priority = feature.get('priority', 'medium')
+                requirements = feature.get('requirements', [])
+                
+                priority_label = "🔴 High" if priority == "high" else "🟡 Medium" if priority == "medium" else "🟢 Low"
+                
+                md += f"### {i}. {name}\n\n"
+                md += f"**Priority:** {priority_label}\n\n"
+                if desc:
+                    md += f"{desc}\n\n"
+                if requirements:
+                    md += "**Requirements:**\n"
+                    for req in requirements:
+                        md += f"- {req}\n"
+                    md += "\n"
+            else:
+                md += f"### {i}. {feature}\n\n"
         
         return md
     

@@ -61,6 +61,7 @@ export function useChatWebSocket(
   const [agentStatus, setAgentStatus] = useState<AgentStatusType>('idle')
   const [typingAgents, setTypingAgents] = useState<Map<string, TypingState>>(new Map())
   const [backgroundTasks, setBackgroundTasks] = useState<Map<string, BackgroundTask>>(new Map())  // NEW
+  const [answeredBatchIds, setAnsweredBatchIds] = useState<Set<string>>(new Set())  // Track answered batches
   const [conversationOwner, setConversationOwner] = useState<{
     agentId: string
     agentName: string
@@ -404,14 +405,15 @@ export function useChatWebSocket(
     }
     
     // Chat or progress_bar mode: Add to messages
+    // Note: Backend sends 'details' but DB stores as 'structured_data'
     const message: Message = {
       id: msg.id,
       project_id: projectIdRef.current!,
       agent_name: msg.agent_name,
       author_type: AuthorType.AGENT,
       content: msg.content,
-      message_type: msg.message_type,
-      structured_data: msg.structured_data,
+      message_type: msg.details?.message_type || msg.message_type || 'text',
+      structured_data: msg.details || msg.structured_data || {},
       created_at: msg.timestamp,
       updated_at: msg.timestamp,
     }
@@ -523,7 +525,10 @@ export function useChatWebSocket(
   const handleBatchAnswersReceived = (msg: any) => {
     console.log('[WS] ✓✓✓ Batch answers received:', msg.batch_id, msg.answer_count, 'answers')
     
-    // Mark batch as answered
+    // Track this batch as answered (for messages from API that won't update via setMessages)
+    setAnsweredBatchIds(prev => new Set([...prev, msg.batch_id]))
+    
+    // Also update wsMessages for consistency
     setMessages(prev => prev.map(m => {
       if (m.structured_data?.batch_id === msg.batch_id) {
         return {
@@ -721,6 +726,26 @@ export function useChatWebSocket(
       })
       
       console.log('[WS] 📨📨📨 Sent batch answers:', { batch_id, count: answers.length })
+      
+      // Immediately update local state with answers (don't wait for server confirmation)
+      setMessages(prev => prev.map(m => {
+        if (m.structured_data?.batch_id === batch_id) {
+          return {
+            ...m,
+            structured_data: {
+              ...m.structured_data,
+              answered: true,
+              status: 'answered',
+              answers: answers,  // Save answers locally
+            }
+          }
+        }
+        return m
+      }))
+      
+      // Also mark as answered
+      setAnsweredBatchIds(prev => new Set([...prev, batch_id]))
+      
       return true
     } catch (error) {
       console.error('[WS] Failed to send batch answers:', error)
@@ -754,6 +779,7 @@ export function useChatWebSocket(
     agentStatus,
     typingAgents,
     backgroundTasks,  // NEW
+    answeredBatchIds,  // Track batches that have been answered
     conversationOwner,
     sendMessage,
     sendQuestionAnswer,

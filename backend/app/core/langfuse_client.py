@@ -1,47 +1,67 @@
-"""Langfuse client singleton for agent tracing."""
+"""Langfuse utilities for backward compatibility."""
 
 import logging
-from typing import Optional
-from langfuse import Langfuse
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-_langfuse_client: Optional[Langfuse] = None
 
-
-def get_langfuse_client() -> Optional[Langfuse]:
-    """Get or create Langfuse client singleton.
-    
-    Returns None if Langfuse is disabled or not configured.
-    """
-    global _langfuse_client
-    
-    if not settings.LANGFUSE_ENABLED:
+def get_langfuse_client():
+    """Get Langfuse client instance."""
+    try:
+        from langfuse import get_client
+        return get_client()
+    except Exception:
         return None
-    
-    if not settings.LANGFUSE_SECRET_KEY or not settings.LANGFUSE_PUBLIC_KEY:
-        logger.warning("Langfuse keys not configured, tracing disabled")
-        return None
-    
-    if _langfuse_client is None:
-        try:
 
-            _langfuse_client = Langfuse(
-                secret_key=settings.LANGFUSE_SECRET_KEY,
-                public_key=settings.LANGFUSE_PUBLIC_KEY,
-                host=settings.LANGFUSE_BASE_URL,
-                timeout=30,  # Increase from default 5s to 30s
-            )
-            logger.info("Langfuse client initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize Langfuse: {e}")
-            return None
-    
-    return _langfuse_client
+
+def get_langfuse_handler():
+    """Get Langfuse CallbackHandler for LangChain."""
+    try:
+        from langfuse.langchain import CallbackHandler
+        return CallbackHandler()
+    except Exception:
+        return None
 
 
 def flush_langfuse():
-    """Flush pending Langfuse events."""
-    if _langfuse_client:
-        _langfuse_client.flush()
+    """Flush pending events."""
+    try:
+        from langfuse import get_client
+        get_client().flush()
+    except Exception:
+        pass
+
+
+def shutdown_langfuse():
+    """Shutdown Langfuse."""
+    try:
+        from langfuse import get_client
+        get_client().shutdown()
+    except Exception:
+        pass
+
+
+# Stubs for backward compatibility
+def get_langfuse_context():
+    return None
+
+def update_current_trace(**kwargs):
+    return False
+
+def update_current_observation(**kwargs):
+    return False
+
+def score_current(name, value, **kwargs):
+    return False
+
+def create_session_id(project_id, conversation_id=None):
+    return f"proj_{project_id[:50]}" if project_id else "unknown"
+
+def format_llm_usage(response):
+    return {}
+
+def format_chat_messages(messages):
+    return []
+
+def get_langchain_callback(**kwargs):
+    return get_langfuse_handler()

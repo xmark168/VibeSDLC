@@ -1,17 +1,4 @@
 """Central Message Router for dispatching tasks to agents.
-
-This module contains the routing logic and service for the VibeSDLC system.
-The Router subscribes to various Kafka events and decides which agent should
-handle each event, then publishes RouterTaskEvent to AGENT_TASKS topic.
-
-Architecture:
-    Events (USER_MESSAGES, AGENT_RESPONSES, etc.)
-        ↓
-    Router (rule-based routing logic)
-        ↓
-    AGENT_TASKS topic (RouterTaskEvent)
-        ↓
-    Agents (consume tasks based on agent_id)
 """
 
 import asyncio
@@ -55,8 +42,6 @@ class BaseEventRouter(ABC):
     @abstractmethod
     async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
         """Route the event to appropriate agent(s).
-
-        Analyzes the event, determines target agent(s), and publishes RouterTaskEvent(s) to AGENT_TASKS topic.
         """
         pass
 
@@ -132,12 +117,8 @@ class BaseEventRouter(ABC):
 
 
 class UserMessageRouter(BaseEventRouter):
-    """Router for USER_MESSAGES events.
-
-    Routing logic:
-    1. Parse message content for @mentions
-    2. If @mention found → route to mentioned agent
-    3. If no @mention → check conversation context → route to active agent or Team Leader
+    """
+    Router for USER_MESSAGES events.
     """
 
     MENTION_PATTERN = re.compile(r"@(\w+)")
@@ -708,6 +689,7 @@ class QuestionAnswerRouter(BaseEventRouter):
             
             session.commit()
             original_task_context = question.task_context
+            project_id = question.project_id  # Get project_id from question
         
         context_data = {
             "question_id": str(question_id),
@@ -740,12 +722,20 @@ class QuestionAnswerRouter(BaseEventRouter):
         )
         
         from app.websocket.connection_manager import connection_manager
+        
+        # Get agent name from database
+        agent_name = "Agent"
+        with Session(engine) as session:
+            agent = session.get(Agent, agent_id)
+            if agent:
+                agent_name = agent.human_name or agent.name or "Agent"
+        
         await connection_manager.broadcast_to_project(
             {
                 "type": "agent.resumed",
                 "question_id": str(question_id),
                 "agent_id": str(agent_id),
-                "agent_name": question.agent.human_name if question.agent else "Agent",
+                "agent_name": agent_name,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
             project_id
@@ -840,12 +830,20 @@ class BatchAnswersRouter(BaseEventRouter):
         self.logger.info(f"Published RESUME_WITH_ANSWER task to agent {agent_id} with {len(answers)} batch answers")
         
         from app.websocket.connection_manager import connection_manager
+        
+        # Get agent name from database
+        agent_name = "Agent"
+        with Session(engine) as session:
+            agent = session.get(Agent, agent_id)
+            if agent:
+                agent_name = agent.human_name or agent.name or "Agent"
+        
         await connection_manager.broadcast_to_project(
             {
                 "type": "agent.resumed_batch",
                 "batch_id": batch_id,
                 "agent_id": str(agent_id),
-                "agent_name": first_question.agent.human_name if first_question and first_question.agent else "Agent",
+                "agent_name": agent_name,
                 "answer_count": len(answers),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },

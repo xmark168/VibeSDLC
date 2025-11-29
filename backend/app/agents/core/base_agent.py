@@ -26,7 +26,18 @@ from app.kafka.event_schemas import (
 )
 from app.models import Agent as AgentModel, AgentStatus
 from datetime import datetime, timezone
-from app.core.langfuse_client import get_langfuse_client, flush_langfuse
+from app.core.langfuse_client import (
+    get_langfuse_client,
+    get_langfuse_context,
+    flush_langfuse, 
+    create_session_id,
+    score_current,
+    update_current_trace,
+    update_current_observation,
+    format_llm_usage,
+    format_chat_messages,
+    get_langchain_callback,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +154,7 @@ class BaseAgent(ABC):
         # Langfuse tracing
         self.langfuse_client = get_langfuse_client()
         self._current_trace_id: Optional[str] = None
+        self._current_trace: Optional[Any] = None  # Current Langfuse trace object
 
         # Cross-agent collaboration
         self._pending_collaborations: Dict[UUID, asyncio.Future] = {}
@@ -282,6 +294,12 @@ class BaseAgent(ABC):
         if display_mode is None:
             display_mode = self._get_default_display_mode(event_type)
         
+        # Save to DB first for response/completed events (single source of truth)
+        message_id = None
+        if save_to_db and event_type in ["response", "completed"]:
+            message_type = (details or {}).get("message_type", "text")
+            message_id = await self._save_message_to_db(content, message_type, details, **kwargs)
+        
         event = AgentEvent(
             event_type=f"agent.{event_type}",
             agent_name=self.name,
@@ -290,8 +308,11 @@ class BaseAgent(ABC):
             execution_id=str(self._current_execution_id) if self._current_execution_id else None,
             task_id=str(self._current_task_id) if self._current_task_id else None,
             content=content,
-            details=details or {},
-            execution_context={  # NEW: Add execution context
+            details={
+                **(details or {}),
+                "message_id": str(message_id) if message_id else None,  # Include DB message_id
+            },
+            execution_context={
                 "mode": self._current_execution_mode,
                 "task_id": str(self._current_task_id) if self._current_task_id else None,
                 "task_type": self._current_task_type or "unknown",
@@ -305,10 +326,6 @@ class BaseAgent(ABC):
         )
         
         await producer.publish(topic=KafkaTopics.AGENT_EVENTS, event=event)
-        
-        # Optionally save to messages table
-        if save_to_db and event_type in ["response", "completed"]:
-            await self._save_message_to_db(content, "text", details, **kwargs)
         
         logger.info(f"[{self.name}] {event_type}: {content[:100]}")
     
@@ -561,15 +578,21 @@ class BaseAgent(ABC):
         message_type: str,
         structured_data: Optional[Dict[str, Any]] = None,
         **metadata
-    ) -> None:
-        """Save message to messages table for persistence."""
+    ) -> UUID:
+        """Save message to messages table for persistence.
+        
+        Returns:
+            UUID: The message ID that was created
+        """
         from sqlmodel import Session
         from app.core.db import engine
         from app.models import Message, AuthorType
         
+        message_id = uuid4()
+        
         with Session(engine) as session:
             message = Message(
-                id=uuid4(),
+                id=message_id,
                 project_id=self.project_id,
                 author_type=AuthorType.AGENT,
                 agent_id=self.agent_id,
@@ -585,6 +608,8 @@ class BaseAgent(ABC):
             )
             session.add(message)
             session.commit()
+        
+        return message_id
     
     async def start_execution(self) -> None:
         """Emit: agent.messaging.start - Notify that agent began execution"""
@@ -772,12 +797,14 @@ class BaseAgent(ABC):
         }
         
         # Save all questions to database
+        batch_message_id = uuid4()  # Single message ID for the entire batch
+        
         with Session(engine) as session:
+            # 1. Save individual AgentQuestion records (for workflow tracking)
             for idx, q_data in enumerate(questions):
                 question_id = uuid4()
                 question_ids.append(question_id)
                 
-                # 1. Save to agent_questions table (for workflow)
                 db_question = AgentQuestion(
                     id=question_id,
                     project_id=self.project_id,
@@ -800,33 +827,42 @@ class BaseAgent(ABC):
                     expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
                 )
                 session.add(db_question)
-                
-                # 2. Save to messages table (for chat history persistence)
-                question_message = Message(
-                    id=question_id,
-                    project_id=self.project_id,
-                    author_type=AuthorType.AGENT,
-                    agent_id=self.agent_id,
-                    content=q_data["question_text"],
-                    message_type="agent_question_batch",  # NEW type
-                    structured_data={
-                        "question_id": str(question_id),
-                        "question_type": q_data["question_type"],
-                        "options": q_data.get("options"),
-                        "allow_multiple": q_data.get("allow_multiple", False),
-                        "context": q_data.get("context"),
-                        "batch_id": batch_id,
-                        "batch_index": idx,
-                        "batch_total": len(questions),
-                        "status": "waiting_answer"
-                    },
-                    message_metadata={
-                        "agent_name": self.name,
-                        "task_id": str(self._current_task_id),
-                        "execution_id": str(self._current_execution_id) if self._current_execution_id else None,
-                    }
-                )
-                session.add(question_message)
+            
+            # 2. Save ONE combined message for chat history (not per-question)
+            # Build questions array for structured_data
+            combined_questions = [
+                {
+                    "question_id": str(question_ids[idx]),
+                    "question_text": q_data["question_text"],
+                    "question_type": q_data["question_type"],
+                    "options": q_data.get("options"),
+                    "allow_multiple": q_data.get("allow_multiple", False),
+                    "context": q_data.get("context"),
+                }
+                for idx, q_data in enumerate(questions)
+            ]
+            
+            batch_message = Message(
+                id=batch_message_id,
+                project_id=self.project_id,
+                author_type=AuthorType.AGENT,
+                agent_id=self.agent_id,
+                content=f"Batch of {len(questions)} questions",  # Summary text
+                message_type="agent_question_batch",
+                structured_data={
+                    "batch_id": batch_id,
+                    "questions": combined_questions,
+                    "question_ids": [str(qid) for qid in question_ids],
+                    "status": "waiting_answer",
+                    "answered": False,
+                },
+                message_metadata={
+                    "agent_name": self.name,
+                    "task_id": str(self._current_task_id),
+                    "execution_id": str(self._current_execution_id) if self._current_execution_id else None,
+                }
+            )
+            session.add(batch_message)
             
             session.commit()
         
@@ -993,15 +1029,7 @@ class BaseAgent(ABC):
                 topic=KafkaTopics.DELEGATION_REQUESTS,
                 event=delegation_event
             )
-            
-            logger.info(f"[{self.name}] Published delegation request to role: {target_role}")
-            
-            # Send notification to user
-            await self.message_user("response", delegation_message, {
-                "message_type": "text",
-                "delegation_to_role": target_role,
-            })
-            
+                        
             return TaskResult(
                 success=True,
                 output="",  # Empty output - message already sent above
@@ -1234,43 +1262,168 @@ Provide a helpful, concise response based on your expertise as a {self.role_type
         tags: List[str] = None,
         metadata: Dict[str, Any] = None
     ) -> Optional[Any]:
-        """Get Langfuse callback handler for LangChain integration.
+        """Get Langfuse callback handler for LangChain integration (v3 API).
         
         Usage:
-            llm = ChatOpenAI(...)
-            callback = self.get_langfuse_callback("my_llm_call", tags=["routing"])
-            response = await llm.ainvoke(messages, callbacks=[callback] if callback else [])
+            callback = self.get_langfuse_callback("my_llm_call")
+            response = await llm.ainvoke(messages, config={"callbacks": [callback]} if callback else {})
+        """
+        return get_langchain_callback(
+            trace_name=trace_name,
+            user_id=str(self._current_user_id) if self._current_user_id else None,
+            session_id=str(self.project_id),
+            tags=tags or [self.role_type],
+            metadata={
+                "agent_id": str(self.agent_id),
+                "agent_name": self.name,
+                "agent_role": self.role_type,
+                "task_id": str(self._current_task_id) if self._current_task_id else None,
+                **(metadata or {})
+            }
+        )
+
+    def track_llm_generation(
+        self,
+        name: str,
+        model: str,
+        input_messages: List[Any],
+        response: Any,
+        model_parameters: Dict[str, Any] = None,
+        duration_ms: float = None,
+    ) -> bool:
+        """Track LLM generation with timing.
         
         Args:
-            trace_name: Name for the trace
-            tags: Optional list of tags
-            metadata: Optional metadata dict
+            name: Generation name (e.g., "routing_decision")
+            model: Model name (e.g., "gpt-4o-mini")
+            input_messages: List of input messages
+            response: LLM response object
+            model_parameters: Optional model params
+            duration_ms: Execution time in milliseconds (measure around ainvoke call)
+        
+        Usage:
+            start = time.time()
+            response = await llm.ainvoke(messages)
+            duration_ms = (time.time() - start) * 1000
             
+            agent.track_llm_generation(
+                name="routing",
+                model="gpt-4o-mini", 
+                input_messages=messages,
+                response=response,
+                duration_ms=duration_ms
+            )
+        
         Returns:
-            CallbackHandler instance or None if Langfuse not available
+            True if tracked successfully
         """
-        if not self.langfuse_client:
-            return None
+        if not LANGFUSE_AVAILABLE:
+            return False
         
         try:
-            from langfuse.callback import CallbackHandler
+            # Extract output content
+            output_content = ""
+            if hasattr(response, "content"):
+                output_content = response.content
+            elif isinstance(response, dict) and "content" in response:
+                output_content = response["content"]
+            elif isinstance(response, str):
+                output_content = response
             
-            return CallbackHandler(
-                trace_name=trace_name,
-                session_id=str(self.project_id),
-                user_id=str(self._current_user_id) if self._current_user_id else None,
-                tags=tags or [self.role_type],
+            # Extract token usage
+            usage = format_llm_usage(response)
+            
+            # Build metadata
+            metadata = {
+                "name": name,
+                "model": model,
+                "model_parameters": model_parameters or {},
+                "input": format_chat_messages(input_messages),
+                "usage": usage,
+                "agent": self.name,
+                "agent_role": self.role_type
+            }
+            
+            # Add duration if provided
+            if duration_ms is not None:
+                metadata["duration_ms"] = round(duration_ms, 2)
+                metadata["latency_ms"] = round(duration_ms, 2)  # Alias for Langfuse
+            
+            # Update current observation if inside @observe
+            updated = update_current_observation(
+                output=output_content,
+                metadata=metadata
+            )
+            
+            if updated:
+                logger.debug(f"[{self.name}] LLM tracked: {name}, model={model}, duration={duration_ms:.0f}ms" if duration_ms else f"[{self.name}] LLM tracked: {name}, model={model}")
+            return updated
+            
+        except Exception as e:
+            logger.debug(f"[{self.name}] track_llm_generation: {e}")
+            return False
+
+    def create_span(
+        self,
+        name: str,
+        input_data: Dict[str, Any] = None,
+        parent_span: Any = None
+    ) -> Optional[Any]:
+        """Create a span - simplified for v3 API.
+        
+        Note: In v3, prefer using @observe decorator instead.
+        This method logs metadata for debugging purposes.
+        """
+        # In v3, spans are created via @observe decorator
+        # This method just logs for debugging
+        logger.debug(f"[{self.name}] Span: {name}, input={input_data}")
+        return {"name": name, "input": input_data}  # Return dummy for compatibility
+
+    def score_current_task(
+        self,
+        success: bool,
+        duration_ms: float = None,
+        comment: str = None
+    ) -> None:
+        """Score the current task (v3 API).
+        
+        Must be called inside an @observe decorated function.
+        """
+        try:
+            # Score success
+            score_current(
+                name="task_success",
+                value=1.0 if success else 0.0,
+                comment=comment
+            )
+            
+            # Score latency if provided
+            if duration_ms is not None:
+                score_current(
+                    name="latency_ms",
+                    value=duration_ms
+                )
+        except Exception as e:
+            logger.debug(f"[{self.name}] score_current_task: {e}")
+
+    def track_event(self, name: str, metadata: Dict[str, Any] = None) -> None:
+        """Track a discrete event (v3 API).
+        
+        Updates current observation with event metadata.
+        """
+        if not LANGFUSE_AVAILABLE:
+            return
+        
+        try:
+            update_current_observation(
                 metadata={
-                    "agent_id": str(self.agent_id),
-                    "agent_name": self.name,
-                    "agent_role": self.role_type,
-                    "task_id": str(self._current_task_id) if self._current_task_id else None,
-                    **(metadata or {})
+                    f"event_{name}": metadata or {},
+                    "event_timestamp": datetime.now(timezone.utc).isoformat()
                 }
             )
+            logger.debug(f"[{self.name}] Event tracked: {name}")
         except Exception as e:
-            logger.warning(f"[{self.name}] Failed to create Langfuse callback: {e}")
-            return None
+            logger.debug(f"[{self.name}] track_event: {e}")
 
     async def _create_execution_record(self, task: "TaskContext") -> UUID:
         """Create AgentExecution record in database"""
@@ -1494,44 +1647,23 @@ Provide a helpful, concise response based on your expertise as a {self.role_type
         Args:
             task_data: RouterTaskEvent as dict
         """
-        trace = None
-        span = None
-        
         try:
             # Extract task info
             task_id = task_data.get("task_id")
             self._current_task_id = task_id
+            self._current_trace_id = str(task_id)  # Use task_id as trace identifier
             
             # Extract context
             context = task_data.get("context", {})
-            
-            # Start Langfuse trace
-            if self.langfuse_client:
-                try:
-                    trace = self.langfuse_client.trace(
-                        name=f"{self.role_type}_task",
-                        user_id=str(context.get("user_id", "unknown")),
-                        session_id=str(self.project_id),
-                        metadata={
-                            "agent_id": str(self.agent_id),
-                            "agent_name": self.name,
-                            "agent_role": self.role_type,
-                            "project_id": str(self.project_id),
-                            "task_id": str(task_id),
-                            "task_type": task_data.get("task_type"),
-                            "routing_reason": task_data.get("routing_reason"),
-                            "personality_traits": self.personality_traits[:3] if self.personality_traits else [],
-                        }
-                    )
-                    self._current_trace_id = trace.id if trace else None
-                except Exception as e:
-                    logger.warning(f"[{self.name}] Failed to start Langfuse trace: {e}")
             
             # Track task context for clarification questions
             self._current_task_type = task_data.get("task_type", "message")
             self._current_task_content = context.get("content", "")
             self._current_routing_reason = task_data.get("routing_reason", "")
-            self._current_user_id = context.get("user_id")
+            # user_id can be at top-level (RouterTaskEvent) or in context
+            self._current_user_id = task_data.get("user_id") or context.get("user_id")
+            if self._current_user_id and isinstance(self._current_user_id, str):
+                self._current_user_id = UUID(self._current_user_id)
 
             # Handle collaboration task types separately (don't create full TaskContext)
             task_type_str = task_data.get("task_type", "message")
@@ -1643,40 +1775,14 @@ Provide a helpful, concise response based on your expertise as a {self.role_type
 
             task_failed = False
             try:
-                # Create span for handle_task
-                if trace:
-                    try:
-                        span = trace.span(
-                            name="handle_task",
-                            input={"content": task.content[:200], "task_type": task.task_type.value}
-                        )
-                    except Exception as e:
-                        logger.warning(f"[{self.name}] Failed to create Langfuse span: {e}")
-                
                 # Call agent's implementation
                 result = await self.handle_task(task)
-                
-                # End span with success
-                if span:
-                    try:
-                        span.end(
-                            output={
-                                "success": result.success,
-                                "output": result.output[:200] if result.output else "",
-                                "structured_data": result.structured_data,
-                            },
-                            level="DEFAULT" if result.success else "ERROR"
-                        )
-                    except Exception as e:
-                        logger.warning(f"[{self.name}] Failed to end Langfuse span: {e}")
                 
                 # Record actual token usage
                 actual_tokens = self._extract_token_usage(result)
                 if actual_tokens > 0:
                     await self._record_token_usage(actual_tokens)
                 
-                # NOTE: Agents should send their own response via message_user("response", ...)
-                # inside handle_task(). Don't auto-send here to avoid duplicates.
                 
                 # Update execution record with success
                 await self._complete_execution_record(result=result, success=True)
@@ -1696,16 +1802,6 @@ Provide a helpful, concise response based on your expertise as a {self.role_type
                 
             except Exception as e:
                 task_failed = True
-                
-                # End span with error
-                if span:
-                    try:
-                        span.end(
-                            output={"error": str(e)},
-                            level="ERROR"
-                        )
-                    except Exception as span_error:
-                        logger.warning(f"[{self.name}] Failed to end Langfuse span with error: {span_error}")
                 
                 # Emit error status to frontend
                 await self.message_user("error", f"Task failed: {str(e)}", {
@@ -1748,24 +1844,20 @@ Provide a helpful, concise response based on your expertise as a {self.role_type
                 exc_info=True
             )
         finally:
-            # End Langfuse trace
-            if trace:
-                try:
-                    duration_ms = (datetime.now(timezone.utc) - self._execution_start_time).total_seconds() * 1000 if self._execution_start_time else 0
-                    trace.update(
-                        output={
-                            "agent": self.name,
-                            "execution_id": str(self._current_execution_id) if self._current_execution_id else None,
-                            "duration_ms": duration_ms,
-                        }
-                    )
-                    flush_langfuse()
-                except Exception as e:
-                    logger.warning(f"[{self.name}] Failed to end Langfuse trace: {e}")
+            # Score task completion (v3 API - non-blocking)
+            try:
+                duration_ms = (datetime.now(timezone.utc) - self._execution_start_time).total_seconds() * 1000 if self._execution_start_time else 0
+                task_success = not task_failed if 'task_failed' in locals() else True
+                self.score_current_task(success=task_success, duration_ms=duration_ms)
+                flush_langfuse()
+            except Exception as e:
+                logger.debug(f"[{self.name}] Langfuse cleanup: {e}")
             
+            # Reset task state
             self._current_task_id = None
             self._current_execution_id = None
             self._current_trace_id = None
+            self._current_trace = None
     
     # ===== Token Budget Methods =====
     

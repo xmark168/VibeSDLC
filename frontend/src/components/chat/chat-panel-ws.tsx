@@ -39,6 +39,8 @@ import { ConversationOwnerBadge } from "./ConversationOwnerBadge";
 import { AgentHandoffNotification } from "./AgentHandoffNotification";
 import { ArtifactCard } from "./ArtifactCard";
 import { StoriesCreatedCard } from "./StoriesCreatedCard";
+import { PrdCreatedCard } from "./PrdCreatedCard";
+import { StoriesFileCard } from "./StoriesFileCard";
 import { useProjectAgents } from "@/queries/agents";
 
 interface ChatPanelProps {
@@ -55,6 +57,7 @@ interface ChatPanelProps {
   onActiveTabChange?: (tab: string | null) => void;
   onAgentStatusesChange?: (statuses: Map<string, { status: string; lastUpdate: string }>) => void; // NEW
   onOpenArtifact?: (artifactId: string) => void;
+  onOpenFile?: (filePath: string) => void;
 }
 
 export function ChatPanelWS({
@@ -69,6 +72,7 @@ export function ChatPanelWS({
   onActiveTabChange,
   onAgentStatusesChange, // NEW
   onOpenArtifact,
+  onOpenFile,
 }: ChatPanelProps) {
   const [message, setMessage] = useState("");
   const [showMentions, setShowMentions] = useState(false);
@@ -141,6 +145,7 @@ export function ChatPanelWS({
     messages: wsMessages,
     agentStatus,
     typingAgents,
+    answeredBatchIds,  // Track which batches have been answered
     conversationOwner,
     sendMessage: wsSendMessage,
     sendQuestionAnswer,
@@ -160,10 +165,97 @@ export function ChatPanelWS({
   )
 
   // Remove duplicates by ID (simple de-duplication)
-  const uniqueMessages = sortedMessages.filter(
+  const deduplicatedMessages = sortedMessages.filter(
     (msg, index, self) => index === self.findIndex(m => m.id === msg.id)
   );
+
+  // Group batch questions: handle both new format (1 message with all questions) and old format (multiple messages)
+  const uniqueMessages = (() => {
+    const processedBatchIds = new Set<string>();
+    const result: Message[] = [];
+
+    for (const msg of deduplicatedMessages) {
+      // If this is a batch question
+      if (msg.message_type === 'agent_question_batch' && msg.structured_data?.batch_id) {
+        const batchId = msg.structured_data.batch_id;
+        
+        // Skip if we already processed this batch
+        if (processedBatchIds.has(batchId)) {
+          continue;
+        }
+        processedBatchIds.add(batchId);
+
+        // NEW FORMAT: structured_data.questions already contains all questions
+        if (msg.structured_data?.questions && Array.isArray(msg.structured_data.questions) && msg.structured_data.questions.length > 0) {
+          // Use as-is, questions are already in correct format
+          result.push(msg);
+          continue;
+        }
+
+        // OLD FORMAT: Multiple messages per batch - need to combine them
+        const batchMessages = deduplicatedMessages.filter(
+          m => m.message_type === 'agent_question_batch' && 
+               m.structured_data?.batch_id === batchId
+        ).sort((a, b) => (a.structured_data?.batch_index || 0) - (b.structured_data?.batch_index || 0));
+
+        // Combine into single message with all questions (from old format where content = question text)
+        const combinedQuestions = batchMessages.map(m => ({
+          question_id: m.structured_data?.question_id,
+          question_text: m.content,  // Old format: content was the question text
+          question_type: m.structured_data?.question_type || 'open',
+          options: m.structured_data?.options,
+          allow_multiple: m.structured_data?.allow_multiple || false,
+        }));
+
+        const combinedQuestionIds = batchMessages.map(m => m.structured_data?.question_id || m.id);
+        const isAnswered = batchMessages.some(m => m.structured_data?.answered);
+
+        const combinedMsg: Message = {
+          ...batchMessages[0],
+          structured_data: {
+            ...batchMessages[0].structured_data,
+            batch_id: batchId,
+            questions: combinedQuestions,
+            question_ids: combinedQuestionIds,
+            answered: isAnswered,
+          }
+        };
+
+        result.push(combinedMsg);
+      } else {
+        // Non-batch message, add as-is
+        result.push(msg);
+      }
+    }
+
+    return result;
+  })();
   
+  // Find the latest PRD card ID (only show actions on the latest one)
+  const latestPrdMessageId = (() => {
+    const prdMessages = uniqueMessages.filter(
+      msg => msg.structured_data?.message_type === 'prd_created'
+    )
+    if (prdMessages.length === 0) return null
+    // Get the one with latest timestamp
+    const latest = prdMessages.sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0]
+    return latest?.id || null
+  })()
+  
+  // Find the latest Stories card ID (only show actions on the latest one)
+  const latestStoriesMessageId = (() => {
+    const storiesMessages = uniqueMessages.filter(
+      msg => msg.structured_data?.message_type === 'stories_created'
+    )
+    if (storiesMessages.length === 0) return null
+    const latest = storiesMessages.sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0]
+    return latest?.id || null
+  })()
+
   // Detect unanswered questions - show only the LATEST one
   useEffect(() => {
     // Find ALL unanswered questions
@@ -677,7 +769,8 @@ export function ChatPanelWS({
                     questions={msg.structured_data?.questions || []}
                     questionIds={msg.structured_data?.question_ids || []}
                     agentName={msg.agent_name}
-                    answered={msg.structured_data?.answered || false}
+                    answered={msg.structured_data?.answered || answeredBatchIds.has(msg.structured_data?.batch_id || '')}
+                    submittedAnswers={msg.structured_data?.answers || []}
                     onSubmit={(answers) => {
                       sendBatchAnswers(
                         msg.structured_data!.batch_id!,
@@ -755,7 +848,54 @@ export function ChatPanelWS({
                     />
                   )}
                   
-                  {/* Show stories created card if message type is stories_created */}
+                  {/* Show PRD created card if structured_data has message_type prd_created */}
+                  {msg.structured_data?.message_type === 'prd_created' && msg.structured_data?.file_path && (
+                    <PrdCreatedCard
+                      title={msg.structured_data.title || 'PRD'}
+                      filePath={msg.structured_data.file_path}
+                      status={msg.structured_data.status || 'pending'}
+                      showActions={msg.id === latestPrdMessageId}
+                      onView={() => {
+                        if (onOpenFile) {
+                          onOpenFile(msg.structured_data!.file_path)
+                        }
+                        if (onActiveTabChange) {
+                          onActiveTabChange('file')
+                        }
+                      }}
+                      onApprove={() => {
+                        wsSendMessage("Phê duyệt PRD này, hãy tạo user stories")
+                      }}
+                      onEdit={(feedback) => {
+                        wsSendMessage(`Chỉnh sửa PRD: ${feedback}`)
+                      }}
+                    />
+                  )}
+                  
+                  {/* Show stories file card if structured_data has message_type stories_created */}
+                  {msg.structured_data?.message_type === 'stories_created' && msg.structured_data?.file_path && (
+                    <StoriesFileCard
+                      filePath={msg.structured_data.file_path}
+                      status={msg.structured_data.status || 'pending'}
+                      showActions={msg.id === latestStoriesMessageId}
+                      onView={() => {
+                        if (onOpenFile) {
+                          onOpenFile(msg.structured_data!.file_path)
+                        }
+                        if (onActiveTabChange) {
+                          onActiveTabChange('file')
+                        }
+                      }}
+                      onApprove={() => {
+                        wsSendMessage("Phê duyệt Epics & Stories, thêm vào backlog")
+                      }}
+                      onEdit={(feedback) => {
+                        wsSendMessage(`Chỉnh sửa Epics/Stories: ${feedback}`)
+                      }}
+                    />
+                  )}
+                  
+                  {/* Show stories created card if message type is stories_created (legacy) */}
                   {msg.message_type === 'stories_created' && msg.structured_data?.story_ids && (
                     <StoriesCreatedCard
                       stories={{

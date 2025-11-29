@@ -1,56 +1,48 @@
-"""Team Leader LangGraph implementation."""
+"""Team Leader LangGraph."""
 
-import logging
 from functools import partial
 from typing import Literal
 
 from langgraph.graph import StateGraph, END
 
 from app.agents.team_leader.src.state import TeamLeaderState
-from app.agents.team_leader.src.nodes import llm_routing, delegate, respond
-
-logger = logging.getLogger(__name__)
+from app.agents.team_leader.src.nodes import router, delegate, respond, clarify, conversational, status_check, extract_preferences
 
 
-def route_after_llm(state: TeamLeaderState) -> Literal["delegate", "respond"]:
-    """Conditional edge: Route after LLM decision."""
-    if state.get("action") == "DELEGATE":
+def route(state: TeamLeaderState) -> Literal["delegate", "extract_preferences", "conversational", "status_check", "clarify"]:
+    """Route to action node. RESPOND goes through extract_preferences first."""
+    action = state.get("action")
+    if action == "DELEGATE":
         return "delegate"
-    else:
-        return "respond"
+    if action == "CONVERSATION":
+        return "conversational"
+    if action == "STATUS_CHECK":
+        return "status_check"
+    if action == "CLARIFY":
+        return "clarify"
+    return "extract_preferences"
 
 
 class TeamLeaderGraph:
-    """LangGraph-based Team Leader routing graph."""
+    """LangGraph-based Team Leader with Lean Kanban integration."""
     
     def __init__(self, agent=None):
-        """Initialize graph with reference to agent.
-        
-        Args:
-            agent: TeamLeader agent instance (for delegation/messaging)
-        """
         self.agent = agent
+        g = StateGraph(TeamLeaderState)
         
-        graph = StateGraph(TeamLeaderState)
+        g.add_node("router", partial(router, agent=agent))
+        g.add_node("extract_preferences", partial(extract_preferences, agent=agent))
+        g.add_node("delegate", partial(delegate, agent=agent))
+        g.add_node("respond", partial(respond, agent=agent))
+        g.add_node("clarify", partial(clarify, agent=agent))
+        g.add_node("conversational", partial(conversational, agent=agent))
+        g.add_node("status_check", partial(status_check, agent=agent))
         
-        graph.add_node("llm_routing", partial(llm_routing, agent=agent))
-        graph.add_node("delegate", partial(delegate, agent=agent))
-        graph.add_node("respond", partial(respond, agent=agent))
+        g.set_entry_point("router")
+        g.add_conditional_edges("router", route)
+        g.add_edge("extract_preferences", "respond")
         
-        graph.set_entry_point("llm_routing")
+        for node in ["delegate", "respond", "clarify", "conversational", "status_check"]:
+            g.add_edge(node, END)
         
-        graph.add_conditional_edges(
-            "llm_routing",
-            route_after_llm,
-            {
-                "delegate": "delegate",
-                "respond": "respond"
-            }
-        )
-        
-        graph.add_edge("delegate", END)
-        graph.add_edge("respond", END)
-        
-        self.graph = graph.compile()
-        
-        logger.info("[TeamLeaderGraph] LLM-only routing graph compiled")
+        self.graph = g.compile()
