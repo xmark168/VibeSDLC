@@ -22,6 +22,7 @@ export default function AuthProvider({
     queryFn: UsersService.readUserMe,
     enabled: !!accessToken,
     retry: false,
+    refetchOnWindowFocus: false,
   })
 
   useEffect(() => {

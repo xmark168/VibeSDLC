@@ -31,6 +31,7 @@ export const useAuth = () => {
     queryKey: ["currentUser"],
     queryFn: UsersService.readUserMe,
     enabled: isLoggedIn(),
+    refetchOnWindowFocus: false, // User info rarely changes during session
   })
 
   const signUpMutation = useMutation({

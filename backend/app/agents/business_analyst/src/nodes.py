@@ -725,16 +725,132 @@ async def approve_stories(state: BAState, agent=None) -> dict:
         return {"error": f"Failed to save stories: {str(e)}"}
 
 
-async def analyze_domain(state: BAState, agent=None) -> dict:
-    """Node: Perform domain analysis."""
-    logger.info(f"[BA] Analyzing domain...")
+# Categories for clarity check
+REQUIRED_CATEGORIES = {
+    "target_users": ["khách hàng", "người dùng", "đối tượng", "ai sẽ dùng", "ai dùng"],
+    "main_features": ["tính năng", "chức năng", "website cần có", "cần có gì"],
+    "risks": ["lo ngại", "thách thức", "rủi ro", "khó khăn", "lo lắng"],
+}
+
+OPTIONAL_CATEGORIES = {
+    "business_model": ["kiếm tiền", "thu nhập", "doanh thu", "mô hình"],
+    "priorities": ["ưu tiên", "quan trọng nhất", "quan trọng"],
+    "details": ["thanh toán", "giao hàng", "chi tiết"],
+}
+
+
+def check_clarity(state: BAState) -> dict:
+    """Check if collected info covers required categories.
     
-    system_prompt = _sys_prompt(agent, "domain_analysis")
-    user_prompt = _user_prompt(
-        "domain_analysis",
-        user_message=state["user_message"],
-        collected_info=json.dumps(state.get("collected_info", {}), ensure_ascii=False)
-    )
+    Returns:
+        dict with is_clear, covered_categories, missing_categories
+    """
+    answers = state.get("collected_info", {}).get("interview_answers", [])
+    
+    covered = {cat: False for cat in REQUIRED_CATEGORIES}
+    
+    for answer in answers:
+        question_text = answer.get("question_text", "").lower()
+        answer_text = answer.get("answer", "")
+        
+        # Skip empty answers
+        if not answer_text or len(answer_text.strip()) < 5:
+            continue
+        
+        for category, keywords in REQUIRED_CATEGORIES.items():
+            if any(kw in question_text for kw in keywords):
+                covered[category] = True
+    
+    missing = [cat for cat, is_covered in covered.items() if not is_covered]
+    is_clear = len(missing) == 0
+    
+    logger.info(f"[BA] Clarity check: covered={[c for c, v in covered.items() if v]}, missing={missing}")
+    
+    return {
+        "is_clear": is_clear,
+        "covered_categories": [c for c, v in covered.items() if v],
+        "missing_categories": missing
+    }
+
+
+async def analyze_domain(state: BAState, agent=None) -> dict:
+    """Node: Web search + generate questions about missing categories.
+    
+    This node:
+    1. Does web search based on user's project to gather domain insights
+    2. Generates additional questions about missing categories
+    3. Returns questions to loop back to ask_batch_questions
+    """
+    logger.info(f"[BA] Domain analysis with web search...")
+    
+    loop_count = state.get("research_loop_count", 0)
+    missing_categories = state.get("missing_categories", [])
+    collected_info = state.get("collected_info", {})
+    user_message = state.get("user_message", "")
+    
+    # Increment loop count
+    new_loop_count = loop_count + 1
+    logger.info(f"[BA] Research loop {new_loop_count}/2, missing: {missing_categories}")
+    
+    # 1. Web search for domain insights
+    domain_research = {}
+    try:
+        from langchain_community.tools.tavily_search import TavilySearchResults
+        
+        # Build search query from user message and collected info
+        search_query = f"{user_message} website features best practices 2024"
+        
+        tavily = TavilySearchResults(max_results=3)
+        search_results = await tavily.ainvoke({"query": search_query})
+        
+        if search_results:
+            domain_research = {
+                "query": search_query,
+                "results": search_results[:3] if isinstance(search_results, list) else search_results,
+            }
+            logger.info(f"[BA] Web search completed: {len(search_results)} results")
+    except ImportError:
+        logger.warning("[BA] Tavily not installed, skipping web search")
+    except Exception as e:
+        logger.warning(f"[BA] Web search failed: {e}")
+    
+    # 2. Generate additional questions about missing categories
+    category_prompts = {
+        "target_users": "người dùng mục tiêu, đối tượng khách hàng",
+        "main_features": "tính năng chính cần có",
+        "risks": "rủi ro, thách thức, lo ngại khi xây dựng",
+    }
+    
+    missing_info = ", ".join([category_prompts.get(cat, cat) for cat in missing_categories])
+    
+    system_prompt = _sys_prompt(agent, "interview_requirements")
+    user_prompt = f"""Dựa trên cuộc trò chuyện trước, user muốn: "{user_message}"
+
+Thông tin đã thu thập: {json.dumps(collected_info, ensure_ascii=False)}
+
+Kết quả tìm hiểu thêm từ web: {json.dumps(domain_research, ensure_ascii=False)[:1500]}
+
+THIẾU THÔNG TIN VỀ: {missing_info}
+
+Hãy tạo 2-3 câu hỏi BỔ SUNG để làm rõ những thông tin còn thiếu.
+Dựa vào kết quả research, đề xuất các options phù hợp với xu hướng hiện tại.
+
+Ví dụ: Nếu research thấy nhiều website bán sách có ebook/audiobook, 
+hãy hỏi: "Ngoài sách giấy, bạn có muốn bán thêm?" với options ["Ebook", "Audiobook", "Cả hai", "Không cần"]
+
+Return JSON format:
+```json
+{{
+  "questions": [
+    {{
+      "text": "Câu hỏi tiếng Việt?",
+      "type": "multichoice",
+      "options": ["Option 1", "Option 2", "Khác"],
+      "allow_multiple": true
+    }}
+  ]
+}}
+```"""
     
     try:
         response = await _default_llm.ainvoke(
@@ -742,16 +858,25 @@ async def analyze_domain(state: BAState, agent=None) -> dict:
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt)
             ],
-            config=_cfg(state, "analyze_domain")
+            config=_cfg(state, "domain_research")
         )
         
-        logger.info(f"[BA] Domain analysis completed ({len(response.content)} chars)")
-        return {"analysis_text": response.content}
+        questions = parse_questions_response(response.content)
+        logger.info(f"[BA] Generated {len(questions)} additional questions from research")
+        
+        return {
+            "questions": questions,
+            "research_loop_count": new_loop_count,
+            "research_done": True,
+            "domain_research": domain_research,
+            "analysis_text": f"Researched: {missing_info}",
+        }
         
     except Exception as e:
         logger.error(f"[BA] Domain analysis failed: {e}")
         return {
-            "analysis_text": f"Domain analysis failed: {str(e)}",
+            "research_loop_count": new_loop_count,
+            "research_done": True,
             "error": str(e)
         }
 
@@ -804,7 +929,10 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
             
             # Send message with View button (different text for create vs update)
             is_update = bool(state.get("change_summary"))
-            message_content = "PRD đã được cập nhật" if is_update else "PRD được tạo thành công"
+            if is_update:
+                message_content = f"Mình đã cập nhật PRD theo yêu cầu của bạn rồi nhé! 📝 Bạn xem lại và cho mình biết còn gì cần chỉnh sửa không"
+            else:
+                message_content = f"Tuyệt vời! 🎉 Mình đã hoàn thành PRD cho dự án **{project_name}** rồi! Bạn xem qua và phê duyệt để mình tạo user stories nhé~"
             
             if agent:
                 await agent.message_user(
@@ -888,7 +1016,7 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
             if agent:
                 await agent.message_user(
                     event_type="response",
-                    content=f"Stories đã được tạo",
+                    content=f"Xong rồi! 🚀 Mình đã tạo **{stories_count} User Stories** từ PRD. Bạn review và phê duyệt để đưa vào backlog nhé~",
                     details={
                         "message_type": "stories_created",
                         "file_path": "docs/user-stories.md",
@@ -906,12 +1034,12 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
     
     # Handle case where story extraction failed (no stories returned)
     elif is_story_intent and not epics_data and not stories_data and agent:
-        error_msg = state.get("error", "Không thể tạo stories từ PRD. Vui lòng kiểm tra lại PRD hoặc thử lại.")
+        error_msg = state.get("error", "Không thể tạo stories từ PRD.")
         logger.warning(f"[BA] Story extraction failed: {error_msg}")
         result["error"] = error_msg
         await agent.message_user(
             event_type="response",
-            content=f"⚠️ {error_msg}",
+            content=f"Hmm, mình gặp chút vấn đề khi tạo stories nè 😅 Bạn thử kiểm tra lại PRD hoặc nhờ mình thử lại nhé!",
             details={
                 "message_type": "error",
                 "error": error_msg
@@ -934,7 +1062,7 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
         if agent:
             await agent.message_user(
                 event_type="response",
-                content=f"📊 Domain Analysis Complete\n\n{state['analysis_text'][:2000]}",
+                content=f"Mình đã phân tích xong domain rồi! 📊\n\n{state['analysis_text'][:2000]}",
                 details={"analysis": state["analysis_text"]}
             )
     
@@ -959,9 +1087,10 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
         # Send simple notification to trigger Kanban refresh (no card displayed)
         if agent:
             logger.info(f"[BA] Sending stories_approved message to frontend")
+            stories_approved = len(state.get("created_stories", []))
             await agent.message_user(
                 event_type="response",
-                content=f"✅ {approval_message}",
+                content=f"Tuyệt vời! 🎊 Đã thêm **{stories_approved} User Stories** vào backlog rồi! Bạn có thể xem trên Kanban board và bắt đầu implement được luôn nha~",
                 details={
                     "message_type": "stories_approved"  # Frontend will refresh Kanban, no card
                 }
