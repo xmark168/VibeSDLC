@@ -201,12 +201,12 @@ class ProjectFiles:
         
         for epic_idx, epic in enumerate(epics_data, 1):
             epic_id = epic.get('id', f'EPIC-{epic_idx:03d}')
-            epic_name = epic.get('name', epic.get('title', 'Untitled Epic'))
+            epic_title = epic.get('title', epic.get('name', 'Untitled Epic'))
             epic_desc = epic.get('description', '')
             epic_domain = epic.get('domain', 'General')
             stories = epic.get('stories', [])
             
-            md += f"""# Epic: {epic_name}
+            md += f"""# Epic: {epic_title}
 
 **ID:** `{epic_id}`  
 **Domain:** {epic_domain}  

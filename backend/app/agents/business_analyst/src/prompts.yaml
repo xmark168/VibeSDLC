@@ -76,7 +76,7 @@ shared_context:
     
     **Epic Structure:**
     - id: Unique identifier (EPIC-001, EPIC-002, ...)
-    - name: Short name describing the feature
+    - title: Short title describing the feature
     - description: Overview of the epic
     - domain: Feature category (Authentication, Product, Cart, Payment, Admin, Notification)
     
@@ -162,7 +162,7 @@ tasks:
       - "Chỉnh sửa Epics/Stories: thêm story cho việc reset password" -> stories_update
          Reasoning: "User wants to modify existing stories with specific feedback"
       
-      - "Phê duyệt Epics & Stories, thêm vào backlog" -> stories_approve
+      - "Phê duyệt Stories" -> stories_approve
          Reasoning: "User approves stories and wants to add them to project backlog"
 
   # ---------------------------------------------------------------------------
@@ -369,7 +369,7 @@ tasks:
       
       **Epic Structure:**
       - id: Unique identifier (e.g., EPIC-001)
-      - name: Short name describing the feature
+      - title: Short title describing the feature
       - description: Overview of the epic and its business value
       - domain: Feature category (Authentication, Product, Cart, Payment, Admin, Notification, etc.)
       
@@ -414,7 +414,7 @@ tasks:
         "epics": [
           {{
             "id": "EPIC-001",
-            "name": "Tên Epic ngắn gọn",
+            "title": "Tên Epic ngắn gọn",
             "description": "Mô tả tổng quan về Epic",
             "domain": "Authentication|Product|Cart|Payment|Admin|Notification",
             "stories": [
@@ -440,7 +440,7 @@ tasks:
         "epics": [
           {{
             "id": "EPIC-001",
-            "name": "Quản lý giỏ hàng",
+            "title": "Quản lý giỏ hàng",
             "description": "Cho phép khách hàng quản lý sản phẩm trong giỏ hàng",
             "domain": "Cart",
             "stories": [
@@ -546,7 +546,7 @@ tasks:
       
       **Epic Structure:**
       - id: Unique identifier (e.g., EPIC-001)
-      - name: Short name describing the feature
+      - title: Short title describing the feature
       - description: Overview of the epic
       - domain: Feature category
       
@@ -580,7 +580,7 @@ tasks:
         "epics": [
           {{
             "id": "EPIC-001",
-            "name": "Tên Epic",
+            "title": "Tên Epic",
             "description": "Mô tả",
             "domain": "Cart|Product|...",
             "stories": [
