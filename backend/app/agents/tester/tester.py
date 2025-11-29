@@ -4,6 +4,7 @@ import logging
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
 from app.models import Agent as AgentModel
 from app.agents.tester.src import TesterGraph
+from app.core.langfuse_client import flush_langfuse
 
 logger = logging.getLogger(__name__)
 
@@ -20,23 +21,34 @@ class Tester(BaseAgent):
         """Handle task using LangGraph."""
         logger.info(f"[{self.name}] Task: type={task.task_type.value}, reason={task.routing_reason}")
         
-        # Setup Langfuse
-        langfuse_handler, langfuse_ctx = None, None
+        # Setup Langfuse tracing (same pattern as Team Leader)
+        langfuse_handler = None
+        langfuse_span = None
+        langfuse_ctx = None
         try:
             from langfuse import get_client
             from langfuse.langchain import CallbackHandler
-            langfuse_ctx = get_client().start_as_current_observation(as_type="span", name="tester_graph")
-            span = langfuse_ctx.__enter__()
-            span.update_trace(
+            
+            langfuse = get_client()
+            # Create parent span for entire graph execution
+            langfuse_ctx = langfuse.start_as_current_observation(
+                as_type="span",
+                name="tester_graph"
+            )
+            # Enter context and get span object
+            langfuse_span = langfuse_ctx.__enter__()
+            # Update trace with metadata
+            langfuse_span.update_trace(
                 user_id=str(task.user_id) if task.user_id else None,
                 session_id=str(self.project_id),
                 input={"message": task.content[:200] if task.content else ""},
                 tags=["tester", self.role_type],
                 metadata={"agent": self.name, "task_id": str(task.task_id)}
             )
+            # Handler inherits trace context automatically
             langfuse_handler = CallbackHandler()
         except Exception as e:
-            logger.debug(f"Langfuse: {e}")
+            logger.debug(f"[{self.name}] Langfuse setup: {e}")
         
         try:
             # Determine if auto-triggered
@@ -57,11 +69,12 @@ class Tester(BaseAgent):
             # Invoke graph
             final_state = await self.graph_engine.graph.ainvoke(initial_state)
             
-            # Close Langfuse
-            if langfuse_ctx:
+            # Update trace output and close span
+            if langfuse_span and langfuse_ctx:
                 try:
-                    span.update_trace(output=final_state.get("result", {}))
+                    langfuse_span.update_trace(output=final_state.get("result", {}))
                     langfuse_ctx.__exit__(None, None, None)
+                    flush_langfuse()
                 except Exception:
                     pass
             
@@ -78,9 +91,11 @@ class Tester(BaseAgent):
             
         except Exception as e:
             logger.error(f"[{self.name}] Error: {e}", exc_info=True)
+            # Cleanup langfuse on error
             if langfuse_ctx:
                 try:
                     langfuse_ctx.__exit__(type(e), e, e.__traceback__)
+                    flush_langfuse()
                 except Exception:
                     pass
             return TaskResult(success=False, error_message=str(e))

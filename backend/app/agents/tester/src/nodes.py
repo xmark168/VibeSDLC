@@ -18,8 +18,8 @@ from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 
 logger = logging.getLogger(__name__)
 
-_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-_chat_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
+_llm = ChatOpenAI(model="gpt-4.1", temperature=0)
+_chat_llm = ChatOpenAI(model="gpt-4.1", temperature=0.7)
 
 
 def _cfg(state: dict, name: str) -> dict:
