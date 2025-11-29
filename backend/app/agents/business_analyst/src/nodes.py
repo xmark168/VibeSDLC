@@ -574,11 +574,17 @@ async def update_stories(state: BAState, agent=None) -> dict:
     if not epics:
         return {"error": "No existing stories to update"}
     
+    # Get conversation context for memory
+    conversation_context = state.get("conversation_context", "")
+    if conversation_context:
+        logger.info(f"[BA] Using conversation context: {len(conversation_context)} chars")
+    
     system_prompt = _sys_prompt(agent, "update_stories")
     user_prompt = _user_prompt(
         "update_stories",
         epics=json.dumps(epics, ensure_ascii=False, indent=2),
-        user_message=state["user_message"]
+        user_message=state["user_message"],
+        conversation_context=conversation_context
     )
     
     try:

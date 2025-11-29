@@ -606,17 +606,25 @@ tasks:
       - **IMPORTANT: ALL content MUST be in ENGLISH**
 
     user_prompt: |
-      Current Epics & Stories:
+      # CONVERSATION CONTEXT
+      {conversation_context}
+      
+      # CURRENT EPICS & STORIES
       ```json
       {epics}
       ```
       
-      User feedback: "{user_message}"
+      # USER REQUEST
+      "{user_message}"
       
       # YOUR TASK
-      Update the Epics and Stories based on user feedback.
+      Update the Epics and Stories based on user request.
       
-      **IMPORTANT: ALL output content MUST be in ENGLISH. Each story MUST have requirements field.**
+      **IMPORTANT GUIDELINES:**
+      - If user mentions "vừa xóa/thêm/sửa" (recently deleted/added/modified), check the conversation context above for details
+      - If user asks to restore a deleted item, look for the item details in the conversation history
+      - ALL output content MUST be in ENGLISH
+      - Each story MUST have requirements field
       
       Return ONLY valid JSON:
       ```json
