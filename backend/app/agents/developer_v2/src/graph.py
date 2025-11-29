@@ -7,25 +7,24 @@ from langgraph.graph import StateGraph, END
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.nodes import (
-    router, setup_workspace, analyze, design, plan, implement, clarify, respond,
+    router, setup_workspace, analyze, design, plan, implement, clarify,
     merge_to_main, cleanup_workspace, code_review, run_code, debug_error, summarize_code
 )
 
 
-def route(state: DeveloperState) -> Literal["setup_workspace", "clarify", "respond"]:
+def route(state: DeveloperState) -> Literal["setup_workspace", "clarify"]:
     """Route to appropriate node based on action.
     
     If action requires code modification (ANALYZE/DESIGN/PLAN/IMPLEMENT) -> setup_workspace first
-    If action is CLARIFY or RESPOND -> go directly (no workspace needed)
+    If action is CLARIFY -> go directly (no workspace needed)
+    Otherwise -> setup_workspace (default to implementation flow)
     """
     action = state.get("action")
     
-    # Actions that need workspace (will modify code)
-    if action in ["ANALYZE", "DESIGN", "PLAN", "IMPLEMENT"]:
-        return "setup_workspace"
     if action == "CLARIFY":
         return "clarify"
-    return "respond"
+    # All other actions go through setup_workspace -> implementation flow
+    return "setup_workspace"
 
 
 def route_after_workspace(state: DeveloperState) -> Literal["analyze", "design", "plan", "implement"]:
@@ -58,23 +57,14 @@ def route_after_analyze(state: DeveloperState) -> Literal["design", "plan"]:
     return "design"
 
 
-def should_continue(state: DeveloperState) -> Literal["implement", "summarize_code", "respond"]:
+def should_continue(state: DeveloperState) -> Literal["implement", "summarize_code", "cleanup_workspace"]:
     """Check if implementation should continue or move to summarize (MetaGPT pattern)."""
     action = state.get("action")
     error = state.get("error")
     
-    # If error occurred, go to respond
+    # If error occurred, cleanup and end
     if error:
-        return "respond"
-    
-    # If action is RESPOND (from failed node), go to respond
-    if action == "RESPOND":
-        return "respond"
-    
-    # If action is PLAN (from implement with empty plan), go to respond with error
-    # This handles the case where plan extraction failed
-    if action == "PLAN":
-        return "respond"
+        return "cleanup_workspace"
     
     # If action is VALIDATE (all steps completed), go to summarize_code (MetaGPT pattern)
     if action == "VALIDATE":
@@ -85,7 +75,7 @@ def should_continue(state: DeveloperState) -> Literal["implement", "summarize_co
     
     # Check if there are steps to implement
     if total_steps == 0:
-        return "respond"  # No steps = nothing to do
+        return "cleanup_workspace"  # No steps = nothing to do
     
     if action == "IMPLEMENT" and current_step < total_steps:
         return "implement"
@@ -94,7 +84,7 @@ def should_continue(state: DeveloperState) -> Literal["implement", "summarize_co
     return "summarize_code"
 
 
-def route_after_summarize(state: DeveloperState) -> Literal["code_review", "run_code", "implement", "respond"]:
+def route_after_summarize(state: DeveloperState) -> Literal["code_review", "run_code", "implement"]:
     """Route after summarize_code completes (MetaGPT IS_PASS pattern).
     
     - If IS_PASS=True -> code_review (or skip for simple tasks)
@@ -113,8 +103,6 @@ def route_after_summarize(state: DeveloperState) -> Literal["code_review", "run_
         return "code_review"
     if action == "IMPLEMENT":
         return "implement"
-    if action == "RESPOND":
-        return "respond"
     
     # IS_PASS check
     if is_pass:
@@ -137,7 +125,7 @@ def route_after_summarize(state: DeveloperState) -> Literal["code_review", "run_
     return "code_review"
 
 
-def route_after_code_review(state: DeveloperState) -> Literal["run_code", "implement", "respond"]:
+def route_after_code_review(state: DeveloperState) -> Literal["run_code", "implement"]:
     """Route after code review completes.
     
     - If passed (LGTM) -> run_code
@@ -158,13 +146,13 @@ def route_after_code_review(state: DeveloperState) -> Literal["run_code", "imple
     return "run_code"  # Proceed even if not all passed after max iterations
 
 
-def route_after_run_code(state: DeveloperState) -> Literal["merge_to_main", "debug_error", "respond", "implement"]:
+def route_after_run_code(state: DeveloperState) -> Literal["merge_to_main", "debug_error", "cleanup_workspace", "implement"]:
     """Route after running tests (MetaGPT React Loop pattern).
     
     - If tests passed -> merge_to_main
     - If failed and can debug -> debug_error
     - If react_mode and under max_react_loop -> implement (retry full cycle)
-    - Otherwise -> respond with failure
+    - Otherwise -> cleanup_workspace (end with failure)
     """
     run_result = state.get("run_result", {})
     status = run_result.get("status", "PASS")
@@ -179,7 +167,7 @@ def route_after_run_code(state: DeveloperState) -> Literal["merge_to_main", "deb
     # HARD LIMIT: Circuit breaker to prevent infinite loops
     total_attempts = debug_count + react_loop_count
     if total_attempts >= 50:  # Absolute maximum attempts (MetaGPT pattern)
-        return "respond"
+        return "cleanup_workspace"
     
     if status == "PASS":
         return "merge_to_main"
@@ -192,28 +180,28 @@ def route_after_run_code(state: DeveloperState) -> Literal["merge_to_main", "deb
     if react_mode and react_loop_count < max_react_loop:
         return "implement"
     
-    return "respond"
+    return "cleanup_workspace"
 
 
 class DeveloperGraph:
     """LangGraph-based Developer V2 for story processing.
     
-    Flow:
-    1. router - Decides if we need to modify code or just respond
-    2. setup_workspace - Creates git branch + CocoIndex + loads AGENTS.md
-    3. analyze - Analyze story requirements
-    4. design - System design with mermaid diagrams (MetaGPT Architect)
+    Nodes:
+    1. router - Classify story, decide action
+    2. setup_workspace - Git branch + CocoIndex + AGENTS.md
+    3. analyze - Analyze requirements
+    4. design - System design (skip for low complexity)
     5. plan - Create implementation plan
-    6. implement - Code implementation
-    7. summarize_code - MetaGPT SummarizeCode + IS_PASS check (loop back if not pass)
-    8. code_review - LGTM/LBTM review with k iterations
-    9. run_code - Execute tests to verify
-    10. debug_error - Fix bugs if tests fail (up to max_debug attempts)
-    11. merge_to_main - Merge branch after tests pass
-    12. cleanup_workspace - Remove worktree and delete branch
-    13. respond/clarify - Direct response
+    6. implement - Generate code
+    7. summarize_code - Validate (IS_PASS check)
+    8. code_review - Batch review (LGTM/LBTM)
+    9. run_code - Execute tests
+    10. debug_error - Fix bugs
+    11. merge_to_main - Merge branch
+    12. cleanup_workspace - Cleanup and END
+    13. clarify - Ask questions (direct to END)
     
-    Flow Diagram (MetaGPT-inspired):
+    Flow Diagram:
     router → setup_workspace → analyze → design → plan → implement
                                                             ↓
                                                      summarize_code (IS_PASS check)
@@ -226,7 +214,7 @@ class DeveloperGraph:
                                                       ↓              ↓
                                                cleanup_workspace  run_code
                                                       ↓
-                                                   respond → END
+                                                    END
     """
     
     def __init__(self, agent=None):
@@ -247,7 +235,6 @@ class DeveloperGraph:
         g.add_node("merge_to_main", partial(merge_to_main, agent=agent))
         g.add_node("cleanup_workspace", partial(cleanup_workspace, agent=agent))
         g.add_node("clarify", partial(clarify, agent=agent))
-        g.add_node("respond", partial(respond, agent=agent))
         
         # Entry point
         g.set_entry_point("router")
@@ -281,10 +268,9 @@ class DeveloperGraph:
         
         # Merge and cleanup flow
         g.add_edge("merge_to_main", "cleanup_workspace")
-        g.add_edge("cleanup_workspace", "respond")
         
         # End nodes
+        g.add_edge("cleanup_workspace", END)
         g.add_edge("clarify", END)
-        g.add_edge("respond", END)
         
         self.graph = g.compile()

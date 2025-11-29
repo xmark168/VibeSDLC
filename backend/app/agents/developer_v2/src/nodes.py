@@ -11,7 +11,7 @@ from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import ( StoryAnalysis, ImplementationPlan, PlanStep,
     CodeChange
 )
-from app.agents.developer_v2.tools import (
+from app.agents.developer_v2.src.tools import (
     submit_routing_decision, submit_story_analysis, submit_implementation_plan,
     submit_code_change, submit_system_design
 )
@@ -291,7 +291,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             task_id = state.get("task_id") or story_id
             
             if workspace_path:
-                from app.agents.developer_v2.tools import index_workspace
+                from app.agents.developer_v2.src.tools import index_workspace
                 index_ready = index_workspace(project_id, workspace_path, task_id)
                 if not index_ready:
                     raise RuntimeError(f"CocoIndex indexing failed for workspace: {workspace_path}")
@@ -303,7 +303,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             project_structure = {}
             if workspace_path:
                 try:
-                    from app.agents.developer_v2.tools import get_agents_md, get_project_context, detect_project_structure
+                    from app.agents.developer_v2.src.tools import get_agents_md, get_project_context, detect_project_structure
                     agents_md = get_agents_md(workspace_path)
                     project_context = get_project_context(workspace_path)
                     project_structure = detect_project_structure(workspace_path)
@@ -387,7 +387,7 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
         workspace_path = state.get("workspace_path", "")
         if workspace_path:
             try:
-                from app.agents.developer_v2.tools import (
+                from app.agents.developer_v2.src.tools import (
                     detect_framework_from_package_json,
                     tavily_search
                 )
@@ -464,7 +464,7 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
         existing_context = ""
         index_ready = state.get("index_ready", False)
         if workspace_path and index_ready:
-            from app.agents.developer_v2.tools import search_codebase
+            from app.agents.developer_v2.src.tools import search_codebase
             project_id = state.get("project_id", "default")
             task_id = state.get("task_id") or state.get("story_id", "")
             existing_context = search_codebase(project_id, state.get("story_title", ""), top_k=10, task_id=task_id)
@@ -563,7 +563,7 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
         
         # CocoIndex semantic search (required)
         if workspace_path and index_ready:
-            from app.agents.developer_v2.tools import search_codebase
+            from app.agents.developer_v2.src.tools import search_codebase
             existing_code = search_codebase(
                 project_id=project_id,
                 query=task_description,
@@ -649,7 +649,7 @@ IMPORTANT: Generate file_path values that match the existing project structure a
         
         # Validate and fix file paths based on project structure
         if project_structure and plan_result.steps:
-            from app.agents.developer_v2.tools import validate_plan_file_paths
+            from app.agents.developer_v2.src.tools import validate_plan_file_paths
             validated_steps = validate_plan_file_paths(
                 [s.model_dump() for s in plan_result.steps],
                 project_structure
@@ -755,7 +755,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             
             # CocoIndex semantic search (required)
             if index_ready:
-                from app.agents.developer_v2.tools import get_related_code_indexed
+                from app.agents.developer_v2.src.tools import get_related_code_indexed
                 related_context = get_related_code_indexed(
                     project_id=project_id,
                     current_file=current_file,
@@ -803,7 +803,7 @@ Conventions: {project_structure.get('conventions', '')}
         
         # Add boilerplate examples (ACCURACY improvement)
         if workspace_path:
-            from app.agents.developer_v2.tools import get_boilerplate_examples
+            from app.agents.developer_v2.src.tools import get_boilerplate_examples
             # Determine task type from file path
             task_type = "page"
             if "component" in current_file.lower():
@@ -935,7 +935,7 @@ async def create_code_plan(state: DeveloperState, agent=None) -> DeveloperState:
         
         existing_code = ""
         if workspace_path and index_ready:
-            from app.agents.developer_v2.tools import search_codebase
+            from app.agents.developer_v2.src.tools import search_codebase
             existing_code = search_codebase(project_id, state.get("story_title", ""), top_k=10, task_id=task_id)
         
         sys_prompt = _build_system_prompt("create_code_plan", agent)
@@ -1017,7 +1017,7 @@ async def summarize_code(state: DeveloperState, agent=None) -> DeveloperState:
         
         code_blocks = ""
         if workspace_path and index_ready:
-            from app.agents.developer_v2.tools import search_codebase
+            from app.agents.developer_v2.src.tools import search_codebase
             code_blocks = search_codebase(project_id, "implementation code", top_k=15, task_id=task_id)
         
         sys_prompt = _build_system_prompt("summarize_code", agent)
@@ -1556,7 +1556,7 @@ async def code_review(state: DeveloperState, agent=None) -> DeveloperState:
             logger.info("[code_review] No code changes to review")
             return {**state, "code_review_passed": True}
         
-        from app.agents.developer_v2.tools import get_markdown_code_block_type
+        from app.agents.developer_v2.src.tools import get_markdown_code_block_type
         
         # Build ALL files into one prompt (batch review)
         all_code_blocks = []
@@ -1700,7 +1700,7 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         if agent:
             pass
         
-        from app.agents.developer_v2.tools import (
+        from app.agents.developer_v2.src.tools import (
             detect_test_command,
             execute_command_async,
             find_test_file,
@@ -1871,7 +1871,7 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
         if agent:
             pass
         
-        from app.agents.developer_v2.tools import get_markdown_code_block_type, find_test_file
+        from app.agents.developer_v2.src.tools import get_markdown_code_block_type, find_test_file
         
         # Read the file to fix
         code_content = ""

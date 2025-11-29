@@ -1114,7 +1114,7 @@ async def install_dependencies(workspace_path: str) -> bool:
 
 
 async def tavily_search(query: str, max_results: int = 3) -> str:
-    """Search web using Tavily API for best practices and documentation.
+    """Search web using LangChain's Tavily tool for best practices and documentation.
     
     Args:
         query: Search query
@@ -1123,27 +1123,29 @@ async def tavily_search(query: str, max_results: int = 3) -> str:
     Returns:
         Formatted search results as string
     """
-    import os
     try:
-        from tavily import TavilyClient
+        from langchain_tavily import TavilySearch
         
-        api_key = os.getenv("TAVILY_API_KEY")
-        if not api_key:
-            return "Tavily API key not configured"
+        tool = TavilySearch(max_results=max_results)
+        results = await tool.ainvoke({"query": query})
         
-        client = TavilyClient(api_key=api_key)
-        response = client.search(query=query, max_results=max_results)
+        if isinstance(results, str):
+            return results
         
-        results = []
-        for r in response.get("results", []):
-            title = r.get("title", "")
-            content = r.get("content", "")[:500]
-            url = r.get("url", "")
-            results.append(f"## {title}\n{content}\nSource: {url}\n")
+        # Format results if it's a list
+        if isinstance(results, list):
+            formatted = []
+            for r in results:
+                if isinstance(r, dict):
+                    title = r.get("title", "")
+                    content = r.get("content", "")[:500]
+                    url = r.get("url", "")
+                    formatted.append(f"## {title}\n{content}\nSource: {url}\n")
+            return "\n".join(formatted) if formatted else "No results found"
         
-        return "\n".join(results) if results else "No results found"
+        return str(results)
     except ImportError:
-        return "Tavily not installed (pip install tavily-python)"
+        return "langchain-tavily not installed (uv add langchain-tavily)"
     except Exception as e:
         return f"Search failed: {e}"
 
