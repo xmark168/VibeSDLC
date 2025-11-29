@@ -21,13 +21,19 @@ from app.agents.developer_v2.src.tools.shell_tools import (
     set_shell_context, execute_shell, semantic_code_search
 )
 from app.agents.core.prompt_utils import load_prompts_yaml
+from langchain_core.messages import ToolMessage
+from app.agents.developer_v2.src.utils.llm_utils import (
+    get_langfuse_config as _cfg,
+    execute_llm_with_tools as _llm_with_tools,
+    clean_json_response as _clean_json,
+    extract_json_from_messages as _extract_json_response,
+)
 
 logger = logging.getLogger(__name__)
 
 _PROMPTS = load_prompts_yaml(Path(__file__).parent / "prompts.yaml")
 
 # LLM models
-# Speed optimization: Use gpt-4o-mini for fast operations (router, clarify, respond)
 _fast_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1, timeout=20)
 _code_llm = ChatOpenAI(model="gpt-4.1", temperature=0.2, timeout=120)
 
@@ -43,99 +49,6 @@ def _setup_tool_context(workspace_path: str = None, project_id: str = None, task
         set_shell_context(root_dir=workspace_path)
     if project_id:
         set_tool_context(project_id=project_id, task_id=task_id, workspace_path=workspace_path)
-
-
-def _clean_json(text: str) -> str:
-    """Strip markdown code blocks from LLM response."""
-    match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
-    return match.group(1).strip() if match else text.strip()
-
-
-def _extract_json_response(result: dict) -> dict:
-    """Extract JSON from agent's final AI message."""
-    import json
-    for msg in reversed(result.get("messages", [])):
-        if hasattr(msg, 'content') and msg.content:
-            try:
-                return json.loads(_clean_json(msg.content))
-            except:
-                continue
-    return {}
-
-
-def _cfg(state: dict, name: str) -> dict:
-    """Get LangChain config with optional Langfuse callback."""
-    h = state.get("langfuse_handler")
-    if h:
-        return {"callbacks": [h], "run_name": name}
-    return {"run_name": name}
-
-
-async def _llm_with_tools(
-    llm: ChatOpenAI,
-    tools: list,
-    messages: list,
-    state: dict,
-    name: str,
-    max_iterations: int = 5
-) -> str:
-    """Call LLM with bound tools and execute tool calls manually.
-    
-    Pattern: LLM.bind_tools() -> tool_calls -> execute -> return final content
-    """
-    # Bind tools to LLM
-    llm_with_tools = llm.bind_tools(tools)
-    
-    # Create tool map for execution
-    tool_map = {tool.name: tool for tool in tools}
-    
-    conversation = list(messages)
-    
-    for iteration in range(max_iterations):
-        # Call LLM
-        response = await llm_with_tools.ainvoke(conversation, config=_cfg(state, name))
-        conversation.append(response)
-        
-        # Check for tool calls
-        if not response.tool_calls:
-            # No more tool calls, return final content
-            return response.content or ""
-        
-        # Execute tool calls
-        from langchain_core.messages import ToolMessage
-        for tool_call in response.tool_calls:
-            tool_name = tool_call["name"]
-            tool_args = tool_call["args"]
-            
-            if tool_name in tool_map:
-                try:
-                    # Execute tool
-                    tool = tool_map[tool_name]
-                    if hasattr(tool, 'invoke'):
-                        result = tool.invoke(tool_args)
-                    elif hasattr(tool, 'func'):
-                        result = tool.func(**tool_args)
-                    else:
-                        result = tool(**tool_args)
-                    
-                    # Add tool result to conversation
-                    conversation.append(ToolMessage(
-                        content=str(result)[:2000],  # Truncate long results
-                        tool_call_id=tool_call["id"]
-                    ))
-                except Exception as e:
-                    conversation.append(ToolMessage(
-                        content=f"Error: {str(e)}",
-                        tool_call_id=tool_call["id"]
-                    ))
-            else:
-                conversation.append(ToolMessage(
-                    content=f"Unknown tool: {tool_name}",
-                    tool_call_id=tool_call["id"]
-                ))
-    
-    # Max iterations reached, return last content
-    return conversation[-1].content if hasattr(conversation[-1], 'content') else ""
 
 
 def _get_prompt(task: str, key: str) -> str:
@@ -1268,10 +1181,16 @@ async def cleanup_workspace(state: DeveloperState, agent=None) -> DeveloperState
                 from app.agents.developer.tools.git_python_tool import GitPythonTool
                 main_git = GitPythonTool(root_dir=main_workspace)
                 
-                # 1. Remove worktree
+                # 1. Remove worktree (only if it's a separate worktree, not main workspace)
                 if workspace_path:
-                    remove_result = main_git._run("remove_worktree", worktree_path=workspace_path)
-                    logger.info(f"[cleanup_workspace] Remove worktree: {remove_result}")
+                    # Check if workspace_path is different from main_workspace
+                    is_worktree = workspace_path != main_workspace
+                    
+                    if is_worktree:
+                        remove_result = main_git._run("remove_worktree", worktree_path=workspace_path)
+                        logger.info(f"[cleanup_workspace] Remove worktree: {remove_result}")
+                    else:
+                        logger.info(f"[cleanup_workspace] Skipping worktree removal (this is the main workspace)")
                 
                 # 2. Delete branch (only if merged successfully)
                 if merged and branch_name:
