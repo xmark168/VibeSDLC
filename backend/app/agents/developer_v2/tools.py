@@ -166,6 +166,69 @@ def get_related_code_indexed(
 # CODE CONTEXT UTILITIES (MetaGPT-inspired) - Fallback when CocoIndex unavailable
 # =============================================================================
 
+def get_all_workspace_files(
+    workspace_path: str,
+    max_files: int = 20,
+    extensions: List[str] = None
+) -> str:
+    """Get all source files from workspace as context (MetaGPT WriteCode pattern).
+    
+    Collects all relevant source files to provide comprehensive context
+    for code generation. Used by design and implement phases.
+    
+    Args:
+        workspace_path: Path to the workspace directory
+        max_files: Maximum number of files to include
+        extensions: File extensions to include (default: common source files)
+        
+    Returns:
+        Markdown-formatted code snippets of all files
+    """
+    if extensions is None:
+        extensions = [".py", ".js", ".ts", ".tsx", ".jsx", ".json", ".css", ".html"]
+    
+    workspace = Path(workspace_path)
+    if not workspace.exists():
+        return "No workspace files found."
+    
+    context_parts = []
+    file_count = 0
+    
+    # Skip common non-source directories
+    skip_dirs = {"node_modules", ".git", "__pycache__", "dist", "build", ".next", "venv", ".venv"}
+    
+    for ext in extensions:
+        for file_path in workspace.rglob(f"*{ext}"):
+            if file_count >= max_files:
+                break
+            
+            # Skip non-source directories
+            if any(part in file_path.parts for part in skip_dirs):
+                continue
+            
+            try:
+                relative_path = file_path.relative_to(workspace)
+                content = file_path.read_text(encoding='utf-8', errors='ignore')
+                
+                # Truncate large files
+                if len(content) > 5000:
+                    content = content[:5000] + "\n... (truncated)"
+                
+                code_type = get_markdown_code_block_type(str(file_path))
+                context_parts.append(
+                    f"### File: `{relative_path}`\n```{code_type}\n{content}\n```\n"
+                )
+                file_count += 1
+            except Exception as e:
+                logger.warning(f"Failed to read {file_path}: {e}")
+                continue
+    
+    if not context_parts:
+        return "No source files found in workspace."
+    
+    return "\n".join(context_parts)
+
+
 def get_markdown_code_block_type(filename: str) -> str:
     """Get markdown code block type from filename extension.
     
@@ -489,6 +552,74 @@ class CommandResult:
         self.success = returncode == 0
 
 
+async def install_dependencies(workspace_path: str) -> bool:
+    """Install dependencies for the workspace (MetaGPT RunCode pattern).
+    
+    Checks for requirements.txt, package.json, etc. and installs dependencies.
+    
+    Args:
+        workspace_path: Path to the workspace
+        
+    Returns:
+        True if dependencies were installed, False otherwise
+    """
+    import subprocess
+    
+    workspace = Path(workspace_path)
+    installed = False
+    
+    # Python: requirements.txt
+    requirements_txt = workspace / "requirements.txt"
+    if requirements_txt.exists() and requirements_txt.stat().st_size > 0:
+        try:
+            logger.info(f"Installing Python dependencies from {requirements_txt}")
+            subprocess.run(
+                ["python", "-m", "pip", "install", "-r", "requirements.txt", "-q"],
+                cwd=workspace_path,
+                check=False,
+                timeout=120
+            )
+            installed = True
+        except Exception as e:
+            logger.warning(f"Failed to install requirements.txt: {e}")
+    
+    # Python: Install pytest for testing
+    py_files = list(workspace.glob("**/*.py"))
+    if py_files:
+        try:
+            subprocess.run(
+                ["python", "-m", "pip", "install", "pytest", "-q"],
+                cwd=workspace_path,
+                check=False,
+                timeout=60
+            )
+            installed = True
+        except Exception as e:
+            logger.warning(f"Failed to install pytest: {e}")
+    
+    # Node.js: package.json
+    package_json = workspace / "package.json"
+    if package_json.exists():
+        try:
+            logger.info(f"Installing Node.js dependencies from {package_json}")
+            # Use shell=True on Windows for npm/pnpm/bun commands
+            import sys
+            use_shell = sys.platform == 'win32'
+            
+            # Prefer pnpm, then npm
+            if (workspace / "pnpm-lock.yaml").exists():
+                subprocess.run("pnpm install", cwd=workspace_path, check=False, timeout=180, shell=use_shell)
+            elif (workspace / "bun.lockb").exists():
+                subprocess.run("bun install", cwd=workspace_path, check=False, timeout=180, shell=use_shell)
+            else:
+                subprocess.run("npm install", cwd=workspace_path, check=False, timeout=180, shell=use_shell)
+            installed = True
+        except Exception as e:
+            logger.warning(f"Failed to install npm dependencies: {e}")
+    
+    return installed
+
+
 def detect_test_command(workspace_path: str) -> List[str]:
     """Detect the appropriate test command for a workspace.
     
@@ -557,6 +688,7 @@ async def execute_command_async(
     """
     import asyncio
     import subprocess
+    import sys
     
     try:
         # Merge with current environment
@@ -568,13 +700,26 @@ async def execute_command_async(
         pythonpath = process_env.get("PYTHONPATH", "")
         process_env["PYTHONPATH"] = f"{working_directory}:{pythonpath}"
         
-        process = await asyncio.create_subprocess_exec(
-            *command,
-            cwd=working_directory,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=process_env
-        )
+        # Use shell on Windows for npm/pnpm/bun commands (they are .cmd files)
+        use_shell = sys.platform == 'win32' and command and command[0] in ['npm', 'pnpm', 'bun', 'npx']
+        
+        if use_shell:
+            cmd_str = ' '.join(command)
+            process = await asyncio.create_subprocess_shell(
+                cmd_str,
+                cwd=working_directory,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=process_env
+            )
+        else:
+            process = await asyncio.create_subprocess_exec(
+                *command,
+                cwd=working_directory,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=process_env
+            )
         
         try:
             stdout, stderr = await asyncio.wait_for(

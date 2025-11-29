@@ -57,6 +57,105 @@ def _build_system_prompt(task: str, agent=None) -> str:
     return prompt
 
 
+def _extract_design_from_raw(raw_content: str) -> dict:
+    """Extract design info from raw LLM response when JSON parsing fails.
+    
+    Looks for mermaid code blocks and other design elements.
+    """
+    import re
+    
+    design_result = {
+        "data_structures": "",
+        "api_interfaces": "",
+        "call_flow": "",
+        "design_notes": "",
+        "file_structure": []
+    }
+    
+    # Extract mermaid classDiagram
+    class_match = re.search(r'```mermaid\s*(classDiagram[\s\S]*?)```', raw_content)
+    if class_match:
+        design_result["data_structures"] = f"```mermaid\n{class_match.group(1).strip()}\n```"
+    
+    # Extract mermaid sequenceDiagram
+    seq_match = re.search(r'```mermaid\s*(sequenceDiagram[\s\S]*?)```', raw_content)
+    if seq_match:
+        design_result["call_flow"] = f"```mermaid\n{seq_match.group(1).strip()}\n```"
+    
+    # Extract any mermaid block if no specific type found
+    if not design_result["data_structures"] and not design_result["call_flow"]:
+        mermaid_match = re.search(r'```mermaid\s*([\s\S]*?)```', raw_content)
+        if mermaid_match:
+            design_result["data_structures"] = f"```mermaid\n{mermaid_match.group(1).strip()}\n```"
+    
+    # Extract TypeScript/interface definitions
+    ts_match = re.search(r'```(?:typescript|ts)\s*([\s\S]*?)```', raw_content)
+    if ts_match:
+        design_result["api_interfaces"] = ts_match.group(1).strip()
+    
+    # Extract file structure from bullet points
+    file_matches = re.findall(r'[-*]\s*[`"]?([a-zA-Z0-9_/.-]+\.[a-zA-Z]+)[`"]?', raw_content)
+    if file_matches:
+        design_result["file_structure"] = list(set(file_matches))[:20]
+    
+    # Use raw content as notes if nothing else found
+    if not any([design_result["data_structures"], design_result["call_flow"], design_result["api_interfaces"]]):
+        design_result["design_notes"] = raw_content[:2000]
+    else:
+        # Extract notes section if present
+        notes_match = re.search(r'(?:notes?|design notes?):\s*([\s\S]*?)(?:\n##|\n```|$)', raw_content, re.IGNORECASE)
+        if notes_match:
+            design_result["design_notes"] = notes_match.group(1).strip()[:500]
+    
+    return design_result
+
+
+def _save_design_docs(workspace_path: str, design_result: dict, design_doc: str, story_title: str):
+    """Save design documents to docs/technical folder."""
+    import re
+    from datetime import datetime
+    
+    docs_dir = Path(workspace_path) / "docs" / "technical"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Clean story title for filename
+    safe_title = re.sub(r'[^\w\s-]', '', story_title).strip().replace(' ', '_')[:30]
+    timestamp = datetime.now().strftime("%Y%m%d")
+    
+    try:
+        # Save main design document
+        design_file = docs_dir / f"design_{safe_title}_{timestamp}.md"
+        design_file.write_text(design_doc, encoding='utf-8')
+        logger.info(f"[design] Saved design doc: {design_file}")
+        
+        # Save mermaid class diagram if present
+        data_structures = design_result.get("data_structures", "")
+        if "mermaid" in data_structures.lower() or "classDiagram" in data_structures:
+            mermaid_file = docs_dir / f"class_diagram_{safe_title}_{timestamp}.mmd"
+            # Extract just the mermaid content
+            mermaid_content = re.sub(r'```mermaid\s*|\s*```', '', data_structures).strip()
+            mermaid_file.write_text(mermaid_content, encoding='utf-8')
+            logger.info(f"[design] Saved class diagram: {mermaid_file}")
+        
+        # Save sequence diagram if present
+        call_flow = design_result.get("call_flow", "")
+        if "mermaid" in call_flow.lower() or "sequenceDiagram" in call_flow:
+            seq_file = docs_dir / f"sequence_diagram_{safe_title}_{timestamp}.mmd"
+            seq_content = re.sub(r'```mermaid\s*|\s*```', '', call_flow).strip()
+            seq_file.write_text(seq_content, encoding='utf-8')
+            logger.info(f"[design] Saved sequence diagram: {seq_file}")
+        
+        # Save API interfaces if present
+        api_interfaces = design_result.get("api_interfaces", "")
+        if api_interfaces and len(api_interfaces) > 50:
+            api_file = docs_dir / f"api_interfaces_{safe_title}_{timestamp}.ts"
+            api_file.write_text(api_interfaces, encoding='utf-8')
+            logger.info(f"[design] Saved API interfaces: {api_file}")
+            
+    except Exception as e:
+        logger.warning(f"[design] Failed to save design docs: {e}")
+
+
 async def router(state: DeveloperState, agent=None) -> DeveloperState:
     """Route story to appropriate processing node."""
     try:
@@ -64,10 +163,14 @@ async def router(state: DeveloperState, agent=None) -> DeveloperState:
         has_plan = bool(state.get("implementation_plan"))
         has_implementation = bool(state.get("code_changes"))
         
+        # Check if this is a valid story task (has meaningful content)
+        story_content = state.get("story_content", "")
+        is_story_task = len(story_content) > 50  # Story with sufficient detail
+        
         sys_prompt = _build_system_prompt("routing_decision", agent)
         user_prompt = _get_prompt("routing_decision", "user_prompt").format(
             story_title=state.get("story_title", "Untitled"),
-            story_content=state.get("story_content", ""),
+            story_content=story_content,
             acceptance_criteria="\n".join(state.get("acceptance_criteria", [])),
             has_analysis=has_analysis,
             has_plan=has_plan,
@@ -83,14 +186,21 @@ async def router(state: DeveloperState, agent=None) -> DeveloperState:
         clean_json = _clean_json(response.content)
         decision = RoutingDecision.model_validate_json(clean_json)
         
-        logger.info(f"[router] Decision: action={decision.action}, type={decision.task_type}, complexity={decision.complexity}")
+        # IMPORTANT: For story tasks, never return RESPOND or CLARIFY
+        # Always proceed with implementation flow (MetaGPT pattern)
+        action = decision.action
+        if is_story_task and action in ("RESPOND", "CLARIFY"):
+            logger.info(f"[router] Story task detected, forcing ANALYZE instead of {action}")
+            action = "ANALYZE"
+        
+        logger.info(f"[router] Decision: action={action}, type={decision.task_type}, complexity={decision.complexity}")
         
         return {
             **state,
-            "action": decision.action,
+            "action": action,
             "task_type": decision.task_type,
             "complexity": decision.complexity,
-            "message": decision.message,
+            "message": decision.message if action == decision.action else "Bắt đầu phân tích story...",
             "reason": decision.reason,
             "confidence": decision.confidence,
         }
@@ -136,7 +246,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         if hasattr(agent, '_setup_workspace'):
             workspace_info = agent._setup_workspace(story_id)
             
-            await agent.message_user("status", f"🔧 Workspace ready: branch `{workspace_info['branch_name']}`")
+            # await agent.message_user("status", f"🔧 Workspace ready: branch `{workspace_info['branch_name']}`")  # Disabled for Kafka mode
             
             # Index workspace with CocoIndex for semantic search
             index_ready = False
@@ -150,7 +260,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                     index_ready = index_workspace(project_id, workspace_path, task_id)
                     if index_ready:
                         logger.info(f"[setup_workspace] Indexed workspace with CocoIndex")
-                        await agent.message_user("status", "📚 Codebase indexed for semantic search")
+                        # await agent.message_user("status", "📚 Codebase indexed for semantic search")  # Disabled for Kafka mode
                 except Exception as idx_err:
                     logger.warning(f"[setup_workspace] CocoIndex indexing failed: {idx_err}")
                     index_ready = False
@@ -169,7 +279,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         
     except Exception as e:
         logger.error(f"[setup_workspace] Error: {e}", exc_info=True)
-        await agent.message_user("status", f"⚠️ Không thể tạo workspace: {str(e)}")
+        # await agent.message_user("status", f"⚠️ Không thể tạo workspace: {str(e)}")  # Disabled for Kafka mode
         return {
             **state,
             "workspace_ready": False,
@@ -181,7 +291,8 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
     """Analyze user story to understand scope and requirements."""
     try:
         if agent:
-            await agent.message_user("status", f"🔍 Đang phân tích story: {state.get('story_title', 'Story')}...")
+            # await agent.message_user("status", f"🔍 Đang phân tích story: {state.get('story_title', 'Story')}...")  # Disabled for Kafka mode
+            pass
         
         sys_prompt = _build_system_prompt("analyze_story", agent)
         user_prompt = _get_prompt("analyze_story", "user_prompt").format(
@@ -215,7 +326,8 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
 💡 **Approach:** {analysis.suggested_approach}"""
         
         if agent:
-            await agent.message_user("response", msg)
+            # await agent.message_user("response", msg)  # Disabled for Kafka mode
+            pass
         
         return {
             **state,
@@ -240,13 +352,148 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
         }
 
 
+async def design(state: DeveloperState, agent=None) -> DeveloperState:
+    """Generate system design before implementation (MetaGPT Architect pattern)."""
+    try:
+        analysis = state.get("analysis_result", {})
+        complexity = state.get("complexity", "medium")
+        
+        # Skip design for simple tasks
+        if complexity == "low":
+            logger.info("[design] Skipping design for low complexity task")
+            return {
+                **state,
+                "action": "PLAN",
+                "message": "Task đơn giản, bỏ qua design phase.",
+            }
+        
+        if agent:
+            # await agent.message_user("status", "🏗️ Đang thiết kế system architecture...")  # Disabled for Kafka mode
+            pass
+        
+        # Get existing code context
+        workspace_path = state.get("workspace_path", "")
+        existing_context = ""
+        if workspace_path:
+            try:
+                from app.agents.developer_v2.tools import get_all_workspace_files
+                existing_context = get_all_workspace_files(workspace_path, max_files=10)
+            except Exception:
+                existing_context = "No existing code"
+        
+        sys_prompt = _build_system_prompt("system_design", agent)
+        user_prompt = _get_prompt("system_design", "user_prompt").format(
+            story_title=state.get("story_title", ""),
+            analysis_summary=analysis.get("summary", ""),
+            task_type=state.get("task_type", "feature"),
+            complexity=complexity,
+            story_content=state.get("story_content", ""),
+            acceptance_criteria="\n".join(f"- {ac}" for ac in state.get("acceptance_criteria", [])),
+            existing_context=existing_context or "No existing code",
+        )
+        
+        messages = [
+            SystemMessage(content=sys_prompt),
+            HumanMessage(content=user_prompt)
+        ]
+        
+        response = await _code_llm.ainvoke(messages, config=_cfg(state, "design"))
+        raw_content = response.content
+        clean_json = _clean_json(raw_content)
+        
+        import json
+        design_result = None
+        
+        # Try JSON parsing first
+        if clean_json and clean_json.strip():
+            try:
+                design_result = json.loads(clean_json)
+                logger.info(f"[design] Parsed JSON successfully")
+            except json.JSONDecodeError:
+                logger.warning(f"[design] JSON parse failed, extracting from raw response")
+        
+        # Fallback: Extract mermaid/content directly from response
+        if not design_result:
+            design_result = _extract_design_from_raw(raw_content)
+            logger.info(f"[design] Extracted design from raw response")
+        
+        logger.info(f"[design] Created system design with {len(design_result.get('file_structure', []))} files")
+        
+        # Build design document
+        design_doc = f"""# System Design
+
+## Data Structures & Interfaces
+{design_result.get('data_structures', 'N/A')}
+
+## API Interfaces
+{design_result.get('api_interfaces', 'N/A')}
+
+## Call Flow
+{design_result.get('call_flow', 'N/A')}
+
+## Design Notes
+{design_result.get('design_notes', 'N/A')}
+
+## File Structure
+{chr(10).join(f'- {f}' for f in design_result.get('file_structure', []))}
+"""
+        
+        # Save design documents to /docs/technical
+        if workspace_path:
+            _save_design_docs(workspace_path, design_result, design_doc, state.get("story_title", "design"))
+        
+        msg = f"""🏗️ **System Design hoàn tất!**
+
+📊 **Data Structures:** Đã định nghĩa interfaces và types
+🔗 **Call Flow:** Đã vẽ sequence diagram
+📁 **Files:** {', '.join(design_result.get('file_structure', [])[:5])}...
+📄 **Docs:** Saved to docs/technical/
+
+💡 **Notes:** {design_result.get('design_notes', '')[:200]}..."""
+        
+        if agent:
+            # await agent.message_user("response", msg)  # Disabled for Kafka mode
+            pass
+        
+        return {
+            **state,
+            "system_design": design_result,
+            "data_structures": design_result.get("data_structures"),
+            "api_interfaces": design_result.get("api_interfaces"),
+            "call_flow": design_result.get("call_flow"),
+            "design_doc": design_doc,
+            "message": msg,
+            "action": "PLAN",
+        }
+        
+    except Exception as e:
+        logger.error(f"[design] Error: {e}", exc_info=True)
+        # Don't fail - continue to plan even if design fails
+        return {
+            **state,
+            "message": f"⚠️ Design skipped: {str(e)}",
+            "action": "PLAN",
+        }
+
+
 async def plan(state: DeveloperState, agent=None) -> DeveloperState:
-    """Create implementation plan from analysis."""
+    """Create implementation plan from analysis (MetaGPT WriteCodePlanAndChange pattern)."""
     try:
         analysis = state.get("analysis_result", {})
         
         if agent:
-            await agent.message_user("status", "📝 Đang tạo implementation plan...")
+            # await agent.message_user("status", "📝 Đang tạo implementation plan với incremental changes...")  # Disabled for Kafka mode
+            pass
+        
+        # Get existing code context for better planning
+        workspace_path = state.get("workspace_path", "")
+        existing_code = ""
+        if workspace_path:
+            try:
+                from app.agents.developer_v2.tools import get_all_workspace_files
+                existing_code = get_all_workspace_files(workspace_path, max_files=10)
+            except Exception:
+                existing_code = "No existing code"
         
         sys_prompt = _build_system_prompt("create_plan", agent)
         user_prompt = _get_prompt("create_plan", "user_prompt").format(
@@ -254,7 +501,9 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
             task_type=state.get("task_type", "feature"),
             complexity=state.get("complexity", "medium"),
             affected_files=", ".join(state.get("affected_files", [])),
+            design_doc=state.get("design_doc", "No design document"),
             acceptance_criteria="\n".join(f"- {ac}" for ac in state.get("acceptance_criteria", [])),
+            existing_code=existing_code or "No existing code",
         )
         
         messages = [
@@ -284,7 +533,8 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
 🔄 **Rollback Plan:** {plan_result.rollback_plan or 'N/A'}"""
         
         if agent:
-            await agent.message_user("response", msg)
+            # await agent.message_user("response", msg)  # Disabled for Kafka mode
+            pass
         
         return {
             **state,
@@ -324,7 +574,8 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         
         if current_step >= len(plan_steps):
             if agent:
-                await agent.message_user("response", f"✅ Implementation hoàn tất! Branch: `{state.get('branch_name', 'unknown')}`")
+                # await agent.message_user("response", f"✅ Implementation hoàn tất! Branch: `{state.get('branch_name', 'unknown')}`")  # Disabled for Kafka mode
+                pass
             return {
                 **state,
                 "message": "Implementation hoàn tất",
@@ -335,7 +586,8 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         current_file = step.get("file_path", "")
         
         if agent:
-            await agent.message_user("status", f"⚙️ Step {current_step + 1}/{len(plan_steps)}: {step.get('description', '')} [workspace: {workspace_path}]")
+            # await agent.message_user("status", f"⚙️ Step {current_step + 1}/{len(plan_steps)}: {step.get('description', '')} [workspace: {workspace_path}]")  # Disabled for Kafka mode
+            pass
         
         # Gather related code context using CocoIndex semantic search (preferred)
         # Falls back to file import if CocoIndex is not available
@@ -442,7 +694,8 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         
         msg = f"✅ Step {current_step + 1}: {code_change.description}"
         if agent:
-            await agent.message_user("response", msg)
+            # await agent.message_user("response", msg)  # Disabled for Kafka mode
+            pass
         
         return {
             **state,
@@ -468,7 +721,8 @@ async def validate(state: DeveloperState, agent=None) -> DeveloperState:
     """Validate implementation against acceptance criteria."""
     try:
         if agent:
-            await agent.message_user("status", "🧪 Đang validate implementation...")
+            # await agent.message_user("status", "🧪 Đang validate implementation...")  # Disabled for Kafka mode
+            pass
         
         sys_prompt = _build_system_prompt("validate_implementation", agent)
         user_prompt = _get_prompt("validate_implementation", "user_prompt").format(
@@ -505,7 +759,8 @@ async def validate(state: DeveloperState, agent=None) -> DeveloperState:
 **Recommendations:** {', '.join(validation.recommendations) if validation.recommendations else 'None'}"""
         
         if agent:
-            await agent.message_user("response", msg)
+            # await agent.message_user("response", msg)  # Disabled for Kafka mode
+            pass
         
         return {
             **state,
@@ -539,7 +794,8 @@ async def create_code_plan(state: DeveloperState, agent=None) -> DeveloperState:
     """
     try:
         if agent:
-            await agent.message_user("status", "📝 Đang tạo code plan chi tiết...")
+            # await agent.message_user("status", "📝 Đang tạo code plan chi tiết...")  # Disabled for Kafka mode
+            pass
         
         # Gather legacy code context
         workspace_path = state.get("workspace_path", "")
@@ -589,7 +845,8 @@ async def create_code_plan(state: DeveloperState, agent=None) -> DeveloperState:
 **Critical Path:** {' → '.join(plan_data.get('critical_path', []))}"""
         
         if agent:
-            await agent.message_user("response", msg)
+            # await agent.message_user("response", msg)  # Disabled for Kafka mode
+            pass
         
         return {
             **state,
@@ -618,7 +875,8 @@ async def summarize_code(state: DeveloperState, agent=None) -> DeveloperState:
     """
     try:
         if agent:
-            await agent.message_user("status", "🔍 Đang review code implementation...")
+            # await agent.message_user("status", "🔍 Đang review code implementation...")  # Disabled for Kafka mode
+            pass
         
         # Gather implemented code blocks
         workspace_path = state.get("workspace_path", "")
@@ -667,7 +925,8 @@ async def summarize_code(state: DeveloperState, agent=None) -> DeveloperState:
 **Reason:** {summary_data.get('reason', 'All checks passed')}"""
             
             if agent:
-                await agent.message_user("response", msg)
+                # await agent.message_user("response", msg)  # Disabled for Kafka mode
+                pass
             
             return {
                 **state,
@@ -689,7 +948,8 @@ async def summarize_code(state: DeveloperState, agent=None) -> DeveloperState:
 Proceeding with current implementation."""
                 
                 if agent:
-                    await agent.message_user("response", msg)
+                    # await agent.message_user("response", msg)  # Disabled for Kafka mode
+                    pass
                 
                 return {
                     **state,
@@ -714,7 +974,8 @@ Proceeding with current implementation."""
 Returning to implementation for fixes..."""
             
             if agent:
-                await agent.message_user("response", msg)
+                # await agent.message_user("response", msg)  # Disabled for Kafka mode
+                pass
             
             # Store error logs for next implementation round
             error_logs = f"Previous review issues:\n{summary_data.get('reason', '')}\n"
@@ -764,7 +1025,8 @@ async def clarify(state: DeveloperState, agent=None) -> DeveloperState:
         logger.info(f"[clarify] Asking for clarification")
         
         if agent:
-            await agent.message_user("response", question)
+            # await agent.message_user("response", question)  # Disabled for Kafka mode
+            pass
         
         return {
             **state,
@@ -776,7 +1038,8 @@ async def clarify(state: DeveloperState, agent=None) -> DeveloperState:
         logger.error(f"[clarify] Error: {e}", exc_info=True)
         default_msg = "🤔 Mình cần thêm thông tin về story này. Bạn có thể mô tả chi tiết hơn không?"
         if agent:
-            await agent.message_user("response", default_msg)
+            # await agent.message_user("response", default_msg)  # Disabled for Kafka mode
+            pass
         return {
             **state,
             "message": default_msg,
@@ -791,7 +1054,8 @@ async def respond(state: DeveloperState, agent=None) -> DeveloperState:
         existing_msg = state.get("message", "")
         if existing_msg and len(existing_msg) > 100:
             if agent:
-                await agent.message_user("response", existing_msg)
+                # await agent.message_user("response", existing_msg)  # Disabled for Kafka mode
+                pass
             return {**state, "action": "RESPOND"}
         
         # Generate conversational response using LLM
@@ -813,7 +1077,8 @@ async def respond(state: DeveloperState, agent=None) -> DeveloperState:
         logger.info(f"[respond] Generated response: {msg[:100]}...")
         
         if agent:
-            await agent.message_user("response", msg)
+            # await agent.message_user("response", msg)  # Disabled for Kafka mode
+            pass
         
         return {**state, "message": msg, "action": "RESPOND"}
         
@@ -821,7 +1086,8 @@ async def respond(state: DeveloperState, agent=None) -> DeveloperState:
         logger.error(f"[respond] Error: {e}", exc_info=True)
         fallback_msg = state.get("message") or "Mình đã nhận được tin nhắn của bạn! 👋"
         if agent:
-            await agent.message_user("response", fallback_msg)
+            # await agent.message_user("response", fallback_msg)  # Disabled for Kafka mode
+            pass
         return {**state, "message": fallback_msg, "action": "RESPOND"}
 
 
@@ -858,7 +1124,8 @@ async def merge_to_main(state: DeveloperState, agent=None) -> DeveloperState:
         
         if "conflict" in merge_result.lower() or "error" in merge_result.lower():
             if agent:
-                await agent.message_user("status", f"⚠️ Merge conflict: {merge_result}")
+                # await agent.message_user("status", f"⚠️ Merge conflict: {merge_result}")  # Disabled for Kafka mode
+                pass
             return {
                 **state,
                 "merged": False,
@@ -866,7 +1133,8 @@ async def merge_to_main(state: DeveloperState, agent=None) -> DeveloperState:
             }
         
         if agent:
-            await agent.message_user("status", f"✅ Merged `{branch_name}` vào main")
+            # await agent.message_user("status", f"✅ Merged `{branch_name}` vào main")  # Disabled for Kafka mode
+            pass
         
         return {
             **state,
@@ -876,7 +1144,8 @@ async def merge_to_main(state: DeveloperState, agent=None) -> DeveloperState:
     except Exception as e:
         logger.error(f"[merge_to_main] Error: {e}", exc_info=True)
         if agent:
-            await agent.message_user("status", f"⚠️ Merge failed: {str(e)}")
+            # await agent.message_user("status", f"⚠️ Merge failed: {str(e)}")  # Disabled for Kafka mode
+            pass
         return {
             **state,
             "merged": False,
@@ -926,7 +1195,8 @@ async def cleanup_workspace(state: DeveloperState, agent=None) -> DeveloperState
                 logger.warning(f"[cleanup_workspace] CocoIndex cleanup failed: {idx_err}")
         
         if agent:
-            await agent.message_user("status", "🧹 Workspace đã được dọn dẹp")
+            # await agent.message_user("status", "🧹 Workspace đã được dọn dẹp")  # Disabled for Kafka mode
+            pass
         
         return {
             **state,
@@ -965,7 +1235,8 @@ async def code_review(state: DeveloperState, agent=None) -> DeveloperState:
             return {**state, "code_review_passed": True}
         
         if agent:
-            await agent.message_user("status", f"🔍 Code Review (iteration {iteration + 1}/{k})")
+            # await agent.message_user("status", f"🔍 Code Review (iteration {iteration + 1}/{k})")  # Disabled for Kafka mode
+            pass
         
         review_results = []
         all_passed = True
@@ -1027,10 +1298,12 @@ async def code_review(state: DeveloperState, agent=None) -> DeveloperState:
                 
                 issues = review.get("issues", [])
                 if agent and issues:
-                    await agent.message_user("status", f"⚠️ Review issues in {file_path}: {', '.join(issues[:2])}")
+                    # await agent.message_user("status", f"⚠️ Review issues in {file_path}: {', '.join(issues[:2])}")  # Disabled for Kafka mode
+                    pass
             else:
                 if agent:
-                    await agent.message_user("status", f"✅ {file_path}: LGTM")
+                    # await agent.message_user("status", f"✅ {file_path}: LGTM")  # Disabled for Kafka mode
+                    pass
         
         new_iteration = iteration + 1
         
@@ -1046,9 +1319,11 @@ async def code_review(state: DeveloperState, agent=None) -> DeveloperState:
         
         if agent:
             if all_passed:
-                await agent.message_user("response", "✅ Code review passed! All files LGTM")
+                # await agent.message_user("response", "✅ Code review passed! All files LGTM")  # Disabled for Kafka mode
+                pass
             else:
-                await agent.message_user("response", f"⚠️ Code review completed after {new_iteration} iterations")
+                # await agent.message_user("response", f"⚠️ Code review completed after {new_iteration} iterations")  # Disabled for Kafka mode
+                pass
         
         return {
             **state,
@@ -1084,14 +1359,25 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
             }
         
         if agent:
-            await agent.message_user("status", "🧪 Running tests...")
+            # await agent.message_user("status", "🧪 Running tests...")  # Disabled for Kafka mode
+            pass
         
         from app.agents.developer_v2.tools import (
             detect_test_command,
             execute_command_async,
             find_test_file,
             get_markdown_code_block_type,
+            install_dependencies,
         )
+        
+        # Install dependencies first (MetaGPT RunCode pattern)
+        try:
+            deps_result = await install_dependencies(workspace_path)
+            if deps_result and agent:
+                # await agent.message_user("status", "📦 Dependencies installed")  # Disabled for Kafka mode
+                pass
+        except Exception as deps_err:
+            logger.warning(f"[run_code] Dependency install failed: {deps_err}")
         
         # Detect and run tests
         test_cmd = state.get("test_command") or detect_test_command(workspace_path)
@@ -1168,9 +1454,11 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         
         if agent:
             if run_status == "PASS":
-                await agent.message_user("response", f"✅ Tests passed! {analysis.get('summary', '')}")
+                # await agent.message_user("response", f"✅ Tests passed! {analysis.get('summary', '')}")  # Disabled for Kafka mode
+                pass
             else:
-                await agent.message_user("status", f"❌ Tests failed: {analysis.get('summary', '')[:100]}")
+                # await agent.message_user("status", f"❌ Tests failed: {analysis.get('summary', '')[:100]}")  # Disabled for Kafka mode
+                pass
         
         return {
             **state,
@@ -1219,7 +1507,8 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
         if debug_count >= max_debug:
             logger.warning(f"[debug_error] Max debug attempts ({max_debug}) reached")
             if agent:
-                await agent.message_user("status", f"⚠️ Reached max debug attempts ({max_debug})")
+                # await agent.message_user("status", f"⚠️ Reached max debug attempts ({max_debug})")  # Disabled for Kafka mode
+                pass
             return state
         
         file_to_fix = run_result.get("file_to_fix", "")
@@ -1233,7 +1522,8 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
             return {**state, "debug_count": debug_count + 1}
         
         if agent:
-            await agent.message_user("status", f"🔧 Debugging {file_to_fix} (attempt {debug_count + 1}/{max_debug})")
+            # await agent.message_user("status", f"🔧 Debugging {file_to_fix} (attempt {debug_count + 1}/{max_debug})")  # Disabled for Kafka mode
+            pass
         
         from app.agents.developer_v2.tools import get_markdown_code_block_type, find_test_file
         
@@ -1299,7 +1589,8 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
                 logger.info(f"[debug_error] Wrote fixed code to {file_to_fix}")
                 
                 if agent:
-                    await agent.message_user("status", f"✏️ Fixed {file_to_fix}: {debug_result.get('fix_description', '')[:50]}")
+                    # await agent.message_user("status", f"✏️ Fixed {file_to_fix}: {debug_result.get('fix_description', '')[:50]}")  # Disabled for Kafka mode
+                    pass
             except Exception as e:
                 logger.error(f"[debug_error] Failed to write fixed code: {e}")
         

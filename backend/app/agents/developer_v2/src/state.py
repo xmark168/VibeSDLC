@@ -3,7 +3,7 @@
 from typing import TypedDict, Literal, Any, List, Optional, Dict
 
 
-Action = Literal["ANALYZE", "PLAN", "IMPLEMENT", "VALIDATE", "CLARIFY", "RESPOND", "CODE_PLAN", "SUMMARIZE"]
+Action = Literal["ANALYZE", "DESIGN", "PLAN", "IMPLEMENT", "VALIDATE", "CLARIFY", "RESPOND", "CODE_PLAN", "SUMMARIZE"]
 TaskType = Literal["feature", "bugfix", "refactor", "enhancement", "documentation"]
 Complexity = Literal["low", "medium", "high"]
 
@@ -85,8 +85,14 @@ class DeveloperState(TypedDict, total=False):
     revision_count: int
     max_revisions: int
     
-    # Design document reference
-    design_doc: Optional[str]
+    # ==========================================================================
+    # System Design (MetaGPT Architect pattern)
+    # ==========================================================================
+    system_design: Optional[Dict[str, Any]]  # Full design document
+    data_structures: Optional[str]  # Class/interface definitions (mermaid)
+    api_interfaces: Optional[str]  # API design
+    call_flow: Optional[str]  # Sequence diagram (mermaid)
+    design_doc: Optional[str]  # Rendered design doc
     task_doc: Optional[str]
     
     # ==========================================================================

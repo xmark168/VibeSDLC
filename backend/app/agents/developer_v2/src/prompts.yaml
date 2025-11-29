@@ -134,6 +134,62 @@ tasks:
       {{"task_type": "...", "complexity": "...", "estimated_hours": N, "summary": "...", "affected_files": [...], "dependencies": [...], "risks": [...], "suggested_approach": "..."}}
 
   # ---------------------------------------------------------------------------
+  # DESIGN - System design before implementation (MetaGPT Architect pattern)
+  # ---------------------------------------------------------------------------
+  system_design:
+    system_prompt: |
+      {shared_context.agent_identity}
+      
+      ---
+      
+      # SYSTEM DESIGN TASK
+      
+      Bạn là Software Architect. Nhiệm vụ là thiết kế system design trước khi implement.
+      
+      ## Design Components
+      1. **Data Structures & Interfaces** - Classes, interfaces, type definitions
+      2. **API Design** - Endpoints, methods, parameters
+      3. **Program Call Flow** - How components interact (sequence)
+      
+      ## Design Principles
+      - Keep it simple and modular
+      - Use appropriate design patterns
+      - Consider scalability and maintainability
+      - Follow existing project conventions
+      
+      ## Output Format
+      - Data structures in mermaid classDiagram format
+      - Call flow in mermaid sequenceDiagram format
+      - Clear interface definitions
+
+    user_prompt: |
+      # STORY ANALYSIS
+      **Title:** {story_title}
+      **Summary:** {analysis_summary}
+      **Task Type:** {task_type}
+      **Complexity:** {complexity}
+      
+      # REQUIREMENTS
+      {story_content}
+      
+      # ACCEPTANCE CRITERIA
+      {acceptance_criteria}
+      
+      # EXISTING CODE CONTEXT
+      {existing_context}
+      
+      ---
+      
+      Design the system architecture. Return ONLY valid JSON:
+      {{
+        "data_structures": "```mermaid\\nclassDiagram\\n  class ClassName {{\\n    +attribute: type\\n    +method(): returnType\\n  }}\\n```",
+        "api_interfaces": "Interface definitions and method signatures",
+        "call_flow": "```mermaid\\nsequenceDiagram\\n  participant A\\n  participant B\\n  A->>B: method()\\n```",
+        "design_notes": "Key design decisions and rationale",
+        "file_structure": ["src/component.tsx", "src/types.ts"]
+      }}
+
+  # ---------------------------------------------------------------------------
   # PLAN - Create implementation plan
   # ---------------------------------------------------------------------------
   create_plan:
@@ -142,9 +198,9 @@ tasks:
       
       ---
       
-      # PLANNING TASK
+      # PLANNING TASK (MetaGPT WriteCodePlanAndChange pattern)
       
-      Tạo implementation plan chi tiết cho story đã analyze.
+      Tạo implementation plan chi tiết với incremental changes ở dạng git diff.
       
       ## Good Plan Characteristics
       - Các bước nhỏ, cụ thể, có thể verify
@@ -152,6 +208,7 @@ tasks:
       - Mỗi bước có estimate time
       - Include testing steps
       - Consider rollback
+      - **Incremental Change**: Viết code draft với git diff format
       
       ## Step Types
       - **create**: Tạo file/component mới
@@ -159,6 +216,15 @@ tasks:
       - **delete**: Xóa code không cần
       - **test**: Viết/chạy tests
       - **config**: Update configuration
+      
+      ## Incremental Change Format (Git Diff)
+      Use `+` to indicate additions and `-` to indicate deletions:
+      ```diff
+      --- Old/file.py
+      +++ New/file.py
+      +new code line
+      -old code line to remove
+      ```
 
     user_prompt: |
       # STORY ANALYSIS
@@ -167,13 +233,34 @@ tasks:
       **Complexity:** {complexity}
       **Affected Files:** {affected_files}
       
+      # SYSTEM DESIGN
+      {design_doc}
+      
       # ACCEPTANCE CRITERIA
       {acceptance_criteria}
       
+      # EXISTING CODE
+      {existing_code}
+      
       ---
       
-      Create a detailed implementation plan. Return ONLY valid JSON:
-      {{"story_summary": "...", "steps": [{{"order": 1, "description": "...", "file_path": "...", "action": "create"|"modify"|"delete"|"test"|"config", "estimated_minutes": N, "dependencies": []}}], "total_estimated_hours": N, "critical_path": [1,2,3], "rollback_plan": "..."}}
+      Create a detailed implementation plan with incremental changes. Return ONLY valid JSON:
+      {{
+        "story_summary": "...", 
+        "development_plan": [
+          "Step 1: Enhance functionality of X by...",
+          "Step 2: Update codebase to incorporate..."
+        ],
+        "steps": [
+          {{"order": 1, "description": "...", "file_path": "...", "action": "create"|"modify", "estimated_minutes": N, "dependencies": []}}
+        ],
+        "incremental_changes": [
+          "```diff\\n--- Old/file.py\\n+++ New/file.py\\n+new code\\n```"
+        ],
+        "total_estimated_hours": N, 
+        "critical_path": [1,2,3], 
+        "rollback_plan": "..."
+      }}
 
   # ---------------------------------------------------------------------------
   # IMPLEMENT - Generate code changes (MetaGPT-inspired)

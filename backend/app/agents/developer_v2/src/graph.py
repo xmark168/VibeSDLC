@@ -7,7 +7,7 @@ from langgraph.graph import StateGraph, END
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.nodes import (
-    router, setup_workspace, analyze, plan, implement, validate, clarify, respond,
+    router, setup_workspace, analyze, design, plan, implement, validate, clarify, respond,
     merge_to_main, cleanup_workspace, code_review, run_code, debug_error
 )
 
@@ -152,6 +152,7 @@ class DeveloperGraph:
         g.add_node("router", partial(router, agent=agent))
         g.add_node("setup_workspace", partial(setup_workspace, agent=agent))
         g.add_node("analyze", partial(analyze, agent=agent))
+        g.add_node("design", partial(design, agent=agent))  # MetaGPT Architect pattern
         g.add_node("plan", partial(plan, agent=agent))
         g.add_node("implement", partial(implement, agent=agent))
         g.add_node("validate", partial(validate, agent=agent))
@@ -172,8 +173,9 @@ class DeveloperGraph:
         # After workspace setup, route to actual work
         g.add_conditional_edges("setup_workspace", route_after_workspace)
         
-        # Work flow edges
-        g.add_edge("analyze", "plan")
+        # Work flow edges (MetaGPT pattern: analyze → design → plan → implement)
+        g.add_edge("analyze", "design")
+        g.add_edge("design", "plan")
         g.add_edge("plan", "implement")
         
         # After implement: continue or go to code review
