@@ -454,11 +454,17 @@ async def update_prd(state: BAState, agent=None) -> dict:
         logger.warning("[BA] No existing PRD to update, creating new one")
         return await generate_prd(state, agent)
     
+    # Get conversation context for memory
+    conversation_context = state.get("conversation_context", "")
+    if conversation_context:
+        logger.info(f"[BA] Using conversation context for PRD update: {len(conversation_context)} chars")
+    
     system_prompt = _sys_prompt(agent, "update_prd")
     user_prompt = _user_prompt(
         "update_prd",
         existing_prd=json.dumps(existing_prd, ensure_ascii=False, indent=2),
-        user_message=state["user_message"]
+        user_message=state["user_message"],
+        conversation_context=conversation_context
     )
     
     try:

@@ -341,15 +341,23 @@ tasks:
       - Update version number if significant changes
 
     user_prompt: |
-      Current PRD:
+      # CONVERSATION CONTEXT
+      {conversation_context}
+      
+      # CURRENT PRD
       ```json
       {existing_prd}
       ```
       
-      User update request: "{user_message}"
+      # USER REQUEST
+      "{user_message}"
       
       # YOUR TASK
-      Update the PRD and provide change summary.
+      Update the PRD based on user request.
+      
+      **IMPORTANT:**
+      - If user mentions "vừa xóa/thêm/sửa" (recently deleted/added/modified), check the conversation context above
+      - If user asks to restore a deleted feature, find its details in the conversation history
       
       Return ONLY valid JSON:
       ```json
