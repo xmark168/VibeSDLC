@@ -1,7 +1,6 @@
 """Developer V2 Graph Nodes - ReAct Agents with Multi-Tool Support."""
 
 import logging
-import os
 import re
 from pathlib import Path
 from langchain_openai import ChatOpenAI
@@ -51,13 +50,15 @@ def _clean_json(text: str) -> str:
     return match.group(1).strip() if match else text.strip()
 
 
-def _extract_tool_args(result: dict, tool_name: str) -> dict:
-    """Extract tool call arguments from agent result messages."""
-    for msg in result.get("messages", []):
-        if hasattr(msg, 'tool_calls') and msg.tool_calls:
-            for tool_call in msg.tool_calls:
-                if tool_call.get("name") == tool_name:
-                    return tool_call.get("args", {})
+def _extract_json_response(result: dict) -> dict:
+    """Extract JSON from agent's final AI message."""
+    import json
+    for msg in reversed(result.get("messages", [])):
+        if hasattr(msg, 'content') and msg.content:
+            try:
+                return json.loads(_clean_json(msg.content))
+            except:
+                continue
     return {}
 
 
@@ -102,50 +103,7 @@ def _build_system_prompt(task: str, agent=None) -> str:
     
     return prompt
 
-def _save_design_docs(workspace_path: str, design_result: dict, design_doc: str, story_title: str):
-    """Save design documents to docs/technical folder."""
-    import re
-    from datetime import datetime
-    
-    docs_dir = Path(workspace_path) / "docs" / "technical"
-    docs_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Clean story title for filename
-    safe_title = re.sub(r'[^\w\s-]', '', story_title).strip().replace(' ', '_')[:30]
-    timestamp = datetime.now().strftime("%Y%m%d")
-    
-    try:
-        # Save main design document
-        design_file = docs_dir / f"design_{safe_title}_{timestamp}.md"
-        design_file.write_text(design_doc, encoding='utf-8')
-        logger.info(f"[design] Saved design doc: {design_file}")
-        
-        # Save mermaid class diagram if present
-        data_structures = design_result.get("data_structures", "")
-        if "mermaid" in data_structures.lower() or "classDiagram" in data_structures:
-            mermaid_file = docs_dir / f"class_diagram_{safe_title}_{timestamp}.mmd"
-            # Extract just the mermaid content
-            mermaid_content = re.sub(r'```mermaid\s*|\s*```', '', data_structures).strip()
-            mermaid_file.write_text(mermaid_content, encoding='utf-8')
-            logger.info(f"[design] Saved class diagram: {mermaid_file}")
-        
-        # Save sequence diagram if present
-        call_flow = design_result.get("call_flow", "")
-        if "mermaid" in call_flow.lower() or "sequenceDiagram" in call_flow:
-            seq_file = docs_dir / f"sequence_diagram_{safe_title}_{timestamp}.mmd"
-            seq_content = re.sub(r'```mermaid\s*|\s*```', '', call_flow).strip()
-            seq_file.write_text(seq_content, encoding='utf-8')
-            logger.info(f"[design] Saved sequence diagram: {seq_file}")
-        
-        # Save API interfaces if present
-        api_interfaces = design_result.get("api_interfaces", "")
-        if api_interfaces and len(api_interfaces) > 50:
-            api_file = docs_dir / f"api_interfaces_{safe_title}_{timestamp}.ts"
-            api_file.write_text(api_interfaces, encoding='utf-8')
-            logger.info(f"[design] Saved API interfaces: {api_file}")
-            
-    except Exception as e:
-        logger.warning(f"[design] Failed to save design docs: {e}")
+
 
 async def router(state: DeveloperState, agent=None) -> DeveloperState:
     """Route story to appropriate processing node using ReAct agent.
@@ -193,8 +151,8 @@ async def router(state: DeveloperState, agent=None) -> DeveloperState:
             config=_cfg(state, "router")
         )
         
-        # Extract tool call arguments
-        args = _extract_tool_args(result, "submit_routing_decision")
+        # Extract JSON from agent response
+        args = _extract_json_response(result)
         action = args.get("action", "ANALYZE")
         task_type = args.get("task_type", "feature")
         complexity = args.get("complexity", "medium")
@@ -315,9 +273,8 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
 
 
 async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
-    """Analyze user story using ReAct agent.
-    
-    Tools: [read_file, search_codebase, web_search]
+    """
+    Analyze user story using ReAct agent.
     """
     try:
         workspace_path = state.get("workspace_path")
@@ -384,7 +341,7 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
 async def design(state: DeveloperState, agent=None) -> DeveloperState:
     """Generate system design using ReAct agent (MetaGPT Architect pattern).
     
-    Tools: [read_file, list_directory, search_codebase]
+    Tools: [read_file, list_directory, search_codebase, write_file]
     """
     try:
         analysis = state.get("analysis_result", {})
@@ -413,7 +370,7 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
         task_id = state.get("task_id") or state.get("story_id")
         _setup_tool_context(workspace_path, project_id, task_id)
         
-        tools = [read_file_safe, list_directory_safe, semantic_code_search]
+        tools = [read_file_safe, list_directory_safe, write_file_safe, semantic_code_search]
         
         # Create agent
         agent = create_agent(
@@ -429,7 +386,7 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
         )
         
         # Extract from tool call
-        args = _extract_tool_args(result, "submit_system_design")
+        args = _extract_json_response(result)
         if not args:
             raise RuntimeError("Agent did not return design")
         
@@ -461,9 +418,7 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
 {chr(10).join(f'- {f}' for f in design_result.get('file_structure', []))}
 """
         
-        # Save design documents
-        if workspace_path:
-            _save_design_docs(workspace_path, design_result, design_doc, state.get("story_title", "design"))
+
         
         return {
             **state,
@@ -558,7 +513,7 @@ IMPORTANT: Generate file_path values that match the existing project structure a
         )
         
         # Extract tool call arguments
-        args = _extract_tool_args(result, "submit_implementation_plan")
+        args = _extract_json_response(result)
         story_summary = args.get("story_summary", state.get("story_title", "Implementation"))
         steps = args.get("steps", [])
         total_estimated_hours = args.get("total_estimated_hours", 0)
@@ -810,7 +765,7 @@ Conventions: {project_structure.get('conventions', '')}
         )
         
         # Extract from tool call
-        args = _extract_tool_args(result, "submit_code_change")
+        args = _extract_json_response(result)
         if not args:
             raise RuntimeError(f"Agent did not return code for step: {step.get('description', '')}")
         

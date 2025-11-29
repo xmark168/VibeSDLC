@@ -7,7 +7,7 @@ from langgraph.graph import StateGraph, END
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.nodes import (
-    router, setup_workspace, analyze, design, plan, implement, clarify,
+    router, setup_workspace, analyze, design, plan, implement, clarify, respond,
     merge_to_main, cleanup_workspace, code_review, run_code, debug_error, summarize_code
 )
 
@@ -232,6 +232,7 @@ class DeveloperGraph:
         g.add_node("merge_to_main", partial(merge_to_main, agent=agent))
         g.add_node("cleanup_workspace", partial(cleanup_workspace, agent=agent))
         g.add_node("clarify", partial(clarify, agent=agent))
+        g.add_node("respond", partial(respond, agent=agent))
         
         # Entry point
         g.set_entry_point("router")

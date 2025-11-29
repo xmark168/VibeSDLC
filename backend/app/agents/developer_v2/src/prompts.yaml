@@ -107,7 +107,7 @@ tasks:
       - Has plan: {has_plan}
       - Has implementation: {has_implementation}
 
-      Decide the next action and call submit_routing_decision.
+      Decide the next action based on current state.
 
     user_prompt: |
       # USER STORY
@@ -156,7 +156,7 @@ tasks:
       - **High**: > 8 hours, cross-cutting, complex logic
 
     input_template: |
-      Analyze this story and call submit_story_analysis:
+      Analyze this story:
 
       Story: {story_title}
 
@@ -213,7 +213,7 @@ tasks:
       - Clear interface definitions
 
     input_template: |
-      Create a system design and call submit_system_design:
+      Create a system design for this story:
 
       Story: {story_title}
       Summary: {analysis_summary}
@@ -230,6 +230,8 @@ tasks:
       {existing_context}
 
       Create design with: data_structures (mermaid), api_interfaces, call_flow (mermaid), design_notes, file_structure.
+      
+      IMPORTANT: Save the design document to docs/technical/design.md using write_file tool.
 
     user_prompt: |
       # STORY ANALYSIS
@@ -296,7 +298,7 @@ tasks:
       ```
 
     input_template: |
-      Create an implementation plan and call submit_implementation_plan:
+      Create an implementation plan:
 
       Story: {story_title}
       Summary: {analysis_summary}
@@ -393,7 +395,7 @@ tasks:
       4. Follow PROJECT GUIDELINES exactly - match existing code patterns
       5. Include error handling for edge cases
       
-      Call submit_code_change with the complete code.
+      Use write_file tool to save the code.
 
     user_prompt: |
       # Context
