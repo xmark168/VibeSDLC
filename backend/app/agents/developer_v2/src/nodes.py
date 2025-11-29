@@ -7,7 +7,7 @@ from pathlib import Path
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_tavily import TavilySearch
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import (
@@ -33,48 +33,6 @@ _PROMPTS = load_prompts_yaml(Path(__file__).parent / "prompts.yaml")
 # Speed optimization: Use gpt-4o-mini for fast operations (router, clarify, respond)
 _fast_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1, timeout=20)
 _code_llm = ChatOpenAI(model="gpt-4.1", temperature=0.2, timeout=120)
-
-
-# =============================================================================
-# REACT AGENT FACTORY
-# Creates ReAct agents with multiple tools for autonomous reasoning
-# =============================================================================
-
-def _create_react_agent(
-    llm,
-    tools: list,
-    system_prompt: str,
-    max_iterations: int = 10
-):
-    """Create a ReAct agent with multiple tools.
-    
-    ReAct pattern: Reason → Act → Observe → Repeat
-    Agent can use multiple tools to explore and complete task.
-    
-    Args:
-        llm: Language model
-        tools: List of tools agent can use
-        system_prompt: System prompt with instructions
-        max_iterations: Max tool call iterations (default: 10)
-    """
-    full_prompt = system_prompt + """
-
-## Tool Usage Instructions
-You have access to multiple tools. Use them strategically:
-1. Use read_file/list_directory to understand existing code
-2. Use search_codebase to find relevant patterns and examples
-3. Use web_search for best practices when needed
-4. Always call the submit_* tool to finalize your result
-
-IMPORTANT: You MUST call the appropriate submit_* tool to complete your task.
-Do not respond with plain text without calling the submit tool."""
-
-    return create_react_agent(
-        model=llm,
-        tools=tools,
-        prompt=full_prompt,
-        debug=False
-    )
 
 
 # =============================================================================
@@ -225,12 +183,15 @@ async def router(state: DeveloperState, agent=None) -> DeveloperState:
         
         tools = [semantic_code_search, submit_routing_decision]
         
-        # Create ReAct agent
-        system_prompt = _build_system_prompt("routing_decision")
-        react_agent = _create_react_agent(_fast_llm, tools, system_prompt)
+        # Create agent
+        agent = create_agent(
+            model=_fast_llm,
+            tools=tools,
+            system_prompt=_build_system_prompt("routing_decision")
+        )
         
         # Invoke agent
-        result = await react_agent.ainvoke(
+        result = await agent.ainvoke(
             {"messages": [{"role": "user", "content": input_text}]},
             config=_cfg(state, "router")
         )
@@ -379,9 +340,12 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
         
         tools = [read_file_safe, semantic_code_search, TavilySearch(max_results=3), submit_story_analysis]
         
-        # Create ReAct agent
-        system_prompt = _build_system_prompt("analyze_story")
-        agent = _create_react_agent(_code_llm, tools, system_prompt)
+        # Create agent
+        agent = create_agent(
+            model=_code_llm,
+            tools=tools,
+            system_prompt=_build_system_prompt("analyze_story")
+        )
 
         result = await agent.ainvoke(
             {"messages": [{"role": "user", "content": input_text}]},
@@ -454,12 +418,15 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
         
         tools = [read_file_safe, list_directory_safe, semantic_code_search, submit_system_design]
         
-        # Create ReAct agent
-        system_prompt = _build_system_prompt("system_design")
-        react_agent = _create_react_agent(_code_llm, tools, system_prompt)
+        # Create agent
+        agent = create_agent(
+            model=_code_llm,
+            tools=tools,
+            system_prompt=_build_system_prompt("system_design")
+        )
         
         # Invoke agent
-        result = await react_agent.ainvoke(
+        result = await agent.ainvoke(
             {"messages": [{"role": "user", "content": input_text}]},
             config=_cfg(state, "design")
         )
@@ -580,12 +547,15 @@ IMPORTANT: Generate file_path values that match the existing project structure a
         
         tools = [read_file_safe, list_directory_safe, semantic_code_search, submit_implementation_plan]
         
-        # Create ReAct agent
-        system_prompt = _build_system_prompt("create_plan")
-        react_agent = _create_react_agent(_code_llm, tools, system_prompt)
+        # Create agent
+        agent = create_agent(
+            model=_code_llm,
+            tools=tools,
+            system_prompt=_build_system_prompt("create_plan")
+        )
         
         # Invoke agent
-        result = await react_agent.ainvoke(
+        result = await agent.ainvoke(
             {"messages": [{"role": "user", "content": input_text}]},
             config=_cfg(state, "plan")
         )
@@ -829,12 +799,15 @@ Conventions: {project_structure.get('conventions', '')}
             execute_shell, semantic_code_search, submit_code_change
         ]
         
-        # Create ReAct agent
-        system_prompt = _build_system_prompt("implement_step")
-        react_agent = _create_react_agent(_code_llm, tools, system_prompt)
+        # Create agent
+        agent = create_agent(
+            model=_code_llm,
+            tools=tools,
+            system_prompt=_build_system_prompt("implement_step")
+        )
         
         # Invoke agent
-        result = await react_agent.ainvoke(
+        result = await agent.ainvoke(
             {"messages": [{"role": "user", "content": input_text}]},
             config=_cfg(state, "implement")
         )
@@ -1905,11 +1878,15 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
         
         tools = [read_file_safe, write_file_safe, execute_shell, semantic_code_search]
         
-        # Create ReAct agent for debugging
-        react_agent = _create_react_agent(_code_llm, tools, sys_prompt)
+        # Create agent for debugging
+        agent = create_agent(
+            model=_code_llm,
+            tools=tools,
+            system_prompt=sys_prompt
+        )
         
         # Invoke agent
-        result = await react_agent.ainvoke(
+        result = await agent.ainvoke(
             {"messages": [{"role": "user", "content": user_prompt}]},
             config=_cfg(state, "debug_error")
         )
