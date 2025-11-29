@@ -1,5 +1,6 @@
 import type React from "react";
 import { useState, useRef, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -84,6 +85,7 @@ export function ChatPanelWS({
   const [pendingQuestion, setPendingQuestion] = useState<Message | null>(null);
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mentionDropdownRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -278,6 +280,21 @@ export function ChatPanelWS({
       }, 100)
     }
   }, [uniqueMessages])
+
+  // Detect stories_approved message and refresh Kanban board
+  const lastApprovedMsgIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const latestApproved = uniqueMessages.find(
+      msg => msg.structured_data?.message_type === 'stories_approved'
+    )
+    
+    // Only refresh if it's a NEW approval message we haven't processed yet
+    if (latestApproved && latestApproved.id !== lastApprovedMsgIdRef.current && projectId) {
+      console.log('[ChatPanel] Stories approved, refreshing Kanban board...')
+      lastApprovedMsgIdRef.current = latestApproved.id
+      queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+    }
+  }, [uniqueMessages, projectId, queryClient])
 
   // Initial scroll to bottom on mount
   useEffect(() => {
@@ -887,10 +904,10 @@ export function ChatPanelWS({
                         }
                       }}
                       onApprove={() => {
-                        wsSendMessage("Phê duyệt Epics & Stories, thêm vào backlog")
+                        wsSendMessage("Phê duyệt Stories")
                       }}
                       onEdit={(feedback) => {
-                        wsSendMessage(`Chỉnh sửa Epics/Stories: ${feedback}`)
+                        wsSendMessage(`Chỉnh sửa Stories: ${feedback}`)
                       }}
                     />
                   )}

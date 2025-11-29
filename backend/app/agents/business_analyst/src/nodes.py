@@ -9,6 +9,8 @@ from pathlib import Path
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
+from sqlmodel import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from .state import BAState
 from .prompts import (
@@ -24,6 +26,9 @@ from app.agents.core.prompt_utils import (
     build_system_prompt as _build_system_prompt,
     build_user_prompt as _build_user_prompt,
 )
+from app.core.db import engine
+from app.models import AgentQuestion, Epic, Story, StoryStatus, StoryType, EpicStatus, ArtifactType
+from app.services.artifact_service import ArtifactService
 
 logger = logging.getLogger(__name__)
 
@@ -163,11 +168,6 @@ async def ask_one_question(state: BAState, agent=None) -> dict:
         )
         
         # Save interview state to question's task_context for resume
-        from sqlmodel import Session
-        from sqlalchemy.orm.attributes import flag_modified
-        from app.core.db import engine
-        from app.models import AgentQuestion
-        
         with Session(engine) as session:
             question = session.get(AgentQuestion, question_id)
             if question:
@@ -258,11 +258,6 @@ async def ask_batch_questions(state: BAState, agent=None) -> dict:
         question_ids = await agent.ask_multiple_clarification_questions(batch_questions)
         
         # Save interview state to the FIRST question's task_context for resume
-        from sqlmodel import Session
-        from sqlalchemy.orm.attributes import flag_modified
-        from app.core.db import engine
-        from app.models import AgentQuestion
-        
         batch_id = None
         with Session(engine) as session:
             first_question = session.get(AgentQuestion, question_ids[0])
@@ -538,11 +533,11 @@ async def extract_stories(state: BAState, agent=None) -> dict:
         all_stories = []
         for epic in epics:
             stories_in_epic = epic.get("stories", [])
-            epic_name = epic.get("name", epic.get("title", "Unknown"))
-            logger.info(f"[BA] Epic '{epic_name}' has {len(stories_in_epic)} stories")
+            epic_title = epic.get("title", epic.get("name", "Unknown"))
+            logger.info(f"[BA] Epic '{epic_title}' has {len(stories_in_epic)} stories")
             for story in stories_in_epic:
                 story["epic_id"] = epic.get("id")
-                story["epic_name"] = epic_name
+                story["epic_title"] = epic_title
                 all_stories.append(story)
         
         total_epics = len(epics)
@@ -595,10 +590,10 @@ async def update_stories(state: BAState, agent=None) -> dict:
         all_stories = []
         for epic in updated_epics:
             stories_in_epic = epic.pop("stories", [])
-            epic_name = epic.get("name", epic.get("title", "Unknown"))
+            epic_title = epic.get("title", epic.get("name", "Unknown"))
             for story in stories_in_epic:
                 story["epic_id"] = epic.get("id")
-                story["epic_name"] = epic_name
+                story["epic_title"] = epic_title
                 all_stories.append(story)
         
         logger.info(f"[BA] Updated {len(updated_epics)} epics with {len(all_stories)} stories")
@@ -615,20 +610,90 @@ async def update_stories(state: BAState, agent=None) -> dict:
 
 
 async def approve_stories(state: BAState, agent=None) -> dict:
-    """Node: Approve stories and prepare them for backlog."""
-    logger.info(f"[BA] Approving stories for backlog...")
+    """Node: Approve stories and save them to database."""
+    logger.info(f"[BA] Approving stories and saving to database...")
     
-    epics = state.get("epics", [])
-    stories = state.get("stories", [])
+    epics_data = state.get("epics", [])
+    stories_data = state.get("stories", [])
     
-    if not epics and not stories:
+    if not epics_data and not stories_data:
         return {"error": "No stories to approve"}
     
-    # Mark as approved
-    return {
-        "stories_approved": True,
-        "approval_message": f"Đã phê duyệt {len(epics)} Epics và {len(stories)} Stories. Đã thêm vào backlog dự án."
-    }
+    if not agent:
+        return {"error": "No agent context for saving to database"}
+    
+    try:
+        created_epics = []
+        created_stories = []
+        epic_id_map = {}  # Map string ID (EPIC-001) to UUID
+        
+        with Session(engine) as session:
+            # 1. Create Epics first
+            for epic_data in epics_data:
+                epic = Epic(
+                    title=epic_data.get("title", epic_data.get("name", "Unknown Epic")),
+                    description=epic_data.get("description"),
+                    domain=epic_data.get("domain"),
+                    project_id=agent.project_id,
+                    epic_status=EpicStatus.PLANNED
+                )
+                session.add(epic)
+                session.flush()  # Get the UUID
+                
+                # Map string ID to UUID
+                string_id = epic_data.get("id", "")
+                epic_id_map[string_id] = epic.id
+                created_epics.append({
+                    "id": str(epic.id),
+                    "title": epic.title,
+                    "domain": epic.domain
+                })
+                logger.info(f"[BA] Created Epic: {epic.title} (id={epic.id})")
+            
+            # 2. Create Stories linked to their Epics
+            for story_data in stories_data:
+                # Get the epic UUID from the string ID
+                epic_string_id = story_data.get("epic_id", "")
+                epic_uuid = epic_id_map.get(epic_string_id)
+                
+                # Parse acceptance criteria
+                acceptance_criteria = story_data.get("acceptance_criteria", [])
+                if isinstance(acceptance_criteria, list):
+                    acceptance_criteria = "\n".join(f"- {ac}" for ac in acceptance_criteria)
+                
+                story = Story(
+                    title=story_data.get("title", "Unknown Story"),
+                    description=story_data.get("description"),
+                    acceptance_criteria=acceptance_criteria,
+                    project_id=agent.project_id,
+                    epic_id=epic_uuid,
+                    status=StoryStatus.TODO,
+                    type=StoryType.USER_STORY
+                )
+                session.add(story)
+                session.flush()
+                
+                created_stories.append({
+                    "id": str(story.id),
+                    "title": story.title,
+                    "epic_id": str(epic_uuid) if epic_uuid else None
+                })
+                logger.info(f"[BA] Created Story: {story.title} (id={story.id})")
+            
+            session.commit()
+        
+        logger.info(f"[BA] Saved {len(created_epics)} epics and {len(created_stories)} stories to database")
+        
+        return {
+            "stories_approved": True,
+            "created_epics": created_epics,
+            "created_stories": created_stories,
+            "approval_message": f"Đã phê duyệt và thêm {len(created_epics)} Epics, {len(created_stories)} Stories vào backlog."
+        }
+        
+    except Exception as e:
+        logger.error(f"[BA] Failed to save stories to database: {e}", exc_info=True)
+        return {"error": f"Failed to save stories: {str(e)}"}
 
 
 async def analyze_domain(state: BAState, agent=None) -> dict:
@@ -678,11 +743,6 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
     # Save PRD if exists
     if state.get("prd_draft") and agent:
         try:
-            from sqlmodel import Session
-            from app.core.db import engine
-            from app.services.artifact_service import ArtifactService
-            from app.models import ArtifactType
-            
             prd_data = state["prd_draft"]
             project_name = prd_data.get("project_name", "Project")
             
@@ -735,42 +795,73 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
             logger.error(f"[BA] Failed to save PRD: {e}", exc_info=True)
             result["error"] = f"Failed to save PRD: {str(e)}"
     
-    # Save epics and stories if exist
+    # Save epics and stories if exist (only for extract_stories, not approve)
     epics_data = state.get("epics", [])
     stories_data = state.get("stories", [])
+    # Check if stories were approved (either by stories_approved flag or by presence of created_epics)
+    is_stories_approved = state.get("stories_approved", False) or bool(state.get("created_epics"))
     
-    if (epics_data or stories_data) and project_files:
+    logger.info(f"[BA] save_artifacts: epics_count={len(epics_data)}, stories_count={len(stories_data)}, is_approved={is_stories_approved}")
+    
+    # Only save markdown and send stories_created message for extract_stories (not approve)
+    if (epics_data or stories_data) and project_files and not is_stories_approved:
         try:
-            # Save with epic structure
+            # Save with epic structure to markdown
             await project_files.save_user_stories(epics_data, stories_data)
             result["stories_saved"] = True
             
             epics_count = len(epics_data)
             stories_count = len(stories_data)
-            total_points = sum(epic.get("total_story_points", 0) for epic in epics_data)
+            
+            # Also save to Artifact table for later retrieval (for approval flow)
+            if agent:
+                try:
+                    logger.info(f"[BA] Saving stories artifact for project_id={agent.project_id}")
+                    with Session(engine) as session:
+                        service = ArtifactService(session)
+                        # Store epics with their stories inside
+                        artifact_content = {
+                            "epics": epics_data,
+                            "stories": stories_data,
+                            "epics_count": epics_count,
+                            "stories_count": stories_count
+                        }
+                        artifact = service.create_artifact(
+                            project_id=agent.project_id,
+                            agent_id=agent.agent_id,
+                            agent_name=agent.name,
+                            artifact_type=ArtifactType.USER_STORIES,
+                            title="User Stories",
+                            content=artifact_content,
+                            description=f"{epics_count} epics with {stories_count} stories",
+                            save_to_file=False
+                        )
+                        result["stories_artifact_id"] = str(artifact.id)
+                        logger.info(f"[BA] Saved stories artifact: {artifact.id} for project {agent.project_id}")
+                except Exception as artifact_err:
+                    logger.error(f"[BA] Failed to save stories artifact: {artifact_err}", exc_info=True)
             
             result["summary"] = f"Extracted {epics_count} epics with {stories_count} INVEST-compliant stories"
             result["next_steps"].extend([
                 "Review epics and prioritize stories",
-                "Add stories to backlog",
-                "Estimate effort for each story"
+                "Approve to add to backlog"
             ])
             
-            # Send success message with View button
+            # Send success message with View button (pending approval)
             if agent:
                 await agent.message_user(
                     event_type="response",
-                    content=f"User Stories đã được tạo",
+                    content=f"Stories đã được tạo",
                     details={
                         "message_type": "stories_created",
                         "file_path": "docs/user-stories.md",
                         "epics_count": epics_count,
                         "stories_count": stories_count,
-                        "total_story_points": total_points
+                        "status": "pending"  # Important: pending status
                     }
                 )
             
-            logger.info(f"[BA] Saved {epics_count} epics with {stories_count} user stories")
+            logger.info(f"[BA] Saved {epics_count} epics with {stories_count} user stories (pending approval)")
             
         except Exception as e:
             logger.error(f"[BA] Failed to save stories: {e}", exc_info=True)
@@ -801,20 +892,24 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
         result["change_summary"] = state["change_summary"]
         # Card is already shown in the PRD save section above
     
-    # Stories approved - send confirmation message
+    # Stories approved - only save to DB, notify Kanban to refresh (no card)
     if state.get("stories_approved"):
         approval_message = state.get("approval_message", "Epics & Stories đã được phê duyệt")
+        created_epics = state.get("created_epics", [])
+        created_stories = state.get("created_stories", [])
+        
         result["summary"] = approval_message
         result["stories_approved"] = True
+        result["created_epics"] = created_epics
+        result["created_stories"] = created_stories
         
+        # Send simple notification to trigger Kanban refresh (no card displayed)
         if agent:
             await agent.message_user(
                 event_type="response",
                 content=f"✅ {approval_message}",
                 details={
-                    "message_type": "stories_approved",
-                    "epics_count": len(state.get("epics", [])),
-                    "stories_count": len(state.get("stories", []))
+                    "message_type": "stories_approved"  # Frontend will refresh Kanban, no card
                 }
             )
     

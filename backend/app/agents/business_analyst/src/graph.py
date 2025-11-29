@@ -34,6 +34,9 @@ def route_by_intent(state: BAState) -> Literal["interview", "prd_create", "prd_u
     existing_prd = state.get("existing_prd")
     epics = state.get("epics", [])
     
+    # Debug logging
+    logger.info(f"[BA Graph] route_by_intent called: intent={intent}, epics_count={len(epics)}, has_prd={bool(existing_prd)}")
+    
     # FORCE INTERVIEW only for prd_create without collected info
     # prd_update can proceed if we have existing PRD (user wants to edit it)
     if intent == "prd_create" and not collected_info:
