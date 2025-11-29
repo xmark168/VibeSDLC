@@ -674,6 +674,9 @@ async def approve_stories(state: BAState, agent=None) -> dict:
                 if isinstance(acceptance_criteria, list):
                     acceptance_criteria = "\n".join(f"- {ac}" for ac in acceptance_criteria)
                 
+                # Get requirements list (keep as list for JSON storage)
+                requirements = story_data.get("requirements", [])
+                
                 # Auto-increment rank for ordering
                 current_rank += 1
                 
@@ -687,6 +690,7 @@ async def approve_stories(state: BAState, agent=None) -> dict:
                     title=story_data.get("title", "Unknown Story"),
                     description=story_data.get("description"),
                     acceptance_criteria=acceptance_criteria,
+                    requirements=requirements,
                     project_id=agent.project_id,
                     epic_id=epic_uuid,
                     status=StoryStatus.TODO,

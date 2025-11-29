@@ -231,10 +231,20 @@ class ProjectFiles:
 ### Description
 {story_desc}
 
-### Acceptance Criteria
+### Requirements
 """
                 
-                # Format acceptance criteria
+                # Format requirements (for developers)
+                req_list = story.get('requirements', [])
+                if isinstance(req_list, list) and req_list:
+                    for req in req_list:
+                        md += f"- {req}\n"
+                else:
+                    md += "_No requirements defined._\n"
+                
+                md += "\n### Acceptance Criteria\n"
+                
+                # Format acceptance criteria (for QA)
                 ac_list = story.get('acceptance_criteria', [])
                 if isinstance(ac_list, list) and ac_list:
                     for ac in ac_list:
