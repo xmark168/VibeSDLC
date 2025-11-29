@@ -19,7 +19,6 @@ export interface Story {
   story_point?: number | null;
   priority?: number | null;
   dependencies: string[];
-  deadline?: string | null;
   completed_at?: string | null;
   started_at?: string | null;
   review_started_at?: string | null;

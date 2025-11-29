@@ -194,6 +194,10 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         rank: item.rank,
         assignee_id: item.assignee_id,
         reviewer_id: item.reviewer_id,
+        epic_id: item.epic_id,
+        acceptance_criteria: item.acceptance_criteria,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
         parent: item.parent ? {
           id: item.parent.id,
           content: item.parent.title,
@@ -299,6 +303,10 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         rank: item.rank,
         assignee_id: item.assignee_id,
         reviewer_id: item.reviewer_id,
+        epic_id: item.epic_id,
+        acceptance_criteria: item.acceptance_criteria,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
         parent: item.parent ? {
           id: item.parent.id,
           content: item.parent.title,

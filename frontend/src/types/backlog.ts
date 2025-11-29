@@ -15,7 +15,6 @@ export interface BacklogItem {
   rank?: number | null
   story_point?: number | null
   priority?: number | null
-  deadline?: string | null
   created_at: string
   updated_at: string
   parent?: BacklogItem | null

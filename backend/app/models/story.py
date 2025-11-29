@@ -69,7 +69,6 @@ class Story(BaseModel, table=True):
     priority: int | None = Field(default=None)
 
     dependencies: list = Field(default_factory=list, sa_column=Column(JSON))
-    deadline: datetime | None = Field(default=None)
     completed_at: datetime | None = Field(default=None)
 
     started_at: datetime | None = Field(default=None)
