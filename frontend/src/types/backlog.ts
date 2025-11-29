@@ -13,9 +13,8 @@ export interface BacklogItem {
   reviewer_id?: string | null
   assignee_id?: string | null
   rank?: number | null
-  estimate_value?: number | null
   story_point?: number | null
-  pause: boolean
+  priority?: number | null
   deadline?: string | null
   created_at: string
   updated_at: string

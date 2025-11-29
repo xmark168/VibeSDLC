@@ -86,6 +86,8 @@ shared_context:
     - title: "As a [user], I want [goal] so that [benefit]"
     - description: Detailed description
     - acceptance_criteria: List of Given/When/Then criteria
+    - priority: Priority level (1=Critical, 2=High, 3=Medium, 4=Low, 5=Nice-to-have)
+    - story_point: Estimated effort (1, 2, 3, 5, 8, 13 - Fibonacci scale)
 
 # ============================================================================
 # TASKS - Specific prompts for each LLM call type
@@ -379,6 +381,8 @@ tasks:
       - title: User story in format "As a [user], I want [goal] so that [benefit]"
       - description: Detailed description of the story
       - acceptance_criteria: List of testable criteria (Given/When/Then format)
+      - priority: Priority level (1=Critical, 2=High, 3=Medium, 4=Low, 5=Nice-to-have)
+      - story_point: Estimated effort in story points (1, 2, 3, 5, 8, 13 - Fibonacci)
       
       **Guidelines (follow INVEST principles):**
       - **I**ndependent: Each story can be developed separately
@@ -426,7 +430,9 @@ tasks:
                 "acceptance_criteria": [
                   "Given [context] when [action] then [expected result]",
                   "Given [context] when [edge case] then [handling]"
-                ]
+                ],
+                "priority": 3,
+                "story_point": 3
               }}
             ]
           }}
@@ -452,7 +458,9 @@ tasks:
                 "acceptance_criteria": [
                   "Given I am on product page when I click Add to Cart then product is added",
                   "Given product is out of stock when I click Add then I see error message"
-                ]
+                ],
+                "priority": 2,
+                "story_point": 5
               }},
               {{
                 "id": "US-002",
@@ -462,7 +470,9 @@ tasks:
                 "acceptance_criteria": [
                   "Given I have items in cart when I change quantity then total updates",
                   "Given quantity is 0 when I confirm then item is removed"
-                ]
+                ],
+                "priority": 3,
+                "story_point": 3
               }}
             ]
           }}
@@ -556,6 +566,8 @@ tasks:
       - title: "As a [user], I want [goal] so that [benefit]"
       - description: Detailed description
       - acceptance_criteria: List of Given/When/Then criteria
+      - priority: Priority level (1=Critical, 2=High, 3=Medium, 4=Low, 5=Nice-to-have)
+      - story_point: Estimated effort in story points (1, 2, 3, 5, 8, 13 - Fibonacci)
       
       **Update Guidelines:**
       - Preserve existing story IDs when possible
@@ -589,7 +601,9 @@ tasks:
                 "epic_id": "EPIC-001",
                 "title": "As a [user], I want [goal] so that [benefit]",
                 "description": "Mô tả chi tiết",
-                "acceptance_criteria": ["Given X when Y then Z"]
+                "acceptance_criteria": ["Given X when Y then Z"],
+                "priority": 3,
+                "story_point": 3
               }}
             ]
           }}

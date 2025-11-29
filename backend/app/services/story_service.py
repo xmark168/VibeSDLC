@@ -6,7 +6,7 @@ from typing import Optional, List
 from sqlmodel import Session, select, update, and_
 from sqlalchemy.sql import ColumnElement
 
-from app.models import Story, StoryStatus, StoryType, StoryPriority
+from app.models import Story, StoryStatus, StoryType
 from app.schemas.story import StoryCreate, StoryUpdate, StoryPublic
 
 
@@ -41,8 +41,8 @@ class StoryService:
             description=story_data.get("description"),
             type=story_data.get("story_type", StoryType.USER_STORY),
             status=StoryStatus.TODO,  # Default to TODO when creating
-            priority=story_data.get("priority", 3),  # Default priority
-            estimate_value=story_data.get("estimated_hours"),
+            priority=story_data.get("priority"),  # 1-5, from input
+            story_point=story_data.get("story_point"),  # Fibonacci scale
             acceptance_criteria=story_data.get("acceptance_criteria"),
             assignee_id=story_data.get("assigned_to"),
             epic_id=story_data.get("epic_id"),
@@ -53,7 +53,6 @@ class StoryService:
             labels=story_data.get("labels", []),
             business_value=story_data.get("business_value"),
             risk_level=story_data.get("risk_level"),
-            story_point=story_data.get("estimated_hours")  # Using estimated_hours as story_point for now
         )
 
         self.session.add(db_story)

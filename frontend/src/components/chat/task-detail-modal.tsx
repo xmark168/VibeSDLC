@@ -238,12 +238,17 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
               </div>
             )}
 
-            {(card.estimate_value !== undefined && card.estimate_value !== null) && (
+            {(card.priority !== undefined && card.priority !== null) && (
               <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-muted-foreground" />
+                <Flag className="w-4 h-4 text-muted-foreground" />
                 <div>
-                  <div className="text-xs text-muted-foreground">Ước lượng</div>
-                  <div className="text-sm font-medium">{card.estimate_value} giờ</div>
+                  <div className="text-xs text-muted-foreground">Priority</div>
+                  <div className="text-sm font-medium">
+                    {card.priority === 1 ? 'Critical' : 
+                     card.priority === 2 ? 'High' : 
+                     card.priority === 3 ? 'Medium' : 
+                     card.priority === 4 ? 'Low' : 'Nice-to-have'}
+                  </div>
                 </div>
               </div>
             )}

@@ -40,6 +40,8 @@ class StoryPublic(StoryBase):
     id: UUID
     project_id: UUID
     status: StoryStatus
+    # Override to allow None (model allows None, but StoryBase requires int)
+    priority: Optional[int] = Field(None, ge=1, le=5)
     agent_state: Optional[StoryAgentState] = None
     assigned_agent_id: Optional[UUID] = None
     branch_name: Optional[str] = None

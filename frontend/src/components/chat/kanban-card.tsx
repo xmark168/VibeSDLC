@@ -28,7 +28,7 @@ export type KanbanCardData = {
   description?: string
   status?: string
   story_point?: number
-  estimate_value?: number
+  priority?: number
   rank?: number
   assignee_id?: string
   reviewer_id?: string
