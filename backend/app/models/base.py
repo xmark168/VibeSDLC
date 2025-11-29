@@ -40,12 +40,6 @@ class StoryType(str, Enum):
     ENABLER_STORY = "EnablerStory"
 
 
-class StoryPriority(str, Enum):
-    HIGH = "High"
-    MEDIUM = "Medium"
-    LOW = "Low"
-
-
 class AuthorType(str, Enum):
     USER = "user"
     AGENT = "agent"

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
-from sqlmodel import Session
+from sqlmodel import Session, func, select
 from sqlalchemy.orm.attributes import flag_modified
 
 from .state import BAState
@@ -651,6 +651,15 @@ async def approve_stories(state: BAState, agent=None) -> dict:
                 logger.info(f"[BA] Created Epic: {epic.title} (id={epic.id})")
             
             # 2. Create Stories linked to their Epics
+            # Get current max rank for TODO stories
+            max_rank_result = session.exec(
+                select(func.max(Story.rank)).where(
+                    Story.project_id == agent.project_id,
+                    Story.status == StoryStatus.TODO
+                )
+            ).one()
+            current_rank = (max_rank_result or 0)
+            
             for story_data in stories_data:
                 # Get the epic UUID from the string ID
                 epic_string_id = story_data.get("epic_id", "")
@@ -661,6 +670,9 @@ async def approve_stories(state: BAState, agent=None) -> dict:
                 if isinstance(acceptance_criteria, list):
                     acceptance_criteria = "\n".join(f"- {ac}" for ac in acceptance_criteria)
                 
+                # Auto-increment rank for ordering
+                current_rank += 1
+                
                 story = Story(
                     title=story_data.get("title", "Unknown Story"),
                     description=story_data.get("description"),
@@ -668,7 +680,10 @@ async def approve_stories(state: BAState, agent=None) -> dict:
                     project_id=agent.project_id,
                     epic_id=epic_uuid,
                     status=StoryStatus.TODO,
-                    type=StoryType.USER_STORY
+                    type=StoryType.USER_STORY,
+                    priority=story_data.get("priority"),  # 1-5, from LLM
+                    story_point=story_data.get("story_point"),  # Fibonacci, from LLM
+                    rank=current_rank,  # Auto-assigned for ordering
                 )
                 session.add(story)
                 session.flush()
@@ -893,18 +908,21 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
         # Card is already shown in the PRD save section above
     
     # Stories approved - only save to DB, notify Kanban to refresh (no card)
-    if state.get("stories_approved"):
+    stories_approved_flag = state.get("stories_approved", False)
+    created_epics_list = state.get("created_epics", [])
+    logger.info(f"[BA] Checking stories_approved: flag={stories_approved_flag}, created_epics={len(created_epics_list)}")
+    
+    if stories_approved_flag or created_epics_list:
         approval_message = state.get("approval_message", "Epics & Stories đã được phê duyệt")
-        created_epics = state.get("created_epics", [])
-        created_stories = state.get("created_stories", [])
         
         result["summary"] = approval_message
         result["stories_approved"] = True
-        result["created_epics"] = created_epics
-        result["created_stories"] = created_stories
+        result["created_epics"] = created_epics_list
+        result["created_stories"] = state.get("created_stories", [])
         
         # Send simple notification to trigger Kanban refresh (no card displayed)
         if agent:
+            logger.info(f"[BA] Sending stories_approved message to frontend")
             await agent.message_user(
                 event_type="response",
                 content=f"✅ {approval_message}",
