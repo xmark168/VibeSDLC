@@ -339,13 +339,17 @@ async def process_batch_answers(state: BAState, agent=None) -> dict:
     
     logger.info(f"[BA] Processed {len(collected_answers)} answers from batch")
     
-    # Build collected_info
+    # Build collected_info - ACCUMULATE answers from previous rounds
     collected_info = state.get("collected_info", {})
-    collected_info["interview_answers"] = collected_answers
+    existing_answers = collected_info.get("interview_answers", [])
+    all_answers = existing_answers + collected_answers
+    collected_info["interview_answers"] = all_answers
     collected_info["interview_completed"] = True
     
+    logger.info(f"[BA] Total accumulated answers: {len(all_answers)} (new: {len(collected_answers)}, previous: {len(existing_answers)})")
+    
     return {
-        "collected_answers": collected_answers,
+        "collected_answers": all_answers,  # Return ALL answers, not just new ones
         "collected_info": collected_info,
         "waiting_for_answer": False,
         "all_questions_answered": True
