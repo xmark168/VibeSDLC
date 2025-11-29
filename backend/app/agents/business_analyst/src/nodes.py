@@ -538,6 +538,9 @@ async def extract_stories(state: BAState, agent=None) -> dict:
             for story in stories_in_epic:
                 story["epic_id"] = epic.get("id")
                 story["epic_title"] = epic_title
+                # Log story details including priority and story_point
+                logger.info(f"[BA] Extracted story: '{story.get('title', '')[:50]}' - priority={story.get('priority')}, story_point={story.get('story_point')}")
+                logger.info(f"[BA] Story keys from LLM: {list(story.keys())}")
                 all_stories.append(story)
         
         total_epics = len(epics)
@@ -673,6 +676,12 @@ async def approve_stories(state: BAState, agent=None) -> dict:
                 # Auto-increment rank for ordering
                 current_rank += 1
                 
+                # Get priority and story_point from LLM
+                priority = story_data.get("priority")
+                story_point = story_data.get("story_point")
+                logger.info(f"[BA] Creating story: '{story_data.get('title', '')[:50]}' - priority={priority}, story_point={story_point}, epic_id={epic_string_id}")
+                logger.info(f"[BA] Story data keys: {list(story_data.keys())}")
+                
                 story = Story(
                     title=story_data.get("title", "Unknown Story"),
                     description=story_data.get("description"),
@@ -681,9 +690,9 @@ async def approve_stories(state: BAState, agent=None) -> dict:
                     epic_id=epic_uuid,
                     status=StoryStatus.TODO,
                     type=StoryType.USER_STORY,
-                    priority=story_data.get("priority"),  # 1-5, from LLM
-                    story_point=story_data.get("story_point"),  # Fibonacci, from LLM
-                    rank=current_rank,  # Auto-assigned for ordering
+                    priority=priority,
+                    story_point=story_point,
+                    rank=current_rank,
                 )
                 session.add(story)
                 session.flush()
@@ -841,6 +850,11 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
                             "epics_count": epics_count,
                             "stories_count": stories_count
                         }
+                        # Log first story to verify priority/story_point
+                        if stories_data:
+                            first_story = stories_data[0]
+                            logger.info(f"[BA] Saving artifact - first story keys: {list(first_story.keys())}")
+                            logger.info(f"[BA] Saving artifact - first story priority={first_story.get('priority')}, story_point={first_story.get('story_point')}")
                         artifact = service.create_artifact(
                             project_id=agent.project_id,
                             agent_id=agent.agent_id,
