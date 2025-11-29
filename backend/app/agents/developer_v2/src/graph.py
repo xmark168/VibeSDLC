@@ -44,6 +44,20 @@ def route_after_workspace(state: DeveloperState) -> Literal["analyze", "design",
     return "implement"
 
 
+def route_after_analyze(state: DeveloperState) -> Literal["design", "plan"]:
+    """Route after analyze - skip design for low complexity tasks.
+    
+    Speed optimization: Low complexity tasks don't need full system design.
+    """
+    complexity = state.get("complexity", "medium")
+    
+    # Skip design for low complexity tasks (saves 1 LLM call)
+    if complexity == "low":
+        return "plan"
+    
+    return "design"
+
+
 def should_continue(state: DeveloperState) -> Literal["implement", "summarize_code", "respond"]:
     """Check if implementation should continue or move to summarize (MetaGPT pattern)."""
     action = state.get("action")
@@ -80,12 +94,14 @@ def should_continue(state: DeveloperState) -> Literal["implement", "summarize_co
     return "summarize_code"
 
 
-def route_after_summarize(state: DeveloperState) -> Literal["code_review", "implement", "respond"]:
+def route_after_summarize(state: DeveloperState) -> Literal["code_review", "run_code", "implement", "respond"]:
     """Route after summarize_code completes (MetaGPT IS_PASS pattern).
     
-    - If IS_PASS=True -> code_review
+    - If IS_PASS=True -> code_review (or skip for simple tasks)
     - If IS_PASS=False and under max_summarize -> implement (loop back with feedback)
     - Otherwise -> code_review (proceed anyway after max attempts)
+    
+    Speed optimization: Skip code_review for simple tasks (low complexity, < 3 files)
     """
     action = state.get("action")
     is_pass = state.get("is_pass", True)
@@ -102,6 +118,15 @@ def route_after_summarize(state: DeveloperState) -> Literal["code_review", "impl
     
     # IS_PASS check
     if is_pass:
+        # Speed optimization: Skip code_review for simple tasks
+        complexity = state.get("complexity", "medium")
+        files_created = state.get("files_created", [])
+        files_modified = state.get("files_modified", [])
+        total_files = len(files_created) + len(files_modified)
+        
+        if complexity == "low" and total_files <= 3:
+            return "run_code"  # Skip code_review, go directly to run tests
+        
         return "code_review"
     
     # Not pass - can we retry?
@@ -112,12 +137,12 @@ def route_after_summarize(state: DeveloperState) -> Literal["code_review", "impl
     return "code_review"
 
 
-def route_after_code_review(state: DeveloperState) -> Literal["run_code", "code_review", "respond"]:
+def route_after_code_review(state: DeveloperState) -> Literal["run_code", "implement", "respond"]:
     """Route after code review completes.
     
     - If passed (LGTM) -> run_code
-    - If not passed and can retry -> code_review again
-    - Otherwise -> respond
+    - If not passed (LBTM) and can retry -> implement (fix code based on review feedback)
+    - Otherwise -> run_code (proceed anyway after max iterations)
     """
     code_review_passed = state.get("code_review_passed", True)
     iteration = state.get("code_review_iteration", 0)
@@ -126,8 +151,9 @@ def route_after_code_review(state: DeveloperState) -> Literal["run_code", "code_
     if code_review_passed:
         return "run_code"
     
+    # LBTM: Go back to implement to fix the code based on review feedback
     if iteration < k:
-        return "code_review"
+        return "implement"
     
     return "run_code"  # Proceed even if not all passed after max iterations
 
@@ -233,7 +259,8 @@ class DeveloperGraph:
         g.add_conditional_edges("setup_workspace", route_after_workspace)
         
         # Work flow edges (MetaGPT pattern: analyze → design → plan → implement)
-        g.add_edge("analyze", "design")
+        # Speed optimization: skip design for low complexity tasks
+        g.add_conditional_edges("analyze", route_after_analyze)
         g.add_edge("design", "plan")
         g.add_edge("plan", "implement")
         

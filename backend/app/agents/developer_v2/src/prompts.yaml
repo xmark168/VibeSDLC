@@ -72,6 +72,22 @@ tasks:
       
       {shared_context.task_types}
 
+    input_template: |
+      Story: {story_title}
+
+      Content:
+      {story_content}
+
+      Acceptance Criteria:
+      {acceptance_criteria}
+
+      Current State:
+      - Has analysis: {has_analysis}
+      - Has plan: {has_plan}
+      - Has implementation: {has_implementation}
+
+      Decide the next action and call submit_routing_decision.
+
     user_prompt: |
       # USER STORY
       **Title:** {story_title}
@@ -118,6 +134,19 @@ tasks:
       - **Medium**: 2-8 hours, multiple files, some integration
       - **High**: > 8 hours, cross-cutting, complex logic
 
+    input_template: |
+      Analyze this story and call submit_story_analysis:
+
+      Story: {story_title}
+
+      Content:
+      {story_content}
+
+      Acceptance Criteria:
+      {acceptance_criteria}
+
+      Identify: task_type, complexity, estimated_hours, affected_files, suggested_approach.
+
     user_prompt: |
       # USER STORY TO ANALYZE
       **Title:** {story_title}
@@ -161,6 +190,25 @@ tasks:
       - Data structures in mermaid classDiagram format
       - Call flow in mermaid sequenceDiagram format
       - Clear interface definitions
+
+    input_template: |
+      Create a system design and call submit_system_design:
+
+      Story: {story_title}
+      Summary: {analysis_summary}
+      Task Type: {task_type}
+      Complexity: {complexity}
+
+      Requirements:
+      {story_content}
+
+      Acceptance Criteria:
+      {acceptance_criteria}
+
+      Existing Code:
+      {existing_context}
+
+      Create design with: data_structures (mermaid), api_interfaces, call_flow (mermaid), design_notes, file_structure.
 
     user_prompt: |
       # STORY ANALYSIS
@@ -225,6 +273,37 @@ tasks:
       +new code line
       -old code line to remove
       ```
+
+    input_template: |
+      Create an implementation plan and call submit_implementation_plan:
+
+      Story: {story_title}
+      Summary: {analysis_summary}
+      Task Type: {task_type}
+      Complexity: {complexity}
+      {structure_guidance}
+      Affected Files: {affected_files}
+
+      Design:
+      {design_doc}
+
+      Acceptance Criteria:
+      {acceptance_criteria}
+
+      {directory_structure}
+
+      Existing Code:
+      {existing_code}
+
+      CRITICAL RULES FOR file_path:
+      1. LOOK at the DIRECTORY STRUCTURE above - use EXACT paths that exist
+      2. If project has "src/app/" directory -> use src/app/page.tsx, src/app/search/page.tsx (NEVER pages/)
+      3. If project has "app/" (without src) -> use app/page.tsx, app/about/page.tsx (NOT pages/)
+      4. If project has "src/components/" -> put components in src/components/
+      5. NEVER use pages/ directory for NextJS App Router projects!
+      6. NEVER invent new directory structures - FOLLOW what exists!
+
+      Create steps with: order, description, file_path, action (create/modify), estimated_minutes, dependencies.
 
     user_prompt: |
       # STORY ANALYSIS
@@ -309,6 +388,35 @@ tasks:
       - Clear, meaningful variable names
       - Comments for complex logic only
       - Follow project conventions
+
+    input_template: |
+      Write code for this step and call submit_code_change:
+
+      Step {step_number}/{total_steps}: {step_description}
+      File: {file_path}
+      Action: {action}
+
+      Story: {story_summary}
+
+      {related_context}
+
+      Existing Code:
+      {existing_code}
+
+      {error_logs}
+
+      CRITICAL REQUIREMENTS:
+      1. Write COMPLETE code - no TODOs, no placeholders, no "// add more here"
+      2. Use the EXACT file_path provided above - DO NOT change it!
+      3. If EXISTING CODE EXAMPLES are provided above, COPY their EXACT patterns:
+         - Same import style
+         - Same component structure
+         - Same naming conventions
+         - Same export style
+      4. Follow the PROJECT STRUCTURE and CONVENTIONS exactly
+      5. NEVER create files in pages/ for NextJS App Router projects - use src/app/ or app/
+      6. Include ALL necessary imports at the top
+      7. Call submit_code_change with the COMPLETE, WORKING code
 
     user_prompt: |
       # Context
@@ -672,6 +780,56 @@ tasks:
         ],
         "result": "LGTM" or "LBTM",
         "rewritten_code": "Complete fixed code if LBTM, empty string if LGTM"
+      }}
+
+  # ---------------------------------------------------------------------------
+  # BATCH CODE REVIEW - Review ALL files in one call (Speed optimization)
+  # ---------------------------------------------------------------------------
+  batch_code_review:
+    system_prompt: |
+      {shared_context.agent_identity}
+      
+      ---
+      
+      # BATCH CODE REVIEW TASK
+      
+      Role: You are a professional software engineer reviewing MULTIPLE code files at once.
+      
+      ## Review Each File For:
+      1. **Requirements**: Is the code implemented correctly?
+      2. **Logic**: Is the code logic correct? Any bugs?
+      3. **Completeness**: Are all functions fully implemented (no TODOs)?
+      4. **Imports**: Are all necessary imports present?
+      5. **Integration**: Do the files work together correctly?
+      
+      ## Review Result Per File
+      - **LGTM**: Code passes all checks
+      - **LBTM**: Code has issues - provide fixed code
+      
+    input_template: |
+      Review ALL these files and return results:
+      
+      ## Requirements:
+      {requirements}
+      
+      ## All Files to Review:
+      {all_code_blocks}
+      
+      Return JSON with review for EACH file:
+      {{
+        "overall_result": "LGTM" or "LBTM",
+        "files": {{
+          "path/to/file1.tsx": {{
+            "result": "LGTM",
+            "issues": []
+          }},
+          "path/to/file2.tsx": {{
+            "result": "LBTM",
+            "issues": ["Issue 1", "Issue 2"],
+            "rewritten_code": "// Complete fixed code here..."
+          }}
+        }},
+        "summary": "Brief summary of review"
       }}
 
   # ---------------------------------------------------------------------------

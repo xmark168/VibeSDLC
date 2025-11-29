@@ -80,6 +80,7 @@ class DeveloperState(TypedDict, total=False):
     # Project context (AGENTS.md + framework info)
     project_context: Optional[str]  # Loaded from AGENTS.md in workspace
     agents_md: Optional[str]  # Raw AGENTS.md content
+    project_structure: Optional[Dict[str, Any]]  # Detected framework, router type, conventions
     
     # Debug and feedback logs
     error_logs: Optional[str]

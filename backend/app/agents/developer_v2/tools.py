@@ -163,6 +163,358 @@ def get_related_code_indexed(
 
 
 # =============================================================================
+# PROJECT STRUCTURE DETECTION (Smart context for agent)
+# =============================================================================
+
+def detect_project_structure(workspace_path: str) -> dict:
+    """Detect project structure and conventions automatically.
+    
+    Analyzes the workspace to determine framework, router type, and conventions.
+    This allows the agent to generate code that follows existing patterns.
+    
+    Args:
+        workspace_path: Path to the workspace directory
+        
+    Returns:
+        Dict with framework info, router type, key directories, and conventions
+    """
+    import json
+    workspace = Path(workspace_path)
+    
+    result = {
+        "framework": "unknown",
+        "router_type": None,
+        "key_dirs": [],
+        "existing_pages": [],
+        "conventions": "",
+        "directory_tree": ""
+    }
+    
+    if not workspace.exists():
+        return result
+    
+    # Detect framework from package.json
+    package_json = workspace / "package.json"
+    if package_json.exists():
+        try:
+            data = json.loads(package_json.read_text(encoding='utf-8'))
+            deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
+            
+            # NextJS detection
+            if "next" in deps:
+                result["framework"] = "nextjs"
+                version = deps.get("next", "").replace("^", "").replace("~", "")
+                
+                # Detect App Router vs Pages Router
+                app_dir = workspace / "app"
+                pages_dir = workspace / "pages"
+                src_app_dir = workspace / "src" / "app"
+                src_pages_dir = workspace / "src" / "pages"
+                
+                if app_dir.exists() or src_app_dir.exists():
+                    result["router_type"] = "app"
+                    base_dir = app_dir if app_dir.exists() else src_app_dir
+                    base_path = str(base_dir.relative_to(workspace))
+                    result["conventions"] = f"NextJS {version} App Router - ALL pages MUST go in {base_path}/ directory (e.g., {base_path}/page.tsx, {base_path}/search/page.tsx). NEVER use pages/ directory!"
+                    
+                    # Find existing pages
+                    for page_file in base_dir.rglob("page.tsx"):
+                        result["existing_pages"].append(str(page_file.relative_to(workspace)))
+                    for page_file in base_dir.rglob("page.jsx"):
+                        result["existing_pages"].append(str(page_file.relative_to(workspace)))
+                        
+                elif pages_dir.exists() or src_pages_dir.exists():
+                    result["router_type"] = "pages"
+                    base_dir = pages_dir if pages_dir.exists() else src_pages_dir
+                    result["conventions"] = f"NextJS {version} Pages Router - pages go in {base_dir.relative_to(workspace)}/ directory"
+                else:
+                    # Default to App Router for new NextJS projects
+                    result["router_type"] = "app"
+                    result["conventions"] = f"NextJS {version} - use App Router (app/ directory)"
+                    
+            # React detection
+            elif "react" in deps and "next" not in deps:
+                result["framework"] = "react"
+                result["conventions"] = "React SPA - components in src/components/, pages in src/pages/"
+                
+            # Vue detection
+            elif "vue" in deps:
+                result["framework"] = "vue"
+                result["conventions"] = "Vue.js - components in src/components/, views in src/views/"
+                
+        except Exception:
+            pass
+    
+    # Python project detection
+    pyproject = workspace / "pyproject.toml"
+    requirements = workspace / "requirements.txt"
+    if pyproject.exists() or requirements.exists():
+        if result["framework"] == "unknown":
+            result["framework"] = "python"
+            result["conventions"] = "Python project - follow existing module structure"
+    
+    # Detect key directories
+    key_dirs_to_check = ["app", "src", "components", "lib", "utils", "pages", "styles", "public", "api"]
+    for dir_name in key_dirs_to_check:
+        dir_path = workspace / dir_name
+        if dir_path.exists() and dir_path.is_dir():
+            result["key_dirs"].append(dir_name)
+        # Also check in src/
+        src_dir_path = workspace / "src" / dir_name
+        if src_dir_path.exists() and src_dir_path.is_dir():
+            result["key_dirs"].append(f"src/{dir_name}")
+    
+    # Generate directory tree (limited depth)
+    result["directory_tree"] = _generate_directory_tree(workspace, max_depth=3)
+    
+    return result
+
+
+def _generate_directory_tree(directory: Path, max_depth: int = 3, prefix: str = "") -> str:
+    """Generate a directory tree string.
+    
+    Args:
+        directory: Root directory
+        max_depth: Maximum depth to traverse
+        prefix: Prefix for formatting
+        
+    Returns:
+        Formatted directory tree string
+    """
+    if max_depth <= 0:
+        return ""
+    
+    skip_dirs = {"node_modules", ".git", "__pycache__", "dist", "build", ".next", "venv", ".venv", ".cache"}
+    
+    lines = []
+    try:
+        items = sorted(directory.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower()))
+        
+        for i, item in enumerate(items):
+            if item.name.startswith('.') and item.name not in ['.env.example']:
+                continue
+            if item.name in skip_dirs:
+                continue
+                
+            is_last = i == len(items) - 1
+            connector = "└── " if is_last else "├── "
+            
+            if item.is_dir():
+                lines.append(f"{prefix}{connector}{item.name}/")
+                extension = "    " if is_last else "│   "
+                subtree = _generate_directory_tree(item, max_depth - 1, prefix + extension)
+                if subtree:
+                    lines.append(subtree)
+            else:
+                # Only show important files at top level
+                if max_depth >= 2 or item.suffix in ['.tsx', '.ts', '.jsx', '.js', '.py', '.json']:
+                    lines.append(f"{prefix}{connector}{item.name}")
+    except PermissionError:
+        pass
+    
+    return "\n".join(lines)
+
+
+def get_agents_md(workspace_path: str) -> str:
+    """Read AGENTS.md from workspace if it exists.
+    
+    Args:
+        workspace_path: Path to the workspace directory
+        
+    Returns:
+        Content of AGENTS.md or empty string
+    """
+    workspace = Path(workspace_path)
+    agents_md = workspace / "AGENTS.md"
+    
+    if agents_md.exists():
+        try:
+            return agents_md.read_text(encoding='utf-8')
+        except Exception:
+            pass
+    
+    return ""
+
+
+def get_project_context(workspace_path: str) -> str:
+    """Get comprehensive project context including structure and guidelines.
+    
+    Combines project structure detection, AGENTS.md, and directory tree
+    to provide full context for the agent.
+    
+    Args:
+        workspace_path: Path to the workspace directory
+        
+    Returns:
+        Formatted project context string
+    """
+    structure = detect_project_structure(workspace_path)
+    agents_md = get_agents_md(workspace_path)
+    
+    context_parts = []
+    
+    # Project structure info
+    if structure["framework"] != "unknown":
+        context_parts.append(f"FRAMEWORK: {structure['framework']}")
+        if structure["router_type"]:
+            context_parts.append(f"ROUTER TYPE: {structure['router_type']}")
+        if structure["conventions"]:
+            context_parts.append(f"CONVENTIONS: {structure['conventions']}")
+    
+    # Key directories
+    if structure["key_dirs"]:
+        context_parts.append(f"KEY DIRECTORIES: {', '.join(structure['key_dirs'])}")
+    
+    # Existing pages (important for NextJS)
+    if structure["existing_pages"]:
+        context_parts.append(f"EXISTING PAGES: {', '.join(structure['existing_pages'][:10])}")
+    
+    # Directory tree
+    if structure["directory_tree"]:
+        context_parts.append(f"\nDIRECTORY STRUCTURE:\n{structure['directory_tree']}")
+    
+    # AGENTS.md content (truncated)
+    if agents_md:
+        context_parts.append(f"\nPROJECT GUIDELINES (from AGENTS.md):\n{agents_md[:2000]}")
+    
+    return "\n".join(context_parts)
+
+
+def get_boilerplate_examples(workspace_path: str, task_type: str = "page") -> str:
+    """Get existing code examples from the project as boilerplate reference.
+    
+    Finds existing pages/components in the project and returns them as examples
+    for the agent to follow when generating new code.
+    
+    Args:
+        workspace_path: Path to the workspace directory
+        task_type: Type of code to find examples for ("page", "component", "api")
+        
+    Returns:
+        Markdown-formatted code examples from the project
+    """
+    workspace = Path(workspace_path)
+    examples = []
+    
+    if not workspace.exists():
+        return ""
+    
+    # Define patterns based on task type
+    patterns = {
+        "page": ["**/page.tsx", "**/page.jsx", "**/pages/*.tsx", "**/pages/*.jsx"],
+        "component": ["**/components/*.tsx", "**/components/*.jsx", "**/src/components/*.tsx"],
+        "api": ["**/api/**/route.ts", "**/api/**/route.js", "**/pages/api/*.ts"],
+        "layout": ["**/layout.tsx", "**/layout.jsx"],
+    }
+    
+    skip_dirs = {"node_modules", ".git", "__pycache__", "dist", "build", ".next", "venv", ".venv"}
+    
+    # Get patterns for the task type
+    search_patterns = patterns.get(task_type, patterns["page"])
+    
+    for pattern in search_patterns:
+        for file_path in workspace.glob(pattern):
+            # Skip excluded directories
+            if any(part in file_path.parts for part in skip_dirs):
+                continue
+            
+            # Limit to 2 examples
+            if len(examples) >= 2:
+                break
+            
+            try:
+                content = file_path.read_text(encoding='utf-8')
+                # Truncate large files
+                if len(content) > 1500:
+                    content = content[:1500] + "\n// ... (truncated)"
+                
+                rel_path = file_path.relative_to(workspace)
+                code_type = "tsx" if file_path.suffix in [".tsx", ".ts"] else "jsx"
+                examples.append(f"### Example: {rel_path}\n```{code_type}\n{content}\n```")
+            except Exception:
+                continue
+    
+    if examples:
+        return "## EXISTING CODE EXAMPLES (Follow this style!):\n" + "\n\n".join(examples)
+    
+    return ""
+
+
+def validate_plan_file_paths(steps: list, project_structure: dict) -> list:
+    """Validate and fix file paths in implementation plan based on project structure.
+    
+    Ensures generated file paths match the project's conventions.
+    For example, converts wrong paths like 'src/pages/about.tsx' to correct 
+    paths like 'app/about/page.tsx' for NextJS App Router.
+    
+    Args:
+        steps: List of implementation plan steps
+        project_structure: Dict from detect_project_structure()
+        
+    Returns:
+        Corrected list of steps with valid file paths
+    """
+    framework = project_structure.get("framework", "unknown")
+    router_type = project_structure.get("router_type")
+    key_dirs = project_structure.get("key_dirs", [])
+    existing_pages = project_structure.get("existing_pages", [])
+    
+    # Determine the base directory for pages
+    page_base_dir = None
+    if "app" in key_dirs:
+        page_base_dir = "app"
+    elif "src/app" in key_dirs:
+        page_base_dir = "src/app"
+    elif "pages" in key_dirs:
+        page_base_dir = "pages"
+    elif "src/pages" in key_dirs:
+        page_base_dir = "src/pages"
+    
+    # Determine component base directory
+    component_base_dir = None
+    if "components" in key_dirs:
+        component_base_dir = "components"
+    elif "src/components" in key_dirs:
+        component_base_dir = "src/components"
+    
+    for step in steps:
+        file_path = step.get("file_path", "")
+        if not file_path:
+            continue
+        
+        original_path = file_path
+        
+        # Fix page paths for App Router projects
+        if framework == "nextjs" and router_type == "app" and page_base_dir:
+            # Wrong: src/pages/about.tsx or pages/about.tsx -> Correct: app/about/page.tsx
+            if file_path.startswith("src/pages/") or file_path.startswith("pages/"):
+                page_name = file_path.replace("src/pages/", "").replace("pages/", "")
+                page_name = page_name.replace(".tsx", "").replace(".jsx", "").replace(".ts", "").replace(".js", "")
+                
+                if page_name in ["index", "_app", "_document"]:
+                    step["file_path"] = f"{page_base_dir}/page.tsx"
+                else:
+                    step["file_path"] = f"{page_base_dir}/{page_name}/page.tsx"
+                    
+            # Wrong: pages/api/... -> Correct: app/api/.../route.ts
+            elif file_path.startswith("pages/api/") or file_path.startswith("src/pages/api/"):
+                api_path = file_path.replace("src/pages/api/", "").replace("pages/api/", "")
+                api_path = api_path.replace(".ts", "").replace(".js", "")
+                step["file_path"] = f"{page_base_dir}/api/{api_path}/route.ts"
+        
+        # Ensure components go to the right place
+        if "component" in file_path.lower() and component_base_dir:
+            if not file_path.startswith(component_base_dir):
+                component_name = Path(file_path).name
+                step["file_path"] = f"{component_base_dir}/{component_name}"
+        
+        if step["file_path"] != original_path:
+            logger.info(f"[validate_plan] Fixed path: {original_path} -> {step['file_path']}")
+    
+    return steps
+
+
+# =============================================================================
 # CODE CONTEXT UTILITIES (MetaGPT-inspired) - Fallback when CocoIndex unavailable
 # =============================================================================
 
@@ -618,6 +970,88 @@ async def install_dependencies(workspace_path: str) -> bool:
             logger.warning(f"Failed to install npm dependencies: {e}")
     
     return installed
+
+
+async def tavily_search(query: str, max_results: int = 3) -> str:
+    """Search web using Tavily API for best practices and documentation.
+    
+    Args:
+        query: Search query
+        max_results: Max number of results
+        
+    Returns:
+        Formatted search results as string
+    """
+    import os
+    try:
+        from tavily import TavilyClient
+        
+        api_key = os.getenv("TAVILY_API_KEY")
+        if not api_key:
+            return "Tavily API key not configured"
+        
+        client = TavilyClient(api_key=api_key)
+        response = client.search(query=query, max_results=max_results)
+        
+        results = []
+        for r in response.get("results", []):
+            title = r.get("title", "")
+            content = r.get("content", "")[:500]
+            url = r.get("url", "")
+            results.append(f"## {title}\n{content}\nSource: {url}\n")
+        
+        return "\n".join(results) if results else "No results found"
+    except ImportError:
+        return "Tavily not installed (pip install tavily-python)"
+    except Exception as e:
+        return f"Search failed: {e}"
+
+
+def detect_framework_from_package_json(workspace_path: str) -> dict:
+    """Detect framework info from package.json.
+    
+    Args:
+        workspace_path: Path to the workspace
+        
+    Returns:
+        Dict with name, version, router info
+    """
+    import json
+    workspace = Path(workspace_path)
+    package_json = workspace / "package.json"
+    
+    result = {"name": "unknown", "version": "", "router": ""}
+    
+    if not package_json.exists():
+        return result
+    
+    try:
+        data = json.loads(package_json.read_text(encoding='utf-8'))
+        deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
+        
+        # Detect framework
+        if "next" in deps:
+            result["name"] = "nextjs"
+            result["version"] = deps.get("next", "").replace("^", "").replace("~", "")
+            # Check for App Router (Next.js 13+)
+            app_dir = workspace / "app"
+            if app_dir.exists():
+                result["router"] = "app"
+            else:
+                result["router"] = "pages"
+        elif "react" in deps:
+            result["name"] = "react"
+            result["version"] = deps.get("react", "").replace("^", "").replace("~", "")
+        elif "vue" in deps:
+            result["name"] = "vue"
+            result["version"] = deps.get("vue", "").replace("^", "").replace("~", "")
+        elif "angular" in deps or "@angular/core" in deps:
+            result["name"] = "angular"
+            result["version"] = deps.get("@angular/core", "").replace("^", "").replace("~", "")
+    except Exception:
+        pass
+    
+    return result
 
 
 def detect_test_command(workspace_path: str) -> List[str]:

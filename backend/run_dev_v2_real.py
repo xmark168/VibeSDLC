@@ -136,6 +136,7 @@ class SimpleDeveloperRunner:
         self.project_id = uuid4()
         self.template = template
         self.template_applied = False
+        self.git_initialized = False
         
         # Create workspace if not provided
         if workspace_path:
@@ -151,10 +152,35 @@ class SimpleDeveloperRunner:
         else:
             self.workspace_path.mkdir(parents=True, exist_ok=True)
         
+        # Initialize git repository in workspace
+        self._init_git()
+        
         # Initialize graph (agent=self but message_user is no-op)
         self.graph = DeveloperGraph(agent=self)
         
         logger.info(f"[{self.name}] Initialized with workspace: {self.workspace_path}")
+    
+    def _init_git(self):
+        """Initialize git repository in workspace."""
+        try:
+            from app.agents.developer.tools.git_python_tool import GitPythonTool
+            
+            git_tool = GitPythonTool(root_dir=str(self.workspace_path))
+            result = git_tool._run("init")
+            logger.info(f"[{self.name}] Git init: {result}")
+            
+            # Check if git is ready
+            git_dir = self.workspace_path / ".git"
+            self.git_initialized = git_dir.exists()
+            
+            if self.git_initialized:
+                logger.info(f"[{self.name}] Git repository initialized successfully")
+            else:
+                logger.warning(f"[{self.name}] Git initialization may have failed")
+                
+        except Exception as e:
+            logger.warning(f"[{self.name}] Git init failed: {e}")
+            self.git_initialized = False
     
     async def message_user(self, msg_type: str, message: str):
         """No-op - message_user calls in nodes.py are disabled."""
@@ -203,7 +229,7 @@ class SimpleDeveloperRunner:
             "workspace_path": str(self.workspace_path),
             "branch_name": f"story_{story.get('story_id', 'main')[:8]}",
             "main_workspace": str(self.workspace_path),
-            "workspace_ready": True,
+            "workspace_ready": self.git_initialized,  # Only True if git init succeeded
             "index_ready": False,
             "merged": False,
             
@@ -262,8 +288,11 @@ class SimpleDeveloperRunner:
         print("="*60)
         
         try:
-            # Run graph
-            final_state = await self.graph.graph.ainvoke(initial_state)
+            # Run graph with high recursion limit for multi-step workflows
+            final_state = await self.graph.graph.ainvoke(
+                initial_state,
+                config={"recursion_limit": 100}
+            )
             
             # Update Langfuse trace output
             if langfuse_span and langfuse_ctx:
@@ -296,13 +325,13 @@ class SimpleDeveloperRunner:
 
 LEARNING_WEBSITE_STORY = {
     "story_id": "learning-001",
-    "title": "Create Learning Website with React",
+    "title": "Create Learning Website ",
     "content": """
 ## User Story
 As a student, I want a beautiful learning website so that I can browse online courses.
 
 ## Requirements
-Create a React learning website with these components:
+Create a learning website with these components:
 
 1. **Navbar.tsx** - Navigation bar with:
    - Logo (LearnHub)
@@ -416,6 +445,25 @@ Create a React login form with:
 }
 
 
+TEXTBOOK_SEARCH_STORY = {
+    "story_id": "US-001",
+    "title": "Search Textbooks by Name, Author or Code",
+    "content": """
+## As a customer, I want to search for textbooks by name, author or code so that I can quickly find the book I need
+
+*ID:* US-001  
+*Epic:* EPIC-001
+
+### Description
+Người dùng có thể sử dụng thanh tìm kiếm để nhập tên sách, tác giả hoặc mã sách và nhận được kết quả phù hợp.
+""",
+    "acceptance_criteria": [
+        "Given I am on the homepage when I enter a book name, author or code in the search bar then I see a list of matching books with basic information",
+        "Given no books match my search when I submit the search then I see a message indicating no results found"
+    ]
+}
+
+
 # =============================================================================
 # MAIN
 # =============================================================================
@@ -427,24 +475,27 @@ async def main():
     print("DEVELOPER V2 - REAL TASK RUNNER")
     print("="*60)
     print("\nSelect a story to run:")
-    print("1. Simple Calculator (Python)")
-    print("2. Login Form (React)")
-    print("3. Learning Website (React) [DEFAULT]")
-    print("4. Custom story (enter your own)")
+    print("1. Textbook Search (React) [DEFAULT]")
+    print("2. Simple Calculator (Python)")
+    print("3. Login Form (React)")
+    print("4. Learning Website (React)")
+    print("5. Custom story (enter your own)")
     print()
     
     try:
-        choice = input("Enter choice (1-4) [default=3]: ").strip() or "3"
+        choice = input("Enter choice (1-5) [default=1]: ").strip() or "1"
     except EOFError:
-        choice = "3"
+        choice = "1"
     
     if choice == "1":
-        story = SIMPLE_CALCULATOR_STORY
+        story = TEXTBOOK_SEARCH_STORY
     elif choice == "2":
-        story = LOGIN_FORM_STORY
+        story = SIMPLE_CALCULATOR_STORY
     elif choice == "3":
-        story = LEARNING_WEBSITE_STORY
+        story = LOGIN_FORM_STORY
     elif choice == "4":
+        story = LEARNING_WEBSITE_STORY
+    elif choice == "5":
         print("\nEnter your story:")
         title = input("Title: ").strip()
         content = input("Description: ").strip()
@@ -455,8 +506,8 @@ async def main():
             "acceptance_criteria": []
         }
     else:
-        print("Invalid choice, using Learning Website")
-        story = LEARNING_WEBSITE_STORY
+        print("Invalid choice, using Textbook Search")
+        story = TEXTBOOK_SEARCH_STORY
     
     print(f"\nSelected: {story['title']}")
     print("-"*40)
