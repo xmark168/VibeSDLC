@@ -589,10 +589,10 @@ async def update_stories(state: BAState, agent=None) -> dict:
         updated_epics = result.get("epics", [])
         change_summary = result.get("change_summary", "Đã cập nhật stories")
         
-        # Flatten stories for backward compatibility
+        # Flatten stories for backward compatibility (use get, NOT pop - to keep stories in epics)
         all_stories = []
         for epic in updated_epics:
-            stories_in_epic = epic.pop("stories", [])
+            stories_in_epic = epic.get("stories", [])  # IMPORTANT: use get() not pop() to keep stories in epic
             epic_title = epic.get("title", epic.get("name", "Unknown"))
             for story in stories_in_epic:
                 story["epic_id"] = epic.get("id")
