@@ -24,6 +24,7 @@ import {
   ChevronsLeft,
   Loader2,
   Crown,
+  PaperclipIcon,
 } from "lucide-react";
 import { TechStackDialog } from "./tech-stack-dialog";
 import { useTheme } from "@/components/provider/theme-provider";
@@ -40,6 +41,8 @@ import { AgentHandoffNotification } from "./AgentHandoffNotification";
 import { ArtifactCard } from "./ArtifactCard";
 import { StoriesCreatedCard } from "./StoriesCreatedCard";
 import { useProjectAgents } from "@/queries/agents";
+import { PromptInput, PromptInputButton, PromptInputSubmit, PromptInputTextarea, PromptInputToolbar, PromptInputTools } from "../ui/shadcn-io/ai/prompt-input";
+import { MentionDropdown, type Agent } from "../ui/mention-dropdown";
 
 interface ChatPanelProps {
   sidebarCollapsed: boolean;
@@ -73,7 +76,6 @@ export function ChatPanelWS({
   const [message, setMessage] = useState("");
   const [showMentions, setShowMentions] = useState(false);
   const [mentionSearch, setMentionSearch] = useState("");
-  const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [mentionedAgent, setMentionedAgent] = useState<{ id: string; name: string } | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
@@ -81,7 +83,6 @@ export function ChatPanelWS({
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const mentionDropdownRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const prevMessagesLengthRef = useRef(0);
 
@@ -93,25 +94,26 @@ export function ChatPanelWS({
     enabled: !!projectId,
   });
 
-  // Map role_type to user-friendly designation and avatar
-  const getRoleInfo = (roleType: string): { role: string; avatar: string } => {
-    const roleMap: Record<string, { role: string; avatar: string }> = {
-      team_leader: { role: "Team Leader", avatar: "👨‍💼" },
-      business_analyst: { role: "Business Analyst", avatar: "👩‍💼" },
-      developer: { role: "Developer", avatar: "👨‍💻" },
-      tester: { role: "Tester", avatar: "🧪" },
+  // Map role_type to user-friendly designation, icon and color
+  const getRoleInfo = (roleType: string): { role: string; icon: string; color: string } => {
+    const roleMap: Record<string, { role: string; icon: string; color: string }> = {
+      team_leader: { role: "Team Leader", icon: "👨‍💼", color: "#6366f1" },
+      business_analyst: { role: "Business Analyst", icon: "👩‍💼", color: "#8b5cf6" },
+      developer: { role: "Developer", icon: "👨‍💻", color: "#10b981" },
+      tester: { role: "Tester", icon: "🧪", color: "#f59e0b" },
     };
-    return roleMap[roleType] || { role: roleType, avatar: "🤖" };
+    return roleMap[roleType] || { role: roleType, icon: "🤖", color: "#6b7280" };
   };
 
   // Transform database agents to dropdown format
-  const AGENTS = (projectAgents || []).map((agent) => {
+  const AGENTS: Agent[] = (projectAgents || []).map((agent) => {
     const roleInfo = getRoleInfo(agent.role_type);
     return {
       id: agent.id,
       name: agent.human_name,
       role: roleInfo.role,
-      avatar: roleInfo.avatar,
+      icon: roleInfo.icon,
+      color: roleInfo.color,
     };
   });
 
@@ -163,21 +165,21 @@ export function ChatPanelWS({
   const uniqueMessages = sortedMessages.filter(
     (msg, index, self) => index === self.findIndex(m => m.id === msg.id)
   );
-  
+
   // Detect unanswered questions - show only the LATEST one
   useEffect(() => {
     // Find ALL unanswered questions
     const unansweredQuestions = uniqueMessages.filter(
       msg => msg.message_type === 'agent_question' && !msg.structured_data?.answered
     )
-    
+
     // Get LATEST by timestamp (most recent)
-    const latestUnanswered = unansweredQuestions.sort((a, b) => 
+    const latestUnanswered = unansweredQuestions.sort((a, b) =>
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     )[0]
-    
+
     setPendingQuestion(latestUnanswered || null)
-    
+
     // Auto-scroll to question if it appears (only if it's a NEW question)
     if (latestUnanswered && latestUnanswered.id !== pendingQuestion?.id) {
       setTimeout(() => {
@@ -206,7 +208,7 @@ export function ChatPanelWS({
     if (!container) return
 
     // Check if user is near bottom (within 100px)
-    const isNearBottom = 
+    const isNearBottom =
       container.scrollHeight - container.scrollTop - container.clientHeight < 200
 
     // Auto-scroll only if:
@@ -224,18 +226,18 @@ export function ChatPanelWS({
     // Update previous length
     prevMessagesLengthRef.current = uniqueMessages.length
   }, [uniqueMessages])
-  
+
   // Determine if chat should be blocked
   const isMultichoiceQuestion = pendingQuestion?.structured_data?.question_type === 'multichoice'
   const shouldBlockChat = pendingQuestion && isMultichoiceQuestion
-  
+
   // Note: Kanban, activeTab, and agentStatuses features removed for simplicity
 
   const filteredAgents = AGENTS.filter((agent) =>
     agent.name.toLowerCase().includes(mentionSearch.toLowerCase())
   );
 
-  const insertMention = (agent: { id: string; name: string; role: string; avatar: string }) => {
+  const insertMention = (agent: Agent) => {
     const textarea = textareaRef.current;
     if (!textarea) return;
 
@@ -275,7 +277,6 @@ export function ChatPanelWS({
       const searchTerm = textBeforeCursor.slice(atIndex + 1);
       setMentionSearch(searchTerm);
       setShowMentions(true);
-      setSelectedMentionIndex(0);
     } else {
       setShowMentions(false);
     }
@@ -330,25 +331,9 @@ export function ChatPanelWS({
   }, [agentStatus]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (showMentions && filteredAgents.length > 0) {
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSelectedMentionIndex((prev) => (prev + 1) % filteredAgents.length);
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSelectedMentionIndex(
-          (prev) => (prev - 1 + filteredAgents.length) % filteredAgents.length
-        );
-      } else if (e.key === "Tab" || e.key === "Enter") {
-        if (showMentions) {
-          e.preventDefault();
-          insertMention(filteredAgents[selectedMentionIndex]);
-        }
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        setShowMentions(false);
-      }
-    } else if (e.key === "Enter" && !e.shiftKey) {
+    // MentionDropdown handles its own keyboard navigation (Arrow, Tab, Enter, Escape)
+    // Only handle Enter to send when dropdown is NOT shown
+    if (!showMentions && e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
@@ -414,7 +399,6 @@ export function ChatPanelWS({
     setMessage(newMessage);
     setShowMentions(true);
     setMentionSearch("");
-    setSelectedMentionIndex(0);
 
     setTimeout(() => {
       textarea.focus();
@@ -431,21 +415,7 @@ export function ChatPanelWS({
     }
   }, [isConnected, onConnectionChange]);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        mentionDropdownRef.current &&
-        !mentionDropdownRef.current.contains(event.target as Node) &&
-        textareaRef.current &&
-        !textareaRef.current.contains(event.target as Node)
-      ) {
-        setShowMentions(false);
-      }
-    };
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   useEffect(() => {
     if (
@@ -471,7 +441,7 @@ export function ChatPanelWS({
           >
             <PanelRightClose className="w-5 h-5" />
           </Button>
-          
+
           {/* Conversation Owner Display (collapsed sidebar) */}
           {conversationOwner && (
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/20">
@@ -481,7 +451,7 @@ export function ChatPanelWS({
               </span>
             </div>
           )}
-          
+
           <div className="flex-1" />
           {!isConnected && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -529,7 +499,7 @@ export function ChatPanelWS({
                 Connected
               </div>
             )}
-            
+
             {/* Conversation Owner Display */}
             {conversationOwner && (
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/20">
@@ -613,7 +583,7 @@ export function ChatPanelWS({
           if (msg.message_type === 'activity') {
             return null;
           }
-          
+
           // Agent Handoff Notification
           if (msg.message_type === 'agent_handoff') {
             return (
@@ -660,7 +630,7 @@ export function ChatPanelWS({
               </div>
             );
           }
-          
+
           // Batch Question Handling
           if (msg.message_type === 'agent_question_batch') {
             return (
@@ -701,7 +671,7 @@ export function ChatPanelWS({
                   <span className="text-xs font-medium text-muted-foreground">
                     {getAgentName(msg)}
                   </span>
-                  
+
                   {/* Conversation Owner Badge */}
                   {msg.author_type === AuthorType.AGENT && conversationOwner && conversationOwner.agentName === msg.agent_name && conversationOwner.status && (
                     <ConversationOwnerBadge
@@ -734,7 +704,7 @@ export function ChatPanelWS({
                       )}
                     </button>
                   </div>
-                  
+
                   {/* Show artifact card if message type is artifact_created */}
                   {msg.message_type === 'artifact_created' && msg.structured_data?.artifact_id && (
                     <ArtifactCard
@@ -754,7 +724,7 @@ export function ChatPanelWS({
                       }}
                     />
                   )}
-                  
+
                   {/* Show stories created card if message type is stories_created */}
                   {msg.message_type === 'stories_created' && msg.structured_data?.story_ids && (
                     <StoriesCreatedCard
@@ -774,7 +744,7 @@ export function ChatPanelWS({
 
         {/* Typing Indicators - ChatGPT style inline indicators */}
         {Array.from(typingAgents.values()).map((typing) => (
-          <TypingIndicator 
+          <TypingIndicator
             key={typing.id}
             agentName={typing.agent_name}
             message={typing.message}
@@ -841,107 +811,78 @@ export function ChatPanelWS({
         </div>
       )}
 
-      <div className="p-2 m-4 rounded-4xl relative bg-muted">
-        {showMentions && filteredAgents.length > 0 && (
-          <div
-            ref={mentionDropdownRef}
-            className="absolute bottom-full left-0 right-0 mb-2 mx-1 bg-card border border-border rounded-lg shadow-lg overflow-hidden"
-          >
-            <div className="flex items-center justify-between px-4 py-2 border-b border-border">
-              <span className="text-sm font-medium text-foreground">
-                Group Members
-              </span>
-              <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 text-xs bg-accent rounded">
-                  Tab
-                </kbd>
-                to select
-              </span>
-            </div>
-            <div className="max-h-[240px] overflow-y-auto">
-              {filteredAgents.map((agent, index) => (
-                <button
-                  key={agent.name}
-                  onClick={() => insertMention(agent)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors ${index === selectedMentionIndex ? "bg-accent/50" : ""
-                    }`}
-                >
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0 bg-muted">
-                    {agent.avatar}
-                  </div>
-                  <div className="flex-1 text-left">
-                    <div className="text-sm font-medium text-foreground">
-                      {agent.name}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {agent.role}
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
+      <div className="p-2 m-4 rounded-4xl relative ">
+        {showMentions && (
+          <MentionDropdown
+            agents={filteredAgents}
+            onSelect={insertMention}
+            onClose={() => setShowMentions(false)}
+          />
         )}
 
-        <div className="bg-transparent rounded-4xl p-1 border-0">
-          <Textarea
+        {/* <div className="bg-transparent rounded-4xl p-1 border-0"> */}
+        <PromptInput onSubmit={handleSend}
+        >
+          <PromptInputTextarea
             ref={textareaRef}
             value={message}
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
-            className="min-h-[40px] resize-none bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground p-1 focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
-            disabled={!isConnected || shouldBlockChat}
-            placeholder={
-              shouldBlockChat
-                ? "⏸️ Please select options in the question above..."
-                : pendingQuestion && !isMultichoiceQuestion
-                ? "💬 Type your answer here..."
-                : "Type a message..."
-            }
+            placeholder="Type your message..."
           />
-          <div className="flex items-center justify-between pt-3">
-            <div className="flex gap-2">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 hover:bg-accent"
-                      onClick={triggerMention}
-                      disabled={!isConnected || shouldBlockChat}
-                    >
-                      <AtSign className="w-4 h-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Mention an agent</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div>
-                      <TechStackDialog />
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>View tech stack</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
-            <Button
-              size="icon"
-              className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90"
-              onClick={handleSend}
-              disabled={!isConnected || !message.trim() || shouldBlockChat}
-            >
-              <ArrowUp className="w-4 h-4" />
-            </Button>
+          <PromptInputToolbar>
+            <PromptInputTools>
+              <PromptInputButton>
+                <PaperclipIcon size={16} />
+              </PromptInputButton>
+
+            </PromptInputTools>
+            <PromptInputSubmit disabled={!isConnected || shouldBlockChat || !message.trim()} />
+          </PromptInputToolbar>
+        </PromptInput>
+        {/* <div className="flex items-center justify-between pt-3">
+          <div className="flex gap-2">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 hover:bg-accent"
+                    onClick={triggerMention}
+                    disabled={!isConnected || shouldBlockChat}
+                  >
+                    <AtSign className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Mention an agent</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div>
+                    <TechStackDialog />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>View tech stack</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
-        </div>
+          <Button
+            size="icon"
+            className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90"
+            onClick={handleSend}
+            disabled={!isConnected || !message.trim() || shouldBlockChat}
+          >
+            <ArrowUp className="w-4 h-4" />
+          </Button>
+        </div> */}
+
       </div>
 
     </div>

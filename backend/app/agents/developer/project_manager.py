@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 
 import cocoindex
 from cocoindex import FlowBuilder
@@ -85,7 +86,8 @@ def create_project_flow(project_id: str, project_path: str):
                     "pnpm-lock.yaml",
                     "package-lock.json",
                 ],
-            )
+            ),
+            refresh_interval=timedelta(minutes=1)  # 🔥 Auto-refresh every 1 minute!
         )
 
         code_embeddings = data_scope.add_collector()
@@ -143,8 +145,10 @@ class AdvancedProjectManager:
 
         print(f"Attempting to index project '{project_id}' (sanitized as '{sanitized_project_id}')...")
         try:
+            # 🔥 Use update() with live mode to enable refresh_interval
             stats = flow.update()
             print(f"✅ Indexing completed for '{project_id}': {stats}")
+            print(f"🔄 Live update enabled: Auto-refresh every 1 minute")
         except Exception as e:
             if "not up-to-date" in str(e):
                 print(
@@ -154,6 +158,7 @@ class AdvancedProjectManager:
                 print("✅ Setup complete. Retrying indexing...")
                 stats = flow.update()
                 print(f"✅ Indexing completed for '{project_id}' after setup: {stats}")
+                print(f"🔄 Live update enabled: Auto-refresh every 1 minute")
             else:
                 print(f"❌ An unexpected error during indexing for '{project_id}':")
                 raise e

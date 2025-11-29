@@ -1,9 +1,12 @@
-import {  ProjectPublic } from "@/client"
+import { ProjectPublic } from "@/client"
 import { ProjectCard } from "./project-card"
-import {  useQueryClient } from "@tanstack/react-query"
+import { useQueryClient } from "@tanstack/react-query"
 
 import { useAppStore } from "@/stores/auth-store"
 import { useNavigate } from "@tanstack/react-router"
+import { ArrowUpRightIcon, FolderOpenDot, Sparkles } from "lucide-react"
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty"
+import { Button } from "../ui/button"
 
 interface ProjectListProps {
   projects: ProjectPublic[]
@@ -18,23 +21,39 @@ export const ProjectList = ({ projects }: ProjectListProps) => {
 
   const handleClickProject = (project: ProjectPublic) => {
 
-      naviagate({ to: "/workspace/$workspaceId", params: { workspaceId: project.id }})
-    
+    naviagate({ to: "/workspace/$workspaceId", params: { workspaceId: project.id } })
+
 
   }
   if (projects.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="w-16 h-16 mb-4 rounded-2xl bg-gradient-to-br from-primary/10 to-accent/10 flex items-center justify-center">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary to-accent opacity-50" />
-        </div>
-        <h3 className="text-xl font-semibold text-foreground mb-2">
-          No projects yet
-        </h3>
-        <p className="text-muted-foreground max-w-sm">
-          Create your first project to get started
-        </p>
-      </div>
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <FolderOpenDot />
+          </EmptyMedia>
+          <EmptyTitle>No Projects Yet</EmptyTitle>
+          <EmptyDescription>
+            You haven&apos;t created any projects yet. Get started by creating
+            your first project.
+          </EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <div className="flex gap-2">
+            <Button>Create Project</Button>
+          </div>
+        </EmptyContent>
+        <Button
+          variant="link"
+          asChild
+          className="text-muted-foreground"
+          size="sm"
+        >
+          <a href="#">
+            Learn More <ArrowUpRightIcon />
+          </a>
+        </Button>
+      </Empty>
     )
   }
 

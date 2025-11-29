@@ -4,8 +4,10 @@ from typing import Optional
 from uuid import UUID, uuid4
 
 from pydantic import EmailStr
-from sqlalchemy import JSON, BigInteger, Text, Enum as SQLEnum, UniqueConstraint
-from sqlmodel import Field, SQLModel, Relationship, Column
+from sqlalchemy import JSON, BigInteger, Text, UniqueConstraint
+from sqlalchemy import Enum as SQLEnum
+from sqlmodel import Column, Field, Relationship, SQLModel
+
 
 class Role(str, Enum):
     ADMIN = "admin"
@@ -49,43 +51,45 @@ class BaseModel(SQLModel):
 
 class AgentPersonaTemplate(BaseModel, table=True):
     __tablename__ = "agent_persona_templates"
-    
+
     name: str = Field(nullable=False, index=True)
     role_type: str = Field(nullable=False, index=True)
-    
+
     personality_traits: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     communication_style: str = Field(nullable=False)
-    
+
     persona_metadata: dict = Field(default_factory=dict, sa_column=Column(JSON))
-    
+
     is_active: bool = Field(default=True)
     display_order: int = Field(default=0)
-    
+
     agents: list["Agent"] = Relationship(back_populates="persona_template")
-    
+
     __table_args__ = (
-        UniqueConstraint('name', 'role_type', name='uq_persona_name_role'),
+        UniqueConstraint("name", "role_type", name="uq_persona_name_role"),
     )
 
 
 class User(BaseModel, table=True):
     __tablename__ = "users"
 
-    username : str | None = Field(default=None, max_length=50, nullable=True)
+    username: str | None = Field(default=None, max_length=50, nullable=True)
     full_name: str | None = Field(default=None, max_length=50, nullable=True)
-    hashed_password: str = Field(nullable=True, sa_column_kwargs={"name": "password_hash"})
+    hashed_password: str = Field(
+        nullable=True, sa_column_kwargs={"name": "password_hash"}
+    )
     email: EmailStr = Field(unique=True, index=True, max_length=255)
-    
+
     address: str | None = Field(default=None, nullable=True)
     balance: float = Field(default=0.0, nullable=True)
     is_active: bool = Field(default=True, nullable=True)
     failed_login_attempts: int = Field(default=0, nullable=False)
     locked_until: datetime | None = Field(default=None)
     two_factor_enabled: bool = Field(default=False, nullable=True)
-    
+
     role: Role = Field(default=Role.USER, nullable=False)
     is_locked: bool = Field(default=False, nullable=False)
-    login_provider: bool = Field(default=False, nullable=False)
+    login_provider: str | None = Field(default=None, nullable=True)
 
     owned_projects: list["Project"] = Relationship(
         back_populates="owner", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
@@ -111,7 +115,9 @@ class Epic(BaseModel, table=True):
 
     title: str
     description: str | None = Field(default=None, sa_column=Column(Text))
-    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE")
+    project_id: UUID = Field(
+        foreign_key="projects.id", nullable=False, ondelete="CASCADE"
+    )
 
     domain: str | None = Field(default=None)
     epic_status: EpicStatus = Field(default=EpicStatus.PLANNED)
@@ -133,17 +139,15 @@ class Project(BaseModel, table=True):
     wip_data: dict | None = Field(default=None, sa_column=Column(JSON))
 
     project_path: str | None = Field(default=None, max_length=500)
-    
+
     active_agent_id: UUID | None = Field(
-        default=None,
-        foreign_key="agents.id",
-        ondelete="SET NULL"
+        default=None, foreign_key="agents.id", ondelete="SET NULL"
     )
     active_agent_updated_at: datetime | None = Field(default=None)
-    
+
     websocket_connected: bool = Field(default=False)
     websocket_last_seen: datetime | None = Field(default=None)
-    
+
     # Token budget fields for cost control
     token_budget_daily: int = Field(default=100000)  # 100K tokens/day
     token_budget_monthly: int = Field(default=2000000)  # 2M tokens/month
@@ -151,7 +155,7 @@ class Project(BaseModel, table=True):
     tokens_used_this_month: int = Field(default=0)
     budget_last_reset_daily: datetime | None = Field(default=None)
     budget_last_reset_monthly: datetime | None = Field(default=None)
-    
+
     owner: User = Relationship(back_populates="owned_projects")
     stories: list["Story"] = Relationship(
         back_populates="project",
@@ -165,20 +169,22 @@ class Project(BaseModel, table=True):
         back_populates="project",
         sa_relationship_kwargs={
             "cascade": "all, delete-orphan",
-            "foreign_keys": "[Agent.project_id]"
+            "foreign_keys": "[Agent.project_id]",
         },
     )
 
     rules: Optional["ProjectRules"] = Relationship(
         back_populates="project",
-        sa_relationship_kwargs={"uselist": False, "cascade": "all, delete-orphan"}
+        sa_relationship_kwargs={"uselist": False, "cascade": "all, delete-orphan"},
     )
 
 
 class WorkflowPolicy(BaseModel, table=True):
     __tablename__ = "workflow_policies"
 
-    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
+    project_id: UUID = Field(
+        foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True
+    )
     from_status: str = Field(max_length=50, nullable=False)
     to_status: str = Field(max_length=50, nullable=False)
     criteria: dict | None = Field(default=None, sa_column=Column(JSON))
@@ -203,7 +209,9 @@ class Story(BaseModel, table=True):
     description: str | None = Field(default=None, sa_column=Column(Text))
     status: StoryStatus = Field(default=StoryStatus.TODO)
 
-    epic_id: UUID | None = Field(default=None, foreign_key="epics.id", ondelete="SET NULL")
+    epic_id: UUID | None = Field(
+        default=None, foreign_key="epics.id", ondelete="SET NULL"
+    )
 
     acceptance_criteria: str | None = Field(default=None, sa_column=Column(Text))
 
@@ -297,9 +305,7 @@ class Comment(BaseModel, table=True):
 class IssueActivity(BaseModel, table=True):
     __tablename__ = "issue_activities"
 
-    issue_id: UUID = Field(
-        foreign_key="stories.id", nullable=False, ondelete="CASCADE"
-    )
+    issue_id: UUID = Field(foreign_key="stories.id", nullable=False, ondelete="CASCADE")
     actor_id: str | None = Field(default=None)
     actor_name: str | None = Field(default=None)
 
@@ -321,7 +327,8 @@ class IssueActivity(BaseModel, table=True):
     type_to: str | None = Field(default=None)
     note: str | None = Field(default=None)
 
-    story: Story = Relationship(back_populates="activities") 
+    story: Story = Relationship(back_populates="activities")
+
 
 class AuthorType(str, Enum):
     USER = "user"
@@ -352,94 +359,83 @@ class PoolType(str, Enum):
 
 class AgentPool(BaseModel, table=True):
     __tablename__ = "agent_pools"
-    
+
     pool_name: str = Field(unique=True, nullable=False)
     role_type: str | None = Field(default=None, index=True)
-    
+
     pool_type: PoolType = Field(default=PoolType.FREE, index=True)
-    
+
     max_agents: int = Field(default=100)
     health_check_interval: int = Field(default=60)
-    
+
     llm_model_config: dict | None = Field(default=None, sa_column=Column(JSON))
     allowed_template_ids: list[str] | None = Field(default=None, sa_column=Column(JSON))
-    
+
     is_active: bool = Field(default=True, index=True)
     last_started_at: datetime | None = Field(default=None)
     last_stopped_at: datetime | None = Field(default=None)
-    
+
     total_spawned: int = Field(default=0)
     total_terminated: int = Field(default=0)
     current_agent_count: int = Field(default=0)
-    
+
     created_by: UUID | None = Field(
-        default=None,
-        foreign_key="users.id",
-        ondelete="SET NULL"
+        default=None, foreign_key="users.id", ondelete="SET NULL"
     )
     updated_by: UUID | None = Field(
-        default=None,
-        foreign_key="users.id",
-        ondelete="SET NULL"
+        default=None, foreign_key="users.id", ondelete="SET NULL"
     )
     auto_created: bool = Field(default=False)
-    
+
     agents: list["Agent"] = Relationship(back_populates="pool")
     metrics: list["AgentPoolMetrics"] = Relationship(
-        back_populates="pool",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+        back_populates="pool", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
 
 class AgentPoolMetrics(BaseModel, table=True):
     __tablename__ = "agent_pool_metrics"
-    
+
     pool_id: UUID = Field(
-        foreign_key="agent_pools.id",
-        nullable=False,
-        ondelete="CASCADE",
-        index=True
+        foreign_key="agent_pools.id", nullable=False, ondelete="CASCADE", index=True
     )
-    
+
     period_start: datetime = Field(nullable=False, index=True)
     period_end: datetime = Field(nullable=False)
-    
+
     total_tokens_used: int = Field(default=0)
     tokens_per_model: dict = Field(default_factory=dict, sa_column=Column(JSON))
-    
+
     total_requests: int = Field(default=0)
     requests_per_model: dict = Field(default_factory=dict, sa_column=Column(JSON))
-    
+
     peak_agent_count: int = Field(default=0)
     avg_agent_count: float = Field(default=0.0)
-    
+
     total_executions: int = Field(default=0)
     successful_executions: int = Field(default=0)
     failed_executions: int = Field(default=0)
-    
+
     avg_execution_duration_ms: float | None = Field(default=None)
-    
+
     snapshot_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
-    
+
     pool: "AgentPool" = Relationship(back_populates="metrics")
 
 
 class Agent(BaseModel, table=True):
     __tablename__ = "agents"
 
-    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
+    project_id: UUID = Field(
+        foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True
+    )
 
     persona_template_id: UUID | None = Field(
-        default=None,
-        foreign_key="agent_persona_templates.id",
-        ondelete="RESTRICT"
+        default=None, foreign_key="agent_persona_templates.id", ondelete="RESTRICT"
     )
-    
+
     pool_id: UUID | None = Field(
-        default=None,
-        foreign_key="agent_pools.id",
-        ondelete="SET NULL",
-        index=True
+        default=None, foreign_key="agent_pools.id", ondelete="SET NULL", index=True
     )
 
     name: str
@@ -451,15 +447,17 @@ class Agent(BaseModel, table=True):
     communication_style: str | None = Field(default=None)
     persona_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
 
-    status: AgentStatus = Field(default=AgentStatus.idle)
+    status: AgentStatus = Field(
+        default=AgentStatus.idle, sa_column=Column(SQLEnum(AgentStatus))
+    )
 
-    persona_template: Optional["AgentPersonaTemplate"] = Relationship(back_populates="agents")
+    persona_template: Optional["AgentPersonaTemplate"] = Relationship(
+        back_populates="agents"
+    )
     pool: Optional["AgentPool"] = Relationship(back_populates="agents")
     project: "Project" = Relationship(
         back_populates="agents",
-        sa_relationship_kwargs={
-            "foreign_keys": "[Agent.project_id]"
-        }
+        sa_relationship_kwargs={"foreign_keys": "[Agent.project_id]"},
     )
     messages: list["Message"] = Relationship(back_populates="agent")
 
@@ -467,20 +465,31 @@ class Agent(BaseModel, table=True):
 class Message(BaseModel, table=True):
     __tablename__ = "messages"
 
-    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
+    project_id: UUID = Field(
+        foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True
+    )
 
     author_type: AuthorType = Field(default=AuthorType.USER, nullable=False)
-    user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
-    agent_id: UUID | None = Field(default=None, foreign_key="agents.id", ondelete="SET NULL")
+    user_id: UUID | None = Field(
+        default=None, foreign_key="users.id", ondelete="SET NULL"
+    )
+    agent_id: UUID | None = Field(
+        default=None, foreign_key="agents.id", ondelete="SET NULL"
+    )
 
     content: str
 
     visibility: MessageVisibility = Field(
         default=MessageVisibility.USER_MESSAGE,
         sa_column=Column(
-            SQLEnum(MessageVisibility, name='messagevisibility', native_enum=True, values_callable=lambda x: [e.value for e in x]),
-            nullable=False
-        )
+            SQLEnum(
+                MessageVisibility,
+                name="messagevisibility",
+                native_enum=True,
+                values_callable=lambda x: [e.value for e in x],
+            ),
+            nullable=False,
+        ),
     )
 
     message_type: str = Field(default="text", nullable=True)
@@ -499,7 +508,9 @@ class RefreshToken(BaseModel, table=True):
     is_revoked: bool = Field(default=False, nullable=False)
 
     family_id: UUID = Field(nullable=False, index=True)
-    parent_token_id: UUID | None = Field(default=None, foreign_key="refresh_tokens.id", ondelete="SET NULL")
+    parent_token_id: UUID | None = Field(
+        default=None, foreign_key="refresh_tokens.id", ondelete="SET NULL"
+    )
 
     user: User = Relationship()
     parent: Optional["RefreshToken"] = Relationship(
@@ -512,7 +523,9 @@ class RefreshToken(BaseModel, table=True):
 class ProjectRules(BaseModel, table=True):
     __tablename__ = "projectrules"
 
-    project_id: UUID = Field(foreign_key="projects.id", unique=True, nullable=False, ondelete="CASCADE")
+    project_id: UUID = Field(
+        foreign_key="projects.id", unique=True, nullable=False, ondelete="CASCADE"
+    )
 
     po_prompt: str | None = Field(default=None, sa_column=Column(Text))
     dev_prompt: str | None = Field(default=None, sa_column=Column(Text))
@@ -532,7 +545,9 @@ class AgentExecutionStatus(str, Enum):
 class AgentExecution(BaseModel, table=True):
     __tablename__ = "agent_executions"
 
-    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
+    project_id: UUID = Field(
+        foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True
+    )
 
     agent_name: str = Field(nullable=False)
     agent_type: str = Field(nullable=False)
@@ -542,8 +557,12 @@ class AgentExecution(BaseModel, table=True):
     completed_at: datetime | None = Field(default=None)
     duration_ms: int | None = Field(default=None)
 
-    trigger_message_id: UUID | None = Field(default=None, foreign_key="messages.id", ondelete="SET NULL")
-    user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
+    trigger_message_id: UUID | None = Field(
+        default=None, foreign_key="messages.id", ondelete="SET NULL"
+    )
+    user_id: UUID | None = Field(
+        default=None, foreign_key="users.id", ondelete="SET NULL"
+    )
 
     token_used: int = Field(default=0)
     llm_calls: int = Field(default=0)
@@ -558,8 +577,12 @@ class AgentExecution(BaseModel, table=True):
 class AgentConversation(BaseModel, table=True):
     __tablename__ = "agent_conversations"
 
-    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
-    execution_id: UUID | None = Field(default=None, foreign_key="agent_executions.id", ondelete="CASCADE")
+    project_id: UUID = Field(
+        foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    execution_id: UUID | None = Field(
+        default=None, foreign_key="agent_executions.id", ondelete="CASCADE"
+    )
 
     sender_type: str = Field(nullable=False)
     sender_name: str = Field(nullable=False)
@@ -577,9 +600,7 @@ class AgentMetricsSnapshot(BaseModel, table=True):
     __tablename__ = "agent_metrics_snapshots"
 
     snapshot_timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        nullable=False,
-        index=True
+        default_factory=lambda: datetime.now(timezone.utc), nullable=False, index=True
     )
     pool_name: str = Field(nullable=False, index=True)
 
@@ -620,37 +641,36 @@ class QuestionStatus(str, Enum):
 
 class AgentQuestion(BaseModel, table=True):
     __tablename__ = "agent_questions"
-    
+
     project_id: UUID = Field(foreign_key="projects.id", ondelete="CASCADE")
     agent_id: UUID = Field(foreign_key="agents.id", ondelete="CASCADE")
     user_id: UUID = Field(foreign_key="users.id")
-    
+
     question_type: QuestionType = Field(sa_column=Column(SQLEnum(QuestionType)))
     question_text: str = Field(sa_column=Column(Text))
-    
+
     options: list[str] | None = Field(default=None, sa_column=Column(JSON))
     allow_multiple: bool = Field(default=False)
-    
+
     proposed_data: dict | None = Field(default=None, sa_column=Column(JSON))
     explanation: str | None = Field(default=None, sa_column=Column(Text))
-    
+
     answer: str | None = Field(default=None, sa_column=Column(Text))
     selected_options: list[str] | None = Field(default=None, sa_column=Column(JSON))
     approved: bool | None = Field(default=None)
     modified_data: dict | None = Field(default=None, sa_column=Column(JSON))
-    
+
     status: QuestionStatus = Field(
-        default=QuestionStatus.WAITING_ANSWER,
-        sa_column=Column(SQLEnum(QuestionStatus))
+        default=QuestionStatus.WAITING_ANSWER, sa_column=Column(SQLEnum(QuestionStatus))
     )
-    
+
     task_id: UUID
     execution_id: UUID | None = None
     task_context: dict = Field(default_factory=dict, sa_column=Column(JSON))
-    
+
     expires_at: datetime
     answered_at: datetime | None = None
-    
+
     extra_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
 
 
@@ -676,51 +696,62 @@ class ArtifactStatus(str, Enum):
 
 class Artifact(BaseModel, table=True):
     __tablename__ = "artifacts"
-    
+
     project_id: UUID = Field(foreign_key="projects.id", ondelete="CASCADE", index=True)
-    agent_id: UUID | None = Field(default=None, foreign_key="agents.id", ondelete="SET NULL")
+    agent_id: UUID | None = Field(
+        default=None, foreign_key="agents.id", ondelete="SET NULL"
+    )
     agent_name: str = Field(nullable=False)
-    
+
     artifact_type: ArtifactType = Field(sa_column=Column(SQLEnum(ArtifactType)))
     title: str = Field(max_length=255)
     description: str | None = Field(default=None, sa_column=Column(Text))
-    
+
     content: dict = Field(sa_column=Column(JSON))
     file_path: str | None = Field(default=None)
-    
+
     version: int = Field(default=1)
-    parent_artifact_id: UUID | None = Field(default=None, foreign_key="artifacts.id", ondelete="SET NULL")
-    
-    status: ArtifactStatus = Field(default=ArtifactStatus.DRAFT, sa_column=Column(SQLEnum(ArtifactStatus)))
-    
-    reviewed_by_user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
+    parent_artifact_id: UUID | None = Field(
+        default=None, foreign_key="artifacts.id", ondelete="SET NULL"
+    )
+
+    status: ArtifactStatus = Field(
+        default=ArtifactStatus.DRAFT, sa_column=Column(SQLEnum(ArtifactStatus))
+    )
+
+    reviewed_by_user_id: UUID | None = Field(
+        default=None, foreign_key="users.id", ondelete="SET NULL"
+    )
     reviewed_at: datetime | None = Field(default=None)
     review_feedback: str | None = Field(default=None, sa_column=Column(Text))
-    
+
     tags: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     extra_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
-    
+
     project: "Project" = Relationship()
     agent: Optional["Agent"] = Relationship()
     reviewed_by: Optional["User"] = Relationship()
     parent: Optional["Artifact"] = Relationship(
         sa_relationship_kwargs={
             "remote_side": "[Artifact.id]",
-            "foreign_keys": "[Artifact.parent_artifact_id]"
+            "foreign_keys": "[Artifact.parent_artifact_id]",
         }
     )
 
 
 # ==================== BILLING & PAYMENT MODELS ====================
 
+
 class OrderType(str, Enum):
     """Type of order"""
+
     SUBSCRIPTION = "subscription"
     CREDIT = "credit"
 
 
 class OrderStatus(str, Enum):
     """Status of an order"""
+
     PENDING = "pending"
     PAID = "paid"
     FAILED = "failed"
@@ -729,6 +760,7 @@ class OrderStatus(str, Enum):
 
 class InvoiceStatus(str, Enum):
     """Status of an invoice"""
+
     DRAFT = "draft"
     ISSUED = "issued"
     PAID = "paid"
@@ -739,30 +771,37 @@ class InvoiceStatus(str, Enum):
 class Plan(BaseModel, table=True):
     __tablename__ = "plans"
 
-    code: str | None = Field(default=None, sa_column=Column(Text)) # 'FREE', 'PLUS', 'PRO'
+    code: str | None = Field(
+        default=None, sa_column=Column(Text)
+    )  # 'FREE', 'PLUS', 'PRO'
     name: str | None = Field(default=None, sa_column=Column(Text))
     description: str | None = Field(default=None, sa_column=Column(Text))
 
     monthly_price: int | None = Field(default=None)
-    yearly_discount_percentage: float | None = Field(default=None)  # Discount % for yearly billing (0-100)
-    currency: str | None = Field(default=None, sa_column=Column(Text)) # VND
+    yearly_discount_percentage: float | None = Field(
+        default=None
+    )  # Discount % for yearly billing (0-100)
+    currency: str | None = Field(default=None, sa_column=Column(Text))  # VND
     monthly_credits: int | None = Field(default=None)
-    additional_credit_price: int | None = Field(default=None)  # Price to buy 100 additional credits
+    additional_credit_price: int | None = Field(
+        default=None
+    )  # Price to buy 100 additional credits
     available_project: int | None = Field(default=None)
     is_active: bool = Field(default=True, nullable=True)
 
-    tier: str | None = Field(
-        default="pay",
-        sa_column=Column(Text)
-    )
+    tier: str | None = Field(default="pay", sa_column=Column(Text))
     # 'free' | 'pay'
 
     sort_index: int | None = Field(default=0)
     # số thứ tự để sắp xếp trên UI
 
-    is_featured: bool = Field(default=False)  # gói nổi bật (đặt ở giữa + badge "Popular")
+    is_featured: bool = Field(
+        default=False
+    )  # gói nổi bật (đặt ở giữa + badge "Popular")
 
-    is_custom_price: bool = Field(default=False)  # true -> hiển thị "Custom" / "Liên hệ"
+    is_custom_price: bool = Field(
+        default=False
+    )  # true -> hiển thị "Custom" / "Liên hệ"
 
     features_text: str | None = Field(default=None, sa_column=Column(Text))
 
@@ -773,19 +812,29 @@ class Plan(BaseModel, table=True):
     @property
     def yearly_price(self) -> int | None:
         """Calculate yearly price from monthly price and discount percentage"""
-        if self.monthly_price is not None and self.yearly_discount_percentage is not None:
+        if (
+            self.monthly_price is not None
+            and self.yearly_discount_percentage is not None
+        ):
             annual_monthly_cost = self.monthly_price * 12
-            yearly_price = annual_monthly_cost * (1 - self.yearly_discount_percentage / 100)
+            yearly_price = annual_monthly_cost * (
+                1 - self.yearly_discount_percentage / 100
+            )
             return round(yearly_price)
         return None
+
 
 class Subscription(BaseModel, table=True):
     __tablename__ = "subscriptions"
 
-    user_id: UUID  | None = Field(foreign_key="users.id", nullable=True, ondelete="CASCADE")
+    user_id: UUID | None = Field(
+        foreign_key="users.id", nullable=True, ondelete="CASCADE"
+    )
     plan_id: UUID = Field(foreign_key="plans.id", nullable=True, ondelete="CASCADE")
 
-    status: str | None = Field(default=None, sa_column=Column(Text)) # 'pending', 'active', 'expired', 'canceled'
+    status: str | None = Field(
+        default=None, sa_column=Column(Text)
+    )  # 'pending', 'active', 'expired', 'canceled'
     start_at: datetime | None = Field(default=None)
     end_at: datetime | None = Field(default=None)
     auto_renew: bool = Field(default=True, nullable=True)
@@ -794,16 +843,24 @@ class Subscription(BaseModel, table=True):
     plan: Plan = Relationship(back_populates="plan_subscriptions")
 
     subscription_wallets: list["CreditWallet"] = Relationship(
-        back_populates="subscription", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+        back_populates="subscription",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+
 
 class CreditWallet(BaseModel, table=True):
     __tablename__ = "credit_wallets"
 
-    user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
-    wallet_type: str | None = Field(default=None, sa_column=Column(Text)) # subscription, addon
+    user_id: UUID | None = Field(
+        default=None, foreign_key="users.id", ondelete="SET NULL"
+    )
+    wallet_type: str | None = Field(
+        default=None, sa_column=Column(Text)
+    )  # subscription, addon
 
-    subscription_id: UUID | None = Field(default=None, foreign_key="subscriptions.id", ondelete="CASCADE")
+    subscription_id: UUID | None = Field(
+        default=None, foreign_key="subscriptions.id", ondelete="CASCADE"
+    )
     period_start: datetime | None = Field(default=None)
     period_end: datetime | None = Field(default=None)
 
@@ -812,21 +869,31 @@ class CreditWallet(BaseModel, table=True):
 
     # Relationships
     user: User | None = Relationship()
-    subscription: Optional["Subscription"] = Relationship(back_populates="subscription_wallets")
-    credit_activities: list["CreditActivity"] = Relationship(
-        back_populates="wallet", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    subscription: Optional["Subscription"] = Relationship(
+        back_populates="subscription_wallets"
     )
+    credit_activities: list["CreditActivity"] = Relationship(
+        back_populates="wallet",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+
 
 class CreditActivity(BaseModel, table=True):
     __tablename__ = "credit_activities"
 
-    user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="CASCADE")
-    agent_id: UUID | None = Field(default=None, foreign_key="agents.id", ondelete="CASCADE")
-    wallet_id: UUID | None = Field(default=None, foreign_key="credit_wallets.id", ondelete="CASCADE")
+    user_id: UUID | None = Field(
+        default=None, foreign_key="users.id", ondelete="CASCADE"
+    )
+    agent_id: UUID | None = Field(
+        default=None, foreign_key="agents.id", ondelete="CASCADE"
+    )
+    wallet_id: UUID | None = Field(
+        default=None, foreign_key="credit_wallets.id", ondelete="CASCADE"
+    )
 
     amount: int | None = Field(default=None)
     reason: str | None = Field(default=None, sa_column=Column(Text))
-    activity_type: str | None = Field(default=None, sa_column=Column(Text)) # cộng, trừ
+    activity_type: str | None = Field(default=None, sa_column=Column(Text))  # cộng, trừ
 
     # Relationships
     user: User | None = Relationship()
@@ -839,7 +906,9 @@ class Order(BaseModel, table=True):
 
     user_id: UUID = Field(foreign_key="users.id", nullable=False, ondelete="CASCADE")
     order_type: OrderType = Field(nullable=False)  # subscription or addon
-    subscription_id: UUID | None = Field(default=None, foreign_key="subscriptions.id", ondelete="SET NULL")
+    subscription_id: UUID | None = Field(
+        default=None, foreign_key="subscriptions.id", ondelete="SET NULL"
+    )
 
     amount: float = Field(nullable=False)
     status: OrderStatus = Field(default=OrderStatus.PENDING, nullable=False)
@@ -847,17 +916,27 @@ class Order(BaseModel, table=True):
     is_active: bool = Field(default=True, nullable=False)
 
     # PayOS Integration fields
-    payos_order_code: int | None = Field(default=None, sa_column=Column(BigInteger, unique=True, index=True))
+    payos_order_code: int | None = Field(
+        default=None, sa_column=Column(BigInteger, unique=True, index=True)
+    )
     payos_transaction_id: str | None = Field(default=None, sa_column=Column(Text))
     payment_link_id: str | None = Field(default=None, sa_column=Column(Text))
     qr_code: str | None = Field(default=None, sa_column=Column(Text))  # Base64 QR code
     checkout_url: str | None = Field(default=None, sa_column=Column(Text))
 
     # Payment details
-    billing_cycle: str | None = Field(default="monthly", sa_column=Column(Text))  # monthly, yearly
-    plan_code: str | None = Field(default=None, sa_column=Column(Text))  # Store plan code for reference
-    auto_renew: bool = Field(default=True, nullable=False)  # Auto-renew subscription preference
-    credit_amount: int | None = Field(default=None, nullable=True)  # Number of credits for credit purchase orders
+    billing_cycle: str | None = Field(
+        default="monthly", sa_column=Column(Text)
+    )  # monthly, yearly
+    plan_code: str | None = Field(
+        default=None, sa_column=Column(Text)
+    )  # Store plan code for reference
+    auto_renew: bool = Field(
+        default=True, nullable=False
+    )  # Auto-renew subscription preference
+    credit_amount: int | None = Field(
+        default=None, nullable=True
+    )  # Number of credits for credit purchase orders
 
     # Relationships
     user: User = Relationship()
@@ -886,4 +965,3 @@ class Invoice(BaseModel, table=True):
 
     # Relationships
     order: Order = Relationship(back_populates="invoices")
-

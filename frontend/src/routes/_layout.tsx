@@ -10,7 +10,7 @@ export const Route = createFileRoute("/_layout")({
 
 function LayoutRoot() {
   return (
-    <div style={{ fontFamily: "IBM Plex Sans" }}>
+    <div style={{ fontFamily: "IBM Plex Sans" }}  >
       <Outlet />
     </div>
   )
