@@ -1,12 +1,12 @@
 """Developer V2 Graph Nodes - ReAct Agents with Multi-Tool Support."""
 
+import json
 import logging
 import re
 from pathlib import Path
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_tavily import TavilySearch
-from langchain.agents import create_agent
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import (
@@ -62,10 +62,79 @@ def _extract_json_response(result: dict) -> dict:
     return {}
 
 
-def _cfg(state: dict, name: str) -> dict | None:
-    """Get LangChain config with Langfuse callback."""
+def _cfg(state: dict, name: str) -> dict:
+    """Get LangChain config with optional Langfuse callback."""
     h = state.get("langfuse_handler")
-    return {"callbacks": [h], "run_name": name} if h else None
+    if h:
+        return {"callbacks": [h], "run_name": name}
+    return {"run_name": name}
+
+
+async def _llm_with_tools(
+    llm: ChatOpenAI,
+    tools: list,
+    messages: list,
+    state: dict,
+    name: str,
+    max_iterations: int = 5
+) -> str:
+    """Call LLM with bound tools and execute tool calls manually.
+    
+    Pattern: LLM.bind_tools() -> tool_calls -> execute -> return final content
+    """
+    # Bind tools to LLM
+    llm_with_tools = llm.bind_tools(tools)
+    
+    # Create tool map for execution
+    tool_map = {tool.name: tool for tool in tools}
+    
+    conversation = list(messages)
+    
+    for iteration in range(max_iterations):
+        # Call LLM
+        response = await llm_with_tools.ainvoke(conversation, config=_cfg(state, name))
+        conversation.append(response)
+        
+        # Check for tool calls
+        if not response.tool_calls:
+            # No more tool calls, return final content
+            return response.content or ""
+        
+        # Execute tool calls
+        from langchain_core.messages import ToolMessage
+        for tool_call in response.tool_calls:
+            tool_name = tool_call["name"]
+            tool_args = tool_call["args"]
+            
+            if tool_name in tool_map:
+                try:
+                    # Execute tool
+                    tool = tool_map[tool_name]
+                    if hasattr(tool, 'invoke'):
+                        result = tool.invoke(tool_args)
+                    elif hasattr(tool, 'func'):
+                        result = tool.func(**tool_args)
+                    else:
+                        result = tool(**tool_args)
+                    
+                    # Add tool result to conversation
+                    conversation.append(ToolMessage(
+                        content=str(result)[:2000],  # Truncate long results
+                        tool_call_id=tool_call["id"]
+                    ))
+                except Exception as e:
+                    conversation.append(ToolMessage(
+                        content=f"Error: {str(e)}",
+                        tool_call_id=tool_call["id"]
+                    ))
+            else:
+                conversation.append(ToolMessage(
+                    content=f"Unknown tool: {tool_name}",
+                    tool_call_id=tool_call["id"]
+                ))
+    
+    # Max iterations reached, return last content
+    return conversation[-1].content if hasattr(conversation[-1], 'content') else ""
 
 
 def _get_prompt(task: str, key: str) -> str:
@@ -106,10 +175,11 @@ def _build_system_prompt(task: str, agent=None) -> str:
 
 
 async def router(state: DeveloperState, agent=None) -> DeveloperState:
-    """Route story to appropriate processing node using ReAct agent.
+    """Route story to appropriate processing node.
     
-    Tools: [search_codebase (optional)]
+    Refactored: Direct LLM call instead of ReAct agent for speed.
     """
+    print("[NODE] router - Analyzing story intent...")
     try:
         has_analysis = bool(state.get("analysis_result"))
         has_plan = bool(state.get("implementation_plan"))
@@ -130,29 +200,20 @@ async def router(state: DeveloperState, agent=None) -> DeveloperState:
             has_implementation=has_implementation
         )
 
-        # Setup tool context and build tools
-        project_id = state.get("project_id")
-        task_id = state.get("task_id") or state.get("story_id")
-        workspace_path = state.get("workspace_path")
-        _setup_tool_context(workspace_path, project_id, task_id)
+        # Direct LLM call (no ReAct agent needed for routing decision)
+        messages = [
+            SystemMessage(content=_build_system_prompt("routing_decision")),
+            HumanMessage(content=input_text)
+        ]
         
-        tools = [semantic_code_search]
+        response = await _fast_llm.ainvoke(messages, config=_cfg(state, "router"))
         
-        # Create agent
-        agent = create_agent(
-            model=_fast_llm,
-            tools=tools,
-            system_prompt=_build_system_prompt("routing_decision")
-        )
+        # Parse JSON response
+        try:
+            args = json.loads(_clean_json(response.content))
+        except json.JSONDecodeError:
+            args = {}
         
-        # Invoke agent
-        result = await agent.ainvoke(
-            {"messages": [{"role": "user", "content": input_text}]},
-            config=_cfg(state, "router")
-        )
-        
-        # Extract JSON from agent response
-        args = _extract_json_response(result)
         action = args.get("action", "ANALYZE")
         task_type = args.get("task_type", "feature")
         complexity = args.get("complexity", "medium")
@@ -166,6 +227,7 @@ async def router(state: DeveloperState, agent=None) -> DeveloperState:
             action = "ANALYZE"
         
         logger.info(f"[router] Decision: action={action}, type={task_type}, complexity={complexity}")
+        print(f"[NODE] router - Decision: {action} (type={task_type}, complexity={complexity})")
         
         return {
             **state,
@@ -192,10 +254,8 @@ async def router(state: DeveloperState, agent=None) -> DeveloperState:
 
 async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
     """Setup git workspace/branch only when code modification is needed.
-    
-    Creates a hotfix branch for this task.
-    Only called when action is ANALYZE/PLAN/IMPLEMENT/VALIDATE.
     """
+    print("[NODE] setup_workspace - Setting up workspace...")
     try:
         story_id = state.get("story_id", state.get("task_id", "unknown"))
         
@@ -273,13 +333,18 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
 
 
 async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
+    """Analyze user story requirements.
+    
+    Refactored: Direct LLM call with bind_tools for file exploration.
     """
-    Analyze user story using ReAct agent.
-    """
+    print("[NODE] analyze - Analyzing story requirements...")
     try:
-        workspace_path = state.get("workspace_path")
+        workspace_path = state.get("workspace_path", "")
         project_id = state.get("project_id")
         task_id = state.get("task_id") or state.get("story_id")
+        
+        # Setup tool context
+        _setup_tool_context(workspace_path, project_id, task_id)
         
         # Build input
         input_text = _format_input_template(
@@ -289,24 +354,29 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
             acceptance_criteria=chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", []))
         )
 
-        # Setup tool context and build tools
-        _setup_tool_context(workspace_path, project_id, task_id)
+        # Tools for exploration
+        tools = [read_file_safe, list_directory_safe, semantic_code_search]
         
-        tools = [read_file_safe, semantic_code_search, TavilySearch(max_results=3)]
+        # LLM with tools
+        messages = [
+            SystemMessage(content=_build_system_prompt("analyze_story")),
+            HumanMessage(content=input_text)
+        ]
         
-        # Create agent
-        agent = create_agent(
-            model=_code_llm,
+        response_content = await _llm_with_tools(
+            llm=_code_llm,
             tools=tools,
-            system_prompt=_build_system_prompt("analyze_story")
-        )
-
-        result = await agent.ainvoke(
-            {"messages": [{"role": "user", "content": input_text}]},
-            config=_cfg(state, "analyze"),
+            messages=messages,
+            state=state,
+            name="analyze",
+            max_iterations=3
         )
         
-    
+        # Parse JSON response
+        try:
+            args = json.loads(_clean_json(response_content))
+        except json.JSONDecodeError:
+            args = {}
         
         analysis = StoryAnalysis(
             task_type=args.get("task_type", "feature"),
@@ -339,21 +409,27 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
 
 
 async def design(state: DeveloperState, agent=None) -> DeveloperState:
-    """Generate system design using ReAct agent (MetaGPT Architect pattern).
+    """Generate system design.
     
-    Tools: [read_file, list_directory, search_codebase, write_file]
+    Refactored: Direct LLM call with bind_tools for exploration.
     """
+    print("[NODE] design - Creating system design...")
     try:
         analysis = state.get("analysis_result", {})
         complexity = state.get("complexity", "medium")
         workspace_path = state.get("workspace_path", "")
+        project_id = state.get("project_id")
+        task_id = state.get("task_id") or state.get("story_id")
         
         # Skip design for simple tasks
         if complexity == "low":
             logger.info("[design] Skipping design for low complexity task")
             return {**state, "action": "PLAN", "message": "Task đơn giản, bỏ qua design phase."}
         
-        # Build input from template (ReAct agent will search codebase itself)
+        # Setup tool context
+        _setup_tool_context(workspace_path, project_id, task_id)
+        
+        # Build input
         input_text = _format_input_template(
             "system_design",
             story_title=state.get("story_title", ""),
@@ -362,33 +438,32 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
             complexity=complexity,
             story_content=state.get("story_content", ""),
             acceptance_criteria=chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", [])),
-            existing_context="Use search_codebase and read_file tools to explore existing code"
+            existing_context="Use tools to explore codebase"
         )
 
-        # Setup tool context and build tools
-        project_id = state.get("project_id")
-        task_id = state.get("task_id") or state.get("story_id")
-        _setup_tool_context(workspace_path, project_id, task_id)
+        # Tools for exploration
+        tools = [read_file_safe, list_directory_safe, semantic_code_search]
         
-        tools = [read_file_safe, list_directory_safe, write_file_safe, semantic_code_search]
+        # LLM with tools
+        messages = [
+            SystemMessage(content=_build_system_prompt("system_design")),
+            HumanMessage(content=input_text)
+        ]
         
-        # Create agent
-        agent = create_agent(
-            model=_code_llm,
+        response_content = await _llm_with_tools(
+            llm=_code_llm,
             tools=tools,
-            system_prompt=_build_system_prompt("system_design")
+            messages=messages,
+            state=state,
+            name="design",
+            max_iterations=3
         )
         
-        # Invoke agent
-        result = await agent.ainvoke(
-            {"messages": [{"role": "user", "content": input_text}]},
-            config=_cfg(state, "design")
-        )
-        
-        # Extract from tool call
-        args = _extract_json_response(result)
-        if not args:
-            raise RuntimeError("Agent did not return design")
+        # Parse JSON response
+        try:
+            args = json.loads(_clean_json(response_content))
+        except json.JSONDecodeError:
+            args = {}
         
         design_result = {
             "data_structures": args.get("data_structures", ""),
@@ -440,20 +515,16 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
 
 
 async def plan(state: DeveloperState, agent=None) -> DeveloperState:
-    """Create implementation plan using ReAct agent.
+    """Create implementation plan.
     
-    Tools: [read_file, list_directory, search_codebase]
+    Refactored: Direct LLM call with pre-fetched context for speed.
     """
+    print("[NODE] plan - Creating implementation plan...")
     try:
         analysis = state.get("analysis_result", {})
         
-        if agent:
-            pass
-        
         # Get workspace context
         workspace_path = state.get("workspace_path", "")
-        project_id = state.get("project_id", "default")
-        task_id = state.get("task_id") or state.get("story_id", "")
         
         # Get project structure and context
         project_context = state.get("project_context", "")
@@ -494,26 +565,19 @@ IMPORTANT: Generate file_path values that match the existing project structure a
             existing_code="Use search_codebase and read_file tools to explore existing code"
         )
 
-        # Setup tool context and build tools
-        _setup_tool_context(workspace_path, project_id, task_id)
+        # Direct LLM call (no ReAct agent needed - context already in input)
+        messages = [
+            SystemMessage(content=_build_system_prompt("create_plan")),
+            HumanMessage(content=input_text)
+        ]
         
-        tools = [read_file_safe, list_directory_safe, semantic_code_search]
+        response = await _code_llm.ainvoke(messages, config=_cfg(state, "plan"))
         
-        # Create agent
-        agent = create_agent(
-            model=_code_llm,
-            tools=tools,
-            system_prompt=_build_system_prompt("create_plan")
-        )
-        
-        # Invoke agent
-        result = await agent.ainvoke(
-            {"messages": [{"role": "user", "content": input_text}]},
-            config=_cfg(state, "plan")
-        )
-        
-        # Extract tool call arguments
-        args = _extract_json_response(result)
+        # Parse JSON response
+        try:
+            args = json.loads(_clean_json(response.content))
+        except json.JSONDecodeError:
+            args = {}
         story_summary = args.get("story_summary", state.get("story_title", "Implementation"))
         steps = args.get("steps", [])
         total_estimated_hours = args.get("total_estimated_hours", 0)
@@ -602,10 +666,13 @@ IMPORTANT: Generate file_path values that match the existing project structure a
 
 
 async def implement(state: DeveloperState, agent=None) -> DeveloperState:
-    """Execute implementation based on plan using ReAct agent.
+    """Execute implementation based on plan.
     
-    Tools: [read_file, list_directory, search_codebase, write_file, run_command]
+    Refactored: Direct LLM call with bind_tools for exploration + manual file writing.
     """
+    current_step = state.get("current_step", 0)
+    total_steps = state.get("total_steps", 0)
+    print(f"[NODE] implement - Step {current_step + 1}/{total_steps}...")
     try:
         plan_steps = state.get("implementation_plan", [])
         current_step = state.get("current_step", 0)
@@ -728,6 +795,9 @@ Conventions: {project_structure.get('conventions', '')}
         if summarize_feedback:
             full_related_context += f"\n\n## FEEDBACK FROM PREVIOUS ATTEMPT (MUST ADDRESS)\n{summarize_feedback}"
         
+        # Setup tool context
+        _setup_tool_context(workspace_path, project_id, task_id)
+        
         # Build input from template
         error_logs_text = f"Previous Errors:{chr(10)}{state.get('error_logs', '')}" if state.get('error_logs') else ""
         input_text = _format_input_template(
@@ -743,31 +813,39 @@ Conventions: {project_structure.get('conventions', '')}
             error_logs=error_logs_text
         )
 
-        # Setup tool context and build tools (most powerful toolset)
-        _setup_tool_context(workspace_path, project_id, task_id)
+        # Tools for exploration (read-only, writing is manual)
+        tools = [read_file_safe, list_directory_safe, semantic_code_search]
         
-        tools = [
-            read_file_safe, list_directory_safe, write_file_safe, 
-            execute_shell, semantic_code_search
+        # LLM with tools
+        messages = [
+            SystemMessage(content=_build_system_prompt("implement_step")),
+            HumanMessage(content=input_text)
         ]
         
-        # Create agent
-        agent = create_agent(
-            model=_code_llm,
+        response_content = await _llm_with_tools(
+            llm=_code_llm,
             tools=tools,
-            system_prompt=_build_system_prompt("implement_step")
+            messages=messages,
+            state=state,
+            name="implement",
+            max_iterations=3
         )
         
-        # Invoke agent
-        result = await agent.ainvoke(
-            {"messages": [{"role": "user", "content": input_text}]},
-            config=_cfg(state, "implement")
-        )
-        
-        # Extract from tool call
-        args = _extract_json_response(result)
-        if not args:
-            raise RuntimeError(f"Agent did not return code for step: {step.get('description', '')}")
+        # Parse JSON response
+        try:
+            args = json.loads(_clean_json(response_content))
+        except json.JSONDecodeError:
+            # Try to extract code from markdown code block
+            code_match = re.search(r'```(?:\w+)?\n([\s\S]*?)\n```', response_content)
+            if code_match:
+                args = {
+                    "file_path": current_file,
+                    "action": step.get("action", "create"),
+                    "code_snippet": code_match.group(1),
+                    "description": step.get("description", "")
+                }
+            else:
+                args = {}
         
         code_change = CodeChange(
             file_path=args.get("file_path", current_file),
@@ -1459,6 +1537,7 @@ async def code_review(state: DeveloperState, agent=None) -> DeveloperState:
     
     Expected improvement: 24 calls -> 1 call (~180s -> ~20s)
     """
+    print("[NODE] code_review - Reviewing code quality...")
     try:
         code_changes = state.get("code_changes", [])
         k = state.get("code_review_k", 2)
@@ -1599,6 +1678,7 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
     Detects test framework and runs appropriate tests.
     Analyzes results with LLM to determine pass/fail.
     """
+    print("[NODE] run_code - Running tests...")
     try:
         workspace_path = state.get("workspace_path", "")
         
@@ -1744,11 +1824,11 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
 # =============================================================================
 
 async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
-    """Debug and fix errors using ReAct agent.
+    """Debug and fix errors.
     
-    Tools: [read_file, search_codebase, run_command, write_file]
-    Analyzes error logs and rewrites code to fix bugs.
+    Refactored: Direct LLM call with bind_tools + manual file writing.
     """
+    print("[NODE] debug_error - Fixing errors...")
     try:
         run_result = state.get("run_result", {})
         workspace_path = state.get("workspace_path", "")
@@ -1812,6 +1892,9 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
         
         language = get_markdown_code_block_type(file_to_fix)
         
+        # Setup tool context
+        _setup_tool_context(workspace_path, project_id, task_id)
+        
         # Build debug prompt
         sys_prompt = _build_system_prompt("debug_error", agent)
         user_prompt = _get_prompt("debug_error", "user_prompt").format(
@@ -1825,35 +1908,27 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
             file_to_fix=file_to_fix,
         )
         
-        # Setup tool context and build tools
-        _setup_tool_context(workspace_path, project_id, task_id)
+        # Tools for debugging exploration
+        tools = [read_file_safe, list_directory_safe, semantic_code_search, execute_shell]
         
-        tools = [read_file_safe, write_file_safe, execute_shell, semantic_code_search]
+        # LLM with tools
+        messages = [
+            SystemMessage(content=sys_prompt),
+            HumanMessage(content=user_prompt)
+        ]
         
-        # Create agent for debugging
-        agent = create_agent(
-            model=_code_llm,
+        response_content = await _llm_with_tools(
+            llm=_code_llm,
             tools=tools,
-            system_prompt=sys_prompt
+            messages=messages,
+            state=state,
+            name="debug_error",
+            max_iterations=3
         )
         
-        # Invoke agent
-        result = await agent.ainvoke(
-            {"messages": [{"role": "user", "content": user_prompt}]},
-            config=_cfg(state, "debug_error")
-        )
-        
-        # Extract response from agent messages
-        response_content = ""
-        for msg in result.get("messages", []):
-            if hasattr(msg, 'content') and msg.content:
-                response_content = msg.content
-        
-        clean_json = _clean_json(response_content)
-        
+        # Parse JSON response
         try:
-            import json
-            debug_result = json.loads(clean_json)
+            debug_result = json.loads(_clean_json(response_content))
         except json.JSONDecodeError:
             logger.warning("[debug_error] Failed to parse debug response")
             return {**state, "debug_count": debug_count + 1}

@@ -21,18 +21,39 @@ from datetime import datetime
 # Fix Windows console encoding
 if sys.platform == 'win32':
     os.system('chcp 65001 >nul 2>&1')
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 
-# Setup logging
+# Setup logging - prevent duplicates
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    force=True  # Reset existing handlers
 )
 logger = logging.getLogger(__name__)
+logger.propagate = False  # Prevent duplicate logs
+
+# Create single handler
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
+# Silence noisy loggers
+for noisy in ["httpx", "opentelemetry", "langfuse", "httpcore", "urllib3", "git"]:
+    logging.getLogger(noisy).setLevel(logging.ERROR)
+
+# Enable developer_v2 logs (show node progress)
+dev_logger = logging.getLogger("app.agents.developer_v2")
+dev_logger.setLevel(logging.INFO)
+dev_logger.propagate = True  # Ensure logs propagate to root
+
+# Set root logger to show all INFO
+logging.getLogger().setLevel(logging.INFO)
 
 # Add backend to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -189,30 +210,44 @@ class SimpleDeveloperRunner:
     async def run_story(self, story: dict) -> dict:
         """Run a story through the graph."""
         
-        # Setup Langfuse tracing
+        # Setup Langfuse tracing (controlled by ENABLE_LANGFUSE env var)
         langfuse_handler = None
-        langfuse_span = None
-        langfuse_ctx = None
-        try:
-            from langfuse import get_client
-            from langfuse.langchain import CallbackHandler
-            langfuse = get_client()
-            # Create parent span for entire graph execution
-            langfuse_ctx = langfuse.start_as_current_observation(
-                as_type="span",
-                name="developer_v2_graph"
-            )
-            langfuse_span = langfuse_ctx.__enter__()
-            langfuse_span.update_trace(
-                user_id=str(uuid4()),
-                session_id=str(self.project_id),
-                input={"story": story.get("title", "")[:200]},
-                metadata={"agent": self.name, "template": self.template}
-            )
-            langfuse_handler = CallbackHandler()
-            logger.info(f"[{self.name}] Langfuse tracing enabled")
-        except Exception as e:
-            logger.debug(f"Langfuse setup: {e}")
+        langfuse_trace = None
+        langfuse_client = None
+        
+        enable_langfuse = os.getenv("ENABLE_LANGFUSE", "false").lower() == "true"
+        
+        if enable_langfuse:
+            try:
+                from langfuse import Langfuse
+                from langfuse.langchain import CallbackHandler
+                
+                # Initialize Langfuse client with moderate batch size
+                langfuse_client = Langfuse(
+                    flush_at=10,
+                    flush_interval=10,
+                )
+                
+                # Create parent trace
+                langfuse_trace = langfuse_client.trace(
+                    name="developer_v2_graph",
+                    user_id=str(uuid4()),
+                    session_id=str(self.project_id),
+                    input={"story_title": story.get("title", "")[:200]},
+                    metadata={"agent": self.name, "template": self.template}
+                )
+                
+                # Create callback handler linked to trace
+                langfuse_handler = CallbackHandler(
+                    trace_id=langfuse_trace.id,
+                    session_id=str(self.project_id),
+                )
+                
+                logger.info(f"[{self.name}] Langfuse tracing enabled")
+            except Exception as e:
+                logger.debug(f"Langfuse setup error: {e}")
+        else:
+            logger.info(f"[{self.name}] Langfuse disabled (set ENABLE_LANGFUSE=true to enable)")
         
         # Build initial state
         initial_state = {
@@ -300,6 +335,9 @@ class SimpleDeveloperRunner:
         print("\n" + "="*60)
         print(f"STARTING: {story.get('title', 'Untitled')}")
         print("="*60)
+        print("\n[*] Running graph... (this may take several minutes)")
+        print("[*] Progress will be shown below:\n")
+        sys.stdout.flush()
         
         try:
             # Run graph with high recursion limit for multi-step workflows
@@ -307,16 +345,31 @@ class SimpleDeveloperRunner:
                 initial_state,
                 config={"recursion_limit": 100}
             )
+            print("\n[*] Graph completed!")
             
             # Update Langfuse trace output
-            if langfuse_span and langfuse_ctx:
+            if langfuse_trace:
                 try:
-                    langfuse_span.update_trace(output={
-                        "action": final_state.get("action"),
-                        "files_created": final_state.get("files_created", []),
-                        "run_status": final_state.get("run_status"),
-                    })
-                    langfuse_ctx.__exit__(None, None, None)
+                    langfuse_trace.update(
+                        output={
+                            "action": final_state.get("action"),
+                            "files_created": final_state.get("files_created", []),
+                            "run_status": final_state.get("run_status"),
+                            "code_review_passed": final_state.get("code_review_passed"),
+                        },
+                        metadata={
+                            "complexity": final_state.get("complexity"),
+                            "debug_count": final_state.get("debug_count", 0),
+                            "react_loop_count": final_state.get("react_loop_count", 0),
+                        }
+                    )
+                except Exception:
+                    pass
+            
+            # Flush all pending events
+            if langfuse_client:
+                try:
+                    langfuse_client.flush()
                 except Exception:
                     pass
             
@@ -324,10 +377,19 @@ class SimpleDeveloperRunner:
             
         except Exception as e:
             logger.error(f"[{self.name}] Graph error: {e}", exc_info=True)
-            # Cleanup Langfuse on error
-            if langfuse_ctx:
+            # Update Langfuse trace with error
+            if langfuse_trace:
                 try:
-                    langfuse_ctx.__exit__(type(e), e, e.__traceback__)
+                    langfuse_trace.update(
+                        output={"error": str(e)[:1000]},
+                        level="ERROR"
+                    )
+                except Exception:
+                    pass
+            # Flush on error too
+            if langfuse_client:
+                try:
+                    langfuse_client.flush()
                 except Exception:
                     pass
             raise

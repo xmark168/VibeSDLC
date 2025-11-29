@@ -414,7 +414,7 @@ class TestE2ELearningWebsite:
         mock_developer_agent,
         temp_project_workspace
     ):
-        """Test with node functions mocked at create_agent level."""
+        """Test with node functions mocked at LLM level."""
         from app.agents.developer_v2.src import nodes
         
         print("\n" + "="*60)
@@ -429,12 +429,13 @@ class TestE2ELearningWebsite:
             "action": None,
         }
         
-        # Create mock agent that returns expected responses
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke = AsyncMock(return_value=create_router_response())
+        # Create mock LLM response
+        mock_response = MagicMock()
+        mock_response.content = '{"action": "ANALYZE", "task_type": "feature", "complexity": "high"}'
         
-        # Patch create_agent to return our mock
-        with patch.object(nodes, 'create_agent', return_value=mock_agent):
+        # Patch the LLM module-level variable
+        with patch.object(nodes, '_fast_llm') as mock_llm:
+            mock_llm.ainvoke = AsyncMock(return_value=mock_response)
             result = await nodes.router(state, mock_developer_agent)
             
             assert result["action"] == "ANALYZE"
