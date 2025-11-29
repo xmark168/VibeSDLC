@@ -1,19 +1,27 @@
 """Developer V2 Graph Nodes - ReAct Agents with Multi-Tool Support."""
 
 import logging
+import os
 import re
 from pathlib import Path
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_tavily import TavilySearch
 from langgraph.prebuilt import create_react_agent
 
 from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.schemas import ( StoryAnalysis, ImplementationPlan, PlanStep,
-    CodeChange
+from app.agents.developer_v2.src.schemas import (
+    StoryAnalysis, ImplementationPlan, PlanStep, CodeChange
 )
 from app.agents.developer_v2.src.tools import (
     submit_routing_decision, submit_story_analysis, submit_implementation_plan,
-    submit_code_change, submit_system_design, get_react_tools_for_node
+    submit_code_change, submit_system_design, set_tool_context
+)
+from app.agents.developer_v2.src.tools.filesystem_tools import (
+    set_fs_context, read_file_safe, write_file_safe, list_directory_safe
+)
+from app.agents.developer_v2.src.tools.shell_tools import (
+    set_shell_context, execute_shell, semantic_code_search
 )
 from app.agents.core.prompt_utils import load_prompts_yaml
 
@@ -67,6 +75,19 @@ Do not respond with plain text without calling the submit tool."""
         prompt=full_prompt,
         debug=False
     )
+
+
+# =============================================================================
+# TOOL CONTEXT SETUP
+# =============================================================================
+
+def _setup_tool_context(workspace_path: str = None, project_id: str = None, task_id: str = None):
+    """Set global context for all tools before agent invocation."""
+    if workspace_path:
+        set_fs_context(root_dir=workspace_path)
+        set_shell_context(root_dir=workspace_path)
+    if project_id:
+        set_tool_context(project_id=project_id, task_id=task_id, workspace_path=workspace_path)
 
 
 def _clean_json(text: str) -> str:
@@ -196,10 +217,13 @@ async def router(state: DeveloperState, agent=None) -> DeveloperState:
             has_implementation=has_implementation
         )
 
-        # Get tools for router (minimal tools since no workspace yet)
+        # Setup tool context and build tools
         project_id = state.get("project_id")
         task_id = state.get("task_id") or state.get("story_id")
-        tools = get_react_tools_for_node("router", project_id=project_id, task_id=task_id)
+        workspace_path = state.get("workspace_path")
+        _setup_tool_context(workspace_path, project_id, task_id)
+        
+        tools = [semantic_code_search, submit_routing_decision]
         
         # Create ReAct agent
         system_prompt = _build_system_prompt("routing_decision")
@@ -338,10 +362,11 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
     Tools: [read_file, search_codebase, web_search, submit_story_analysis]
     """
     try:
-        if agent:
-            pass
+        workspace_path = state.get("workspace_path")
+        project_id = state.get("project_id")
+        task_id = state.get("task_id") or state.get("story_id")
         
-        # Build input from template
+        # Build input
         input_text = _format_input_template(
             "analyze_story",
             story_title=state.get("story_title", "Untitled"),
@@ -349,90 +374,34 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
             acceptance_criteria=chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", []))
         )
 
-        # Get tools for analyze (can read files and search)
-        workspace_path = state.get("workspace_path")
-        project_id = state.get("project_id")
-        task_id = state.get("task_id") or state.get("story_id")
-        tools = get_react_tools_for_node("analyze", workspace_path=workspace_path, project_id=project_id, task_id=task_id)
+        # Setup tool context and build tools
+        _setup_tool_context(workspace_path, project_id, task_id)
+        
+        tools = [read_file_safe, semantic_code_search, TavilySearch(max_results=3), submit_story_analysis]
         
         # Create ReAct agent
         system_prompt = _build_system_prompt("analyze_story")
-        react_agent = _create_react_agent(_code_llm, tools, system_prompt)
-        
-        # Invoke agent
-        result = await react_agent.ainvoke(
+        agent = _create_react_agent(_code_llm, tools, system_prompt)
+
+        result = await agent.ainvoke(
             {"messages": [{"role": "user", "content": input_text}]},
-            config=_cfg(state, "analyze")
+            config=_cfg(state, "analyze"),
         )
         
-        # Extract tool call arguments
-        args = _extract_tool_args(result, "submit_story_analysis")
-        task_type = args.get("task_type", "feature")
-        complexity = args.get("complexity", "medium")
-        estimated_hours = args.get("estimated_hours", 4.0)
-        summary = args.get("summary", state.get("story_title", "Implementation"))
-        affected_files = args.get("affected_files", [])
-        suggested_approach = args.get("suggested_approach", "Standard implementation approach")
-        dependencies = args.get("dependencies") or []
-        risks = args.get("risks") or []
+    
         
-        # Create analysis object for compatibility
         analysis = StoryAnalysis(
-            task_type=task_type,
-            complexity=complexity,
-            estimated_hours=estimated_hours,
-            summary=summary,
-            affected_files=affected_files,
-            dependencies=dependencies,
-            risks=risks,
-            suggested_approach=suggested_approach
+            task_type=args.get("task_type", "feature"),
+            complexity=args.get("complexity", "medium"),
+            estimated_hours=args.get("estimated_hours", 4.0),
+            summary=args.get("summary", state.get("story_title", "")),
+            affected_files=args.get("affected_files", []),
+            suggested_approach=args.get("suggested_approach", ""),
+            dependencies=args.get("dependencies") or [],
+            risks=args.get("risks") or [],
         )
-        logger.info(f"[analyze] Completed: type={task_type}, complexity={complexity}, hours={estimated_hours}")
         
-        # Research best practices with Tavily (if available)
-        research_context = ""
-        workspace_path = state.get("workspace_path", "")
-        if workspace_path:
-            try:
-                from app.agents.developer_v2.src.tools import detect_framework_from_package_json
-                from langchain_tavily import TavilySearch
-                
-                framework_info = detect_framework_from_package_json(workspace_path)
-                
-                if framework_info.get("name") != "unknown":
-                    framework_name = framework_info.get("name", "")
-                    framework_version = framework_info.get("version", "")
-                    router_type = framework_info.get("router", "")
-                    
-                    # Build search query based on story and framework
-                    story_title = state.get("story_title", "")
-                    search_query = f"{framework_name} {framework_version} {router_type} router {story_title} best practices 2024"
-                    
-                    logger.info(f"[analyze] Researching: {search_query}")
-                    tavily = TavilySearch(max_results=3, include_answer=True)
-                    research_context = await tavily.ainvoke({"query": search_query})
-                    if isinstance(research_context, dict):
-                        research_context = str(research_context)
-                    logger.info(f"[analyze] Research completed: {len(research_context)} chars")
-            except ImportError:
-                logger.warning("[analyze] langchain-tavily not installed, skipping research")
-            except Exception as research_err:
-                logger.warning(f"[analyze] Research failed (continuing): {research_err}")
-        
-        msg = f"""✅ **Phân tích hoàn tất!**
-
-📋 **Summary:** {analysis.summary}
-📁 **Loại task:** {analysis.task_type}
-⚡ **Độ phức tạp:** {analysis.complexity}
-⏱️ **Ước tính:** {analysis.estimated_hours}h
-
-📂 **Files liên quan:** {', '.join(analysis.affected_files) if analysis.affected_files else 'Chưa xác định'}
-⚠️ **Risks:** {', '.join(analysis.risks) if analysis.risks else 'Không có'}
-
-💡 **Approach:** {analysis.suggested_approach}"""
-        
-        if agent:
-            pass
+        logger.info(f"[analyze] Done: {analysis.task_type}, {analysis.complexity}")
         
         return {
             **state,
@@ -443,20 +412,12 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
             "affected_files": analysis.affected_files,
             "dependencies": analysis.dependencies,
             "risks": analysis.risks,
-            "research_context": research_context,  # Tavily research results
-            "message": msg,
             "action": "PLAN",
         }
         
     except Exception as e:
         logger.error(f"[analyze] Error: {e}", exc_info=True)
-        return {
-            **state,
-            "error": str(e),
-            "research_context": "",
-            "message": f"❌ Lỗi khi phân tích: {str(e)}",
-            "action": "RESPOND",
-        }
+        return {**state, "error": str(e), "action": "RESPOND"}
 
 
 async def design(state: DeveloperState, agent=None) -> DeveloperState:
@@ -486,10 +447,12 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
             existing_context="Use search_codebase and read_file tools to explore existing code"
         )
 
-        # Get tools for design
+        # Setup tool context and build tools
         project_id = state.get("project_id")
         task_id = state.get("task_id") or state.get("story_id")
-        tools = get_react_tools_for_node("design", workspace_path=workspace_path, project_id=project_id, task_id=task_id)
+        _setup_tool_context(workspace_path, project_id, task_id)
+        
+        tools = [read_file_safe, list_directory_safe, semantic_code_search, submit_system_design]
         
         # Create ReAct agent
         system_prompt = _build_system_prompt("system_design")
@@ -612,8 +575,10 @@ IMPORTANT: Generate file_path values that match the existing project structure a
             existing_code="Use search_codebase and read_file tools to explore existing code"
         )
 
-        # Get tools for plan
-        tools = get_react_tools_for_node("plan", workspace_path=workspace_path, project_id=project_id, task_id=task_id)
+        # Setup tool context and build tools
+        _setup_tool_context(workspace_path, project_id, task_id)
+        
+        tools = [read_file_safe, list_directory_safe, semantic_code_search, submit_implementation_plan]
         
         # Create ReAct agent
         system_prompt = _build_system_prompt("create_plan")
@@ -856,8 +821,13 @@ Conventions: {project_structure.get('conventions', '')}
             error_logs=error_logs_text
         )
 
-        # Get tools for implement (most powerful toolset)
-        tools = get_react_tools_for_node("implement", workspace_path=workspace_path, project_id=project_id, task_id=task_id)
+        # Setup tool context and build tools (most powerful toolset)
+        _setup_tool_context(workspace_path, project_id, task_id)
+        
+        tools = [
+            read_file_safe, list_directory_safe, write_file_safe, 
+            execute_shell, semantic_code_search, submit_code_change
+        ]
         
         # Create ReAct agent
         system_prompt = _build_system_prompt("implement_step")
@@ -1930,8 +1900,10 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
             file_to_fix=file_to_fix,
         )
         
-        # Get tools for debug (can read files, run commands, and write fixes)
-        tools = get_react_tools_for_node("debug", workspace_path=workspace_path, project_id=project_id, task_id=task_id)
+        # Setup tool context and build tools
+        _setup_tool_context(workspace_path, project_id, task_id)
+        
+        tools = [read_file_safe, write_file_safe, execute_shell, semantic_code_search]
         
         # Create ReAct agent for debugging
         react_agent = _create_react_agent(_code_llm, tools, sys_prompt)

@@ -44,13 +44,10 @@ def route_after_workspace(state: DeveloperState) -> Literal["analyze", "design",
 
 
 def route_after_analyze(state: DeveloperState) -> Literal["design", "plan"]:
-    """Route after analyze - skip design for low complexity tasks.
-    
-    Speed optimization: Low complexity tasks don't need full system design.
+    """
+    Route after analyze - skip design for low complexity tasks.
     """
     complexity = state.get("complexity", "medium")
-    
-    # Skip design for low complexity tasks (saves 1 LLM call)
     if complexity == "low":
         return "plan"
     
@@ -186,20 +183,20 @@ def route_after_run_code(state: DeveloperState) -> Literal["merge_to_main", "deb
 class DeveloperGraph:
     """LangGraph-based Developer V2 for story processing.
     
-    Nodes:
-    1. router - Classify story, decide action
-    2. setup_workspace - Git branch + CocoIndex + AGENTS.md
-    3. analyze - Analyze requirements
-    4. design - System design (skip for low complexity)
+    Flow:
+    1. router - Decides if we need to modify code or just respond
+    2. setup_workspace - Creates git branch + CocoIndex + loads AGENTS.md
+    3. analyze - Analyze story requirements
+    4. design - System design with mermaid diagrams (MetaGPT Architect)
     5. plan - Create implementation plan
-    6. implement - Generate code
-    7. summarize_code - Validate (IS_PASS check)
-    8. code_review - Batch review (LGTM/LBTM)
-    9. run_code - Execute tests
-    10. debug_error - Fix bugs
-    11. merge_to_main - Merge branch
-    12. cleanup_workspace - Cleanup and END
-    13. clarify - Ask questions (direct to END)
+    6. implement - Code implementation
+    7. summarize_code - MetaGPT SummarizeCode + IS_PASS check (loop back if not pass)
+    8. code_review - LGTM/LBTM review with k iterations
+    9. run_code - Execute tests to verify
+    10. debug_error - Fix bugs if tests fail (up to max_debug attempts)
+    11. merge_to_main - Merge branch after tests pass
+    12. cleanup_workspace - Remove worktree and delete branch
+    13. respond/clarify - Direct response
     
     Flow Diagram:
     router → setup_workspace → analyze → design → plan → implement
@@ -268,9 +265,10 @@ class DeveloperGraph:
         
         # Merge and cleanup flow
         g.add_edge("merge_to_main", "cleanup_workspace")
+        g.add_edge("cleanup_workspace", "respond")
         
         # End nodes
-        g.add_edge("cleanup_workspace", END)
         g.add_edge("clarify", END)
+        g.add_edge("respond", END)
         
         self.graph = g.compile()

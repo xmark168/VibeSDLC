@@ -9,6 +9,9 @@ from functools import partial
 
 from pydantic import BaseModel, Field
 from langchain_core.tools import tool, StructuredTool
+from app.agents.developer.tools.git_python_tool import GitPythonTool
+from app.agents.developer.tools.custom_tool import ShellCommandTool
+
 
 logger = logging.getLogger(__name__)
 
@@ -155,209 +158,35 @@ def submit_system_design(
 
 
 # =============================================================================
-# REACT AGENT TOOL FACTORIES
-# Creates tools with workspace context injected for ReAct agents
-# =============================================================================
-
-def create_search_codebase_tool(project_id: str, task_id: str = None) -> StructuredTool:
-    """Create a search_codebase tool with project context injected."""
-    
-    def _search(query: str, top_k: int = 5) -> str:
-        """Search codebase using semantic search.
-        
-        Args:
-            query: Natural language query (e.g., "authentication logic", "user model")
-            top_k: Number of results to return (default: 5)
-        """
-        return search_codebase(project_id, query, top_k, task_id)
-    
-    return StructuredTool.from_function(
-        func=_search,
-        name="search_codebase",
-        description="Search codebase using semantic search. Use this to find relevant code, patterns, and examples."
-    )
-
-
-def create_read_file_tool(workspace_path: str) -> StructuredTool:
-    """Create a read_file tool scoped to workspace."""
-    
-    def _read(file_path: str) -> str:
-        """Read contents of a file in the workspace.
-        
-        Args:
-            file_path: Relative path from workspace root (e.g., 'src/app/page.tsx')
-        """
-        full_path = os.path.join(workspace_path, file_path)
-        return read_file(full_path)
-    
-    return StructuredTool.from_function(
-        func=_read,
-        name="read_file",
-        description="Read contents of a file. Use relative paths from project root."
-    )
-
-
-def create_write_file_tool(workspace_path: str) -> StructuredTool:
-    """Create a write_file tool scoped to workspace."""
-    
-    def _write(file_path: str, content: str) -> str:
-        """Write content to a file in the workspace.
-        
-        Args:
-            file_path: Relative path from workspace root
-            content: Content to write
-        """
-        full_path = os.path.join(workspace_path, file_path)
-        # Ensure directory exists
-        os.makedirs(os.path.dirname(full_path), exist_ok=True)
-        return write_file(full_path, content)
-    
-    return StructuredTool.from_function(
-        func=_write,
-        name="write_file",
-        description="Write content to a file. Creates directories if needed."
-    )
-
-
-def create_list_directory_tool(workspace_path: str) -> StructuredTool:
-    """Create a list_directory tool scoped to workspace."""
-    
-    def _list(directory_path: str = ".") -> str:
-        """List contents of a directory in the workspace.
-        
-        Args:
-            directory_path: Relative path from workspace root (default: root)
-        """
-        full_path = os.path.join(workspace_path, directory_path)
-        return list_directory(full_path)
-    
-    return StructuredTool.from_function(
-        func=_list,
-        name="list_directory",
-        description="List files and folders in a directory. Use '.' for root."
-    )
-
-
-def create_run_command_tool(workspace_path: str) -> StructuredTool:
-    """Create a run_command tool scoped to workspace."""
-    
-    def _run(command: str) -> str:
-        """Run a shell command in the workspace.
-        
-        Args:
-            command: Shell command to execute
-        """
-        return run_command(command, cwd=workspace_path)
-    
-    return StructuredTool.from_function(
-        func=_run,
-        name="run_command",
-        description="Run a shell command. Use for testing, building, or checking status."
-    )
-
-
-
-
-
-def get_react_tools_for_node(
-    node_name: str,
-    workspace_path: str = None,
-    project_id: str = None,
-    task_id: str = None
-) -> List:
-    """Get list of tools for a specific ReAct agent node.
-    
-    Args:
-        node_name: Name of the node (router, analyze, design, plan, implement, debug)
-        workspace_path: Path to workspace
-        project_id: Project ID for CocoIndex
-        task_id: Task ID for CocoIndex
-        
-    Returns:
-        List of tools for the node
-    """
-    tools = []
-    
-    # Common tools based on node
-    if node_name == "router":
-        if project_id:
-            tools.append(create_search_codebase_tool(project_id, task_id))
-        tools.append(submit_routing_decision)
-        
-    elif node_name == "analyze":
-        if workspace_path:
-            tools.append(create_read_file_tool(workspace_path))
-        if project_id:
-            tools.append(create_search_codebase_tool(project_id, task_id))
-        # Add TavilySearch for web research
-        try:
-            from langchain_tavily import TavilySearch
-            tools.append(TavilySearch(max_results=3, include_answer=True))
-        except ImportError:
-            pass
-        tools.append(submit_story_analysis)
-        
-    elif node_name == "design":
-        if workspace_path:
-            tools.append(create_read_file_tool(workspace_path))
-            tools.append(create_list_directory_tool(workspace_path))
-        if project_id:
-            tools.append(create_search_codebase_tool(project_id, task_id))
-        tools.append(submit_system_design)
-        
-    elif node_name == "plan":
-        if workspace_path:
-            tools.append(create_read_file_tool(workspace_path))
-            tools.append(create_list_directory_tool(workspace_path))
-        if project_id:
-            tools.append(create_search_codebase_tool(project_id, task_id))
-        tools.append(submit_implementation_plan)
-        
-    elif node_name == "implement":
-        if workspace_path:
-            tools.append(create_read_file_tool(workspace_path))
-            tools.append(create_list_directory_tool(workspace_path))
-            tools.append(create_write_file_tool(workspace_path))
-            tools.append(create_run_command_tool(workspace_path))
-        if project_id:
-            tools.append(create_search_codebase_tool(project_id, task_id))
-        tools.append(submit_code_change)
-        
-    elif node_name == "debug":
-        if workspace_path:
-            tools.append(create_read_file_tool(workspace_path))
-            tools.append(create_write_file_tool(workspace_path))
-            tools.append(create_run_command_tool(workspace_path))
-        if project_id:
-            tools.append(create_search_codebase_tool(project_id, task_id))
-    
-    return tools
-
-
-# =============================================================================
 # COCOINDEX SEMANTIC SEARCH (from Developer V1)
 # =============================================================================
 
-def search_codebase(
-    project_id: str,
-    query: str,
-    top_k: int = 5,
-    task_id: str = None
-) -> str:
+# Global context for tools (set by nodes before agent invocation)
+_tool_context = {
+    "project_id": None,
+    "task_id": None,
+    "workspace_path": None,
+}
+
+
+def set_tool_context(project_id: str = None, task_id: str = None, workspace_path: str = None):
+    """Set global context for tools. Called by nodes before agent invocation."""
+    if project_id:
+        _tool_context["project_id"] = project_id
+    if task_id:
+        _tool_context["task_id"] = task_id
+    if workspace_path:
+        _tool_context["workspace_path"] = workspace_path
+
+
+def search_codebase(project_id: str, query: str, top_k: int = 5, task_id: str = None) -> str:
     """Search codebase using CocoIndex semantic search.
-    
-    Uses the existing CocoIndex infrastructure from Developer V1 to perform
-    semantic search over indexed code. Much more efficient than importing
-    all files into context.
-    
+
     Args:
         project_id: Project identifier
         query: Natural language query (e.g., "authentication logic", "user model")
-        top_k: Number of results to return (default: 5)
+        top_k: Maximum number of results to return
         task_id: Optional task ID for task-specific search
-        
-    Returns:
-        Markdown-formatted code snippets with relevance scores
     """
     try:
         from app.agents.developer.project_manager import project_manager
@@ -383,11 +212,146 @@ def search_codebase(
         return "\n".join(formatted)
         
     except ImportError as e:
-        logger.warning(f"CocoIndex not available, falling back to file import: {e}")
-        return "CocoIndex not available. Using fallback."
+        logger.warning(f"CocoIndex not available: {e}")
+        return "CocoIndex not available."
     except Exception as e:
         logger.error(f"Codebase search error: {e}")
         return f"Search error: {str(e)}"
+
+
+@tool
+def search_codebase_tool(query: str, top_k: int = 5) -> str:
+    """Search codebase using semantic search to find relevant code.
+
+    Args:
+        query: Natural language query (e.g., "authentication logic", "user model")
+        top_k: Maximum number of results to return
+    """
+    project_id = _tool_context.get("project_id")
+    task_id = _tool_context.get("task_id")
+    
+    if not project_id:
+        return "Error: project_id not set in tool context"
+    
+    return search_codebase(project_id, query, top_k, task_id)
+
+
+@tool
+def reindex_workspace() -> str:
+    """Reindex the workspace to update the semantic search index.
+    
+    Call this after making file changes to ensure search results are up-to-date.
+    """
+    project_id = _tool_context.get("project_id")
+    task_id = _tool_context.get("task_id")
+    workspace_path = _tool_context.get("workspace_path")
+    
+    if not project_id or not workspace_path:
+        return "Error: project_id or workspace_path not set in tool context"
+    
+    try:
+        from app.agents.developer.project_manager import project_manager
+        
+        if task_id:
+            project_manager.register_task(project_id, task_id, workspace_path)
+        else:
+            project_manager.register_project(project_id, workspace_path)
+        
+        return f"Successfully reindexed workspace: {workspace_path}"
+        
+    except ImportError as e:
+        return f"CocoIndex not available: {e}"
+    except Exception as e:
+        return f"Reindex error: {str(e)}"
+
+
+@tool
+def get_related_code(query: str, top_k: int = 5) -> str:
+    """Search for code related to the current task using semantic search.
+
+    Args:
+        query: Description of what code you're looking for
+        top_k: Maximum number of results to return
+    """
+    project_id = _tool_context.get("project_id")
+    task_id = _tool_context.get("task_id")
+    
+    if not project_id:
+        return "Error: project_id not set in tool context"
+    
+    return search_codebase(project_id, query, top_k, task_id)
+
+
+@tool
+def get_project_structure() -> str:
+    """Get the project structure including framework, router type, and conventions.
+    
+    Use this to understand the project layout before generating code.
+    """
+    workspace_path = _tool_context.get("workspace_path")
+    
+    if not workspace_path:
+        return "Error: workspace_path not set in tool context"
+    
+    structure = detect_project_structure(workspace_path)
+    
+    parts = []
+    parts.append(f"Framework: {structure.get('framework', 'unknown')}")
+    if structure.get("router_type"):
+        parts.append(f"Router Type: {structure['router_type']}")
+    if structure.get("conventions"):
+        parts.append(f"Conventions: {structure['conventions']}")
+    if structure.get("key_dirs"):
+        parts.append(f"Key Directories: {', '.join(structure['key_dirs'])}")
+    if structure.get("existing_pages"):
+        parts.append(f"Existing Pages: {', '.join(structure['existing_pages'][:10])}")
+    if structure.get("directory_tree"):
+        parts.append(f"\nDirectory Tree:\n{structure['directory_tree']}")
+    
+    return "\n".join(parts)
+
+
+@tool
+def get_coding_guidelines() -> str:
+    """
+    Get the project's coding guidelines from AGENTS.md.
+    """
+    workspace_path = _tool_context.get("workspace_path")
+    
+    if not workspace_path:
+        return "Error: workspace_path not set in tool context"
+    
+    content = get_agents_md(workspace_path)
+    return content if content else "No AGENTS.md found in project"
+
+
+@tool
+def get_code_examples(task_type: str = "page") -> str:
+    """Get existing code examples from the project as reference.
+
+    Args:
+        task_type: Type of code to find examples for (page, component, api, layout)
+    """
+    workspace_path = _tool_context.get("workspace_path")
+    
+    if not workspace_path:
+        return "Error: workspace_path not set in tool context"
+    
+    return get_boilerplate_examples(workspace_path, task_type)
+
+
+@tool
+def get_project_info() -> str:
+    """Get comprehensive project context including structure and guidelines.
+    
+    Combines project structure, AGENTS.md, and directory tree.
+    """
+    workspace_path = _tool_context.get("workspace_path")
+    
+    if not workspace_path:
+        return "Error: workspace_path not set in tool context"
+    
+    return get_project_context(workspace_path)
 
 
 def index_workspace(project_id: str, workspace_path: str, task_id: str = None) -> bool:
@@ -1595,8 +1559,7 @@ def get_workspace_tools(workspace_path: str):
         SafeFileDeleteTool,
         FileSearchTool,
     )
-    from app.agents.developer.tools.git_python_tool import GitPythonTool
-    from app.agents.developer.tools.custom_tool import ShellCommandTool
+   
     
     return [
         SafeFileReadTool(root_dir=workspace_path),
