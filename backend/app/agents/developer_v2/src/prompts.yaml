@@ -244,23 +244,24 @@ tasks:
       
       ---
       
-      Create a detailed implementation plan with incremental changes. Return ONLY valid JSON:
-      {{
-        "story_summary": "...", 
-        "development_plan": [
-          "Step 1: Enhance functionality of X by...",
-          "Step 2: Update codebase to incorporate..."
-        ],
-        "steps": [
-          {{"order": 1, "description": "...", "file_path": "...", "action": "create"|"modify", "estimated_minutes": N, "dependencies": []}}
-        ],
-        "incremental_changes": [
-          "```diff\\n--- Old/file.py\\n+++ New/file.py\\n+new code\\n```"
-        ],
-        "total_estimated_hours": N, 
-        "critical_path": [1,2,3], 
-        "rollback_plan": "..."
-      }}
+      Create a detailed implementation plan. The output schema is:
+      
+      - story_summary: Brief description of what will be implemented
+      - steps: Array of implementation steps, each with:
+        - order: Step number (1, 2, 3...)
+        - description: What to implement
+        - file_path: Path to file (e.g., "app/page.tsx", "src/components/Button.tsx")
+        - action: "create" for new files, "modify" for existing files
+        - estimated_minutes: Time estimate (15-60 minutes)
+        - dependencies: Array of step orders this depends on (usually empty [])
+      - total_estimated_hours: Sum of all steps in hours
+      - critical_path: Array of step orders on critical path (e.g., [1, 2, 3])
+      - rollback_plan: How to revert if needed (optional)
+      
+      Important:
+      - Include ALL files needed for the feature
+      - Use correct file paths for the framework (NextJS App Router: app/*, React: src/*)
+      - Order steps logically (dependencies first)
 
   # ---------------------------------------------------------------------------
   # IMPLEMENT - Generate code changes (MetaGPT-inspired)
