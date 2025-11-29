@@ -297,11 +297,9 @@ tasks:
 
       CRITICAL RULES FOR file_path:
       1. LOOK at the DIRECTORY STRUCTURE above - use EXACT paths that exist
-      2. If project has "src/app/" directory -> use src/app/page.tsx, src/app/search/page.tsx (NEVER pages/)
-      3. If project has "app/" (without src) -> use app/page.tsx, app/about/page.tsx (NOT pages/)
-      4. If project has "src/components/" -> put components in src/components/
-      5. NEVER use pages/ directory for NextJS App Router projects!
-      6. NEVER invent new directory structures - FOLLOW what exists!
+      2. Follow the CONVENTIONS specified in PROJECT STRUCTURE
+      3. Put files in directories that ALREADY EXIST in the project
+      4. NEVER invent new directory structures - FOLLOW what exists!
 
       Create steps with: order, description, file_path, action (create/modify), estimated_minutes, dependencies.
 
@@ -413,10 +411,9 @@ tasks:
          - Same component structure
          - Same naming conventions
          - Same export style
-      4. Follow the PROJECT STRUCTURE and CONVENTIONS exactly
-      5. NEVER create files in pages/ for NextJS App Router projects - use src/app/ or app/
-      6. Include ALL necessary imports at the top
-      7. Call submit_code_change with the COMPLETE, WORKING code
+      4. Follow the PROJECT GUIDELINES and CONVENTIONS exactly
+      5. Include ALL necessary imports at the top
+      6. Call submit_code_change with the COMPLETE, WORKING code
 
     user_prompt: |
       # Context

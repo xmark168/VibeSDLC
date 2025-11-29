@@ -3,19 +3,15 @@
 import logging
 import re
 from pathlib import Path
-from typing import Optional
-
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain.agents import create_agent
-from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.schemas import (
-    RoutingDecision, StoryAnalysis, ImplementationPlan, PlanStep,
+from app.agents.developer_v2.src.schemas import ( StoryAnalysis, ImplementationPlan, PlanStep,
     CodeChange
 )
-from app.agents.developer_v2.src.agent_tools import (
+from app.agents.developer_v2.tools import (
     submit_routing_decision, submit_story_analysis, submit_implementation_plan,
     submit_code_change, submit_system_design
 )
@@ -599,8 +595,8 @@ Framework: {framework}
 IMPORTANT: Generate file_path values that match the existing project structure above!
 """
         
-        # Build input from template
-        directory_structure = f"DIRECTORY STRUCTURE:{chr(10)}{project_context[:3000]}" if project_context else ""
+        # Build input from template (include full project_context with AGENTS.md)
+        directory_structure = f"PROJECT CONTEXT (MUST FOLLOW):{chr(10)}{project_context}" if project_context else ""
         input_text = _format_input_template(
             "create_plan",
             story_title=state.get("story_title", "Untitled"),
@@ -821,9 +817,9 @@ Conventions: {project_structure.get('conventions', '')}
             if boilerplate:
                 full_related_context = f"{boilerplate}\n\n---\n\n{full_related_context}"
         
-        # Add project guidelines (AGENTS.md)
+        # Add project guidelines (AGENTS.md - full content, critical for conventions)
         if project_context:
-            full_related_context = f"## PROJECT GUIDELINES\n{project_context[:2500]}\n\n---\n\n{full_related_context}"
+            full_related_context = f"## PROJECT GUIDELINES (MUST FOLLOW)\n{project_context}\n\n---\n\n{full_related_context}"
         
         # Add research results
         if research_context:
