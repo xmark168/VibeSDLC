@@ -214,6 +214,10 @@ class DeveloperV2(BaseAgent):
                 "branch_name": "",
                 "main_workspace": str(self.main_workspace),
                 "workspace_ready": False,
+                # React mode (MetaGPT Engineer2 pattern) - retry full cycle on failure
+                "react_mode": True,
+                "react_loop_count": 0,
+                "max_react_loop": 40,
                 # Initialize other fields
                 "action": None,
                 "task_type": None,

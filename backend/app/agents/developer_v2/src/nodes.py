@@ -3,19 +3,21 @@
 import logging
 import re
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Optional
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_core.tools import tool
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain.agents import create_agent
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import (
     RoutingDecision, StoryAnalysis, ImplementationPlan, PlanStep,
-    CodeChange, ValidationResult
+    CodeChange
+)
+from app.agents.developer_v2.src.agent_tools import (
+    submit_routing_decision, submit_story_analysis, submit_implementation_plan,
+    submit_code_change, submit_system_design
 )
 from app.agents.core.prompt_utils import load_prompts_yaml
 
@@ -23,195 +25,67 @@ logger = logging.getLogger(__name__)
 
 _PROMPTS = load_prompts_yaml(Path(__file__).parent / "prompts.yaml")
 
-# GPT-4.1 models
+# LLM models
 _fast_llm = ChatOpenAI(model="gpt-4.1", temperature=0.1, timeout=30)
 _code_llm = ChatOpenAI(model="gpt-4.1", temperature=0.2, timeout=120)
 
 
 # =============================================================================
-# TOOLS - Force structured JSON output via tool calling
+# AGENT EXECUTORS (using langchain create_agent)
 # =============================================================================
 
-@tool
-def submit_routing_decision(
-    action: str,
-    task_type: str,
-    complexity: str,
-    message: str,
-    reason: str,
-    confidence: float = 0.8
-) -> str:
-    """Submit routing decision for the story. MUST be called with your decision.
-    
-    Args:
-        action: One of ANALYZE, PLAN, IMPLEMENT, VALIDATE, CLARIFY, RESPOND
-        task_type: One of feature, bugfix, refactor, enhancement, documentation
-        complexity: One of low, medium, high
-        message: Vietnamese status message for user
-        reason: 1-line reasoning for decision
-        confidence: Confidence score 0.0-1.0
-    """
-    return f"ROUTING_RESULT:{action}|{task_type}|{complexity}|{message}|{reason}|{confidence}"
-
-
-@tool
-def submit_story_analysis(
-    task_type: str,
-    complexity: str,
-    estimated_hours: float,
-    summary: str,
-    affected_files: List[str],
-    suggested_approach: str,
-    dependencies: Optional[List[str]] = None,
-    risks: Optional[List[str]] = None
-) -> str:
-    """Submit story analysis result. MUST be called with your analysis.
-    
-    Args:
-        task_type: One of feature, bugfix, refactor, enhancement, documentation
-        complexity: One of low, medium, high
-        estimated_hours: Estimated hours (0.5-100)
-        summary: Brief summary of what needs to be done
-        affected_files: Files likely to be modified (e.g., ["app/page.tsx", "src/components/Button.tsx"])
-        suggested_approach: Recommended implementation approach
-        dependencies: External dependencies or blockers (optional)
-        risks: Potential risks or concerns (optional)
-    """
-    files_str = ",".join(affected_files) if affected_files else ""
-    return f"ANALYSIS_RESULT:{task_type}|{complexity}|{estimated_hours}|{summary}|{files_str}|{suggested_approach}"
-
-
-@tool
-def submit_implementation_plan(
-    story_summary: str,
-    steps: List[dict],
-    total_estimated_hours: float,
-    critical_path: Optional[List[int]] = None,
-    rollback_plan: Optional[str] = None
-) -> str:
-    """Submit implementation plan. MUST be called with your plan.
-    
-    Args:
-        story_summary: Brief summary of the implementation
-        steps: List of steps. Each step MUST have: order (int), description (str), file_path (str), action (create/modify), estimated_minutes (int), dependencies (list of int)
-        total_estimated_hours: Total estimated hours for all steps
-        critical_path: List of step order numbers on critical path (optional)
-        rollback_plan: How to rollback if needed (optional)
-    
-    Example steps:
-        [
-            {"order": 1, "description": "Create main page", "file_path": "app/page.tsx", "action": "create", "estimated_minutes": 30, "dependencies": []},
-            {"order": 2, "description": "Add button component", "file_path": "app/components/Button.tsx", "action": "create", "estimated_minutes": 20, "dependencies": [1]}
-        ]
-    """
-    return f"PLAN_RESULT:{len(steps)} steps|{total_estimated_hours}h"
-
-
-@tool
-def submit_code_change(
-    file_path: str,
-    action: str,
-    description: str,
-    code_snippet: str,
-    line_start: Optional[int] = None,
-    line_end: Optional[int] = None
-) -> str:
-    """Submit code change. MUST be called with the complete code.
-    
-    Args:
-        file_path: Path to the file (e.g., "app/page.tsx", "src/utils/helpers.ts")
-        action: One of create, modify, delete
-        description: What the change does
-        code_snippet: The COMPLETE code content for the file. Must be valid, working code.
-        line_start: Starting line number for modify (optional)
-        line_end: Ending line number for modify (optional)
-    """
-    return f"CODE_RESULT:{action}|{file_path}|{len(code_snippet)} chars"
-
-
-# =============================================================================
-# AGENT EXECUTORS - Create agents with forced tool calling
-# =============================================================================
-
-def _create_agent_executor(llm, tools: list, system_prompt: str) -> AgentExecutor:
-    """Create an agent executor that forces tool calling."""
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt + "\n\nIMPORTANT: You MUST call the provided tool to submit your result. Do not respond with plain text."),
-        ("human", "{input}"),
-        MessagesPlaceholder(variable_name="agent_scratchpad"),
-    ])
-    
-    agent = create_tool_calling_agent(llm, tools, prompt)
-    return AgentExecutor(
-        agent=agent,
-        tools=tools,
-        verbose=False,
-        max_iterations=3,
-        return_intermediate_steps=True,
-        handle_parsing_errors=True
-    )
+def _create_agent_instance(llm, tools: list, system_prompt: str):
+    """Create an agent with tool calling."""
+    full_prompt = system_prompt + "\n\nIMPORTANT: You MUST call the provided tool to submit your result. Do not respond with plain text."
+    return create_agent(llm, tools=tools, system_prompt=full_prompt)
 
 
 # Lazy initialization of agents
-_routing_agent: Optional[AgentExecutor] = None
-_analysis_agent: Optional[AgentExecutor] = None
-_plan_agent: Optional[AgentExecutor] = None
-_code_agent: Optional[AgentExecutor] = None
+_routing_agent = None
+_analysis_agent = None
+_design_agent = None
+_plan_agent = None
+_code_agent = None
 
 
-def _get_routing_agent() -> AgentExecutor:
+def _get_routing_agent():
     global _routing_agent
     if _routing_agent is None:
         system_prompt = _build_system_prompt("routing_decision")
-        _routing_agent = _create_agent_executor(
-            _fast_llm,
-            [submit_routing_decision],
-            system_prompt
-        )
+        _routing_agent = _create_agent_instance(_fast_llm, [submit_routing_decision], system_prompt)
     return _routing_agent
 
 
-def _get_analysis_agent() -> AgentExecutor:
+def _get_analysis_agent():
     global _analysis_agent
     if _analysis_agent is None:
         system_prompt = _build_system_prompt("analyze_story")
-        _analysis_agent = _create_agent_executor(
-            _code_llm,
-            [submit_story_analysis],
-            system_prompt
-        )
+        _analysis_agent = _create_agent_instance(_code_llm, [submit_story_analysis], system_prompt)
     return _analysis_agent
 
 
-def _get_plan_agent() -> AgentExecutor:
+def _get_design_agent():
+    global _design_agent
+    if _design_agent is None:
+        system_prompt = _build_system_prompt("system_design")
+        _design_agent = _create_agent_instance(_code_llm, [submit_system_design], system_prompt)
+    return _design_agent
+
+
+def _get_plan_agent():
     global _plan_agent
     if _plan_agent is None:
         system_prompt = _build_system_prompt("create_plan")
-        _plan_agent = _create_agent_executor(
-            _code_llm,
-            [submit_implementation_plan],
-            system_prompt
-        )
+        _plan_agent = _create_agent_instance(_code_llm, [submit_implementation_plan], system_prompt)
     return _plan_agent
 
 
-def _get_code_agent() -> AgentExecutor:
+def _get_code_agent():
     global _code_agent
     if _code_agent is None:
         system_prompt = _build_system_prompt("implement_step")
-        _code_agent = _create_agent_executor(
-            _code_llm,
-            [submit_code_change],
-            system_prompt
-        )
+        _code_agent = _create_agent_instance(_code_llm, [submit_code_change], system_prompt)
     return _code_agent
-
-
-# MetaGPT Pattern: Retry with exponential backoff for LLM calls
-@retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
-async def _llm_call_with_retry(llm, messages, config=None):
-    """Call LLM with retry on failure (MetaGPT pattern)."""
-    return await llm.ainvoke(messages, config=config)
 
 
 def _clean_json(text: str) -> str:
@@ -220,15 +94,14 @@ def _clean_json(text: str) -> str:
     return match.group(1).strip() if match else text.strip()
 
 
-def _normalize_newlines(content: str) -> str:
-    """Convert escaped newlines to actual newlines.
-    
-    Fixes issue where LLM returns \\n as literal string instead of newline.
-    """
-    if not content:
-        return content
-    # Replace literal \n with actual newlines
-    return content.replace('\\n', '\n').replace('\\r', '\r')
+def _extract_tool_args(result: dict, tool_name: str) -> dict:
+    """Extract tool call arguments from agent result messages."""
+    for msg in result.get("messages", []):
+        if hasattr(msg, 'tool_calls') and msg.tool_calls:
+            for tool_call in msg.tool_calls:
+                if tool_call.get("name") == tool_name:
+                    return tool_call.get("args", {})
+    return {}
 
 
 def _cfg(state: dict, name: str) -> dict | None:
@@ -258,66 +131,6 @@ def _build_system_prompt(task: str, agent=None) -> str:
         prompt = prompt.replace("{role}", "Software Developer")
     
     return prompt
-
-
-def _extract_design_from_raw(raw_content: str) -> dict:
-    """Extract design info from raw LLM response when JSON parsing fails.
-    
-    Looks for mermaid code blocks and other design elements.
-    """
-    import re
-    
-    design_result = {
-        "data_structures": "",
-        "api_interfaces": "",
-        "call_flow": "",
-        "design_notes": "",
-        "file_structure": []
-    }
-    
-    # Extract mermaid classDiagram
-    class_match = re.search(r'```mermaid\s*(classDiagram[\s\S]*?)```', raw_content)
-    if class_match:
-        design_result["data_structures"] = f"```mermaid\n{class_match.group(1).strip()}\n```"
-    
-    # Extract mermaid sequenceDiagram
-    seq_match = re.search(r'```mermaid\s*(sequenceDiagram[\s\S]*?)```', raw_content)
-    if seq_match:
-        design_result["call_flow"] = f"```mermaid\n{seq_match.group(1).strip()}\n```"
-    
-    # Extract any mermaid block if no specific type found
-    if not design_result["data_structures"] and not design_result["call_flow"]:
-        mermaid_match = re.search(r'```mermaid\s*([\s\S]*?)```', raw_content)
-        if mermaid_match:
-            design_result["data_structures"] = f"```mermaid\n{mermaid_match.group(1).strip()}\n```"
-    
-    # Extract TypeScript/interface definitions
-    ts_match = re.search(r'```(?:typescript|ts)\s*([\s\S]*?)```', raw_content)
-    if ts_match:
-        design_result["api_interfaces"] = ts_match.group(1).strip()
-    
-    # Extract file structure from bullet points
-    file_matches = re.findall(r'[-*]\s*[`"]?([a-zA-Z0-9_/.-]+\.[a-zA-Z]+)[`"]?', raw_content)
-    if file_matches:
-        design_result["file_structure"] = list(set(file_matches))[:20]
-    
-    # Use raw content as notes if nothing else found
-    if not any([design_result["data_structures"], design_result["call_flow"], design_result["api_interfaces"]]):
-        design_result["design_notes"] = raw_content[:2000]
-    else:
-        # Extract notes section if present
-        notes_match = re.search(r'(?:notes?|design notes?):\s*([\s\S]*?)(?:\n##|\n```|$)', raw_content, re.IGNORECASE)
-        if notes_match:
-            design_result["design_notes"] = notes_match.group(1).strip()[:500]
-    
-    # Normalize escaped newlines in all content
-    design_result["data_structures"] = _normalize_newlines(design_result["data_structures"])
-    design_result["call_flow"] = _normalize_newlines(design_result["call_flow"])
-    design_result["api_interfaces"] = _normalize_newlines(design_result["api_interfaces"])
-    design_result["design_notes"] = _normalize_newlines(design_result["design_notes"])
-    
-    return design_result
-
 
 def _save_design_docs(workspace_path: str, design_result: dict, design_doc: str, story_title: str):
     """Save design documents to docs/technical folder."""
@@ -393,28 +206,18 @@ Decide the next action and call submit_routing_decision."""
 
         # Use agent with tool calling
         routing_agent = _get_routing_agent()
-        result = await routing_agent.ainvoke({"input": input_text})
+        result = await routing_agent.ainvoke(
+            {"messages": [{"role": "user", "content": input_text}]}
+        )
         
-        # Extract tool call arguments from intermediate steps
-        action = "ANALYZE"
-        task_type = "feature"
-        complexity = "medium"
-        message = "Bắt đầu phân tích story..."
-        reason = "New story needs analysis"
-        confidence = 0.8
-        
-        intermediate_steps = result.get("intermediate_steps", [])
-        if intermediate_steps:
-            # Get the last tool call
-            for action_obj, _ in intermediate_steps:
-                if hasattr(action_obj, 'tool_input'):
-                    tool_input = action_obj.tool_input
-                    action = tool_input.get("action", action)
-                    task_type = tool_input.get("task_type", task_type)
-                    complexity = tool_input.get("complexity", complexity)
-                    message = tool_input.get("message", message)
-                    reason = tool_input.get("reason", reason)
-                    confidence = tool_input.get("confidence", confidence)
+        # Extract tool call arguments
+        args = _extract_tool_args(result, "submit_routing_decision")
+        action = args.get("action", "ANALYZE")
+        task_type = args.get("task_type", "feature")
+        complexity = args.get("complexity", "medium")
+        message = args.get("message", "Bắt đầu phân tích story...")
+        reason = args.get("reason", "New story needs analysis")
+        confidence = args.get("confidence", 0.8)
         
         # IMPORTANT: For story tasks, never return RESPOND or CLARIFY
         if is_story_task and action in ("RESPOND", "CLARIFY"):
@@ -545,31 +348,20 @@ Identify: task_type, complexity, estimated_hours, affected_files, suggested_appr
 
         # Use agent with tool calling
         analysis_agent = _get_analysis_agent()
-        result = await analysis_agent.ainvoke({"input": input_text})
+        result = await analysis_agent.ainvoke(
+            {"messages": [{"role": "user", "content": input_text}]}
+        )
         
         # Extract tool call arguments
-        task_type = "feature"
-        complexity = "medium"
-        estimated_hours = 4.0
-        summary = state.get("story_title", "Implementation")
-        affected_files = []
-        suggested_approach = "Standard implementation approach"
-        dependencies = []
-        risks = []
-        
-        intermediate_steps = result.get("intermediate_steps", [])
-        if intermediate_steps:
-            for action_obj, _ in intermediate_steps:
-                if hasattr(action_obj, 'tool_input'):
-                    tool_input = action_obj.tool_input
-                    task_type = tool_input.get("task_type", task_type)
-                    complexity = tool_input.get("complexity", complexity)
-                    estimated_hours = tool_input.get("estimated_hours", estimated_hours)
-                    summary = tool_input.get("summary", summary)
-                    affected_files = tool_input.get("affected_files", affected_files)
-                    suggested_approach = tool_input.get("suggested_approach", suggested_approach)
-                    dependencies = tool_input.get("dependencies", dependencies) or []
-                    risks = tool_input.get("risks", risks) or []
+        args = _extract_tool_args(result, "submit_story_analysis")
+        task_type = args.get("task_type", "feature")
+        complexity = args.get("complexity", "medium")
+        estimated_hours = args.get("estimated_hours", 4.0)
+        summary = args.get("summary", state.get("story_title", "Implementation"))
+        affected_files = args.get("affected_files", [])
+        suggested_approach = args.get("suggested_approach", "Standard implementation approach")
+        dependencies = args.get("dependencies") or []
+        risks = args.get("risks") or []
         
         # Create analysis object for compatibility
         analysis = StoryAnalysis(
@@ -651,76 +443,64 @@ Identify: task_type, complexity, estimated_hours, affected_files, suggested_appr
 
 
 async def design(state: DeveloperState, agent=None) -> DeveloperState:
-    """Generate system design before implementation (MetaGPT Architect pattern)."""
+    """Generate system design using agent with tool calling (MetaGPT Architect pattern)."""
     try:
         analysis = state.get("analysis_result", {})
         complexity = state.get("complexity", "medium")
+        workspace_path = state.get("workspace_path", "")
         
         # Skip design for simple tasks
         if complexity == "low":
             logger.info("[design] Skipping design for low complexity task")
-            return {
-                **state,
-                "action": "PLAN",
-                "message": "Task đơn giản, bỏ qua design phase.",
-            }
+            return {**state, "action": "PLAN", "message": "Task đơn giản, bỏ qua design phase."}
         
-        if agent:
-            pass
-        
-        # Get existing code context
-        workspace_path = state.get("workspace_path", "")
+        # Get code context via CocoIndex
         existing_context = ""
-        if workspace_path:
-            try:
-                from app.agents.developer_v2.tools import get_all_workspace_files
-                existing_context = get_all_workspace_files(workspace_path, max_files=10)
-            except Exception:
-                existing_context = "No existing code"
+        index_ready = state.get("index_ready", False)
+        if workspace_path and index_ready:
+            from app.agents.developer_v2.tools import search_codebase
+            project_id = state.get("project_id", "default")
+            task_id = state.get("task_id") or state.get("story_id", "")
+            existing_context = search_codebase(project_id, state.get("story_title", ""), top_k=10, task_id=task_id)
         
-        sys_prompt = _build_system_prompt("system_design", agent)
-        user_prompt = _get_prompt("system_design", "user_prompt").format(
-            story_title=state.get("story_title", ""),
-            analysis_summary=analysis.get("summary", ""),
-            task_type=state.get("task_type", "feature"),
-            complexity=complexity,
-            story_content=state.get("story_content", ""),
-            acceptance_criteria="\n".join(f"- {ac}" for ac in state.get("acceptance_criteria", [])),
-            existing_context=existing_context or "No existing code",
+        # Build input for agent
+        input_text = f"""Create a system design and call submit_system_design:
+
+Story: {state.get("story_title", "")}
+Summary: {analysis.get("summary", "")}
+Task Type: {state.get("task_type", "feature")}
+Complexity: {complexity}
+
+Requirements:
+{state.get("story_content", "")}
+
+Acceptance Criteria:
+{chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", []))}
+
+Existing Code:
+{existing_context[:5000] if existing_context else "No existing code"}
+
+Create design with: data_structures (mermaid), api_interfaces, call_flow (mermaid), design_notes, file_structure."""
+
+        # Use agent with tool calling
+        design_agent = _get_design_agent()
+        result = await design_agent.ainvoke(
+            {"messages": [{"role": "user", "content": input_text}]}
         )
         
-        messages = [
-            SystemMessage(content=sys_prompt),
-            HumanMessage(content=user_prompt)
-        ]
+        # Extract from tool call
+        args = _extract_tool_args(result, "submit_system_design")
+        if not args:
+            raise RuntimeError("Agent did not return design")
         
-        response = await _code_llm.ainvoke(messages, config=_cfg(state, "design"))
-        raw_content = response.content
-        clean_json = _clean_json(raw_content)
-        
-        import json
-        design_result = None
-        
-        # Try JSON parsing first
-        if clean_json and clean_json.strip():
-            try:
-                design_result = json.loads(clean_json)
-                logger.info(f"[design] Parsed JSON successfully")
-                
-                # Normalize escaped newlines in JSON result
-                for key in ["data_structures", "call_flow", "api_interfaces", "design_notes"]:
-                    if key in design_result and isinstance(design_result[key], str):
-                        design_result[key] = _normalize_newlines(design_result[key])
-                        
-            except json.JSONDecodeError:
-                logger.warning(f"[design] JSON parse failed, extracting from raw response")
-        
-        # Fallback: Extract mermaid/content directly from response
-        if not design_result:
-            design_result = _extract_design_from_raw(raw_content)
-            logger.info(f"[design] Extracted design from raw response")
-        
-        logger.info(f"[design] Created system design with {len(design_result.get('file_structure', []))} files")
+        design_result = {
+            "data_structures": args.get("data_structures", ""),
+            "api_interfaces": args.get("api_interfaces", ""),
+            "call_flow": args.get("call_flow", ""),
+            "design_notes": args.get("design_notes", ""),
+            "file_structure": args.get("file_structure", []),
+        }
+        logger.info(f"[design] Got design from agent: {len(design_result.get('file_structure', []))} files")
         
         # Build design document
         design_doc = f"""# System Design
@@ -741,21 +521,9 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
 {chr(10).join(f'- {f}' for f in design_result.get('file_structure', []))}
 """
         
-        # Save design documents to /docs/technical
+        # Save design documents
         if workspace_path:
             _save_design_docs(workspace_path, design_result, design_doc, state.get("story_title", "design"))
-        
-        msg = f"""🏗️ **System Design hoàn tất!**
-
-📊 **Data Structures:** Đã định nghĩa interfaces và types
-🔗 **Call Flow:** Đã vẽ sequence diagram
-📁 **Files:** {', '.join(design_result.get('file_structure', [])[:5])}...
-📄 **Docs:** Saved to docs/technical/
-
-💡 **Notes:** {design_result.get('design_notes', '')[:200]}..."""
-        
-        if agent:
-            pass
         
         return {
             **state,
@@ -764,13 +532,11 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
             "api_interfaces": design_result.get("api_interfaces"),
             "call_flow": design_result.get("call_flow"),
             "design_doc": design_doc,
-            "message": msg,
             "action": "PLAN",
         }
         
     except Exception as e:
         logger.error(f"[design] Error: {e}", exc_info=True)
-        # Don't fail - continue to plan even if design fails
         return {
             **state,
             "message": f"⚠️ Design skipped: {str(e)}",
@@ -835,25 +601,17 @@ IMPORTANT: Follow the project guidelines above for file paths and conventions.""
 
         # Use agent with tool calling
         plan_agent = _get_plan_agent()
-        result = await plan_agent.ainvoke({"input": input_text})
+        result = await plan_agent.ainvoke(
+            {"messages": [{"role": "user", "content": input_text}]}
+        )
         
         # Extract tool call arguments
-        story_summary = state.get("story_title", "Implementation")
-        steps = []
-        total_estimated_hours = 0
-        critical_path = []
-        rollback_plan = None
-        
-        intermediate_steps = result.get("intermediate_steps", [])
-        if intermediate_steps:
-            for action_obj, _ in intermediate_steps:
-                if hasattr(action_obj, 'tool_input'):
-                    tool_input = action_obj.tool_input
-                    story_summary = tool_input.get("story_summary", story_summary)
-                    steps = tool_input.get("steps", steps)
-                    total_estimated_hours = tool_input.get("total_estimated_hours", total_estimated_hours)
-                    critical_path = tool_input.get("critical_path", critical_path) or []
-                    rollback_plan = tool_input.get("rollback_plan", rollback_plan)
+        args = _extract_tool_args(result, "submit_implementation_plan")
+        story_summary = args.get("story_summary", state.get("story_title", "Implementation"))
+        steps = args.get("steps", [])
+        total_estimated_hours = args.get("total_estimated_hours", 0)
+        critical_path = args.get("critical_path") or []
+        rollback_plan = args.get("rollback_plan")
         
         # Convert steps to PlanStep objects
         plan_steps = []
@@ -925,6 +683,14 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         plan_steps = state.get("implementation_plan", [])
         current_step = state.get("current_step", 0)
         workspace_path = state.get("workspace_path", "")
+        
+        # React mode: increment counter if retrying (already have code changes)
+        react_loop_count = state.get("react_loop_count", 0)
+        debug_count = state.get("debug_count", 0)
+        if state.get("code_changes") and state.get("react_mode"):
+            react_loop_count += 1
+            debug_count = 0  # Reset debug count for new cycle
+            logger.info(f"[implement] React loop iteration {react_loop_count}")
         
         if not plan_steps:
             logger.error("[implement] No implementation plan")
@@ -1028,28 +794,22 @@ IMPORTANT:
 
         # Use agent with tool calling
         code_agent = _get_code_agent()
-        result = await code_agent.ainvoke({"input": input_text})
-        
-        code_change = None
+        result = await code_agent.ainvoke(
+            {"messages": [{"role": "user", "content": input_text}]}
+        )
         
         # Extract from tool call
-        intermediate_steps = result.get("intermediate_steps", [])
-        if intermediate_steps:
-            for action_obj, _ in intermediate_steps:
-                if hasattr(action_obj, 'tool') and action_obj.tool == "submit_code_change":
-                    tool_input = action_obj.tool_input
-                    code_change = CodeChange(
-                        file_path=tool_input.get("file_path", current_file),
-                        action=tool_input.get("action", step.get("action", "create")),
-                        code_snippet=tool_input.get("code_snippet", ""),
-                        description=tool_input.get("description", step.get("description", ""))
-                    )
-                    logger.info(f"[implement] Got code from agent tool call")
-                    break
-        
-        # Error if no code from agent
-        if not code_change:
+        args = _extract_tool_args(result, "submit_code_change")
+        if not args:
             raise RuntimeError(f"Agent did not return code for step: {step.get('description', '')}")
+        
+        code_change = CodeChange(
+            file_path=args.get("file_path", current_file),
+            action=args.get("action", step.get("action", "create")),
+            code_snippet=args.get("code_snippet", ""),
+            description=args.get("description", step.get("description", ""))
+        )
+        logger.info(f"[implement] Got code from agent tool call")
         
         logger.info(f"[implement] Step {current_step + 1}: {code_change.action} {code_change.file_path}")
         
@@ -1084,6 +844,8 @@ IMPORTANT:
             "files_created": files_created,
             "files_modified": files_modified,
             "current_step": current_step + 1,
+            "react_loop_count": react_loop_count,
+            "debug_count": debug_count,
             "message": msg,
             "action": "IMPLEMENT" if current_step + 1 < len(plan_steps) else "VALIDATE",
         }
@@ -1094,69 +856,6 @@ IMPORTANT:
             **state,
             "error": str(e),
             "message": f"❌ Lỗi khi implement: {str(e)}",
-            "action": "RESPOND",
-        }
-
-
-async def validate(state: DeveloperState, agent=None) -> DeveloperState:
-    """Validate implementation against acceptance criteria."""
-    try:
-        if agent:
-            pass
-        
-        sys_prompt = _build_system_prompt("validate_implementation", agent)
-        user_prompt = _get_prompt("validate_implementation", "user_prompt").format(
-            files_created=", ".join(state.get("files_created", [])) or "None",
-            files_modified=", ".join(state.get("files_modified", [])) or "None",
-            acceptance_criteria="\n".join(f"- {ac}" for ac in state.get("acceptance_criteria", [])),
-            test_results="Tests not executed in this simulation",
-            lint_results="Lint not executed in this simulation",
-        )
-        
-        messages = [
-            SystemMessage(content=sys_prompt),
-            HumanMessage(content=user_prompt)
-        ]
-        
-        response = await _fast_llm.ainvoke(messages, config=_cfg(state, "validate"))
-        clean_json = _clean_json(response.content)
-        validation = ValidationResult.model_validate_json(clean_json)
-        
-        logger.info(f"[validate] tests={validation.tests_passed}, lint={validation.lint_passed}, ac_verified={len(validation.ac_verified)}")
-        
-        status = "✅ PASSED" if validation.tests_passed and validation.lint_passed else "⚠️ NEEDS ATTENTION"
-        
-        msg = f"""🧪 **Validation Result: {status}**
-
-**Tests:** {'✅ Passed' if validation.tests_passed else '❌ Failed'}
-**Lint:** {'✅ Passed' if validation.lint_passed else '❌ Failed'}
-
-**AC Verified:** {len(validation.ac_verified)}/{len(validation.ac_verified) + len(validation.ac_failed)}
-{chr(10).join(f'  ✅ {ac}' for ac in validation.ac_verified)}
-{chr(10).join(f'  ❌ {ac}' for ac in validation.ac_failed)}
-
-**Issues:** {', '.join(validation.issues) if validation.issues else 'None'}
-**Recommendations:** {', '.join(validation.recommendations) if validation.recommendations else 'None'}"""
-        
-        if agent:
-            pass
-        
-        return {
-            **state,
-            "validation_result": validation.model_dump(),
-            "tests_passed": validation.tests_passed,
-            "lint_passed": validation.lint_passed,
-            "ac_verified": validation.ac_verified,
-            "message": msg,
-            "action": "RESPOND",
-        }
-        
-    except Exception as e:
-        logger.error(f"[validate] Error: {e}", exc_info=True)
-        return {
-            **state,
-            "error": str(e),
-            "message": f"❌ Lỗi khi validate: {str(e)}",
             "action": "RESPOND",
         }
 

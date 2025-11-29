@@ -237,9 +237,23 @@ class SimpleDeveloperRunner:
             
             # Debug
             "debug_count": 0,
-            "max_debug": 3,  # Allow 3 debug attempts
+            "max_debug": 5,  # Allow 5 debug attempts (MetaGPT pattern)
             "debug_history": [],
             "last_debug_file": None,
+            
+            # React mode (MetaGPT Engineer2 pattern)
+            "react_mode": True,
+            "react_loop_count": 0,
+            "max_react_loop": 40,
+            
+            # Summarize code (MetaGPT SummarizeCode pattern)
+            "summarize_feedback": None,
+            "summarize_count": 0,
+            "max_summarize": 3,
+            
+            # Project context
+            "project_context": None,
+            "agents_md": None,
         }
         
         logger.info(f"[{self.name}] Starting story: {story.get('title', 'Untitled')}")
