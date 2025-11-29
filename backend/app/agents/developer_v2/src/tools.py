@@ -2,11 +2,13 @@
 
 import logging
 import os
+import asyncio
 from pathlib import Path
-from typing import Optional, List, Dict, Literal
+from typing import Optional, List, Dict, Literal, Callable
+from functools import partial
 
 from pydantic import BaseModel, Field
-from langchain_core.tools import tool
+from langchain_core.tools import tool, StructuredTool
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +152,186 @@ def submit_system_design(
 ) -> str:
     """Submit system design. You MUST call this tool with your design."""
     return f"Design submitted: {len(file_structure)} files"
+
+
+# =============================================================================
+# REACT AGENT TOOL FACTORIES
+# Creates tools with workspace context injected for ReAct agents
+# =============================================================================
+
+def create_search_codebase_tool(project_id: str, task_id: str = None) -> StructuredTool:
+    """Create a search_codebase tool with project context injected."""
+    
+    def _search(query: str, top_k: int = 5) -> str:
+        """Search codebase using semantic search.
+        
+        Args:
+            query: Natural language query (e.g., "authentication logic", "user model")
+            top_k: Number of results to return (default: 5)
+        """
+        return search_codebase(project_id, query, top_k, task_id)
+    
+    return StructuredTool.from_function(
+        func=_search,
+        name="search_codebase",
+        description="Search codebase using semantic search. Use this to find relevant code, patterns, and examples."
+    )
+
+
+def create_read_file_tool(workspace_path: str) -> StructuredTool:
+    """Create a read_file tool scoped to workspace."""
+    
+    def _read(file_path: str) -> str:
+        """Read contents of a file in the workspace.
+        
+        Args:
+            file_path: Relative path from workspace root (e.g., 'src/app/page.tsx')
+        """
+        full_path = os.path.join(workspace_path, file_path)
+        return read_file(full_path)
+    
+    return StructuredTool.from_function(
+        func=_read,
+        name="read_file",
+        description="Read contents of a file. Use relative paths from project root."
+    )
+
+
+def create_write_file_tool(workspace_path: str) -> StructuredTool:
+    """Create a write_file tool scoped to workspace."""
+    
+    def _write(file_path: str, content: str) -> str:
+        """Write content to a file in the workspace.
+        
+        Args:
+            file_path: Relative path from workspace root
+            content: Content to write
+        """
+        full_path = os.path.join(workspace_path, file_path)
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        return write_file(full_path, content)
+    
+    return StructuredTool.from_function(
+        func=_write,
+        name="write_file",
+        description="Write content to a file. Creates directories if needed."
+    )
+
+
+def create_list_directory_tool(workspace_path: str) -> StructuredTool:
+    """Create a list_directory tool scoped to workspace."""
+    
+    def _list(directory_path: str = ".") -> str:
+        """List contents of a directory in the workspace.
+        
+        Args:
+            directory_path: Relative path from workspace root (default: root)
+        """
+        full_path = os.path.join(workspace_path, directory_path)
+        return list_directory(full_path)
+    
+    return StructuredTool.from_function(
+        func=_list,
+        name="list_directory",
+        description="List files and folders in a directory. Use '.' for root."
+    )
+
+
+def create_run_command_tool(workspace_path: str) -> StructuredTool:
+    """Create a run_command tool scoped to workspace."""
+    
+    def _run(command: str) -> str:
+        """Run a shell command in the workspace.
+        
+        Args:
+            command: Shell command to execute
+        """
+        return run_command(command, cwd=workspace_path)
+    
+    return StructuredTool.from_function(
+        func=_run,
+        name="run_command",
+        description="Run a shell command. Use for testing, building, or checking status."
+    )
+
+
+
+
+
+def get_react_tools_for_node(
+    node_name: str,
+    workspace_path: str = None,
+    project_id: str = None,
+    task_id: str = None
+) -> List:
+    """Get list of tools for a specific ReAct agent node.
+    
+    Args:
+        node_name: Name of the node (router, analyze, design, plan, implement, debug)
+        workspace_path: Path to workspace
+        project_id: Project ID for CocoIndex
+        task_id: Task ID for CocoIndex
+        
+    Returns:
+        List of tools for the node
+    """
+    tools = []
+    
+    # Common tools based on node
+    if node_name == "router":
+        if project_id:
+            tools.append(create_search_codebase_tool(project_id, task_id))
+        tools.append(submit_routing_decision)
+        
+    elif node_name == "analyze":
+        if workspace_path:
+            tools.append(create_read_file_tool(workspace_path))
+        if project_id:
+            tools.append(create_search_codebase_tool(project_id, task_id))
+        # Add TavilySearch for web research
+        try:
+            from langchain_tavily import TavilySearch
+            tools.append(TavilySearch(max_results=3, include_answer=True))
+        except ImportError:
+            pass
+        tools.append(submit_story_analysis)
+        
+    elif node_name == "design":
+        if workspace_path:
+            tools.append(create_read_file_tool(workspace_path))
+            tools.append(create_list_directory_tool(workspace_path))
+        if project_id:
+            tools.append(create_search_codebase_tool(project_id, task_id))
+        tools.append(submit_system_design)
+        
+    elif node_name == "plan":
+        if workspace_path:
+            tools.append(create_read_file_tool(workspace_path))
+            tools.append(create_list_directory_tool(workspace_path))
+        if project_id:
+            tools.append(create_search_codebase_tool(project_id, task_id))
+        tools.append(submit_implementation_plan)
+        
+    elif node_name == "implement":
+        if workspace_path:
+            tools.append(create_read_file_tool(workspace_path))
+            tools.append(create_list_directory_tool(workspace_path))
+            tools.append(create_write_file_tool(workspace_path))
+            tools.append(create_run_command_tool(workspace_path))
+        if project_id:
+            tools.append(create_search_codebase_tool(project_id, task_id))
+        tools.append(submit_code_change)
+        
+    elif node_name == "debug":
+        if workspace_path:
+            tools.append(create_read_file_tool(workspace_path))
+            tools.append(create_write_file_tool(workspace_path))
+            tools.append(create_run_command_tool(workspace_path))
+        if project_id:
+            tools.append(create_search_codebase_tool(project_id, task_id))
+    
+    return tools
 
 
 # =============================================================================
@@ -1113,41 +1295,7 @@ async def install_dependencies(workspace_path: str) -> bool:
     return installed
 
 
-async def tavily_search(query: str, max_results: int = 3) -> str:
-    """Search web using LangChain's Tavily tool for best practices and documentation.
-    
-    Args:
-        query: Search query
-        max_results: Max number of results
-        
-    Returns:
-        Formatted search results as string
-    """
-    try:
-        from langchain_tavily import TavilySearch
-        
-        tool = TavilySearch(max_results=max_results)
-        results = await tool.ainvoke({"query": query})
-        
-        if isinstance(results, str):
-            return results
-        
-        # Format results if it's a list
-        if isinstance(results, list):
-            formatted = []
-            for r in results:
-                if isinstance(r, dict):
-                    title = r.get("title", "")
-                    content = r.get("content", "")[:500]
-                    url = r.get("url", "")
-                    formatted.append(f"## {title}\n{content}\nSource: {url}\n")
-            return "\n".join(formatted) if formatted else "No results found"
-        
-        return str(results)
-    except ImportError:
-        return "langchain-tavily not installed (uv add langchain-tavily)"
-    except Exception as e:
-        return f"Search failed: {e}"
+
 
 
 def detect_framework_from_package_json(workspace_path: str) -> dict:

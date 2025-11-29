@@ -1,11 +1,11 @@
-"""Developer V2 Graph Nodes."""
+"""Developer V2 Graph Nodes - ReAct Agents with Multi-Tool Support."""
 
 import logging
 import re
 from pathlib import Path
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
-from langchain.agents import create_agent
+from langgraph.prebuilt import create_react_agent
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import ( StoryAnalysis, ImplementationPlan, PlanStep,
@@ -13,7 +13,7 @@ from app.agents.developer_v2.src.schemas import ( StoryAnalysis, ImplementationP
 )
 from app.agents.developer_v2.src.tools import (
     submit_routing_decision, submit_story_analysis, submit_implementation_plan,
-    submit_code_change, submit_system_design
+    submit_code_change, submit_system_design, get_react_tools_for_node
 )
 from app.agents.core.prompt_utils import load_prompts_yaml
 
@@ -28,61 +28,45 @@ _code_llm = ChatOpenAI(model="gpt-4.1", temperature=0.2, timeout=120)
 
 
 # =============================================================================
-# AGENT EXECUTORS (using langchain create_agent)
+# REACT AGENT FACTORY
+# Creates ReAct agents with multiple tools for autonomous reasoning
 # =============================================================================
 
-def _create_agent_instance(llm, tools: list, system_prompt: str):
-    """Create an agent with tool calling."""
-    full_prompt = system_prompt + "\n\nIMPORTANT: You MUST call the provided tool to submit your result. Do not respond with plain text."
-    return create_agent(llm, tools=tools, system_prompt=full_prompt)
+def _create_react_agent(
+    llm,
+    tools: list,
+    system_prompt: str,
+    max_iterations: int = 10
+):
+    """Create a ReAct agent with multiple tools.
+    
+    ReAct pattern: Reason → Act → Observe → Repeat
+    Agent can use multiple tools to explore and complete task.
+    
+    Args:
+        llm: Language model
+        tools: List of tools agent can use
+        system_prompt: System prompt with instructions
+        max_iterations: Max tool call iterations (default: 10)
+    """
+    full_prompt = system_prompt + """
 
+## Tool Usage Instructions
+You have access to multiple tools. Use them strategically:
+1. Use read_file/list_directory to understand existing code
+2. Use search_codebase to find relevant patterns and examples
+3. Use web_search for best practices when needed
+4. Always call the submit_* tool to finalize your result
 
-# Lazy initialization of agents
-_routing_agent = None
-_analysis_agent = None
-_design_agent = None
-_plan_agent = None
-_code_agent = None
+IMPORTANT: You MUST call the appropriate submit_* tool to complete your task.
+Do not respond with plain text without calling the submit tool."""
 
-
-def _get_routing_agent():
-    global _routing_agent
-    if _routing_agent is None:
-        system_prompt = _build_system_prompt("routing_decision")
-        _routing_agent = _create_agent_instance(_fast_llm, [submit_routing_decision], system_prompt)
-    return _routing_agent
-
-
-def _get_analysis_agent():
-    global _analysis_agent
-    if _analysis_agent is None:
-        system_prompt = _build_system_prompt("analyze_story")
-        _analysis_agent = _create_agent_instance(_code_llm, [submit_story_analysis], system_prompt)
-    return _analysis_agent
-
-
-def _get_design_agent():
-    global _design_agent
-    if _design_agent is None:
-        system_prompt = _build_system_prompt("system_design")
-        _design_agent = _create_agent_instance(_code_llm, [submit_system_design], system_prompt)
-    return _design_agent
-
-
-def _get_plan_agent():
-    global _plan_agent
-    if _plan_agent is None:
-        system_prompt = _build_system_prompt("create_plan")
-        _plan_agent = _create_agent_instance(_code_llm, [submit_implementation_plan], system_prompt)
-    return _plan_agent
-
-
-def _get_code_agent():
-    global _code_agent
-    if _code_agent is None:
-        system_prompt = _build_system_prompt("implement_step")
-        _code_agent = _create_agent_instance(_code_llm, [submit_code_change], system_prompt)
-    return _code_agent
+    return create_react_agent(
+        model=llm,
+        tools=tools,
+        prompt=full_prompt,
+        debug=False
+    )
 
 
 def _clean_json(text: str) -> str:
@@ -188,7 +172,10 @@ def _save_design_docs(workspace_path: str, design_result: dict, design_doc: str,
         logger.warning(f"[design] Failed to save design docs: {e}")
 
 async def router(state: DeveloperState, agent=None) -> DeveloperState:
-    """Route story to appropriate processing node using agent with tool calling."""
+    """Route story to appropriate processing node using ReAct agent.
+    
+    Tools: [search_codebase (optional), submit_routing_decision]
+    """
     try:
         has_analysis = bool(state.get("analysis_result"))
         has_plan = bool(state.get("implementation_plan"))
@@ -209,9 +196,17 @@ async def router(state: DeveloperState, agent=None) -> DeveloperState:
             has_implementation=has_implementation
         )
 
-        # Use agent with tool calling
-        routing_agent = _get_routing_agent()
-        result = await routing_agent.ainvoke(
+        # Get tools for router (minimal tools since no workspace yet)
+        project_id = state.get("project_id")
+        task_id = state.get("task_id") or state.get("story_id")
+        tools = get_react_tools_for_node("router", project_id=project_id, task_id=task_id)
+        
+        # Create ReAct agent
+        system_prompt = _build_system_prompt("routing_decision")
+        react_agent = _create_react_agent(_fast_llm, tools, system_prompt)
+        
+        # Invoke agent
+        result = await react_agent.ainvoke(
             {"messages": [{"role": "user", "content": input_text}]},
             config=_cfg(state, "router")
         )
@@ -338,7 +333,10 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
 
 
 async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
-    """Analyze user story using agent with tool calling."""
+    """Analyze user story using ReAct agent.
+    
+    Tools: [read_file, search_codebase, web_search, submit_story_analysis]
+    """
     try:
         if agent:
             pass
@@ -351,9 +349,18 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
             acceptance_criteria=chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", []))
         )
 
-        # Use agent with tool calling
-        analysis_agent = _get_analysis_agent()
-        result = await analysis_agent.ainvoke(
+        # Get tools for analyze (can read files and search)
+        workspace_path = state.get("workspace_path")
+        project_id = state.get("project_id")
+        task_id = state.get("task_id") or state.get("story_id")
+        tools = get_react_tools_for_node("analyze", workspace_path=workspace_path, project_id=project_id, task_id=task_id)
+        
+        # Create ReAct agent
+        system_prompt = _build_system_prompt("analyze_story")
+        react_agent = _create_react_agent(_code_llm, tools, system_prompt)
+        
+        # Invoke agent
+        result = await react_agent.ainvoke(
             {"messages": [{"role": "user", "content": input_text}]},
             config=_cfg(state, "analyze")
         )
@@ -387,10 +394,9 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
         workspace_path = state.get("workspace_path", "")
         if workspace_path:
             try:
-                from app.agents.developer_v2.src.tools import (
-                    detect_framework_from_package_json,
-                    tavily_search
-                )
+                from app.agents.developer_v2.src.tools import detect_framework_from_package_json
+                from langchain_tavily import TavilySearch
+                
                 framework_info = detect_framework_from_package_json(workspace_path)
                 
                 if framework_info.get("name") != "unknown":
@@ -403,8 +409,13 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
                     search_query = f"{framework_name} {framework_version} {router_type} router {story_title} best practices 2024"
                     
                     logger.info(f"[analyze] Researching: {search_query}")
-                    research_context = await tavily_search(search_query, max_results=3)
+                    tavily = TavilySearch(max_results=3, include_answer=True)
+                    research_context = await tavily.ainvoke({"query": search_query})
+                    if isinstance(research_context, dict):
+                        research_context = str(research_context)
                     logger.info(f"[analyze] Research completed: {len(research_context)} chars")
+            except ImportError:
+                logger.warning("[analyze] langchain-tavily not installed, skipping research")
             except Exception as research_err:
                 logger.warning(f"[analyze] Research failed (continuing): {research_err}")
         
@@ -449,7 +460,10 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
 
 
 async def design(state: DeveloperState, agent=None) -> DeveloperState:
-    """Generate system design using agent with tool calling (MetaGPT Architect pattern)."""
+    """Generate system design using ReAct agent (MetaGPT Architect pattern).
+    
+    Tools: [read_file, list_directory, search_codebase, submit_system_design]
+    """
     try:
         analysis = state.get("analysis_result", {})
         complexity = state.get("complexity", "medium")
@@ -460,16 +474,7 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
             logger.info("[design] Skipping design for low complexity task")
             return {**state, "action": "PLAN", "message": "Task đơn giản, bỏ qua design phase."}
         
-        # Get code context via CocoIndex
-        existing_context = ""
-        index_ready = state.get("index_ready", False)
-        if workspace_path and index_ready:
-            from app.agents.developer_v2.src.tools import search_codebase
-            project_id = state.get("project_id", "default")
-            task_id = state.get("task_id") or state.get("story_id", "")
-            existing_context = search_codebase(project_id, state.get("story_title", ""), top_k=10, task_id=task_id)
-        
-        # Build input from template
+        # Build input from template (ReAct agent will search codebase itself)
         input_text = _format_input_template(
             "system_design",
             story_title=state.get("story_title", ""),
@@ -478,12 +483,20 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
             complexity=complexity,
             story_content=state.get("story_content", ""),
             acceptance_criteria=chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", [])),
-            existing_context=existing_context[:5000] if existing_context else "No existing code"
+            existing_context="Use search_codebase and read_file tools to explore existing code"
         )
 
-        # Use agent with tool calling
-        design_agent = _get_design_agent()
-        result = await design_agent.ainvoke(
+        # Get tools for design
+        project_id = state.get("project_id")
+        task_id = state.get("task_id") or state.get("story_id")
+        tools = get_react_tools_for_node("design", workspace_path=workspace_path, project_id=project_id, task_id=task_id)
+        
+        # Create ReAct agent
+        system_prompt = _build_system_prompt("system_design")
+        react_agent = _create_react_agent(_code_llm, tools, system_prompt)
+        
+        # Invoke agent
+        result = await react_agent.ainvoke(
             {"messages": [{"role": "user", "content": input_text}]},
             config=_cfg(state, "design")
         )
@@ -545,32 +558,20 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
 
 
 async def plan(state: DeveloperState, agent=None) -> DeveloperState:
-    """Create implementation plan using agent with tool calling."""
+    """Create implementation plan using ReAct agent.
+    
+    Tools: [read_file, list_directory, search_codebase, submit_implementation_plan]
+    """
     try:
         analysis = state.get("analysis_result", {})
         
         if agent:
             pass
         
-        # Get existing code context for better planning (CocoIndex required)
+        # Get workspace context
         workspace_path = state.get("workspace_path", "")
-        index_ready = state.get("index_ready", False)
         project_id = state.get("project_id", "default")
         task_id = state.get("task_id") or state.get("story_id", "")
-        task_description = state.get("story_title", "") + " " + analysis.get("summary", "")
-        
-        existing_code = ""
-        
-        # CocoIndex semantic search (required)
-        if workspace_path and index_ready:
-            from app.agents.developer_v2.src.tools import search_codebase
-            existing_code = search_codebase(
-                project_id=project_id,
-                query=task_description,
-                top_k=10,
-                task_id=task_id
-            )
-            logger.info(f"[plan] Using CocoIndex for context: {len(existing_code)} chars")
         
         # Get project structure and context
         project_context = state.get("project_context", "")
@@ -608,12 +609,18 @@ IMPORTANT: Generate file_path values that match the existing project structure a
             design_doc=state.get("design_doc", "No design document"),
             acceptance_criteria=chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", [])),
             directory_structure=directory_structure,
-            existing_code=existing_code[:2000] if existing_code else "No existing code"
+            existing_code="Use search_codebase and read_file tools to explore existing code"
         )
 
-        # Use agent with tool calling
-        plan_agent = _get_plan_agent()
-        result = await plan_agent.ainvoke(
+        # Get tools for plan
+        tools = get_react_tools_for_node("plan", workspace_path=workspace_path, project_id=project_id, task_id=task_id)
+        
+        # Create ReAct agent
+        system_prompt = _build_system_prompt("create_plan")
+        react_agent = _create_react_agent(_code_llm, tools, system_prompt)
+        
+        # Invoke agent
+        result = await react_agent.ainvoke(
             {"messages": [{"role": "user", "content": input_text}]},
             config=_cfg(state, "plan")
         )
@@ -708,11 +715,16 @@ IMPORTANT: Generate file_path values that match the existing project structure a
 
 
 async def implement(state: DeveloperState, agent=None) -> DeveloperState:
-    """Execute implementation based on plan (Enhanced with MetaGPT context)."""
+    """Execute implementation based on plan using ReAct agent.
+    
+    Tools: [read_file, list_directory, search_codebase, write_file, run_command, submit_code_change]
+    """
     try:
         plan_steps = state.get("implementation_plan", [])
         current_step = state.get("current_step", 0)
         workspace_path = state.get("workspace_path", "")
+        project_id = state.get("project_id", "default")
+        task_id = state.get("task_id") or state.get("story_id", "")
         
         # React mode: only increment counter when looping back from summarize (current_step reset to 0)
         react_loop_count = state.get("react_loop_count", 0)
@@ -844,9 +856,15 @@ Conventions: {project_structure.get('conventions', '')}
             error_logs=error_logs_text
         )
 
-        # Use agent with tool calling
-        code_agent = _get_code_agent()
-        result = await code_agent.ainvoke(
+        # Get tools for implement (most powerful toolset)
+        tools = get_react_tools_for_node("implement", workspace_path=workspace_path, project_id=project_id, task_id=task_id)
+        
+        # Create ReAct agent
+        system_prompt = _build_system_prompt("implement_step")
+        react_agent = _create_react_agent(_code_llm, tools, system_prompt)
+        
+        # Invoke agent
+        result = await react_agent.ainvoke(
             {"messages": [{"role": "user", "content": input_text}]},
             config=_cfg(state, "implement")
         )
@@ -1831,13 +1849,16 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
 # =============================================================================
 
 async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
-    """Debug and fix errors based on test results.
+    """Debug and fix errors using ReAct agent.
     
+    Tools: [read_file, search_codebase, run_command, write_file]
     Analyzes error logs and rewrites code to fix bugs.
     """
     try:
         run_result = state.get("run_result", {})
         workspace_path = state.get("workspace_path", "")
+        project_id = state.get("project_id", "default")
+        task_id = state.get("task_id") or state.get("story_id", "")
         debug_count = state.get("debug_count", 0)
         max_debug = state.get("max_debug", 5)  # MetaGPT pattern
         
@@ -1909,13 +1930,25 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
             file_to_fix=file_to_fix,
         )
         
-        messages = [
-            SystemMessage(content=sys_prompt),
-            HumanMessage(content=user_prompt)
-        ]
+        # Get tools for debug (can read files, run commands, and write fixes)
+        tools = get_react_tools_for_node("debug", workspace_path=workspace_path, project_id=project_id, task_id=task_id)
         
-        response = await _code_llm.ainvoke(messages, config=_cfg(state, "debug_error"))
-        clean_json = _clean_json(response.content)
+        # Create ReAct agent for debugging
+        react_agent = _create_react_agent(_code_llm, tools, sys_prompt)
+        
+        # Invoke agent
+        result = await react_agent.ainvoke(
+            {"messages": [{"role": "user", "content": user_prompt}]},
+            config=_cfg(state, "debug_error")
+        )
+        
+        # Extract response from agent messages
+        response_content = ""
+        for msg in result.get("messages", []):
+            if hasattr(msg, 'content') and msg.content:
+                response_content = msg.content
+        
+        clean_json = _clean_json(response_content)
         
         try:
             import json
