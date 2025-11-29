@@ -245,9 +245,10 @@ tasks:
       → Cần hỏi:
       - "Khách hàng của bạn là ai?" → ["Học sinh/Sinh viên", "Người đi làm", "Phụ huynh mua cho con", "Tất cả mọi người", "Khác (vui lòng mô tả)"]
       - "Bạn bán loại sách nào?" → ["Sách giáo khoa", "Truyện/Tiểu thuyết", "Sách kỹ năng/Self-help", "Sách thiếu nhi", "Tất cả các loại trên", "Khác (vui lòng mô tả)"]
-      - "Website cần có những tính năng gì?" → ["Tìm kiếm sách", "Giỏ hàng & thanh toán", "Đánh giá/bình luận sách", "Gợi ý sách theo sở thích", "Theo dõi đơn hàng", "Tài khoản thành viên", "Khác (vui lòng mô tả)"]
+      - "Website cần có những tính năng gì?" → ["Đăng nhập/Đăng ký", "Trang chủ giới thiệu", "Tìm kiếm sách", "Giỏ hàng & thanh toán", "Đánh giá/bình luận sách", "Gợi ý sách theo sở thích", "Theo dõi đơn hàng", "Quản lý tài khoản cá nhân", "Khác (vui lòng mô tả)"]
       - "Khách thanh toán thế nào?" → ["Chuyển khoản ngân hàng", "Ví điện tử (Momo, ZaloPay...)", "Tiền mặt khi nhận hàng", "Thẻ tín dụng/ghi nợ", "Khác (vui lòng mô tả)"]
       - "Bạn có hỗ trợ giao hàng không?" → ["Giao toàn quốc", "Chỉ giao nội thành", "Khách tự đến lấy tại cửa hàng", "Khác (vui lòng mô tả)"]
+      - "Bạn lo ngại điều gì nhất khi xây dựng website?" → ["Bảo mật thanh toán", "Quản lý tồn kho", "Thu hút khách hàng", "Chi phí vận hành", "Khác (vui lòng mô tả)"]
       → SKIP: "Kiếm tiền thế nào?" (đã rõ là bán sách)
       
       ## Website tin tức:
