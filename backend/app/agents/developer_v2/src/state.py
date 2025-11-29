@@ -3,7 +3,7 @@
 from typing import TypedDict, Literal, Any, List, Optional, Dict
 
 
-Action = Literal["ANALYZE", "PLAN", "IMPLEMENT", "VALIDATE", "CLARIFY", "RESPOND", "CODE_PLAN", "SUMMARIZE"]
+Action = Literal["ANALYZE", "DESIGN", "PLAN", "IMPLEMENT", "VALIDATE", "CLARIFY", "RESPOND", "CODE_PLAN", "SUMMARIZE"]
 TaskType = Literal["feature", "bugfix", "refactor", "enhancement", "documentation"]
 Complexity = Literal["low", "medium", "high"]
 
@@ -85,8 +85,14 @@ class DeveloperState(TypedDict, total=False):
     revision_count: int
     max_revisions: int
     
-    # Design document reference
-    design_doc: Optional[str]
+    # ==========================================================================
+    # System Design (MetaGPT Architect pattern)
+    # ==========================================================================
+    system_design: Optional[Dict[str, Any]]  # Full design document
+    data_structures: Optional[str]  # Class/interface definitions (mermaid)
+    api_interfaces: Optional[str]  # API design
+    call_flow: Optional[str]  # Sequence diagram (mermaid)
+    design_doc: Optional[str]  # Rendered design doc
     task_doc: Optional[str]
     
     # ==========================================================================
@@ -113,3 +119,31 @@ class DeveloperState(TypedDict, total=False):
     max_debug: int  # Max debug attempts (default: 3)
     last_debug_file: Optional[str]
     debug_history: Optional[List[Dict[str, Any]]]
+    
+    # ==========================================================================
+    # React Loop Mode (MetaGPT Engineer2 pattern)
+    # ==========================================================================
+    react_loop_count: int  # Current iteration in react loop
+    max_react_loop: int  # Max iterations (default: 10)
+    react_mode: bool  # Whether in react mode
+    
+    # ==========================================================================
+    # Editor State (MetaGPT Editor pattern)
+    # ==========================================================================
+    editor_current_file: Optional[str]
+    editor_current_line: int
+    editor_working_dir: Optional[str]
+    
+    # ==========================================================================
+    # Enhanced Context (MetaGPT WriteCode pattern)
+    # ==========================================================================
+    file_to_rewrite: Optional[str]  # Current file being implemented
+    existing_files_context: Optional[str]  # Related files for context
+    code_plan_and_change: Optional[str]  # Git diff style changes
+    
+    # ==========================================================================
+    # Send To (MetaGPT RunCode analysis)
+    # ==========================================================================
+    send_to: Optional[str]  # "NoOne", "Engineer", "QaEngineer"
+    file_to_fix: Optional[str]  # File that needs fixing
+    fix_instructions: Optional[str]  # How to fix the error

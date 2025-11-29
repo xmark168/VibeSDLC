@@ -13,6 +13,7 @@ import json
 import logging
 import sys
 import os
+import shutil
 from pathlib import Path
 from uuid import uuid4
 from datetime import datetime
@@ -40,13 +41,101 @@ from app.agents.developer_v2.src.graph import DeveloperGraph
 from app.agents.developer_v2.src.state import DeveloperState
 
 
-class SimpleDeveloperRunner:
-    """Simple runner for DeveloperV2 without full agent infrastructure."""
+# =============================================================================
+# TEMPLATES
+# =============================================================================
+
+TEMPLATES_DIR = Path(__file__).parent / "app" / "agents" / "templates" / "boilerplate"
+
+AVAILABLE_TEMPLATES = {
+    "nextjs": "nextjs-boilerplate",
+    "react": "nextjs-boilerplate",  # Use NextJS for React projects too
+    "python": None,  # No boilerplate, start from scratch
+}
+
+
+def copy_boilerplate(template_name: str, target_path: Path) -> bool:
+    """Copy boilerplate template to target workspace.
     
-    def __init__(self, workspace_path: str = None):
+    Args:
+        template_name: Name of template (nextjs, react, python)
+        target_path: Destination workspace path
+        
+    Returns:
+        True if copied successfully, False otherwise
+    """
+    template_dir = AVAILABLE_TEMPLATES.get(template_name.lower())
+    
+    if not template_dir:
+        logger.info(f"No boilerplate for '{template_name}', starting with empty workspace")
+        target_path.mkdir(parents=True, exist_ok=True)
+        return False
+    
+    source_path = TEMPLATES_DIR / template_dir
+    
+    if not source_path.exists():
+        logger.warning(f"Template not found: {source_path}")
+        target_path.mkdir(parents=True, exist_ok=True)
+        return False
+    
+    try:
+        # Copy entire template directory
+        if target_path.exists():
+            shutil.rmtree(target_path)
+        
+        shutil.copytree(source_path, target_path)
+        logger.info(f"Copied boilerplate '{template_dir}' to {target_path}")
+        
+        # Count files copied
+        file_count = sum(1 for _ in target_path.rglob("*") if _.is_file())
+        logger.info(f"Copied {file_count} files from template")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Failed to copy boilerplate: {e}")
+        target_path.mkdir(parents=True, exist_ok=True)
+        return False
+
+
+def detect_template_type(story: dict) -> str:
+    """Detect which template to use based on story content.
+    
+    Args:
+        story: Story dictionary with title and content
+        
+    Returns:
+        Template type: 'nextjs', 'react', or 'python'
+    """
+    title = story.get("title", "").lower()
+    content = story.get("content", "").lower()
+    combined = f"{title} {content}"
+    
+    # Check for React/NextJS indicators
+    react_keywords = ["react", "nextjs", "next.js", "tsx", "jsx", "component", "tailwind", "website"]
+    if any(kw in combined for kw in react_keywords):
+        return "nextjs"
+    
+    # Check for Python indicators
+    python_keywords = ["python", ".py", "pytest", "unittest", "django", "fastapi", "flask"]
+    if any(kw in combined for kw in python_keywords):
+        return "python"
+    
+    # Default to NextJS for web projects
+    return "nextjs"
+
+
+class SimpleDeveloperRunner:
+    """Simple runner for DeveloperV2 without full agent infrastructure.
+    
+    Note: message_user calls in nodes.py are disabled for this mode.
+    """
+    
+    def __init__(self, workspace_path: str = None, template: str = None):
         self.name = "DeveloperV2"
         self.role_type = "developer"
         self.project_id = uuid4()
+        self.template = template
+        self.template_applied = False
         
         # Create workspace if not provided
         if workspace_path:
@@ -54,33 +143,50 @@ class SimpleDeveloperRunner:
         else:
             self.workspace_path = Path(__file__).parent / "projects" / f"project_{self.project_id}"
         
-        self.workspace_path.mkdir(parents=True, exist_ok=True)
+        # Apply boilerplate template if specified
+        if template:
+            self.template_applied = copy_boilerplate(template, self.workspace_path)
+            if self.template_applied:
+                logger.info(f"[{self.name}] Applied '{template}' boilerplate template")
+        else:
+            self.workspace_path.mkdir(parents=True, exist_ok=True)
         
-        # Initialize graph
+        # Initialize graph (agent=self but message_user is no-op)
         self.graph = DeveloperGraph(agent=self)
         
         logger.info(f"[{self.name}] Initialized with workspace: {self.workspace_path}")
     
     async def message_user(self, msg_type: str, message: str):
-        """Print message to console (handle encoding for Windows)."""
-        try:
-            print(f"\n{'='*60}")
-            print(f"[{self.name}] {msg_type.upper()}")
-            print(f"{'='*60}")
-            print(message)
-            print(f"{'='*60}\n")
-        except UnicodeEncodeError:
-            # Fallback: remove non-ASCII characters
-            import re
-            clean_msg = re.sub(r'[^\x00-\x7F]+', '', message)
-            print(f"\n{'='*60}")
-            print(f"[{self.name}] {msg_type.upper()}")
-            print(f"{'='*60}")
-            print(clean_msg)
-            print(f"{'='*60}\n")
+        """No-op - message_user calls in nodes.py are disabled."""
+        pass  # Disabled for local runner mode
     
     async def run_story(self, story: dict) -> dict:
         """Run a story through the graph."""
+        
+        # Setup Langfuse tracing
+        langfuse_handler = None
+        langfuse_span = None
+        langfuse_ctx = None
+        try:
+            from langfuse import get_client
+            from langfuse.langchain import CallbackHandler
+            langfuse = get_client()
+            # Create parent span for entire graph execution
+            langfuse_ctx = langfuse.start_as_current_observation(
+                as_type="span",
+                name="developer_v2_graph"
+            )
+            langfuse_span = langfuse_ctx.__enter__()
+            langfuse_span.update_trace(
+                user_id=str(uuid4()),
+                session_id=str(self.project_id),
+                input={"story": story.get("title", "")[:200]},
+                metadata={"agent": self.name, "template": self.template}
+            )
+            langfuse_handler = CallbackHandler()
+            logger.info(f"[{self.name}] Langfuse tracing enabled")
+        except Exception as e:
+            logger.debug(f"Langfuse setup: {e}")
         
         # Build initial state
         initial_state = {
@@ -91,7 +197,7 @@ class SimpleDeveloperRunner:
             "project_id": str(self.project_id),
             "task_id": str(uuid4()),
             "user_id": str(uuid4()),
-            "langfuse_handler": None,
+            "langfuse_handler": langfuse_handler,
             
             # Workspace
             "workspace_path": str(self.workspace_path),
@@ -141,10 +247,33 @@ class SimpleDeveloperRunner:
         print(f"STARTING: {story.get('title', 'Untitled')}")
         print("="*60)
         
-        # Run graph
-        final_state = await self.graph.graph.ainvoke(initial_state)
-        
-        return final_state
+        try:
+            # Run graph
+            final_state = await self.graph.graph.ainvoke(initial_state)
+            
+            # Update Langfuse trace output
+            if langfuse_span and langfuse_ctx:
+                try:
+                    langfuse_span.update_trace(output={
+                        "action": final_state.get("action"),
+                        "files_created": final_state.get("files_created", []),
+                        "run_status": final_state.get("run_status"),
+                    })
+                    langfuse_ctx.__exit__(None, None, None)
+                except Exception:
+                    pass
+            
+            return final_state
+            
+        except Exception as e:
+            logger.error(f"[{self.name}] Graph error: {e}", exc_info=True)
+            # Cleanup Langfuse on error
+            if langfuse_ctx:
+                try:
+                    langfuse_ctx.__exit__(type(e), e, e.__traceback__)
+                except Exception:
+                    pass
+            raise
 
 
 # =============================================================================
@@ -318,10 +447,24 @@ async def main():
     print(f"\nSelected: {story['title']}")
     print("-"*40)
     
-    # Create runner with workspace for learning website
-    workspace_name = f"learning_website_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    # Detect template type based on story
+    template_type = detect_template_type(story)
+    print(f"Template: {template_type}")
+    print("-"*40)
+    
+    # Create workspace name based on story
+    story_slug = story.get('title', 'project').lower().replace(' ', '_')[:20]
+    workspace_name = f"{story_slug}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     workspace_path = Path(__file__).parent / "projects" / workspace_name
-    runner = SimpleDeveloperRunner(workspace_path=str(workspace_path))
+    
+    # Create runner with boilerplate template
+    runner = SimpleDeveloperRunner(workspace_path=str(workspace_path), template=template_type)
+    
+    if runner.template_applied:
+        print(f"Boilerplate applied: {template_type}")
+        file_count = sum(1 for _ in workspace_path.rglob("*") if _.is_file())
+        print(f"Template files: {file_count}")
+        print("-"*40)
     
     # Run story
     try:

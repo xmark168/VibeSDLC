@@ -7,7 +7,7 @@ from langgraph.graph import StateGraph, END
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.nodes import (
-    router, setup_workspace, analyze, plan, implement, validate, clarify, respond,
+    router, setup_workspace, analyze, design, plan, implement, validate, clarify, respond,
     merge_to_main, cleanup_workspace, code_review, run_code, debug_error
 )
 
@@ -74,11 +74,12 @@ def route_after_code_review(state: DeveloperState) -> Literal["run_code", "code_
     return "run_code"  # Proceed even if not all passed after max iterations
 
 
-def route_after_run_code(state: DeveloperState) -> Literal["merge_to_main", "debug_error", "respond"]:
-    """Route after running tests.
+def route_after_run_code(state: DeveloperState) -> Literal["merge_to_main", "debug_error", "respond", "implement"]:
+    """Route after running tests (MetaGPT React Loop pattern).
     
     - If tests passed -> merge_to_main
     - If failed and can debug -> debug_error
+    - If react_mode and under max_react_loop -> implement (retry full cycle)
     - Otherwise -> respond with failure
     """
     run_result = state.get("run_result", {})
@@ -86,11 +87,21 @@ def route_after_run_code(state: DeveloperState) -> Literal["merge_to_main", "deb
     debug_count = state.get("debug_count", 0)
     max_debug = state.get("max_debug", 3)
     
+    # React loop mode (MetaGPT Engineer2 pattern)
+    react_mode = state.get("react_mode", False)
+    react_loop_count = state.get("react_loop_count", 0)
+    max_react_loop = state.get("max_react_loop", 10)
+    
     if status == "PASS":
         return "merge_to_main"
     
+    # Try debug first
     if debug_count < max_debug:
         return "debug_error"
+    
+    # React mode: retry full implementation cycle
+    if react_mode and react_loop_count < max_react_loop:
+        return "implement"
     
     return "respond"
 
@@ -152,6 +163,7 @@ class DeveloperGraph:
         g.add_node("router", partial(router, agent=agent))
         g.add_node("setup_workspace", partial(setup_workspace, agent=agent))
         g.add_node("analyze", partial(analyze, agent=agent))
+        g.add_node("design", partial(design, agent=agent))  # MetaGPT Architect pattern
         g.add_node("plan", partial(plan, agent=agent))
         g.add_node("implement", partial(implement, agent=agent))
         g.add_node("validate", partial(validate, agent=agent))
@@ -172,8 +184,9 @@ class DeveloperGraph:
         # After workspace setup, route to actual work
         g.add_conditional_edges("setup_workspace", route_after_workspace)
         
-        # Work flow edges
-        g.add_edge("analyze", "plan")
+        # Work flow edges (MetaGPT pattern: analyze → design → plan → implement)
+        g.add_edge("analyze", "design")
+        g.add_edge("design", "plan")
         g.add_edge("plan", "implement")
         
         # After implement: continue or go to code review

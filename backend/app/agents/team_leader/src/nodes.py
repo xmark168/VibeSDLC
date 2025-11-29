@@ -21,7 +21,7 @@ _PROMPTS = load_prompts_yaml(Path(__file__).parent / "prompts.yaml")
 _DEFAULTS = {"name": "Team Leader", "role": "Team Leader & Project Coordinator", "personality": "Professional and helpful"}
 _fast_llm = ChatOpenAI(model="claude-haiku-4-5-20251001", temperature=0.1, timeout=15)
 _chat_llm = ChatOpenAI(model="claude-haiku-4-5-20251001", temperature=0.7, timeout=30)
-
+    
 ROLE_WIP_MAP = {"developer": "InProgress", "tester": "Review", "business_analyst": None}
 
 
