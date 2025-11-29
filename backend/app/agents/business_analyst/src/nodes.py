@@ -9,7 +9,7 @@ from pathlib import Path
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
-from sqlmodel import Session, func
+from sqlmodel import Session, func, select
 from sqlalchemy.orm.attributes import flag_modified
 
 from .state import BAState
