@@ -196,6 +196,7 @@ class BusinessAnalyst(BaseAgent):
             "batch_answers": batch_answers,
             "waiting_for_answer": False,
             "all_questions_answered": False,
+            "research_loop_count": interview_state.get("research_loop_count", 0),  # Restore loop count
         }
         
         # Process all batch answers

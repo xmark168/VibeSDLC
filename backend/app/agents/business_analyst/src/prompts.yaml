@@ -232,19 +232,39 @@ tasks:
       - DON'T repeat what user already said
       - Use SIMPLE Vietnamese
       
-      **FORMAT:**
+      **FORMAT (QUAN TRỌNG: mỗi câu hỏi PHẢI có field "category"):**
       ```json
       {{
         "questions": [
           {{
-            "text": "Câu hỏi bằng tiếng Việt?",
+            "text": "Câu hỏi về đối tượng người dùng?",
             "type": "multichoice",
-            "options": ["Lựa chọn phù hợp với dự án", "Lựa chọn khác", "Khác (vui lòng mô tả)"],
-            "allow_multiple": true
+            "options": ["Option 1", "Option 2", "Khác (vui lòng mô tả)"],
+            "allow_multiple": true,
+            "category": "target_users"
+          }},
+          {{
+            "text": "Câu hỏi về tính năng?",
+            "type": "multichoice",
+            "options": ["Feature 1", "Feature 2"],
+            "allow_multiple": true,
+            "category": "main_features"
+          }},
+          {{
+            "text": "Câu hỏi về rủi ro/lo ngại?",
+            "type": "multichoice",
+            "options": ["Risk 1", "Risk 2"],
+            "allow_multiple": true,
+            "category": "risks"
           }}
         ]
       }}
       ```
+      
+      **CATEGORY MAPPING:**
+      - "target_users": câu hỏi về khách hàng, người dùng, đối tượng
+      - "main_features": câu hỏi về tính năng, chức năng website cần có
+      - "risks": câu hỏi về lo ngại, thách thức, rủi ro
       
       # EXAMPLES BY PROJECT TYPE:
       

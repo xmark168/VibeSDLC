@@ -362,6 +362,7 @@ async def ask_batch_questions(state: BAState, agent=None) -> dict:
                         "question_ids": [str(qid) for qid in question_ids],
                         "collected_info": state.get("collected_info", {}),
                         "user_message": state.get("user_message", ""),  # Save original request for PRD generation
+                        "research_loop_count": state.get("research_loop_count", 0),  # Track research loops
                     }
                 }
                 first_question.task_context = new_task_context
@@ -411,6 +412,7 @@ async def process_batch_answers(state: BAState, agent=None) -> dict:
         # Find matching question by index or question_id
         q_idx = ans.get("question_index", len(collected_answers))
         if q_idx < len(questions):
+            question = questions[q_idx]
             answer_text = ans.get("answer", "")
             selected_options = ans.get("selected_options", [])
             
@@ -420,9 +422,10 @@ async def process_batch_answers(state: BAState, agent=None) -> dict:
             
             collected_answers.append({
                 "question_index": q_idx,
-                "question_text": questions[q_idx]["text"],
+                "question_text": question.get("text", ""),
                 "answer": answer_text,
-                "selected_options": selected_options
+                "selected_options": selected_options,
+                "category": question.get("category", "")  # Preserve category for clarity check
             })
     
     logger.info(f"[BA] Processed {len(collected_answers)} answers from batch")
@@ -856,14 +859,22 @@ def check_clarity(state: BAState) -> dict:
     for answer in answers:
         question_text = answer.get("question_text", "").lower()
         answer_text = answer.get("answer", "")
+        category = answer.get("category", "")  # Check explicit category first
         
         # Skip empty answers
         if not answer_text or len(answer_text.strip()) < 5:
             continue
         
-        for category, keywords in REQUIRED_CATEGORIES.items():
-            if any(kw in question_text for kw in keywords):
-                covered[category] = True
+        # Method 1: Check explicit category field (preferred)
+        if category and category in covered:
+            covered[category] = True
+            continue
+        
+        # Method 2: Fallback to keyword matching in question + answer
+        combined_text = f"{question_text} {answer_text}".lower()
+        for cat, keywords in REQUIRED_CATEGORIES.items():
+            if any(kw in combined_text for kw in keywords):
+                covered[cat] = True
     
     missing = [cat for cat, is_covered in covered.items() if not is_covered]
     is_clear = len(missing) == 0
@@ -928,29 +939,43 @@ async def analyze_domain(state: BAState, agent=None) -> dict:
     missing_info = ", ".join([category_prompts.get(cat, cat) for cat in missing_categories])
     
     system_prompt = _sys_prompt(agent, "interview_requirements")
+    
+    # Build category info for prompt
+    categories_to_ask = []
+    for cat in missing_categories:
+        cat_name = category_prompts.get(cat, cat)
+        categories_to_ask.append(f'- category: "{cat}", về: {cat_name}')
+    categories_str = "\n".join(categories_to_ask)
+    
     user_prompt = f"""Dựa trên cuộc trò chuyện trước, user muốn: "{user_message}"
 
 Thông tin đã thu thập: {json.dumps(collected_info, ensure_ascii=False)}
 
 Kết quả tìm hiểu thêm từ web: {json.dumps(domain_research, ensure_ascii=False)[:1500]}
 
-THIẾU THÔNG TIN VỀ: {missing_info}
+CẦN HỎI THÊM VỀ CÁC CATEGORY SAU:
+{categories_str}
 
-Hãy tạo 2-3 câu hỏi BỔ SUNG để làm rõ những thông tin còn thiếu.
-Dựa vào kết quả research, đề xuất các options phù hợp với xu hướng hiện tại.
-
-Ví dụ: Nếu research thấy nhiều website bán sách có ebook/audiobook, 
-hãy hỏi: "Ngoài sách giấy, bạn có muốn bán thêm?" với options ["Ebook", "Audiobook", "Cả hai", "Không cần"]
+Hãy tạo 1-2 câu hỏi CHO MỖI CATEGORY còn thiếu.
+QUAN TRỌNG: Mỗi question PHẢI có field "category" để tracking.
 
 Return JSON format:
 ```json
 {{
   "questions": [
     {{
-      "text": "Câu hỏi tiếng Việt?",
+      "text": "Câu hỏi tiếng Việt về người dùng?",
       "type": "multichoice",
       "options": ["Option 1", "Option 2", "Khác"],
-      "allow_multiple": true
+      "allow_multiple": true,
+      "category": "target_users"
+    }},
+    {{
+      "text": "Câu hỏi về rủi ro?",
+      "type": "multichoice", 
+      "options": ["Rủi ro 1", "Rủi ro 2"],
+      "allow_multiple": true,
+      "category": "risks"
     }}
   ]
 }}
