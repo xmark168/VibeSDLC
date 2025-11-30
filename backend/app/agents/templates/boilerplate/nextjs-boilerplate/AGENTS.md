@@ -1,6 +1,6 @@
 ## Project Overview
 
-Next.js 15 boilerplate with TypeScript, App Router, Prisma, NextAuth v5, Tailwind CSS 4, and shadcn/ui components. Uses bun as package manager.
+Next.js 15 boilerplate with TypeScript, App Router, Prisma, NextAuth v5, Tailwind CSS 4, and shadcn/ui components. Uses pnpm as package manager.
 
 **Key Stack:**
 - Next.js 15 + React 19
@@ -15,28 +15,28 @@ Next.js 15 boilerplate with TypeScript, App Router, Prisma, NextAuth v5, Tailwin
 
 ```bash
 # Development
-bun dev                  # Start dev server with Turbopack
-bun dev:webpack          # Start dev server with Webpack (fallback)
+pnpm dev                  # Start dev server with Turbopack
+pnpm dev:webpack          # Start dev server with Webpack (fallback)
 
 # Build & Deploy
-bun run build            # Production build
-bun start                # Start production server
+pnpm run build            # Production build
+pnpm start                # Start production server
 
 # Testing
-bun test                 # Run all tests
-bun test:watch           # Run tests in watch mode
-bun test:coverage        # Run tests with coverage report
+pnpm test                 # Run all tests
+pnpm test:watch           # Run tests in watch mode
+pnpm test:coverage        # Run tests with coverage report
 
 # Linting & Formatting
-bun lint                 # Run ESLint
-bun lint:fix             # Fix ESLint errors
-bun format               # Format with Prettier
+pnpm lint                 # Run ESLint
+pnpm lint:fix             # Fix ESLint errors
+pnpm format               # Format with Prettier
 
 # Database (Prisma)
-bunx prisma generate     # Generate Prisma Client (after schema changes)
-bunx prisma db push      # Push schema changes to database (dev)
-bunx prisma migrate dev  # Create and apply migrations (production-ready)
-bunx prisma studio       # Open Prisma Studio GUI
+pnpm exec prisma generate     # Generate Prisma Client (after schema changes)
+pnpm exec prisma db push      # Push schema changes to database (dev)
+pnpm exec prisma migrate dev  # Create and apply migrations (production-ready)
+pnpm exec prisma studio       # Open Prisma Studio GUI
 ```
 
 ## Next.js 15 App Router Conventions
@@ -110,7 +110,7 @@ Always follow this flow when implementing features:
 1. **Database Schema** (`prisma/schema.prisma`)
    - **APPEND new models at end of file, PRESERVE existing models**
    - Auth models (User, Account, Session, VerificationToken) are REQUIRED
-   - Run `bunx prisma generate && bunx prisma db push`
+   - Run `pnpm exec prisma generate && pnpm exec prisma db push`
 
 2. **Type Definitions** (`src/types/api.types.ts`)
    - **NEVER overwrite existing types**
@@ -581,7 +581,7 @@ src/
 2. **Server Components for data fetching** - Use Prisma directly, no API calls
 3. **Always validate inputs** - Use Zod on server side
 4. **Always use revalidatePath/revalidateTag** - After mutations
-5. **Never skip Prisma generation** - Run `bunx prisma generate` after schema changes
+5. **Never skip Prisma generation** - Run `pnpm exec prisma generate` after schema changes
 6. **PRESERVE existing code** - Append new types/models, don't overwrite
 7. **Use existing shadcn/ui components** - Before creating custom ones
 8. **Test new features** - Write tests before committing

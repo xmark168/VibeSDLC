@@ -154,14 +154,16 @@ def route_after_code_review(state: DeveloperState) -> Literal["run_code", "imple
     return "run_code"  # Proceed even if not all passed after max iterations
 
 
-def route_after_run_code(state: DeveloperState) -> Literal["merge_to_main", "debug_error", "cleanup_workspace", "implement"]:
+def route_after_run_code(state: DeveloperState) -> Literal["respond", "debug_error", "implement"]:
     """Third quality gate: test execution with self-healing (MetaGPT React pattern).
     
     Runs auto-detected tests (npm/pnpm/pytest). Routes:
-    - Tests PASS -> merge_to_main (success path)
+    - Tests PASS -> respond (success - dev server started in run_code)
     - Tests FAIL + debug retries available -> debug_error (fix & retry)
     - Debug exhausted + React mode -> implement (full cycle retry with feedback)
-    - All retries exhausted -> cleanup_workspace (abort)
+    - All retries exhausted -> respond (abort with error message)
+    
+    NOTE: No merge_to_main or cleanup_workspace - stay on feature branch
     
     Safety limits:
     - max_debug: 5 attempts (quick fixes)
@@ -181,10 +183,10 @@ def route_after_run_code(state: DeveloperState) -> Literal["merge_to_main", "deb
     # HARD LIMIT: Circuit breaker to prevent infinite loops
     total_attempts = debug_count + react_loop_count
     if total_attempts >= 50:  # Absolute maximum attempts (MetaGPT pattern)
-        return "cleanup_workspace"
+        return "respond"
     
     if status == "PASS":
-        return "merge_to_main"
+        return "respond"
     
     # Try debug first
     if debug_count < max_debug:
@@ -194,7 +196,7 @@ def route_after_run_code(state: DeveloperState) -> Literal["merge_to_main", "deb
     if react_mode and react_loop_count < max_react_loop:
         return "implement"
     
-    return "cleanup_workspace"
+    return "respond"
 
 
 class DeveloperGraph:
