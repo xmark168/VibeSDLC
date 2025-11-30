@@ -81,7 +81,7 @@ class Tester(BaseAgent):
             # Return result
             error = final_state.get("error")
             if error:
-                return TaskResult(success=False, error_message=error)
+                return TaskResult(success=False, output="", error_message=error)
             
             return TaskResult(
                 success=True,
@@ -98,4 +98,4 @@ class Tester(BaseAgent):
                     flush_langfuse()
                 except Exception:
                     pass
-            return TaskResult(success=False, error_message=str(e))
+            return TaskResult(success=False, output="", error_message=str(e))

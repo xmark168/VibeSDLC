@@ -30,12 +30,12 @@ class TesterState(TypedDict, total=False):
     stories: list[dict]
     test_scenarios: list[dict]
     
-    # Test cases - split by type
-    test_cases: dict  # {"integration_tests": [...], "unit_tests": [...]}
+    # Test cases - integration tests only
+    test_cases: dict  # {"integration_tests": [...]}
     
-    # Results - split by type
-    result: dict  # {"integration": {...}, "unit": {...}}
-    test_execution: dict  # {"integration": {...}, "unit": {...}}
+    # Results - integration tests only
+    result: dict  # {"integration": {...}}
+    test_execution: dict
     
     # Output
     message: str

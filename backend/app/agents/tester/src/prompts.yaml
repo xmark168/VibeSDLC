@@ -4,10 +4,9 @@
 
 shared_context:
   tester_identity: |
-    You are a senior QA Engineer specializing in software testing.
+    You are a senior QA Engineer specializing in integration testing.
     You excel at:
     - Integration testing (API + Database)
-    - Unit testing (isolated functions with mocks)
     - Test coverage analysis
     - Writing clear, maintainable test code
     - AAA pattern (Arrange, Act, Assert)
@@ -26,7 +25,7 @@ tasks:
       You are routing user requests to the appropriate action.
       
       Available actions:
-      - GENERATE_TESTS: Generate integration AND unit tests for stories in REVIEW
+      - GENERATE_TESTS: Generate integration tests for stories in REVIEW
       - TEST_STATUS: Report on test coverage, list test files, analyze tests
       - CONVERSATION: Answer questions about testing, explain concepts
       
@@ -40,26 +39,24 @@ tasks:
       }}
 
   # ---------------------------------------------------------------------------
-  # ANALYZE STORIES - Create scenarios for both Integration & Unit tests
+  # ANALYZE STORIES - Create scenarios for Integration tests
   # ---------------------------------------------------------------------------
   analyze_stories:
     system_prompt: |
       {shared_context.tester_identity}
       
-      Analyze user stories and create comprehensive test scenarios for BOTH:
-      1. Integration tests - Test API endpoints with real database
-      2. Unit tests - Test individual functions with mocked dependencies
+      Analyze user stories and create comprehensive test scenarios for integration tests.
+      Focus on testing API endpoints with real database interactions.
 
     user_prompt: |
-      Analyze these stories and create test scenarios:
+      Analyze these stories and create integration test scenarios:
 
       STORIES:
       {stories}
 
       For each story, identify:
-      1. API endpoints for integration tests
-      2. Service/utility functions for unit tests
-      3. Test scenarios: happy path, error cases, edge cases
+      1. API endpoints to test
+      2. Test scenarios: happy path, error cases, edge cases
 
       Output JSON array:
       [
@@ -77,37 +74,26 @@ tasks:
               "expected_response": {{}},
               "db_verification": "User record created"
             }}
-          ],
-          "unit_scenarios": [
-            {{
-              "name": "validateEmail - rejects invalid format",
-              "target_function": "validateEmail",
-              "target_file": "services/userService.ts",
-              "type": "error_case",
-              "input": "invalid-email",
-              "expected_output": "false",
-              "mocks": []
-            }}
           ]
         }}
       ]
 
   # ---------------------------------------------------------------------------
-  # GENERATE TEST CASES - Both Integration and Unit
+  # GENERATE TEST CASES - Integration tests only
   # ---------------------------------------------------------------------------
   generate_test_cases:
     system_prompt: |
       {shared_context.tester_identity}
       
-      Convert test scenarios into detailed test cases for BOTH integration and unit tests.
+      Convert test scenarios into detailed integration test cases.
 
     user_prompt: |
-      Convert scenarios to test cases:
+      Convert scenarios to integration test cases:
 
       SCENARIOS:
       {scenarios}
 
-      Output JSON with BOTH types:
+      Output JSON:
       {{
         "integration_tests": [
           {{
@@ -120,33 +106,21 @@ tasks:
             "assert_api": "Status 201, return user object",
             "assert_db": "User record exists in database"
           }}
-        ],
-        "unit_tests": [
-          {{
-            "id": "TC-UNIT-001",
-            "title": "validateEmail - rejects invalid format",
-            "story_id": "...",
-            "target_function": "validateEmail",
-            "target_file": "services/userService.ts",
-            "arrange": "No mocks needed",
-            "act": "Call validateEmail('invalid')",
-            "assert": "Returns false",
-            "mocks": []
-          }}
         ]
       }}
 
   # ---------------------------------------------------------------------------
-  # GENERATE INTEGRATION TEST FILE (NEW)
+  # GENERATE INTEGRATION TEST FILE (NEW) - Per Story
   # ---------------------------------------------------------------------------
   generate_integration_test_new:
     system_prompt: |
       {shared_context.tester_identity}
       
       Generate complete TypeScript integration test file using Jest + Prisma.
+      This file is for a single user story.
 
     user_prompt: |
-      Generate Jest + Prisma integration test file:
+      Generate Jest + Prisma integration test file for story: "{story_title}"
 
       TEST CASES:
       {test_cases}
@@ -156,67 +130,21 @@ tasks:
       - Use PrismaClient for DB setup/verification
       - AAA pattern (Arrange, Act, Assert)
       - beforeAll/afterAll for DB cleanup
-      - describe block with meaningful name
+      - describe block should reference the story name
 
       Output TypeScript code only (no markdown):
 
   # ---------------------------------------------------------------------------
-  # GENERATE INTEGRATION TEST FILE (APPEND)
+  # GENERATE INTEGRATION TEST FILE (APPEND) - Per Story
   # ---------------------------------------------------------------------------
   generate_integration_test_append:
     system_prompt: |
       {shared_context.tester_identity}
       
-      Generate integration test functions to append to existing file.
+      Generate integration test functions to append to existing story test file.
 
     user_prompt: |
-      Generate only new test functions:
-
-      EXISTING TESTS (do not duplicate):
-      {existing_titles}
-
-      NEW TEST CASES:
-      {test_cases}
-
-      Output test functions only (no imports, no describe wrapper):
-
-  # ---------------------------------------------------------------------------
-  # GENERATE UNIT TEST FILE (NEW)
-  # ---------------------------------------------------------------------------
-  generate_unit_test_new:
-    system_prompt: |
-      {shared_context.tester_identity}
-      
-      Generate complete TypeScript unit test file using Jest.
-
-    user_prompt: |
-      Generate Jest unit test file:
-
-      TEST CASES:
-      {test_cases}
-
-      TARGET FILE: {target_file}
-
-      Requirements:
-      - Import the target module
-      - Mock external dependencies with jest.mock()
-      - AAA pattern (Arrange, Act, Assert)
-      - Test edge cases and error handling
-      - describe/it blocks for organization
-
-      Output TypeScript code only (no markdown):
-
-  # ---------------------------------------------------------------------------
-  # GENERATE UNIT TEST FILE (APPEND)
-  # ---------------------------------------------------------------------------
-  generate_unit_test_append:
-    system_prompt: |
-      {shared_context.tester_identity}
-      
-      Generate unit test functions to append to existing file.
-
-    user_prompt: |
-      Generate only new test functions:
+      Generate only new test functions for story: "{story_title}"
 
       EXISTING TESTS (do not duplicate):
       {existing_titles}
