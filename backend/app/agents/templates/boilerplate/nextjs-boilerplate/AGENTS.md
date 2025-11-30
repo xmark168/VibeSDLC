@@ -48,7 +48,9 @@ Prisma Schema → Types → API Routes → Services → Components → Pages
 Always follow this flow when implementing features:
 
 1. **Database Schema** (`prisma/schema.prisma`)
-   - Define models, run `npx prisma generate && npx prisma db push`
+   - **When adding models**: APPEND at end of file, PRESERVE existing models
+   - Auth models (User, Account, Session, VerificationToken) are REQUIRED - do not remove
+   - Run `npx prisma generate && npx prisma db push`
    - Use camelCase for field names
 
 2. **Type Definitions** (`src/types/api.types.ts`)

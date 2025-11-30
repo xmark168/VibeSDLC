@@ -1,7 +1,9 @@
 """Developer V2 Graph Nodes - ReAct Agents with Multi-Tool Support."""
 import json
 import logging
+import os
 import re
+import subprocess
 from pathlib import Path
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -18,6 +20,10 @@ from app.agents.developer_v2.src.tools.filesystem_tools import (
 )
 from app.agents.developer_v2.src.tools.shell_tools import (
     set_shell_context, execute_shell, semantic_code_search
+)
+from app.agents.developer_v2.src.tools.container_tools import (
+    dev_container_manager, set_container_context, get_container_tools,
+    container_exec, container_logs, container_status,
 )
 from langchain_core.messages import ToolMessage
 from app.agents.developer_v2.src.utils.llm_utils import (
@@ -65,7 +71,15 @@ _code_llm = ChatOpenAI(model="gpt-4.1", temperature=0.2, timeout=120)
 # =============================================================================
 
 def _detect_project_type(workspace_path: str) -> dict:
-    """Detect project type by checking config files (no LLM needed)."""
+    """Detect project type by checking config files (no LLM needed).
+    
+    Returns dict with:
+        - type: project type (node, python, rust, go, java, unknown)
+        - install_cmd: command to install dependencies
+        - test_cmd: command to run tests
+        - needs_db: whether project requires database (Prisma, Drizzle, etc.)
+        - db_cmds: database setup commands (generate, push, migrate)
+    """
     ws = Path(workspace_path)
     
     # Node.js / JavaScript / TypeScript
@@ -85,43 +99,80 @@ def _detect_project_type(workspace_path: str) -> dict:
             
             # Detect package manager
             install_cmd = "npm install"
-            if (ws / "yarn.lock").exists():
+            pkg_manager = "npx"
+            if (ws / "bun.lockb").exists():
+                install_cmd = "bun install"
+                test_cmd = test_cmd.replace("npm", "bun")
+                pkg_manager = "bunx"
+            elif (ws / "yarn.lock").exists():
                 install_cmd = "yarn install"
                 test_cmd = test_cmd.replace("npm", "yarn")
+                pkg_manager = "yarn"
             elif (ws / "pnpm-lock.yaml").exists():
                 install_cmd = "pnpm install"
                 test_cmd = test_cmd.replace("npm", "pnpm")
+                pkg_manager = "pnpm"
             
-            return {"type": "node", "test_cmd": test_cmd, "install_cmd": install_cmd}
+            # Detect DB requirements (Prisma, Drizzle, etc.)
+            needs_db = False
+            db_cmds = []
+            
+            # Prisma detection
+            if (ws / "prisma" / "schema.prisma").exists():
+                needs_db = True
+                db_cmds = [
+                    f"{pkg_manager} prisma generate",
+                    f"{pkg_manager} prisma db push --accept-data-loss",
+                ]
+            
+            # Drizzle detection
+            elif (ws / "drizzle.config.ts").exists() or (ws / "drizzle.config.js").exists():
+                needs_db = True
+                db_cmds = [
+                    f"{pkg_manager} drizzle-kit generate",
+                    f"{pkg_manager} drizzle-kit push",
+                ]
+            
+            return {
+                "type": "node",
+                "install_cmd": install_cmd,
+                "test_cmd": test_cmd,
+                "needs_db": needs_db,
+                "db_cmds": db_cmds,
+            }
         except Exception:
-            return {"type": "node", "test_cmd": "npm test", "install_cmd": "npm install"}
+            return {"type": "node", "test_cmd": "npm test", "install_cmd": "npm install", "needs_db": False, "db_cmds": []}
     
     # Python
     if (ws / "pyproject.toml").exists():
-        return {"type": "python", "test_cmd": "pytest -v", "install_cmd": "pip install -e ."}
+        needs_db = (ws / "alembic.ini").exists() or (ws / "alembic").exists()
+        db_cmds = ["alembic upgrade head"] if needs_db else []
+        return {"type": "python", "test_cmd": "pytest -v", "install_cmd": "pip install -e .", "needs_db": needs_db, "db_cmds": db_cmds}
     if (ws / "requirements.txt").exists():
-        return {"type": "python", "test_cmd": "pytest -v", "install_cmd": "pip install -r requirements.txt"}
+        needs_db = (ws / "alembic.ini").exists()
+        db_cmds = ["alembic upgrade head"] if needs_db else []
+        return {"type": "python", "test_cmd": "pytest -v", "install_cmd": "pip install -r requirements.txt", "needs_db": needs_db, "db_cmds": db_cmds}
     if (ws / "setup.py").exists():
-        return {"type": "python", "test_cmd": "pytest -v", "install_cmd": "pip install -e ."}
+        return {"type": "python", "test_cmd": "pytest -v", "install_cmd": "pip install -e .", "needs_db": False, "db_cmds": []}
     
     # Rust
     if (ws / "Cargo.toml").exists():
-        return {"type": "rust", "test_cmd": "cargo test", "install_cmd": "cargo build"}
+        return {"type": "rust", "test_cmd": "cargo test", "install_cmd": "cargo build", "needs_db": False, "db_cmds": []}
     
     # Go
     if (ws / "go.mod").exists():
-        return {"type": "go", "test_cmd": "go test ./...", "install_cmd": "go mod download"}
+        return {"type": "go", "test_cmd": "go test ./...", "install_cmd": "go mod download", "needs_db": False, "db_cmds": []}
     
     # Java / Maven
     if (ws / "pom.xml").exists():
-        return {"type": "java", "test_cmd": "mvn test", "install_cmd": "mvn install -DskipTests"}
+        return {"type": "java", "test_cmd": "mvn test", "install_cmd": "mvn install -DskipTests", "needs_db": False, "db_cmds": []}
     
     # Java / Gradle
     if (ws / "build.gradle").exists() or (ws / "build.gradle.kts").exists():
-        return {"type": "java", "test_cmd": "./gradlew test", "install_cmd": "./gradlew build -x test"}
+        return {"type": "java", "test_cmd": "./gradlew test", "install_cmd": "./gradlew build -x test", "needs_db": False, "db_cmds": []}
     
     # Default fallback
-    return {"type": "unknown", "test_cmd": "", "install_cmd": ""}
+    return {"type": "unknown", "test_cmd": "", "install_cmd": "", "needs_db": False, "db_cmds": []}
 
 
 def _analyze_test_output(stdout: str, stderr: str, project_type: str = "") -> dict:
@@ -213,6 +264,98 @@ def _analyze_test_output(stdout: str, stderr: str, project_type: str = "") -> di
     
     # Default: assume PASS if no errors detected
     return {"status": "PASS", "summary": "Test execution completed"}
+
+
+def _run_with_isolated_db(workspace_path: str, commands: list, timeout_per_cmd: int = 120) -> dict:
+    """Run commands with isolated PostgreSQL container using testcontainers.
+    
+    Each agent gets its own DB container - no conflicts with parallel execution.
+    Container is auto-destroyed after execution.
+    
+    Args:
+        workspace_path: Project workspace path
+        commands: List of shell commands to execute
+        timeout_per_cmd: Timeout per command in seconds
+        
+    Returns:
+        dict with status, stdout, stderr
+    """
+    try:
+        from testcontainers.postgres import PostgresContainer
+    except ImportError:
+        logger.warning("[_run_with_isolated_db] testcontainers not installed, falling back to direct execution")
+        return {"status": "SKIP", "stdout": "", "stderr": "testcontainers not installed"}
+    
+    logger.info(f"[_run_with_isolated_db] Starting isolated PostgreSQL container...")
+    
+    try:
+        with PostgresContainer("postgres:16-alpine") as postgres:
+            # Get connection URL in Prisma format
+            db_url = postgres.get_connection_url()
+            # testcontainers returns: postgresql+psycopg://user:pass@host:port/db
+            # Prisma needs: postgresql://user:pass@host:port/db
+            db_url = db_url.replace("postgresql+psycopg://", "postgresql://")
+            
+            logger.info(f"[_run_with_isolated_db] Container started, DB_URL: {db_url[:50]}...")
+            
+            stdout_all = ""
+            stderr_all = ""
+            status = "PASS"
+            
+            # Prepare environment with DATABASE_URL
+            env = os.environ.copy()
+            env["DATABASE_URL"] = db_url
+            
+            for cmd in commands:
+                if not cmd:
+                    continue
+                    
+                logger.info(f"[_run_with_isolated_db] Running: {cmd}")
+                
+                try:
+                    # Determine shell based on OS
+                    if os.name == "nt":  # Windows
+                        shell_cmd = ["cmd", "/c", cmd]
+                        use_shell = False
+                    else:
+                        shell_cmd = cmd
+                        use_shell = True
+                    
+                    result = subprocess.run(
+                        shell_cmd,
+                        cwd=workspace_path,
+                        shell=use_shell,
+                        capture_output=True,
+                        text=True,
+                        timeout=timeout_per_cmd,
+                        env=env,
+                    )
+                    
+                    stdout_all += f"\n=== {cmd} ===\n{result.stdout}"
+                    stderr_all += result.stderr
+                    
+                    if result.returncode != 0:
+                        logger.warning(f"[_run_with_isolated_db] Command failed: {cmd} (exit={result.returncode})")
+                        # Don't break on prisma generate/push failures, only on test failures
+                        if "test" in cmd.lower():
+                            status = "FAIL"
+                            break
+                            
+                except subprocess.TimeoutExpired:
+                    stderr_all += f"\nCommand timed out: {cmd}\n"
+                    logger.error(f"[_run_with_isolated_db] Timeout: {cmd}")
+                    status = "FAIL"
+                    break
+                except Exception as e:
+                    stderr_all += f"\nCommand error: {cmd} - {str(e)}\n"
+                    logger.error(f"[_run_with_isolated_db] Error: {cmd} - {e}")
+            
+            logger.info(f"[_run_with_isolated_db] Completed with status: {status}")
+            return {"status": status, "stdout": stdout_all, "stderr": stderr_all}
+            
+    except Exception as e:
+        logger.error(f"[_run_with_isolated_db] Container error: {e}", exc_info=True)
+        return {"status": "ERROR", "stdout": "", "stderr": f"Container error: {str(e)}"}
 
 
 # =============================================================================
@@ -1377,10 +1520,19 @@ async def cleanup_workspace(state: DeveloperState, agent=None) -> DeveloperState
             except Exception as idx_err:
                 logger.debug(f"[cleanup_workspace] CocoIndex cleanup: {idx_err}")
         
+        # Stop dev container (not remove - preserve for resume)
+        if branch_name:
+            try:
+                dev_container_manager.stop(branch_name)
+                logger.info(f"[cleanup_workspace] Stopped container for: {branch_name}")
+            except Exception as container_err:
+                logger.debug(f"[cleanup_workspace] Container stop: {container_err}")
+        
         return {
             **state,
             "workspace_ready": False,
             "index_ready": False,
+            "container_stopped": True,
         }
         
     except Exception as e:
@@ -1715,8 +1867,8 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
     
     Fast approach:
     1. Detect project type by checking config files
-    2. Install dependencies using known commands
-    3. Run tests using detected test command
+    2. If needs_db: Run in isolated container (Prisma, Drizzle safe)
+    3. Else: Direct execution
     4. Analyze results using regex patterns
     """
     print("[NODE] run_code - Running tests (rule-based, no LLM)...")
@@ -1741,8 +1893,10 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         project_type = project_info["type"]
         test_cmd = project_info["test_cmd"]
         install_cmd = project_info["install_cmd"]
+        needs_db = project_info.get("needs_db", False)
+        db_cmds = project_info.get("db_cmds", [])
         
-        logger.info(f"[run_code] Detected project: {project_type}, test_cmd: {test_cmd}")
+        logger.info(f"[run_code] Detected project: {project_type}, test_cmd: {test_cmd}, needs_db: {needs_db}")
         
         if project_type == "unknown" or not test_cmd:
             logger.warning("[run_code] Unknown project type, skipping tests")
@@ -1755,7 +1909,87 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         stdout_combined = ""
         stderr_combined = ""
         
-        # 2. Install dependencies (optional, skip errors)
+        # 2. If needs_db: Run in persistent container (parallel-safe, reusable)
+        if needs_db:
+            branch_name = state.get("branch_name") or task_id
+            logger.info(f"[run_code] Project needs DB, using persistent container for {branch_name}...")
+            
+            try:
+                # Set container context for LLM tools
+                set_container_context(branch_name=branch_name, workspace_path=workspace_path)
+                
+                # Get or create persistent container
+                container_info = dev_container_manager.get_or_create(
+                    branch_name=branch_name,
+                    workspace_path=workspace_path,
+                    project_type=project_type,
+                )
+                logger.info(f"[run_code] Container ready: {container_info.get('name')} ({container_info.get('status')})")
+                
+                # Build command sequence: install -> db_cmds -> test
+                commands = [install_cmd] + db_cmds + [test_cmd]
+                
+                # Execute commands in container
+                for cmd in commands:
+                    if not cmd:
+                        continue
+                    
+                    logger.info(f"[run_code] Container exec: {cmd}")
+                    result = dev_container_manager.exec(branch_name, cmd)
+                    
+                    stdout_combined += f"\n=== {cmd} ===\n{result.get('output', '')}"
+                    
+                    # Check for test failures (continue on other failures)
+                    if result.get("exit_code", 0) != 0 and "test" in cmd.lower():
+                        stderr_combined += result.get("output", "")
+                        break
+                
+                # Analyze results
+                analysis = _analyze_test_output(stdout_combined, stderr_combined, project_type)
+                run_status = analysis["status"]
+                summary = analysis["summary"]
+                
+                logger.info(f"[run_code] Container execution: {run_status} - {summary}")
+                
+                # Note: Container stays running for reuse!
+                
+                # Return early for container execution
+                file_to_fix = ""
+                if run_status == "FAIL":
+                    file_patterns = [
+                        r"File [\"']([^\"']+)[\"']",
+                        r"at\s+([^\s:]+):\d+",
+                        r"([^\s]+\.(py|js|ts|jsx|tsx|rs|go)):\d+",
+                    ]
+                    for pattern in file_patterns:
+                        match = re.search(pattern, stderr_combined)
+                        if match:
+                            file_to_fix = match.group(1)
+                            break
+                
+                return {
+                    **state,
+                    "run_status": run_status,
+                    "run_stdout": stdout_combined,
+                    "run_stderr": stderr_combined,
+                    "run_result": {
+                        "status": run_status,
+                        "summary": summary,
+                        "file_to_fix": file_to_fix,
+                        "send_to": "NoOne" if run_status == "PASS" else "Engineer",
+                        "fix_instructions": "",
+                        "error_type": "test_failure" if run_status == "FAIL" else "none",
+                    },
+                    "test_command": [test_cmd],
+                    "container_name": container_info.get("name"),
+                }
+                
+            except Exception as container_err:
+                logger.warning(f"[run_code] Container failed, falling back: {container_err}")
+                # Fall through to direct execution
+        
+        # 3. Direct execution (no DB needed)
+        # Install dependencies (optional, skip errors)
         if install_cmd:
             try:
                 logger.info(f"[run_code] Installing dependencies: {install_cmd}")
@@ -1767,7 +2001,7 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
             except Exception as install_err:
                 logger.warning(f"[run_code] Install failed (continuing): {install_err}")
         
-        # 3. Run tests
+        # Run tests
         logger.info(f"[run_code] Running tests: {test_cmd}")
         try:
             test_result = execute_shell.invoke({"command": test_cmd, "timeout": 300})

@@ -3,9 +3,23 @@
 This script sends a real task to DeveloperV2 and lets it process
 with actual LLM calls.
 
+Features:
+- Interactive mode: After each run, waits for more commands
+- Container persistence: Reuses containers between runs
+- Graceful cleanup: Ctrl+C cleans up containers before exit
+
 Usage:
     cd backend
     python run_dev_v2_real.py
+
+Commands (after first run):
+    run     - Run another story
+    test    - Run tests in container
+    exec    - Execute command in container
+    logs    - Show container logs
+    status  - Show container status
+    clear   - Remove containers and exit
+    exit    - Stop containers and exit (can resume later)
 """
 
 # Load environment variables FIRST
@@ -13,8 +27,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import asyncio
+import atexit
 import json
 import logging
+import signal
 import sys
 import os
 import shutil
@@ -584,15 +600,191 @@ Người dùng có thể sử dụng thanh tìm kiếm để nhập tên sách, 
 
 
 # =============================================================================
-# MAIN
+# GLOBAL STATE FOR CLEANUP
 # =============================================================================
 
-async def main():
-    """Main entry point."""
+_active_branch = None
+_active_workspace = None
+_should_cleanup = False
+
+
+def cleanup_containers(remove: bool = False):
+    """Cleanup containers on exit."""
+    global _active_branch
     
+    if not _active_branch:
+        return
+    
+    try:
+        from app.agents.developer_v2.src.tools.container_tools import dev_container_manager
+        
+        if remove:
+            print(f"\n[*] Removing containers for {_active_branch}...")
+            dev_container_manager.remove(_active_branch)
+            print("[*] Containers removed.")
+        else:
+            print(f"\n[*] Stopping containers for {_active_branch}...")
+            dev_container_manager.stop(_active_branch)
+            print("[*] Containers stopped (can resume later).")
+    except Exception as e:
+        logger.debug(f"Cleanup error: {e}")
+
+
+def signal_handler(signum, frame):
+    """Handle Ctrl+C gracefully."""
+    global _should_cleanup
+    
+    print("\n\n[!] Interrupted! Cleaning up...")
+    _should_cleanup = True
+    cleanup_containers(remove=True)
+    sys.exit(0)
+
+
+# Register signal handler
+signal.signal(signal.SIGINT, signal_handler)
+
+
+# =============================================================================
+# INTERACTIVE COMMANDS
+# =============================================================================
+
+def print_help():
+    """Print available commands."""
+    print("\n" + "-"*40)
+    print("COMMANDS:")
+    print("  run     - Run another story")
+    print("  test    - Run tests in container")
+    print("  exec    - Execute command in container")
+    print("  logs    - Show container logs")
+    print("  status  - Show container status")
+    print("  clear   - Remove containers and exit")
+    print("  exit    - Stop containers and exit (can resume later)")
+    print("  help    - Show this help")
+    print("-"*40)
+
+
+async def handle_command(cmd: str, branch_name: str, workspace_path: Path) -> bool:
+    """Handle interactive command.
+    
+    Returns:
+        True to continue, False to exit
+    """
+    from app.agents.developer_v2.src.tools.container_tools import dev_container_manager
+    
+    cmd = cmd.strip().lower()
+    
+    if cmd == "help" or cmd == "?":
+        print_help()
+        return True
+    
+    elif cmd == "exit" or cmd == "quit" or cmd == "q":
+        cleanup_containers(remove=False)
+        return False
+    
+    elif cmd == "clear":
+        cleanup_containers(remove=True)
+        return False
+    
+    elif cmd == "status":
+        try:
+            status = dev_container_manager.status(branch_name)
+            print("\n" + json.dumps(status, indent=2))
+        except Exception as e:
+            print(f"Error: {e}")
+        return True
+    
+    elif cmd == "logs":
+        try:
+            logs = dev_container_manager.get_logs(branch_name, tail=50)
+            print("\n" + "-"*40)
+            print("CONTAINER LOGS (last 50 lines):")
+            print("-"*40)
+            print(logs)
+        except Exception as e:
+            print(f"Error: {e}")
+        return True
+    
+    elif cmd == "test":
+        try:
+            print("\n[*] Running tests in container...")
+            # Detect test command
+            from app.agents.developer_v2.src.nodes import _detect_project_type
+            project_info = _detect_project_type(str(workspace_path))
+            test_cmd = project_info.get("test_cmd", "npm test")
+            
+            print(f"[*] Executing: {test_cmd}")
+            result = dev_container_manager.exec(branch_name, test_cmd)
+            print("\n" + "-"*40)
+            print(f"Exit code: {result.get('exit_code')}")
+            print("-"*40)
+            print(result.get("output", ""))
+        except Exception as e:
+            print(f"Error: {e}")
+        return True
+    
+    elif cmd.startswith("exec "):
+        try:
+            shell_cmd = cmd[5:].strip()
+            if not shell_cmd:
+                print("Usage: exec <command>")
+                return True
+            
+            print(f"\n[*] Executing: {shell_cmd}")
+            result = dev_container_manager.exec(branch_name, shell_cmd)
+            print("\n" + "-"*40)
+            print(f"Exit code: {result.get('exit_code')}")
+            print("-"*40)
+            print(result.get("output", ""))
+        except Exception as e:
+            print(f"Error: {e}")
+        return True
+    
+    elif cmd == "run":
+        return "run"  # Special signal to run another story
+    
+    else:
+        print(f"Unknown command: {cmd}")
+        print("Type 'help' for available commands")
+        return True
+
+
+def print_result(result: dict, workspace_path: Path):
+    """Print story execution result."""
     print("\n" + "="*60)
-    print("DEVELOPER V2 - REAL TASK RUNNER")
+    print("RESULT")
     print("="*60)
+    print(f"Action: {result.get('action')}")
+    print(f"Task Type: {result.get('task_type')}")
+    print(f"Complexity: {result.get('complexity')}")
+    print(f"Files Created: {len(result.get('files_created', []))}")
+    print(f"Files Modified: {len(result.get('files_modified', []))}")
+    print(f"Code Review: {'PASSED' if result.get('code_review_passed') else 'PENDING'}")
+    print(f"Tests: {result.get('run_status', 'N/A')}")
+    print(f"Debug Iterations: {result.get('debug_count', 0)}")
+    print(f"React Loops: {result.get('react_loop_count', 0)}")
+    
+    # Show created files
+    files_created = result.get('files_created', [])
+    if files_created:
+        print("\n" + "-"*40)
+        print("FILES CREATED:")
+        for f in files_created[:10]:
+            print(f"  - {f}")
+            file_path = workspace_path / f
+            if file_path.exists():
+                size = file_path.stat().st_size
+                print(f"    ({size} bytes)")
+        if len(files_created) > 10:
+            print(f"  ... and {len(files_created) - 10} more")
+    
+    # Show workspace location
+    print("\n" + "-"*40)
+    print(f"WORKSPACE: {workspace_path}")
+    print(f"CONTAINER: {result.get('container_name', 'N/A')}")
+
+
+def select_story() -> dict:
+    """Interactive story selection."""
     print("\nSelect a story to run:")
     print("1. Textbook Search (React) [DEFAULT]")
     print("2. Simple Calculator (Python)")
@@ -607,18 +799,18 @@ async def main():
         choice = "1"
     
     if choice == "1":
-        story = TEXTBOOK_SEARCH_STORY
+        return TEXTBOOK_SEARCH_STORY
     elif choice == "2":
-        story = SIMPLE_CALCULATOR_STORY
+        return SIMPLE_CALCULATOR_STORY
     elif choice == "3":
-        story = LOGIN_FORM_STORY
+        return LOGIN_FORM_STORY
     elif choice == "4":
-        story = LEARNING_WEBSITE_STORY
+        return LEARNING_WEBSITE_STORY
     elif choice == "5":
         print("\nEnter your story:")
         title = input("Title: ").strip()
         content = input("Description: ").strip()
-        story = {
+        return {
             "story_id": str(uuid4())[:8],
             "title": title,
             "content": content,
@@ -626,7 +818,24 @@ async def main():
         }
     else:
         print("Invalid choice, using Textbook Search")
-        story = TEXTBOOK_SEARCH_STORY
+        return TEXTBOOK_SEARCH_STORY
+
+
+# =============================================================================
+# MAIN
+# =============================================================================
+
+async def main():
+    """Main entry point with interactive loop."""
+    global _active_branch, _active_workspace
+    
+    print("\n" + "="*60)
+    print("DEVELOPER V2 - INTERACTIVE RUNNER")
+    print("="*60)
+    print("Press Ctrl+C at any time to cleanup and exit")
+    
+    # Select first story
+    story = select_story()
     
     print(f"\nSelected: {story['title']}")
     print("-"*40)
@@ -650,65 +859,65 @@ async def main():
         print(f"Template files: {file_count}")
         print("-"*40)
     
-    # Run story
+    # Run first story
     try:
         result = await runner.run_story(story)
         
-        print("\n" + "="*60)
-        print("RESULT")
-        print("="*60)
-        print(f"Action: {result.get('action')}")
-        print(f"Task Type: {result.get('task_type')}")
-        print(f"Complexity: {result.get('complexity')}")
-        print(f"Files Created: {len(result.get('files_created', []))}")
-        print(f"Files Modified: {len(result.get('files_modified', []))}")
-        print(f"Code Review: {'PASSED' if result.get('code_review_passed') else 'PENDING'}")
-        print(f"Tests: {result.get('run_status', 'N/A')}")
-        print(f"Debug Iterations: {result.get('debug_count', 0)}")
-        print(f"React Loops: {result.get('react_loop_count', 0)}")
+        # Update global state for cleanup
+        _active_branch = result.get("branch_name") or story.get("story_id", "unknown")
+        _active_workspace = workspace_path
         
-        # Show created files
-        files_created = result.get('files_created', [])
-        if files_created:
-            print("\n" + "-"*40)
-            print("FILES CREATED:")
-            for f in files_created:
-                print(f"  - {f}")
-                # Check if file exists and show size
-                file_path = workspace_path / f
-                if file_path.exists():
-                    size = file_path.stat().st_size
-                    print(f"    ({size} bytes)")
-        
-        # Show code changes summary
-        code_changes = result.get('code_changes', [])
-        if code_changes:
-            print("\n" + "-"*40)
-            print(f"CODE CHANGES: {len(code_changes)} files")
-            for change in code_changes[:5]:
-                fp = change.get('file_path', 'unknown')
-                print(f"  - {fp}")
-        
-        # Show workspace location
-        print("\n" + "-"*40)
-        print(f"WORKSPACE: {workspace_path}")
-        print("\nTo view the files:")
-        print(f"  cd {workspace_path}")
-        print("  ls -la")
-        
-        # If React project, show how to run
-        if "react" in story.get('title', '').lower() or "website" in story.get('title', '').lower():
-            print("\nTo run the React app:")
-            print(f"  cd {workspace_path}")
-            print("  npm install")
-            print("  npm run dev")
+        print_result(result, workspace_path)
         
     except Exception as e:
         logger.error(f"Error: {e}", exc_info=True)
         print(f"\nError: {e}")
         print("\nPartial results may be in workspace:")
         print(f"  {workspace_path}")
+    
+    # Interactive loop
+    print_help()
+    
+    while True:
+        try:
+            cmd = input("\n[dev_v2] > ").strip()
+            
+            if not cmd:
+                continue
+            
+            result = await handle_command(cmd, _active_branch, workspace_path)
+            
+            if result == "run":
+                # Run another story
+                story = select_story()
+                print(f"\nRunning: {story['title']}")
+                
+                try:
+                    result = await runner.run_story(story)
+                    _active_branch = result.get("branch_name") or story.get("story_id", "unknown")
+                    print_result(result, workspace_path)
+                except Exception as e:
+                    print(f"Error: {e}")
+                    
+            elif result is False:
+                # Exit
+                break
+                
+        except EOFError:
+            # Handle pipe/redirect end
+            cleanup_containers(remove=False)
+            break
+        except KeyboardInterrupt:
+            # Handle Ctrl+C in input
+            print("\n[!] Interrupted!")
+            cleanup_containers(remove=True)
+            break
+    
+    print("\nGoodbye!")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass  # Already handled by signal handler

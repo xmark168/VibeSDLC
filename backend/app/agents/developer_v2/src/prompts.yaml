@@ -38,6 +38,15 @@ shared_context:
     4. **Follow Conventions** - Match existing code style exactly (see PROJECT GUIDELINES)
     5. **Error Handling** - Include proper error handling and edge cases
     
+    # FILE MODIFICATION RULES (CRITICAL)
+    - For NEW files (action: "create"): Write complete new file
+    - For EXISTING files (action: "modify"):
+      1. ALWAYS read current content first with read_file_safe
+      2. MERGE your changes with existing content
+      3. Use edit_file to make targeted changes, OR
+      4. Use write_file_safe with COMPLETE merged content (existing + new)
+      5. NEVER discard existing code - preserve all functionality
+    
     # DEBUGGING GUIDELINES
     - Address ROOT CAUSE, not symptoms
     - Add descriptive logging to track state
@@ -394,6 +403,14 @@ tasks:
       3. Add ALL necessary imports at the top of the file
       4. Follow PROJECT GUIDELINES exactly - match existing code patterns
       5. Include error handling for edge cases
+      
+      # FILE HANDLING (CRITICAL)
+      - If action is "create": Write complete new file
+      - If action is "modify": 
+        - The existing code is shown above in EXISTING CODE section
+        - PRESERVE all existing functionality
+        - ADD/CHANGE only what's needed for this step
+        - Return COMPLETE file content (existing + your changes merged)
       
       Use write_file tool to save the code.
 
