@@ -21,7 +21,6 @@ from .git_tools import (
     git_commit,
     git_create_branch,
     git_checkout,
-    git_push,
     git_diff,
     git_merge,
     git_delete_branch,
@@ -97,7 +96,6 @@ __all__ = [
     "git_commit",
     "git_create_branch",
     "git_checkout",
-    "git_push",
     "git_diff",
     "git_merge",
     "git_delete_branch",
@@ -130,10 +128,8 @@ __all__ = [
     # Execution
     "CommandResult",
     "install_dependencies",
-    "detect_framework_from_package_json",
     "detect_test_command",
     "execute_command_async",
-    "execute_command_sync",
     "find_test_file",
     # Workspace
     "setup_git_worktree",

@@ -1,5 +1,6 @@
 """CocoIndex Tools - Semantic search and project context utilities."""
 
+import asyncio
 import json
 import logging
 import os
@@ -115,18 +116,9 @@ def search_codebase(project_id: str, query: str, top_k: int = 5, task_id: str = 
 
 
 def index_workspace(project_id: str, workspace_path: str, task_id: str = None) -> bool:
-    """Index workspace using CocoIndex.
-    
+    """
+    Index workspace using CocoIndex.
     Creates vector embeddings for all source files in the workspace,
-    enabling fast semantic search later.
-    
-    Args:
-        project_id: Project identifier
-        workspace_path: Path to workspace directory
-        task_id: Optional task ID for task-specific indexing
-        
-    Returns:
-        True if indexing successful, False otherwise
     """
     import os
     
@@ -225,6 +217,50 @@ def incremental_update_index(project_id: str, task_id: str = None) -> bool:
     except Exception as e:
         logger.error(f"Incremental update error: {e}")
         return False
+
+
+# =============================================================================
+# ASYNC WRAPPER FUNCTIONS (for use in async nodes)
+# =============================================================================
+
+async def search_codebase_async(project_id: str, query: str, top_k: int = 5, task_id: str = None) -> str:
+    """Async version - Search codebase using CocoIndex semantic search.
+    
+    Wraps sync function in asyncio.to_thread() to avoid blocking event loop.
+    """
+    return await asyncio.to_thread(search_codebase, project_id, query, top_k, task_id)
+
+
+async def index_workspace_async(project_id: str, workspace_path: str, task_id: str = None) -> bool:
+    """Async version - Index workspace using CocoIndex.
+    
+    Wraps sync function in asyncio.to_thread() to avoid blocking event loop.
+    """
+    return await asyncio.to_thread(index_workspace, project_id, workspace_path, task_id)
+
+
+async def incremental_update_index_async(project_id: str, task_id: str = None) -> bool:
+    """Async version - Perform incremental index update.
+    
+    Wraps sync function in asyncio.to_thread() to avoid blocking event loop.
+    """
+    return await asyncio.to_thread(incremental_update_index, project_id, task_id)
+
+
+async def get_related_code_indexed_async(
+    project_id: str,
+    current_file: str,
+    task_description: str,
+    top_k: int = 5,
+    task_id: str = None
+) -> str:
+    """Async version - Get related code context using CocoIndex semantic search.
+    
+    Wraps sync function in asyncio.to_thread() to avoid blocking event loop.
+    """
+    return await asyncio.to_thread(
+        get_related_code_indexed, project_id, current_file, task_description, top_k, task_id
+    )
 
 
 def get_related_code_indexed(

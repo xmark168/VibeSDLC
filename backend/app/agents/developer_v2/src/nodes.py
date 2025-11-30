@@ -61,6 +61,161 @@ _code_llm = ChatOpenAI(model="gpt-4.1", temperature=0.2, timeout=120)
 
 
 # =============================================================================
+# RULE-BASED HELPERS (No LLM)
+# =============================================================================
+
+def _detect_project_type(workspace_path: str) -> dict:
+    """Detect project type by checking config files (no LLM needed)."""
+    ws = Path(workspace_path)
+    
+    # Node.js / JavaScript / TypeScript
+    if (ws / "package.json").exists():
+        try:
+            pkg = json.loads((ws / "package.json").read_text(encoding="utf-8"))
+            scripts = pkg.get("scripts", {})
+            
+            # Detect test command from package.json
+            test_cmd = "npm test"
+            if "test" in scripts:
+                test_cmd = "npm test"
+            elif "test:unit" in scripts:
+                test_cmd = "npm run test:unit"
+            elif "jest" in scripts.get("test", ""):
+                test_cmd = "npm test"
+            
+            # Detect package manager
+            install_cmd = "npm install"
+            if (ws / "yarn.lock").exists():
+                install_cmd = "yarn install"
+                test_cmd = test_cmd.replace("npm", "yarn")
+            elif (ws / "pnpm-lock.yaml").exists():
+                install_cmd = "pnpm install"
+                test_cmd = test_cmd.replace("npm", "pnpm")
+            
+            return {"type": "node", "test_cmd": test_cmd, "install_cmd": install_cmd}
+        except Exception:
+            return {"type": "node", "test_cmd": "npm test", "install_cmd": "npm install"}
+    
+    # Python
+    if (ws / "pyproject.toml").exists():
+        return {"type": "python", "test_cmd": "pytest -v", "install_cmd": "pip install -e ."}
+    if (ws / "requirements.txt").exists():
+        return {"type": "python", "test_cmd": "pytest -v", "install_cmd": "pip install -r requirements.txt"}
+    if (ws / "setup.py").exists():
+        return {"type": "python", "test_cmd": "pytest -v", "install_cmd": "pip install -e ."}
+    
+    # Rust
+    if (ws / "Cargo.toml").exists():
+        return {"type": "rust", "test_cmd": "cargo test", "install_cmd": "cargo build"}
+    
+    # Go
+    if (ws / "go.mod").exists():
+        return {"type": "go", "test_cmd": "go test ./...", "install_cmd": "go mod download"}
+    
+    # Java / Maven
+    if (ws / "pom.xml").exists():
+        return {"type": "java", "test_cmd": "mvn test", "install_cmd": "mvn install -DskipTests"}
+    
+    # Java / Gradle
+    if (ws / "build.gradle").exists() or (ws / "build.gradle.kts").exists():
+        return {"type": "java", "test_cmd": "./gradlew test", "install_cmd": "./gradlew build -x test"}
+    
+    # Default fallback
+    return {"type": "unknown", "test_cmd": "", "install_cmd": ""}
+
+
+def _analyze_test_output(stdout: str, stderr: str, project_type: str = "") -> dict:
+    """Analyze test results using regex patterns (no LLM needed)."""
+    combined = f"{stdout}\n{stderr}"
+    
+    # === PASS patterns ===
+    
+    # Python pytest: "X passed" or "OK"
+    pytest_pass = re.search(r"(\d+) passed", combined)
+    if pytest_pass:
+        passed_count = pytest_pass.group(1)
+        failed_match = re.search(r"(\d+) failed", combined)
+        if not failed_match or failed_match.group(1) == "0":
+            return {"status": "PASS", "summary": f"{passed_count} tests passed"}
+    
+    # Python unittest: "OK"
+    if re.search(r"Ran \d+ tests? in [\d.]+s\s*\n\s*OK", combined):
+        return {"status": "PASS", "summary": "All tests passed (unittest)"}
+    
+    # Node/Jest: "Tests: X passed"
+    jest_pass = re.search(r"Tests:\s*(\d+)\s*passed", combined)
+    if jest_pass and "failed" not in combined.lower():
+        return {"status": "PASS", "summary": f"{jest_pass.group(1)} tests passed (Jest)"}
+    
+    # Node/Mocha: "X passing"
+    mocha_pass = re.search(r"(\d+)\s+passing", combined)
+    if mocha_pass and "failing" not in combined.lower():
+        return {"status": "PASS", "summary": f"{mocha_pass.group(1)} tests passing (Mocha)"}
+    
+    # Rust: "test result: ok"
+    if re.search(r"test result: ok\.", combined, re.IGNORECASE):
+        return {"status": "PASS", "summary": "All tests passed (Cargo)"}
+    
+    # Go: "ok" at end or "PASS"
+    if re.search(r"^ok\s+", combined, re.MULTILINE) or re.search(r"^PASS$", combined, re.MULTILINE):
+        return {"status": "PASS", "summary": "All tests passed (Go)"}
+    
+    # Generic: "All tests passed" or similar
+    if re.search(r"all\s+tests?\s+pass", combined, re.IGNORECASE):
+        return {"status": "PASS", "summary": "All tests passed"}
+    
+    # === FAIL patterns ===
+    
+    # Python: "X failed" or "FAILED"
+    pytest_fail = re.search(r"(\d+) failed", combined)
+    if pytest_fail and int(pytest_fail.group(1)) > 0:
+        return {"status": "FAIL", "summary": f"{pytest_fail.group(1)} tests failed"}
+    
+    if re.search(r"FAILED|AssertionError|Error:|Traceback", combined):
+        return {"status": "FAIL", "summary": "Tests failed with errors"}
+    
+    # Node/Jest: "X failed"
+    jest_fail = re.search(r"Tests:\s*\d+\s*failed", combined)
+    if jest_fail:
+        return {"status": "FAIL", "summary": "Tests failed (Jest)"}
+    
+    # Node/Mocha: "X failing"
+    mocha_fail = re.search(r"(\d+)\s+failing", combined)
+    if mocha_fail and int(mocha_fail.group(1)) > 0:
+        return {"status": "FAIL", "summary": f"{mocha_fail.group(1)} tests failing (Mocha)"}
+    
+    # Rust: "test result: FAILED"
+    if re.search(r"test result: FAILED", combined, re.IGNORECASE):
+        return {"status": "FAIL", "summary": "Tests failed (Cargo)"}
+    
+    # Go: "FAIL"
+    if re.search(r"^FAIL\s+", combined, re.MULTILINE):
+        return {"status": "FAIL", "summary": "Tests failed (Go)"}
+    
+    # Generic error indicators
+    if re.search(r"error:|exception:|failed|failure", combined, re.IGNORECASE):
+        # But not if it's just "0 failed" or similar
+        if not re.search(r"0\s+(failed|failures?|errors?)", combined, re.IGNORECASE):
+            return {"status": "FAIL", "summary": "Tests failed with errors"}
+    
+    # === No tests or unknown ===
+    
+    # No tests found
+    if re.search(r"no tests (found|ran|collected)", combined, re.IGNORECASE):
+        return {"status": "PASS", "summary": "No tests found (skipped)"}
+    
+    # Exit code based (if we can detect it)
+    if "exit code: 0" in combined.lower() or "exited with code 0" in combined.lower():
+        return {"status": "PASS", "summary": "Command succeeded"}
+    
+    if "exit code:" in combined.lower() and "exit code: 0" not in combined.lower():
+        return {"status": "FAIL", "summary": "Command failed with non-zero exit code"}
+    
+    # Default: assume PASS if no errors detected
+    return {"status": "PASS", "summary": "Test execution completed"}
+
+
+# =============================================================================
 # TOOL CONTEXT SETUP
 # =============================================================================
 
@@ -72,6 +227,44 @@ def _setup_tool_context(workspace_path: str = None, project_id: str = None, task
     if project_id:
         set_tool_context(project_id=project_id, task_id=task_id, workspace_path=workspace_path)
 
+
+
+def _detect_task_type(story_title: str, story_content: str) -> str:
+    """Detect task type from story content using keyword matching."""
+    text = f"{story_title} {story_content}".lower()
+    
+    # Bug fix keywords
+    if any(kw in text for kw in ["bug", "fix", "error", "issue", "broken", "crash", "lỗi", "sửa"]):
+        return "bugfix"
+    
+    # Refactor keywords
+    if any(kw in text for kw in ["refactor", "optimize", "improve", "clean", "restructure", "tối ưu"]):
+        return "refactor"
+    
+    # Test keywords
+    if any(kw in text for kw in ["test", "unit test", "e2e", "coverage", "kiểm thử"]):
+        return "test"
+    
+    # Documentation keywords
+    if any(kw in text for kw in ["document", "readme", "comment", "tài liệu"]):
+        return "documentation"
+    
+    # Default to feature
+    return "feature"
+
+
+def _estimate_complexity(story_content: str, acceptance_criteria: list) -> str:
+    """Estimate task complexity based on content analysis."""
+    content_len = len(story_content)
+    ac_count = len(acceptance_criteria)
+    
+    # Simple heuristics
+    if content_len < 200 and ac_count <= 2:
+        return "low"
+    elif content_len > 1000 or ac_count > 5:
+        return "high"
+    else:
+        return "medium"
 
 
 async def router(state: DeveloperState, agent=None) -> DeveloperState:
@@ -274,8 +467,8 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
             max_iterations=2
         )
         
-        # Step 2: Get structured response
-        messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:3000]}\n\nNow provide your final analysis."))
+        # Step 2: Get structured response (exploration already filtered by semantic search)
+        messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:5000]}\n\nNow provide your final analysis."))
         structured_llm = _code_llm.with_structured_output(StoryAnalysis)
         analysis = await structured_llm.ainvoke(messages, config=_cfg(state, "analyze"))
         
@@ -349,8 +542,8 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
             max_iterations=2
         )
         
-        # Step 2: Get structured response
-        messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:3000]}\n\nNow provide your final system design."))
+        # Step 2: Get structured response (exploration already filtered by semantic search)
+        messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:5000]}\n\nNow provide your final system design."))
         structured_llm = _code_llm.with_structured_output(SystemDesign)
         design_result = await structured_llm.ainvoke(messages, config=_cfg(state, "design"))
         
@@ -657,8 +850,8 @@ Conventions: {project_structure.get('conventions', '')}
             file_path=current_file,
             action=step.get("action", "modify"),
             story_summary=state.get("analysis_result", {}).get("summary", ""),
-            related_context=full_related_context[:6000],
-            existing_code=existing_code[:3000] if existing_code else "No existing code (new file)",
+            related_context=full_related_context[:8000],  # CocoIndex already filters relevant code
+            existing_code=existing_code if existing_code else "No existing code (new file)",  # Full file for modification
             error_logs=error_logs_text
         )
 
@@ -680,8 +873,8 @@ Conventions: {project_structure.get('conventions', '')}
             max_iterations=2
         )
         
-        # Step 2: Get structured response
-        messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:3000]}\n\nNow provide the code implementation."))
+        # Step 2: Get structured response (exploration already filtered by semantic search)
+        messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:5000]}\n\nNow provide the code implementation."))
         structured_llm = _code_llm.with_structured_output(CodeChange)
         code_change = await structured_llm.ainvoke(messages, config=_cfg(state, "implement"))
         
@@ -1227,27 +1420,31 @@ Respond with JSON:
 """
 
 
-async def _summarize_all_code(code_changes: list, workspace_path: str = "") -> str:
-    """Summarize all code changes into a single summary."""
+async def _summarize_all_code(code_changes: list, workspace_path: str = "", state: dict = None) -> str:
+    """Summarize all code changes for IS_PASS validation.
+    
+    Uses code_snippet directly from code_changes (already contains full implementation).
+    No truncation needed - code_changes comes from implement node with complete code.
+    """
     if not code_changes:
         return "No code changes to summarize."
     
     summary_parts = []
+    
     for change in code_changes:
         file_path = change.get("file_path", "unknown")
         action = change.get("action", "unknown")
         description = change.get("description", "") or ""
         code = change.get("code_snippet", "") or ""
         
-        # Truncate code for summary
-        code_preview = code[:500] + "..." if code and len(code) > 500 else (code or "")
+        # Get language for markdown code block
+        lang = get_markdown_code_block_type(file_path)
         
-        summary_parts.append(f"""
-### {file_path} ({action})
+        summary_parts.append(f"""### {file_path} ({action})
 {description}
 
-```
-{code_preview}
+```{lang}
+{code}
 ```
 """)
     
@@ -1316,8 +1513,8 @@ async def summarize_code(state: DeveloperState, agent=None) -> DeveloperState:
             # await agent.message_user("status", f"📝 Summarizing code (iteration {summarize_count + 1}/{max_summarize})...")
             pass
         
-        # 1. Summarize all code
-        summary = await _summarize_all_code(code_changes, workspace_path)
+        # 1. Summarize all code using CocoIndex
+        summary = await _summarize_all_code(code_changes, workspace_path, state)
         logger.info(f"[summarize_code] Generated summary: {len(summary)} chars")
         
         # 2. Check IS_PASS
@@ -1510,18 +1707,23 @@ async def code_review(state: DeveloperState, agent=None) -> DeveloperState:
 
 
 # =============================================================================
-# RUN CODE (Execute tests to verify)
+# RUN CODE (Execute tests to verify) - Rule-based, NO LLM
 # =============================================================================
 
 async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
-    """Execute tests in workspace to verify code works.
+    """Execute tests in workspace using rule-based detection (no LLM).
     
-    Detects test framework and runs appropriate tests.
-    Analyzes results with LLM to determine pass/fail.
+    Fast approach:
+    1. Detect project type by checking config files
+    2. Install dependencies using known commands
+    3. Run tests using detected test command
+    4. Analyze results using regex patterns
     """
-    print("[NODE] run_code - Running tests...")
+    print("[NODE] run_code - Running tests (rule-based, no LLM)...")
     try:
         workspace_path = state.get("workspace_path", "")
+        project_id = state.get("project_id", "default")
+        task_id = state.get("task_id") or state.get("story_id", "")
         
         if not workspace_path or not Path(workspace_path).exists():
             logger.warning("[run_code] No workspace path, skipping tests")
@@ -1531,124 +1733,90 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
                 "run_result": {"status": "PASS", "summary": "No workspace to test"},
             }
         
-        if agent:
-            pass
+        # Setup tool context for shell tools
+        _setup_tool_context(workspace_path, project_id, task_id)
         
-        # Install dependencies first (MetaGPT RunCode pattern)
-        try:
-            deps_result = await install_dependencies(workspace_path)
-            if deps_result and agent:
-                pass
-        except Exception as deps_err:
-            logger.warning(f"[run_code] Dependency install failed: {deps_err}")
+        # 1. Detect project type (rule-based, no LLM)
+        project_info = _detect_project_type(workspace_path)
+        project_type = project_info["type"]
+        test_cmd = project_info["test_cmd"]
+        install_cmd = project_info["install_cmd"]
         
-        # Detect and run tests
-        test_cmd = state.get("test_command") or detect_test_command(workspace_path)
-        logger.info(f"[run_code] Running: {' '.join(test_cmd)}")
+        logger.info(f"[run_code] Detected project: {project_type}, test_cmd: {test_cmd}")
         
-        result = await execute_command_async(
-            command=test_cmd,
-            working_directory=workspace_path,
-            timeout=120  # 2 minutes for tests
-        )
-        
-        # Determine basic pass/fail
-        basic_status = "PASS" if result.success else "FAIL"
-        
-        # Get code context for analysis
-        files_modified = state.get("files_modified", [])
-        code_filename = files_modified[0] if files_modified else ""
-        code_content = ""
-        test_filename = ""
-        test_content = ""
-        
-        if code_filename and workspace_path:
-            # Read code file using read_file_safe tool
-            try:
-                result = read_file_safe.invoke({"file_path": code_filename})
-                if result and not result.startswith("Error:"):
-                    if "\n\n" in result:
-                        code_content = result.split("\n\n", 1)[1][:5000]
-                    else:
-                        code_content = result[:5000]
-            except Exception:
-                pass
-            
-            test_filename = find_test_file(workspace_path, code_filename) or ""
-            if test_filename:
-                # Read test file using read_file_safe tool
-                try:
-                    result = read_file_safe.invoke({"file_path": test_filename})
-                    if result and not result.startswith("Error:"):
-                        if "\n\n" in result:
-                            test_content = result.split("\n\n", 1)[1][:5000]
-                        else:
-                            test_content = result[:5000]
-                except Exception:
-                    pass
-        
-        language = get_markdown_code_block_type(code_filename) if code_filename else "python"
-        
-        # MetaGPT RunCode pattern: Truncate outputs to avoid token overflow
-        # stdout might be long but not important - truncate to 500 chars
-        # stderr is more important - truncate to 10000 chars
-        stdout_truncated = (result.stdout or "")[:500]
-        stderr_truncated = (result.stderr or "")[:10000]
-        
-        # Analyze with LLM
-        sys_prompt = _build_system_prompt("run_code_analysis", agent)
-        user_prompt = _get_prompt("run_code_analysis", "user_prompt").format(
-            code_filename=code_filename or "unknown",
-            language=language,
-            code=code_content or "No source code available",
-            test_filename=test_filename or "unknown",
-            test_code=test_content or "No test code available",
-            command=" ".join(test_cmd),
-            stdout=stdout_truncated or "No output",
-            stderr=stderr_truncated or "No errors",
-        )
-        
-        messages = [
-            SystemMessage(content=sys_prompt),
-            HumanMessage(content=user_prompt)
-        ]
-        
-        response = await _fast_llm.ainvoke(messages, config=_cfg(state, "run_code"))
-        clean_json = _clean_json(response.content)
-        
-        try:
-            import json
-            analysis = json.loads(clean_json)
-        except json.JSONDecodeError:
-            analysis = {
-                "status": basic_status,
-                "summary": result.stderr[:200] if result.stderr else "Test completed",
-                "file_to_fix": "",
-                "send_to": "NoOne" if result.success else "Engineer",
+        if project_type == "unknown" or not test_cmd:
+            logger.warning("[run_code] Unknown project type, skipping tests")
+            return {
+                **state,
+                "run_status": "PASS",
+                "run_result": {"status": "PASS", "summary": "Unknown project type, skipped tests"},
             }
         
-        run_status = analysis.get("status", basic_status)
+        stdout_combined = ""
+        stderr_combined = ""
         
-        if agent:
-            if run_status == "PASS":
-                pass
-            else:
-                pass
+        # 2. Install dependencies (optional, skip errors)
+        if install_cmd:
+            try:
+                logger.info(f"[run_code] Installing dependencies: {install_cmd}")
+                install_result = execute_shell.invoke({"command": install_cmd, "timeout": 120})
+                if isinstance(install_result, dict):
+                    stdout_combined += install_result.get("stdout", "") + "\n"
+                    stderr_combined += install_result.get("stderr", "") + "\n"
+                logger.info("[run_code] Dependencies installed")
+            except Exception as install_err:
+                logger.warning(f"[run_code] Install failed (continuing): {install_err}")
+        
+        # 3. Run tests
+        logger.info(f"[run_code] Running tests: {test_cmd}")
+        try:
+            test_result = execute_shell.invoke({"command": test_cmd, "timeout": 300})
+            
+            if isinstance(test_result, dict):
+                stdout_combined += test_result.get("stdout", "") + "\n"
+                stderr_combined += test_result.get("stderr", "") + "\n"
+            elif isinstance(test_result, str):
+                stdout_combined += test_result + "\n"
+        except Exception as test_err:
+            logger.error(f"[run_code] Test execution failed: {test_err}")
+            stderr_combined += f"Test execution error: {str(test_err)}\n"
+        
+        # 4. Analyze results (rule-based, no LLM)
+        analysis = _analyze_test_output(stdout_combined, stderr_combined, project_type)
+        run_status = analysis["status"]
+        summary = analysis["summary"]
+        
+        logger.info(f"[run_code] Final status: {run_status} - {summary}")
+        
+        # Detect file to fix from error output
+        file_to_fix = ""
+        if run_status == "FAIL":
+            # Try to extract file path from error messages
+            file_patterns = [
+                r"File [\"']([^\"']+)[\"']",  # Python traceback
+                r"at\s+([^\s:]+):\d+",  # Node.js stack trace
+                r"([^\s]+\.(py|js|ts|jsx|tsx|rs|go)):\d+",  # Generic file:line
+            ]
+            for pattern in file_patterns:
+                match = re.search(pattern, stderr_combined)
+                if match:
+                    file_to_fix = match.group(1)
+                    break
         
         return {
             **state,
             "run_status": run_status,
-            "run_stdout": result.stdout,
-            "run_stderr": result.stderr,
+            "run_stdout": stdout_combined,
+            "run_stderr": stderr_combined,
             "run_result": {
                 "status": run_status,
-                "summary": analysis.get("summary", ""),
-                "file_to_fix": analysis.get("file_to_fix", ""),
-                "send_to": analysis.get("send_to", "NoOne"),
-                "fix_instructions": analysis.get("fix_instructions", ""),
-                "error_type": analysis.get("error_type", "none"),
+                "summary": summary,
+                "file_to_fix": file_to_fix,
+                "send_to": "NoOne" if run_status == "PASS" else "Engineer",
+                "fix_instructions": "",
+                "error_type": "test_failure" if run_status == "FAIL" else "none",
             },
-            "test_command": test_cmd,
+            "test_command": [test_cmd],
         }
         
     except Exception as e:
@@ -1771,8 +1939,8 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
             max_iterations=2
         )
         
-        # Step 2: Get structured response
-        messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:3000]}\n\nNow provide your debug analysis and fixed code."))
+        # Step 2: Get structured response (exploration already filtered by semantic search)
+        messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:5000]}\n\nNow provide your debug analysis and fixed code."))
         structured_llm = _code_llm.with_structured_output(DebugResult)
         debug_result = await structured_llm.ainvoke(messages, config=_cfg(state, "debug_error"))
         

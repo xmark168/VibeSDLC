@@ -522,9 +522,8 @@ class TestToolsIntegration:
     def test_execution_tools_available(self):
         """Test execution tools can be imported."""
         from app.agents.developer_v2.src.tools.execution_tools import (
-            execute_command_sync, execute_command_async, CommandResult
+            execute_command_async, CommandResult
         )
-        assert execute_command_sync is not None
         assert execute_command_async is not None
         assert CommandResult is not None
 

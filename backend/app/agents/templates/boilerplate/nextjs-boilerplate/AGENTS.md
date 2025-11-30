@@ -52,8 +52,32 @@ Always follow this flow when implementing features:
    - Use camelCase for field names
 
 2. **Type Definitions** (`src/types/api.types.ts`)
-   - Define API request/response types
-   - Create Zod schemas for validation
+   - **NEVER overwrite existing types** (ApiResponse, ApiError, HttpStatus, PaginationMeta, etc.)
+   - **ADD new types at the end of file** following this format:
+   
+   ```typescript
+   /**
+    * [FEATURE_NAME] - e.g., PRODUCT, ORDER, etc.
+    */
+   
+   // Zod schema for input validation
+   export const [feature]Schema = z.object({
+     field1: z.string().min(1, 'Field1 is required'),
+     field2: z.number().positive(),
+   });
+   
+   // Request type (infer from Zod schema)
+   export type [Feature]Request = z.infer<typeof [feature]Schema>;
+   
+   // Response type (what API returns)
+   export interface [Feature]Response {
+     id: string;
+     // ... other fields
+   }
+   ```
+   
+   - Use **PascalCase** for interfaces/types, **camelCase** for Zod schemas
+   - Group related types with section comments
 
 3. **API Routes** (`src/app/api/[resource]/route.ts`)
    - Use type-safe response helpers from `@/lib/api-response.ts`

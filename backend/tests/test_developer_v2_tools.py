@@ -332,27 +332,6 @@ class TestExecutionTools:
         assert result.stdout == "Test output"
         assert result.returncode == 0
     
-    def test_detect_framework_from_package_json(self, temp_workspace):
-        """Test detecting framework from package.json."""
-        from app.agents.developer_v2.src.tools.execution_tools import detect_framework_from_package_json
-        
-        result = detect_framework_from_package_json(temp_workspace)
-        assert isinstance(result, dict)
-        assert "name" in result or result == {}
-    
-    def test_detect_framework_nextjs(self, temp_workspace):
-        """Test detecting Next.js framework."""
-        from app.agents.developer_v2.src.tools.execution_tools import detect_framework_from_package_json
-        
-        # Create Next.js package.json
-        (Path(temp_workspace) / "package.json").write_text(json.dumps({
-            "name": "nextjs-app",
-            "dependencies": {"next": "13.0.0", "react": "18.0.0"}
-        }))
-        
-        result = detect_framework_from_package_json(temp_workspace)
-        assert result.get("framework") == "nextjs" or "next" in str(result)
-    
     def test_detect_test_command(self, temp_workspace):
         """Test detecting test command."""
         from app.agents.developer_v2.src.tools.execution_tools import detect_test_command
@@ -369,24 +348,6 @@ class TestExecutionTools:
         
         result = detect_test_command(temp_workspace)
         assert any("pytest" in cmd for cmd in result) or len(result) >= 0
-    
-    def test_execute_command_sync(self, temp_workspace):
-        """Test synchronous command execution."""
-        from app.agents.developer_v2.src.tools.execution_tools import execute_command_sync
-        import platform
-        
-        # Use platform-appropriate command
-        cmd = "echo test" if platform.system() != "Windows" else "cmd /c echo test"
-        result = execute_command_sync(cmd, temp_workspace)
-        # On some systems echo may fail, just check it ran
-        assert result is not None
-    
-    def test_execute_command_sync_failure(self, temp_workspace):
-        """Test synchronous command execution failure."""
-        from app.agents.developer_v2.src.tools.execution_tools import execute_command_sync
-        
-        result = execute_command_sync("nonexistent_command_12345", temp_workspace)
-        assert not result.success or result.returncode != 0
     
     def test_find_test_file(self, temp_workspace):
         """Test finding test file for source file."""

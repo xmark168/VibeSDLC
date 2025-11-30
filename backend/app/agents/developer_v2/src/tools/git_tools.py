@@ -4,7 +4,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 from langchain_core.tools import tool
-from git import Repo, InvalidGitRepositoryError
+
+try:
+    from git import Repo, InvalidGitRepositoryError
+    GIT_AVAILABLE = True
+except ImportError:
+    GIT_AVAILABLE = False
+    Repo = None
+    InvalidGitRepositoryError = Exception
 
 
 # Global context for git operations
@@ -29,6 +36,9 @@ def git_init(message: str = "Initial commit") -> str:
     """
     Initialize a git repository with initial commit.
     """
+    if not GIT_AVAILABLE:
+        return "Error: GitPython not installed"
+    
     root_dir = _get_root_dir()
     original_dir = os.getcwd()
     os.chdir(root_dir)

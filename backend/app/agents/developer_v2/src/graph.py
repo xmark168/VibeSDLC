@@ -1,21 +1,5 @@
-"""Developer V2 LangGraph Definition.
-
-This module defines the LangGraph workflow for Developer V2 agent, implementing
-a comprehensive software development lifecycle with MetaGPT-inspired patterns.
-
-Architecture:
-- State: DeveloperState (TypedDict) - workflow state management
-- Nodes: 14 nodes for different development stages
-- Routing: Conditional edges based on state and metrics
-- Tools: Direct tool calls from src/tools/ (workspace, CocoIndex, execution)
-- Utils: LLM helpers (utils/llm_utils), prompts (utils/prompt_utils)
-
-Key Features:
-- Workspace isolation: Git worktrees for each story
-- Semantic search: CocoIndex for code context
-- Quality gates: SummarizeCode (IS_PASS), code review, tests
-- Self-healing: Debug loops, React mode for retry cycles
-- MetaGPT patterns: Architect, SummarizeCode, Engineer2 React loop
+"""
+Developer V2 LangGraph Definition.
 """
 
 from functools import partial
@@ -31,16 +15,8 @@ from app.agents.developer_v2.src.nodes import (
 
 
 def route(state: DeveloperState) -> Literal["setup_workspace", "clarify"]:
-    """Entry point routing: determine if workspace setup is needed.
-    
-    Routes:
-    - CLARIFY action -> clarify node (no workspace needed)
-    - All other actions -> setup_workspace first
-    
-    Workspace setup creates:
-    - Git worktree with feature branch (via workspace_tools)
-    - CocoIndex for semantic code search
-    - Project context (AGENTS.md, structure detection)
+    """
+    Entry point routing: determine if workspace setup is needed.
     """
     action = state.get("action")
     
@@ -51,12 +27,8 @@ def route(state: DeveloperState) -> Literal["setup_workspace", "clarify"]:
 
 
 def route_after_workspace(state: DeveloperState) -> Literal["analyze", "design", "plan", "implement"]:
-    """Route to actual work node after workspace setup completes.
-    
-    Standard flow: analyze -> design -> plan -> implement
-    
-    Can skip to any node if action is already determined (e.g., direct IMPLEMENT).
-    Most common path starts with ANALYZE for requirement analysis.
+    """
+    Route to actual work node after workspace setup completes.
     """
     action = state.get("action")
     
@@ -70,13 +42,8 @@ def route_after_workspace(state: DeveloperState) -> Literal["analyze", "design",
 
 
 def route_after_analyze(state: DeveloperState) -> Literal["design", "plan"]:
-    """Route after analysis: skip design for simple tasks (optimization).
-    
-    Complexity-based routing:
-    - Low complexity -> plan (skip design for speed)
-    - Medium/High complexity -> design (create system architecture)
-    
-    Design node follows MetaGPT Architect pattern with mermaid diagrams.
+    """
+    Route after analysis: skip design for simple tasks (optimization).
     """
     complexity = state.get("complexity", "medium")
     if complexity == "low":

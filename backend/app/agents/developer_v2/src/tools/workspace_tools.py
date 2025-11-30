@@ -15,26 +15,43 @@ def setup_git_worktree(
     """
     Setup git worktree for a story task.
     Creates a separate worktree for isolation from main workspace.
+    
+    NOTE: Git should already be initialized in the workspace (copied from template).
+    If not, worktree creation will fail and we fallback to main workspace.
     """
     main_workspace = Path(main_workspace)
     short_id = story_id.split('-')[-1][:8] if '-' in story_id else story_id[:8]
     branch_name = f"story_{short_id}"
     
+    # Check if workspace exists
+    if not main_workspace.exists():
+        logger.error(f"[{agent_name}] Workspace does not exist: {main_workspace}")
+        return {
+            "workspace_path": str(main_workspace),
+            "branch_name": branch_name,
+            "main_workspace": str(main_workspace),
+            "workspace_ready": False,
+        }
+    
     git_tool = GitPythonTool(root_dir=str(main_workspace))
     
-    # 1. Initialize git in main workspace if needed
+    # Verify git is ready (should exist from template copy)
     status_result = git_tool._run("status")
     if "not a git repository" in status_result.lower() or "fatal" in status_result.lower():
-        logger.info(f"[{agent_name}] Initializing git in main workspace")
-        git_tool._run("init")
-        git_tool._run("commit", message="Initial commit", files=["."])
+        logger.error(f"[{agent_name}] Workspace not a git repo (template issue?): {main_workspace}")
+        return {
+            "workspace_path": str(main_workspace),
+            "branch_name": branch_name,
+            "main_workspace": str(main_workspace),
+            "workspace_ready": False,
+        }
     
-    # 2. Create worktree for this story
+    # Create worktree for this story
     logger.info(f"[{agent_name}] Creating worktree for branch '{branch_name}'")
     worktree_result = git_tool._run("create_worktree", branch_name=branch_name)
     logger.info(f"[{agent_name}] Worktree result: {worktree_result}")
     
-    # 3. Determine worktree path (git creates ws_story_{id} next to main)
+    # Determine worktree path (git creates ws_story_{id} next to main)
     worktree_path = main_workspace.parent / f"ws_story_{short_id}"
     workspace_ready = worktree_path.exists() and worktree_path.is_dir()
     

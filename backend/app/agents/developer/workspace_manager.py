@@ -82,6 +82,8 @@ class ProjectWorkspaceManager:
             ignore = set()
 
             # Always ignore these directories
+            # NOTE: .git is NOT ignored - template should have git initialized
+            # so worktrees can be created immediately after copy
             ignore_dirs = {
                 'node_modules',
                 '.next',
@@ -92,7 +94,7 @@ class ProjectWorkspaceManager:
                 '.cache',
                 'coverage',
                 '.swc',
-                '.git',
+                # '.git',  # KEEP .git - needed for worktree support
                 '__pycache__',
                 '.pytest_cache',
                 '.venv',

@@ -26,7 +26,7 @@ async def execute_llm_with_tools(
     tools: list,
     messages: list,
     state: dict,
-    run_name: str,
+    name: str,
     max_iterations: int = 5
 ) -> str:
     """Execute LLM with ReAct tool calling pattern.
@@ -38,7 +38,7 @@ async def execute_llm_with_tools(
         tools: List of LangChain tools to bind
         messages: Initial conversation messages
         state: State dict (for Langfuse config)
-        run_name: Run name for tracing
+        name: Run name for Langfuse tracing
         max_iterations: Max tool calling loops
         
     Returns:
@@ -51,7 +51,7 @@ async def execute_llm_with_tools(
     for _ in range(max_iterations):
         response = await llm_with_tools.ainvoke(
             conversation, 
-            config=get_langfuse_config(state, run_name)
+            config=get_langfuse_config(state, name)
         )
         conversation.append(response)
         
