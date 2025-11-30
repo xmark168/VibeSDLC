@@ -24,6 +24,70 @@ _chat_llm = ChatOpenAI(model="claude-haiku-4-5-20251001", temperature=0.7, timeo
     
 ROLE_WIP_MAP = {"developer": "InProgress", "tester": "Review", "business_analyst": None}
 
+# Patterns to detect specialist task completion - must be specific completion messages
+# Format: (role, [(pattern, is_completion_message)])
+SPECIALIST_COMPLETION_PATTERNS = {
+    "business_analyst": [
+        "đã thêm",  # "Đã thêm X User Stories vào backlog"
+        "stories vào backlog",
+        "đã phê duyệt",
+    ],
+    "developer": [
+        "implement xong",
+        "code xong", 
+        "đã merge",
+        "pull request đã được merge",
+    ],
+    "tester": [
+        "test xong",
+        "qa xong",
+        "all tests passed",
+        "đã test xong",
+    ],
+}
+
+
+def _detect_specialist_completion(conversation_history: str) -> str | None:
+    """Detect if a specialist JUST completed a task (check LAST assistant message only).
+    
+    Conversation history format from ProjectContext.format_memory():
+    ```
+    ## Gần đây:
+    User: message
+    Assistant: message
+    ```
+    
+    Returns:
+        specialist_role if detected, None otherwise
+    """
+    if not conversation_history:
+        return None
+    
+    # Parse conversation to get LAST Assistant message only
+    lines = conversation_history.strip().split('\n')
+    
+    # Find last Assistant message (format: "Assistant: message")
+    last_assistant_msg = None
+    for line in reversed(lines):
+        line_stripped = line.strip()
+        # Match "Assistant: ..." format from format_memory()
+        if line_stripped.startswith('Assistant:'):
+            last_assistant_msg = line_stripped[len('Assistant:'):].strip()
+            break
+    
+    if not last_assistant_msg:
+        return None
+    
+    last_msg_lower = last_assistant_msg.lower()
+    
+    # Check each role's completion patterns
+    for role, patterns in SPECIALIST_COMPLETION_PATTERNS.items():
+        for pattern in patterns:
+            if pattern.lower() in last_msg_lower:
+                return role
+    
+    return None
+
 
 def _clean_json(text: str) -> str:
     """Strip markdown code blocks from LLM response."""
@@ -176,14 +240,37 @@ Hãy viết MỘT câu hỏi clarification thân thiện, tự nhiên để hi�
 async def conversational(state: TeamLeaderState, agent=None) -> TeamLeaderState:
     """Generate conversational response."""
     try:
+        conversation_history = state.get("conversation_history", "")
+        
+        # Detect if specialist just completed a task
+        specialist_role = _detect_specialist_completion(conversation_history)
+        
+        # Build context for LLM
         sys_prompt = _sys_prompt(agent, "conversational")
-        if state.get("conversation_history"):
+        
+        # Add specialist completion context if detected
+        specialist_context = ""
+        if specialist_role:
+            role_names = {
+                "business_analyst": "Business Analyst",
+                "developer": "Developer", 
+                "tester": "Tester"
+            }
+            role_display = role_names.get(specialist_role, specialist_role)
+            specialist_context = f"""
+**LƯU Ý QUAN TRỌNG:** {role_display} vừa hoàn thành task. Bạn đang tiếp quản cuộc hội thoại.
+- Hãy chào đón user trở lại một cách tự nhiên
+- Có thể hỏi user cần gì tiếp theo
+- Đừng lặp lại những gì {role_display} đã nói"""
+        
+        if conversation_history:
             sys_prompt += f"""
 
 ---
 
 **Cuộc trò chuyện gần đây:**
-{state['conversation_history']}
+{conversation_history}
+{specialist_context}
 
 **Lưu ý:** Dựa vào context trên để trả lời tự nhiên và liên quan. Đừng lặp lại những gì đã nói."""
         

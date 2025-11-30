@@ -434,7 +434,10 @@ class AgentMessageRouter(BaseEventRouter):
         return event_type in ["agent.response", "agent.response.created"]
     
     async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
-        """Update conversation context when agent responds."""
+        """Update conversation context when agent responds.
+        
+        If task_completed=True in details/structured_data, CLEAR ownership instead.
+        """
         event_dict = event if isinstance(event, dict) else event.model_dump()
         
         project_id = event_dict.get("project_id")
@@ -442,6 +445,11 @@ class AgentMessageRouter(BaseEventRouter):
         
         if not project_id or not agent_name:
             return
+        
+        # Check if this is a task completion (should release ownership)
+        details = event_dict.get("details", {})
+        structured_data = event_dict.get("structured_data", {})
+        task_completed = details.get("task_completed") or structured_data.get("task_completed")
         
         with Session(engine) as session:
             from app.services import AgentService
@@ -456,16 +464,91 @@ class AgentMessageRouter(BaseEventRouter):
             if agent:
                 project = session.get(Project, agent.project_id)
                 if project:
-                    previous_agent_id = project.active_agent_id
-                    project.active_agent_id = agent.id
-                    project.active_agent_updated_at = datetime.now(timezone.utc)
-                    session.add(project)
-                    session.commit()
-                    
-                    self.logger.info(
-                        f"[CONTEXT_UPDATE] Agent {agent.human_name} responded, "
-                        f"set as active for project {project_id}"
-                    )
+                    if task_completed:
+                        # Task completed - CLEAR ownership
+                        previous_agent_name = agent.human_name
+                        project.active_agent_id = None
+                        project.active_agent_updated_at = None
+                        session.add(project)
+                        session.commit()
+                        
+                        self.logger.info(
+                            f"[CONTEXT_CLEAR] Agent {previous_agent_name} completed task, "
+                            f"released ownership for project {project_id}"
+                        )
+                        
+                        # Proactive greeting from Team Leader
+                        await self._send_team_leader_greeting(
+                            project_id, 
+                            previous_agent_name
+                        )
+                    else:
+                        # Normal response - set as active
+                        project.active_agent_id = agent.id
+                        project.active_agent_updated_at = datetime.now(timezone.utc)
+                        session.add(project)
+                        session.commit()
+                        
+                        self.logger.info(
+                            f"[CONTEXT_UPDATE] Agent {agent.human_name} responded, "
+                            f"set as active for project {project_id}"
+                        )
+    
+    async def _send_team_leader_greeting(
+        self, 
+        project_id: str | UUID, 
+        completed_agent_name: str
+    ) -> None:
+        """Send proactive greeting from Team Leader when specialist completes task."""
+        try:
+            from app.services import AgentService
+            
+            if isinstance(project_id, str):
+                project_id = UUID(project_id)
+            
+            with Session(engine) as session:
+                agent_service = AgentService(session)
+                team_leader = agent_service.get_by_project_and_role(
+                    project_id=project_id,
+                    role_type="team_leader"
+                )
+            
+            if not team_leader:
+                self.logger.warning(f"[GREETING] No Team Leader found for project {project_id}")
+                return
+            
+            # Generate greeting message
+            greeting = (
+                f"Tuyệt vời! {completed_agent_name} đã hoàn thành xong rồi! 🎉 "
+                f"Bạn cần mình tạo ra web luôn không?"
+            )
+            
+            # Broadcast greeting via WebSocket (use same format as agent_events_handler)
+            from app.websocket.connection_manager import connection_manager
+            
+            await connection_manager.broadcast_to_project(
+                {
+                    "type": "agent.messaging.response",  # Match frontend expectation
+                    "id": str(uuid4()),
+                    "execution_id": "",
+                    "agent_name": team_leader.human_name,
+                    "content": greeting,
+                    "message_type": "handoff_greeting",
+                    "structured_data": {
+                        "from_agent": completed_agent_name,
+                    },
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+                project_id
+            )
+            
+            self.logger.info(
+                f"[GREETING] Team Leader {team_leader.human_name} sent greeting "
+                f"after {completed_agent_name} completed task"
+            )
+            
+        except Exception as e:
+            self.logger.error(f"[GREETING] Failed to send Team Leader greeting: {e}", exc_info=True)
 
 
 class TaskCompletionRouter(BaseEventRouter):

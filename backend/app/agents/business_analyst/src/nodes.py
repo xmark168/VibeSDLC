@@ -1140,16 +1140,28 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
         # Send simple notification to trigger Kanban refresh (no card displayed)
         if agent:
             logger.info(f"[BA] Sending stories_approved message to frontend")
-            stories_approved = len(state.get("created_stories", []))
+            stories_count = len(state.get("created_stories", []))
             await agent.message_user(
                 event_type="response",
-                content=f"Tuyệt vời! 🎊 Đã thêm **{stories_approved} User Stories** vào backlog rồi! Bạn có thể xem trên Kanban board và bắt đầu implement được luôn nha~",
+                content=f"Tuyệt vời! 🎊 Đã thêm **{stories_count} User Stories** vào backlog rồi! Bạn có thể xem trên Kanban board và bắt đầu implement được luôn nha~",
                 details={
-                    "message_type": "stories_approved"  # Frontend will refresh Kanban, no card
+                    "message_type": "stories_approved",  # Frontend will refresh Kanban, no card
+                    "task_completed": True  # Signal to release ownership
                 }
             )
     
     logger.info(f"[BA] Artifacts saved: {result['summary']}")
+    
+    # Determine if task is truly complete (should release ownership)
+    # ONLY release ownership when stories are APPROVED (final step in BA workflow)
+    # Keep ownership for: PRD create/update, stories pending approval, waiting for answer
+    is_stories_approved = result.get("stories_approved", False)
+    
+    if is_stories_approved:
+        result["task_completed"] = True
+        logger.info(f"[BA] Stories approved - task completed, will release ownership")
+    else:
+        logger.info(f"[BA] Task not complete yet, keeping ownership (stories_approved={is_stories_approved})")
     
     return {
         "result": result,
