@@ -391,7 +391,7 @@ async def confirm_replace(state: TeamLeaderState, agent=None) -> TeamLeaderState
         stories_count = state.get("existing_stories_count", 0)
         
         question = (
-            f"Bạn đã có project **'{existing_title}'** với **{stories_count} stories**. "
+            f"Bạn đã có project '{existing_title}' và các tài liệu liên quan. "
             f"Bạn muốn:"
         )
         
@@ -405,7 +405,10 @@ async def confirm_replace(state: TeamLeaderState, agent=None) -> TeamLeaderState
                         "Thay thế bằng project mới",
                         "Giữ nguyên project cũ"
                     ],
-                    "allow_multiple": False
+                    "allow_multiple": False,
+                    "context": {
+                        "original_user_message": state.get("user_message", "")
+                    }
                 }
             )
         

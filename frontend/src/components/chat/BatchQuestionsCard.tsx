@@ -41,15 +41,14 @@ export function BatchQuestionsCard({
   answered = false,
   submittedAnswers = []
 }: BatchQuestionsCardProps) {
-  // Current question index
+  // ALL hooks must be at the top, before any conditional returns
   const [currentIndex, setCurrentIndex] = useState(0)
-  
-  // State for each question's answer
   const [answers, setAnswers] = useState<Map<string, { answer: string; selectedOptions: Set<string> }>>(
     new Map(questions.map((q, idx) => [questionIds[idx], { answer: '', selectedOptions: new Set() }]))
   )
   const [customInputs, setCustomInputs] = useState<Map<string, string>>(new Map())
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showQA, setShowQA] = useState(false)  // Moved here from below
   
   const currentQuestion = questions[currentIndex]
   const currentQuestionId = questionIds[currentIndex]
@@ -175,9 +174,6 @@ export function BatchQuestionsCard({
       return ans.selectedOptions.size > 0 && (!hasOtherSelected || customText?.trim())
     }
   })
-  
-  // State for showing/hiding Q&A in answered view
-  const [showQA, setShowQA] = useState(false)
   
   if (answered) {
     // Build a map of answers by question_id for quick lookup

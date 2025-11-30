@@ -218,7 +218,16 @@ class TeamLeader(BaseAgent):
                 await self.message_user("response", msg)
                 
                 # Delegate to BA for new project
-                original_message = task.context.get("original_context", {}).get("user_message", task.content)
+                # Get original user message from question context (saved when confirm_replace was called)
+                original_context = task.context.get("original_context", {})
+                question_context = original_context.get("question_context", {})
+                original_message = (
+                    question_context.get("original_user_message") or  # From confirm_replace question
+                    original_context.get("original_message") or  # From task context
+                    task.content or
+                    "Tạo project mới"  # Fallback
+                )
+                logger.info(f"[{self.name}] Delegating to BA with message: {original_message[:50] if original_message else 'empty'}...")
                 
                 new_task = TaskContext(
                     task_id=task.task_id,

@@ -32,10 +32,12 @@ export function AgentQuestionCard({
   onSubmit,
   agentName,
 }: AgentQuestionCardProps) {
+  // ALL hooks must be at the top, before any conditional returns
   const [textAnswer, setTextAnswer] = useState('')
   const [selectedOptions, setSelectedOptions] = useState<Set<string>>(new Set())
   const [customInput, setCustomInput] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showQA, setShowQA] = useState(false)  // Moved here from below
   
   const handleSubmit = async () => {
     setIsSubmitting(true)
@@ -91,9 +93,6 @@ export function AgentQuestionCard({
       </Card>
     )
   }
-  
-  // State for showing/hiding Q&A in answered view
-  const [showQA, setShowQA] = useState(false)
   
   // Answered state (agent has processed the answer)
   if (answered) {
