@@ -20,9 +20,8 @@ from uuid import uuid4
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.tools import (
     get_markdown_code_block_type,
-    get_related_code_context,
     detect_test_command,
-    execute_command_sync,
+    execute_command_async,
     find_test_file,
     CommandResult,
 )
@@ -232,40 +231,6 @@ class TestCommandResult:
         assert result.returncode == 1
 
 
-class TestExecuteCommandSync:
-    """Test execute_command_sync function."""
-    
-    def test_successful_command(self):
-        """Test executing a successful command."""
-        result = execute_command_sync(
-            command=["python", "--version"],
-            working_directory=".",
-            timeout=10
-        )
-        assert result.success == True
-        assert "Python" in result.stdout or "Python" in result.stderr
-    
-    def test_failed_command(self):
-        """Test executing a failing command."""
-        result = execute_command_sync(
-            command=["python", "-c", "import nonexistent_module_xyz"],
-            working_directory=".",
-            timeout=10
-        )
-        assert result.success == False
-        assert "ModuleNotFoundError" in result.stderr or "No module" in result.stderr
-    
-    def test_timeout(self):
-        """Test command timeout."""
-        result = execute_command_sync(
-            command=["python", "-c", "import time; time.sleep(10)"],
-            working_directory=".",
-            timeout=1
-        )
-        assert result.success == False
-        assert "timed out" in result.stderr.lower()
-
-
 # =============================================================================
 # UNIT TESTS - State
 # =============================================================================
@@ -452,7 +417,7 @@ class TestCodeReviewNode:
 
 
 class TestRunCodeNode:
-    """Test run_code node."""
+    """Test run_code node (uses LLM + shell tools)."""
     
     @pytest.mark.asyncio
     async def test_run_code_passes(self, base_state, mock_agent, temp_workspace):
@@ -462,24 +427,30 @@ class TestRunCodeNode:
         base_state["workspace_path"] = str(temp_workspace)
         base_state["files_modified"] = ["src/calculator.py"]
         
-        mock_response = MagicMock()
-        mock_response.content = json.dumps({
+        # Mock _llm_with_tools to return shell execution result
+        mock_shell_output = json.dumps({
+            "status": "success",
+            "exit_code": 0,
+            "stdout": "2 passed",
+            "stderr": "",
+            "command": "npm test"
+        })
+        
+        # Mock analysis response
+        mock_analysis_response = MagicMock()
+        mock_analysis_response.content = json.dumps({
             "status": "PASS",
             "summary": "All tests passed",
             "file_to_fix": "",
             "send_to": "NoOne"
         })
         
-        with patch('app.agents.developer_v2.src.nodes._fast_llm') as mock_llm, \
-             patch('app.agents.developer_v2.src.nodes._build_system_prompt', return_value="System prompt"), \
-             patch('app.agents.developer_v2.tools.execute_command_async') as mock_exec:
+        with patch('app.agents.developer_v2.src.nodes._llm_with_tools', new_callable=AsyncMock) as mock_llm_tools, \
+             patch('app.agents.developer_v2.src.nodes._fast_llm') as mock_fast_llm, \
+             patch('app.agents.developer_v2.src.nodes._build_system_prompt', return_value="System prompt"):
             
-            mock_llm.ainvoke = AsyncMock(return_value=mock_response)
-            mock_exec.return_value = CommandResult(
-                stdout="2 passed",
-                stderr="",
-                returncode=0
-            )
+            mock_llm_tools.return_value = mock_shell_output
+            mock_fast_llm.ainvoke = AsyncMock(return_value=mock_analysis_response)
             
             result = await run_code(base_state, mock_agent)
             
@@ -493,24 +464,30 @@ class TestRunCodeNode:
         base_state["workspace_path"] = str(temp_workspace)
         base_state["files_modified"] = ["src/calculator.py"]
         
-        mock_response = MagicMock()
-        mock_response.content = json.dumps({
+        # Mock _llm_with_tools to return failed shell execution
+        mock_shell_output = json.dumps({
+            "status": "error",
+            "exit_code": 1,
+            "stdout": "",
+            "stderr": "AssertionError: expected 5 but got 4",
+            "command": "pytest"
+        })
+        
+        # Mock analysis response
+        mock_analysis_response = MagicMock()
+        mock_analysis_response.content = json.dumps({
             "status": "FAIL",
             "summary": "Test failed: assertion error",
             "file_to_fix": "src/calculator.py",
             "send_to": "Engineer"
         })
         
-        with patch('app.agents.developer_v2.src.nodes._fast_llm') as mock_llm, \
-             patch('app.agents.developer_v2.src.nodes._build_system_prompt', return_value="System prompt"), \
-             patch('app.agents.developer_v2.tools.execute_command_async') as mock_exec:
+        with patch('app.agents.developer_v2.src.nodes._llm_with_tools', new_callable=AsyncMock) as mock_llm_tools, \
+             patch('app.agents.developer_v2.src.nodes._fast_llm') as mock_fast_llm, \
+             patch('app.agents.developer_v2.src.nodes._build_system_prompt', return_value="System prompt"):
             
-            mock_llm.ainvoke = AsyncMock(return_value=mock_response)
-            mock_exec.return_value = CommandResult(
-                stdout="",
-                stderr="AssertionError: expected 5 but got 4",
-                returncode=1
-            )
+            mock_llm_tools.return_value = mock_shell_output
+            mock_fast_llm.ainvoke = AsyncMock(return_value=mock_analysis_response)
             
             result = await run_code(base_state, mock_agent)
             

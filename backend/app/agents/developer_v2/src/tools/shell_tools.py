@@ -95,7 +95,7 @@ def execute_shell(command: str, working_directory: str = ".", timeout: int = 60)
         if os.name == "nt":  # Windows
             shell_cmd = ["cmd", "/c", command]
             use_shell = False
-        else:  # Unix/Linux/Mac
+        else:  
             shell_cmd = command
             use_shell = True
         

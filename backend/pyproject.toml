@@ -3,7 +3,7 @@ name = "agents-service"
 version = "0.0.1"
 description = "Backend"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
     "fastapi[standard]>=0.115.0",
     "python-multipart>=0.0.17",
@@ -46,6 +46,8 @@ dependencies = [
     "langchain>=1.1.0",
     "langchain-core>=1.1.0",
     "langchain-tavily>=0.2.13",
+    "testcontainers[postgres]>=4.8.0",
+    "docker>=7.0.0",
 ]
 
 
@@ -104,4 +106,9 @@ reload-excludes = [
     "*.pyc",
     ".venv/*",
     "alembic/versions/*.pyc",
+]
+
+[tool.uv.workspace]
+members = [
+    "benchmark",
 ]

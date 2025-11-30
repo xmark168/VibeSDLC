@@ -1,4 +1,6 @@
-"""Developer V2 LangGraph Definition."""
+"""
+Developer V2 LangGraph Definition.
+"""
 
 from functools import partial
 from typing import Literal
@@ -8,16 +10,14 @@ from langgraph.graph import StateGraph, END
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.nodes import (
     router, setup_workspace, analyze, design, plan, implement, clarify, respond,
-    merge_to_main, cleanup_workspace, code_review, run_code, debug_error, summarize_code
+    merge_to_main, cleanup_workspace, code_review, run_code, debug_error, summarize_code,
+    lint_and_format
 )
 
 
 def route(state: DeveloperState) -> Literal["setup_workspace", "clarify"]:
-    """Route to appropriate node based on action.
-    
-    If action requires code modification (ANALYZE/DESIGN/PLAN/IMPLEMENT) -> setup_workspace first
-    If action is CLARIFY -> go directly (no workspace needed)
-    Otherwise -> setup_workspace (default to implementation flow)
+    """
+    Entry point routing: determine if workspace setup is needed.
     """
     action = state.get("action")
     
@@ -28,9 +28,8 @@ def route(state: DeveloperState) -> Literal["setup_workspace", "clarify"]:
 
 
 def route_after_workspace(state: DeveloperState) -> Literal["analyze", "design", "plan", "implement"]:
-    """Route to actual work node after workspace is setup.
-    
-    Flow: analyze -> design -> plan -> implement
+    """
+    Route to actual work node after workspace setup completes.
     """
     action = state.get("action")
     
@@ -45,7 +44,7 @@ def route_after_workspace(state: DeveloperState) -> Literal["analyze", "design",
 
 def route_after_analyze(state: DeveloperState) -> Literal["design", "plan"]:
     """
-    Route after analyze - skip design for low complexity tasks.
+    Route after analysis: skip design for simple tasks (optimization).
     """
     complexity = state.get("complexity", "medium")
     if complexity == "low":
@@ -55,7 +54,14 @@ def route_after_analyze(state: DeveloperState) -> Literal["design", "plan"]:
 
 
 def should_continue(state: DeveloperState) -> Literal["implement", "summarize_code", "cleanup_workspace"]:
-    """Check if implementation should continue or move to summarize (MetaGPT pattern)."""
+    """Implementation loop control: continue steps or move to quality gate.
+    
+    Routes:
+    - More steps remaining -> implement (continue loop)
+    - All steps done (VALIDATE) -> summarize_code (MetaGPT quality gate)
+    - Error occurred -> cleanup_workspace (abort)
+    - No steps defined -> cleanup_workspace (nothing to do)
+    """
     action = state.get("action")
     error = state.get("error")
     
@@ -81,14 +87,16 @@ def should_continue(state: DeveloperState) -> Literal["implement", "summarize_co
     return "summarize_code"
 
 
-def route_after_summarize(state: DeveloperState) -> Literal["code_review", "run_code", "implement"]:
-    """Route after summarize_code completes (MetaGPT IS_PASS pattern).
+def route_after_summarize(state: DeveloperState) -> Literal["lint_and_format", "run_code", "implement"]:
+    """First quality gate: IS_PASS check (MetaGPT SummarizeCode pattern).
     
-    - If IS_PASS=True -> code_review (or skip for simple tasks)
-    - If IS_PASS=False and under max_summarize -> implement (loop back with feedback)
-    - Otherwise -> code_review (proceed anyway after max attempts)
+    LLM evaluates if implementation meets requirements. Routes:
+    - IS_PASS=True -> lint_and_format -> code_review (or run_code for simple tasks)
+    - IS_PASS=False + retries available -> implement (retry with feedback)
+    - Max attempts reached -> lint_and_format (proceed anyway)
     
-    Speed optimization: Skip code_review for simple tasks (low complexity, < 3 files)
+    Optimization: Skip lint_and_format + code_review for low complexity + ≤3 files.
+    Max retries: 3 iterations (configurable via max_summarize).
     """
     action = state.get("action")
     is_pass = state.get("is_pass", True)
@@ -97,37 +105,40 @@ def route_after_summarize(state: DeveloperState) -> Literal["code_review", "run_
     
     # If action explicitly set
     if action == "CODE_REVIEW":
-        return "code_review"
+        return "lint_and_format"
     if action == "IMPLEMENT":
         return "implement"
     
     # IS_PASS check
     if is_pass:
-        # Speed optimization: Skip code_review for simple tasks
+        # Speed optimization: Skip lint + code_review for simple tasks
         complexity = state.get("complexity", "medium")
         files_created = state.get("files_created", [])
         files_modified = state.get("files_modified", [])
         total_files = len(files_created) + len(files_modified)
         
         if complexity == "low" and total_files <= 3:
-            return "run_code"  # Skip code_review, go directly to run tests
+            return "run_code"  # Skip lint + code_review, go directly to run tests
         
-        return "code_review"
+        return "lint_and_format"
     
     # Not pass - can we retry?
     if summarize_count < max_summarize:
         return "implement"  # Loop back with feedback
     
-    # Max attempts reached, proceed to code review anyway
-    return "code_review"
+    # Max attempts reached, proceed to lint + code review anyway
+    return "lint_and_format"
 
 
 def route_after_code_review(state: DeveloperState) -> Literal["run_code", "implement"]:
-    """Route after code review completes.
+    """Second quality gate: code review (LGTM/LBTM pattern).
     
-    - If passed (LGTM) -> run_code
-    - If not passed (LBTM) and can retry -> implement (fix code based on review feedback)
-    - Otherwise -> run_code (proceed anyway after max iterations)
+    LLM reviews all code changes in batch. Routes:
+    - LGTM (Looks Good To Me) -> run_code (proceed to tests)
+    - LBTM (Looks Bad To Me) + retries available -> implement (fix issues)
+    - Max iterations reached -> run_code (proceed anyway)
+    
+    Default iterations: k=1 (one review pass) for speed.
     """
     code_review_passed = state.get("code_review_passed", True)
     iteration = state.get("code_review_iteration", 0)
@@ -144,12 +155,18 @@ def route_after_code_review(state: DeveloperState) -> Literal["run_code", "imple
 
 
 def route_after_run_code(state: DeveloperState) -> Literal["merge_to_main", "debug_error", "cleanup_workspace", "implement"]:
-    """Route after running tests (MetaGPT React Loop pattern).
+    """Third quality gate: test execution with self-healing (MetaGPT React pattern).
     
-    - If tests passed -> merge_to_main
-    - If failed and can debug -> debug_error
-    - If react_mode and under max_react_loop -> implement (retry full cycle)
-    - Otherwise -> cleanup_workspace (end with failure)
+    Runs auto-detected tests (npm/pnpm/pytest). Routes:
+    - Tests PASS -> merge_to_main (success path)
+    - Tests FAIL + debug retries available -> debug_error (fix & retry)
+    - Debug exhausted + React mode -> implement (full cycle retry with feedback)
+    - All retries exhausted -> cleanup_workspace (abort)
+    
+    Safety limits:
+    - max_debug: 5 attempts (quick fixes)
+    - max_react_loop: 40 iterations (MetaGPT Engineer2 pattern)
+    - Hard limit: 50 total attempts (circuit breaker)
     """
     run_result = state.get("run_result", {})
     status = run_result.get("status", "PASS")
@@ -181,37 +198,110 @@ def route_after_run_code(state: DeveloperState) -> Literal["merge_to_main", "deb
 
 
 class DeveloperGraph:
-    """LangGraph-based Developer V2 for story processing.
+    """LangGraph-based Developer V2 workflow for automated story implementation.
     
-    Flow:
-    1. router - Decides if we need to modify code or just respond
-    2. setup_workspace - Creates git branch + CocoIndex + loads AGENTS.md
-    3. analyze - Analyze story requirements
-    4. design - System design with mermaid diagrams (MetaGPT Architect)
-    5. plan - Create implementation plan
-    6. implement - Code implementation
-    7. summarize_code - MetaGPT SummarizeCode + IS_PASS check (loop back if not pass)
-    8. code_review - LGTM/LBTM review with k iterations
-    9. run_code - Execute tests to verify
-    10. debug_error - Fix bugs if tests fail (up to max_debug attempts)
-    11. merge_to_main - Merge branch after tests pass
-    12. cleanup_workspace - Remove worktree and delete branch
-    13. respond/clarify - Direct response
+    Complete SDLC workflow with MetaGPT-inspired patterns:
+    
+    1. router - Entry routing (workspace needed or direct response)
+    2. setup_workspace - Git worktree + CocoIndex + project context
+    3. analyze - Requirements analysis (task type, complexity, affected files)
+    4. design - System architecture with mermaid (MetaGPT Architect, skipped for low complexity)
+    5. plan - Implementation plan (ordered steps with file paths)
+    6. implement - Code generation with ReAct tools (read, search, write)
+    7. summarize_code - Quality gate #1: IS_PASS check (MetaGPT SummarizeCode)
+    8. code_review - Quality gate #2: LGTM/LBTM batch review
+    9. run_code - Quality gate #3: Auto-detected test execution
+    10. debug_error - Self-healing bug fixes with LLM analysis
+    11. merge_to_main - Git merge to main branch (success path)
+    12. cleanup_workspace - Remove worktree & branch (cleanup)
+    13. respond - Final response to user
+    14. clarify - Ask questions when requirements unclear
+    
+    Key Features:
+    - Workspace isolation: Each story gets a separate git worktree
+    - Semantic search: CocoIndex for relevant code context (8-15 files)
+    - Project awareness: Loads AGENTS.md, detects framework (Next.js/React/Python)
+    - Quality gates: 3-stage validation (IS_PASS, code review, tests)
+    - Self-healing: Debug loop (5 attempts) + React mode (40 full cycles)
+    - Optimization: Skip design for low complexity, skip review for simple tasks
+    
+    Tools Used:
+    - workspace_tools: setup_git_worktree, commit_workspace_changes
+    - CocoIndex: get_related_code_indexed, search_codebase
+    - Execution: detect_test_command, execute_command_async, install_dependencies
+    - Context: get_agents_md, get_project_context, detect_project_structure, get_boilerplate_examples
+    
+    Utils:
+    - llm_utils: execute_llm_with_tools (ReAct pattern), get_langfuse_config
+    - prompt_utils: format_input_template, build_system_prompt, get_prompt
     
     Flow Diagram:
-    router → setup_workspace → analyze → design → plan → implement
-                                                            ↓
-                                                     summarize_code (IS_PASS check)
-                                                      ↓ (PASS)    ↑ (NOT PASS)
-                                                      code_review ─┘
-                                                      ↓ (LGTM)   ↑ (LBTM)
-                                                      run_code ──┘
-                                                      ↓ (PASS)   ↓ (FAIL)
-                                                 merge_to_main  debug_error
-                                                      ↓              ↓
-                                               cleanup_workspace  run_code
-                                                      ↓
-                                                    END
+                     ┌─────────┐
+                     │ router  │ (entry)
+                     └────┬────┘
+                          │
+                ┌─────────┴──────────┐
+                │                    │
+         ┌──────▼──────┐      ┌─────▼─────┐
+         │setup_workspace│      │  clarify  │ → END
+         └──────┬──────┘      └───────────┘
+                │
+         ┌──────▼──────┐
+         │   analyze   │
+         └──────┬──────┘
+                │
+         ┌──────▼──────┐
+         │   design    │ (skip if low complexity)
+         └──────┬──────┘
+                │
+         ┌──────▼──────┐
+         │    plan     │
+         └──────┬──────┘
+                │
+         ┌──────▼──────┐
+    ┌───│  implement  │◄───────┐
+    │   └──────┬──────┘        │
+    │          │                │
+    │   ┌──────▼───────┐       │
+    │   │summarize_code│       │ (IS_PASS retry)
+    │   └──────┬───────┘       │
+    │          │ (PASS)         │
+    │   ┌──────▼──────┐        │
+    │   │code_review  │        │ (LBTM retry)
+    │   └──────┬──────┘        │
+    │          │ (LGTM)         │
+    │   ┌──────▼──────┐        │
+    │   │  run_code   │◄───┐   │
+    │   └──────┬──────┘    │   │
+    │          │ (FAIL)     │   │
+    │   ┌──────▼──────┐    │   │
+    │   │debug_error  │────┘   │ (debug retry)
+    │   └─────────────┘        │
+    │                           │
+    └───────────────────────────┘ (React full retry)
+                │ (PASS)
+         ┌──────▼──────┐
+         │merge_to_main│
+         └──────┬──────┘
+                │
+      ┌─────────▼─────────┐
+      │cleanup_workspace  │
+      └─────────┬─────────┘
+                │
+         ┌──────▼──────┐
+         │   respond   │ → END
+         └─────────────┘
+    
+    MetaGPT Patterns:
+    - Architect: System design with mermaid diagrams before coding
+    - SummarizeCode: IS_PASS quality gate with retry feedback
+    - Engineer2: React mode for full cycle retries (max 40 iterations)
+    - RunCode: Auto test execution with dependency installation
+    
+    State Management:
+    - State: DeveloperState (TypedDict) passed between nodes
+    - Persistence: Each node returns updated state dict
+    - Routing: Conditional edges based on state values (action, complexity, results)
     """
     
     def __init__(self, agent=None):
@@ -226,6 +316,7 @@ class DeveloperGraph:
         g.add_node("plan", partial(plan, agent=agent))
         g.add_node("implement", partial(implement, agent=agent))
         g.add_node("summarize_code", partial(summarize_code, agent=agent))  # MetaGPT SummarizeCode + IS_PASS
+        g.add_node("lint_and_format", partial(lint_and_format, agent=agent))  # Auto-fix style before review
         g.add_node("code_review", partial(code_review, agent=agent))
         g.add_node("run_code", partial(run_code, agent=agent))
         g.add_node("debug_error", partial(debug_error, agent=agent))
@@ -252,8 +343,11 @@ class DeveloperGraph:
         # After implement: continue or go to summarize_code (MetaGPT pattern)
         g.add_conditional_edges("implement", should_continue)
         
-        # After summarize_code: IS_PASS check - loop back to implement or proceed to code_review
+        # After summarize_code: IS_PASS check - loop back to implement or proceed to lint_and_format
         g.add_conditional_edges("summarize_code", route_after_summarize)
+        
+        # After lint_and_format: always go to code_review
+        g.add_edge("lint_and_format", "code_review")
         
         # After code review: run tests or retry review
         g.add_conditional_edges("code_review", route_after_code_review)

@@ -5,7 +5,6 @@ Tests cover all tools in:
 - git_tools
 - shell_tools
 - execution_tools
-- code_context_tools
 - cocoindex_tools
 """
 
@@ -333,27 +332,6 @@ class TestExecutionTools:
         assert result.stdout == "Test output"
         assert result.returncode == 0
     
-    def test_detect_framework_from_package_json(self, temp_workspace):
-        """Test detecting framework from package.json."""
-        from app.agents.developer_v2.src.tools.execution_tools import detect_framework_from_package_json
-        
-        result = detect_framework_from_package_json(temp_workspace)
-        assert isinstance(result, dict)
-        assert "name" in result or result == {}
-    
-    def test_detect_framework_nextjs(self, temp_workspace):
-        """Test detecting Next.js framework."""
-        from app.agents.developer_v2.src.tools.execution_tools import detect_framework_from_package_json
-        
-        # Create Next.js package.json
-        (Path(temp_workspace) / "package.json").write_text(json.dumps({
-            "name": "nextjs-app",
-            "dependencies": {"next": "13.0.0", "react": "18.0.0"}
-        }))
-        
-        result = detect_framework_from_package_json(temp_workspace)
-        assert result.get("framework") == "nextjs" or "next" in str(result)
-    
     def test_detect_test_command(self, temp_workspace):
         """Test detecting test command."""
         from app.agents.developer_v2.src.tools.execution_tools import detect_test_command
@@ -370,24 +348,6 @@ class TestExecutionTools:
         
         result = detect_test_command(temp_workspace)
         assert any("pytest" in cmd for cmd in result) or len(result) >= 0
-    
-    def test_execute_command_sync(self, temp_workspace):
-        """Test synchronous command execution."""
-        from app.agents.developer_v2.src.tools.execution_tools import execute_command_sync
-        import platform
-        
-        # Use platform-appropriate command
-        cmd = "echo test" if platform.system() != "Windows" else "cmd /c echo test"
-        result = execute_command_sync(cmd, temp_workspace)
-        # On some systems echo may fail, just check it ran
-        assert result is not None
-    
-    def test_execute_command_sync_failure(self, temp_workspace):
-        """Test synchronous command execution failure."""
-        from app.agents.developer_v2.src.tools.execution_tools import execute_command_sync
-        
-        result = execute_command_sync("nonexistent_command_12345", temp_workspace)
-        assert not result.success or result.returncode != 0
     
     def test_find_test_file(self, temp_workspace):
         """Test finding test file for source file."""
@@ -408,64 +368,6 @@ class TestExecutionTools:
         result = await execute_command_async(cmd, temp_workspace)
         # On some systems echo may fail, just check it ran
         assert result is not None
-
-
-# =============================================================================
-# CODE CONTEXT TOOLS TESTS
-# =============================================================================
-
-class TestCodeContextTools:
-    """Tests for code_context_tools module."""
-    
-    def test_get_all_workspace_files(self, temp_workspace):
-        """Test getting all workspace files."""
-        from app.agents.developer_v2.src.tools.code_context_tools import get_all_workspace_files
-        
-        result = get_all_workspace_files(temp_workspace)
-        assert isinstance(result, str)
-        assert "app.py" in result or len(result) > 0
-    
-    def test_get_related_code_context(self, temp_workspace):
-        """Test getting related code context."""
-        from app.agents.developer_v2.src.tools.code_context_tools import get_related_code_context
-        
-        result = get_related_code_context(
-            temp_workspace,
-            ["src/app.py", "src/utils.py"],
-            "app.py"
-        )
-        assert isinstance(result, str)
-    
-    def test_get_legacy_code(self, temp_workspace):
-        """Test getting legacy code."""
-        from app.agents.developer_v2.src.tools.code_context_tools import get_legacy_code
-        
-        result = get_legacy_code(temp_workspace)
-        assert isinstance(result, str)
-    
-    def test_get_legacy_code_with_exclusions(self, temp_workspace):
-        """Test getting legacy code with exclusions."""
-        from app.agents.developer_v2.src.tools.code_context_tools import get_legacy_code
-        
-        result = get_legacy_code(temp_workspace, exclude_files=["src/app.py"])
-        assert isinstance(result, str)
-        # app.py should be excluded
-    
-    def test_format_code_for_context(self):
-        """Test formatting code for context."""
-        from app.agents.developer_v2.src.tools.code_context_tools import format_code_for_context
-        
-        result = format_code_for_context("test.py", "def test():\n    pass", is_target=False)
-        assert "test.py" in result
-        assert "def test():" in result
-    
-    def test_format_code_for_context_target(self):
-        """Test formatting target file for context."""
-        from app.agents.developer_v2.src.tools.code_context_tools import format_code_for_context
-        
-        result = format_code_for_context("target.py", "# Target file", is_target=True)
-        assert "target.py" in result
-        assert "rewrite" in result.lower() or "target" in result.lower()
 
 
 # =============================================================================
@@ -740,9 +642,6 @@ class TestToolsIntegration:
         from app.agents.developer_v2.src.tools.cocoindex_tools import (
             detect_project_structure, get_project_context, get_markdown_code_block_type
         )
-        from app.agents.developer_v2.src.tools.code_context_tools import (
-            get_all_workspace_files, get_related_code_context
-        )
         
         # Detect structure
         structure = detect_project_structure(temp_workspace)
@@ -751,10 +650,6 @@ class TestToolsIntegration:
         # Get context
         context = get_project_context(temp_workspace)
         assert isinstance(context, str)
-        
-        # Get all files
-        files = get_all_workspace_files(temp_workspace)
-        assert isinstance(files, str)
         
         # Get code block type
         assert get_markdown_code_block_type("test.py") == "python"

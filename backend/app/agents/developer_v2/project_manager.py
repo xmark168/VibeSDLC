@@ -1,4 +1,3 @@
-import asyncio
 import os
 
 import cocoindex
@@ -7,7 +6,7 @@ from cocoindex.functions import DetectProgrammingLanguage, SplitRecursively
 from pgvector.psycopg import register_vector
 
 from pathlib import Path
-from app.agents.developer.flows import code_to_embedding, connection_pool
+from app.agents.developer_v2.flows import code_to_embedding, connection_pool
 
 
 def create_structure_document(project_root):
@@ -131,29 +130,9 @@ class AdvancedProjectManager:
         self.flows = {}  # For project-level indexing
         self.task_flows = {}  # For task-level indexing
 
-    def _is_in_event_loop(self) -> bool:
-        """Check if we're inside an async event loop."""
-        try:
-            asyncio.get_running_loop()
-            return True
-        except RuntimeError:
-            return False
-
     def register_project(self, project_id: str, project_path: str):
-        """Register and index a new project.
-        
-        Auto-detects async context and uses appropriate method.
-        If in event loop, returns coroutine that caller must await.
-        """
-        if self._is_in_event_loop():
-            # Return coroutine - caller must await to avoid deadlock
-            # DO NOT use run_coroutine_threadsafe + future.result() - causes deadlock
-            return self.register_project_async(project_id, project_path)
-        
-        return self._register_project_sync(project_id, project_path)
-
-    def _register_project_sync(self, project_id: str, project_path: str):
-        """Sync implementation of register_project."""
+        """Register and index a new project."""
+        # Sanitize the project_id to create a valid flow name
         sanitized_project_id = "".join(c if c.isalnum() else "_" for c in project_id)
 
         if sanitized_project_id in self.flows:
@@ -174,59 +153,21 @@ class AdvancedProjectManager:
                 flow.setup()
                 print("✅ Setup complete. Retrying indexing...")
                 stats = flow.update()
-                print(f"✅ Indexing completed for '{project_id}' after setup: {stats}")
-            else:
-                print(f"❌ An unexpected error during indexing for '{project_id}':")
-                raise e
-
-    async def register_project_async(self, project_id: str, project_path: str):
-        """Register and index a new project (async version - no warnings)."""
-        sanitized_project_id = "".join(c if c.isalnum() else "_" for c in project_id)
-
-        if sanitized_project_id in self.flows:
-            return
-
-        flow = create_project_flow(project_id, project_path)
-        self.flows[sanitized_project_id] = flow
-
-        print(f"Attempting to index project '{project_id}' (sanitized as '{sanitized_project_id}')...")
-        try:
-            stats = await flow.update_async()
-            print(f"✅ Indexing completed for '{project_id}': {stats}")
-        except Exception as e:
-            if "not up-to-date" in str(e):
-                print(
-                    f"🔄 Database setup required for flow '{project_id}'. Running setup..."
-                )
-                await flow.setup_async()
-                print("✅ Setup complete. Retrying indexing...")
-                stats = await flow.update_async()
                 print(f"✅ Indexing completed for '{project_id}' after setup: {stats}")
             else:
                 print(f"❌ An unexpected error during indexing for '{project_id}':")
                 raise e
 
     def register_task(self, project_id: str, task_id: str, task_path: str):
-        """Register and index a specific task workspace.
-        
-        Auto-detects async context and uses appropriate method.
-        If in event loop, returns coroutine that caller must await.
-        """
-        if self._is_in_event_loop():
-            # Return coroutine - caller must await to avoid deadlock
-            # DO NOT use run_coroutine_threadsafe + future.result() - causes deadlock
-            return self.register_task_async(project_id, task_id, task_path)
-        
-        return self._register_task_sync(project_id, task_id, task_path)
-
-    def _register_task_sync(self, project_id: str, task_id: str, task_path: str):
-        """Sync implementation of register_task."""
+        """Register and index a specific task workspace."""
+        # task_id is already unique (UUID), no need to include project_id
         task_identifier = task_id
         sanitized_task_id = "".join(c if c.isalnum() else "_" for c in task_identifier)
 
         if sanitized_task_id in self.task_flows:
             return
 
+        # Create a flow specific to this task
         flow = create_project_flow(task_identifier, task_path)
         self.task_flows[sanitized_task_id] = flow
 
@@ -242,34 +183,6 @@ class AdvancedProjectManager:
                 flow.setup()
                 print("✅ Setup complete. Retrying indexing...")
                 stats = flow.update()
-                print(f"✅ Indexing completed for task '{task_identifier}' after setup: {stats}")
-            else:
-                print(f"❌ An unexpected error during indexing for task '{task_identifier}':")
-                raise e
-
-    async def register_task_async(self, project_id: str, task_id: str, task_path: str):
-        """Register and index a task workspace (async version - no warnings)."""
-        task_identifier = task_id
-        sanitized_task_id = "".join(c if c.isalnum() else "_" for c in task_identifier)
-
-        if sanitized_task_id in self.task_flows:
-            return
-
-        flow = create_project_flow(task_identifier, task_path)
-        self.task_flows[sanitized_task_id] = flow
-
-        print(f"Attempting to index task '{task_identifier}' (sanitized as '{sanitized_task_id}')...")
-        try:
-            stats = await flow.update_async()
-            print(f"✅ Indexing completed for task '{task_identifier}': {stats}")
-        except Exception as e:
-            if "not up-to-date" in str(e):
-                print(
-                    f"🔄 Database setup required for task '{task_identifier}'. Running setup..."
-                )
-                await flow.setup_async()
-                print("✅ Setup complete. Retrying indexing...")
-                stats = await flow.update_async()
                 print(f"✅ Indexing completed for task '{task_identifier}' after setup: {stats}")
             else:
                 print(f"❌ An unexpected error during indexing for task '{task_identifier}':")

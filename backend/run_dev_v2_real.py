@@ -3,14 +3,34 @@
 This script sends a real task to DeveloperV2 and lets it process
 with actual LLM calls.
 
+Features:
+- Interactive mode: After each run, waits for more commands
+- Container persistence: Reuses containers between runs
+- Graceful cleanup: Ctrl+C cleans up containers before exit
+
 Usage:
     cd backend
     python run_dev_v2_real.py
+
+Commands (after first run):
+    run     - Run another story
+    test    - Run tests in container
+    exec    - Execute command in container
+    logs    - Show container logs
+    status  - Show container status
+    clear   - Remove containers and exit
+    exit    - Stop containers and exit (can resume later)
 """
 
+# Load environment variables FIRST
+from dotenv import load_dotenv
+load_dotenv()
+
 import asyncio
+import atexit
 import json
 import logging
+import signal
 import sys
 import os
 import shutil
@@ -21,18 +41,39 @@ from datetime import datetime
 # Fix Windows console encoding
 if sys.platform == 'win32':
     os.system('chcp 65001 >nul 2>&1')
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 
-# Setup logging
+# Setup logging - prevent duplicates
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    force=True  # Reset existing handlers
 )
 logger = logging.getLogger(__name__)
+logger.propagate = False  # Prevent duplicate logs
+
+# Create single handler
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
+# Silence noisy loggers
+for noisy in ["httpx", "opentelemetry", "langfuse", "httpcore", "urllib3", "git"]:
+    logging.getLogger(noisy).setLevel(logging.ERROR)
+
+# Enable developer_v2 logs (show node progress)
+dev_logger = logging.getLogger("app.agents.developer_v2")
+dev_logger.setLevel(logging.INFO)
+dev_logger.propagate = True  # Ensure logs propagate to root
+
+# Set root logger to show all INFO
+logging.getLogger().setLevel(logging.INFO)
 
 # Add backend to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -127,16 +168,20 @@ def detect_template_type(story: dict) -> str:
 class SimpleDeveloperRunner:
     """Simple runner for DeveloperV2 without full agent infrastructure.
     
+    This runner provides the `_setup_workspace` method that the graph's
+    `setup_workspace` node expects. It handles:
+    - Git init and branch creation
+    - CocoIndex indexing for semantic search
+    
     Note: message_user calls in nodes.py are disabled for this mode.
     """
     
     def __init__(self, workspace_path: str = None, template: str = None):
         self.name = "DeveloperV2"
         self.role_type = "developer"
-        self.project_id = uuid4()
+        self.project_id = str(uuid4())
         self.template = template
         self.template_applied = False
-        self.git_initialized = False
         
         # Create workspace if not provided
         if workspace_path:
@@ -144,7 +189,7 @@ class SimpleDeveloperRunner:
         else:
             self.workspace_path = Path(__file__).parent / "projects" / f"project_{self.project_id}"
         
-        # Apply boilerplate template if specified
+        # Apply boilerplate template if specified (workspace_ready stays False)
         if template:
             self.template_applied = copy_boilerplate(template, self.workspace_path)
             if self.template_applied:
@@ -152,85 +197,276 @@ class SimpleDeveloperRunner:
         else:
             self.workspace_path.mkdir(parents=True, exist_ok=True)
         
-        # Initialize git repository in workspace
-        self._init_git()
-        
-        # Initialize graph (agent=self but message_user is no-op)
+        # Initialize graph (agent=self, setup_workspace node will call _setup_workspace)
         self.graph = DeveloperGraph(agent=self)
         
         logger.info(f"[{self.name}] Initialized with workspace: {self.workspace_path}")
+        logger.info(f"[{self.name}] Workspace ready: False (will be setup by graph)")
     
-    def _init_git(self):
-        """Initialize git repository in workspace."""
+    def _setup_workspace(self, story_id: str) -> dict:
+        """Setup workspace for the graph's setup_workspace node.
+        
+        This method is called by the setup_workspace node in graph.py.
+        It handles:
+        1. Git init (if not already)
+        2. Create and checkout feature branch
+        3. Initial commit of boilerplate (if any)
+        
+        Args:
+            story_id: Story ID for branch naming
+            
+        Returns:
+            dict with workspace_path, branch_name, main_workspace, workspace_ready
+        """
+        short_id = story_id.split('-')[-1][:8] if '-' in story_id else story_id[:8]
+        branch_name = f"story_{short_id}"
+        
+        workspace_ready = False
+        
         try:
             from app.agents.developer.tools.git_python_tool import GitPythonTool
             
             git_tool = GitPythonTool(root_dir=str(self.workspace_path))
-            result = git_tool._run("init")
-            logger.info(f"[{self.name}] Git init: {result}")
             
-            # Check if git is ready
+            # 1. Initialize git if needed
             git_dir = self.workspace_path / ".git"
-            self.git_initialized = git_dir.exists()
+            if not git_dir.exists():
+                result = git_tool._run("init")
+                logger.info(f"[{self.name}] Git init: {result}")
             
-            if self.git_initialized:
-                logger.info(f"[{self.name}] Git repository initialized successfully")
-            else:
-                logger.warning(f"[{self.name}] Git initialization may have failed")
-                
+            # 2. Initial commit if there are files (from boilerplate)
+            status = git_tool._run("status")
+            if "nothing to commit" not in status.lower() and "untracked files" in status.lower():
+                # Stage all files
+                commit_result = git_tool._run("commit", message="Initial boilerplate", files=["."])
+                logger.info(f"[{self.name}] Initial commit: {commit_result}")
+            
+            # 3. Create and checkout feature branch
+            create_result = git_tool._run("create_branch", branch_name=branch_name)
+            logger.info(f"[{self.name}] Create branch '{branch_name}': {create_result}")
+            
+            checkout_result = git_tool._run("checkout_branch", branch_name=branch_name)
+            logger.info(f"[{self.name}] Checkout branch '{branch_name}': {checkout_result}")
+            
+            workspace_ready = True
+            logger.info(f"[{self.name}] Workspace setup complete: branch={branch_name}")
+            
         except Exception as e:
-            logger.warning(f"[{self.name}] Git init failed: {e}")
-            self.git_initialized = False
+            logger.warning(f"[{self.name}] Git setup failed: {e}")
+            workspace_ready = False
+        
+        return {
+            "workspace_path": str(self.workspace_path),
+            "branch_name": branch_name,
+            "main_workspace": str(self.workspace_path),
+            "workspace_ready": workspace_ready,
+        }
     
     async def message_user(self, msg_type: str, message: str):
         """No-op - message_user calls in nodes.py are disabled."""
         pass  # Disabled for local runner mode
     
+    def _get_project_config(self) -> dict:
+        """Get project config based on template type.
+        
+        Returns:
+            Always uses services array format:
+            {"tech_stack": "...", "services": [{...}, {...}]}
+        """
+        # Default config for NextJS boilerplate (single service)
+        if self.template in ["nextjs", "react"]:
+            return {
+                "tech_stack": "nextjs",
+                "services": [
+                    {
+                        "name": "app",
+                        "path": ".",
+                        # Runtime & Framework
+                        "runtime": "bun",
+                        "framework": "nextjs",
+                        # ORM & Database
+                        "orm": "prisma",
+                        "db_type": "postgresql",
+                        # Validation & Auth
+                        "validation": "zod",
+                        "auth": "next-auth",
+                        # Commands
+                        "install_cmd": "bun install",
+                        "test_cmd": "bun test",
+                        "run_cmd": "bun dev",
+                        "build_cmd": "bun run build",
+                        "lint_cmd": "bun run lint",
+                        # Auto-fix commands (run before code review)
+                        "lint_fix_cmd": "bunx eslint --fix . --ext .ts,.tsx,.js,.jsx",
+                        "format_cmd": "bunx prettier --write .",
+                        # DB setup
+                        "needs_db": True,
+                        "db_cmds": ["bunx prisma generate", "bunx prisma db push --accept-data-loss"],
+                    }
+                ]
+            }
+        
+        # Python projects (single service)
+        if self.template == "python":
+            return {
+                "tech_stack": "python",
+                "services": [
+                    {
+                        "name": "app",
+                        "path": ".",
+                        # Runtime & Framework
+                        "runtime": "python",
+                        "framework": "fastapi",
+                        # ORM & Database
+                        "orm": "sqlalchemy",
+                        "db_type": "postgresql",
+                        # Validation
+                        "validation": "pydantic",
+                        # Commands
+                        "install_cmd": "pip install -e .",
+                        "test_cmd": "pytest -v",
+                        "run_cmd": "uvicorn app.main:app --reload",
+                        "build_cmd": "",
+                        "lint_cmd": "ruff check .",
+                        # Auto-fix commands (run before code review)
+                        "lint_fix_cmd": "ruff check --fix .",
+                        "format_cmd": "ruff format .",
+                        # DB setup
+                        "needs_db": False,
+                        "db_cmds": [],
+                    }
+                ]
+            }
+        
+        # Fullstack monorepo (multi-service)
+        if self.template == "fullstack":
+            return {
+                "tech_stack": "fullstack",
+                "services": [
+                    {
+                        "name": "frontend",
+                        "path": "frontend",
+                        # Runtime & Framework
+                        "runtime": "bun",
+                        "framework": "nextjs",
+                        # Validation & Auth
+                        "validation": "zod",
+                        "auth": "next-auth",
+                        # Commands
+                        "install_cmd": "bun install",
+                        "test_cmd": "bun test",
+                        "run_cmd": "bun dev",
+                        "build_cmd": "bun run build",
+                        "lint_cmd": "bun run lint",
+                        # Auto-fix commands
+                        "lint_fix_cmd": "bunx eslint --fix . --ext .ts,.tsx,.js,.jsx",
+                        "format_cmd": "bunx prettier --write .",
+                        # No DB for frontend
+                        "needs_db": False,
+                        "db_cmds": [],
+                    },
+                    {
+                        "name": "backend",
+                        "path": "backend",
+                        # Runtime & Framework
+                        "runtime": "python",
+                        "framework": "fastapi",
+                        # ORM & Database
+                        "orm": "sqlalchemy",
+                        "db_type": "postgresql",
+                        # Validation
+                        "validation": "pydantic",
+                        # Commands
+                        "install_cmd": "pip install -e .",
+                        "test_cmd": "pytest -v",
+                        "run_cmd": "uvicorn app.main:app --reload",
+                        "build_cmd": "",
+                        "lint_cmd": "ruff check .",
+                        # Auto-fix commands
+                        "lint_fix_cmd": "ruff check --fix .",
+                        "format_cmd": "ruff format .",
+                        # DB setup
+                        "needs_db": True,
+                        "db_cmds": ["alembic upgrade head"],
+                    },
+                ]
+            }
+        
+        # Default: auto-detect (empty services triggers fallback)
+        return {"services": []}
+    
     async def run_story(self, story: dict) -> dict:
         """Run a story through the graph."""
         
-        # Setup Langfuse tracing
+        # Setup Langfuse tracing (controlled by ENABLE_LANGFUSE env var)
         langfuse_handler = None
         langfuse_span = None
         langfuse_ctx = None
-        try:
-            from langfuse import get_client
-            from langfuse.langchain import CallbackHandler
-            langfuse = get_client()
-            # Create parent span for entire graph execution
-            langfuse_ctx = langfuse.start_as_current_observation(
-                as_type="span",
-                name="developer_v2_graph"
-            )
-            langfuse_span = langfuse_ctx.__enter__()
-            langfuse_span.update_trace(
-                user_id=str(uuid4()),
-                session_id=str(self.project_id),
-                input={"story": story.get("title", "")[:200]},
-                metadata={"agent": self.name, "template": self.template}
-            )
-            langfuse_handler = CallbackHandler()
-            logger.info(f"[{self.name}] Langfuse tracing enabled")
-        except Exception as e:
-            logger.debug(f"Langfuse setup: {e}")
+        enable_langfuse = os.getenv("ENABLE_LANGFUSE", "false").lower() == "true"
+        
+        if enable_langfuse:
+            try:
+                from langfuse import get_client
+                from langfuse.langchain import CallbackHandler
+                
+                # Create parent span for entire graph execution (Team Leader pattern)
+                langfuse = get_client()
+                langfuse_ctx = langfuse.start_as_current_observation(
+                    as_type="span",
+                    name="developer_v2_story_execution"
+                )
+                
+                # Enter context and get span object
+                langfuse_span = langfuse_ctx.__enter__()
+                
+                # Update trace with metadata
+                langfuse_span.update_trace(
+                    user_id=str(uuid4()),
+                    session_id=str(self.project_id),
+                    input={
+                        "story_id": story.get("story_id", "unknown"),
+                        "title": story.get("title", "Untitled"),
+                        "content": story.get("content", "")[:200]
+                    },
+                    tags=["developer_v2", "story_execution", self.template or "no_template"],
+                    metadata={
+                        "agent": self.name,
+                        "template": self.template,
+                        "template_applied": self.template_applied
+                    }
+                )
+                
+                # Handler inherits trace context automatically
+                langfuse_handler = CallbackHandler()
+                
+                logger.info(f"[{self.name}] Langfuse tracing enabled (session={self.project_id})")
+            except Exception as e:
+                logger.error(f"Langfuse setup error: {e}")
+        else:
+            logger.info(f"[{self.name}] Langfuse disabled (set ENABLE_LANGFUSE=true to enable)")
         
         # Build initial state
+        # Note: workspace_path is provided but workspace_ready=False
+        # The setup_workspace node will call agent._setup_workspace() to:
+        # - Initialize git
+        # - Create and checkout feature branch
+        # - Index codebase with CocoIndex
         initial_state = {
             "story_id": story.get("story_id", str(uuid4())),
             "story_title": story.get("title", "Untitled"),
             "story_content": story.get("content", ""),
             "acceptance_criteria": story.get("acceptance_criteria", []),
-            "project_id": str(self.project_id),
+            "project_id": self.project_id,
             "task_id": str(uuid4()),
             "user_id": str(uuid4()),
             "langfuse_handler": langfuse_handler,
             
-            # Workspace
-            "workspace_path": str(self.workspace_path),
-            "branch_name": f"story_{story.get('story_id', 'main')[:8]}",
+            # Workspace - setup_workspace node will handle git/branch/indexing
+            "workspace_path": str(self.workspace_path),  # Pre-set path (may have boilerplate)
+            "branch_name": None,  # Will be set by setup_workspace node
             "main_workspace": str(self.workspace_path),
-            "workspace_ready": self.git_initialized,  # Only True if git init succeeded
-            "index_ready": False,
+            "workspace_ready": False,  # Will be set to True by setup_workspace node
+            "index_ready": False,  # Will be set to True after CocoIndex indexing
             "merged": False,
             
             # Workflow state
@@ -290,16 +526,21 @@ class SimpleDeveloperRunner:
             
             # Project context
             "project_context": None,
-            "project_structure": {},
             "agents_md": None,
             "related_code_context": "",
             "research_context": "",
+            
+            # Project config (tech stack, commands)
+            "project_config": self._get_project_config(),
         }
         
         logger.info(f"[{self.name}] Starting story: {story.get('title', 'Untitled')}")
         print("\n" + "="*60)
         print(f"STARTING: {story.get('title', 'Untitled')}")
         print("="*60)
+        print("\n[*] Running graph... (this may take several minutes)")
+        print("[*] Progress will be shown below:\n")
+        sys.stdout.flush()
         
         try:
             # Run graph with high recursion limit for multi-step workflows
@@ -307,29 +548,40 @@ class SimpleDeveloperRunner:
                 initial_state,
                 config={"recursion_limit": 100}
             )
+            print("\n[*] Graph completed!")
             
-            # Update Langfuse trace output
+            # Update trace output and close span (Team Leader pattern)
             if langfuse_span and langfuse_ctx:
                 try:
                     langfuse_span.update_trace(output={
                         "action": final_state.get("action"),
-                        "files_created": final_state.get("files_created", []),
+                        "task_type": final_state.get("task_type"),
+                        "complexity": final_state.get("complexity"),
+                        "files_created": len(final_state.get("files_created", [])),
+                        "files_modified": len(final_state.get("files_modified", [])),
+                        "code_review_passed": final_state.get("code_review_passed"),
                         "run_status": final_state.get("run_status"),
+                        "debug_count": final_state.get("debug_count", 0),
+                        "react_loop_count": final_state.get("react_loop_count", 0)
                     })
                     langfuse_ctx.__exit__(None, None, None)
-                except Exception:
-                    pass
+                    logger.info(f"[{self.name}] Langfuse span closed successfully")
+                except Exception as e:
+                    logger.error(f"Langfuse span close error: {e}")
             
             return final_state
             
         except Exception as e:
             logger.error(f"[{self.name}] Graph error: {e}", exc_info=True)
-            # Cleanup Langfuse on error
+            
+            # Cleanup langfuse span on error (Team Leader pattern)
             if langfuse_ctx:
                 try:
                     langfuse_ctx.__exit__(type(e), e, e.__traceback__)
-                except Exception:
-                    pass
+                    logger.info(f"[{self.name}] Langfuse span closed (on error)")
+                except Exception as cleanup_err:
+                    logger.error(f"Langfuse cleanup error: {cleanup_err}")
+            
             raise
 
 
@@ -479,15 +731,191 @@ Người dùng có thể sử dụng thanh tìm kiếm để nhập tên sách, 
 
 
 # =============================================================================
-# MAIN
+# GLOBAL STATE FOR CLEANUP
 # =============================================================================
 
-async def main():
-    """Main entry point."""
+_active_branch = None
+_active_workspace = None
+_should_cleanup = False
+
+
+def cleanup_containers(remove: bool = False):
+    """Cleanup containers on exit."""
+    global _active_branch
     
+    if not _active_branch:
+        return
+    
+    try:
+        from app.agents.developer_v2.src.tools.container_tools import dev_container_manager
+        
+        if remove:
+            print(f"\n[*] Removing containers for {_active_branch}...")
+            dev_container_manager.remove(_active_branch)
+            print("[*] Containers removed.")
+        else:
+            print(f"\n[*] Stopping containers for {_active_branch}...")
+            dev_container_manager.stop(_active_branch)
+            print("[*] Containers stopped (can resume later).")
+    except Exception as e:
+        logger.debug(f"Cleanup error: {e}")
+
+
+def signal_handler(signum, frame):
+    """Handle Ctrl+C gracefully."""
+    global _should_cleanup
+    
+    print("\n\n[!] Interrupted! Cleaning up...")
+    _should_cleanup = True
+    cleanup_containers(remove=True)
+    sys.exit(0)
+
+
+# Register signal handler
+signal.signal(signal.SIGINT, signal_handler)
+
+
+# =============================================================================
+# INTERACTIVE COMMANDS
+# =============================================================================
+
+def print_help():
+    """Print available commands."""
+    print("\n" + "-"*40)
+    print("COMMANDS:")
+    print("  run     - Run another story")
+    print("  test    - Run tests in container")
+    print("  exec    - Execute command in container")
+    print("  logs    - Show container logs")
+    print("  status  - Show container status")
+    print("  clear   - Remove containers and exit")
+    print("  exit    - Stop containers and exit (can resume later)")
+    print("  help    - Show this help")
+    print("-"*40)
+
+
+async def handle_command(cmd: str, branch_name: str, workspace_path: Path) -> bool:
+    """Handle interactive command.
+    
+    Returns:
+        True to continue, False to exit
+    """
+    from app.agents.developer_v2.src.tools.container_tools import dev_container_manager
+    
+    cmd = cmd.strip().lower()
+    
+    if cmd == "help" or cmd == "?":
+        print_help()
+        return True
+    
+    elif cmd == "exit" or cmd == "quit" or cmd == "q":
+        cleanup_containers(remove=False)
+        return False
+    
+    elif cmd == "clear":
+        cleanup_containers(remove=True)
+        return False
+    
+    elif cmd == "status":
+        try:
+            status = dev_container_manager.status(branch_name)
+            print("\n" + json.dumps(status, indent=2))
+        except Exception as e:
+            print(f"Error: {e}")
+        return True
+    
+    elif cmd == "logs":
+        try:
+            logs = dev_container_manager.get_logs(branch_name, tail=50)
+            print("\n" + "-"*40)
+            print("CONTAINER LOGS (last 50 lines):")
+            print("-"*40)
+            print(logs)
+        except Exception as e:
+            print(f"Error: {e}")
+        return True
+    
+    elif cmd == "test":
+        try:
+            print("\n[*] Running tests in container...")
+            # Detect test command
+            from app.agents.developer_v2.src.nodes import _detect_project_type
+            project_info = _detect_project_type(str(workspace_path))
+            test_cmd = project_info.get("test_cmd", "npm test")
+            
+            print(f"[*] Executing: {test_cmd}")
+            result = dev_container_manager.exec(branch_name, test_cmd)
+            print("\n" + "-"*40)
+            print(f"Exit code: {result.get('exit_code')}")
+            print("-"*40)
+            print(result.get("output", ""))
+        except Exception as e:
+            print(f"Error: {e}")
+        return True
+    
+    elif cmd.startswith("exec "):
+        try:
+            shell_cmd = cmd[5:].strip()
+            if not shell_cmd:
+                print("Usage: exec <command>")
+                return True
+            
+            print(f"\n[*] Executing: {shell_cmd}")
+            result = dev_container_manager.exec(branch_name, shell_cmd)
+            print("\n" + "-"*40)
+            print(f"Exit code: {result.get('exit_code')}")
+            print("-"*40)
+            print(result.get("output", ""))
+        except Exception as e:
+            print(f"Error: {e}")
+        return True
+    
+    elif cmd == "run":
+        return "run"  # Special signal to run another story
+    
+    else:
+        print(f"Unknown command: {cmd}")
+        print("Type 'help' for available commands")
+        return True
+
+
+def print_result(result: dict, workspace_path: Path):
+    """Print story execution result."""
     print("\n" + "="*60)
-    print("DEVELOPER V2 - REAL TASK RUNNER")
+    print("RESULT")
     print("="*60)
+    print(f"Action: {result.get('action')}")
+    print(f"Task Type: {result.get('task_type')}")
+    print(f"Complexity: {result.get('complexity')}")
+    print(f"Files Created: {len(result.get('files_created', []))}")
+    print(f"Files Modified: {len(result.get('files_modified', []))}")
+    print(f"Code Review: {'PASSED' if result.get('code_review_passed') else 'PENDING'}")
+    print(f"Tests: {result.get('run_status', 'N/A')}")
+    print(f"Debug Iterations: {result.get('debug_count', 0)}")
+    print(f"React Loops: {result.get('react_loop_count', 0)}")
+    
+    # Show created files
+    files_created = result.get('files_created', [])
+    if files_created:
+        print("\n" + "-"*40)
+        print("FILES CREATED:")
+        for f in files_created[:10]:
+            print(f"  - {f}")
+            file_path = workspace_path / f
+            if file_path.exists():
+                size = file_path.stat().st_size
+                print(f"    ({size} bytes)")
+        if len(files_created) > 10:
+            print(f"  ... and {len(files_created) - 10} more")
+    
+    # Show workspace location
+    print("\n" + "-"*40)
+    print(f"WORKSPACE: {workspace_path}")
+    print(f"CONTAINER: {result.get('container_name', 'N/A')}")
+
+
+def select_story() -> dict:
+    """Interactive story selection."""
     print("\nSelect a story to run:")
     print("1. Textbook Search (React) [DEFAULT]")
     print("2. Simple Calculator (Python)")
@@ -502,18 +930,18 @@ async def main():
         choice = "1"
     
     if choice == "1":
-        story = TEXTBOOK_SEARCH_STORY
+        return TEXTBOOK_SEARCH_STORY
     elif choice == "2":
-        story = SIMPLE_CALCULATOR_STORY
+        return SIMPLE_CALCULATOR_STORY
     elif choice == "3":
-        story = LOGIN_FORM_STORY
+        return LOGIN_FORM_STORY
     elif choice == "4":
-        story = LEARNING_WEBSITE_STORY
+        return LEARNING_WEBSITE_STORY
     elif choice == "5":
         print("\nEnter your story:")
         title = input("Title: ").strip()
         content = input("Description: ").strip()
-        story = {
+        return {
             "story_id": str(uuid4())[:8],
             "title": title,
             "content": content,
@@ -521,7 +949,24 @@ async def main():
         }
     else:
         print("Invalid choice, using Textbook Search")
-        story = TEXTBOOK_SEARCH_STORY
+        return TEXTBOOK_SEARCH_STORY
+
+
+# =============================================================================
+# MAIN
+# =============================================================================
+
+async def main():
+    """Main entry point with interactive loop."""
+    global _active_branch, _active_workspace
+    
+    print("\n" + "="*60)
+    print("DEVELOPER V2 - INTERACTIVE RUNNER")
+    print("="*60)
+    print("Press Ctrl+C at any time to cleanup and exit")
+    
+    # Select first story
+    story = select_story()
     
     print(f"\nSelected: {story['title']}")
     print("-"*40)
@@ -545,65 +990,65 @@ async def main():
         print(f"Template files: {file_count}")
         print("-"*40)
     
-    # Run story
+    # Run first story
     try:
         result = await runner.run_story(story)
         
-        print("\n" + "="*60)
-        print("RESULT")
-        print("="*60)
-        print(f"Action: {result.get('action')}")
-        print(f"Task Type: {result.get('task_type')}")
-        print(f"Complexity: {result.get('complexity')}")
-        print(f"Files Created: {len(result.get('files_created', []))}")
-        print(f"Files Modified: {len(result.get('files_modified', []))}")
-        print(f"Code Review: {'PASSED' if result.get('code_review_passed') else 'PENDING'}")
-        print(f"Tests: {result.get('run_status', 'N/A')}")
-        print(f"Debug Iterations: {result.get('debug_count', 0)}")
-        print(f"React Loops: {result.get('react_loop_count', 0)}")
+        # Update global state for cleanup
+        _active_branch = result.get("branch_name") or story.get("story_id", "unknown")
+        _active_workspace = workspace_path
         
-        # Show created files
-        files_created = result.get('files_created', [])
-        if files_created:
-            print("\n" + "-"*40)
-            print("FILES CREATED:")
-            for f in files_created:
-                print(f"  - {f}")
-                # Check if file exists and show size
-                file_path = workspace_path / f
-                if file_path.exists():
-                    size = file_path.stat().st_size
-                    print(f"    ({size} bytes)")
-        
-        # Show code changes summary
-        code_changes = result.get('code_changes', [])
-        if code_changes:
-            print("\n" + "-"*40)
-            print(f"CODE CHANGES: {len(code_changes)} files")
-            for change in code_changes[:5]:
-                fp = change.get('file_path', 'unknown')
-                print(f"  - {fp}")
-        
-        # Show workspace location
-        print("\n" + "-"*40)
-        print(f"WORKSPACE: {workspace_path}")
-        print("\nTo view the files:")
-        print(f"  cd {workspace_path}")
-        print("  ls -la")
-        
-        # If React project, show how to run
-        if "react" in story.get('title', '').lower() or "website" in story.get('title', '').lower():
-            print("\nTo run the React app:")
-            print(f"  cd {workspace_path}")
-            print("  npm install")
-            print("  npm run dev")
+        print_result(result, workspace_path)
         
     except Exception as e:
         logger.error(f"Error: {e}", exc_info=True)
         print(f"\nError: {e}")
         print("\nPartial results may be in workspace:")
         print(f"  {workspace_path}")
+    
+    # Interactive loop
+    print_help()
+    
+    while True:
+        try:
+            cmd = input("\n[dev_v2] > ").strip()
+            
+            if not cmd:
+                continue
+            
+            result = await handle_command(cmd, _active_branch, workspace_path)
+            
+            if result == "run":
+                # Run another story
+                story = select_story()
+                print(f"\nRunning: {story['title']}")
+                
+                try:
+                    result = await runner.run_story(story)
+                    _active_branch = result.get("branch_name") or story.get("story_id", "unknown")
+                    print_result(result, workspace_path)
+                except Exception as e:
+                    print(f"Error: {e}")
+                    
+            elif result is False:
+                # Exit
+                break
+                
+        except EOFError:
+            # Handle pipe/redirect end
+            cleanup_containers(remove=False)
+            break
+        except KeyboardInterrupt:
+            # Handle Ctrl+C in input
+            print("\n[!] Interrupted!")
+            cleanup_containers(remove=True)
+            break
+    
+    print("\nGoodbye!")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass  # Already handled by signal handler

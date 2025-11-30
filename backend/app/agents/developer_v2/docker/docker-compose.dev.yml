@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  app:
+    image: ${APP_IMAGE:-oven/bun:1}
+    container_name: ${CONTAINER_PREFIX:-dev}-app
+    working_dir: /app
+    volumes:
+      - ${WORKSPACE_PATH:-.}:/app
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      - DATABASE_URL=postgresql://dev:dev@db:5432/app
+      - NODE_ENV=development
+      - CI=true
+      - PORT=3000
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - devnet
+    stdin_open: true
+    tty: true
+    command: ["sh", "-c", "bun install && bun run dev"]
+
+  db:
+    image: postgres:16-alpine
+    container_name: ${CONTAINER_PREFIX:-dev}-db
+    environment:
+      POSTGRES_USER: dev
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: app
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dev -d app"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      - devnet
+    tmpfs:
+      - /var/lib/postgresql/data
+
+networks:
+  devnet:
+    driver: bridge

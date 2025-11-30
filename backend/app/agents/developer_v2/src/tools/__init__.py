@@ -16,12 +16,10 @@ from .filesystem_tools import (
 # Git tools
 from .git_tools import (
     set_git_context,
-    git_init,
     git_status,
     git_commit,
     git_create_branch,
     git_checkout,
-    git_push,
     git_diff,
     git_merge,
     git_delete_branch,
@@ -52,31 +50,25 @@ from .cocoindex_tools import (
     get_coding_guidelines,
     get_code_examples,
     get_project_info,
-    detect_project_structure,
     get_agents_md,
     get_project_context,
     get_boilerplate_examples,
-    validate_plan_file_paths,
     get_markdown_code_block_type,
-)
-
-# Code context tools
-from .code_context_tools import (
-    get_all_workspace_files,
-    get_related_code_context,
-    get_legacy_code,
-    format_code_for_context,
 )
 
 # Execution tools
 from .execution_tools import (
     CommandResult,
     install_dependencies,
-    detect_framework_from_package_json,
     detect_test_command,
     execute_command_async,
-    execute_command_sync,
     find_test_file,
+)
+
+# Workspace tools
+from .workspace_tools import (
+    setup_git_worktree,
+    commit_workspace_changes,
 )
 
 __all__ = [
@@ -100,7 +92,6 @@ __all__ = [
     "git_commit",
     "git_create_branch",
     "git_checkout",
-    "git_push",
     "git_diff",
     "git_merge",
     "git_delete_branch",
@@ -123,23 +114,17 @@ __all__ = [
     "get_coding_guidelines",
     "get_code_examples",
     "get_project_info",
-    "detect_project_structure",
     "get_agents_md",
     "get_project_context",
     "get_boilerplate_examples",
-    "validate_plan_file_paths",
     "get_markdown_code_block_type",
-    # Code Context
-    "get_all_workspace_files",
-    "get_related_code_context",
-    "get_legacy_code",
-    "format_code_for_context",
     # Execution
     "CommandResult",
     "install_dependencies",
-    "detect_framework_from_package_json",
     "detect_test_command",
     "execute_command_async",
-    "execute_command_sync",
     "find_test_file",
+    # Workspace
+    "setup_git_worktree",
+    "commit_workspace_changes",
 ]

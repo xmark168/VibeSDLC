@@ -1,5 +1,4 @@
 """Git Tools using LangChain @tool decorator."""
-
 import os
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +10,9 @@ try:
     GIT_AVAILABLE = True
 except ImportError:
     GIT_AVAILABLE = False
+    Repo = None
+    InvalidGitRepositoryError = Exception
+
 
 # Global context for git operations
 _git_context = {
@@ -28,44 +30,6 @@ def _get_root_dir() -> str:
     """Get root directory from context or use cwd."""
     return _git_context.get("root_dir") or os.getcwd()
 
-
-@tool
-def git_init(message: str = "Initial commit") -> str:
-    """Initialize a git repository with initial commit.
-
-    Args:
-        message: Commit message for initial commit
-    """
-    if not GIT_AVAILABLE:
-        return "Error: GitPython not installed. Run: pip install gitpython"
-    
-    root_dir = _get_root_dir()
-    original_dir = os.getcwd()
-    os.chdir(root_dir)
-    
-    try:
-        try:
-            repo = Repo(root_dir)
-            return "Git repository already exists"
-        except InvalidGitRepositoryError:
-            repo = Repo.init(root_dir)
-            
-            with repo.config_writer() as git_config:
-                git_config.set_value("user", "name", "AI-Agent")
-                git_config.set_value("user", "email", "ai-agent@vibesdlc.com")
-            
-            if not repo.heads:
-                gitkeep_path = os.path.join(root_dir, ".gitkeep")
-                with open(gitkeep_path, "w") as f:
-                    f.write("# Initial commit by AI agent\n")
-                repo.index.add([".gitkeep"])
-                repo.index.commit(message)
-            
-            return "Git repository initialized successfully"
-    except Exception as e:
-        return f"Git init failed: {str(e)}"
-    finally:
-        os.chdir(original_dir)
 
 
 @tool
@@ -143,14 +107,9 @@ def git_commit(message: str = "Auto-commit by AI agent", files: str = ".") -> st
 
 @tool
 def git_create_branch(branch_name: Optional[str] = None) -> str:
-    """Create and switch to a new git branch.
-
-    Args:
-        branch_name: Name of branch to create. Auto-generates if not provided.
     """
-    if not GIT_AVAILABLE:
-        return "Error: GitPython not installed"
-    
+    Create and switch to a new git branch.
+    """
     root_dir = _get_root_dir()
     original_dir = os.getcwd()
     os.chdir(root_dir)
@@ -182,8 +141,6 @@ def git_checkout(branch_name: str) -> str:
     Args:
         branch_name: Name of branch to checkout
     """
-    if not GIT_AVAILABLE:
-        return "Error: GitPython not installed"
     
     root_dir = _get_root_dir()
     original_dir = os.getcwd()
@@ -202,47 +159,9 @@ def git_checkout(branch_name: str) -> str:
     finally:
         os.chdir(original_dir)
 
-
-@tool
-def git_push() -> str:
-    """Push current branch to remote repository."""
-    if not GIT_AVAILABLE:
-        return "Error: GitPython not installed"
-    
-    root_dir = _get_root_dir()
-    original_dir = os.getcwd()
-    os.chdir(root_dir)
-    
-    try:
-        repo = Repo(root_dir)
-        
-        if repo.head.is_detached:
-            return "Cannot push in detached HEAD state"
-        
-        current_branch = repo.active_branch
-        branch_name = current_branch.name
-        
-        if len(repo.remotes) == 0:
-            return f"No remote found for branch {branch_name}"
-        
-        origin = repo.remotes.origin
-        push_info = origin.push(refspec=f"{branch_name}:{branch_name}")
-        
-        if push_info and push_info[0].flags & push_info[0].ERROR:
-            return f"Push failed: {push_info[0].summary}"
-        return f"Pushed branch {branch_name} successfully"
-    except Exception as e:
-        return f"Git push failed: {str(e)}"
-    finally:
-        os.chdir(original_dir)
-
-
 @tool
 def git_diff() -> str:
     """Get list of changed files in the repository."""
-    if not GIT_AVAILABLE:
-        return "Error: GitPython not installed"
-    
     root_dir = _get_root_dir()
     original_dir = os.getcwd()
     os.chdir(root_dir)
@@ -266,13 +185,9 @@ def git_diff() -> str:
 
 @tool
 def git_merge(branch_name: str) -> str:
-    """Merge a branch into the current branch.
-
-    Args:
-        branch_name: Name of branch to merge
     """
-    if not GIT_AVAILABLE:
-        return "Error: GitPython not installed"
+    Merge a branch into the current branch.
+    """
     
     root_dir = _get_root_dir()
     original_dir = os.getcwd()
@@ -335,9 +250,6 @@ def git_create_worktree(branch_name: str) -> str:
     Args:
         branch_name: Name of branch for worktree
     """
-    if not GIT_AVAILABLE:
-        return "Error: GitPython not installed"
-    
     root_dir = _get_root_dir()
     original_dir = os.getcwd()
     os.chdir(root_dir)
@@ -376,10 +288,7 @@ def git_remove_worktree(worktree_path: str) -> str:
 
     Args:
         worktree_path: Path to the worktree to remove
-    """
-    if not GIT_AVAILABLE:
-        return "Error: GitPython not installed"
-    
+    """ 
     root_dir = _get_root_dir()
     original_dir = os.getcwd()
     os.chdir(root_dir)
@@ -397,9 +306,6 @@ def git_remove_worktree(worktree_path: str) -> str:
 @tool
 def git_list_worktrees() -> str:
     """List all git worktrees."""
-    if not GIT_AVAILABLE:
-        return "Error: GitPython not installed"
-    
     root_dir = _get_root_dir()
     original_dir = os.getcwd()
     os.chdir(root_dir)

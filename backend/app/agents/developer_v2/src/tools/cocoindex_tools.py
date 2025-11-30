@@ -1,5 +1,6 @@
 """CocoIndex Tools - Semantic search and project context utilities."""
 
+import asyncio
 import json
 import logging
 import os
@@ -115,39 +116,49 @@ def search_codebase(project_id: str, query: str, top_k: int = 5, task_id: str = 
 
 
 def index_workspace(project_id: str, workspace_path: str, task_id: str = None) -> bool:
-    """Index workspace using CocoIndex.
-    
-    Creates vector embeddings for all source files in the workspace,
-    enabling fast semantic search later.
-    
-    Args:
-        project_id: Project identifier
-        workspace_path: Path to workspace directory
-        task_id: Optional task ID for task-specific indexing
-        
-    Returns:
-        True if indexing successful, False otherwise
     """
+    Index workspace using CocoIndex (sync version).
+    Blocks for 2-5s but simple and reliable.
+    """
+    import os
+    
+    # Check prerequisites
+    db_url = os.environ.get("COCOINDEX_DATABASE_URL")
+    if not db_url:
+        logger.error("COCOINDEX_DATABASE_URL environment variable not set!")
+        return False
+    
+    workspace = Path(workspace_path)
+    if not workspace.exists():
+        logger.error(f"Workspace path does not exist: {workspace_path}")
+        return False
+    
+    # Count source files
+    source_files = list(workspace.rglob("*.py")) + list(workspace.rglob("*.ts")) + list(workspace.rglob("*.tsx"))
+    logger.info(f"[CocoIndex] Found {len(source_files)} source files in {workspace_path}")
+    
     try:
         from app.agents.developer.project_manager import project_manager
         
         if task_id:
-            project_manager.register_task(project_id, task_id, workspace_path)
-            logger.info(f"Indexed task workspace: {project_id}/{task_id}")
+            logger.info(f"[CocoIndex] Registering task: {project_id}/{task_id}")
+            project_manager._register_task_sync(project_id, task_id, workspace_path)
+            logger.info(f"[CocoIndex] Indexed task workspace: {project_id}/{task_id}")
         else:
-            project_manager.register_project(project_id, workspace_path)
-            logger.info(f"Indexed project workspace: {project_id}")
+            logger.info(f"[CocoIndex] Registering project: {project_id}")
+            project_manager._register_project_sync(project_id, workspace_path)
+            logger.info(f"[CocoIndex] Indexed project workspace: {project_id}")
         return True
     except ImportError as e:
-        logger.warning(f"CocoIndex not available: {e}")
+        logger.error(f"[CocoIndex] Import error - CocoIndex not available: {e}")
         return False
     except Exception as e:
-        logger.error(f"Indexing error: {e}")
+        logger.error(f"[CocoIndex] Indexing error: {e}", exc_info=True)
         return False
 
 
 async def update_workspace_index(project_id: str, task_id: str = None) -> bool:
-    """Re-index workspace after code changes.
+    """Re-index workspace after code changes (async version).
     
     Should be called after implementing code changes to keep
     the search index up-to-date.
@@ -175,6 +186,74 @@ async def update_workspace_index(project_id: str, task_id: str = None) -> bool:
     except Exception as e:
         logger.error(f"Index update error: {e}")
         return False
+
+
+# =============================================================================
+# ASYNC WRAPPER FUNCTIONS (for use in async nodes)
+# =============================================================================
+
+async def search_codebase_async(project_id: str, query: str, top_k: int = 5, task_id: str = None) -> str:
+    """Async version - Search codebase using CocoIndex semantic search.
+    
+    Wraps sync function in asyncio.to_thread() to avoid blocking event loop.
+    """
+    return await asyncio.to_thread(search_codebase, project_id, query, top_k, task_id)
+
+
+async def index_workspace_async(project_id: str, workspace_path: str, task_id: str = None) -> bool:
+    """Async version - Index workspace using CocoIndex.
+    
+    Uses native async methods to avoid RuntimeWarning about sync API in event loop.
+    """
+    import os
+    
+    db_url = os.environ.get("COCOINDEX_DATABASE_URL")
+    if not db_url:
+        logger.error("COCOINDEX_DATABASE_URL environment variable not set!")
+        return False
+    
+    workspace = Path(workspace_path)
+    if not workspace.exists():
+        logger.error(f"Workspace path does not exist: {workspace_path}")
+        return False
+    
+    source_files = list(workspace.rglob("*.py")) + list(workspace.rglob("*.ts")) + list(workspace.rglob("*.tsx"))
+    logger.info(f"[CocoIndex] Found {len(source_files)} source files in {workspace_path}")
+    
+    try:
+        from app.agents.developer.project_manager import project_manager
+        
+        if task_id:
+            logger.info(f"[CocoIndex] Registering task: {project_id}/{task_id}")
+            await project_manager.register_task_async(project_id, task_id, workspace_path)
+            logger.info(f"[CocoIndex] Indexed task workspace: {project_id}/{task_id}")
+        else:
+            logger.info(f"[CocoIndex] Registering project: {project_id}")
+            await project_manager.register_project_async(project_id, workspace_path)
+            logger.info(f"[CocoIndex] Indexed project workspace: {project_id}")
+        return True
+    except ImportError as e:
+        logger.error(f"[CocoIndex] Import error - CocoIndex not available: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"[CocoIndex] Indexing error: {e}", exc_info=True)
+        return False
+
+
+async def get_related_code_indexed_async(
+    project_id: str,
+    current_file: str,
+    task_description: str,
+    top_k: int = 5,
+    task_id: str = None
+) -> str:
+    """Async version - Get related code context using CocoIndex semantic search.
+    
+    Wraps sync function in asyncio.to_thread() to avoid blocking event loop.
+    """
+    return await asyncio.to_thread(
+        get_related_code_indexed, project_id, current_file, task_description, top_k, task_id
+    )
 
 
 def get_related_code_indexed(
@@ -248,9 +327,9 @@ def reindex_workspace() -> str:
         from app.agents.developer.project_manager import project_manager
         
         if task_id:
-            project_manager.register_task(project_id, task_id, workspace_path)
+            project_manager._register_task_sync(project_id, task_id, workspace_path)
         else:
-            project_manager.register_project(project_id, workspace_path)
+            project_manager._register_project_sync(project_id, workspace_path)
         
         return f"Successfully reindexed workspace: {workspace_path}"
         
