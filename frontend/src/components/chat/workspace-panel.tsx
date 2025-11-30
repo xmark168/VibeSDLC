@@ -60,46 +60,81 @@ const getRoleDesignation = (roleType: string): string => {
 export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projectId, activeTab: wsActiveTab, agentStatuses, selectedArtifactId, onResize }: WorkspacePanelProps) {
   const queryClient = useQueryClient()
 
-  // Resize handle state
-  const [isDragging, setIsDragging] = useState(false)
+  // Resize handle state - use refs to avoid re-renders during drag
+  const isDraggingRef = useRef(false)
   const startXRef = useRef(0)
+  const rafIdRef = useRef<number | null>(null)
+  const pendingDeltaRef = useRef(0)
+  const onResizeRef = useRef(onResize)
+
+  // Keep onResize ref updated
+  useEffect(() => {
+    onResizeRef.current = onResize
+  }, [onResize])
 
   useEffect(() => {
+    const applyResize = () => {
+      if (pendingDeltaRef.current !== 0 && onResizeRef.current) {
+        onResizeRef.current(pendingDeltaRef.current)
+        pendingDeltaRef.current = 0
+      }
+      rafIdRef.current = null
+    }
+
     const handleMouseMove = (e: MouseEvent) => {
-      if (isDragging && onResize) {
-        e.preventDefault()
-        const delta = e.clientX - startXRef.current
-        startXRef.current = e.clientX
-        onResize(delta)
+      if (!isDraggingRef.current) return
+      e.preventDefault()
+
+      // Accumulate delta
+      const delta = e.clientX - startXRef.current
+      startXRef.current = e.clientX
+      pendingDeltaRef.current += delta
+
+      // Use requestAnimationFrame for smooth updates
+      if (rafIdRef.current === null) {
+        rafIdRef.current = requestAnimationFrame(applyResize)
       }
     }
 
     const handleMouseUp = () => {
-      setIsDragging(false)
-      document.body.style.userSelect = ""
-      document.body.style.cursor = ""
+      if (isDraggingRef.current) {
+        isDraggingRef.current = false
+        document.body.style.userSelect = ""
+        document.body.style.cursor = ""
+
+        // Apply any remaining delta
+        if (rafIdRef.current !== null) {
+          cancelAnimationFrame(rafIdRef.current)
+          rafIdRef.current = null
+        }
+        if (pendingDeltaRef.current !== 0 && onResizeRef.current) {
+          onResizeRef.current(pendingDeltaRef.current)
+          pendingDeltaRef.current = 0
+        }
+      }
     }
 
-    if (isDragging) {
-      document.body.style.userSelect = "none"
-      document.body.style.cursor = "col-resize"
-
-      document.addEventListener("mousemove", handleMouseMove)
-      document.addEventListener("mouseup", handleMouseUp)
-    }
+    document.addEventListener("mousemove", handleMouseMove)
+    document.addEventListener("mouseup", handleMouseUp)
 
     return () => {
       document.removeEventListener("mousemove", handleMouseMove)
       document.removeEventListener("mouseup", handleMouseUp)
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current)
+      }
     }
-  }, [isDragging, onResize])
+  }, [])
 
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
-    if (!onResize) return
+    if (!onResizeRef.current) return
     e.preventDefault()
-    setIsDragging(true)
+    isDraggingRef.current = true
     startXRef.current = e.clientX
-  }, [onResize])
+    pendingDeltaRef.current = 0
+    document.body.style.userSelect = "none"
+    document.body.style.cursor = "col-resize"
+  }, [])
 
   // Fetch project agents from database
   const { data: projectAgents, isLoading: agentsLoading } = useProjectAgents(projectId || "", {
@@ -395,9 +430,10 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
           </div>
         </div>
       </div>
-      <div className="border border-3 mb-3 mr-3 shadow-2xs rounded-2xl h-screen overflow-auto">
-        {renderView()}
-
+      <div className="border border-3 mb-3 mr-3 shadow-2xs rounded-2xl flex-1 min-h-0 overflow-hidden">
+        <div className="h-full w-full overflow-auto">
+          {renderView()}
+        </div>
       </div>
 
       {/* Agent Detail Sheet */}
