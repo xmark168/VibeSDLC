@@ -7,8 +7,9 @@ import { FileText, ExternalLink, Check, Pencil, X } from "lucide-react"
 interface PrdCreatedCardProps {
   title: string
   filePath: string
-  status?: 'pending' | 'approved' | 'editing'
+  status?: 'pending' | 'approved' | 'editing' | 'submitted'
   showActions?: boolean  // Only show buttons on latest PRD card
+  submitted?: boolean  // User has already submitted approve/edit
   onView?: () => void
   onApprove?: () => void
   onEdit?: (feedback: string) => void
@@ -19,6 +20,7 @@ export function PrdCreatedCard({
   filePath, 
   status = 'pending',
   showActions = true,
+  submitted = false,
   onView, 
   onApprove,
   onEdit 
@@ -26,6 +28,9 @@ export function PrdCreatedCard({
   const [isEditing, setIsEditing] = useState(false)
   const [feedback, setFeedback] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  
+  // Check if already submitted (from prop or status)
+  const hasSubmitted = submitted || status === 'submitted' || isLoading
 
   const handleApprove = () => {
     setIsLoading(true)
@@ -75,7 +80,7 @@ export function PrdCreatedCard({
           </div>
           <div className="flex-1 min-w-0">
             <h4 className="text-sm font-medium text-blue-700 dark:text-blue-400">
-              📋 PRD đã được tạo - Chờ phê duyệt
+              📋 PRD đã được tạo {!hasSubmitted && '- Chờ phê duyệt'}
             </h4>
             <p className="text-xs text-muted-foreground">{title}</p>
           </div>
@@ -93,7 +98,7 @@ export function PrdCreatedCard({
         )}
 
         {/* Submitted state - show after user submits approve/edit */}
-        {showActions && isLoading && (
+        {showActions && hasSubmitted && (
           <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
             <Check className="w-4 h-4" />
             <span>Đã gửi yêu cầu</span>
@@ -101,7 +106,7 @@ export function PrdCreatedCard({
         )}
 
         {/* Edit feedback input */}
-        {showActions && isEditing && !isLoading && (
+        {showActions && isEditing && !hasSubmitted && (
           <div className="space-y-2">
             <Textarea
               placeholder="Nhập yêu cầu chỉnh sửa PRD..."
@@ -134,7 +139,7 @@ export function PrdCreatedCard({
         )}
 
         {/* Action buttons */}
-        {showActions && !isEditing && !isLoading && (
+        {showActions && !isEditing && !hasSubmitted && (
           <div className="flex gap-2">
             <Button 
               size="sm" 
