@@ -8,13 +8,13 @@ Dự án này sử dụng Jest 30 và React Testing Library để test component
 
 ```bash
 # Chạy tất cả tests
-pnpm test
+bun test
 
 # Chạy tests ở watch mode
-pnpm test:watch
+bun test:watch
 
 # Chạy tests với coverage
-pnpm test:coverage
+bun test:coverage
 ```
 
 ## Test Structure
@@ -152,7 +152,7 @@ Jest setup đã mock sẵn:
 
 ## Coverage
 
-Xem coverage report sau khi chạy `pnpm test:coverage`:
+Xem coverage report sau khi chạy `bun test:coverage`:
 - HTML report: `coverage/lcov-report/index.html`
 - Terminal summary hiển thị ngay sau khi test
 

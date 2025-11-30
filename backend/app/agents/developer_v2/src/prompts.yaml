@@ -55,6 +55,12 @@ shared_context:
     - Add descriptive logging to track state
     - Don't make uneducated guesses - read the error message
     
+    # IMPORT/EXPORT VERIFICATION (CRITICAL)
+    - **Read AGENTS.md first** - Check project's export conventions before writing code
+    - **Match export/import patterns** - If file uses named export, use named import
+    - **Verify file exists** - Before importing, confirm the file path exists
+    - **Check existing code patterns** - Follow the same export style as existing files in the project
+    
     # UNIT TEST REQUIREMENTS (MANDATORY)
     When implementing a feature/component, you MUST also create corresponding unit tests:
     
@@ -70,6 +76,8 @@ shared_context:
        - jest, @testing-library/react, @testing-library/jest-dom
        - @testing-library/user-event for user interactions
        - msw for API mocking (Mock Service Worker)
+       - node-mocks-http for mocking Next.js API routes (req/res)
+       - @faker-js/faker for generating fake test data
 
   task_types: |
     **Task Types:**
@@ -879,8 +887,8 @@ tasks:
       4. **Report Results**: Return test output
       
       ## Package Manager Detection
+      - `bun.lock` or `bun.lockb` exists -> use `bun`
       - `pnpm-lock.yaml` exists -> use `pnpm`
-      - `bun.lockb` exists -> use `bun`
       - `yarn.lock` exists -> use `yarn`
       - `package-lock.json` or `package.json` -> use `npm`
       - `requirements.txt` or `pyproject.toml` -> use `pip` + `pytest`
@@ -987,21 +995,38 @@ tasks:
       
       # DEBUG AND FIX TASK
       
-      Role: You are a senior development engineer debugging code.
+      Role: Senior engineer with shell execution and web search capabilities.
       
-      ## Your Task
-      Based on the error logs, figure out which code (development or test)
-      produced the error, then rewrite that code to fix all bugs.
+      ## Available Tools
+      - `execute_shell`: Run shell commands (install packages, run scripts, etc.)
+      - `TavilySearch`: Search web for error solutions
+      - `read_file_safe`, `list_directory_safe`: File operations
+      
+      ## Debugging Strategy
+      1. Analyze the error message/traceback carefully
+      2. **For "Cannot find package/module" errors:**
+         - Use `execute_shell` to install the missing package
+         - Use the install command pattern from tech_stack info (see user prompt)
+         - For dev/test dependencies, add `-D` flag (e.g., `bun add -D`, `npm install -D`)
+         - Example: `execute_shell(command="bun add -D node-mocks-http")`
+      3. Use TavilySearch to search for SPECIFIC error + "fix solution"
+      4. Determine the correct file to fix:
+         - jest.setup.ts / jest.config.ts for test environment errors
+         - Source files for code logic errors
+      5. Apply the fix with COMPLETE working code
       
       ## Guidelines
-      1. Analyze the error traceback carefully
-      2. Identify the exact line and cause
-      3. Fix the root cause, not just symptoms
-      4. Ensure the fix doesn't break other functionality
-      5. Add defensive checks where appropriate
-      6. Return COMPLETE, WORKING code
+      - **Install missing packages FIRST** before attempting code fixes
+      - Match the project's package manager from tech_stack (bun/pnpm/npm/pip)
+      - Search for SPECIFIC error messages, not generic terms
+      - If error is about missing globals (TextEncoder, fetch, etc), fix jest.setup.ts
+      - Always provide COMPLETE, WORKING code - not partial fixes
+      - Fix the root cause, not just symptoms
 
     user_prompt: |
+      # Tech Stack
+      {tech_stack_info}
+      
       # Legacy Code (Source)
       ## File: {code_filename}
       ```{language}

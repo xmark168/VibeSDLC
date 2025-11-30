@@ -157,7 +157,7 @@ def route_after_code_review(state: DeveloperState) -> Literal["run_code", "imple
 def route_after_run_code(state: DeveloperState) -> Literal["respond", "debug_error", "implement"]:
     """Third quality gate: test execution with self-healing (MetaGPT React pattern).
     
-    Runs auto-detected tests (npm/pnpm/pytest). Routes:
+    Runs auto-detected tests (bun/npm/pytest). Routes:
     - Tests PASS -> respond (success - dev server started in run_code)
     - Tests FAIL + debug retries available -> debug_error (fix & retry)
     - Debug exhausted + React mode -> implement (full cycle retry with feedback)

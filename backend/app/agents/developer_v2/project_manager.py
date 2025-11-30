@@ -82,8 +82,10 @@ def create_project_flow(project_id: str, project_path: str):
                     ".next",
                     "coverage",
                     "*.lock",
+                    "bun.lock",
                     "pnpm-lock.yaml",
                     "package-lock.json",
+                    "node_modules"
                 ],
             )
         )

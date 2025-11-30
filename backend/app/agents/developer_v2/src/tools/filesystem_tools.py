@@ -37,6 +37,9 @@ def read_file_safe(file_path: str) -> str:
     Args:
         file_path: Path to file relative to project root
     """
+    if not file_path or not file_path.strip():
+        return "Error: file_path cannot be empty"
+    
     root_dir = _get_root_dir()
     full_path = os.path.join(root_dir, file_path)
     
@@ -62,6 +65,9 @@ def write_file_safe(file_path: str, content: str, mode: str = "w") -> str:
         content: Content to write
         mode: Write mode - 'w' for overwrite, 'a' for append
     """
+    if not file_path or not file_path.strip():
+        return "Error: file_path cannot be empty"
+    
     root_dir = _get_root_dir()
     full_path = os.path.join(root_dir, file_path)
     
@@ -69,7 +75,9 @@ def write_file_safe(file_path: str, content: str, mode: str = "w") -> str:
         return f"Error: Access denied. Path outside root directory: {file_path}"
     
     try:
-        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        dir_name = os.path.dirname(full_path)
+        if dir_name:
+            os.makedirs(dir_name, exist_ok=True)
         with open(full_path, mode, encoding='utf-8') as f:
             f.write(content)
         action = "Appended to" if mode == "a" else "Written to"

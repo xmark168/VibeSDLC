@@ -1,5 +1,16 @@
 // Learn more: https://github.com/testing-library/jest-dom
 import '@testing-library/jest-dom';
+import { TextEncoder, TextDecoder } from 'util';
+import { Response, Request, Headers, fetch } from 'undici';
+
+global.TextEncoder = TextEncoder;
+global.TextDecoder = TextDecoder as any;
+
+// Fetch API polyfills for Node.js test environment
+global.Response = Response as any;
+global.Request = Request as any;
+global.Headers = Headers as any;
+global.fetch = fetch as any;
 
 // Mock Next.js router
 jest.mock('next/navigation', () => ({
