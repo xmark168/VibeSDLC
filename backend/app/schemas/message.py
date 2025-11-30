@@ -31,6 +31,7 @@ class ChatMessagePublic(SQLModel):
     author_type: AuthorType
     user_id: Optional[UUID] = None
     agent_id: Optional[UUID] = None
+    agent_name: Optional[str] = None  # Agent's human-readable name
     content: str
     message_type: Optional[str] = "text"
     structured_data: Optional[Any] = None
