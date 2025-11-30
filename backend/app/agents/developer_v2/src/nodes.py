@@ -45,13 +45,11 @@ from app.agents.developer_v2.src.tools import (
     # Project context
     get_agents_md,
     get_project_context,
-    detect_project_structure,
     get_boilerplate_examples,
     get_markdown_code_block_type,
     # CocoIndex
     get_related_code_indexed,
     search_codebase,
-    validate_plan_file_paths,
     # Execution
     detect_test_command,
     execute_command_async,
@@ -534,20 +532,22 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                 raise RuntimeError(f"CocoIndex indexing failed for workspace: {workspace_path}")
             logger.info(f"[setup_workspace] Indexed workspace with CocoIndex")
         
-        # Load project structure and context
+        # Load project context (AGENTS.md)
         project_context = ""
         agents_md = ""
-        project_structure = {}
         if workspace_path:
             try:
                 agents_md = get_agents_md(workspace_path)
                 project_context = get_project_context(workspace_path)
-                project_structure = detect_project_structure(workspace_path)
-                logger.info(f"[setup_workspace] Detected: {project_structure.get('framework', 'unknown')} ({project_structure.get('router_type', 'N/A')})")
                 if agents_md:
                     logger.info(f"[setup_workspace] Loaded AGENTS.md: {len(agents_md)} chars")
             except Exception as ctx_err:
                 logger.warning(f"[setup_workspace] Failed to load project context: {ctx_err}")
+        
+        # Log project config if provided
+        project_config = state.get("project_config", {})
+        if project_config:
+            logger.info(f"[setup_workspace] Using project_config: {project_config}")
         
         return {
             **state,
@@ -558,7 +558,6 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             "index_ready": index_ready,
             "agents_md": agents_md,
             "project_context": project_context,
-            "project_structure": project_structure,
         }
         
     except Exception as e:
@@ -741,27 +740,23 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
         # Get workspace context
         workspace_path = state.get("workspace_path", "")
         
-        # Get project structure and context
+        # Get project context (AGENTS.md, etc.)
         project_context = state.get("project_context", "")
-        project_structure = state.get("project_structure", {})
+        project_config = state.get("project_config", {})
         
-        # Build clear structure guidance
+        # Build structure guidance from project_config if provided
         structure_guidance = ""
-        if project_structure:
-            framework = project_structure.get("framework", "unknown")
-            router_type = project_structure.get("router_type")
-            conventions = project_structure.get("conventions", "")
-            existing_pages = project_structure.get("existing_pages", [])
-            
-            if framework != "unknown":
+        if project_config:
+            tech_stack = project_config.get("tech_stack", "")
+            if tech_stack:
                 structure_guidance = f"""
-=== PROJECT STRUCTURE (CRITICAL - MUST FOLLOW) ===
-Framework: {framework}
-{f"Router Type: {router_type}" if router_type else ""}
-{f"Conventions: {conventions}" if conventions else ""}
-{f"Existing Pages: {', '.join(existing_pages[:5])}" if existing_pages else ""}
+=== PROJECT CONFIG ===
+Tech Stack: {tech_stack}
+Install Command: {project_config.get('install_cmd', 'npm install')}
+Test Command: {project_config.get('test_cmd', 'npm test')}
+Run Command: {project_config.get('run_cmd', 'npm run dev')}
 
-IMPORTANT: Generate file_path values that match the existing project structure above!
+IMPORTANT: Follow AGENTS.md conventions for file paths!
 """
         
         # Build input from template (include full project_context with AGENTS.md)
@@ -788,22 +783,6 @@ IMPORTANT: Generate file_path values that match the existing project structure a
         
         structured_llm = _code_llm.with_structured_output(ImplementationPlan)
         plan_result = await structured_llm.ainvoke(messages, config=_cfg(state, "plan"))
-        
-        # Validate and fix file paths based on project structure
-        if project_structure and plan_result.steps:
-            validated_steps = validate_plan_file_paths(
-                [s.model_dump() for s in plan_result.steps],
-                project_structure
-            )
-            # Update plan_result with validated paths
-            plan_result = ImplementationPlan(
-                story_summary=plan_result.story_summary,
-                steps=[PlanStep(**s) for s in validated_steps],
-                total_estimated_hours=plan_result.total_estimated_hours,
-                critical_path=plan_result.critical_path,
-                rollback_plan=plan_result.rollback_plan
-            )
-            logger.info(f"[plan] Validated {len(plan_result.steps)} file paths")
         
         # Warning if no steps
         if not plan_result.steps:
@@ -936,22 +915,22 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
                 for i, s in enumerate(plan_steps)
             )
         
-        # Build full context including project structure, research results, and summarize feedback
+        # Build full context including project config, research results, and summarize feedback
         research_context = state.get("research_context", "")
         project_context = state.get("project_context", "")
-        project_structure = state.get("project_structure", {})
+        project_config = state.get("project_config", {})
         summarize_feedback = state.get("summarize_feedback", "")
         
         full_related_context = related_context or "No related files"
         
-        # Add project structure info (CRITICAL for correct file paths)
-        if project_structure and project_structure.get("framework") != "unknown":
-            structure_info = f"""## PROJECT STRUCTURE (CRITICAL)
-Framework: {project_structure.get('framework')}
-Router: {project_structure.get('router_type', 'N/A')}
-Conventions: {project_structure.get('conventions', '')}
+        # Add project config info if provided
+        if project_config:
+            config_info = f"""## PROJECT CONFIG
+Tech Stack: {project_config.get('tech_stack', 'unknown')}
+Install: {project_config.get('install_cmd', 'npm install')}
+Test: {project_config.get('test_cmd', 'npm test')}
 """
-            full_related_context = f"{structure_info}\n---\n\n{full_related_context}"
+            full_related_context = f"{config_info}\n---\n\n{full_related_context}"
         
         # Add boilerplate examples (ACCURACY improvement)
         if workspace_path:
@@ -1467,58 +1446,15 @@ async def merge_to_main(state: DeveloperState, agent=None) -> DeveloperState:
 
 
 async def cleanup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
-    """Cleanup worktree and branch after merge.
+    """Cleanup workspace resources after task completion.
     
-    This node removes the worktree and deletes the feature branch
-    after successful merge to main.
-    
-    If workspace is not a git worktree, skip git cleanup.
+    NOTE: Everything is PRESERVED for potential future use:
+    - Git worktree and branch (can resume work)
+    - CocoIndex task index (can search without re-indexing)
+    - Dev containers are stopped (not removed) - can restart quickly
     """
     try:
-        workspace_path = state.get("workspace_path")
         branch_name = state.get("branch_name")
-        main_workspace = state.get("main_workspace")
-        merged = state.get("merged", False)
-        workspace_ready = state.get("workspace_ready", False)
-        
-        # Only do git cleanup if workspace was properly set up as worktree
-        if workspace_ready and main_workspace:
-            # Check if main_workspace is a git repo
-            main_git_dir = Path(main_workspace) / ".git"
-            if main_git_dir.exists():
-                from app.agents.developer.tools.git_python_tool import GitPythonTool
-                main_git = GitPythonTool(root_dir=main_workspace)
-                
-                # 1. Remove worktree (only if it's a separate worktree, not main workspace)
-                if workspace_path:
-                    # Check if workspace_path is different from main_workspace
-                    is_worktree = workspace_path != main_workspace
-                    
-                    if is_worktree:
-                        remove_result = main_git._run("remove_worktree", worktree_path=workspace_path)
-                        logger.info(f"[cleanup_workspace] Remove worktree: {remove_result}")
-                    else:
-                        logger.info(f"[cleanup_workspace] Skipping worktree removal (this is the main workspace)")
-                
-                # 2. Delete branch (only if merged successfully)
-                if merged and branch_name:
-                    delete_result = main_git._run("delete_branch", branch_name=branch_name)
-                    logger.info(f"[cleanup_workspace] Delete branch: {delete_result}")
-            else:
-                logger.info("[cleanup_workspace] Main workspace not a git repo, skipping git cleanup")
-        else:
-            logger.info("[cleanup_workspace] Workspace not a git worktree, skipping git cleanup")
-        
-        # Cleanup CocoIndex task index (always try this)
-        project_id = state.get("project_id")
-        task_id = state.get("task_id") or state.get("story_id")
-        if project_id and task_id:
-            try:
-                from app.agents.developer.project_manager import project_manager
-                project_manager.unregister_task(project_id, task_id)
-                logger.info(f"[cleanup_workspace] Unregistered CocoIndex task: {task_id}")
-            except Exception as idx_err:
-                logger.debug(f"[cleanup_workspace] CocoIndex cleanup: {idx_err}")
         
         # Stop dev container (not remove - preserve for resume)
         if branch_name:
@@ -1527,6 +1463,8 @@ async def cleanup_workspace(state: DeveloperState, agent=None) -> DeveloperState
                 logger.info(f"[cleanup_workspace] Stopped container for: {branch_name}")
             except Exception as container_err:
                 logger.debug(f"[cleanup_workspace] Container stop: {container_err}")
+        
+        logger.info(f"[cleanup_workspace] Workspace preserved (branch: {branch_name})")
         
         return {
             **state,
@@ -1888,15 +1826,26 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         # Setup tool context for shell tools
         _setup_tool_context(workspace_path, project_id, task_id)
         
-        # 1. Detect project type (rule-based, no LLM)
-        project_info = _detect_project_type(workspace_path)
-        project_type = project_info["type"]
-        test_cmd = project_info["test_cmd"]
-        install_cmd = project_info["install_cmd"]
-        needs_db = project_info.get("needs_db", False)
-        db_cmds = project_info.get("db_cmds", [])
+        # 1. Use project_config if provided, otherwise auto-detect
+        project_config = state.get("project_config", {})
         
-        logger.info(f"[run_code] Detected project: {project_type}, test_cmd: {test_cmd}, needs_db: {needs_db}")
+        if project_config and project_config.get("test_cmd"):
+            # Use provided config
+            project_type = project_config.get("tech_stack", "node")
+            test_cmd = project_config.get("test_cmd", "npm test")
+            install_cmd = project_config.get("install_cmd", "npm install")
+            needs_db = project_config.get("needs_db", False)
+            db_cmds = project_config.get("db_cmds", [])
+            logger.info(f"[run_code] Using project_config: {project_type}, test_cmd: {test_cmd}")
+        else:
+            # Fallback to auto-detection
+            project_info = _detect_project_type(workspace_path)
+            project_type = project_info["type"]
+            test_cmd = project_info["test_cmd"]
+            install_cmd = project_info["install_cmd"]
+            needs_db = project_info.get("needs_db", False)
+            db_cmds = project_info.get("db_cmds", [])
+            logger.info(f"[run_code] Auto-detected: {project_type}, test_cmd: {test_cmd}, needs_db: {needs_db}")
         
         if project_type == "unknown" or not test_cmd:
             logger.warning("[run_code] Unknown project type, skipping tests")

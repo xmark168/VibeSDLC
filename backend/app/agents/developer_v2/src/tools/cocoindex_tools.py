@@ -234,9 +234,41 @@ async def search_codebase_async(project_id: str, query: str, top_k: int = 5, tas
 async def index_workspace_async(project_id: str, workspace_path: str, task_id: str = None) -> bool:
     """Async version - Index workspace using CocoIndex.
     
-    Wraps sync function in asyncio.to_thread() to avoid blocking event loop.
+    Uses native async methods to avoid RuntimeWarning about sync API in event loop.
     """
-    return await asyncio.to_thread(index_workspace, project_id, workspace_path, task_id)
+    import os
+    
+    db_url = os.environ.get("COCOINDEX_DATABASE_URL")
+    if not db_url:
+        logger.error("COCOINDEX_DATABASE_URL environment variable not set!")
+        return False
+    
+    workspace = Path(workspace_path)
+    if not workspace.exists():
+        logger.error(f"Workspace path does not exist: {workspace_path}")
+        return False
+    
+    source_files = list(workspace.rglob("*.py")) + list(workspace.rglob("*.ts")) + list(workspace.rglob("*.tsx"))
+    logger.info(f"[CocoIndex] Found {len(source_files)} source files in {workspace_path}")
+    
+    try:
+        from app.agents.developer.project_manager import project_manager
+        
+        if task_id:
+            logger.info(f"[CocoIndex] Registering task: {project_id}/{task_id}")
+            await project_manager.register_task_async(project_id, task_id, workspace_path)
+            logger.info(f"[CocoIndex] Indexed task workspace: {project_id}/{task_id}")
+        else:
+            logger.info(f"[CocoIndex] Registering project: {project_id}")
+            await project_manager.register_project_async(project_id, workspace_path)
+            logger.info(f"[CocoIndex] Indexed project workspace: {project_id}")
+        return True
+    except ImportError as e:
+        logger.error(f"[CocoIndex] Import error - CocoIndex not available: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"[CocoIndex] Indexing error: {e}", exc_info=True)
+        return False
 
 
 async def incremental_update_index_async(project_id: str, task_id: str = None) -> bool:

@@ -79,7 +79,10 @@ class DeveloperState(TypedDict, total=False):
     # Project context (AGENTS.md + framework info)
     project_context: Optional[str]  # Loaded from AGENTS.md in workspace
     agents_md: Optional[str]  # Raw AGENTS.md content
-    project_structure: Optional[Dict[str, Any]]  # Detected framework, router type, conventions
+    
+    # Project config (passed in, not auto-detected)
+    # Example: {"tech_stack": "nextjs", "install_cmd": "bun install", "test_cmd": "bun test", "run_cmd": "bun dev"}
+    project_config: Optional[Dict[str, str]]
     
     # Debug and feedback logs
     error_logs: Optional[str]

@@ -266,6 +266,37 @@ class SimpleDeveloperRunner:
         """No-op - message_user calls in nodes.py are disabled."""
         pass  # Disabled for local runner mode
     
+    def _get_project_config(self) -> dict:
+        """Get project config based on template type.
+        
+        Returns:
+            Dict with tech_stack, install_cmd, test_cmd, run_cmd, needs_db
+        """
+        # Default config for NextJS boilerplate
+        if self.template in ["nextjs", "react"]:
+            return {
+                "tech_stack": "nextjs",
+                "install_cmd": "bun install",
+                "test_cmd": "bun test",
+                "run_cmd": "bun dev",
+                "needs_db": True,  # Prisma in boilerplate
+                "db_cmds": ["bunx prisma generate", "bunx prisma db push --accept-data-loss"],
+            }
+        
+        # Python projects
+        if self.template == "python":
+            return {
+                "tech_stack": "python",
+                "install_cmd": "pip install -e .",
+                "test_cmd": "pytest -v",
+                "run_cmd": "python main.py",
+                "needs_db": False,
+                "db_cmds": [],
+            }
+        
+        # Default: auto-detect
+        return {}
+    
     async def run_story(self, story: dict) -> dict:
         """Run a story through the graph."""
         
@@ -397,10 +428,12 @@ class SimpleDeveloperRunner:
             
             # Project context
             "project_context": None,
-            "project_structure": {},
             "agents_md": None,
             "related_code_context": "",
             "research_context": "",
+            
+            # Project config (tech stack, commands)
+            "project_config": self._get_project_config(),
         }
         
         logger.info(f"[{self.name}] Starting story: {story.get('title', 'Untitled')}")

@@ -1,13 +1,22 @@
 """Container Tools for Persistent Dev Environments.
 
 Provides LLM-callable tools for managing Docker containers per branch.
-Each branch gets its own isolated dev environment (App + DB).
+Each branch gets its own isolated dev environment (App + DB) via docker-compose.
+
+Speed optimizations:
+- Uses docker-compose for reliable container orchestration
+- tmpfs for DB (no disk I/O)
+- Health checks ensure DB is ready before app starts
+- Subprocess calls instead of Docker SDK (faster)
 """
 
 import json
 import logging
+import os
 import re
+import subprocess
 import time
+from pathlib import Path
 from typing import Optional
 
 from langchain_core.tools import tool
@@ -33,62 +42,98 @@ def set_container_context(branch_name: str = None, container_name: str = None, w
 
 
 class DevContainerManager:
-    """Manage persistent dev containers per branch.
+    """Manage persistent dev containers per branch using docker-compose.
     
     Features:
-    - One container per branch (App + PostgreSQL)
-    - Reuse existing containers (fast!)
-    - Stop instead of remove (preserve data)
-    - LLM can exec commands via tools
+    - One container set per branch (App + PostgreSQL)
+    - Fast startup with docker-compose
+    - tmpfs for DB (speed)
+    - Health checks ensure DB ready
+    - Subprocess for fast exec
     """
     
     def __init__(self):
-        self._client = None
-        self._containers = {}  # branch -> container_info
+        self._compose_file = None
+        self._containers = {}
     
-    @property
-    def client(self):
-        """Lazy load Docker client."""
-        if self._client is None:
-            try:
-                import docker
-                self._client = docker.from_env()
-            except Exception as e:
-                logger.error(f"[DevContainerManager] Failed to connect to Docker: {e}")
-                raise
-        return self._client
+    def _get_compose_file(self) -> str:
+        """Get path to docker-compose.dev.yml."""
+        if self._compose_file is None:
+            # Find compose file relative to this module
+            module_dir = Path(__file__).parent.parent.parent  # developer_v2/
+            compose_path = module_dir / "docker" / "docker-compose.dev.yml"
+            
+            if not compose_path.exists():
+                raise FileNotFoundError(f"docker-compose.dev.yml not found at {compose_path}")
+            
+            self._compose_file = str(compose_path)
+        
+        return self._compose_file
     
     def _safe_name(self, branch_name: str) -> str:
         """Convert branch name to safe container name."""
-        return re.sub(r'[^a-zA-Z0-9]', '-', branch_name)[:50]
+        return re.sub(r'[^a-zA-Z0-9]', '-', branch_name)[:50].lower()
     
-    def _get_container_name(self, branch_name: str) -> str:
-        """Generate container name for branch."""
-        return f"dev-env-{self._safe_name(branch_name)}"
+    def _get_container_prefix(self, branch_name: str) -> str:
+        """Generate container prefix for branch."""
+        return f"dev-{self._safe_name(branch_name)}"
     
-    def _get_network_name(self, branch_name: str) -> str:
-        """Generate network name for branch."""
-        return f"dev-net-{self._safe_name(branch_name)}"
+    def _get_app_container_name(self, branch_name: str) -> str:
+        """Get app container name."""
+        return f"{self._get_container_prefix(branch_name)}-app"
     
     def _get_db_container_name(self, branch_name: str) -> str:
-        """Generate DB container name for branch."""
-        return f"dev-db-{self._safe_name(branch_name)}"
+        """Get DB container name."""
+        return f"{self._get_container_prefix(branch_name)}-db"
     
-    def _wait_for_db(self, db_container, timeout: int = 30) -> bool:
-        """Wait for PostgreSQL to be ready."""
-        start = time.time()
-        while time.time() - start < timeout:
-            try:
-                exit_code, _ = db_container.exec_run("pg_isready -U dev -d app")
-                if exit_code == 0:
-                    return True
-            except Exception:
-                pass
-            time.sleep(1)
-        return False
+    def _get_image(self, project_type: str) -> str:
+        """Get Docker image for project type."""
+        image_map = {
+            "node": "node:20-slim",
+            "python": "python:3.11-slim",
+            "rust": "rust:1.75-slim",
+            "go": "golang:1.21-alpine",
+        }
+        return image_map.get(project_type, "node:20-slim")
+    
+    def _is_running(self, branch_name: str) -> bool:
+        """Check if containers are running."""
+        app_name = self._get_app_container_name(branch_name)
+        try:
+            result = subprocess.run(
+                ["docker", "inspect", "-f", "{{.State.Running}}", app_name],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return result.returncode == 0 and "true" in result.stdout.lower()
+        except Exception:
+            return False
+    
+    def _run_compose(self, branch_name: str, workspace_path: str, project_type: str, command: list) -> subprocess.CompletedProcess:
+        """Run docker-compose command with environment."""
+        compose_file = self._get_compose_file()
+        prefix = self._get_container_prefix(branch_name)
+        
+        env = {
+            **os.environ,
+            "CONTAINER_PREFIX": prefix,
+            "WORKSPACE_PATH": workspace_path,
+            "APP_IMAGE": self._get_image(project_type),
+        }
+        
+        full_cmd = ["docker-compose", "-f", compose_file, "-p", prefix] + command
+        
+        return subprocess.run(
+            full_cmd,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
     
     def get_or_create(self, branch_name: str, workspace_path: str, project_type: str = "node") -> dict:
-        """Get existing or create new dev container.
+        """Get existing or create new dev container using docker-compose.
         
         Args:
             branch_name: Git branch name (used as container identifier)
@@ -98,125 +143,113 @@ class DevContainerManager:
         Returns:
             Container info dict with name, status, db_url, etc.
         """
-        import docker
+        app_name = self._get_app_container_name(branch_name)
+        db_name = self._get_db_container_name(branch_name)
         
-        app_container_name = self._get_container_name(branch_name)
-        db_container_name = self._get_db_container_name(branch_name)
-        network_name = self._get_network_name(branch_name)
+        # Check if already running
+        if self._is_running(branch_name):
+            logger.info(f"[DevContainerManager] Reusing running container: {app_name}")
+            return self._get_container_info(branch_name)
         
-        try:
-            # Check if app container exists
-            app_container = self.client.containers.get(app_container_name)
+        logger.info(f"[DevContainerManager] Starting dev environment for {branch_name}...")
+        
+        # Start with docker-compose
+        result = self._run_compose(branch_name, workspace_path, project_type, ["up", "-d", "--wait"])
+        
+        if result.returncode != 0:
+            logger.error(f"[DevContainerManager] docker-compose up failed: {result.stderr}")
+            # Try without --wait (older docker-compose)
+            result = self._run_compose(branch_name, workspace_path, project_type, ["up", "-d"])
             
-            if app_container.status == "exited":
-                # Also start DB container if exists
-                try:
-                    db_container = self.client.containers.get(db_container_name)
-                    if db_container.status == "exited":
-                        db_container.start()
-                        self._wait_for_db(db_container)
-                except docker.errors.NotFound:
-                    pass
-                
-                app_container.start()
-                logger.info(f"[DevContainerManager] Restarted: {app_container_name}")
+            if result.returncode != 0:
+                raise RuntimeError(f"docker-compose up failed: {result.stderr}")
             
-            return self._get_container_info(branch_name, app_container)
-            
-        except docker.errors.NotFound:
-            # Create new containers
-            return self._create_containers(branch_name, workspace_path, project_type)
+            # Manual wait for DB
+            self._wait_for_db(branch_name, timeout=30)
+        
+        logger.info(f"[DevContainerManager] Started: {app_name}")
+        
+        # Install bun/pnpm in node containers (one-time setup)
+        if project_type == "node":
+            self._setup_node_tools(branch_name)
+        
+        return self._get_container_info(branch_name)
     
-    def _create_containers(self, branch_name: str, workspace_path: str, project_type: str) -> dict:
-        """Create new dev environment (App + DB containers)."""
-        import docker
+    def _setup_node_tools(self, branch_name: str):
+        """Install bun and pnpm in node container (if not already installed)."""
+        app_name = self._get_app_container_name(branch_name)
         
-        app_container_name = self._get_container_name(branch_name)
-        db_container_name = self._get_db_container_name(branch_name)
-        network_name = self._get_network_name(branch_name)
-        
-        logger.info(f"[DevContainerManager] Creating dev environment for {branch_name}...")
-        
-        # Create network
-        try:
-            network = self.client.networks.get(network_name)
-        except docker.errors.NotFound:
-            network = self.client.networks.create(network_name, driver="bridge")
-            logger.info(f"[DevContainerManager] Created network: {network_name}")
-        
-        # Create DB container
-        try:
-            db_container = self.client.containers.get(db_container_name)
-            if db_container.status == "exited":
-                db_container.start()
-        except docker.errors.NotFound:
-            db_container = self.client.containers.run(
-                "postgres:16-alpine",
-                name=db_container_name,
-                environment={
-                    "POSTGRES_USER": "dev",
-                    "POSTGRES_PASSWORD": "dev",
-                    "POSTGRES_DB": "app",
-                },
-                network=network_name,
-                detach=True,
-                remove=False,
-            )
-            logger.info(f"[DevContainerManager] Created DB container: {db_container_name}")
-        
-        # Wait for DB to be ready
-        if not self._wait_for_db(db_container):
-            logger.warning("[DevContainerManager] DB might not be ready")
-        
-        # Select base image based on project type
-        image_map = {
-            "node": "node:20-slim",
-            "python": "python:3.11-slim",
-            "rust": "rust:1.75-slim",
-            "go": "golang:1.21-alpine",
-        }
-        base_image = image_map.get(project_type, "node:20-slim")
-        
-        # Create App container
-        app_container = self.client.containers.run(
-            base_image,
-            name=app_container_name,
-            working_dir="/app",
-            volumes={
-                workspace_path: {"bind": "/app", "mode": "rw"},
-            },
-            environment={
-                "DATABASE_URL": f"postgresql://dev:dev@{db_container_name}:5432/app",
-                "NODE_ENV": "development",
-            },
-            network=network_name,
-            command="tail -f /dev/null",  # Keep container running
-            detach=True,
-            remove=False,
+        # Check if bun already installed
+        check = subprocess.run(
+            ["docker", "exec", app_name, "which", "bun"],
+            capture_output=True,
+            timeout=10,
         )
-        logger.info(f"[DevContainerManager] Created app container: {app_container_name}")
         
-        # Cache container info
-        info = self._get_container_info(branch_name, app_container)
-        self._containers[branch_name] = info
+        if check.returncode == 0:
+            logger.info("[DevContainerManager] bun already installed")
+            return
         
-        return info
+        logger.info("[DevContainerManager] Installing bun and pnpm...")
+        
+        # Install bun and pnpm
+        subprocess.run(
+            ["docker", "exec", app_name, "npm", "install", "-g", "bun", "pnpm"],
+            capture_output=True,
+            timeout=120,
+        )
     
-    def _get_container_info(self, branch_name: str, container) -> dict:
+    def _wait_for_db(self, branch_name: str, timeout: int = 30) -> bool:
+        """Wait for PostgreSQL to be ready."""
+        db_name = self._get_db_container_name(branch_name)
+        start = time.time()
+        
+        while time.time() - start < timeout:
+            try:
+                result = subprocess.run(
+                    ["docker", "exec", db_name, "pg_isready", "-U", "dev", "-d", "app"],
+                    capture_output=True,
+                    timeout=5,
+                )
+                if result.returncode == 0:
+                    logger.info("[DevContainerManager] DB is ready")
+                    return True
+            except Exception:
+                pass
+            time.sleep(1)
+        
+        logger.warning("[DevContainerManager] DB might not be ready (timeout)")
+        return False
+    
+    def _get_container_info(self, branch_name: str) -> dict:
         """Get container info dict."""
-        db_container_name = self._get_db_container_name(branch_name)
+        app_name = self._get_app_container_name(branch_name)
+        db_name = self._get_db_container_name(branch_name)
+        
+        # Get status
+        status = "unknown"
+        try:
+            result = subprocess.run(
+                ["docker", "inspect", "-f", "{{.State.Status}}", app_name],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                status = result.stdout.strip()
+        except Exception:
+            pass
         
         return {
-            "name": container.name,
-            "id": container.id[:12],
-            "status": container.status,
+            "name": app_name,
+            "status": status,
             "branch": branch_name,
-            "db_container": db_container_name,
-            "db_url": f"postgresql://dev:dev@{db_container_name}:5432/app",
+            "db_container": db_name,
+            "db_url": f"postgresql://dev:dev@{db_name}:5432/app",
         }
     
     def exec(self, branch_name: str, command: str, workdir: str = "/app") -> dict:
-        """Execute command in app container.
+        """Execute command in app container using subprocess (fast).
         
         Args:
             branch_name: Branch name to identify container
@@ -226,30 +259,43 @@ class DevContainerManager:
         Returns:
             Dict with exit_code and output
         """
-        app_container_name = self._get_container_name(branch_name)
+        app_name = self._get_app_container_name(branch_name)
         
         try:
-            container = self.client.containers.get(app_container_name)
+            # Always use bash -c for reliable command execution
+            full_cmd = [
+                "docker", "exec",
+                "-w", workdir,
+                app_name,
+                "bash", "-c", command
+            ]
             
-            if container.status != "running":
-                container.start()
-                time.sleep(1)
+            logger.info(f"[DevContainerManager] Exec: {command[:80]}...")
             
-            exit_code, output = container.exec_run(
-                f"sh -c '{command}'",
-                workdir=workdir,
+            result = subprocess.run(
+                full_cmd,
+                capture_output=True,
+                text=True,
+                timeout=300,
             )
             
-            output_str = output.decode("utf-8", errors="replace") if output else ""
+            output = result.stdout + result.stderr
             
-            logger.info(f"[DevContainerManager] Exec '{command[:50]}...' -> exit={exit_code}")
+            logger.info(f"[DevContainerManager] Exit code: {result.returncode}")
             
             return {
-                "exit_code": exit_code,
-                "output": output_str,
+                "exit_code": result.returncode,
+                "output": output,
                 "command": command,
             }
             
+        except subprocess.TimeoutExpired:
+            logger.error(f"[DevContainerManager] Command timeout: {command}")
+            return {
+                "exit_code": -1,
+                "output": f"Error: Command timed out after 300s",
+                "command": command,
+            }
         except Exception as e:
             logger.error(f"[DevContainerManager] Exec error: {e}")
             return {
@@ -259,77 +305,74 @@ class DevContainerManager:
             }
     
     def stop(self, branch_name: str):
-        """Stop containers (preserve data for later)."""
-        app_container_name = self._get_container_name(branch_name)
-        db_container_name = self._get_db_container_name(branch_name)
+        """Stop containers (preserve for later restart)."""
+        prefix = self._get_container_prefix(branch_name)
         
-        for name in [app_container_name, db_container_name]:
-            try:
-                container = self.client.containers.get(name)
-                container.stop(timeout=10)
-                logger.info(f"[DevContainerManager] Stopped: {name}")
-            except Exception as e:
-                logger.debug(f"[DevContainerManager] Stop {name}: {e}")
+        try:
+            compose_file = self._get_compose_file()
+            subprocess.run(
+                ["docker-compose", "-f", compose_file, "-p", prefix, "stop"],
+                capture_output=True,
+                timeout=30,
+            )
+            logger.info(f"[DevContainerManager] Stopped: {prefix}")
+        except Exception as e:
+            logger.debug(f"[DevContainerManager] Stop error: {e}")
     
     def remove(self, branch_name: str):
         """Remove containers completely."""
-        import docker
+        prefix = self._get_container_prefix(branch_name)
         
-        app_container_name = self._get_container_name(branch_name)
-        db_container_name = self._get_db_container_name(branch_name)
-        network_name = self._get_network_name(branch_name)
-        
-        # Remove containers
-        for name in [app_container_name, db_container_name]:
-            try:
-                container = self.client.containers.get(name)
-                container.remove(force=True, v=True)
-                logger.info(f"[DevContainerManager] Removed: {name}")
-            except docker.errors.NotFound:
-                pass
-            except Exception as e:
-                logger.warning(f"[DevContainerManager] Remove {name}: {e}")
-        
-        # Remove network
         try:
-            network = self.client.networks.get(network_name)
-            network.remove()
-            logger.info(f"[DevContainerManager] Removed network: {network_name}")
-        except Exception:
-            pass
+            compose_file = self._get_compose_file()
+            subprocess.run(
+                ["docker-compose", "-f", compose_file, "-p", prefix, "down", "-v", "--remove-orphans"],
+                capture_output=True,
+                timeout=60,
+            )
+            logger.info(f"[DevContainerManager] Removed: {prefix}")
+        except Exception as e:
+            logger.warning(f"[DevContainerManager] Remove error: {e}")
         
-        # Clear cache
         self._containers.pop(branch_name, None)
     
     def get_logs(self, branch_name: str, tail: int = 100) -> str:
         """Get logs from app container."""
-        app_container_name = self._get_container_name(branch_name)
+        app_name = self._get_app_container_name(branch_name)
         
         try:
-            container = self.client.containers.get(app_container_name)
-            return container.logs(tail=tail).decode("utf-8", errors="replace")
+            result = subprocess.run(
+                ["docker", "logs", "--tail", str(tail), app_name],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            return result.stdout + result.stderr
         except Exception as e:
             return f"Error getting logs: {str(e)}"
     
     def status(self, branch_name: str) -> dict:
         """Get status of dev environment."""
-        import docker
-        
-        app_container_name = self._get_container_name(branch_name)
-        db_container_name = self._get_db_container_name(branch_name)
+        app_name = self._get_app_container_name(branch_name)
+        db_name = self._get_db_container_name(branch_name)
         
         result = {
             "branch": branch_name,
-            "app": {"name": app_container_name, "status": "not_found"},
-            "db": {"name": db_container_name, "status": "not_found"},
+            "app": {"name": app_name, "status": "not_found"},
+            "db": {"name": db_name, "status": "not_found"},
         }
         
-        for key, name in [("app", app_container_name), ("db", db_container_name)]:
+        for key, name in [("app", app_name), ("db", db_name)]:
             try:
-                container = self.client.containers.get(name)
-                result[key]["status"] = container.status
-                result[key]["id"] = container.id[:12]
-            except docker.errors.NotFound:
+                inspect = subprocess.run(
+                    ["docker", "inspect", "-f", "{{.State.Status}}", name],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if inspect.returncode == 0:
+                    result[key]["status"] = inspect.stdout.strip()
+            except Exception:
                 pass
         
         return result
@@ -350,6 +393,8 @@ def container_exec(command: str) -> str:
     Use this to run commands like:
     - npm install, npm test, npm run build
     - npx prisma generate, npx prisma db push
+    - bun install, bun test
+    - pnpm install, pnpm test
     - python -m pytest, pip install
     
     Args:
@@ -447,7 +492,7 @@ def container_stop() -> str:
     
     try:
         dev_container_manager.stop(branch_name)
-        return f"Container stopped: dev-env-{branch_name}"
+        return f"Container stopped: {branch_name}"
     except Exception as e:
         return f"Error stopping container: {str(e)}"
 

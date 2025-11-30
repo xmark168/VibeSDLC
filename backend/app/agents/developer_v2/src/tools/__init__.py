@@ -52,11 +52,9 @@ from .cocoindex_tools import (
     get_coding_guidelines,
     get_code_examples,
     get_project_info,
-    detect_project_structure,
     get_agents_md,
     get_project_context,
     get_boilerplate_examples,
-    validate_plan_file_paths,
     get_markdown_code_block_type,
 )
 
@@ -119,11 +117,9 @@ __all__ = [
     "get_coding_guidelines",
     "get_code_examples",
     "get_project_info",
-    "detect_project_structure",
     "get_agents_md",
     "get_project_context",
     "get_boilerplate_examples",
-    "validate_plan_file_paths",
     "get_markdown_code_block_type",
     # Execution
     "CommandResult",
