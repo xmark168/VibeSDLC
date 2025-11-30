@@ -9,7 +9,10 @@ from app.agents.core.project_context import ProjectContext
 from app.models import Agent as AgentModel
 from app.agents.developer_v2.src import DeveloperGraph
 from app.agents.developer.workspace_manager import ProjectWorkspaceManager
-from app.agents.developer.tools.git_python_tool import GitPythonTool
+from app.agents.developer_v2.src.tools import (
+    setup_git_worktree,
+    commit_workspace_changes,
+)
 from app.kafka.event_schemas import AgentTaskType
 
 logger = logging.getLogger(__name__)
@@ -33,7 +36,6 @@ class DeveloperV2(BaseAgent):
         # Workspace management
         self.workspace_manager = ProjectWorkspaceManager(self.project_id)
         self.main_workspace = self.workspace_manager.get_main_workspace()
-        self.git_tool = GitPythonTool(root_dir=str(self.main_workspace))
         
         logger.info(f"[{self.name}] LangGraph initialized, workspace: {self.main_workspace}")
 
@@ -105,67 +107,6 @@ class DeveloperV2(BaseAgent):
                 output="",
                 error_message=f"Story processing error: {str(e)}"
             )
-
-    def _setup_workspace(self, story_id: str) -> dict:
-        """Setup git worktree for a task.
-        
-        Creates a separate worktree for isolation.
-        Branch naming: story_{short_id}
-        Worktree path: ws_story_{short_id}
-        """
-        short_id = story_id.split('-')[-1][:8] if '-' in story_id else story_id[:8]
-        branch_name = f"story_{short_id}"
-        
-        # Initialize git in main workspace if needed
-        status_result = self.git_tool._run("status")
-        if "not a git repository" in status_result.lower() or "fatal" in status_result.lower():
-            logger.info(f"[{self.name}] Initializing git in main workspace")
-            self.git_tool._run("init")
-            self.git_tool._run("commit", message="Initial commit", files=["."])
-        
-        # Create worktree for this story
-        logger.info(f"[{self.name}] Creating worktree for branch '{branch_name}'")
-        worktree_result = self.git_tool._run("create_worktree", branch_name=branch_name)
-        logger.info(f"[{self.name}] Worktree result: {worktree_result}")
-        
-        # Determine worktree path
-        worktree_path = self.main_workspace.parent / f"ws_story_{short_id}"
-        workspace_ready = worktree_path.exists() and worktree_path.is_dir()
-        
-        if workspace_ready:
-            logger.info(f"[{self.name}] Workspace ready: {worktree_path}")
-        else:
-            logger.warning(f"[{self.name}] Worktree not created, using main workspace")
-            worktree_path = self.main_workspace
-        
-        return {
-            "workspace_path": str(worktree_path),
-            "branch_name": branch_name,
-            "main_workspace": str(self.main_workspace),
-            "workspace_ready": workspace_ready,
-        }
-
-    def _commit_changes(self, workspace_info: dict, title: str) -> str:
-        """Commit changes in the worktree."""
-        workspace_path = workspace_info.get("workspace_path")
-        branch_name = workspace_info.get("branch_name", "unknown")
-        
-        if not workspace_path:
-            return "No workspace to commit"
-        
-        worktree_git = GitPythonTool(root_dir=workspace_path)
-        
-        # Check for changes
-        status = worktree_git._run("status")
-        if "nothing to commit" in status.lower():
-            return "No changes to commit"
-        
-        # Commit changes
-        commit_msg = f"feat: {title[:50]}"
-        result = worktree_git._run("commit", message=commit_msg, files=["."])
-        logger.info(f"[{self.name}] Committed changes on branch '{branch_name}': {result}")
-        
-        return result
 
     async def _process_story(self, story_data: dict, task: TaskContext) -> TaskResult:
         """Process story through LangGraph workflow.
@@ -258,11 +199,12 @@ class DeveloperV2(BaseAgent):
             
             # Commit changes if workspace was setup and has changes
             if final_state.get("workspace_ready"):
-                workspace_info = {
-                    "workspace_path": final_state.get("workspace_path"),
-                    "branch_name": final_state.get("branch_name"),
-                }
-                commit_result = self._commit_changes(workspace_info, story_data.get("title", "Untitled"))
+                commit_result = commit_workspace_changes(
+                    workspace_path=final_state.get("workspace_path"),
+                    title=story_data.get("title", "Untitled"),
+                    branch_name=final_state.get("branch_name", "unknown"),
+                    agent_name=self.name
+                )
                 logger.info(f"[{self.name}] Commit result: {commit_result}")
             
             action = final_state.get("action")

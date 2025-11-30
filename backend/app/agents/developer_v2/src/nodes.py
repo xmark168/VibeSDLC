@@ -1,5 +1,4 @@
 """Developer V2 Graph Nodes - ReAct Agents with Multi-Tool Support."""
-
 import json
 import logging
 import re
@@ -20,7 +19,6 @@ from app.agents.developer_v2.src.tools.filesystem_tools import (
 from app.agents.developer_v2.src.tools.shell_tools import (
     set_shell_context, execute_shell, semantic_code_search
 )
-from app.agents.core.prompt_utils import load_prompts_yaml
 from langchain_core.messages import ToolMessage
 from app.agents.developer_v2.src.utils.llm_utils import (
     get_langfuse_config as _cfg,
@@ -28,10 +26,34 @@ from app.agents.developer_v2.src.utils.llm_utils import (
     clean_json_response as _clean_json,
     extract_json_from_messages as _extract_json_response,
 )
+from app.agents.developer_v2.src.utils.prompt_utils import (
+    get_prompt as _get_prompt,
+    format_input_template as _format_input_template,
+    build_system_prompt as _build_system_prompt,
+)
+from app.agents.developer_v2.src.tools import (
+    # Workspace management
+    setup_git_worktree,
+    index_workspace,
+    incremental_update_index,
+    # Project context
+    get_agents_md,
+    get_project_context,
+    detect_project_structure,
+    get_boilerplate_examples,
+    get_markdown_code_block_type,
+    # CocoIndex
+    get_related_code_indexed,
+    search_codebase,
+    validate_plan_file_paths,
+    # Execution
+    detect_test_command,
+    execute_command_async,
+    install_dependencies,
+    find_test_file,
+)
 
 logger = logging.getLogger(__name__)
-
-_PROMPTS = load_prompts_yaml(Path(__file__).parent / "prompts.yaml")
 
 # LLM models
 _fast_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1, timeout=20)
@@ -49,42 +71,6 @@ def _setup_tool_context(workspace_path: str = None, project_id: str = None, task
         set_shell_context(root_dir=workspace_path)
     if project_id:
         set_tool_context(project_id=project_id, task_id=task_id, workspace_path=workspace_path)
-
-
-def _get_prompt(task: str, key: str) -> str:
-    """Get prompt from YAML config."""
-    return _PROMPTS.get("tasks", {}).get(task, {}).get(key, "")
-
-
-def _format_input_template(task: str, **kwargs) -> str:
-    """Format input template from prompts.yaml with provided values."""
-    template = _get_prompt(task, "input_template")
-    if not template:
-        return ""
-    
-    for key, value in kwargs.items():
-        placeholder = "{" + key + "}"
-        template = template.replace(placeholder, str(value) if value else "")
-    
-    return template.strip()
-
-
-def _build_system_prompt(task: str, agent=None) -> str:
-    """Build system prompt with shared context."""
-    prompt = _get_prompt(task, "system_prompt")
-    shared = _PROMPTS.get("shared_context", {})
-    
-    for key, value in shared.items():
-        prompt = prompt.replace(f"{{shared_context.{key}}}", value)
-    
-    if agent:
-        prompt = prompt.replace("{name}", agent.name or "Developer")
-        prompt = prompt.replace("{role}", agent.role_type or "Software Developer")
-    else:
-        prompt = prompt.replace("{name}", "Developer")
-        prompt = prompt.replace("{role}", "Software Developer")
-    
-    return prompt
 
 
 
@@ -183,54 +169,61 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         
         logger.info(f"[setup_workspace] Setting up workspace for branch '{branch_name}'")
         
-        # Use agent's workspace manager
-        if hasattr(agent, '_setup_workspace'):
-            workspace_info = agent._setup_workspace(story_id)
-            
+        # Setup workspace using tools directly
+        
+        # Get main_workspace from agent - try multiple attributes
+        if hasattr(agent, 'main_workspace'):
+            main_workspace = agent.main_workspace
+        elif hasattr(agent, 'workspace_path'):
+            main_workspace = agent.workspace_path
+        else:
+            logger.warning("[setup_workspace] Agent has no workspace path attribute")
+            return {**state, "workspace_ready": False, "index_ready": False}
+        
+        workspace_info = setup_git_worktree(
+            story_id=story_id,
+            main_workspace=main_workspace,
+            agent_name=agent.name
+        )
             
             # Index workspace with CocoIndex for semantic search
-            index_ready = False
-            workspace_path = workspace_info.get("workspace_path", "")
-            project_id = state.get("project_id", "default")
-            task_id = state.get("task_id") or story_id
-            
-            if workspace_path:
-                from app.agents.developer_v2.src.tools import index_workspace
-                index_ready = index_workspace(project_id, workspace_path, task_id)
-                if not index_ready:
-                    raise RuntimeError(f"CocoIndex indexing failed for workspace: {workspace_path}")
-                logger.info(f"[setup_workspace] Indexed workspace with CocoIndex")
-            
-            # Load project structure and context
-            project_context = ""
-            agents_md = ""
-            project_structure = {}
-            if workspace_path:
-                try:
-                    from app.agents.developer_v2.src.tools import get_agents_md, get_project_context, detect_project_structure
-                    agents_md = get_agents_md(workspace_path)
-                    project_context = get_project_context(workspace_path)
-                    project_structure = detect_project_structure(workspace_path)
-                    logger.info(f"[setup_workspace] Detected: {project_structure.get('framework', 'unknown')} ({project_structure.get('router_type', 'N/A')})")
-                    if agents_md:
-                        logger.info(f"[setup_workspace] Loaded AGENTS.md: {len(agents_md)} chars")
-                except Exception as ctx_err:
-                    logger.warning(f"[setup_workspace] Failed to load project context: {ctx_err}")
-            
-            return {
-                **state,
-                "workspace_path": workspace_info["workspace_path"],
-                "branch_name": workspace_info["branch_name"],
-                "main_workspace": workspace_info["main_workspace"],
-                "workspace_ready": workspace_info["workspace_ready"],
-                "index_ready": index_ready,
-                "agents_md": agents_md,
-                "project_context": project_context,
-                "project_structure": project_structure,
-            }
-        else:
-            logger.warning("[setup_workspace] Agent has no _setup_workspace method")
-            return {**state, "workspace_ready": False, "index_ready": False}
+        index_ready = False
+        workspace_path = workspace_info.get("workspace_path", "")
+        project_id = state.get("project_id", "default")
+        task_id = state.get("task_id") or story_id
+        
+        if workspace_path:
+            index_ready = index_workspace(project_id, workspace_path, task_id)
+            if not index_ready:
+                raise RuntimeError(f"CocoIndex indexing failed for workspace: {workspace_path}")
+            logger.info(f"[setup_workspace] Indexed workspace with CocoIndex")
+        
+        # Load project structure and context
+        project_context = ""
+        agents_md = ""
+        project_structure = {}
+        if workspace_path:
+            try:
+                agents_md = get_agents_md(workspace_path)
+                project_context = get_project_context(workspace_path)
+                project_structure = detect_project_structure(workspace_path)
+                logger.info(f"[setup_workspace] Detected: {project_structure.get('framework', 'unknown')} ({project_structure.get('router_type', 'N/A')})")
+                if agents_md:
+                    logger.info(f"[setup_workspace] Loaded AGENTS.md: {len(agents_md)} chars")
+            except Exception as ctx_err:
+                logger.warning(f"[setup_workspace] Failed to load project context: {ctx_err}")
+        
+        return {
+            **state,
+            "workspace_path": workspace_info["workspace_path"],
+            "branch_name": workspace_info["branch_name"],
+            "main_workspace": workspace_info["main_workspace"],
+            "workspace_ready": workspace_info["workspace_ready"],
+            "index_ready": index_ready,
+            "agents_md": agents_md,
+            "project_context": project_context,
+            "project_structure": project_structure,
+        }
         
     except Exception as e:
         logger.error(f"[setup_workspace] Error: {e}", exc_info=True)
@@ -402,9 +395,8 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
 
 
 async def plan(state: DeveloperState, agent=None) -> DeveloperState:
-    """Create implementation plan.
-    
-    Refactored: Uses with_structured_output for reliable response.
+    """
+    Create implementation plan.
     """
     print("[NODE] plan - Creating implementation plan...")
     try:
@@ -463,7 +455,6 @@ IMPORTANT: Generate file_path values that match the existing project structure a
         
         # Validate and fix file paths based on project structure
         if project_structure and plan_result.steps:
-            from app.agents.developer_v2.src.tools import validate_plan_file_paths
             validated_steps = validate_plan_file_paths(
                 [s.model_dump() for s in plan_result.steps],
                 project_structure
@@ -577,7 +568,6 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             
             # CocoIndex semantic search (required)
             if index_ready:
-                from app.agents.developer_v2.src.tools import get_related_code_indexed
                 related_context = get_related_code_indexed(
                     project_id=project_id,
                     current_file=current_file,
@@ -629,7 +619,6 @@ Conventions: {project_structure.get('conventions', '')}
         
         # Add boilerplate examples (ACCURACY improvement)
         if workspace_path:
-            from app.agents.developer_v2.src.tools import get_boilerplate_examples
             # Determine task type from file path
             task_type = "page"
             if "component" in current_file.lower():
@@ -719,7 +708,6 @@ Conventions: {project_structure.get('conventions', '')}
                 logger.info(f"[implement] {result}")
                 
                 # Incremental update index (fast - only changed file)
-                from app.agents.developer_v2.src.tools import incremental_update_index
                 incremental_update_index(project_id, task_id)
             except Exception as write_err:
                 logger.warning(f"[implement] Failed to write {code_change.file_path}: {write_err}")
@@ -772,9 +760,6 @@ async def create_code_plan(state: DeveloperState, agent=None) -> DeveloperState:
     showing exactly what changes will be made to each file.
     """
     try:
-        if agent:
-            pass
-        
         # Get code context via CocoIndex
         workspace_path = state.get("workspace_path", "")
         index_ready = state.get("index_ready", False)
@@ -783,7 +768,6 @@ async def create_code_plan(state: DeveloperState, agent=None) -> DeveloperState:
         
         existing_code = ""
         if workspace_path and index_ready:
-            from app.agents.developer_v2.src.tools import search_codebase
             existing_code = search_codebase(project_id, state.get("story_title", ""), top_k=10, task_id=task_id)
         
         sys_prompt = _build_system_prompt("create_code_plan", agent)
@@ -854,9 +838,6 @@ async def summarize_code(state: DeveloperState, agent=None) -> DeveloperState:
     quality checks. If not, it returns to IMPLEMENT for revisions.
     """
     try:
-        if agent:
-            pass
-        
         # Get implemented code via CocoIndex
         workspace_path = state.get("workspace_path", "")
         index_ready = state.get("index_ready", False)
@@ -865,7 +846,6 @@ async def summarize_code(state: DeveloperState, agent=None) -> DeveloperState:
         
         code_blocks = ""
         if workspace_path and index_ready:
-            from app.agents.developer_v2.src.tools import search_codebase
             code_blocks = search_codebase(project_id, "implementation code", top_k=15, task_id=task_id)
         
         sys_prompt = _build_system_prompt("summarize_code", agent)
@@ -997,8 +977,6 @@ async def clarify(state: DeveloperState, agent=None) -> DeveloperState:
         
         response = await _fast_llm.ainvoke(messages, config=_cfg(state, "clarify"))
         question = response.content
-        
-        logger.info(f"[clarify] Asking for clarification")
         
         if agent:
             pass
@@ -1411,8 +1389,6 @@ async def code_review(state: DeveloperState, agent=None) -> DeveloperState:
             logger.info("[code_review] No code changes to review")
             return {**state, "code_review_passed": True}
         
-        from app.agents.developer_v2.src.tools import get_markdown_code_block_type
-        
         # Build ALL files into one prompt (batch review)
         all_code_blocks = []
         file_map = {}  # Map file_path to code_change for updates
@@ -1557,14 +1533,6 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         
         if agent:
             pass
-        
-        from app.agents.developer_v2.src.tools import (
-            detect_test_command,
-            execute_command_async,
-            find_test_file,
-            get_markdown_code_block_type,
-            install_dependencies,
-        )
         
         # Install dependencies first (MetaGPT RunCode pattern)
         try:
@@ -1740,8 +1708,6 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
         if agent:
             pass
         
-        from app.agents.developer_v2.src.tools import get_markdown_code_block_type, find_test_file
-        
         # Read the file to fix using read_file_safe tool
         code_content = ""
         if workspace_path:
@@ -1821,7 +1787,6 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
                 logger.info(f"[debug_error] {result}")
                 
                 # Incremental update index (fast - only changed file)
-                from app.agents.developer_v2.src.tools import incremental_update_index
                 incremental_update_index(project_id, task_id)
             except Exception as e:
                 logger.error(f"[debug_error] Failed to write fixed code: {e}")

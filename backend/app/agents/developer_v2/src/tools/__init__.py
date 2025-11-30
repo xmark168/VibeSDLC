@@ -61,23 +61,19 @@ from .cocoindex_tools import (
     get_markdown_code_block_type,
 )
 
-# Code context tools
-from .code_context_tools import (
-    get_all_workspace_files,
-    get_related_code_context,
-    get_legacy_code,
-    format_code_for_context,
-)
-
 # Execution tools
 from .execution_tools import (
     CommandResult,
     install_dependencies,
-    detect_framework_from_package_json,
     detect_test_command,
     execute_command_async,
-    execute_command_sync,
     find_test_file,
+)
+
+# Workspace tools
+from .workspace_tools import (
+    setup_git_worktree,
+    commit_workspace_changes,
 )
 
 __all__ = [
@@ -131,11 +127,6 @@ __all__ = [
     "get_boilerplate_examples",
     "validate_plan_file_paths",
     "get_markdown_code_block_type",
-    # Code Context
-    "get_all_workspace_files",
-    "get_related_code_context",
-    "get_legacy_code",
-    "format_code_for_context",
     # Execution
     "CommandResult",
     "install_dependencies",
@@ -144,4 +135,7 @@ __all__ = [
     "execute_command_async",
     "execute_command_sync",
     "find_test_file",
+    # Workspace
+    "setup_git_worktree",
+    "commit_workspace_changes",
 ]

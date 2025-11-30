@@ -82,47 +82,6 @@ async def install_dependencies(workspace_path: str) -> bool:
     return installed
 
 
-def detect_framework_from_package_json(workspace_path: str) -> dict:
-    """Detect framework info from package.json.
-    
-    Args:
-        workspace_path: Path to the workspace
-        
-    Returns:
-        Dict with name, version, router info
-    """
-    workspace = Path(workspace_path)
-    package_json = workspace / "package.json"
-    
-    result = {"name": "unknown", "version": "", "router": ""}
-    
-    if not package_json.exists():
-        return result
-    
-    try:
-        data = json.loads(package_json.read_text(encoding='utf-8'))
-        deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
-        
-        if "next" in deps:
-            result["name"] = "nextjs"
-            result["version"] = deps.get("next", "").replace("^", "").replace("~", "")
-            app_dir = workspace / "app"
-            result["router"] = "app" if app_dir.exists() else "pages"
-        elif "react" in deps:
-            result["name"] = "react"
-            result["version"] = deps.get("react", "").replace("^", "").replace("~", "")
-        elif "vue" in deps:
-            result["name"] = "vue"
-            result["version"] = deps.get("vue", "").replace("^", "").replace("~", "")
-        elif "angular" in deps or "@angular/core" in deps:
-            result["name"] = "angular"
-            result["version"] = deps.get("@angular/core", "").replace("^", "").replace("~", "")
-    except Exception:
-        pass
-    
-    return result
-
-
 def detect_test_command(workspace_path: str) -> List[str]:
     """Detect the appropriate test command for a workspace.
     
@@ -227,59 +186,6 @@ async def execute_command_async(
                 returncode=-1
             )
             
-    except Exception as e:
-        return CommandResult(
-            stdout="",
-            stderr=f"Error executing command: {str(e)}",
-            returncode=-1
-        )
-
-
-def execute_command_sync(
-    command: List[str],
-    working_directory: str,
-    timeout: int = 60,
-    env: Dict[str, str] = None
-) -> CommandResult:
-    """Execute a command synchronously.
-    
-    Args:
-        command: Command and arguments as list
-        working_directory: Working directory for the command
-        timeout: Timeout in seconds
-        env: Optional environment variables
-        
-    Returns:
-        CommandResult with stdout, stderr, and returncode
-    """
-    try:
-        process_env = os.environ.copy()
-        if env:
-            process_env.update(env)
-        
-        pythonpath = process_env.get("PYTHONPATH", "")
-        process_env["PYTHONPATH"] = f"{working_directory}:{pythonpath}"
-        
-        result = subprocess.run(
-            command,
-            cwd=working_directory,
-            capture_output=True,
-            timeout=timeout,
-            env=process_env
-        )
-        
-        return CommandResult(
-            stdout=result.stdout.decode("utf-8", errors="replace"),
-            stderr=result.stderr.decode("utf-8", errors="replace"),
-            returncode=result.returncode
-        )
-        
-    except subprocess.TimeoutExpired:
-        return CommandResult(
-            stdout="",
-            stderr=f"Command timed out after {timeout} seconds",
-            returncode=-1
-        )
     except Exception as e:
         return CommandResult(
             stdout="",
