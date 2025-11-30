@@ -81,8 +81,9 @@ class DeveloperState(TypedDict, total=False):
     agents_md: Optional[str]  # Raw AGENTS.md content
     
     # Project config (passed in, not auto-detected)
-    # Example: {"tech_stack": "nextjs", "install_cmd": "bun install", "test_cmd": "bun test", "run_cmd": "bun dev"}
-    project_config: Optional[Dict[str, str]]
+    # Single service: {"tech_stack": "nextjs", "install_cmd": "bun install", "test_cmd": "bun test"}
+    # Multi-service:  {"tech_stack": "fullstack", "services": {"frontend": {...}, "backend": {...}}}
+    project_config: Optional[Dict[str, Any]]
     
     # Debug and feedback logs
     error_logs: Optional[str]

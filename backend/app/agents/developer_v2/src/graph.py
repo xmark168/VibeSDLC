@@ -10,7 +10,8 @@ from langgraph.graph import StateGraph, END
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.nodes import (
     router, setup_workspace, analyze, design, plan, implement, clarify, respond,
-    merge_to_main, cleanup_workspace, code_review, run_code, debug_error, summarize_code
+    merge_to_main, cleanup_workspace, code_review, run_code, debug_error, summarize_code,
+    lint_and_format
 )
 
 
@@ -86,15 +87,15 @@ def should_continue(state: DeveloperState) -> Literal["implement", "summarize_co
     return "summarize_code"
 
 
-def route_after_summarize(state: DeveloperState) -> Literal["code_review", "run_code", "implement"]:
+def route_after_summarize(state: DeveloperState) -> Literal["lint_and_format", "run_code", "implement"]:
     """First quality gate: IS_PASS check (MetaGPT SummarizeCode pattern).
     
     LLM evaluates if implementation meets requirements. Routes:
-    - IS_PASS=True -> code_review (or run_code for simple tasks)
+    - IS_PASS=True -> lint_and_format -> code_review (or run_code for simple tasks)
     - IS_PASS=False + retries available -> implement (retry with feedback)
-    - Max attempts reached -> code_review (proceed anyway)
+    - Max attempts reached -> lint_and_format (proceed anyway)
     
-    Optimization: Skip code_review for low complexity + ≤3 files (go direct to run_code).
+    Optimization: Skip lint_and_format + code_review for low complexity + ≤3 files.
     Max retries: 3 iterations (configurable via max_summarize).
     """
     action = state.get("action")
@@ -104,29 +105,29 @@ def route_after_summarize(state: DeveloperState) -> Literal["code_review", "run_
     
     # If action explicitly set
     if action == "CODE_REVIEW":
-        return "code_review"
+        return "lint_and_format"
     if action == "IMPLEMENT":
         return "implement"
     
     # IS_PASS check
     if is_pass:
-        # Speed optimization: Skip code_review for simple tasks
+        # Speed optimization: Skip lint + code_review for simple tasks
         complexity = state.get("complexity", "medium")
         files_created = state.get("files_created", [])
         files_modified = state.get("files_modified", [])
         total_files = len(files_created) + len(files_modified)
         
         if complexity == "low" and total_files <= 3:
-            return "run_code"  # Skip code_review, go directly to run tests
+            return "run_code"  # Skip lint + code_review, go directly to run tests
         
-        return "code_review"
+        return "lint_and_format"
     
     # Not pass - can we retry?
     if summarize_count < max_summarize:
         return "implement"  # Loop back with feedback
     
-    # Max attempts reached, proceed to code review anyway
-    return "code_review"
+    # Max attempts reached, proceed to lint + code review anyway
+    return "lint_and_format"
 
 
 def route_after_code_review(state: DeveloperState) -> Literal["run_code", "implement"]:
@@ -315,6 +316,7 @@ class DeveloperGraph:
         g.add_node("plan", partial(plan, agent=agent))
         g.add_node("implement", partial(implement, agent=agent))
         g.add_node("summarize_code", partial(summarize_code, agent=agent))  # MetaGPT SummarizeCode + IS_PASS
+        g.add_node("lint_and_format", partial(lint_and_format, agent=agent))  # Auto-fix style before review
         g.add_node("code_review", partial(code_review, agent=agent))
         g.add_node("run_code", partial(run_code, agent=agent))
         g.add_node("debug_error", partial(debug_error, agent=agent))
@@ -341,8 +343,11 @@ class DeveloperGraph:
         # After implement: continue or go to summarize_code (MetaGPT pattern)
         g.add_conditional_edges("implement", should_continue)
         
-        # After summarize_code: IS_PASS check - loop back to implement or proceed to code_review
+        # After summarize_code: IS_PASS check - loop back to implement or proceed to lint_and_format
         g.add_conditional_edges("summarize_code", route_after_summarize)
+        
+        # After lint_and_format: always go to code_review
+        g.add_edge("lint_and_format", "code_review")
         
         # After code review: run tests or retry review
         g.add_conditional_edges("code_review", route_after_code_review)

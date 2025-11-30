@@ -51,6 +51,18 @@ shared_context:
     - Address ROOT CAUSE, not symptoms
     - Add descriptive logging to track state
     - Don't make uneducated guesses - read the error message
+    
+    # UNIT TEST REQUIREMENTS (MANDATORY)
+    When implementing a feature/component, you MUST also create corresponding unit tests:
+    
+    1. **Test File Location**: Follow project's AGENTS.md and existing test structure
+    2. **Test Coverage Requirements**:
+       - Happy path (normal operation)
+       - Edge cases (empty input, null, boundary values)
+       - Error handling (invalid input, exceptions)
+    3. **Test Framework**: Use project's existing test framework (from project_config)
+    4. **Minimum**: Every new function/component needs at least 1 test file with 3 test cases
+    5. **NEVER skip tests** - Include test file in implementation plan
 
   task_types: |
     **Task Types:**

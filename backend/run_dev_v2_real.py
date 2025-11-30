@@ -270,32 +270,130 @@ class SimpleDeveloperRunner:
         """Get project config based on template type.
         
         Returns:
-            Dict with tech_stack, install_cmd, test_cmd, run_cmd, needs_db
+            Always uses services array format:
+            {"tech_stack": "...", "services": [{...}, {...}]}
         """
-        # Default config for NextJS boilerplate
+        # Default config for NextJS boilerplate (single service)
         if self.template in ["nextjs", "react"]:
             return {
                 "tech_stack": "nextjs",
-                "install_cmd": "bun install",
-                "test_cmd": "bun test",
-                "run_cmd": "bun dev",
-                "needs_db": True,  # Prisma in boilerplate
-                "db_cmds": ["bunx prisma generate", "bunx prisma db push --accept-data-loss"],
+                "services": [
+                    {
+                        "name": "app",
+                        "path": ".",
+                        # Runtime & Framework
+                        "runtime": "bun",
+                        "framework": "nextjs",
+                        # ORM & Database
+                        "orm": "prisma",
+                        "db_type": "postgresql",
+                        # Validation & Auth
+                        "validation": "zod",
+                        "auth": "next-auth",
+                        # Commands
+                        "install_cmd": "bun install",
+                        "test_cmd": "bun test",
+                        "run_cmd": "bun dev",
+                        "build_cmd": "bun run build",
+                        "lint_cmd": "bun run lint",
+                        # Auto-fix commands (run before code review)
+                        "lint_fix_cmd": "bunx eslint --fix . --ext .ts,.tsx,.js,.jsx",
+                        "format_cmd": "bunx prettier --write .",
+                        # DB setup
+                        "needs_db": True,
+                        "db_cmds": ["bunx prisma generate", "bunx prisma db push --accept-data-loss"],
+                    }
+                ]
             }
         
-        # Python projects
+        # Python projects (single service)
         if self.template == "python":
             return {
                 "tech_stack": "python",
-                "install_cmd": "pip install -e .",
-                "test_cmd": "pytest -v",
-                "run_cmd": "python main.py",
-                "needs_db": False,
-                "db_cmds": [],
+                "services": [
+                    {
+                        "name": "app",
+                        "path": ".",
+                        # Runtime & Framework
+                        "runtime": "python",
+                        "framework": "fastapi",
+                        # ORM & Database
+                        "orm": "sqlalchemy",
+                        "db_type": "postgresql",
+                        # Validation
+                        "validation": "pydantic",
+                        # Commands
+                        "install_cmd": "pip install -e .",
+                        "test_cmd": "pytest -v",
+                        "run_cmd": "uvicorn app.main:app --reload",
+                        "build_cmd": "",
+                        "lint_cmd": "ruff check .",
+                        # Auto-fix commands (run before code review)
+                        "lint_fix_cmd": "ruff check --fix .",
+                        "format_cmd": "ruff format .",
+                        # DB setup
+                        "needs_db": False,
+                        "db_cmds": [],
+                    }
+                ]
             }
         
-        # Default: auto-detect
-        return {}
+        # Fullstack monorepo (multi-service)
+        if self.template == "fullstack":
+            return {
+                "tech_stack": "fullstack",
+                "services": [
+                    {
+                        "name": "frontend",
+                        "path": "frontend",
+                        # Runtime & Framework
+                        "runtime": "bun",
+                        "framework": "nextjs",
+                        # Validation & Auth
+                        "validation": "zod",
+                        "auth": "next-auth",
+                        # Commands
+                        "install_cmd": "bun install",
+                        "test_cmd": "bun test",
+                        "run_cmd": "bun dev",
+                        "build_cmd": "bun run build",
+                        "lint_cmd": "bun run lint",
+                        # Auto-fix commands
+                        "lint_fix_cmd": "bunx eslint --fix . --ext .ts,.tsx,.js,.jsx",
+                        "format_cmd": "bunx prettier --write .",
+                        # No DB for frontend
+                        "needs_db": False,
+                        "db_cmds": [],
+                    },
+                    {
+                        "name": "backend",
+                        "path": "backend",
+                        # Runtime & Framework
+                        "runtime": "python",
+                        "framework": "fastapi",
+                        # ORM & Database
+                        "orm": "sqlalchemy",
+                        "db_type": "postgresql",
+                        # Validation
+                        "validation": "pydantic",
+                        # Commands
+                        "install_cmd": "pip install -e .",
+                        "test_cmd": "pytest -v",
+                        "run_cmd": "uvicorn app.main:app --reload",
+                        "build_cmd": "",
+                        "lint_cmd": "ruff check .",
+                        # Auto-fix commands
+                        "lint_fix_cmd": "ruff check --fix .",
+                        "format_cmd": "ruff format .",
+                        # DB setup
+                        "needs_db": True,
+                        "db_cmds": ["alembic upgrade head"],
+                    },
+                ]
+            }
+        
+        # Default: auto-detect (empty services triggers fallback)
+        return {"services": []}
     
     async def run_story(self, story: dict) -> dict:
         """Run a story through the graph."""

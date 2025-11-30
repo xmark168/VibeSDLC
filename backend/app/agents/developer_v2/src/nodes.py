@@ -1654,6 +1654,96 @@ async def summarize_code(state: DeveloperState, agent=None) -> DeveloperState:
 
 
 # =============================================================================
+# LINT AND FORMAT (Auto-fix style issues before code review) - NO LLM
+# =============================================================================
+
+async def lint_and_format(state: DeveloperState, agent=None) -> DeveloperState:
+    """Auto-fix lint/format issues before code review.
+    
+    Uses project_config to determine lint/format commands:
+    - Node/Bun: eslint --fix + prettier --write
+    - Python: ruff check --fix + ruff format
+    
+    This reduces trivial style issues in code review, saving tokens and time.
+    """
+    workspace_path = state.get("workspace_path")
+    if not workspace_path:
+        logger.warning("[lint_and_format] No workspace_path, skipping")
+        return state
+    
+    project_config = state.get("project_config", {})
+    services = project_config.get("services", [])
+    
+    # If no services config, try to detect and use default commands
+    if not services:
+        # Fallback: detect project type and use default fix commands
+        if Path(workspace_path, "package.json").exists():
+            services = [{"name": "app", "path": ".", "runtime": "bun"}]
+        elif Path(workspace_path, "pyproject.toml").exists():
+            services = [{"name": "app", "path": ".", "runtime": "python"}]
+        else:
+            logger.info("[lint_and_format] No services config, skipping")
+            return state
+    
+    fixed_count = 0
+    lint_output = ""
+    
+    for svc in services:
+        svc_name = svc.get("name", "app")
+        svc_path = str(Path(workspace_path) / svc.get("path", "."))
+        runtime = svc.get("runtime", "node")
+        
+        # Use custom commands if provided, otherwise use defaults
+        lint_fix_cmd = svc.get("lint_fix_cmd")
+        format_cmd = svc.get("format_cmd")
+        
+        if not lint_fix_cmd and not format_cmd:
+            # Default commands based on runtime
+            if runtime in ["bun", "node"]:
+                lint_fix_cmd = "bunx eslint --fix . --ext .ts,.tsx,.js,.jsx 2>/dev/null || true"
+                format_cmd = "bunx prettier --write . 2>/dev/null || true"
+            elif runtime == "python":
+                lint_fix_cmd = "ruff check --fix . 2>/dev/null || true"
+                format_cmd = "ruff format . 2>/dev/null || true"
+            else:
+                continue
+        
+        logger.info(f"[lint_and_format] Running lint/format for {svc_name} ({runtime})")
+        
+        # Execute lint fix
+        if lint_fix_cmd:
+            try:
+                cmd = f"cd {svc_path} && {lint_fix_cmd}"
+                result = execute_shell.invoke({"command": cmd, "timeout": 60})
+                if isinstance(result, dict):
+                    output = result.get("stdout", "") + result.get("stderr", "")
+                    lint_output += f"\n=== {svc_name} lint ===\n{output}"
+                    # Count fixed files from output (rough estimate)
+                    if "fixed" in output.lower() or "formatted" in output.lower():
+                        fixed_count += 1
+            except Exception as e:
+                logger.warning(f"[lint_and_format] Lint fix error: {e}")
+        
+        # Execute format
+        if format_cmd:
+            try:
+                cmd = f"cd {svc_path} && {format_cmd}"
+                result = execute_shell.invoke({"command": cmd, "timeout": 60})
+                if isinstance(result, dict):
+                    output = result.get("stdout", "") + result.get("stderr", "")
+                    lint_output += f"\n=== {svc_name} format ===\n{output}"
+            except Exception as e:
+                logger.warning(f"[lint_and_format] Format error: {e}")
+    
+    logger.info(f"[lint_and_format] Completed, ~{fixed_count} fixes applied")
+    
+    return {
+        **state,
+        "lint_output": lint_output,
+    }
+
+
+# =============================================================================
 # CODE REVIEW (BATCH - Review ALL files in ONE LLM call)
 # =============================================================================
 
@@ -1800,6 +1890,112 @@ async def code_review(state: DeveloperState, agent=None) -> DeveloperState:
 # RUN CODE (Execute tests to verify) - Rule-based, NO LLM
 # =============================================================================
 
+async def _run_code_multi_service(state: DeveloperState, workspace_path: str, services: list) -> DeveloperState:
+    """Run tests for project services (single or multi-service).
+    
+    Args:
+        state: Current state
+        workspace_path: Root workspace path
+        services: List of service configs [{"name": "app", "path": ".", ...}, ...]
+    
+    Returns:
+        Updated state with combined test results
+    """
+    task_id = state.get("task_id") or state.get("story_id", "")
+    branch_name = state.get("branch_name") or task_id
+    
+    all_stdout = ""
+    all_stderr = ""
+    all_passed = True
+    summaries = []
+    
+    for svc_config in services:
+        svc_name = svc_config.get("name", "app")
+        svc_path = str(Path(workspace_path) / svc_config.get("path", "."))
+        test_cmd = svc_config.get("test_cmd", "")
+        install_cmd = svc_config.get("install_cmd", "")
+        needs_db = svc_config.get("needs_db", False)
+        db_cmds = svc_config.get("db_cmds", [])
+        
+        if not test_cmd:
+            logger.info(f"[run_code] Skipping {svc_name}: no test_cmd")
+            continue
+        
+        logger.info(f"[run_code] Running tests for {svc_name} at {svc_path}")
+        all_stdout += f"\n\n{'='*40}\n SERVICE: {svc_name}\n{'='*40}\n"
+        
+        # Build commands for this service
+        commands = []
+        if install_cmd:
+            commands.append(f"cd {svc_config.get('path', svc_name)} && {install_cmd}")
+        for db_cmd in db_cmds:
+            commands.append(f"cd {svc_config.get('path', svc_name)} && {db_cmd}")
+        commands.append(f"cd {svc_config.get('path', svc_name)} && {test_cmd}")
+        
+        # If any service needs DB, use container
+        if needs_db:
+            try:
+                set_container_context(branch_name=branch_name, workspace_path=workspace_path)
+                container_info = dev_container_manager.get_or_create(
+                    branch_name=branch_name,
+                    workspace_path=workspace_path,
+                    project_type="node",  # Container supports multiple runtimes
+                )
+                
+                for cmd in commands:
+                    result = dev_container_manager.exec(branch_name, cmd)
+                    all_stdout += f"\n$ {cmd}\n{result.get('output', '')}"
+                    
+                    if result.get("exit_code", 0) != 0 and "test" in cmd.lower():
+                        all_stderr += result.get("output", "")
+                        all_passed = False
+                        summaries.append(f"{svc_name}: FAIL")
+                        break
+                else:
+                    summaries.append(f"{svc_name}: PASS")
+                    
+            except Exception as e:
+                logger.error(f"[run_code] Container error for {svc_name}: {e}")
+                all_passed = False
+                summaries.append(f"{svc_name}: ERROR")
+        else:
+            # Direct execution for services without DB
+            for cmd in commands:
+                try:
+                    result = execute_shell.invoke({"command": cmd, "timeout": 300})
+                    if isinstance(result, dict):
+                        all_stdout += f"\n$ {cmd}\n{result.get('stdout', '')}"
+                        if result.get("exit_code", 0) != 0 and "test" in cmd.lower():
+                            all_stderr += result.get("stderr", "")
+                            all_passed = False
+                            summaries.append(f"{svc_name}: FAIL")
+                            break
+                except Exception as e:
+                    all_stderr += f"\nError: {e}"
+                    all_passed = False
+                    summaries.append(f"{svc_name}: ERROR")
+                    break
+            else:
+                summaries.append(f"{svc_name}: PASS")
+    
+    run_status = "PASS" if all_passed else "FAIL"
+    summary = ", ".join(summaries)
+    
+    logger.info(f"[run_code] Multi-service result: {run_status} ({summary})")
+    
+    return {
+        **state,
+        "run_status": run_status,
+        "run_stdout": all_stdout,
+        "run_stderr": all_stderr,
+        "run_result": {
+            "status": run_status,
+            "summary": f"Multi-service: {summary}",
+            "services": summaries,
+        },
+    }
+
+
 async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
     """Execute tests in workspace using rule-based detection (no LLM).
     
@@ -1826,26 +2022,24 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         # Setup tool context for shell tools
         _setup_tool_context(workspace_path, project_id, task_id)
         
-        # 1. Use project_config if provided, otherwise auto-detect
+        # 1. Use project_config services array if provided, otherwise auto-detect
         project_config = state.get("project_config", {})
+        services = project_config.get("services", [])
         
-        if project_config and project_config.get("test_cmd"):
-            # Use provided config
-            project_type = project_config.get("tech_stack", "node")
-            test_cmd = project_config.get("test_cmd", "npm test")
-            install_cmd = project_config.get("install_cmd", "npm install")
-            needs_db = project_config.get("needs_db", False)
-            db_cmds = project_config.get("db_cmds", [])
-            logger.info(f"[run_code] Using project_config: {project_type}, test_cmd: {test_cmd}")
-        else:
-            # Fallback to auto-detection
-            project_info = _detect_project_type(workspace_path)
-            project_type = project_info["type"]
-            test_cmd = project_info["test_cmd"]
-            install_cmd = project_info["install_cmd"]
-            needs_db = project_info.get("needs_db", False)
-            db_cmds = project_info.get("db_cmds", [])
-            logger.info(f"[run_code] Auto-detected: {project_type}, test_cmd: {test_cmd}, needs_db: {needs_db}")
+        # Services array config (single or multi-service)
+        if services:
+            svc_names = [s.get("name", "app") for s in services]
+            logger.info(f"[run_code] Services config: {svc_names}")
+            return await _run_code_multi_service(state, workspace_path, services)
+        
+        # Fallback to auto-detection (no services array provided)
+        project_info = _detect_project_type(workspace_path)
+        project_type = project_info["type"]
+        test_cmd = project_info["test_cmd"]
+        install_cmd = project_info["install_cmd"]
+        needs_db = project_info.get("needs_db", False)
+        db_cmds = project_info.get("db_cmds", [])
+        logger.info(f"[run_code] Auto-detected: {project_type}, test_cmd: {test_cmd}, needs_db: {needs_db}")
         
         if project_type == "unknown" or not test_cmd:
             logger.warning("[run_code] Unknown project type, skipping tests")
