@@ -24,6 +24,70 @@ _chat_llm = ChatOpenAI(model="claude-haiku-4-5-20251001", temperature=0.7, timeo
     
 ROLE_WIP_MAP = {"developer": "InProgress", "tester": "Review", "business_analyst": None}
 
+# Patterns to detect specialist task completion - must be specific completion messages
+# Format: (role, [(pattern, is_completion_message)])
+SPECIALIST_COMPLETION_PATTERNS = {
+    "business_analyst": [
+        "đã thêm",  # "Đã thêm X User Stories vào backlog"
+        "stories vào backlog",
+        "đã phê duyệt",
+    ],
+    "developer": [
+        "implement xong",
+        "code xong", 
+        "đã merge",
+        "pull request đã được merge",
+    ],
+    "tester": [
+        "test xong",
+        "qa xong",
+        "all tests passed",
+        "đã test xong",
+    ],
+}
+
+
+def _detect_specialist_completion(conversation_history: str) -> str | None:
+    """Detect if a specialist JUST completed a task (check LAST assistant message only).
+    
+    Conversation history format from ProjectContext.format_memory():
+    ```
+    ## Gần đây:
+    User: message
+    Assistant: message
+    ```
+    
+    Returns:
+        specialist_role if detected, None otherwise
+    """
+    if not conversation_history:
+        return None
+    
+    # Parse conversation to get LAST Assistant message only
+    lines = conversation_history.strip().split('\n')
+    
+    # Find last Assistant message (format: "Assistant: message")
+    last_assistant_msg = None
+    for line in reversed(lines):
+        line_stripped = line.strip()
+        # Match "Assistant: ..." format from format_memory()
+        if line_stripped.startswith('Assistant:'):
+            last_assistant_msg = line_stripped[len('Assistant:'):].strip()
+            break
+    
+    if not last_assistant_msg:
+        return None
+    
+    last_msg_lower = last_assistant_msg.lower()
+    
+    # Check each role's completion patterns
+    for role, patterns in SPECIALIST_COMPLETION_PATTERNS.items():
+        for pattern in patterns:
+            if pattern.lower() in last_msg_lower:
+                return role
+    
+    return None
+
 
 def _clean_json(text: str) -> str:
     """Strip markdown code blocks from LLM response."""
@@ -72,6 +136,33 @@ async def extract_preferences(state: TeamLeaderState, agent=None) -> dict:
     return {}
 
 
+async def _check_domain_change(user_message: str, existing_prd_title: str, state: dict) -> bool:
+    """Use LLM to check if user request is for a different domain than existing PRD."""
+    try:
+        prompt = f"""So sánh 2 project sau và xác định xem chúng có CÙNG DOMAIN hay KHÁC DOMAIN.
+
+Project hiện tại: "{existing_prd_title}"
+Yêu cầu mới của user: "{user_message}"
+
+CÙNG DOMAIN: Nếu user muốn update, sửa đổi, thêm feature cho project hiện tại.
+VÍ DỤ: "Website bán sách" + "thêm feature giỏ hàng" = CÙNG DOMAIN
+
+KHÁC DOMAIN: Nếu user muốn tạo một project hoàn toàn mới, khác lĩnh vực.
+VÍ DỤ: "Website bán sách" + "tạo website quản lý công việc" = KHÁC DOMAIN
+
+Trả lời CHỈ một từ: SAME hoặc DIFFERENT"""
+
+        response = await _fast_llm.ainvoke(
+            [HumanMessage(content=prompt)],
+            config=_cfg(state, "check_domain_change")
+        )
+        answer = response.content.strip().upper()
+        return "DIFFERENT" in answer
+    except Exception as e:
+        logger.error(f"[_check_domain_change] Error: {e}")
+        return False
+
+
 async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
     """Route request using structured LLM output."""
     try:
@@ -108,6 +199,54 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                 if wip_available.get(wip_col, 1) <= 0:
                     return {**state, "action": "RESPOND", "wip_blocked": True,
                             "message": f"Hiện tại {wip_col} đang full. Cần đợi stories hoàn thành.", "confidence": 0.95}
+            
+            # Check for domain change when delegating to BA
+            if result.get("target_role") == "business_analyst" and agent:
+                try:
+                    from sqlmodel import Session
+                    from app.core.db import engine
+                    from app.services.artifact_service import ArtifactService
+                    from app.models import ArtifactType, Epic, Story
+                    
+                    project_id = UUID(state["project_id"])
+                    
+                    with Session(engine) as session:
+                        artifact_service = ArtifactService(session)
+                        existing_prd = artifact_service.get_latest_version(
+                            project_id=project_id,
+                            artifact_type=ArtifactType.PRD
+                        )
+                        
+                        if existing_prd:
+                            # Check if domains are different
+                            is_different = await _check_domain_change(
+                                state["user_message"],
+                                existing_prd.title,
+                                state
+                            )
+                            
+                            if is_different:
+                                # Count existing stories
+                                from sqlmodel import select
+                                stories_count = session.exec(
+                                    select(Story).where(Story.project_id == project_id)
+                                ).all()
+                                
+                                logger.info(
+                                    f"[router] Domain change detected: '{existing_prd.title}' → new request. "
+                                    f"Asking for confirmation."
+                                )
+                                
+                                return {
+                                    **state,
+                                    "action": "CONFIRM_REPLACE",
+                                    "existing_prd_title": existing_prd.title,
+                                    "existing_stories_count": len(stories_count),
+                                    "needs_replace_confirm": True,
+                                    "wip_blocked": False
+                                }
+                except Exception as e:
+                    logger.error(f"[router] Error checking domain change: {e}", exc_info=True)
         
         return {**state, **result, "wip_blocked": False}
     except Exception as e:
@@ -176,14 +315,37 @@ Hãy viết MỘT câu hỏi clarification thân thiện, tự nhiên để hi�
 async def conversational(state: TeamLeaderState, agent=None) -> TeamLeaderState:
     """Generate conversational response."""
     try:
+        conversation_history = state.get("conversation_history", "")
+        
+        # Detect if specialist just completed a task
+        specialist_role = _detect_specialist_completion(conversation_history)
+        
+        # Build context for LLM
         sys_prompt = _sys_prompt(agent, "conversational")
-        if state.get("conversation_history"):
+        
+        # Add specialist completion context if detected
+        specialist_context = ""
+        if specialist_role:
+            role_names = {
+                "business_analyst": "Business Analyst",
+                "developer": "Developer", 
+                "tester": "Tester"
+            }
+            role_display = role_names.get(specialist_role, specialist_role)
+            specialist_context = f"""
+**LƯU Ý QUAN TRỌNG:** {role_display} vừa hoàn thành task. Bạn đang tiếp quản cuộc hội thoại.
+- Hãy chào đón user trở lại một cách tự nhiên
+- Có thể hỏi user cần gì tiếp theo
+- Đừng lặp lại những gì {role_display} đã nói"""
+        
+        if conversation_history:
             sys_prompt += f"""
 
 ---
 
 **Cuộc trò chuyện gần đây:**
-{state['conversation_history']}
+{conversation_history}
+{specialist_context}
 
 **Lưu ý:** Dựa vào context trên để trả lời tự nhiên và liên quan. Đừng lặp lại những gì đã nói."""
         
@@ -220,3 +382,45 @@ async def status_check(state: TeamLeaderState, agent=None) -> TeamLeaderState:
     except Exception as e:
         logger.error(f"[status_check] {e}")
         return {**state, "message": "", "action": "STATUS_CHECK"}
+
+
+async def confirm_replace(state: TeamLeaderState, agent=None) -> TeamLeaderState:
+    """Ask user to confirm replacing existing project with new one."""
+    try:
+        existing_title = state.get("existing_prd_title", "project hiện tại")
+        stories_count = state.get("existing_stories_count", 0)
+        
+        question = (
+            f"Bạn đã có project '{existing_title}' và các tài liệu liên quan. "
+            f"Bạn muốn:"
+        )
+        
+        if agent:
+            await agent.message_user(
+                "question",
+                question,
+                question_config={
+                    "question_type": "multichoice",
+                    "options": [
+                        "Thay thế bằng project mới",
+                        "Giữ nguyên project cũ"
+                    ],
+                    "allow_multiple": False,
+                    "context": {
+                        "original_user_message": state.get("user_message", "")
+                    }
+                }
+            )
+        
+        logger.info(f"[confirm_replace] Asked user to confirm replacing '{existing_title}'")
+        
+        return {
+            **state,
+            "action": "CONFIRM_REPLACE",
+            "waiting_for_answer": True
+        }
+    except Exception as e:
+        logger.error(f"[confirm_replace] Error: {e}", exc_info=True)
+        if agent:
+            await agent.message_user("response", "Có lỗi xảy ra, vui lòng thử lại.")
+        return {**state, "action": "RESPOND"}

@@ -4,10 +4,41 @@ import logging
 import os
 import re
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_tavily import TavilySearch
+
+
+def _write_test_log(task_id: str, test_output: str, status: str = "FAIL"):
+    """Write test output to logs/developer/test_log directory."""
+    try:
+        # Create logs directory
+        log_dir = Path("logs/developer/test_log")
+        log_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_task_id = re.sub(r'[^\w\-]', '_', task_id or "unknown")
+        filename = f"{safe_task_id}_{timestamp}_{status}.log"
+        
+        log_path = log_dir / filename
+        
+        # Write log content
+        content = f"""{'='*60}
+TEST LOG - {status}
+Task: {task_id}
+Time: {datetime.now().isoformat()}
+{'='*60}
+
+{test_output}
+"""
+        log_path.write_text(content, encoding='utf-8')
+        logger.info(f"[run_code] Test log saved: {log_path}")
+        
+    except Exception as e:
+        logger.warning(f"[run_code] Failed to write test log: {e}")
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import (
@@ -41,7 +72,6 @@ from app.agents.developer_v2.src.tools import (
     # Workspace management
     setup_git_worktree,
     index_workspace,
-    incremental_update_index,
     # Project context
     get_agents_md,
     get_project_context,
@@ -842,16 +872,25 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         project_id = state.get("project_id", "default")
         task_id = state.get("task_id") or state.get("story_id", "")
         
-        # React mode: only increment counter when looping back from summarize (current_step reset to 0)
+        # React mode: increment counter when looping back
         react_loop_count = state.get("react_loop_count", 0)
         debug_count = state.get("debug_count", 0)
         summarize_feedback = state.get("summarize_feedback")
+        run_status = state.get("run_status")
         
-        # Only increment when: have feedback from summarize AND at step 0 (just looped back)
-        if summarize_feedback and current_step == 0 and state.get("react_mode"):
+        # FIX: Check run_status == "FAIL" FIRST (regardless of current_step)
+        # When coming from run_code FAIL in React mode, current_step is NOT 0
+        # We need to reset it to 0 to actually re-implement
+        if state.get("react_mode") and run_status == "FAIL":
+            current_step = 0  # Reset to start over
             react_loop_count += 1
-            debug_count = 0  # Reset debug count for new cycle
-            logger.info(f"[implement] React loop iteration {react_loop_count} (feedback: {summarize_feedback[:100]}...)")
+            debug_count = 0
+            logger.info(f"[implement] React loop {react_loop_count} (from run_code FAIL, restarting from step 0)")
+        # Check for summarize feedback (when current_step is already 0)
+        elif state.get("react_mode") and current_step == 0 and summarize_feedback:
+            react_loop_count += 1
+            debug_count = 0
+            logger.info(f"[implement] React loop {react_loop_count} (from summarize: {summarize_feedback[:100]}...)")
         
         if not plan_steps:
             logger.error("[implement] No implementation plan")
@@ -1021,9 +1060,7 @@ Test: {project_config.get('test_cmd', 'npm test')}
                     "mode": "w"
                 })
                 logger.info(f"[implement] {result}")
-                
-                # Incremental update index (fast - only changed file)
-                incremental_update_index(project_id, task_id)
+                # Note: Removed incremental_update_index - index at setup_workspace is enough
             except Exception as write_err:
                 logger.warning(f"[implement] Failed to write {code_change.file_path}: {write_err}")
         
@@ -1050,6 +1087,7 @@ Test: {project_config.get('test_cmd', 'npm test')}
             "current_step": current_step + 1,
             "react_loop_count": react_loop_count,
             "debug_count": debug_count,
+            "run_status": None,  # Clear run_status to avoid re-triggering React loop
             "message": msg,
             "action": "IMPLEMENT" if current_step + 1 < len(plan_steps) else "VALIDATE",
         }
@@ -1813,12 +1851,16 @@ async def code_review(state: DeveloperState, agent=None) -> DeveloperState:
             batch_result = json.loads(clean_json)
         except json.JSONDecodeError:
             logger.warning("[code_review] Failed to parse batch result, assuming LGTM")
-            batch_result = {"overall_result": "LGTM", "files": {}, "summary": "Parse error"}
+            batch_result = {"files": {}, "summary": "Parse error"}
         
-        # Process batch results
-        overall_result = batch_result.get("overall_result", "LGTM")
+        # Process batch results - calculate all_passed from actual file results (ignore overall_result)
         files_review = batch_result.get("files", {})
-        all_passed = "LGTM" in overall_result
+        
+        # all_passed = True only if ALL files are LGTM
+        all_passed = all(
+            "LGTM" in r.get("result", "LGTM")
+            for r in files_review.values()
+        ) if files_review else True
         
         review_results = []
         error_logs_parts = ["## CODE REVIEW FEEDBACK (MUST FIX):"]
@@ -1890,6 +1932,19 @@ async def code_review(state: DeveloperState, agent=None) -> DeveloperState:
 # RUN CODE (Execute tests to verify) - Rule-based, NO LLM
 # =============================================================================
 
+def _get_langfuse_span(state: DeveloperState, name: str, input_data: dict = None):
+    """Get Langfuse span if handler is available."""
+    handler = state.get("langfuse_handler")
+    if not handler:
+        return None
+    try:
+        from langfuse import get_client
+        langfuse = get_client()
+        return langfuse.span(name=name, input=input_data or {})
+    except Exception:
+        return None
+
+
 async def _run_code_multi_service(state: DeveloperState, workspace_path: str, services: list) -> DeveloperState:
     """Run tests for project services (single or multi-service).
     
@@ -1904,96 +1959,151 @@ async def _run_code_multi_service(state: DeveloperState, workspace_path: str, se
     task_id = state.get("task_id") or state.get("story_id", "")
     branch_name = state.get("branch_name") or task_id
     
+    # Langfuse tracing
+    parent_span = _get_langfuse_span(state, "run_code_multi_service", {
+        "services": [s.get("name") for s in services],
+        "workspace": workspace_path,
+    })
+    
     all_stdout = ""
     all_stderr = ""
     all_passed = True
     summaries = []
     
-    for svc_config in services:
-        svc_name = svc_config.get("name", "app")
-        svc_path = str(Path(workspace_path) / svc_config.get("path", "."))
-        test_cmd = svc_config.get("test_cmd", "")
-        install_cmd = svc_config.get("install_cmd", "")
-        needs_db = svc_config.get("needs_db", False)
-        db_cmds = svc_config.get("db_cmds", [])
-        
-        if not test_cmd:
-            logger.info(f"[run_code] Skipping {svc_name}: no test_cmd")
-            continue
-        
-        logger.info(f"[run_code] Running tests for {svc_name} at {svc_path}")
-        all_stdout += f"\n\n{'='*40}\n SERVICE: {svc_name}\n{'='*40}\n"
-        
-        # Build commands for this service
-        commands = []
-        if install_cmd:
-            commands.append(f"cd {svc_config.get('path', svc_name)} && {install_cmd}")
-        for db_cmd in db_cmds:
-            commands.append(f"cd {svc_config.get('path', svc_name)} && {db_cmd}")
-        commands.append(f"cd {svc_config.get('path', svc_name)} && {test_cmd}")
-        
-        # If any service needs DB, use container
-        if needs_db:
-            try:
-                set_container_context(branch_name=branch_name, workspace_path=workspace_path)
-                container_info = dev_container_manager.get_or_create(
-                    branch_name=branch_name,
-                    workspace_path=workspace_path,
-                    project_type="node",  # Container supports multiple runtimes
-                )
-                
-                for cmd in commands:
-                    result = dev_container_manager.exec(branch_name, cmd)
-                    all_stdout += f"\n$ {cmd}\n{result.get('output', '')}"
+    try:
+        for svc_config in services:
+            svc_name = svc_config.get("name", "app")
+            svc_path = str(Path(workspace_path) / svc_config.get("path", "."))
+            test_cmd = svc_config.get("test_cmd", "")
+            install_cmd = svc_config.get("install_cmd", "")
+            needs_db = svc_config.get("needs_db", False)
+            db_cmds = svc_config.get("db_cmds", [])
+            
+            if not test_cmd:
+                logger.info(f"[run_code] Skipping {svc_name}: no test_cmd")
+                continue
+            
+            # Service-level span
+            svc_span = parent_span.span(name=f"service:{svc_name}", input={
+                "path": svc_config.get("path", "."),
+                "needs_db": needs_db,
+            }) if parent_span else None
+            
+            logger.info(f"[run_code] Running tests for {svc_name} at {svc_path}")
+            all_stdout += f"\n\n{'='*40}\n SERVICE: {svc_name}\n{'='*40}\n"
+            
+            # Build commands for this service
+            commands = []
+            if install_cmd:
+                commands.append(f"cd {svc_config.get('path', svc_name)} && {install_cmd}")
+            for db_cmd in db_cmds:
+                commands.append(f"cd {svc_config.get('path', svc_name)} && {db_cmd}")
+            commands.append(f"cd {svc_config.get('path', svc_name)} && {test_cmd}")
+            
+            svc_passed = True
+            
+            # If any service needs DB, use container
+            if needs_db:
+                try:
+                    set_container_context(branch_name=branch_name, workspace_path=workspace_path)
+                    container_info = dev_container_manager.get_or_create(
+                        branch_name=branch_name,
+                        workspace_path=workspace_path,
+                        project_type="node",
+                    )
                     
-                    if result.get("exit_code", 0) != 0 and "test" in cmd.lower():
-                        all_stderr += result.get("output", "")
+                    for cmd in commands:
+                        # Command-level span
+                        cmd_span = svc_span.span(name=f"exec:{cmd[:40]}...") if svc_span else None
+                        
+                        # Longer timeout for install commands (300s vs 120s default)
+                        timeout = 300 if "install" in cmd else 120
+                        result = dev_container_manager.exec(branch_name, cmd, timeout=timeout)
+                        all_stdout += f"\n$ {cmd}\n{result.get('output', '')}"
+                        
+                        exit_code = result.get("exit_code", 0)
+                        if cmd_span:
+                            cmd_span.end(output={"exit_code": exit_code, "output_len": len(result.get("output", ""))})
+                        
+                        if exit_code != 0 and "test" in cmd.lower():
+                            test_output = result.get("output", "")
+                            all_stderr += test_output
+                            all_passed = False
+                            svc_passed = False
+                            summaries.append(f"{svc_name}: FAIL")
+                            # Log test failure details
+                            logger.error(f"[run_code] TEST FAILED for {svc_name}:\n{test_output[:2000]}")
+                            # Write to log file
+                            task_id = state.get("task_id") or state.get("story_id", "unknown")
+                            _write_test_log(task_id, test_output, "FAIL")
+                            break
+                    else:
+                        summaries.append(f"{svc_name}: PASS")
+                        
+                except Exception as e:
+                    logger.error(f"[run_code] Container error for {svc_name}: {e}")
+                    all_passed = False
+                    svc_passed = False
+                    summaries.append(f"{svc_name}: ERROR")
+            else:
+                # Direct execution for services without DB
+                for cmd in commands:
+                    cmd_span = svc_span.span(name=f"exec:{cmd[:40]}...") if svc_span else None
+                    
+                    try:
+                        result = execute_shell.invoke({"command": cmd, "timeout": 300})
+                        if isinstance(result, dict):
+                            all_stdout += f"\n$ {cmd}\n{result.get('stdout', '')}"
+                            exit_code = result.get("exit_code", 0)
+                            
+                            if cmd_span:
+                                cmd_span.end(output={"exit_code": exit_code})
+                            
+                            if exit_code != 0 and "test" in cmd.lower():
+                                all_stderr += result.get("stderr", "")
+                                all_passed = False
+                                svc_passed = False
+                                summaries.append(f"{svc_name}: FAIL")
+                                break
+                    except Exception as e:
+                        if cmd_span:
+                            cmd_span.end(output={"error": str(e)})
+                        all_stderr += f"\nError: {e}"
                         all_passed = False
-                        summaries.append(f"{svc_name}: FAIL")
+                        svc_passed = False
+                        summaries.append(f"{svc_name}: ERROR")
                         break
                 else:
                     summaries.append(f"{svc_name}: PASS")
-                    
-            except Exception as e:
-                logger.error(f"[run_code] Container error for {svc_name}: {e}")
-                all_passed = False
-                summaries.append(f"{svc_name}: ERROR")
-        else:
-            # Direct execution for services without DB
-            for cmd in commands:
-                try:
-                    result = execute_shell.invoke({"command": cmd, "timeout": 300})
-                    if isinstance(result, dict):
-                        all_stdout += f"\n$ {cmd}\n{result.get('stdout', '')}"
-                        if result.get("exit_code", 0) != 0 and "test" in cmd.lower():
-                            all_stderr += result.get("stderr", "")
-                            all_passed = False
-                            summaries.append(f"{svc_name}: FAIL")
-                            break
-                except Exception as e:
-                    all_stderr += f"\nError: {e}"
-                    all_passed = False
-                    summaries.append(f"{svc_name}: ERROR")
-                    break
-            else:
-                summaries.append(f"{svc_name}: PASS")
-    
-    run_status = "PASS" if all_passed else "FAIL"
-    summary = ", ".join(summaries)
-    
-    logger.info(f"[run_code] Multi-service result: {run_status} ({summary})")
-    
-    return {
-        **state,
-        "run_status": run_status,
-        "run_stdout": all_stdout,
-        "run_stderr": all_stderr,
-        "run_result": {
-            "status": run_status,
-            "summary": f"Multi-service: {summary}",
-            "services": summaries,
-        },
-    }
+            
+            # End service span
+            if svc_span:
+                svc_span.end(output={"status": "PASS" if svc_passed else "FAIL"})
+        
+        run_status = "PASS" if all_passed else "FAIL"
+        summary = ", ".join(summaries)
+        
+        logger.info(f"[run_code] Multi-service result: {run_status} ({summary})")
+        
+        # End parent span
+        if parent_span:
+            parent_span.end(output={"status": run_status, "summary": summary, "services": summaries})
+        
+        return {
+            **state,
+            "run_status": run_status,
+            "run_stdout": all_stdout,
+            "run_stderr": all_stderr,
+            "run_result": {
+                "status": run_status,
+                "summary": f"Multi-service: {summary}",
+                "services": summaries,
+            },
+        }
+    except Exception as e:
+        if parent_span:
+            parent_span.end(output={"error": str(e)})
+        raise
 
 
 async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
@@ -2006,13 +2116,22 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
     4. Analyze results using regex patterns
     """
     print("[NODE] run_code - Running tests (rule-based, no LLM)...")
+    
+    workspace_path = state.get("workspace_path", "")
+    project_id = state.get("project_id", "default")
+    task_id = state.get("task_id") or state.get("story_id", "")
+    
+    # Langfuse tracing for run_code
+    run_code_span = _get_langfuse_span(state, "run_code", {
+        "workspace": workspace_path,
+        "task_id": task_id,
+    })
+    
     try:
-        workspace_path = state.get("workspace_path", "")
-        project_id = state.get("project_id", "default")
-        task_id = state.get("task_id") or state.get("story_id", "")
-        
         if not workspace_path or not Path(workspace_path).exists():
             logger.warning("[run_code] No workspace path, skipping tests")
+            if run_code_span:
+                run_code_span.end(output={"status": "PASS", "reason": "No workspace"})
             return {
                 **state,
                 "run_status": "PASS",
@@ -2030,6 +2149,8 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         if services:
             svc_names = [s.get("name", "app") for s in services]
             logger.info(f"[run_code] Services config: {svc_names}")
+            if run_code_span:
+                run_code_span.end(output={"mode": "multi_service", "services": svc_names})
             return await _run_code_multi_service(state, workspace_path, services)
         
         # Fallback to auto-detection (no services array provided)
@@ -2043,6 +2164,8 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         
         if project_type == "unknown" or not test_cmd:
             logger.warning("[run_code] Unknown project type, skipping tests")
+            if run_code_span:
+                run_code_span.end(output={"status": "PASS", "reason": "Unknown project type"})
             return {
                 **state,
                 "run_status": "PASS",
@@ -2056,6 +2179,12 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         if needs_db:
             branch_name = state.get("branch_name") or task_id
             logger.info(f"[run_code] Project needs DB, using persistent container for {branch_name}...")
+            
+            # Container execution span
+            container_span = run_code_span.span(name="container_execution", input={
+                "branch": branch_name,
+                "project_type": project_type,
+            }) if run_code_span else None
             
             try:
                 # Set container context for LLM tools
@@ -2077,14 +2206,28 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
                     if not cmd:
                         continue
                     
+                    # Command-level span
+                    cmd_span = container_span.span(name=f"exec:{cmd[:40]}...") if container_span else None
+                    
+                    # Longer timeout for install commands (300s vs 120s default)
+                    timeout = 300 if "install" in cmd else 120
                     logger.info(f"[run_code] Container exec: {cmd}")
-                    result = dev_container_manager.exec(branch_name, cmd)
+                    result = dev_container_manager.exec(branch_name, cmd, timeout=timeout)
+                    
+                    exit_code = result.get("exit_code", 0)
+                    if cmd_span:
+                        cmd_span.end(output={"exit_code": exit_code, "output_len": len(result.get("output", ""))})
                     
                     stdout_combined += f"\n=== {cmd} ===\n{result.get('output', '')}"
                     
                     # Check for test failures (continue on other failures)
-                    if result.get("exit_code", 0) != 0 and "test" in cmd.lower():
-                        stderr_combined += result.get("output", "")
+                    if exit_code != 0 and "test" in cmd.lower():
+                        test_output = result.get("output", "")
+                        stderr_combined += test_output
+                        # Log test failure details
+                        logger.error(f"[run_code] TEST FAILED:\n{test_output[:2000]}")
+                        # Write to log file
+                        _write_test_log(task_id, test_output, "FAIL")
                         break
                 
                 # Analyze results
@@ -2093,6 +2236,14 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
                 summary = analysis["summary"]
                 
                 logger.info(f"[run_code] Container execution: {run_status} - {summary}")
+                
+                # End container span
+                if container_span:
+                    container_span.end(output={"status": run_status, "summary": summary})
+                
+                # End run_code span
+                if run_code_span:
+                    run_code_span.end(output={"status": run_status, "mode": "container"})
                 
                 # Note: Container stays running for reuse!
                 
@@ -2129,22 +2280,35 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
                 
             except Exception as container_err:
                 logger.warning(f"[run_code] Container failed, falling back: {container_err}")
+                if container_span:
+                    container_span.end(output={"error": str(container_err)})
                 # Fall through to direct execution
         
         # 3. Direct execution (no DB needed)
+        direct_span = run_code_span.span(name="direct_execution", input={
+            "test_cmd": test_cmd,
+            "install_cmd": install_cmd,
+        }) if run_code_span else None
+        
         # Install dependencies (optional, skip errors)
         if install_cmd:
+            install_span = direct_span.span(name=f"exec:{install_cmd[:40]}...") if direct_span else None
             try:
                 logger.info(f"[run_code] Installing dependencies: {install_cmd}")
                 install_result = execute_shell.invoke({"command": install_cmd, "timeout": 120})
                 if isinstance(install_result, dict):
                     stdout_combined += install_result.get("stdout", "") + "\n"
                     stderr_combined += install_result.get("stderr", "") + "\n"
+                    if install_span:
+                        install_span.end(output={"exit_code": install_result.get("exit_code", 0)})
                 logger.info("[run_code] Dependencies installed")
             except Exception as install_err:
                 logger.warning(f"[run_code] Install failed (continuing): {install_err}")
+                if install_span:
+                    install_span.end(output={"error": str(install_err)})
         
         # Run tests
+        test_span = direct_span.span(name=f"exec:{test_cmd[:40]}...") if direct_span else None
         logger.info(f"[run_code] Running tests: {test_cmd}")
         try:
             test_result = execute_shell.invoke({"command": test_cmd, "timeout": 300})
@@ -2152,11 +2316,17 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
             if isinstance(test_result, dict):
                 stdout_combined += test_result.get("stdout", "") + "\n"
                 stderr_combined += test_result.get("stderr", "") + "\n"
+                if test_span:
+                    test_span.end(output={"exit_code": test_result.get("exit_code", 0)})
             elif isinstance(test_result, str):
                 stdout_combined += test_result + "\n"
+                if test_span:
+                    test_span.end(output={"output_len": len(test_result)})
         except Exception as test_err:
             logger.error(f"[run_code] Test execution failed: {test_err}")
             stderr_combined += f"Test execution error: {str(test_err)}\n"
+            if test_span:
+                test_span.end(output={"error": str(test_err)})
         
         # 4. Analyze results (rule-based, no LLM)
         analysis = _analyze_test_output(stdout_combined, stderr_combined, project_type)
@@ -2164,6 +2334,12 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         summary = analysis["summary"]
         
         logger.info(f"[run_code] Final status: {run_status} - {summary}")
+        
+        # End spans
+        if direct_span:
+            direct_span.end(output={"status": run_status, "summary": summary})
+        if run_code_span:
+            run_code_span.end(output={"status": run_status, "mode": "direct"})
         
         # Detect file to fix from error output
         file_to_fix = ""
@@ -2198,6 +2374,8 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         
     except Exception as e:
         logger.error(f"[run_code] Error: {e}", exc_info=True)
+        if run_code_span:
+            run_code_span.end(output={"error": str(e)})
         return {
             **state,
             "run_status": "PASS",  # Pass on error to continue flow
@@ -2330,9 +2508,7 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
                     "mode": "w"
                 })
                 logger.info(f"[debug_error] {result}")
-                
-                # Incremental update index (fast - only changed file)
-                incremental_update_index(project_id, task_id)
+                # Note: Removed incremental_update_index - not needed for debug fixes
             except Exception as e:
                 logger.error(f"[debug_error] Failed to write fixed code: {e}")
         

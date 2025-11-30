@@ -1,6 +1,5 @@
 from typing import List, Optional, Type
 from pydantic import BaseModel, Field
-from crewai.tools import BaseTool
 from git import Repo, InvalidGitRepositoryError
 import os
 from datetime import datetime
@@ -16,7 +15,9 @@ class GitPythonToolInput(BaseModel):
     worktree_path: str = Field(default=None, description="Path for worktree operations")
 
 
-class GitPythonTool(BaseTool):
+class GitPythonTool:
+    """Git operations using GitPython library (standalone, no CrewAI dependency)."""
+    
     name: str = "git_python_tool"
     description: str = """Git operations using GitPython library:
     - 'init': Initialize git repository
@@ -32,11 +33,8 @@ class GitPythonTool(BaseTool):
     - 'merge': Merge a branch into current branch
     - 'delete_branch': Delete a local branch
     Usage: {'operation': 'create_branch', 'branch_name': 'feature/new-feature', 'message': 'Initial commit'}"""
-    args_schema: Type[BaseModel] = GitPythonToolInput
-    root_dir: str = Field(default_factory=os.getcwd, description="Root directory for git operations")
 
     def __init__(self, root_dir: str = None, **kwargs):
-        super().__init__(**kwargs)
         self.root_dir = root_dir or os.getcwd()
 
     def _run(self, operation: str, branch_name: str = None, message: str = "Auto-commit by AI agent", files: List[str] = ["."], worktree_path: str = None) -> str:

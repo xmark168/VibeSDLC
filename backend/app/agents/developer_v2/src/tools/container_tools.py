@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import re
+import socket
 import subprocess
 import time
 from pathlib import Path
@@ -22,6 +23,26 @@ from typing import Optional
 from langchain_core.tools import tool
 
 logger = logging.getLogger(__name__)
+
+
+def find_available_port(start_port: int = 3000, max_attempts: int = 100) -> int:
+    """Find an available port on the host machine.
+    
+    Args:
+        start_port: Port to start searching from
+        max_attempts: Maximum number of ports to try
+        
+    Returns:
+        Available port number
+    """
+    for port in range(start_port, start_port + max_attempts):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('', port))
+                return port
+        except OSError:
+            continue
+    raise RuntimeError(f"No available port found in range {start_port}-{start_port + max_attempts}")
 
 # Global container context
 _container_context = {
@@ -50,16 +71,29 @@ class DevContainerManager:
     - tmpfs for DB (speed)
     - Health checks ensure DB ready
     - Subprocess for fast exec
+    - Dynamic port mapping (finds available host port)
     """
     
     def __init__(self):
         self._compose_file = None
         self._containers = {}
+        self._branch_ports = {}  # Cache: branch_name -> host_port
     
-    def _get_compose_file(self) -> str:
-        """Get path to docker-compose.dev.yml."""
+    def _get_compose_file(self, workspace_path: str = None) -> str:
+        """Get path to docker-compose.dev.yml.
+        
+        Priority:
+        1. Workspace's docker-compose.dev.yml (if exists)
+        2. Default from developer_v2/docker/
+        """
+        # Check workspace first
+        if workspace_path:
+            workspace_compose = Path(workspace_path) / "docker-compose.dev.yml"
+            if workspace_compose.exists():
+                return str(workspace_compose)
+        
+        # Fallback to default
         if self._compose_file is None:
-            # Find compose file relative to this module
             module_dir = Path(__file__).parent.parent.parent  # developer_v2/
             compose_path = module_dir / "docker" / "docker-compose.dev.yml"
             
@@ -89,12 +123,12 @@ class DevContainerManager:
     def _get_image(self, project_type: str) -> str:
         """Get Docker image for project type."""
         image_map = {
-            "node": "node:20-slim",
+            "node": "oven/bun:1",  # bun pre-installed, faster than node:20-slim
             "python": "python:3.11-slim",
             "rust": "rust:1.75-slim",
             "go": "golang:1.21-alpine",
         }
-        return image_map.get(project_type, "node:20-slim")
+        return image_map.get(project_type, "oven/bun:1")
     
     def _is_running(self, branch_name: str) -> bool:
         """Check if containers are running."""
@@ -110,16 +144,55 @@ class DevContainerManager:
         except Exception:
             return False
     
+    def _get_or_assign_port(self, branch_name: str) -> int:
+        """Get cached port or find a new available port for branch."""
+        # Check cache first
+        if branch_name in self._branch_ports:
+            return self._branch_ports[branch_name]
+        
+        # Check if container already has a port mapped
+        existing_port = self._get_container_port(branch_name)
+        if existing_port:
+            self._branch_ports[branch_name] = existing_port
+            return existing_port
+        
+        # Find new available port
+        port = find_available_port(start_port=3000)
+        self._branch_ports[branch_name] = port
+        logger.info(f"[DevContainerManager] Assigned port {port} to branch {branch_name}")
+        return port
+    
+    def _get_container_port(self, branch_name: str) -> Optional[int]:
+        """Get the host port mapped to container's port 3000."""
+        app_name = self._get_app_container_name(branch_name)
+        try:
+            result = subprocess.run(
+                ["docker", "port", app_name, "3000"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                # Output format: "0.0.0.0:3001" or ":::3001"
+                port_str = result.stdout.strip().split(':')[-1]
+                return int(port_str)
+        except Exception:
+            pass
+        return None
+    
     def _run_compose(self, branch_name: str, workspace_path: str, project_type: str, command: list) -> subprocess.CompletedProcess:
         """Run docker-compose command with environment."""
-        compose_file = self._get_compose_file()
+        compose_file = self._get_compose_file(workspace_path)
+        logger.info(f"[DevContainerManager] Using compose file: {compose_file}")
         prefix = self._get_container_prefix(branch_name)
+        port = self._get_or_assign_port(branch_name)
         
         env = {
             **os.environ,
             "CONTAINER_PREFIX": prefix,
             "WORKSPACE_PATH": workspace_path,
             "APP_IMAGE": self._get_image(project_type),
+            "APP_PORT": str(port),
         }
         
         full_cmd = ["docker-compose", "-f", compose_file, "-p", prefix] + command
@@ -198,42 +271,21 @@ class DevContainerManager:
             logger.warning(f"[DevContainerManager] Copy error: {e}")
     
     def _setup_node_env(self, branch_name: str, workspace_path: str):
-        """Setup node environment: copy node_modules if exists, else install tools."""
-        app_name = self._get_app_container_name(branch_name)
+        """Setup node environment: copy node_modules if exists.
         
+        Note: Using oven/bun:1 image which has bun pre-installed,
+        so no need to install bun separately.
+        """
         # Check if node_modules exists on host - copy instead of install (much faster)
         node_modules = Path(workspace_path) / "node_modules"
         if node_modules.exists() and node_modules.is_dir():
-            logger.info("[DevContainerManager] Copying node_modules from host (faster than install)...")
+            logger.info("[DevContainerManager] Copying node_modules from host (~5s vs 120s+ install)...")
             self._copy_to_container(branch_name, node_modules, "/app/node_modules")
             return
         
-        # No node_modules on host - install bun
-        self._setup_node_tools(branch_name)
-    
-    def _setup_node_tools(self, branch_name: str):
-        """Install bun in node container (if not already installed)."""
-        app_name = self._get_app_container_name(branch_name)
-        
-        # Check if bun already installed
-        check = subprocess.run(
-            ["docker", "exec", app_name, "which", "bun"],
-            capture_output=True,
-            timeout=10,
-        )
-        
-        if check.returncode == 0:
-            logger.info("[DevContainerManager] bun already installed")
-            return
-        
-        logger.info("[DevContainerManager] Installing bun...")
-        
-        # Install bun only (skip pnpm to save time), with CI=1 for non-interactive
-        subprocess.run(
-            ["docker", "exec", "-e", "CI=1", app_name, "npm", "install", "-g", "bun"],
-            capture_output=True,
-            timeout=60,
-        )
+        # No node_modules on host - oven/bun:1 image already has bun pre-installed
+        # No need to call _setup_node_tools() anymore
+        logger.info("[DevContainerManager] No node_modules to copy, bun already in oven/bun image")
     
     def _wait_for_db(self, branch_name: str, timeout: int = 30) -> bool:
         """Wait for PostgreSQL to be ready."""
@@ -276,12 +328,17 @@ class DevContainerManager:
         except Exception:
             pass
         
+        # Get host port
+        host_port = self._get_container_port(branch_name) or self._branch_ports.get(branch_name)
+        
         return {
             "name": app_name,
             "status": status,
             "branch": branch_name,
             "db_container": db_name,
             "db_url": f"postgresql://dev:dev@{db_name}:5432/app",
+            "host_port": host_port,
+            "app_url": f"http://localhost:{host_port}" if host_port else None,
         }
     
     def exec(self, branch_name: str, command: str, workdir: str = "/app", timeout: int = 120) -> dict:
@@ -387,6 +444,8 @@ class DevContainerManager:
                 ["docker", "logs", "--tail", str(tail), app_name],
                 capture_output=True,
                 text=True,
+                encoding='utf-8',
+                errors='replace',
                 timeout=30,
             )
             return result.stdout + result.stderr

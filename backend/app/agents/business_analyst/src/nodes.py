@@ -57,6 +57,57 @@ def _user_prompt(task: str, **kwargs) -> str:
     return _build_user_prompt(PROMPTS, task, user_message, **kwargs)
 
 
+async def _generate_completion_message(
+    state: BAState, 
+    agent, 
+    task_type: str, 
+    context: str, 
+    next_step: str,
+    fallback: str
+) -> str:
+    """Generate a natural completion message using LLM with agent personality.
+    
+    Args:
+        state: Current BA state
+        agent: Agent instance for personality
+        task_type: Type of completed task (prd_created, prd_updated, stories_created, stories_approved)
+        context: Context info (project name, count, etc.)
+        next_step: Hint for what user should do next
+        fallback: Fallback message if LLM fails
+    
+    Returns:
+        Natural completion message
+    """
+    try:
+        system_prompt = _sys_prompt(agent, "completion_message")
+        user_prompt = _user_prompt(
+            "completion_message",
+            task_type=task_type,
+            context=context,
+            next_step=next_step
+        )
+        
+        response = await _fast_llm.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ],
+            config=_cfg(state, f"completion_{task_type}")
+        )
+        
+        message = response.content.strip()
+        # Remove any quotes if LLM wrapped the response
+        if message.startswith('"') and message.endswith('"'):
+            message = message[1:-1]
+        
+        logger.info(f"[BA] Generated completion message: {message[:80]}...")
+        return message
+        
+    except Exception as e:
+        logger.warning(f"[BA] Failed to generate completion message: {e}, using fallback")
+        return fallback
+
+
 async def analyze_intent(state: BAState, agent=None) -> dict:
     """Node: Analyze user intent and classify task."""
     logger.info(f"[BA] Analyzing intent: {state['user_message'][:80]}...")
@@ -89,6 +140,43 @@ async def analyze_intent(state: BAState, agent=None) -> dict:
             "intent": "interview",
             "reasoning": f"Error parsing intent: {str(e)}"
         }
+
+
+async def respond_conversational(state: BAState, agent=None) -> dict:
+    """Node: Respond to casual conversation (greetings, thanks, etc.)."""
+    logger.info(f"[BA] Handling conversational message: {state['user_message'][:50]}...")
+    
+    try:
+        system_prompt = _sys_prompt(agent, "respond_conversational")
+        user_prompt = _user_prompt(
+            "respond_conversational",
+            user_message=state["user_message"]
+        )
+        
+        response = await _default_llm.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ],
+            config=_cfg(state, "respond_conversational")
+        )
+        
+        message = response.content.strip()
+        
+        # Send response to user
+        if agent:
+            await agent.message_user("response", message)
+        
+        logger.info(f"[BA] Conversational response sent: {message[:50]}...")
+        
+        return {"is_complete": True}
+        
+    except Exception as e:
+        logger.error(f"[BA] Conversational response failed: {e}")
+        fallback = "Chào bạn! Mình là BA, sẵn sàng hỗ trợ. Bạn cần gì nhé? 😊"
+        if agent:
+            await agent.message_user("response", fallback)
+        return {"is_complete": True}
 
 
 async def interview_requirements(state: BAState, agent=None) -> dict:
@@ -339,13 +427,17 @@ async def process_batch_answers(state: BAState, agent=None) -> dict:
     
     logger.info(f"[BA] Processed {len(collected_answers)} answers from batch")
     
-    # Build collected_info
+    # Build collected_info - ACCUMULATE answers from previous rounds
     collected_info = state.get("collected_info", {})
-    collected_info["interview_answers"] = collected_answers
+    existing_answers = collected_info.get("interview_answers", [])
+    all_answers = existing_answers + collected_answers
+    collected_info["interview_answers"] = all_answers
     collected_info["interview_completed"] = True
     
+    logger.info(f"[BA] Total accumulated answers: {len(all_answers)} (new: {len(collected_answers)}, previous: {len(existing_answers)})")
+    
     return {
-        "collected_answers": collected_answers,
+        "collected_answers": all_answers,  # Return ALL answers, not just new ones
         "collected_info": collected_info,
         "waiting_for_answer": False,
         "all_questions_answered": True
@@ -450,11 +542,17 @@ async def update_prd(state: BAState, agent=None) -> dict:
         logger.warning("[BA] No existing PRD to update, creating new one")
         return await generate_prd(state, agent)
     
+    # Get conversation context for memory
+    conversation_context = state.get("conversation_context", "")
+    if conversation_context:
+        logger.info(f"[BA] Using conversation context for PRD update: {len(conversation_context)} chars")
+    
     system_prompt = _sys_prompt(agent, "update_prd")
     user_prompt = _user_prompt(
         "update_prd",
         existing_prd=json.dumps(existing_prd, ensure_ascii=False, indent=2),
-        user_message=state["user_message"]
+        user_message=state["user_message"],
+        conversation_context=conversation_context
     )
     
     try:
@@ -570,11 +668,17 @@ async def update_stories(state: BAState, agent=None) -> dict:
     if not epics:
         return {"error": "No existing stories to update"}
     
+    # Get conversation context for memory
+    conversation_context = state.get("conversation_context", "")
+    if conversation_context:
+        logger.info(f"[BA] Using conversation context: {len(conversation_context)} chars")
+    
     system_prompt = _sys_prompt(agent, "update_stories")
     user_prompt = _user_prompt(
         "update_stories",
         epics=json.dumps(epics, ensure_ascii=False, indent=2),
-        user_message=state["user_message"]
+        user_message=state["user_message"],
+        conversation_context=conversation_context
     )
     
     try:
@@ -930,9 +1034,21 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
             # Send message with View button (different text for create vs update)
             is_update = bool(state.get("change_summary"))
             if is_update:
-                message_content = f"Mình đã cập nhật PRD theo yêu cầu của bạn rồi nhé! 📝 Bạn xem lại và cho mình biết còn gì cần chỉnh sửa không"
+                message_content = await _generate_completion_message(
+                    state, agent,
+                    task_type="prd_updated",
+                    context=f"Đã cập nhật PRD cho dự án '{project_name}' theo feedback của user",
+                    next_step="User cần review lại và cho biết còn gì cần chỉnh không",
+                    fallback=f"Mình đã cập nhật PRD theo yêu cầu của bạn rồi nhé! 📝 Bạn xem lại và cho mình biết còn gì cần chỉnh sửa không"
+                )
             else:
-                message_content = f"Tuyệt vời! 🎉 Mình đã hoàn thành PRD cho dự án **{project_name}** rồi! Bạn xem qua và phê duyệt để mình tạo user stories nhé~"
+                message_content = await _generate_completion_message(
+                    state, agent,
+                    task_type="prd_created",
+                    context=f"Đã tạo xong PRD cho dự án '{project_name}'",
+                    next_step="User cần xem qua và phê duyệt để tạo user stories",
+                    fallback=f"Tuyệt vời! 🎉 Mình đã hoàn thành PRD cho dự án '{project_name}' rồi! Bạn xem qua và phê duyệt để mình tạo user stories nhé~"
+                )
             
             if agent:
                 await agent.message_user(
@@ -1014,9 +1130,16 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
             
             # Send success message with View button (pending approval)
             if agent:
+                stories_message = await _generate_completion_message(
+                    state, agent,
+                    task_type="stories_created",
+                    context=f"Đã tạo {stories_count} User Stories từ {epics_count} Epics",
+                    next_step="User cần review và phê duyệt để đưa vào backlog",
+                    fallback=f"Xong rồi! 🚀 Mình đã tạo '{stories_count} User Stories' từ PRD. Bạn review và phê duyệt để đưa vào backlog nhé~"
+                )
                 await agent.message_user(
                     event_type="response",
-                    content=f"Xong rồi! 🚀 Mình đã tạo **{stories_count} User Stories** từ PRD. Bạn review và phê duyệt để đưa vào backlog nhé~",
+                    content=stories_message,
                     details={
                         "message_type": "stories_created",
                         "file_path": "docs/user-stories.md",
@@ -1087,16 +1210,35 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
         # Send simple notification to trigger Kanban refresh (no card displayed)
         if agent:
             logger.info(f"[BA] Sending stories_approved message to frontend")
-            stories_approved = len(state.get("created_stories", []))
+            stories_count = len(state.get("created_stories", []))
+            approved_message = await _generate_completion_message(
+                state, agent,
+                task_type="stories_approved",
+                context=f"Đã thêm {stories_count} User Stories vào backlog thành công",
+                next_step="User có thể xem trên Kanban board và bắt đầu implement",
+                fallback=f"Tuyệt vời! 🎊 Đã thêm Stories vào backlog rồi! Bạn có thể xem trên Kanban board và bắt đầu implement được luôn nha~"
+            )
             await agent.message_user(
                 event_type="response",
-                content=f"Tuyệt vời! 🎊 Đã thêm **{stories_approved} User Stories** vào backlog rồi! Bạn có thể xem trên Kanban board và bắt đầu implement được luôn nha~",
+                content=approved_message,
                 details={
-                    "message_type": "stories_approved"  # Frontend will refresh Kanban, no card
+                    "message_type": "stories_approved",  # Frontend will refresh Kanban, no card
+                    "task_completed": True  # Signal to release ownership
                 }
             )
     
     logger.info(f"[BA] Artifacts saved: {result['summary']}")
+    
+    # Determine if task is truly complete (should release ownership)
+    # ONLY release ownership when stories are APPROVED (final step in BA workflow)
+    # Keep ownership for: PRD create/update, stories pending approval, waiting for answer
+    is_stories_approved = result.get("stories_approved", False)
+    
+    if is_stories_approved:
+        result["task_completed"] = True
+        logger.info(f"[BA] Stories approved - task completed, will release ownership")
+    else:
+        logger.info(f"[BA] Task not complete yet, keeping ownership (stories_approved={is_stories_approved})")
     
     return {
         "result": result,

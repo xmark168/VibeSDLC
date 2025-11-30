@@ -472,6 +472,7 @@ class BaseAgent(ABC):
         allow_multiple = question_config.get("allow_multiple", False)
         proposed_data = question_config.get("proposed_data")
         explanation = question_config.get("explanation")
+        custom_context = question_config.get("context", {})  # Custom context from caller
         
         question_id = uuid4()
         
@@ -482,6 +483,7 @@ class BaseAgent(ABC):
             "execution_id": str(self._current_execution_id) if self._current_execution_id else None,
             "original_message": self._current_task_content,
             "routing_reason": self._current_routing_reason,
+            "question_context": custom_context,  # Include custom context for resume
         }
         
         # Save to database (dual storage: agent_questions + messages)

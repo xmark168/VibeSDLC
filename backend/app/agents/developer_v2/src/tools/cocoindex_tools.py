@@ -188,36 +188,6 @@ async def update_workspace_index(project_id: str, task_id: str = None) -> bool:
         return False
 
 
-def incremental_update_index(project_id: str, task_id: str = None) -> bool:
-    """Perform incremental index update (sync, fast).
-    
-    Only reprocesses files that changed since last update.
-    Much faster than full re-index. Call this after writing files.
-    
-    Args:
-        project_id: Project identifier
-        task_id: Optional task ID for task-specific update
-        
-    Returns:
-        True if update successful, False otherwise
-    """
-    try:
-        from app.agents.developer.project_manager import project_manager
-        
-        if task_id:
-            result = project_manager.incremental_update_task(project_id, task_id)
-        else:
-            result = project_manager.incremental_update_project(project_id)
-        
-        return result is not None
-    except ImportError as e:
-        logger.warning(f"CocoIndex not available: {e}")
-        return False
-    except Exception as e:
-        logger.error(f"Incremental update error: {e}")
-        return False
-
-
 # =============================================================================
 # ASYNC WRAPPER FUNCTIONS (for use in async nodes)
 # =============================================================================
@@ -268,14 +238,6 @@ async def index_workspace_async(project_id: str, workspace_path: str, task_id: s
     except Exception as e:
         logger.error(f"[CocoIndex] Indexing error: {e}", exc_info=True)
         return False
-
-
-async def incremental_update_index_async(project_id: str, task_id: str = None) -> bool:
-    """Async version - Perform incremental index update.
-    
-    Wraps sync function in asyncio.to_thread() to avoid blocking event loop.
-    """
-    return await asyncio.to_thread(incremental_update_index, project_id, task_id)
 
 
 async def get_related_code_indexed_async(

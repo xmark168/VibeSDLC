@@ -227,7 +227,7 @@ class DeveloperGraph:
     
     Tools Used:
     - workspace_tools: setup_git_worktree, commit_workspace_changes
-    - CocoIndex: get_related_code_indexed, search_codebase, incremental_update_index
+    - CocoIndex: get_related_code_indexed, search_codebase
     - Execution: detect_test_command, execute_command_async, install_dependencies
     - Context: get_agents_md, get_project_context, detect_project_structure, get_boilerplate_examples
     

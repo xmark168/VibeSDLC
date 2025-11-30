@@ -1,4 +1,4 @@
-"""Shared Project Context Cache."""
+"""Shared Project Context Cache with Rolling Summarization."""
 
 import asyncio
 import logging
@@ -22,19 +22,31 @@ PREF_LABELS = {
 # Kanban cache TTL (seconds) - shorter than preferences since board changes more often
 KANBAN_CACHE_TTL = 30
 
+# Summarization settings
+SUMMARY_THRESHOLD = 5  # Summarize when memory has N messages, then clear them
+
 
 class ProjectContext:
-    """Singleton per project_id - shared memory + preferences + Kanban cache."""
+    """Singleton per project_id - shared memory + preferences + Kanban cache + rolling summary.
+    
+    Summarization flow:
+    1. Messages accumulate in self.memory
+    2. When len(memory) >= SUMMARY_THRESHOLD, summarize and CLEAR those messages
+    3. format_memory() returns: summary + remaining messages
+    """
     
     _instances: Dict[UUID, "ProjectContext"] = {}
     
     def __init__(self, project_id: UUID):
         self.project_id = project_id
-        self.memory: List[dict] = []
+        self.memory: List[dict] = []  # Only unsummarized messages
         self.preferences: dict = {}
         self._loaded = False
         self._lock = asyncio.Lock()
-        self._max_memory = 20
+        
+        # Rolling summarization - summary of older messages (cleared from memory)
+        self._summary: str = ""
+        self._summary_lock = asyncio.Lock()
         
         # Kanban context cache (lazy loaded, with TTL)
         self._kanban_board_state: Optional[dict] = None
@@ -65,18 +77,20 @@ class ProjectContext:
             self._loaded = True
     
     async def _load_memory(self):
+        """Load recent messages from DB (only used for initial context)."""
         try:
             from sqlmodel import Session, select
             from app.core.db import engine
             from app.models import Message, AuthorType, MessageVisibility
             
+            # Load last 10 messages for initial context (will be summarized if needed)
             with Session(engine) as session:
                 messages = session.exec(
                     select(Message)
                     .where(Message.project_id == self.project_id)
                     .where(Message.visibility == MessageVisibility.USER_MESSAGE)
                     .order_by(Message.created_at.desc())
-                    .limit(self._max_memory)
+                    .limit(10)
                 ).all()
             
             self.memory = [
@@ -103,15 +117,77 @@ class ProjectContext:
             logger.warning(f"[ProjectContext] Load preferences failed: {e}")
     
     def add_message(self, role: str, content: str):
+        """Add message to memory (unsummarized messages only)."""
         self.memory.append({"role": role, "content": content[:500]})
-        if len(self.memory) > self._max_memory:
-            self.memory = self.memory[-self._max_memory:]
+    
+    async def maybe_summarize(self):
+        """Check and create summary if enough messages, then clear them."""
+        if len(self.memory) >= SUMMARY_THRESHOLD:
+            async with self._summary_lock:
+                # Double-check after acquiring lock
+                if len(self.memory) >= SUMMARY_THRESHOLD:
+                    await self._create_summary()
+    
+    async def _create_summary(self):
+        """Summarize messages and CLEAR them from memory."""
+        try:
+            from langchain_openai import ChatOpenAI
+            from langchain_core.messages import HumanMessage, SystemMessage
+            
+            # Take first SUMMARY_THRESHOLD messages to summarize
+            messages_to_summarize = self.memory[:SUMMARY_THRESHOLD]
+            
+            if not messages_to_summarize:
+                return
+            
+            # Format messages for summarization
+            messages_text = "\n".join(
+                f"{'User' if m['role']=='user' else 'Assistant'}: {m['content']}"
+                for m in messages_to_summarize
+            )
+            
+            system_prompt = """You are a conversation summarizer. Create a concise summary that captures:
+1. Key user requests and decisions made
+2. Important items created/modified/deleted (preserve IDs like US-017, EPIC-001)
+3. Current project state and context
+
+Keep the summary to 2-4 sentences. Focus on information an AI agent would need to understand future requests.
+Write in the same language as the conversation (Vietnamese if the conversation is in Vietnamese)."""
+
+            prompt = f"""Previous context summary:
+{self._summary or "None"}
+
+New conversation to incorporate:
+{messages_text}
+
+Create an updated summary that merges the previous context with the new conversation.
+Keep IDs (like US-017, EPIC-001) and important decisions.
+Write 2-4 sentences maximum."""
+
+            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3, timeout=30)
+            response = await llm.ainvoke([
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=prompt)
+            ])
+            
+            self._summary = response.content.strip()
+            
+            # CLEAR summarized messages from memory
+            self.memory = self.memory[SUMMARY_THRESHOLD:]
+            
+            logger.info(f"[ProjectContext] Created summary, cleared {SUMMARY_THRESHOLD} messages. Summary: {self._summary[:100]}...")
+            
+        except Exception as e:
+            logger.warning(f"[ProjectContext] Summarization failed: {e}")
     
     def update_preference(self, key: str, value):
         self.preferences[key] = value
     
     def invalidate(self):
+        """Reset context - used when project changes significantly."""
         self._loaded = False
+        self._summary = ""
+        self.memory = []
     
     def invalidate_kanban(self):
         """Force refresh Kanban cache on next access."""
@@ -158,10 +234,30 @@ class ProjectContext:
             self._kanban_wip_available = {}
     
     def format_memory(self, exclude_last: bool = True) -> str:
-        if not self.memory:
-            return ""
-        msgs = self.memory[:-1] if exclude_last else self.memory
-        return "\n".join(f"{'User' if m['role']=='user' else 'Assistant'}: {m['content']}" for m in msgs)
+        """Format memory: summary + all remaining messages.
+        
+        Returns:
+            Formatted string with:
+            - Summary of older messages (if available)
+            - All unsummarized messages in memory
+        """
+        msgs = self.memory[:-1] if (exclude_last and self.memory) else self.memory
+        
+        parts = []
+        
+        # Add summary if available
+        if self._summary:
+            parts.append(f"## Tóm tắt:\n{self._summary}")
+        
+        # Add remaining messages
+        if msgs:
+            recent_text = "\n".join(
+                f"{'User' if m['role']=='user' else 'Assistant'}: {m['content']}"
+                for m in msgs
+            )
+            parts.append(f"## Gần đây:\n{recent_text}")
+        
+        return "\n\n".join(parts) if parts else ""
     
     def format_preferences(self) -> str:
         if not self.preferences:

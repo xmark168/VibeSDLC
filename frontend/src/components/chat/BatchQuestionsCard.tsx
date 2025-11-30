@@ -5,7 +5,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Label } from '@/components/ui/label'
-import { Loader2, ArrowLeft, ArrowRight, ChevronDown, ChevronUp } from 'lucide-react'
+import { Loader2, ArrowLeft, ArrowRight, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react'
 
 interface BatchQuestion {
   question_id?: string
@@ -41,15 +41,14 @@ export function BatchQuestionsCard({
   answered = false,
   submittedAnswers = []
 }: BatchQuestionsCardProps) {
-  // Current question index
+  // ALL hooks must be at the top, before any conditional returns
   const [currentIndex, setCurrentIndex] = useState(0)
-  
-  // State for each question's answer
   const [answers, setAnswers] = useState<Map<string, { answer: string; selectedOptions: Set<string> }>>(
     new Map(questions.map((q, idx) => [questionIds[idx], { answer: '', selectedOptions: new Set() }]))
   )
   const [customInputs, setCustomInputs] = useState<Map<string, string>>(new Map())
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showQA, setShowQA] = useState(false)  // Moved here from below
   
   const currentQuestion = questions[currentIndex]
   const currentQuestionId = questionIds[currentIndex]
@@ -176,30 +175,27 @@ export function BatchQuestionsCard({
     }
   })
   
-  // State for showing/hiding Q&A in answered view
-  const [showQA, setShowQA] = useState(false)
-  
   if (answered) {
     // Build a map of answers by question_id for quick lookup
     const answersMap = new Map(submittedAnswers.map(a => [a.question_id, a]))
     
     return (
-      <Card className="border-green-200 bg-green-50/50 dark:bg-green-950/20">
-        <CardContent className="p-4 space-y-3">
+      <Card className="p-4 bg-gradient-to-r from-green-500/10 to-emerald-500/10 border-green-500/20">
+        <CardContent className="p-0 space-y-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="text-2xl">✅</div>
-              <div>
-                <h3 className="text-sm font-semibold text-green-700 dark:text-green-400">
-                  Đã trả lời {questions.length} câu hỏi
-                </h3>
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-green-500/20">
+                <CheckCircle2 className="w-5 h-5 text-green-600" />
               </div>
+              <span className="text-sm font-medium text-green-700 dark:text-green-400">
+                Đã trả lời {questions.length} câu hỏi
+              </span>
             </div>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setShowQA(!showQA)}
-              className="text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900"
+              className="text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50"
             >
               {showQA ? (
                 <>

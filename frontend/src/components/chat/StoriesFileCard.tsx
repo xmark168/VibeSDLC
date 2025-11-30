@@ -6,8 +6,9 @@ import { ListTodo, ExternalLink, Check, Pencil, X } from "lucide-react"
 
 interface StoriesFileCardProps {
   filePath: string
-  status?: 'pending' | 'approved' | 'editing'
+  status?: 'pending' | 'approved' | 'editing' | 'submitted'
   showActions?: boolean
+  submitted?: boolean  // User has already submitted approve/edit
   onView?: () => void
   onApprove?: () => void
   onEdit?: (feedback: string) => void
@@ -17,6 +18,7 @@ export function StoriesFileCard({
   filePath, 
   status = 'pending',
   showActions = true,
+  submitted = false,
   onView, 
   onApprove,
   onEdit 
@@ -24,6 +26,9 @@ export function StoriesFileCard({
   const [isEditing, setIsEditing] = useState(false)
   const [feedback, setFeedback] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  
+  // Check if already submitted (from prop or status)
+  const hasSubmitted = submitted || status === 'submitted' || isLoading
 
   const handleApprove = () => {
     setIsLoading(true)
@@ -70,7 +75,7 @@ export function StoriesFileCard({
           </div>
           <div className="flex-1 min-w-0">
             <h4 className="text-sm font-medium text-purple-700 dark:text-purple-400">
-              📋 Stories đã được tạo - Chờ phê duyệt
+              📋 Stories đã được tạo {!hasSubmitted && '- Chờ phê duyệt'}
             </h4>
           </div>
           <Button 
@@ -92,7 +97,7 @@ export function StoriesFileCard({
         )}
 
         {/* Submitted state */}
-        {showActions && isLoading && (
+        {showActions && hasSubmitted && (
           <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
             <Check className="w-4 h-4" />
             <span>Đã gửi yêu cầu</span>
@@ -100,7 +105,7 @@ export function StoriesFileCard({
         )}
 
         {/* Edit feedback input */}
-        {showActions && isEditing && !isLoading && (
+        {showActions && isEditing && !hasSubmitted && (
           <div className="space-y-2">
             <Textarea
               placeholder="Nhập yêu cầu chỉnh sửa Epics/Stories..."
@@ -133,7 +138,7 @@ export function StoriesFileCard({
         )}
 
         {/* Action buttons */}
-        {showActions && !isEditing && !isLoading && (
+        {showActions && !isEditing && !hasSubmitted && (
           <div className="flex gap-2">
             <Button 
               size="sm" 

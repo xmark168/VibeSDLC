@@ -9,6 +9,7 @@ from langgraph.graph import StateGraph, END
 from .state import BAState
 from .nodes import (
     analyze_intent,
+    respond_conversational,
     interview_requirements,
     ask_one_question,
     ask_batch_questions,
@@ -27,7 +28,7 @@ from .nodes import (
 logger = logging.getLogger(__name__)
 
 
-def route_by_intent(state: BAState) -> Literal["interview", "prd_create", "prd_update", "extract_stories", "stories_update", "stories_approve"]:
+def route_by_intent(state: BAState) -> Literal["conversational", "interview", "prd_create", "prd_update", "extract_stories", "stories_update", "stories_approve"]:
     """Router: Direct flow based on classified intent."""
     intent = state.get("intent", "interview")
     reasoning = state.get("reasoning", "")
@@ -37,6 +38,11 @@ def route_by_intent(state: BAState) -> Literal["interview", "prd_create", "prd_u
     
     # Debug logging
     logger.info(f"[BA Graph] route_by_intent called: intent={intent}, epics_count={len(epics)}, has_prd={bool(existing_prd)}")
+    
+    # Conversational messages go directly to respond node
+    if intent == "conversational":
+        logger.info("[BA Graph] Routing to 'conversational' (casual chat)")
+        return "conversational"
     
     # domain_analysis is now integrated into interview flow
     # Redirect to interview which will do research automatically
@@ -167,6 +173,7 @@ class BusinessAnalystGraph:
         
         # Add nodes with agent reference using partial
         graph.add_node("analyze_intent", partial(analyze_intent, agent=agent))
+        graph.add_node("respond_conversational", partial(respond_conversational, agent=agent))
         graph.add_node("interview_requirements", partial(interview_requirements, agent=agent))
         # Sequential mode nodes (deprecated but kept for compatibility)
         graph.add_node("ask_one_question", partial(ask_one_question, agent=agent))
@@ -192,6 +199,7 @@ class BusinessAnalystGraph:
             "analyze_intent",
             route_by_intent,
             {
+                "conversational": "respond_conversational",
                 "interview": "interview_requirements",
                 "prd_create": "generate_prd",
                 "prd_update": "update_prd",
@@ -254,6 +262,9 @@ class BusinessAnalystGraph:
                 "generate_prd": "generate_prd"
             }
         )
+        
+        # Conversational -> END (no artifacts to save)
+        graph.add_edge("respond_conversational", END)
         
         # PRD creation -> save (wait for user approval before extracting stories)
         graph.add_edge("generate_prd", "save_artifacts")
