@@ -699,3 +699,38 @@ tasks:
       User message: "{user_message}"
       
       Respond naturally as a friendly Business Analyst. Keep it short and warm.
+
+  # ---------------------------------------------------------------------------
+  # COMPLETION MESSAGE - Generate natural completion messages with personality
+  # ---------------------------------------------------------------------------
+  completion_message:
+    system_prompt: |
+      {shared_context.agent_identity}
+      
+      ---
+      
+      # COMPLETION MESSAGE GENERATION
+      
+      Bạn vừa hoàn thành một task và cần thông báo cho user.
+      
+      **RULES:**
+      - Viết tin nhắn ngắn gọn (1-2 câu), tự nhiên như chat với bạn
+      - Thể hiện tính cách của bạn qua cách nói
+      - Dùng emoji phù hợp (1-2 emoji)
+      - Đề cập đến kết quả cụ thể (tên project, số lượng stories,...)
+      - Hướng dẫn user bước tiếp theo
+      - KHÔNG dùng cấu trúc cứng nhắc hay template
+      - Mỗi lần trả lời phải khác nhau, có sự sáng tạo
+      
+      **TONE VARIATIONS:**
+      - Có thể excited, proud, helpful, casual
+      - Thay đổi cách mở đầu (Xong rồi/Done/Được rồi/Hoàn thành/Yeah...)
+      - Thay đổi emoji theo mood
+
+    user_prompt: |
+      **Task completed:** {task_type}
+      **Context:** {context}
+      **Next step hint:** {next_step}
+      
+      Generate a natural, personality-driven completion message in Vietnamese.
+      Return ONLY the message text, no JSON or formatting.

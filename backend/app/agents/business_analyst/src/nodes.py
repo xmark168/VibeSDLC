@@ -57,6 +57,57 @@ def _user_prompt(task: str, **kwargs) -> str:
     return _build_user_prompt(PROMPTS, task, user_message, **kwargs)
 
 
+async def _generate_completion_message(
+    state: BAState, 
+    agent, 
+    task_type: str, 
+    context: str, 
+    next_step: str,
+    fallback: str
+) -> str:
+    """Generate a natural completion message using LLM with agent personality.
+    
+    Args:
+        state: Current BA state
+        agent: Agent instance for personality
+        task_type: Type of completed task (prd_created, prd_updated, stories_created, stories_approved)
+        context: Context info (project name, count, etc.)
+        next_step: Hint for what user should do next
+        fallback: Fallback message if LLM fails
+    
+    Returns:
+        Natural completion message
+    """
+    try:
+        system_prompt = _sys_prompt(agent, "completion_message")
+        user_prompt = _user_prompt(
+            "completion_message",
+            task_type=task_type,
+            context=context,
+            next_step=next_step
+        )
+        
+        response = await _fast_llm.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ],
+            config=_cfg(state, f"completion_{task_type}")
+        )
+        
+        message = response.content.strip()
+        # Remove any quotes if LLM wrapped the response
+        if message.startswith('"') and message.endswith('"'):
+            message = message[1:-1]
+        
+        logger.info(f"[BA] Generated completion message: {message[:80]}...")
+        return message
+        
+    except Exception as e:
+        logger.warning(f"[BA] Failed to generate completion message: {e}, using fallback")
+        return fallback
+
+
 async def analyze_intent(state: BAState, agent=None) -> dict:
     """Node: Analyze user intent and classify task."""
     logger.info(f"[BA] Analyzing intent: {state['user_message'][:80]}...")
@@ -983,9 +1034,21 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
             # Send message with View button (different text for create vs update)
             is_update = bool(state.get("change_summary"))
             if is_update:
-                message_content = f"Mình đã cập nhật PRD theo yêu cầu của bạn rồi nhé! 📝 Bạn xem lại và cho mình biết còn gì cần chỉnh sửa không"
+                message_content = await _generate_completion_message(
+                    state, agent,
+                    task_type="prd_updated",
+                    context=f"Đã cập nhật PRD cho dự án '{project_name}' theo feedback của user",
+                    next_step="User cần review lại và cho biết còn gì cần chỉnh không",
+                    fallback=f"Mình đã cập nhật PRD theo yêu cầu của bạn rồi nhé! 📝 Bạn xem lại và cho mình biết còn gì cần chỉnh sửa không"
+                )
             else:
-                message_content = f"Tuyệt vời! 🎉 Mình đã hoàn thành PRD cho dự án **{project_name}** rồi! Bạn xem qua và phê duyệt để mình tạo user stories nhé~"
+                message_content = await _generate_completion_message(
+                    state, agent,
+                    task_type="prd_created",
+                    context=f"Đã tạo xong PRD cho dự án '{project_name}'",
+                    next_step="User cần xem qua và phê duyệt để tạo user stories",
+                    fallback=f"Tuyệt vời! 🎉 Mình đã hoàn thành PRD cho dự án '{project_name}' rồi! Bạn xem qua và phê duyệt để mình tạo user stories nhé~"
+                )
             
             if agent:
                 await agent.message_user(
@@ -1067,9 +1130,16 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
             
             # Send success message with View button (pending approval)
             if agent:
+                stories_message = await _generate_completion_message(
+                    state, agent,
+                    task_type="stories_created",
+                    context=f"Đã tạo {stories_count} User Stories từ {epics_count} Epics",
+                    next_step="User cần review và phê duyệt để đưa vào backlog",
+                    fallback=f"Xong rồi! 🚀 Mình đã tạo '{stories_count} User Stories' từ PRD. Bạn review và phê duyệt để đưa vào backlog nhé~"
+                )
                 await agent.message_user(
                     event_type="response",
-                    content=f"Xong rồi! 🚀 Mình đã tạo **{stories_count} User Stories** từ PRD. Bạn review và phê duyệt để đưa vào backlog nhé~",
+                    content=stories_message,
                     details={
                         "message_type": "stories_created",
                         "file_path": "docs/user-stories.md",
@@ -1141,9 +1211,16 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
         if agent:
             logger.info(f"[BA] Sending stories_approved message to frontend")
             stories_count = len(state.get("created_stories", []))
+            approved_message = await _generate_completion_message(
+                state, agent,
+                task_type="stories_approved",
+                context=f"Đã thêm {stories_count} User Stories vào backlog thành công",
+                next_step="User có thể xem trên Kanban board và bắt đầu implement",
+                fallback=f"Tuyệt vời! 🎊 Đã thêm Stories vào backlog rồi! Bạn có thể xem trên Kanban board và bắt đầu implement được luôn nha~"
+            )
             await agent.message_user(
                 event_type="response",
-                content=f"Tuyệt vời! 🎊 Đã thêm **{stories_count} User Stories** vào backlog rồi! Bạn có thể xem trên Kanban board và bắt đầu implement được luôn nha~",
+                content=approved_message,
                 details={
                     "message_type": "stories_approved",  # Frontend will refresh Kanban, no card
                     "task_completed": True  # Signal to release ownership
