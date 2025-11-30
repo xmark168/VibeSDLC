@@ -21,12 +21,13 @@ from .nodes import (
     approve_stories,
     analyze_domain,
     save_artifacts,
+    check_clarity,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def route_by_intent(state: BAState) -> Literal["interview", "prd_create", "prd_update", "extract_stories", "stories_update", "stories_approve", "domain_analysis"]:
+def route_by_intent(state: BAState) -> Literal["interview", "prd_create", "prd_update", "extract_stories", "stories_update", "stories_approve"]:
     """Router: Direct flow based on classified intent."""
     intent = state.get("intent", "interview")
     reasoning = state.get("reasoning", "")
@@ -36,6 +37,12 @@ def route_by_intent(state: BAState) -> Literal["interview", "prd_create", "prd_u
     
     # Debug logging
     logger.info(f"[BA Graph] route_by_intent called: intent={intent}, epics_count={len(epics)}, has_prd={bool(existing_prd)}")
+    
+    # domain_analysis is now integrated into interview flow
+    # Redirect to interview which will do research automatically
+    if intent == "domain_analysis":
+        logger.info("[BA Graph] Redirecting 'domain_analysis' -> 'interview' (research integrated)")
+        return "interview"
     
     # FORCE INTERVIEW only for prd_create without collected info
     # prd_update can proceed if we have existing PRD (user wants to edit it)
@@ -115,6 +122,37 @@ def batch_after_ask(state: BAState) -> Literal["wait", "generate_prd"]:
         return "generate_prd"
 
 
+def should_research_or_generate(state: BAState) -> Literal["research", "generate"]:
+    """Router: After processing answers, decide if we need more research or can generate PRD.
+    
+    Logic:
+    1. Check if we've reached max loops (2) → generate PRD
+    2. Check clarity (required categories covered?) → if clear, generate PRD
+    3. Otherwise → do domain research to get more info
+    """
+    loop_count = state.get("research_loop_count", 0)
+    max_loops = 2
+    
+    # Max loops reached → generate PRD anyway
+    if loop_count >= max_loops:
+        logger.info(f"[BA Graph] Max research loops ({max_loops}) reached, generating PRD")
+        return "generate"
+    
+    # Check clarity using categories
+    clarity_result = check_clarity(state)
+    is_clear = clarity_result.get("is_clear", False)
+    missing = clarity_result.get("missing_categories", [])
+    
+    if is_clear:
+        logger.info(f"[BA Graph] Info is clear, generating PRD")
+        return "generate"
+    else:
+        logger.info(f"[BA Graph] Missing categories: {missing}, doing research (loop {loop_count + 1})")
+        # Store missing categories in state for domain_analysis to use
+        state["missing_categories"] = missing
+        return "research"
+
+
 class BusinessAnalystGraph:
     
     def __init__(self, agent=None):
@@ -149,6 +187,7 @@ class BusinessAnalystGraph:
         graph.set_entry_point("analyze_intent")
         
         # Add conditional routing after intent analysis
+        # Note: domain_analysis intent is redirected to interview in route_by_intent()
         graph.add_conditional_edges(
             "analyze_intent",
             route_by_intent,
@@ -159,7 +198,6 @@ class BusinessAnalystGraph:
                 "extract_stories": "extract_stories",
                 "stories_update": "update_stories",
                 "stories_approve": "approve_stories",
-                "domain_analysis": "analyze_domain"
             }
         )
         
@@ -183,8 +221,18 @@ class BusinessAnalystGraph:
             }
         )
         
-        # After processing batch answers: generate PRD
-        graph.add_edge("process_batch_answers", "generate_prd")
+        # After processing batch answers: check clarity → research or generate PRD
+        graph.add_conditional_edges(
+            "process_batch_answers",
+            should_research_or_generate,
+            {
+                "research": "analyze_domain",  # Need more info → web search + more questions
+                "generate": "generate_prd"     # Info is clear → generate PRD
+            }
+        )
+        
+        # After domain analysis (research): loop back to ask more questions
+        graph.add_edge("analyze_domain", "ask_batch_questions")
         
         # Keep sequential mode edges for backward compatibility (not used in main flow)
         graph.add_conditional_edges(
@@ -222,8 +270,8 @@ class BusinessAnalystGraph:
         # PRD update -> save (no story extraction needed)
         graph.add_edge("update_prd", "save_artifacts")
         
-        # Domain analysis -> save
-        graph.add_edge("analyze_domain", "save_artifacts")
+        # Note: analyze_domain now loops back to ask_batch_questions (defined above)
+        # Removed: graph.add_edge("analyze_domain", "save_artifacts")
         
         # Save -> END
         graph.add_edge("save_artifacts", END)

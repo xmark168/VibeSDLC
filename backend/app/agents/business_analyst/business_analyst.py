@@ -18,7 +18,8 @@ from app.agents.business_analyst.src import BusinessAnalystGraph
 from app.agents.business_analyst.src.nodes import (
     process_answer, ask_one_question, 
     process_batch_answers,
-    generate_prd, extract_stories, save_artifacts
+    generate_prd, extract_stories, save_artifacts,
+    check_clarity, analyze_domain, ask_batch_questions
 )
 
 logger = logging.getLogger(__name__)
@@ -197,8 +198,49 @@ class BusinessAnalyst(BaseAgent):
         logger.info(f"[{self.name}] Processing {len(batch_answers)} batch answers")
         state = {**state, **(await process_batch_answers(state, agent=self))}
         
-        # Generate PRD (all answers should be collected now)
-        logger.info(f"[{self.name}] All batch answers processed, generating PRD")
+        # Check clarity - do we have enough info or need more research?
+        max_research_loops = 2
+        research_loop_count = state.get("research_loop_count", 0)
+        
+        while research_loop_count < max_research_loops:
+            clarity_result = check_clarity(state)
+            is_clear = clarity_result.get("is_clear", False)
+            missing_categories = clarity_result.get("missing_categories", [])
+            
+            if is_clear:
+                logger.info(f"[{self.name}] Info is clear, generating PRD")
+                break
+            else:
+                logger.info(f"[{self.name}] Missing categories: {missing_categories}, doing research (loop {research_loop_count + 1})")
+                state["missing_categories"] = missing_categories
+                
+                # Do domain research and generate more questions
+                state = {**state, **(await analyze_domain(state, agent=self))}
+                research_loop_count = state.get("research_loop_count", research_loop_count + 1)
+                
+                # Check if we have new questions to ask
+                new_questions = state.get("questions", [])
+                if new_questions:
+                    logger.info(f"[{self.name}] Research generated {len(new_questions)} more questions, asking user...")
+                    state = {**state, **(await ask_batch_questions(state, agent=self))}
+                    
+                    # If waiting for answer, save state and return
+                    if state.get("waiting_for_answer"):
+                        logger.info(f"[{self.name}] Waiting for user to answer research questions")
+                        return TaskResult(
+                            success=True,
+                            output="Research questions asked, waiting for answer",
+                            structured_data={"waiting_for_answer": True, "research_loop": research_loop_count}
+                        )
+                else:
+                    logger.info(f"[{self.name}] No new questions from research, proceeding to PRD")
+                    break
+        
+        if research_loop_count >= max_research_loops:
+            logger.info(f"[{self.name}] Max research loops ({max_research_loops}) reached, generating PRD anyway")
+        
+        # Generate PRD
+        logger.info(f"[{self.name}] Generating PRD...")
         state = {**state, **(await generate_prd(state, agent=self))}
         
         # Save PRD and wait for user approval before extracting stories
@@ -253,7 +295,29 @@ class BusinessAnalyst(BaseAgent):
         
         # Check if more questions or generate PRD
         if state.get("all_questions_answered"):
-            logger.info(f"[{self.name}] All questions answered, generating PRD")
+            # Check clarity before generating PRD
+            clarity_result = check_clarity(state)
+            is_clear = clarity_result.get("is_clear", False)
+            research_loop_count = state.get("research_loop_count", 0)
+            
+            if not is_clear and research_loop_count < 2:
+                missing_categories = clarity_result.get("missing_categories", [])
+                logger.info(f"[{self.name}] Missing categories: {missing_categories}, doing research")
+                state["missing_categories"] = missing_categories
+                state = {**state, **(await analyze_domain(state, agent=self))}
+                
+                new_questions = state.get("questions", [])
+                if new_questions:
+                    logger.info(f"[{self.name}] Research generated {len(new_questions)} more questions")
+                    state = {**state, **(await ask_batch_questions(state, agent=self))}
+                    if state.get("waiting_for_answer"):
+                        return TaskResult(
+                            success=True,
+                            output="Research questions asked, waiting for answer",
+                            structured_data={"waiting_for_answer": True}
+                        )
+            
+            logger.info(f"[{self.name}] Generating PRD...")
             state = {**state, **(await generate_prd(state, agent=self))}
             
             # Save PRD and wait for user approval before extracting stories

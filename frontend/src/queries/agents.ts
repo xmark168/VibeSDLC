@@ -51,6 +51,7 @@ export function useProjectAgents(projectId: string, options?: { enabled?: boolea
     },
     enabled: (options?.enabled ?? true) && !!projectId,
     staleTime: 10000, // Consider stale after 10s
+    refetchOnWindowFocus: false, // Agent status updated via WebSocket
   })
 }
 

@@ -80,3 +80,21 @@ class ValidationResult(BaseModel):
     ac_failed: List[str] = Field(default_factory=list, description="Acceptance criteria that failed")
     issues: List[str] = Field(default_factory=list)
     recommendations: List[str] = Field(default_factory=list)
+
+
+class SystemDesign(BaseModel):
+    """System design output for with_structured_output."""
+    data_structures: str = Field(default="", description="Data structures in mermaid classDiagram format")
+    api_interfaces: str = Field(default="", description="API endpoints and methods")
+    call_flow: str = Field(default="", description="Call flow in mermaid sequenceDiagram format")
+    design_notes: str = Field(default="", description="Important design decisions and notes")
+    file_structure: List[str] = Field(default_factory=list, description="Files to create or modify")
+
+
+class DebugResult(BaseModel):
+    """Debug error analysis result for with_structured_output."""
+    analysis: str = Field(description="Analysis of the error")
+    root_cause: str = Field(description="Root cause of the error")
+    fix_description: str = Field(description="Description of the fix")
+    fixed_code: str = Field(default="", description="The corrected code")
+

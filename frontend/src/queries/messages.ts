@@ -11,6 +11,7 @@ export function useMessages(params: FetchMessagesParams) {
     queryKey: ["messages", params],
     queryFn: () => messagesApi.list(params),
     enabled: !!params.project_id,
+    refetchOnWindowFocus: false, // Disable - chat uses WebSocket for real-time updates
   })
 }
 

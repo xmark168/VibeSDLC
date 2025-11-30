@@ -1,184 +1,418 @@
-"""Developer V2 Graph Nodes."""
-
+"""Developer V2 Graph Nodes - ReAct Agents with Multi-Tool Support."""
+import json
 import logging
+import os
 import re
+import subprocess
 from pathlib import Path
-from typing import Optional
-
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
-from langchain.agents import create_agent
-from tenacity import retry, stop_after_attempt, wait_random_exponential
+from langchain_tavily import TavilySearch
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import (
-    RoutingDecision, StoryAnalysis, ImplementationPlan, PlanStep,
-    CodeChange
+    StoryAnalysis, ImplementationPlan, PlanStep, CodeChange,
+    RoutingDecision, SystemDesign, DebugResult
 )
-from app.agents.developer_v2.src.agent_tools import (
-    submit_routing_decision, submit_story_analysis, submit_implementation_plan,
-    submit_code_change, submit_system_design
+from app.agents.developer_v2.src.tools import set_tool_context
+from app.agents.developer_v2.src.tools.filesystem_tools import (
+    set_fs_context, read_file_safe, write_file_safe, list_directory_safe, edit_file
 )
-from app.agents.core.prompt_utils import load_prompts_yaml
+from app.agents.developer_v2.src.tools.shell_tools import (
+    set_shell_context, execute_shell, semantic_code_search
+)
+from app.agents.developer_v2.src.tools.container_tools import (
+    dev_container_manager, set_container_context, get_container_tools,
+    container_exec, container_logs, container_status,
+)
+from langchain_core.messages import ToolMessage
+from app.agents.developer_v2.src.utils.llm_utils import (
+    get_langfuse_config as _cfg,
+    execute_llm_with_tools as _llm_with_tools,
+    clean_json_response as _clean_json,
+    extract_json_from_messages as _extract_json_response,
+)
+from app.agents.developer_v2.src.utils.prompt_utils import (
+    get_prompt as _get_prompt,
+    format_input_template as _format_input_template,
+    build_system_prompt as _build_system_prompt,
+)
+from app.agents.developer_v2.src.tools import (
+    # Workspace management
+    setup_git_worktree,
+    index_workspace,
+    incremental_update_index,
+    # Project context
+    get_agents_md,
+    get_project_context,
+    get_boilerplate_examples,
+    get_markdown_code_block_type,
+    # CocoIndex
+    get_related_code_indexed,
+    search_codebase,
+    # Execution
+    detect_test_command,
+    execute_command_async,
+    install_dependencies,
+    find_test_file,
+)
 
 logger = logging.getLogger(__name__)
 
-_PROMPTS = load_prompts_yaml(Path(__file__).parent / "prompts.yaml")
-
 # LLM models
-_fast_llm = ChatOpenAI(model="gpt-4.1", temperature=0.1, timeout=30)
+_fast_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1, timeout=20)
 _code_llm = ChatOpenAI(model="gpt-4.1", temperature=0.2, timeout=120)
 
 
 # =============================================================================
-# AGENT EXECUTORS (using langchain create_agent)
+# RULE-BASED HELPERS (No LLM)
 # =============================================================================
 
-def _create_agent_instance(llm, tools: list, system_prompt: str):
-    """Create an agent with tool calling."""
-    full_prompt = system_prompt + "\n\nIMPORTANT: You MUST call the provided tool to submit your result. Do not respond with plain text."
-    return create_agent(llm, tools=tools, system_prompt=full_prompt)
-
-
-# Lazy initialization of agents
-_routing_agent = None
-_analysis_agent = None
-_design_agent = None
-_plan_agent = None
-_code_agent = None
-
-
-def _get_routing_agent():
-    global _routing_agent
-    if _routing_agent is None:
-        system_prompt = _build_system_prompt("routing_decision")
-        _routing_agent = _create_agent_instance(_fast_llm, [submit_routing_decision], system_prompt)
-    return _routing_agent
-
-
-def _get_analysis_agent():
-    global _analysis_agent
-    if _analysis_agent is None:
-        system_prompt = _build_system_prompt("analyze_story")
-        _analysis_agent = _create_agent_instance(_code_llm, [submit_story_analysis], system_prompt)
-    return _analysis_agent
-
-
-def _get_design_agent():
-    global _design_agent
-    if _design_agent is None:
-        system_prompt = _build_system_prompt("system_design")
-        _design_agent = _create_agent_instance(_code_llm, [submit_system_design], system_prompt)
-    return _design_agent
-
-
-def _get_plan_agent():
-    global _plan_agent
-    if _plan_agent is None:
-        system_prompt = _build_system_prompt("create_plan")
-        _plan_agent = _create_agent_instance(_code_llm, [submit_implementation_plan], system_prompt)
-    return _plan_agent
-
-
-def _get_code_agent():
-    global _code_agent
-    if _code_agent is None:
-        system_prompt = _build_system_prompt("implement_step")
-        _code_agent = _create_agent_instance(_code_llm, [submit_code_change], system_prompt)
-    return _code_agent
-
-
-def _clean_json(text: str) -> str:
-    """Strip markdown code blocks from LLM response."""
-    match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
-    return match.group(1).strip() if match else text.strip()
-
-
-def _extract_tool_args(result: dict, tool_name: str) -> dict:
-    """Extract tool call arguments from agent result messages."""
-    for msg in result.get("messages", []):
-        if hasattr(msg, 'tool_calls') and msg.tool_calls:
-            for tool_call in msg.tool_calls:
-                if tool_call.get("name") == tool_name:
-                    return tool_call.get("args", {})
-    return {}
-
-
-def _cfg(state: dict, name: str) -> dict | None:
-    """Get LangChain config with Langfuse callback."""
-    h = state.get("langfuse_handler")
-    return {"callbacks": [h], "run_name": name} if h else None
-
-
-def _get_prompt(task: str, key: str) -> str:
-    """Get prompt from YAML config."""
-    return _PROMPTS.get("tasks", {}).get(task, {}).get(key, "")
-
-
-def _build_system_prompt(task: str, agent=None) -> str:
-    """Build system prompt with shared context."""
-    prompt = _get_prompt(task, "system_prompt")
-    shared = _PROMPTS.get("shared_context", {})
+def _detect_project_type(workspace_path: str) -> dict:
+    """Detect project type by checking config files (no LLM needed).
     
-    for key, value in shared.items():
-        prompt = prompt.replace(f"{{shared_context.{key}}}", value)
+    Returns dict with:
+        - type: project type (node, python, rust, go, java, unknown)
+        - install_cmd: command to install dependencies
+        - test_cmd: command to run tests
+        - needs_db: whether project requires database (Prisma, Drizzle, etc.)
+        - db_cmds: database setup commands (generate, push, migrate)
+    """
+    ws = Path(workspace_path)
     
-    if agent:
-        prompt = prompt.replace("{name}", agent.name or "Developer")
-        prompt = prompt.replace("{role}", agent.role_type or "Software Developer")
-    else:
-        prompt = prompt.replace("{name}", "Developer")
-        prompt = prompt.replace("{role}", "Software Developer")
+    # Node.js / JavaScript / TypeScript
+    if (ws / "package.json").exists():
+        try:
+            pkg = json.loads((ws / "package.json").read_text(encoding="utf-8"))
+            scripts = pkg.get("scripts", {})
+            
+            # Detect test command from package.json
+            test_cmd = "npm test"
+            if "test" in scripts:
+                test_cmd = "npm test"
+            elif "test:unit" in scripts:
+                test_cmd = "npm run test:unit"
+            elif "jest" in scripts.get("test", ""):
+                test_cmd = "npm test"
+            
+            # Detect package manager
+            install_cmd = "npm install"
+            pkg_manager = "npx"
+            if (ws / "bun.lockb").exists():
+                install_cmd = "bun install"
+                test_cmd = test_cmd.replace("npm", "bun")
+                pkg_manager = "bunx"
+            elif (ws / "yarn.lock").exists():
+                install_cmd = "yarn install"
+                test_cmd = test_cmd.replace("npm", "yarn")
+                pkg_manager = "yarn"
+            elif (ws / "pnpm-lock.yaml").exists():
+                install_cmd = "pnpm install"
+                test_cmd = test_cmd.replace("npm", "pnpm")
+                pkg_manager = "pnpm"
+            
+            # Detect DB requirements (Prisma, Drizzle, etc.)
+            needs_db = False
+            db_cmds = []
+            
+            # Prisma detection
+            if (ws / "prisma" / "schema.prisma").exists():
+                needs_db = True
+                db_cmds = [
+                    f"{pkg_manager} prisma generate",
+                    f"{pkg_manager} prisma db push --accept-data-loss",
+                ]
+            
+            # Drizzle detection
+            elif (ws / "drizzle.config.ts").exists() or (ws / "drizzle.config.js").exists():
+                needs_db = True
+                db_cmds = [
+                    f"{pkg_manager} drizzle-kit generate",
+                    f"{pkg_manager} drizzle-kit push",
+                ]
+            
+            return {
+                "type": "node",
+                "install_cmd": install_cmd,
+                "test_cmd": test_cmd,
+                "needs_db": needs_db,
+                "db_cmds": db_cmds,
+            }
+        except Exception:
+            return {"type": "node", "test_cmd": "npm test", "install_cmd": "npm install", "needs_db": False, "db_cmds": []}
     
-    return prompt
+    # Python
+    if (ws / "pyproject.toml").exists():
+        needs_db = (ws / "alembic.ini").exists() or (ws / "alembic").exists()
+        db_cmds = ["alembic upgrade head"] if needs_db else []
+        return {"type": "python", "test_cmd": "pytest -v", "install_cmd": "pip install -e .", "needs_db": needs_db, "db_cmds": db_cmds}
+    if (ws / "requirements.txt").exists():
+        needs_db = (ws / "alembic.ini").exists()
+        db_cmds = ["alembic upgrade head"] if needs_db else []
+        return {"type": "python", "test_cmd": "pytest -v", "install_cmd": "pip install -r requirements.txt", "needs_db": needs_db, "db_cmds": db_cmds}
+    if (ws / "setup.py").exists():
+        return {"type": "python", "test_cmd": "pytest -v", "install_cmd": "pip install -e .", "needs_db": False, "db_cmds": []}
+    
+    # Rust
+    if (ws / "Cargo.toml").exists():
+        return {"type": "rust", "test_cmd": "cargo test", "install_cmd": "cargo build", "needs_db": False, "db_cmds": []}
+    
+    # Go
+    if (ws / "go.mod").exists():
+        return {"type": "go", "test_cmd": "go test ./...", "install_cmd": "go mod download", "needs_db": False, "db_cmds": []}
+    
+    # Java / Maven
+    if (ws / "pom.xml").exists():
+        return {"type": "java", "test_cmd": "mvn test", "install_cmd": "mvn install -DskipTests", "needs_db": False, "db_cmds": []}
+    
+    # Java / Gradle
+    if (ws / "build.gradle").exists() or (ws / "build.gradle.kts").exists():
+        return {"type": "java", "test_cmd": "./gradlew test", "install_cmd": "./gradlew build -x test", "needs_db": False, "db_cmds": []}
+    
+    # Default fallback
+    return {"type": "unknown", "test_cmd": "", "install_cmd": "", "needs_db": False, "db_cmds": []}
 
-def _save_design_docs(workspace_path: str, design_result: dict, design_doc: str, story_title: str):
-    """Save design documents to docs/technical folder."""
-    import re
-    from datetime import datetime
+
+def _analyze_test_output(stdout: str, stderr: str, project_type: str = "") -> dict:
+    """Analyze test results using regex patterns (no LLM needed)."""
+    combined = f"{stdout}\n{stderr}"
     
-    docs_dir = Path(workspace_path) / "docs" / "technical"
-    docs_dir.mkdir(parents=True, exist_ok=True)
+    # === PASS patterns ===
     
-    # Clean story title for filename
-    safe_title = re.sub(r'[^\w\s-]', '', story_title).strip().replace(' ', '_')[:30]
-    timestamp = datetime.now().strftime("%Y%m%d")
+    # Python pytest: "X passed" or "OK"
+    pytest_pass = re.search(r"(\d+) passed", combined)
+    if pytest_pass:
+        passed_count = pytest_pass.group(1)
+        failed_match = re.search(r"(\d+) failed", combined)
+        if not failed_match or failed_match.group(1) == "0":
+            return {"status": "PASS", "summary": f"{passed_count} tests passed"}
+    
+    # Python unittest: "OK"
+    if re.search(r"Ran \d+ tests? in [\d.]+s\s*\n\s*OK", combined):
+        return {"status": "PASS", "summary": "All tests passed (unittest)"}
+    
+    # Node/Jest: "Tests: X passed"
+    jest_pass = re.search(r"Tests:\s*(\d+)\s*passed", combined)
+    if jest_pass and "failed" not in combined.lower():
+        return {"status": "PASS", "summary": f"{jest_pass.group(1)} tests passed (Jest)"}
+    
+    # Node/Mocha: "X passing"
+    mocha_pass = re.search(r"(\d+)\s+passing", combined)
+    if mocha_pass and "failing" not in combined.lower():
+        return {"status": "PASS", "summary": f"{mocha_pass.group(1)} tests passing (Mocha)"}
+    
+    # Rust: "test result: ok"
+    if re.search(r"test result: ok\.", combined, re.IGNORECASE):
+        return {"status": "PASS", "summary": "All tests passed (Cargo)"}
+    
+    # Go: "ok" at end or "PASS"
+    if re.search(r"^ok\s+", combined, re.MULTILINE) or re.search(r"^PASS$", combined, re.MULTILINE):
+        return {"status": "PASS", "summary": "All tests passed (Go)"}
+    
+    # Generic: "All tests passed" or similar
+    if re.search(r"all\s+tests?\s+pass", combined, re.IGNORECASE):
+        return {"status": "PASS", "summary": "All tests passed"}
+    
+    # === FAIL patterns ===
+    
+    # Python: "X failed" or "FAILED"
+    pytest_fail = re.search(r"(\d+) failed", combined)
+    if pytest_fail and int(pytest_fail.group(1)) > 0:
+        return {"status": "FAIL", "summary": f"{pytest_fail.group(1)} tests failed"}
+    
+    if re.search(r"FAILED|AssertionError|Error:|Traceback", combined):
+        return {"status": "FAIL", "summary": "Tests failed with errors"}
+    
+    # Node/Jest: "X failed"
+    jest_fail = re.search(r"Tests:\s*\d+\s*failed", combined)
+    if jest_fail:
+        return {"status": "FAIL", "summary": "Tests failed (Jest)"}
+    
+    # Node/Mocha: "X failing"
+    mocha_fail = re.search(r"(\d+)\s+failing", combined)
+    if mocha_fail and int(mocha_fail.group(1)) > 0:
+        return {"status": "FAIL", "summary": f"{mocha_fail.group(1)} tests failing (Mocha)"}
+    
+    # Rust: "test result: FAILED"
+    if re.search(r"test result: FAILED", combined, re.IGNORECASE):
+        return {"status": "FAIL", "summary": "Tests failed (Cargo)"}
+    
+    # Go: "FAIL"
+    if re.search(r"^FAIL\s+", combined, re.MULTILINE):
+        return {"status": "FAIL", "summary": "Tests failed (Go)"}
+    
+    # Generic error indicators
+    if re.search(r"error:|exception:|failed|failure", combined, re.IGNORECASE):
+        # But not if it's just "0 failed" or similar
+        if not re.search(r"0\s+(failed|failures?|errors?)", combined, re.IGNORECASE):
+            return {"status": "FAIL", "summary": "Tests failed with errors"}
+    
+    # === No tests or unknown ===
+    
+    # No tests found
+    if re.search(r"no tests (found|ran|collected)", combined, re.IGNORECASE):
+        return {"status": "PASS", "summary": "No tests found (skipped)"}
+    
+    # Exit code based (if we can detect it)
+    if "exit code: 0" in combined.lower() or "exited with code 0" in combined.lower():
+        return {"status": "PASS", "summary": "Command succeeded"}
+    
+    if "exit code:" in combined.lower() and "exit code: 0" not in combined.lower():
+        return {"status": "FAIL", "summary": "Command failed with non-zero exit code"}
+    
+    # Default: assume PASS if no errors detected
+    return {"status": "PASS", "summary": "Test execution completed"}
+
+
+def _run_with_isolated_db(workspace_path: str, commands: list, timeout_per_cmd: int = 120) -> dict:
+    """Run commands with isolated PostgreSQL container using testcontainers.
+    
+    Each agent gets its own DB container - no conflicts with parallel execution.
+    Container is auto-destroyed after execution.
+    
+    Args:
+        workspace_path: Project workspace path
+        commands: List of shell commands to execute
+        timeout_per_cmd: Timeout per command in seconds
+        
+    Returns:
+        dict with status, stdout, stderr
+    """
+    try:
+        from testcontainers.postgres import PostgresContainer
+    except ImportError:
+        logger.warning("[_run_with_isolated_db] testcontainers not installed, falling back to direct execution")
+        return {"status": "SKIP", "stdout": "", "stderr": "testcontainers not installed"}
+    
+    logger.info(f"[_run_with_isolated_db] Starting isolated PostgreSQL container...")
     
     try:
-        # Save main design document
-        design_file = docs_dir / f"design_{safe_title}_{timestamp}.md"
-        design_file.write_text(design_doc, encoding='utf-8')
-        logger.info(f"[design] Saved design doc: {design_file}")
-        
-        # Save mermaid class diagram if present
-        data_structures = design_result.get("data_structures", "")
-        if "mermaid" in data_structures.lower() or "classDiagram" in data_structures:
-            mermaid_file = docs_dir / f"class_diagram_{safe_title}_{timestamp}.mmd"
-            # Extract just the mermaid content
-            mermaid_content = re.sub(r'```mermaid\s*|\s*```', '', data_structures).strip()
-            mermaid_file.write_text(mermaid_content, encoding='utf-8')
-            logger.info(f"[design] Saved class diagram: {mermaid_file}")
-        
-        # Save sequence diagram if present
-        call_flow = design_result.get("call_flow", "")
-        if "mermaid" in call_flow.lower() or "sequenceDiagram" in call_flow:
-            seq_file = docs_dir / f"sequence_diagram_{safe_title}_{timestamp}.mmd"
-            seq_content = re.sub(r'```mermaid\s*|\s*```', '', call_flow).strip()
-            seq_file.write_text(seq_content, encoding='utf-8')
-            logger.info(f"[design] Saved sequence diagram: {seq_file}")
-        
-        # Save API interfaces if present
-        api_interfaces = design_result.get("api_interfaces", "")
-        if api_interfaces and len(api_interfaces) > 50:
-            api_file = docs_dir / f"api_interfaces_{safe_title}_{timestamp}.ts"
-            api_file.write_text(api_interfaces, encoding='utf-8')
-            logger.info(f"[design] Saved API interfaces: {api_file}")
+        with PostgresContainer("postgres:16-alpine") as postgres:
+            # Get connection URL in Prisma format
+            db_url = postgres.get_connection_url()
+            # testcontainers returns: postgresql+psycopg://user:pass@host:port/db
+            # Prisma needs: postgresql://user:pass@host:port/db
+            db_url = db_url.replace("postgresql+psycopg://", "postgresql://")
+            
+            logger.info(f"[_run_with_isolated_db] Container started, DB_URL: {db_url[:50]}...")
+            
+            stdout_all = ""
+            stderr_all = ""
+            status = "PASS"
+            
+            # Prepare environment with DATABASE_URL
+            env = os.environ.copy()
+            env["DATABASE_URL"] = db_url
+            
+            for cmd in commands:
+                if not cmd:
+                    continue
+                    
+                logger.info(f"[_run_with_isolated_db] Running: {cmd}")
+                
+                try:
+                    # Determine shell based on OS
+                    if os.name == "nt":  # Windows
+                        shell_cmd = ["cmd", "/c", cmd]
+                        use_shell = False
+                    else:
+                        shell_cmd = cmd
+                        use_shell = True
+                    
+                    result = subprocess.run(
+                        shell_cmd,
+                        cwd=workspace_path,
+                        shell=use_shell,
+                        capture_output=True,
+                        text=True,
+                        timeout=timeout_per_cmd,
+                        env=env,
+                    )
+                    
+                    stdout_all += f"\n=== {cmd} ===\n{result.stdout}"
+                    stderr_all += result.stderr
+                    
+                    if result.returncode != 0:
+                        logger.warning(f"[_run_with_isolated_db] Command failed: {cmd} (exit={result.returncode})")
+                        # Don't break on prisma generate/push failures, only on test failures
+                        if "test" in cmd.lower():
+                            status = "FAIL"
+                            break
+                            
+                except subprocess.TimeoutExpired:
+                    stderr_all += f"\nCommand timed out: {cmd}\n"
+                    logger.error(f"[_run_with_isolated_db] Timeout: {cmd}")
+                    status = "FAIL"
+                    break
+                except Exception as e:
+                    stderr_all += f"\nCommand error: {cmd} - {str(e)}\n"
+                    logger.error(f"[_run_with_isolated_db] Error: {cmd} - {e}")
+            
+            logger.info(f"[_run_with_isolated_db] Completed with status: {status}")
+            return {"status": status, "stdout": stdout_all, "stderr": stderr_all}
             
     except Exception as e:
-        logger.warning(f"[design] Failed to save design docs: {e}")
+        logger.error(f"[_run_with_isolated_db] Container error: {e}", exc_info=True)
+        return {"status": "ERROR", "stdout": "", "stderr": f"Container error: {str(e)}"}
+
+
+# =============================================================================
+# TOOL CONTEXT SETUP
+# =============================================================================
+
+def _setup_tool_context(workspace_path: str = None, project_id: str = None, task_id: str = None):
+    """Set global context for all tools before agent invocation."""
+    if workspace_path:
+        set_fs_context(root_dir=workspace_path)
+        set_shell_context(root_dir=workspace_path)
+    if project_id:
+        set_tool_context(project_id=project_id, task_id=task_id, workspace_path=workspace_path)
+
+
+
+def _detect_task_type(story_title: str, story_content: str) -> str:
+    """Detect task type from story content using keyword matching."""
+    text = f"{story_title} {story_content}".lower()
+    
+    # Bug fix keywords
+    if any(kw in text for kw in ["bug", "fix", "error", "issue", "broken", "crash", "lỗi", "sửa"]):
+        return "bugfix"
+    
+    # Refactor keywords
+    if any(kw in text for kw in ["refactor", "optimize", "improve", "clean", "restructure", "tối ưu"]):
+        return "refactor"
+    
+    # Test keywords
+    if any(kw in text for kw in ["test", "unit test", "e2e", "coverage", "kiểm thử"]):
+        return "test"
+    
+    # Documentation keywords
+    if any(kw in text for kw in ["document", "readme", "comment", "tài liệu"]):
+        return "documentation"
+    
+    # Default to feature
+    return "feature"
+
+
+def _estimate_complexity(story_content: str, acceptance_criteria: list) -> str:
+    """Estimate task complexity based on content analysis."""
+    content_len = len(story_content)
+    ac_count = len(acceptance_criteria)
+    
+    # Simple heuristics
+    if content_len < 200 and ac_count <= 2:
+        return "low"
+    elif content_len > 1000 or ac_count > 5:
+        return "high"
+    else:
+        return "medium"
+
 
 async def router(state: DeveloperState, agent=None) -> DeveloperState:
-    """Route story to appropriate processing node using agent with tool calling."""
+    """
+    Route story to appropriate processing node.
+    """
+    print("[NODE] router - Analyzing story intent...")
     try:
         has_analysis = bool(state.get("analysis_result"))
         has_plan = bool(state.get("implementation_plan"))
@@ -188,41 +422,42 @@ async def router(state: DeveloperState, agent=None) -> DeveloperState:
         story_content = state.get("story_content", "")
         is_story_task = len(story_content) > 50  # Story with sufficient detail
         
-        # Build input for agent
-        input_text = f"""Story: {state.get("story_title", "Untitled")}
-
-Content:
-{story_content}
-
-Acceptance Criteria:
-{chr(10).join(state.get("acceptance_criteria", []))}
-
-Current State:
-- Has analysis: {has_analysis}
-- Has plan: {has_plan}
-- Has implementation: {has_implementation}
-
-Decide the next action and call submit_routing_decision."""
-
-        # Use agent with tool calling
-        routing_agent = _get_routing_agent()
-        result = await routing_agent.ainvoke(
-            {"messages": [{"role": "user", "content": input_text}]}
+        # Build input from template
+        input_text = _format_input_template(
+            "routing_decision",
+            story_title=state.get("story_title", "Untitled"),
+            story_content=story_content,
+            acceptance_criteria=chr(10).join(state.get("acceptance_criteria", [])),
+            has_analysis=has_analysis,
+            has_plan=has_plan,
+            has_implementation=has_implementation
         )
+
+        # Use with_structured_output for reliable response
+        messages = [
+            SystemMessage(content=_build_system_prompt("routing_decision")),
+            HumanMessage(content=input_text)
+        ]
         
-        # Extract tool call arguments
-        args = _extract_tool_args(result, "submit_routing_decision")
-        action = args.get("action", "ANALYZE")
-        task_type = args.get("task_type", "feature")
-        complexity = args.get("complexity", "medium")
-        message = args.get("message", "Bắt đầu phân tích story...")
-        reason = args.get("reason", "New story needs analysis")
-        confidence = args.get("confidence", 0.8)
+        structured_llm = _fast_llm.with_structured_output(RoutingDecision)
+        result = await structured_llm.ainvoke(messages, config=_cfg(state, "router"))
         
-        # IMPORTANT: For story tasks, never return RESPOND or CLARIFY
-        if is_story_task and action in ("RESPOND", "CLARIFY"):
-            logger.info(f"[router] Story task detected, forcing ANALYZE instead of {action}")
-            action = "ANALYZE"
+        action = result.action
+        task_type = result.task_type
+        complexity = result.complexity
+        message = result.message
+        reason = result.reason
+        confidence = result.confidence
+        
+        if is_story_task:
+            # Never return RESPOND or CLARIFY for story tasks
+            if action in ("RESPOND", "CLARIFY"):
+                logger.info(f"[router] Story task detected, forcing ANALYZE instead of {action}")
+                action = "ANALYZE"
+            # Must analyze before plan/implement
+            elif action in ("PLAN", "IMPLEMENT") and not has_analysis:
+                logger.info(f"[router] No analysis yet, forcing ANALYZE instead of {action}")
+                action = "ANALYZE"
         
         logger.info(f"[router] Decision: action={action}, type={task_type}, complexity={complexity}")
         
@@ -250,17 +485,12 @@ Decide the next action and call submit_routing_decision."""
 
 
 async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
-    """Setup git workspace/branch only when code modification is needed.
-    
-    Creates a hotfix branch for this task.
-    Only called when action is ANALYZE/PLAN/IMPLEMENT/VALIDATE.
     """
+    Setup git workspace/branch only when code modification is needed.
+    """
+    print("[NODE] setup_workspace - Setting up workspace...")
     try:
         story_id = state.get("story_id", state.get("task_id", "unknown"))
-        
-        if not agent:
-            logger.warning("[setup_workspace] No agent, skipping workspace setup")
-            return {**state, "workspace_ready": False}
         
         # Check if workspace already setup
         if state.get("workspace_ready"):
@@ -273,50 +503,62 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         
         logger.info(f"[setup_workspace] Setting up workspace for branch '{branch_name}'")
         
-        # Use agent's workspace manager
-        if hasattr(agent, '_setup_workspace'):
-            workspace_info = agent._setup_workspace(story_id)
-            
+        # Setup workspace using tools directly
+        
+        # Get main_workspace from agent - try multiple attributes
+        if hasattr(agent, 'main_workspace'):
+            main_workspace = agent.main_workspace
+        elif hasattr(agent, 'workspace_path'):
+            main_workspace = agent.workspace_path
+        else:
+            logger.warning("[setup_workspace] Agent has no workspace path attribute")
+            return {**state, "workspace_ready": False, "index_ready": False}
+        
+        workspace_info = setup_git_worktree(
+            story_id=story_id,
+            main_workspace=main_workspace,
+            agent_name=agent.name
+        )
             
             # Index workspace with CocoIndex for semantic search
-            index_ready = False
-            workspace_path = workspace_info.get("workspace_path", "")
-            project_id = state.get("project_id", "default")
-            task_id = state.get("task_id") or story_id
-            
-            if workspace_path:
-                from app.agents.developer_v2.tools import index_workspace
-                index_ready = index_workspace(project_id, workspace_path, task_id)
-                if not index_ready:
-                    raise RuntimeError(f"CocoIndex indexing failed for workspace: {workspace_path}")
-                logger.info(f"[setup_workspace] Indexed workspace with CocoIndex")
-            
-            # Load AGENTS.md and project context
-            project_context = ""
-            agents_md = ""
-            if workspace_path:
-                try:
-                    from app.agents.developer_v2.tools import get_agents_md, get_project_context
-                    agents_md = get_agents_md(workspace_path)
-                    project_context = get_project_context(workspace_path)
-                    if agents_md:
-                        logger.info(f"[setup_workspace] Loaded AGENTS.md: {len(agents_md)} chars")
-                except Exception as ctx_err:
-                    logger.warning(f"[setup_workspace] Failed to load project context: {ctx_err}")
-            
-            return {
-                **state,
-                "workspace_path": workspace_info["workspace_path"],
-                "branch_name": workspace_info["branch_name"],
-                "main_workspace": workspace_info["main_workspace"],
-                "workspace_ready": workspace_info["workspace_ready"],
-                "index_ready": index_ready,
-                "agents_md": agents_md,
-                "project_context": project_context,
-            }
-        else:
-            logger.warning("[setup_workspace] Agent has no _setup_workspace method")
-            return {**state, "workspace_ready": False, "index_ready": False}
+        index_ready = False
+        workspace_path = workspace_info.get("workspace_path", "")
+        project_id = state.get("project_id", "default")
+        task_id = state.get("task_id") or story_id
+        
+        if workspace_path:
+            index_ready = index_workspace(project_id, workspace_path, task_id)
+            if not index_ready:
+                raise RuntimeError(f"CocoIndex indexing failed for workspace: {workspace_path}")
+            logger.info(f"[setup_workspace] Indexed workspace with CocoIndex")
+        
+        # Load project context (AGENTS.md)
+        project_context = ""
+        agents_md = ""
+        if workspace_path:
+            try:
+                agents_md = get_agents_md(workspace_path)
+                project_context = get_project_context(workspace_path)
+                if agents_md:
+                    logger.info(f"[setup_workspace] Loaded AGENTS.md: {len(agents_md)} chars")
+            except Exception as ctx_err:
+                logger.warning(f"[setup_workspace] Failed to load project context: {ctx_err}")
+        
+        # Log project config if provided
+        project_config = state.get("project_config", {})
+        if project_config:
+            logger.info(f"[setup_workspace] Using project_config: {project_config}")
+        
+        return {
+            **state,
+            "workspace_path": workspace_info["workspace_path"],
+            "branch_name": workspace_info["branch_name"],
+            "main_workspace": workspace_info["main_workspace"],
+            "workspace_ready": workspace_info["workspace_ready"],
+            "index_ready": index_ready,
+            "agents_md": agents_md,
+            "project_context": project_context,
+        }
         
     except Exception as e:
         logger.error(f"[setup_workspace] Error: {e}", exc_info=True)
@@ -328,94 +570,51 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
 
 
 async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
-    """Analyze user story using agent with tool calling."""
+    """Analyze user story requirements.
+    
+    Refactored: Tools for exploration + with_structured_output for response.
+    """
+    print("[NODE] analyze - Analyzing story requirements...")
     try:
-        if agent:
-            pass
-        
-        # Build input for agent
-        input_text = f"""Analyze this story and call submit_story_analysis:
-
-Story: {state.get("story_title", "Untitled")}
-
-Content:
-{state.get("story_content", "")}
-
-Acceptance Criteria:
-{chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", []))}
-
-Identify: task_type, complexity, estimated_hours, affected_files, suggested_approach."""
-
-        # Use agent with tool calling
-        analysis_agent = _get_analysis_agent()
-        result = await analysis_agent.ainvoke(
-            {"messages": [{"role": "user", "content": input_text}]}
-        )
-        
-        # Extract tool call arguments
-        args = _extract_tool_args(result, "submit_story_analysis")
-        task_type = args.get("task_type", "feature")
-        complexity = args.get("complexity", "medium")
-        estimated_hours = args.get("estimated_hours", 4.0)
-        summary = args.get("summary", state.get("story_title", "Implementation"))
-        affected_files = args.get("affected_files", [])
-        suggested_approach = args.get("suggested_approach", "Standard implementation approach")
-        dependencies = args.get("dependencies") or []
-        risks = args.get("risks") or []
-        
-        # Create analysis object for compatibility
-        analysis = StoryAnalysis(
-            task_type=task_type,
-            complexity=complexity,
-            estimated_hours=estimated_hours,
-            summary=summary,
-            affected_files=affected_files,
-            dependencies=dependencies,
-            risks=risks,
-            suggested_approach=suggested_approach
-        )
-        logger.info(f"[analyze] Completed: type={task_type}, complexity={complexity}, hours={estimated_hours}")
-        
-        # Research best practices with Tavily (if available)
-        research_context = ""
         workspace_path = state.get("workspace_path", "")
-        if workspace_path:
-            try:
-                from app.agents.developer_v2.tools import (
-                    detect_framework_from_package_json,
-                    tavily_search
-                )
-                framework_info = detect_framework_from_package_json(workspace_path)
-                
-                if framework_info.get("name") != "unknown":
-                    framework_name = framework_info.get("name", "")
-                    framework_version = framework_info.get("version", "")
-                    router_type = framework_info.get("router", "")
-                    
-                    # Build search query based on story and framework
-                    story_title = state.get("story_title", "")
-                    search_query = f"{framework_name} {framework_version} {router_type} router {story_title} best practices 2024"
-                    
-                    logger.info(f"[analyze] Researching: {search_query}")
-                    research_context = await tavily_search(search_query, max_results=3)
-                    logger.info(f"[analyze] Research completed: {len(research_context)} chars")
-            except Exception as research_err:
-                logger.warning(f"[analyze] Research failed (continuing): {research_err}")
+        project_id = state.get("project_id")
+        task_id = state.get("task_id") or state.get("story_id")
         
-        msg = f"""✅ **Phân tích hoàn tất!**
-
-📋 **Summary:** {analysis.summary}
-📁 **Loại task:** {analysis.task_type}
-⚡ **Độ phức tạp:** {analysis.complexity}
-⏱️ **Ước tính:** {analysis.estimated_hours}h
-
-📂 **Files liên quan:** {', '.join(analysis.affected_files) if analysis.affected_files else 'Chưa xác định'}
-⚠️ **Risks:** {', '.join(analysis.risks) if analysis.risks else 'Không có'}
-
-💡 **Approach:** {analysis.suggested_approach}"""
+        # Setup tool context
+        _setup_tool_context(workspace_path, project_id, task_id)
         
-        if agent:
-            pass
+        # Build input
+        input_text = _format_input_template(
+            "analyze_story",
+            story_title=state.get("story_title", "Untitled"),
+            story_content=state.get("story_content", ""),
+            acceptance_criteria=chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", []))
+        )
+
+        # Tools for exploration
+        tools = [read_file_safe, list_directory_safe, semantic_code_search]
+        
+        # Step 1: Explore with tools
+        messages = [
+            SystemMessage(content=_build_system_prompt("analyze_story")),
+            HumanMessage(content=input_text)
+        ]
+        
+        exploration = await _llm_with_tools(
+            llm=_code_llm,
+            tools=tools,
+            messages=messages,
+            state=state,
+            name="analyze_explore",
+            max_iterations=2
+        )
+        
+        # Step 2: Get structured response (exploration already filtered by semantic search)
+        messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:5000]}\n\nNow provide your final analysis."))
+        structured_llm = _code_llm.with_structured_output(StoryAnalysis)
+        analysis = await structured_llm.ainvoke(messages, config=_cfg(state, "analyze"))
+        
+        logger.info(f"[analyze] Done: {analysis.task_type}, {analysis.complexity}")
         
         return {
             **state,
@@ -426,111 +625,97 @@ Identify: task_type, complexity, estimated_hours, affected_files, suggested_appr
             "affected_files": analysis.affected_files,
             "dependencies": analysis.dependencies,
             "risks": analysis.risks,
-            "research_context": research_context,  # Tavily research results
-            "message": msg,
             "action": "PLAN",
         }
         
     except Exception as e:
         logger.error(f"[analyze] Error: {e}", exc_info=True)
-        return {
-            **state,
-            "error": str(e),
-            "research_context": "",
-            "message": f"❌ Lỗi khi phân tích: {str(e)}",
-            "action": "RESPOND",
-        }
+        return {**state, "error": str(e), "action": "RESPOND"}
 
 
 async def design(state: DeveloperState, agent=None) -> DeveloperState:
-    """Generate system design using agent with tool calling (MetaGPT Architect pattern)."""
+    """Generate system design.
+    
+    Refactored: Tools for exploration + with_structured_output for response.
+    """
+    print("[NODE] design - Creating system design...")
     try:
         analysis = state.get("analysis_result", {})
         complexity = state.get("complexity", "medium")
         workspace_path = state.get("workspace_path", "")
+        project_id = state.get("project_id")
+        task_id = state.get("task_id") or state.get("story_id")
         
         # Skip design for simple tasks
         if complexity == "low":
             logger.info("[design] Skipping design for low complexity task")
             return {**state, "action": "PLAN", "message": "Task đơn giản, bỏ qua design phase."}
         
-        # Get code context via CocoIndex
-        existing_context = ""
-        index_ready = state.get("index_ready", False)
-        if workspace_path and index_ready:
-            from app.agents.developer_v2.tools import search_codebase
-            project_id = state.get("project_id", "default")
-            task_id = state.get("task_id") or state.get("story_id", "")
-            existing_context = search_codebase(project_id, state.get("story_title", ""), top_k=10, task_id=task_id)
+        # Setup tool context
+        _setup_tool_context(workspace_path, project_id, task_id)
         
-        # Build input for agent
-        input_text = f"""Create a system design and call submit_system_design:
+        # Build input
+        input_text = _format_input_template(
+            "system_design",
+            story_title=state.get("story_title", ""),
+            analysis_summary=analysis.get("summary", ""),
+            task_type=state.get("task_type", "feature"),
+            complexity=complexity,
+            story_content=state.get("story_content", ""),
+            acceptance_criteria=chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", [])),
+            existing_context="Use tools to explore codebase"
+        )
 
-Story: {state.get("story_title", "")}
-Summary: {analysis.get("summary", "")}
-Task Type: {state.get("task_type", "feature")}
-Complexity: {complexity}
-
-Requirements:
-{state.get("story_content", "")}
-
-Acceptance Criteria:
-{chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", []))}
-
-Existing Code:
-{existing_context[:5000] if existing_context else "No existing code"}
-
-Create design with: data_structures (mermaid), api_interfaces, call_flow (mermaid), design_notes, file_structure."""
-
-        # Use agent with tool calling
-        design_agent = _get_design_agent()
-        result = await design_agent.ainvoke(
-            {"messages": [{"role": "user", "content": input_text}]}
+        # Tools for exploration
+        tools = [read_file_safe, list_directory_safe, semantic_code_search]
+        
+        # Step 1: Explore with tools
+        messages = [
+            SystemMessage(content=_build_system_prompt("system_design")),
+            HumanMessage(content=input_text)
+        ]
+        
+        exploration = await _llm_with_tools(
+            llm=_code_llm,
+            tools=tools,
+            messages=messages,
+            state=state,
+            name="design_explore",
+            max_iterations=2
         )
         
-        # Extract from tool call
-        args = _extract_tool_args(result, "submit_system_design")
-        if not args:
-            raise RuntimeError("Agent did not return design")
+        # Step 2: Get structured response (exploration already filtered by semantic search)
+        messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:5000]}\n\nNow provide your final system design."))
+        structured_llm = _code_llm.with_structured_output(SystemDesign)
+        design_result = await structured_llm.ainvoke(messages, config=_cfg(state, "design"))
         
-        design_result = {
-            "data_structures": args.get("data_structures", ""),
-            "api_interfaces": args.get("api_interfaces", ""),
-            "call_flow": args.get("call_flow", ""),
-            "design_notes": args.get("design_notes", ""),
-            "file_structure": args.get("file_structure", []),
-        }
-        logger.info(f"[design] Got design from agent: {len(design_result.get('file_structure', []))} files")
+        logger.info(f"[design] Got design: {len(design_result.file_structure)} files")
         
         # Build design document
         design_doc = f"""# System Design
 
 ## Data Structures & Interfaces
-{design_result.get('data_structures', 'N/A')}
+{design_result.data_structures or 'N/A'}
 
 ## API Interfaces
-{design_result.get('api_interfaces', 'N/A')}
+{design_result.api_interfaces or 'N/A'}
 
 ## Call Flow
-{design_result.get('call_flow', 'N/A')}
+{design_result.call_flow or 'N/A'}
 
 ## Design Notes
-{design_result.get('design_notes', 'N/A')}
+{design_result.design_notes or 'N/A'}
 
 ## File Structure
-{chr(10).join(f'- {f}' for f in design_result.get('file_structure', []))}
+{chr(10).join(f'- {f}' for f in design_result.file_structure)}
 """
-        
-        # Save design documents
-        if workspace_path:
-            _save_design_docs(workspace_path, design_result, design_doc, state.get("story_title", "design"))
         
         return {
             **state,
-            "system_design": design_result,
-            "data_structures": design_result.get("data_structures"),
-            "api_interfaces": design_result.get("api_interfaces"),
-            "call_flow": design_result.get("call_flow"),
+            "system_design": design_result.model_dump(),
+            "data_structures": design_result.data_structures,
+            "api_interfaces": design_result.api_interfaces,
+            "call_flow": design_result.call_flow,
             "design_doc": design_doc,
             "action": "PLAN",
         }
@@ -545,94 +730,59 @@ Create design with: data_structures (mermaid), api_interfaces, call_flow (mermai
 
 
 async def plan(state: DeveloperState, agent=None) -> DeveloperState:
-    """Create implementation plan using agent with tool calling."""
+    """
+    Create implementation plan.
+    """
+    print("[NODE] plan - Creating implementation plan...")
     try:
-        analysis = state.get("analysis_result", {})
+        analysis = state.get("analysis_result") or {}
         
-        if agent:
-            pass
-        
-        # Get existing code context for better planning (CocoIndex required)
+        # Get workspace context
         workspace_path = state.get("workspace_path", "")
-        index_ready = state.get("index_ready", False)
-        project_id = state.get("project_id", "default")
-        task_id = state.get("task_id") or state.get("story_id", "")
-        task_description = state.get("story_title", "") + " " + analysis.get("summary", "")
         
-        existing_code = ""
-        
-        # CocoIndex semantic search (required)
-        if workspace_path and index_ready:
-            from app.agents.developer_v2.tools import search_codebase
-            existing_code = search_codebase(
-                project_id=project_id,
-                query=task_description,
-                top_k=10,
-                task_id=task_id
-            )
-            logger.info(f"[plan] Using CocoIndex for context: {len(existing_code)} chars")
-        
-        # Get project context (AGENTS.md)
+        # Get project context (AGENTS.md, etc.)
         project_context = state.get("project_context", "")
+        project_config = state.get("project_config", {})
         
-        # Build input for agent
-        input_text = f"""Create an implementation plan and call submit_implementation_plan:
+        # Build structure guidance from project_config if provided
+        structure_guidance = ""
+        if project_config:
+            tech_stack = project_config.get("tech_stack", "")
+            if tech_stack:
+                structure_guidance = f"""
+=== PROJECT CONFIG ===
+Tech Stack: {tech_stack}
+Install Command: {project_config.get('install_cmd', 'npm install')}
+Test Command: {project_config.get('test_cmd', 'npm test')}
+Run Command: {project_config.get('run_cmd', 'npm run dev')}
 
-Story: {state.get("story_title", "Untitled")}
-Summary: {analysis.get("summary", "")}
-Task Type: {state.get("task_type", "feature")}
-Complexity: {state.get("complexity", "medium")}
-
-Affected Files: {", ".join(state.get("affected_files", []))}
-
-Design:
-{state.get("design_doc", "No design document")}
-
-Acceptance Criteria:
-{chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", []))}
-
-{f"PROJECT GUIDELINES (IMPORTANT - Follow these conventions):{chr(10)}{project_context[:4000]}" if project_context else ""}
-
-Existing Code:
-{existing_code[:2000] if existing_code else "No existing code"}
-
-Create steps with: order, description, file_path, action (create/modify), estimated_minutes, dependencies.
-IMPORTANT: Follow the project guidelines above for file paths and conventions."""
-
-        # Use agent with tool calling
-        plan_agent = _get_plan_agent()
-        result = await plan_agent.ainvoke(
-            {"messages": [{"role": "user", "content": input_text}]}
+IMPORTANT: Follow AGENTS.md conventions for file paths!
+"""
+        
+        # Build input from template (include full project_context with AGENTS.md)
+        directory_structure = f"PROJECT CONTEXT (MUST FOLLOW):{chr(10)}{project_context}" if project_context else ""
+        input_text = _format_input_template(
+            "create_plan",
+            story_title=state.get("story_title", "Untitled"),
+            analysis_summary=analysis.get("summary", ""),
+            task_type=state.get("task_type", "feature"),
+            complexity=state.get("complexity", "medium"),
+            structure_guidance=structure_guidance,
+            affected_files=", ".join(state.get("affected_files", [])),
+            design_doc=state.get("design_doc", "No design document"),
+            acceptance_criteria=chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", [])),
+            directory_structure=directory_structure,
+            existing_code="Use search_codebase and read_file tools to explore existing code"
         )
+
+        # Use with_structured_output for reliable response
+        messages = [
+            SystemMessage(content=_build_system_prompt("create_plan")),
+            HumanMessage(content=input_text)
+        ]
         
-        # Extract tool call arguments
-        args = _extract_tool_args(result, "submit_implementation_plan")
-        story_summary = args.get("story_summary", state.get("story_title", "Implementation"))
-        steps = args.get("steps", [])
-        total_estimated_hours = args.get("total_estimated_hours", 0)
-        critical_path = args.get("critical_path") or []
-        rollback_plan = args.get("rollback_plan")
-        
-        # Convert steps to PlanStep objects
-        plan_steps = []
-        for s in steps:
-            plan_steps.append(PlanStep(
-                order=s.get("order", len(plan_steps) + 1),
-                description=s.get("description", ""),
-                file_path=s.get("file_path", ""),
-                action=s.get("action", "create"),
-                estimated_minutes=s.get("estimated_minutes", 30),
-                dependencies=s.get("dependencies", [])
-            ))
-        
-        # Create plan_result for compatibility
-        plan_result = ImplementationPlan(
-            story_summary=story_summary,
-            steps=plan_steps,
-            total_estimated_hours=total_estimated_hours,
-            critical_path=critical_path,
-            rollback_plan=rollback_plan
-        )
+        structured_llm = _code_llm.with_structured_output(ImplementationPlan)
+        plan_result = await structured_llm.ainvoke(messages, config=_cfg(state, "plan"))
         
         # Warning if no steps
         if not plan_result.steps:
@@ -678,19 +828,30 @@ IMPORTANT: Follow the project guidelines above for file paths and conventions.""
 
 
 async def implement(state: DeveloperState, agent=None) -> DeveloperState:
-    """Execute implementation based on plan (Enhanced with MetaGPT context)."""
+    """Execute implementation based on plan.
+    
+    Refactored: Tools for exploration + with_structured_output for response.
+    """
+    current_step = state.get("current_step", 0)
+    total_steps = state.get("total_steps", 0)
+    print(f"[NODE] implement - Step {current_step + 1}/{total_steps}...")
     try:
         plan_steps = state.get("implementation_plan", [])
         current_step = state.get("current_step", 0)
         workspace_path = state.get("workspace_path", "")
+        project_id = state.get("project_id", "default")
+        task_id = state.get("task_id") or state.get("story_id", "")
         
-        # React mode: increment counter if retrying (already have code changes)
+        # React mode: only increment counter when looping back from summarize (current_step reset to 0)
         react_loop_count = state.get("react_loop_count", 0)
         debug_count = state.get("debug_count", 0)
-        if state.get("code_changes") and state.get("react_mode"):
+        summarize_feedback = state.get("summarize_feedback")
+        
+        # Only increment when: have feedback from summarize AND at step 0 (just looped back)
+        if summarize_feedback and current_step == 0 and state.get("react_mode"):
             react_loop_count += 1
             debug_count = 0  # Reset debug count for new cycle
-            logger.info(f"[implement] React loop iteration {react_loop_count}")
+            logger.info(f"[implement] React loop iteration {react_loop_count} (feedback: {summarize_feedback[:100]}...)")
         
         if not plan_steps:
             logger.error("[implement] No implementation plan")
@@ -706,7 +867,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             }
         
         step = plan_steps[current_step]
-        current_file = step.get("file_path", "")
+        current_file = step.get("file_path") or ""
         
         if agent:
             pass
@@ -722,7 +883,6 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             
             # CocoIndex semantic search (required)
             if index_ready:
-                from app.agents.developer_v2.tools import get_related_code_indexed
                 related_context = get_related_code_indexed(
                     project_id=project_id,
                     current_file=current_file,
@@ -732,15 +892,19 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
                 )
                 logger.info(f"[implement] Using CocoIndex for context")
         
-        # Get existing code if modifying
+        # Get existing code if modifying (using read_file_safe tool)
         existing_code = ""
         if workspace_path and current_file and step.get("action") == "modify":
-            file_path = Path(workspace_path) / current_file
-            if file_path.exists():
-                try:
-                    existing_code = file_path.read_text(encoding='utf-8')
-                except Exception:
-                    pass
+            try:
+                result = read_file_safe.invoke({"file_path": current_file})
+                if result and not result.startswith("Error:"):
+                    # Extract content after "Content of {file_path}:\n\n"
+                    if "\n\n" in result:
+                        existing_code = result.split("\n\n", 1)[1]
+                    else:
+                        existing_code = result
+            except Exception:
+                pass
         
         # Build implementation plan context
         implementation_plan = state.get("code_plan_doc") or ""
@@ -751,16 +915,41 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
                 for i, s in enumerate(plan_steps)
             )
         
-        # Build full context including AGENTS.md, research results, and summarize feedback
+        # Build full context including project config, research results, and summarize feedback
         research_context = state.get("research_context", "")
         project_context = state.get("project_context", "")
+        project_config = state.get("project_config", {})
         summarize_feedback = state.get("summarize_feedback", "")
         
         full_related_context = related_context or "No related files"
         
-        # Add project guidelines (AGENTS.md) - MOST IMPORTANT
+        # Add project config info if provided
+        if project_config:
+            config_info = f"""## PROJECT CONFIG
+Tech Stack: {project_config.get('tech_stack', 'unknown')}
+Install: {project_config.get('install_cmd', 'npm install')}
+Test: {project_config.get('test_cmd', 'npm test')}
+"""
+            full_related_context = f"{config_info}\n---\n\n{full_related_context}"
+        
+        # Add boilerplate examples (ACCURACY improvement)
+        if workspace_path:
+            # Determine task type from file path
+            task_type = "page"
+            if "component" in current_file.lower():
+                task_type = "component"
+            elif "api" in current_file.lower() or "route" in current_file.lower():
+                task_type = "api"
+            elif "layout" in current_file.lower():
+                task_type = "layout"
+            
+            boilerplate = get_boilerplate_examples(workspace_path, task_type)
+            if boilerplate:
+                full_related_context = f"{boilerplate}\n\n---\n\n{full_related_context}"
+        
+        # Add project guidelines (AGENTS.md - full content, critical for conventions)
         if project_context:
-            full_related_context = f"## PROJECT GUIDELINES (MUST FOLLOW)\n{project_context[:3000]}\n\n---\n\n{full_related_context}"
+            full_related_context = f"## PROJECT GUIDELINES (MUST FOLLOW)\n{project_context}\n\n---\n\n{full_related_context}"
         
         # Add research results
         if research_context:
@@ -770,56 +959,71 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         if summarize_feedback:
             full_related_context += f"\n\n## FEEDBACK FROM PREVIOUS ATTEMPT (MUST ADDRESS)\n{summarize_feedback}"
         
-        # Build input for code agent
-        input_text = f"""Write code for this step and call submit_code_change:
+        # Setup tool context
+        _setup_tool_context(workspace_path, project_id, task_id)
+        
+        # Build input from template
+        error_logs_text = f"Previous Errors:{chr(10)}{state.get('error_logs', '')}" if state.get('error_logs') else ""
+        input_text = _format_input_template(
+            "implement_step",
+            step_number=current_step + 1,
+            total_steps=len(plan_steps),
+            step_description=step.get("description", ""),
+            file_path=current_file,
+            action=step.get("action", "modify"),
+            story_summary=state.get("analysis_result", {}).get("summary", ""),
+            related_context=full_related_context[:8000],  # CocoIndex already filters relevant code
+            existing_code=existing_code if existing_code else "No existing code (new file)",  # Full file for modification
+            error_logs=error_logs_text
+        )
 
-Step {current_step + 1}/{len(plan_steps)}: {step.get("description", "")}
-File: {current_file}
-Action: {step.get("action", "modify")}
-
-Story: {state.get("analysis_result", {}).get("summary", "")}
-
-{full_related_context[:6000]}
-
-Existing Code:
-{existing_code[:3000] if existing_code else "No existing code (new file)"}
-
-{f"Previous Errors:{chr(10)}{state.get('error_logs', '')}" if state.get('error_logs') else ""}
-
-IMPORTANT:
-- Write COMPLETE code - no TODOs, no placeholders
-- Follow the PROJECT GUIDELINES above
-- Include all necessary imports
-- Call submit_code_change with the complete code"""
-
-        # Use agent with tool calling
-        code_agent = _get_code_agent()
-        result = await code_agent.ainvoke(
-            {"messages": [{"role": "user", "content": input_text}]}
+        # Tools for exploration (read-only, writing is manual)
+        tools = [read_file_safe, list_directory_safe, semantic_code_search]
+        
+        # Step 1: Explore with tools
+        messages = [
+            SystemMessage(content=_build_system_prompt("implement_step")),
+            HumanMessage(content=input_text)
+        ]
+        
+        exploration = await _llm_with_tools(
+            llm=_code_llm,
+            tools=tools,
+            messages=messages,
+            state=state,
+            name="implement_explore",
+            max_iterations=2
         )
         
-        # Extract from tool call
-        args = _extract_tool_args(result, "submit_code_change")
-        if not args:
-            raise RuntimeError(f"Agent did not return code for step: {step.get('description', '')}")
+        # Step 2: Get structured response (exploration already filtered by semantic search)
+        messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:5000]}\n\nNow provide the code implementation."))
+        structured_llm = _code_llm.with_structured_output(CodeChange)
+        code_change = await structured_llm.ainvoke(messages, config=_cfg(state, "implement"))
         
-        code_change = CodeChange(
-            file_path=args.get("file_path", current_file),
-            action=args.get("action", step.get("action", "create")),
-            code_snippet=args.get("code_snippet", ""),
-            description=args.get("description", step.get("description", ""))
-        )
-        logger.info(f"[implement] Got code from agent tool call")
+        # Fill defaults if missing
+        if not code_change.file_path:
+            code_change = CodeChange(
+                file_path=current_file,
+                action=code_change.action or step.get("action", "create"),
+                code_snippet=code_change.code_snippet,
+                description=code_change.description or step.get("description", "")
+            )
+        logger.info(f"[implement] Got code from structured output")
         
         logger.info(f"[implement] Step {current_step + 1}: {code_change.action} {code_change.file_path}")
         
-        # IMPORTANT: Write the generated code to file
+        # IMPORTANT: Write the generated code to file using write_file_safe tool
         if workspace_path and code_change.code_snippet:
             try:
-                file_path = Path(workspace_path) / code_change.file_path
-                file_path.parent.mkdir(parents=True, exist_ok=True)
-                file_path.write_text(code_change.code_snippet, encoding='utf-8')
-                logger.info(f"[implement] Wrote {len(code_change.code_snippet)} chars to {code_change.file_path}")
+                result = write_file_safe.invoke({
+                    "file_path": code_change.file_path,
+                    "content": code_change.code_snippet,
+                    "mode": "w"
+                })
+                logger.info(f"[implement] {result}")
+                
+                # Incremental update index (fast - only changed file)
+                incremental_update_index(project_id, task_id)
             except Exception as write_err:
                 logger.warning(f"[implement] Failed to write {code_change.file_path}: {write_err}")
         
@@ -871,9 +1075,6 @@ async def create_code_plan(state: DeveloperState, agent=None) -> DeveloperState:
     showing exactly what changes will be made to each file.
     """
     try:
-        if agent:
-            pass
-        
         # Get code context via CocoIndex
         workspace_path = state.get("workspace_path", "")
         index_ready = state.get("index_ready", False)
@@ -882,7 +1083,6 @@ async def create_code_plan(state: DeveloperState, agent=None) -> DeveloperState:
         
         existing_code = ""
         if workspace_path and index_ready:
-            from app.agents.developer_v2.tools import search_codebase
             existing_code = search_codebase(project_id, state.get("story_title", ""), top_k=10, task_id=task_id)
         
         sys_prompt = _build_system_prompt("create_code_plan", agent)
@@ -953,9 +1153,6 @@ async def summarize_code(state: DeveloperState, agent=None) -> DeveloperState:
     quality checks. If not, it returns to IMPLEMENT for revisions.
     """
     try:
-        if agent:
-            pass
-        
         # Get implemented code via CocoIndex
         workspace_path = state.get("workspace_path", "")
         index_ready = state.get("index_ready", False)
@@ -964,7 +1161,6 @@ async def summarize_code(state: DeveloperState, agent=None) -> DeveloperState:
         
         code_blocks = ""
         if workspace_path and index_ready:
-            from app.agents.developer_v2.tools import search_codebase
             code_blocks = search_codebase(project_id, "implementation code", top_k=15, task_id=task_id)
         
         sys_prompt = _build_system_prompt("summarize_code", agent)
@@ -1097,8 +1293,6 @@ async def clarify(state: DeveloperState, agent=None) -> DeveloperState:
         response = await _fast_llm.ainvoke(messages, config=_cfg(state, "clarify"))
         question = response.content
         
-        logger.info(f"[clarify] Asking for clarification")
-        
         if agent:
             pass
         
@@ -1167,12 +1361,21 @@ async def merge_to_main(state: DeveloperState, agent=None) -> DeveloperState:
     This node is called after validate passes (is_pass=True).
     It commits all changes and merges the story branch into main branch.
     (Following Developer V1 pattern: auto-commit after implementation)
+    
+    If workspace is not a git repo (worktree creation failed), skip merge
+    and just keep the generated files.
     """
     try:
         branch_name = state.get("branch_name")
         main_workspace = state.get("main_workspace")
         workspace_path = state.get("workspace_path")
         story_title = state.get("story_title", "Implementation")
+        workspace_ready = state.get("workspace_ready", False)
+        
+        # If workspace wasn't properly set up as git worktree, skip merge
+        if not workspace_ready:
+            logger.info("[merge_to_main] Workspace not a git worktree, skipping merge (files already written)")
+            return {**state, "merged": False, "error": "Workspace not a git worktree"}
         
         if not branch_name or not main_workspace:
             logger.warning("[merge_to_main] Missing branch_name or main_workspace")
@@ -1180,16 +1383,31 @@ async def merge_to_main(state: DeveloperState, agent=None) -> DeveloperState:
         
         from app.agents.developer.tools.git_python_tool import GitPythonTool
         
-        # Auto-commit changes in workspace before merge (Dev V1 pattern)
+        # Check if workspace is actually a git repo
         if workspace_path and Path(workspace_path).exists():
+            git_dir = Path(workspace_path) / ".git"
+            if not git_dir.exists():
+                logger.info("[merge_to_main] Workspace is not a git repo, skipping merge")
+                return {**state, "merged": False, "error": "Not a git repository"}
+            
             workspace_git = GitPythonTool(root_dir=workspace_path)
             
             # Stage all changes
             status_result = workspace_git._run("status")
+            if "not a git repository" in status_result.lower():
+                logger.info("[merge_to_main] Workspace is not a git repo, skipping merge")
+                return {**state, "merged": False, "error": "Not a git repository"}
+            
             if "nothing to commit" not in status_result:
                 commit_msg = f"feat: {story_title[:50]}... [auto-commit by Developer V2]"
                 commit_result = workspace_git._run("commit", message=commit_msg, files=["."])
                 logger.info(f"[merge_to_main] Auto-commit: {commit_result}")
+        
+        # Check if main_workspace is a git repo
+        main_git_dir = Path(main_workspace) / ".git"
+        if not main_git_dir.exists():
+            logger.info("[merge_to_main] Main workspace is not a git repo, skipping merge")
+            return {**state, "merged": False, "error": "Main workspace not a git repository"}
         
         main_git = GitPythonTool(root_dir=main_workspace)
         
@@ -1198,7 +1416,7 @@ async def merge_to_main(state: DeveloperState, agent=None) -> DeveloperState:
         logger.info(f"[merge_to_main] Checkout main: {checkout_result}")
         
         # If main doesn't exist, try master
-        if "does not exist" in checkout_result:
+        if "does not exist" in checkout_result or "error" in checkout_result.lower():
             checkout_result = main_git._run("checkout_branch", branch_name="master")
             logger.info(f"[merge_to_main] Checkout master: {checkout_result}")
         
@@ -1207,16 +1425,11 @@ async def merge_to_main(state: DeveloperState, agent=None) -> DeveloperState:
         logger.info(f"[merge_to_main] Merge result: {merge_result}")
         
         if "conflict" in merge_result.lower() or "error" in merge_result.lower():
-            if agent:
-                pass
             return {
                 **state,
                 "merged": False,
                 "error": merge_result,
             }
-        
-        if agent:
-            pass
         
         return {
             **state,
@@ -1225,8 +1438,6 @@ async def merge_to_main(state: DeveloperState, agent=None) -> DeveloperState:
         
     except Exception as e:
         logger.error(f"[merge_to_main] Error: {e}", exc_info=True)
-        if agent:
-            pass
         return {
             **state,
             "merged": False,
@@ -1235,53 +1446,31 @@ async def merge_to_main(state: DeveloperState, agent=None) -> DeveloperState:
 
 
 async def cleanup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
-    """Cleanup worktree and branch after merge.
+    """Cleanup workspace resources after task completion.
     
-    This node removes the worktree and deletes the feature branch
-    after successful merge to main.
+    NOTE: Everything is PRESERVED for potential future use:
+    - Git worktree and branch (can resume work)
+    - CocoIndex task index (can search without re-indexing)
+    - Dev containers are stopped (not removed) - can restart quickly
     """
     try:
-        workspace_path = state.get("workspace_path")
         branch_name = state.get("branch_name")
-        main_workspace = state.get("main_workspace")
-        merged = state.get("merged", False)
         
-        if not main_workspace:
-            logger.warning("[cleanup_workspace] No main_workspace, skipping cleanup")
-            return state
-        
-        from app.agents.developer.tools.git_python_tool import GitPythonTool
-        
-        main_git = GitPythonTool(root_dir=main_workspace)
-        
-        # 1. Remove worktree
-        if workspace_path:
-            remove_result = main_git._run("remove_worktree", worktree_path=workspace_path)
-            logger.info(f"[cleanup_workspace] Remove worktree: {remove_result}")
-        
-        # 2. Delete branch (only if merged successfully)
-        if merged and branch_name:
-            delete_result = main_git._run("delete_branch", branch_name=branch_name)
-            logger.info(f"[cleanup_workspace] Delete branch: {delete_result}")
-        
-        # 3. Cleanup CocoIndex task index
-        project_id = state.get("project_id")
-        task_id = state.get("task_id") or state.get("story_id")
-        if project_id and task_id:
+        # Stop dev container (not remove - preserve for resume)
+        if branch_name:
             try:
-                from app.agents.developer.project_manager import project_manager
-                project_manager.unregister_task(project_id, task_id)
-                logger.info(f"[cleanup_workspace] Unregistered CocoIndex task: {task_id}")
-            except Exception as idx_err:
-                logger.warning(f"[cleanup_workspace] CocoIndex cleanup failed: {idx_err}")
+                dev_container_manager.stop(branch_name)
+                logger.info(f"[cleanup_workspace] Stopped container for: {branch_name}")
+            except Exception as container_err:
+                logger.debug(f"[cleanup_workspace] Container stop: {container_err}")
         
-        if agent:
-            pass
+        logger.info(f"[cleanup_workspace] Workspace preserved (branch: {branch_name})")
         
         return {
             **state,
             "workspace_ready": False,
             "index_ready": False,
+            "container_stopped": True,
         }
         
     except Exception as e:
@@ -1321,27 +1510,31 @@ Respond with JSON:
 """
 
 
-async def _summarize_all_code(code_changes: list, workspace_path: str = "") -> str:
-    """Summarize all code changes into a single summary."""
+async def _summarize_all_code(code_changes: list, workspace_path: str = "", state: dict = None) -> str:
+    """Summarize all code changes for IS_PASS validation.
+    
+    Uses code_snippet directly from code_changes (already contains full implementation).
+    No truncation needed - code_changes comes from implement node with complete code.
+    """
     if not code_changes:
         return "No code changes to summarize."
     
     summary_parts = []
+    
     for change in code_changes:
         file_path = change.get("file_path", "unknown")
         action = change.get("action", "unknown")
-        description = change.get("description", "")
-        code = change.get("code_snippet", "")
+        description = change.get("description", "") or ""
+        code = change.get("code_snippet", "") or ""
         
-        # Truncate code for summary
-        code_preview = code[:500] + "..." if len(code) > 500 else code
+        # Get language for markdown code block
+        lang = get_markdown_code_block_type(file_path)
         
-        summary_parts.append(f"""
-### {file_path} ({action})
+        summary_parts.append(f"""### {file_path} ({action})
 {description}
 
-```
-{code_preview}
+```{lang}
+{code}
 ```
 """)
     
@@ -1410,8 +1603,8 @@ async def summarize_code(state: DeveloperState, agent=None) -> DeveloperState:
             # await agent.message_user("status", f"📝 Summarizing code (iteration {summarize_count + 1}/{max_summarize})...")
             pass
         
-        # 1. Summarize all code
-        summary = await _summarize_all_code(code_changes, workspace_path)
+        # 1. Summarize all code using CocoIndex
+        summary = await _summarize_all_code(code_changes, workspace_path, state)
         logger.info(f"[summarize_code] Generated summary: {len(summary)} chars")
         
         # 2. Check IS_PASS
@@ -1461,20 +1654,108 @@ async def summarize_code(state: DeveloperState, agent=None) -> DeveloperState:
 
 
 # =============================================================================
-# CODE REVIEW (LGTM/LBTM pattern from MetaGPT)
+# LINT AND FORMAT (Auto-fix style issues before code review) - NO LLM
+# =============================================================================
+
+async def lint_and_format(state: DeveloperState, agent=None) -> DeveloperState:
+    """Auto-fix lint/format issues before code review.
+    
+    Uses project_config to determine lint/format commands:
+    - Node/Bun: eslint --fix + prettier --write
+    - Python: ruff check --fix + ruff format
+    
+    This reduces trivial style issues in code review, saving tokens and time.
+    """
+    workspace_path = state.get("workspace_path")
+    if not workspace_path:
+        logger.warning("[lint_and_format] No workspace_path, skipping")
+        return state
+    
+    project_config = state.get("project_config", {})
+    services = project_config.get("services", [])
+    
+    # If no services config, try to detect and use default commands
+    if not services:
+        # Fallback: detect project type and use default fix commands
+        if Path(workspace_path, "package.json").exists():
+            services = [{"name": "app", "path": ".", "runtime": "bun"}]
+        elif Path(workspace_path, "pyproject.toml").exists():
+            services = [{"name": "app", "path": ".", "runtime": "python"}]
+        else:
+            logger.info("[lint_and_format] No services config, skipping")
+            return state
+    
+    fixed_count = 0
+    lint_output = ""
+    
+    for svc in services:
+        svc_name = svc.get("name", "app")
+        svc_path = str(Path(workspace_path) / svc.get("path", "."))
+        runtime = svc.get("runtime", "node")
+        
+        # Use custom commands if provided, otherwise use defaults
+        lint_fix_cmd = svc.get("lint_fix_cmd")
+        format_cmd = svc.get("format_cmd")
+        
+        if not lint_fix_cmd and not format_cmd:
+            # Default commands based on runtime
+            if runtime in ["bun", "node"]:
+                lint_fix_cmd = "bunx eslint --fix . --ext .ts,.tsx,.js,.jsx 2>/dev/null || true"
+                format_cmd = "bunx prettier --write . 2>/dev/null || true"
+            elif runtime == "python":
+                lint_fix_cmd = "ruff check --fix . 2>/dev/null || true"
+                format_cmd = "ruff format . 2>/dev/null || true"
+            else:
+                continue
+        
+        logger.info(f"[lint_and_format] Running lint/format for {svc_name} ({runtime})")
+        
+        # Execute lint fix
+        if lint_fix_cmd:
+            try:
+                cmd = f"cd {svc_path} && {lint_fix_cmd}"
+                result = execute_shell.invoke({"command": cmd, "timeout": 60})
+                if isinstance(result, dict):
+                    output = result.get("stdout", "") + result.get("stderr", "")
+                    lint_output += f"\n=== {svc_name} lint ===\n{output}"
+                    # Count fixed files from output (rough estimate)
+                    if "fixed" in output.lower() or "formatted" in output.lower():
+                        fixed_count += 1
+            except Exception as e:
+                logger.warning(f"[lint_and_format] Lint fix error: {e}")
+        
+        # Execute format
+        if format_cmd:
+            try:
+                cmd = f"cd {svc_path} && {format_cmd}"
+                result = execute_shell.invoke({"command": cmd, "timeout": 60})
+                if isinstance(result, dict):
+                    output = result.get("stdout", "") + result.get("stderr", "")
+                    lint_output += f"\n=== {svc_name} format ===\n{output}"
+            except Exception as e:
+                logger.warning(f"[lint_and_format] Format error: {e}")
+    
+    logger.info(f"[lint_and_format] Completed, ~{fixed_count} fixes applied")
+    
+    return {
+        **state,
+        "lint_output": lint_output,
+    }
+
+
+# =============================================================================
+# CODE REVIEW (BATCH - Review ALL files in ONE LLM call)
 # =============================================================================
 
 async def code_review(state: DeveloperState, agent=None) -> DeveloperState:
-    """Review code k times until LGTM or max iterations.
+    """Batch review ALL files in ONE LLM call.
     
-    MetaGPT-inspired code review that checks:
-    1. Requirements implementation
-    2. Code logic correctness
-    3. Design compliance
-    4. Implementation completeness
-    5. Import correctness
-    6. Method reuse
+    Speed optimization: Instead of N separate LLM calls for N files,
+    review all files together in a single call.
+    
+    Expected improvement: 24 calls -> 1 call (~180s -> ~20s)
     """
+    print("[NODE] code_review - Reviewing code quality...")
     try:
         code_changes = state.get("code_changes", [])
         k = state.get("code_review_k", 2)
@@ -1485,92 +1766,113 @@ async def code_review(state: DeveloperState, agent=None) -> DeveloperState:
             logger.info("[code_review] No code changes to review")
             return {**state, "code_review_passed": True}
         
-        if agent:
-            pass
-        
-        review_results = []
-        all_passed = True
-        
-        from app.agents.developer_v2.tools import get_markdown_code_block_type
+        # Build ALL files into one prompt (batch review)
+        all_code_blocks = []
+        file_map = {}  # Map file_path to code_change for updates
         
         for change in code_changes:
-            file_path = change.get("file_path", "")
+            file_path = change.get("file_path") or ""
             code = change.get("code_snippet", "")
             
             if not code:
                 continue
             
-            language = get_markdown_code_block_type(file_path)
-            
-            # Build review prompt
-            sys_prompt = _build_system_prompt("code_review", agent)
-            user_prompt = _get_prompt("code_review", "user_prompt").format(
-                design=state.get("design_doc", ""),
-                task=state.get("task_doc", state.get("story_description", "")),
-                code_plan=state.get("code_plan_doc", ""),
-                related_code=state.get("related_code_context", ""),
-                filename=file_path,
-                language=language,
-                code=code,
-            )
-            
-            messages = [
-                SystemMessage(content=sys_prompt),
-                HumanMessage(content=user_prompt)
-            ]
-            
-            response = await _code_llm.ainvoke(messages, config=_cfg(state, "code_review"))
-            clean_json = _clean_json(response.content)
-            
-            try:
-                import json
-                review = json.loads(clean_json)
-            except json.JSONDecodeError:
-                review = {"result": "LGTM", "issues": [], "rewritten_code": ""}
-            
-            review_results.append(review)
-            
+            file_map[file_path] = change
+            lang = get_markdown_code_block_type(file_path)
+            all_code_blocks.append(f"### {file_path}\n```{lang}\n{code}\n```")
+        
+        if not all_code_blocks:
+            logger.info("[code_review] No code to review")
+            return {**state, "code_review_passed": True}
+        
+        combined_code = "\n\n".join(all_code_blocks)
+        logger.info(f"[code_review] Batch reviewing {len(all_code_blocks)} files in ONE call")
+        
+        # Build batch review prompt
+        requirements = state.get("story_content", "") or state.get("task_doc", "")
+        acceptance_criteria = "\n".join(f"- {ac}" for ac in state.get("acceptance_criteria", []))
+        
+        sys_prompt = _build_system_prompt("batch_code_review", agent)
+        input_template = _get_prompt("batch_code_review", "input_template")
+        user_prompt = input_template.format(
+            requirements=f"{requirements}\n\nAcceptance Criteria:\n{acceptance_criteria}",
+            all_code_blocks=combined_code
+        )
+        
+        messages = [
+            SystemMessage(content=sys_prompt),
+            HumanMessage(content=user_prompt)
+        ]
+        
+        # Single LLM call for ALL files
+        response = await _code_llm.ainvoke(messages, config=_cfg(state, "batch_code_review"))
+        clean_json = _clean_json(response.content)
+        
+        try:
+            import json
+            batch_result = json.loads(clean_json)
+        except json.JSONDecodeError:
+            logger.warning("[code_review] Failed to parse batch result, assuming LGTM")
+            batch_result = {"overall_result": "LGTM", "files": {}, "summary": "Parse error"}
+        
+        # Process batch results
+        overall_result = batch_result.get("overall_result", "LGTM")
+        files_review = batch_result.get("files", {})
+        all_passed = "LGTM" in overall_result
+        
+        review_results = []
+        error_logs_parts = ["## CODE REVIEW FEEDBACK (MUST FIX):"]
+        
+        for file_path, review in files_review.items():
             result = review.get("result", "LGTM")
+            issues = review.get("issues", [])
+            rewritten = review.get("rewritten_code", "")
+            
+            review_results.append({
+                "filename": file_path,
+                "result": result,
+                "issues": issues,
+            })
+            
             if "LBTM" in result:
                 all_passed = False
-                # If LBTM and rewritten code provided, update the change
-                rewritten = review.get("rewritten_code", "")
-                if rewritten and rewritten.strip():
-                    change["code_snippet"] = rewritten
-                    # Also write to file
+                
+                # Collect feedback for implement
+                if issues:
+                    error_logs_parts.append(f"\n### {file_path}:")
+                    for issue in issues:
+                        error_logs_parts.append(f"  - {issue}")
+                
+                # If rewritten code provided, update the file using write_file_safe tool
+                if rewritten and rewritten.strip() and file_path in file_map:
+                    file_map[file_path]["code_snippet"] = rewritten
+                    
                     if workspace_path:
-                        full_path = Path(workspace_path) / file_path
                         try:
-                            full_path.parent.mkdir(parents=True, exist_ok=True)
-                            full_path.write_text(rewritten, encoding='utf-8')
-                            logger.info(f"[code_review] Rewrote {file_path} based on review")
+                            result = write_file_safe.invoke({
+                                "file_path": file_path,
+                                "content": rewritten,
+                                "mode": "w"
+                            })
+                            logger.info(f"[code_review] {result}")
                         except Exception as e:
                             logger.warning(f"[code_review] Failed to write {file_path}: {e}")
-                
-                issues = review.get("issues", [])
-                if agent and issues:
-                    pass
-            else:
-                if agent:
-                    pass
         
         new_iteration = iteration + 1
+        logger.info(f"[code_review] Batch result: {'PASSED' if all_passed else 'FAILED'} ({len(files_review)} files)")
         
-        # If not all passed and we haven't reached max iterations, we'll retry
+        # If not all passed and can retry, go back to implement
         if not all_passed and new_iteration < k:
-            logger.info(f"[code_review] Iteration {new_iteration}, retrying...")
+            logger.info(f"[code_review] Iteration {new_iteration}, routing to implement for fixes...")
+            
             return {
                 **state,
                 "code_review_passed": False,
                 "code_review_results": review_results,
                 "code_review_iteration": new_iteration,
+                "error_logs": "\n".join(error_logs_parts),
+                "current_step": 0,  # Reset to re-implement from start
             }
-        
-        if agent:
-            if all_passed:
-                pass
-            else:
-                pass
         
         return {
             **state,
@@ -1585,17 +1887,129 @@ async def code_review(state: DeveloperState, agent=None) -> DeveloperState:
 
 
 # =============================================================================
-# RUN CODE (Execute tests to verify)
+# RUN CODE (Execute tests to verify) - Rule-based, NO LLM
 # =============================================================================
 
-async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
-    """Execute tests in workspace to verify code works.
+async def _run_code_multi_service(state: DeveloperState, workspace_path: str, services: list) -> DeveloperState:
+    """Run tests for project services (single or multi-service).
     
-    Detects test framework and runs appropriate tests.
-    Analyzes results with LLM to determine pass/fail.
+    Args:
+        state: Current state
+        workspace_path: Root workspace path
+        services: List of service configs [{"name": "app", "path": ".", ...}, ...]
+    
+    Returns:
+        Updated state with combined test results
     """
+    task_id = state.get("task_id") or state.get("story_id", "")
+    branch_name = state.get("branch_name") or task_id
+    
+    all_stdout = ""
+    all_stderr = ""
+    all_passed = True
+    summaries = []
+    
+    for svc_config in services:
+        svc_name = svc_config.get("name", "app")
+        svc_path = str(Path(workspace_path) / svc_config.get("path", "."))
+        test_cmd = svc_config.get("test_cmd", "")
+        install_cmd = svc_config.get("install_cmd", "")
+        needs_db = svc_config.get("needs_db", False)
+        db_cmds = svc_config.get("db_cmds", [])
+        
+        if not test_cmd:
+            logger.info(f"[run_code] Skipping {svc_name}: no test_cmd")
+            continue
+        
+        logger.info(f"[run_code] Running tests for {svc_name} at {svc_path}")
+        all_stdout += f"\n\n{'='*40}\n SERVICE: {svc_name}\n{'='*40}\n"
+        
+        # Build commands for this service
+        commands = []
+        if install_cmd:
+            commands.append(f"cd {svc_config.get('path', svc_name)} && {install_cmd}")
+        for db_cmd in db_cmds:
+            commands.append(f"cd {svc_config.get('path', svc_name)} && {db_cmd}")
+        commands.append(f"cd {svc_config.get('path', svc_name)} && {test_cmd}")
+        
+        # If any service needs DB, use container
+        if needs_db:
+            try:
+                set_container_context(branch_name=branch_name, workspace_path=workspace_path)
+                container_info = dev_container_manager.get_or_create(
+                    branch_name=branch_name,
+                    workspace_path=workspace_path,
+                    project_type="node",  # Container supports multiple runtimes
+                )
+                
+                for cmd in commands:
+                    result = dev_container_manager.exec(branch_name, cmd)
+                    all_stdout += f"\n$ {cmd}\n{result.get('output', '')}"
+                    
+                    if result.get("exit_code", 0) != 0 and "test" in cmd.lower():
+                        all_stderr += result.get("output", "")
+                        all_passed = False
+                        summaries.append(f"{svc_name}: FAIL")
+                        break
+                else:
+                    summaries.append(f"{svc_name}: PASS")
+                    
+            except Exception as e:
+                logger.error(f"[run_code] Container error for {svc_name}: {e}")
+                all_passed = False
+                summaries.append(f"{svc_name}: ERROR")
+        else:
+            # Direct execution for services without DB
+            for cmd in commands:
+                try:
+                    result = execute_shell.invoke({"command": cmd, "timeout": 300})
+                    if isinstance(result, dict):
+                        all_stdout += f"\n$ {cmd}\n{result.get('stdout', '')}"
+                        if result.get("exit_code", 0) != 0 and "test" in cmd.lower():
+                            all_stderr += result.get("stderr", "")
+                            all_passed = False
+                            summaries.append(f"{svc_name}: FAIL")
+                            break
+                except Exception as e:
+                    all_stderr += f"\nError: {e}"
+                    all_passed = False
+                    summaries.append(f"{svc_name}: ERROR")
+                    break
+            else:
+                summaries.append(f"{svc_name}: PASS")
+    
+    run_status = "PASS" if all_passed else "FAIL"
+    summary = ", ".join(summaries)
+    
+    logger.info(f"[run_code] Multi-service result: {run_status} ({summary})")
+    
+    return {
+        **state,
+        "run_status": run_status,
+        "run_stdout": all_stdout,
+        "run_stderr": all_stderr,
+        "run_result": {
+            "status": run_status,
+            "summary": f"Multi-service: {summary}",
+            "services": summaries,
+        },
+    }
+
+
+async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
+    """Execute tests in workspace using rule-based detection (no LLM).
+    
+    Fast approach:
+    1. Detect project type by checking config files
+    2. If needs_db: Run in isolated container (Prisma, Drizzle safe)
+    3. Else: Direct execution
+    4. Analyze results using regex patterns
+    """
+    print("[NODE] run_code - Running tests (rule-based, no LLM)...")
     try:
         workspace_path = state.get("workspace_path", "")
+        project_id = state.get("project_id", "default")
+        task_id = state.get("task_id") or state.get("story_id", "")
         
         if not workspace_path or not Path(workspace_path).exists():
             logger.warning("[run_code] No workspace path, skipping tests")
@@ -1605,124 +2019,181 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
                 "run_result": {"status": "PASS", "summary": "No workspace to test"},
             }
         
-        if agent:
-            pass
+        # Setup tool context for shell tools
+        _setup_tool_context(workspace_path, project_id, task_id)
         
-        from app.agents.developer_v2.tools import (
-            detect_test_command,
-            execute_command_async,
-            find_test_file,
-            get_markdown_code_block_type,
-            install_dependencies,
-        )
+        # 1. Use project_config services array if provided, otherwise auto-detect
+        project_config = state.get("project_config", {})
+        services = project_config.get("services", [])
         
-        # Install dependencies first (MetaGPT RunCode pattern)
-        try:
-            deps_result = await install_dependencies(workspace_path)
-            if deps_result and agent:
-                pass
-        except Exception as deps_err:
-            logger.warning(f"[run_code] Dependency install failed: {deps_err}")
+        # Services array config (single or multi-service)
+        if services:
+            svc_names = [s.get("name", "app") for s in services]
+            logger.info(f"[run_code] Services config: {svc_names}")
+            return await _run_code_multi_service(state, workspace_path, services)
         
-        # Detect and run tests
-        test_cmd = state.get("test_command") or detect_test_command(workspace_path)
-        logger.info(f"[run_code] Running: {' '.join(test_cmd)}")
+        # Fallback to auto-detection (no services array provided)
+        project_info = _detect_project_type(workspace_path)
+        project_type = project_info["type"]
+        test_cmd = project_info["test_cmd"]
+        install_cmd = project_info["install_cmd"]
+        needs_db = project_info.get("needs_db", False)
+        db_cmds = project_info.get("db_cmds", [])
+        logger.info(f"[run_code] Auto-detected: {project_type}, test_cmd: {test_cmd}, needs_db: {needs_db}")
         
-        result = await execute_command_async(
-            command=test_cmd,
-            working_directory=workspace_path,
-            timeout=120  # 2 minutes for tests
-        )
-        
-        # Determine basic pass/fail
-        basic_status = "PASS" if result.success else "FAIL"
-        
-        # Get code context for analysis
-        files_modified = state.get("files_modified", [])
-        code_filename = files_modified[0] if files_modified else ""
-        code_content = ""
-        test_filename = ""
-        test_content = ""
-        
-        if code_filename and workspace_path:
-            code_path = Path(workspace_path) / code_filename
-            if code_path.exists():
-                try:
-                    code_content = code_path.read_text(encoding='utf-8')[:5000]
-                except Exception:
-                    pass
-            
-            test_filename = find_test_file(workspace_path, code_filename) or ""
-            if test_filename:
-                test_path = Path(workspace_path) / test_filename
-                if test_path.exists():
-                    try:
-                        test_content = test_path.read_text(encoding='utf-8')[:5000]
-                    except Exception:
-                        pass
-        
-        language = get_markdown_code_block_type(code_filename) if code_filename else "python"
-        
-        # MetaGPT RunCode pattern: Truncate outputs to avoid token overflow
-        # stdout might be long but not important - truncate to 500 chars
-        # stderr is more important - truncate to 10000 chars
-        stdout_truncated = (result.stdout or "")[:500]
-        stderr_truncated = (result.stderr or "")[:10000]
-        
-        # Analyze with LLM
-        sys_prompt = _build_system_prompt("run_code_analysis", agent)
-        user_prompt = _get_prompt("run_code_analysis", "user_prompt").format(
-            code_filename=code_filename or "unknown",
-            language=language,
-            code=code_content or "No source code available",
-            test_filename=test_filename or "unknown",
-            test_code=test_content or "No test code available",
-            command=" ".join(test_cmd),
-            stdout=stdout_truncated or "No output",
-            stderr=stderr_truncated or "No errors",
-        )
-        
-        messages = [
-            SystemMessage(content=sys_prompt),
-            HumanMessage(content=user_prompt)
-        ]
-        
-        response = await _fast_llm.ainvoke(messages, config=_cfg(state, "run_code"))
-        clean_json = _clean_json(response.content)
-        
-        try:
-            import json
-            analysis = json.loads(clean_json)
-        except json.JSONDecodeError:
-            analysis = {
-                "status": basic_status,
-                "summary": result.stderr[:200] if result.stderr else "Test completed",
-                "file_to_fix": "",
-                "send_to": "NoOne" if result.success else "Engineer",
+        if project_type == "unknown" or not test_cmd:
+            logger.warning("[run_code] Unknown project type, skipping tests")
+            return {
+                **state,
+                "run_status": "PASS",
+                "run_result": {"status": "PASS", "summary": "Unknown project type, skipped tests"},
             }
         
-        run_status = analysis.get("status", basic_status)
+        stdout_combined = ""
+        stderr_combined = ""
         
-        if agent:
-            if run_status == "PASS":
-                pass
-            else:
-                pass
+        # 2. If needs_db: Run in persistent container (parallel-safe, reusable)
+        if needs_db:
+            branch_name = state.get("branch_name") or task_id
+            logger.info(f"[run_code] Project needs DB, using persistent container for {branch_name}...")
+            
+            try:
+                # Set container context for LLM tools
+                set_container_context(branch_name=branch_name, workspace_path=workspace_path)
+                
+                # Get or create persistent container
+                container_info = dev_container_manager.get_or_create(
+                    branch_name=branch_name,
+                    workspace_path=workspace_path,
+                    project_type=project_type,
+                )
+                logger.info(f"[run_code] Container ready: {container_info.get('name')} ({container_info.get('status')})")
+                
+                # Build command sequence: install -> db_cmds -> test
+                commands = [install_cmd] + db_cmds + [test_cmd]
+                
+                # Execute commands in container
+                for cmd in commands:
+                    if not cmd:
+                        continue
+                    
+                    logger.info(f"[run_code] Container exec: {cmd}")
+                    result = dev_container_manager.exec(branch_name, cmd)
+                    
+                    stdout_combined += f"\n=== {cmd} ===\n{result.get('output', '')}"
+                    
+                    # Check for test failures (continue on other failures)
+                    if result.get("exit_code", 0) != 0 and "test" in cmd.lower():
+                        stderr_combined += result.get("output", "")
+                        break
+                
+                # Analyze results
+                analysis = _analyze_test_output(stdout_combined, stderr_combined, project_type)
+                run_status = analysis["status"]
+                summary = analysis["summary"]
+                
+                logger.info(f"[run_code] Container execution: {run_status} - {summary}")
+                
+                # Note: Container stays running for reuse!
+                
+                # Return early for container execution
+                file_to_fix = ""
+                if run_status == "FAIL":
+                    file_patterns = [
+                        r"File [\"']([^\"']+)[\"']",
+                        r"at\s+([^\s:]+):\d+",
+                        r"([^\s]+\.(py|js|ts|jsx|tsx|rs|go)):\d+",
+                    ]
+                    for pattern in file_patterns:
+                        match = re.search(pattern, stderr_combined)
+                        if match:
+                            file_to_fix = match.group(1)
+                            break
+                
+                return {
+                    **state,
+                    "run_status": run_status,
+                    "run_stdout": stdout_combined,
+                    "run_stderr": stderr_combined,
+                    "run_result": {
+                        "status": run_status,
+                        "summary": summary,
+                        "file_to_fix": file_to_fix,
+                        "send_to": "NoOne" if run_status == "PASS" else "Engineer",
+                        "fix_instructions": "",
+                        "error_type": "test_failure" if run_status == "FAIL" else "none",
+                    },
+                    "test_command": [test_cmd],
+                    "container_name": container_info.get("name"),
+                }
+                
+            except Exception as container_err:
+                logger.warning(f"[run_code] Container failed, falling back: {container_err}")
+                # Fall through to direct execution
+        
+        # 3. Direct execution (no DB needed)
+        # Install dependencies (optional, skip errors)
+        if install_cmd:
+            try:
+                logger.info(f"[run_code] Installing dependencies: {install_cmd}")
+                install_result = execute_shell.invoke({"command": install_cmd, "timeout": 120})
+                if isinstance(install_result, dict):
+                    stdout_combined += install_result.get("stdout", "") + "\n"
+                    stderr_combined += install_result.get("stderr", "") + "\n"
+                logger.info("[run_code] Dependencies installed")
+            except Exception as install_err:
+                logger.warning(f"[run_code] Install failed (continuing): {install_err}")
+        
+        # Run tests
+        logger.info(f"[run_code] Running tests: {test_cmd}")
+        try:
+            test_result = execute_shell.invoke({"command": test_cmd, "timeout": 300})
+            
+            if isinstance(test_result, dict):
+                stdout_combined += test_result.get("stdout", "") + "\n"
+                stderr_combined += test_result.get("stderr", "") + "\n"
+            elif isinstance(test_result, str):
+                stdout_combined += test_result + "\n"
+        except Exception as test_err:
+            logger.error(f"[run_code] Test execution failed: {test_err}")
+            stderr_combined += f"Test execution error: {str(test_err)}\n"
+        
+        # 4. Analyze results (rule-based, no LLM)
+        analysis = _analyze_test_output(stdout_combined, stderr_combined, project_type)
+        run_status = analysis["status"]
+        summary = analysis["summary"]
+        
+        logger.info(f"[run_code] Final status: {run_status} - {summary}")
+        
+        # Detect file to fix from error output
+        file_to_fix = ""
+        if run_status == "FAIL":
+            # Try to extract file path from error messages
+            file_patterns = [
+                r"File [\"']([^\"']+)[\"']",  # Python traceback
+                r"at\s+([^\s:]+):\d+",  # Node.js stack trace
+                r"([^\s]+\.(py|js|ts|jsx|tsx|rs|go)):\d+",  # Generic file:line
+            ]
+            for pattern in file_patterns:
+                match = re.search(pattern, stderr_combined)
+                if match:
+                    file_to_fix = match.group(1)
+                    break
         
         return {
             **state,
             "run_status": run_status,
-            "run_stdout": result.stdout,
-            "run_stderr": result.stderr,
+            "run_stdout": stdout_combined,
+            "run_stderr": stderr_combined,
             "run_result": {
                 "status": run_status,
-                "summary": analysis.get("summary", ""),
-                "file_to_fix": analysis.get("file_to_fix", ""),
-                "send_to": analysis.get("send_to", "NoOne"),
-                "fix_instructions": analysis.get("fix_instructions", ""),
-                "error_type": analysis.get("error_type", "none"),
+                "summary": summary,
+                "file_to_fix": file_to_fix,
+                "send_to": "NoOne" if run_status == "PASS" else "Engineer",
+                "fix_instructions": "",
+                "error_type": "test_failure" if run_status == "FAIL" else "none",
             },
-            "test_command": test_cmd,
+            "test_command": [test_cmd],
         }
         
     except Exception as e:
@@ -1739,13 +2210,16 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
 # =============================================================================
 
 async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
-    """Debug and fix errors based on test results.
+    """Debug and fix errors.
     
-    Analyzes error logs and rewrites code to fix bugs.
+    Refactored: Tools for exploration + with_structured_output for response.
     """
+    print("[NODE] debug_error - Fixing errors...")
     try:
         run_result = state.get("run_result", {})
         workspace_path = state.get("workspace_path", "")
+        project_id = state.get("project_id", "default")
+        task_id = state.get("task_id") or state.get("story_id", "")
         debug_count = state.get("debug_count", 0)
         max_debug = state.get("max_debug", 5)  # MetaGPT pattern
         
@@ -1779,30 +2253,37 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
         if agent:
             pass
         
-        from app.agents.developer_v2.tools import get_markdown_code_block_type, find_test_file
-        
-        # Read the file to fix
+        # Read the file to fix using read_file_safe tool
         code_content = ""
         if workspace_path:
-            code_path = Path(workspace_path) / file_to_fix
-            if code_path.exists():
-                try:
-                    code_content = code_path.read_text(encoding='utf-8')
-                except Exception:
-                    pass
+            try:
+                result = read_file_safe.invoke({"file_path": file_to_fix})
+                if result and not result.startswith("Error:"):
+                    if "\n\n" in result:
+                        code_content = result.split("\n\n", 1)[1]
+                    else:
+                        code_content = result
+            except Exception:
+                pass
         
-        # Find and read test file
+        # Find and read test file using read_file_safe tool
         test_filename = find_test_file(workspace_path, file_to_fix) if workspace_path else ""
         test_content = ""
         if test_filename and workspace_path:
-            test_path = Path(workspace_path) / test_filename
-            if test_path.exists():
-                try:
-                    test_content = test_path.read_text(encoding='utf-8')
-                except Exception:
-                    pass
+            try:
+                result = read_file_safe.invoke({"file_path": test_filename})
+                if result and not result.startswith("Error:"):
+                    if "\n\n" in result:
+                        test_content = result.split("\n\n", 1)[1]
+                    else:
+                        test_content = result
+            except Exception:
+                pass
         
         language = get_markdown_code_block_type(file_to_fix)
+        
+        # Setup tool context
+        _setup_tool_context(workspace_path, project_id, task_id)
         
         # Build debug prompt
         sys_prompt = _build_system_prompt("debug_error", agent)
@@ -1817,33 +2298,41 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
             file_to_fix=file_to_fix,
         )
         
+        # Tools for debugging exploration
+        tools = [read_file_safe, list_directory_safe, semantic_code_search, execute_shell]
+        
+        # Step 1: Explore with tools
         messages = [
             SystemMessage(content=sys_prompt),
             HumanMessage(content=user_prompt)
         ]
         
-        response = await _code_llm.ainvoke(messages, config=_cfg(state, "debug_error"))
-        clean_json = _clean_json(response.content)
+        exploration = await _llm_with_tools(
+            llm=_code_llm,
+            tools=tools,
+            messages=messages,
+            state=state,
+            name="debug_explore",
+            max_iterations=2
+        )
         
-        try:
-            import json
-            debug_result = json.loads(clean_json)
-        except json.JSONDecodeError:
-            logger.warning("[debug_error] Failed to parse debug response")
-            return {**state, "debug_count": debug_count + 1}
+        # Step 2: Get structured response (exploration already filtered by semantic search)
+        messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:5000]}\n\nNow provide your debug analysis and fixed code."))
+        structured_llm = _code_llm.with_structured_output(DebugResult)
+        debug_result = await structured_llm.ainvoke(messages, config=_cfg(state, "debug_error"))
         
-        fixed_code = debug_result.get("fixed_code", "")
-        
-        if fixed_code and workspace_path:
-            # Write fixed code
-            fix_path = Path(workspace_path) / file_to_fix
+        if debug_result.fixed_code and workspace_path:
+            # Write fixed code using write_file_safe tool
             try:
-                fix_path.parent.mkdir(parents=True, exist_ok=True)
-                fix_path.write_text(fixed_code, encoding='utf-8')
-                logger.info(f"[debug_error] Wrote fixed code to {file_to_fix}")
+                result = write_file_safe.invoke({
+                    "file_path": file_to_fix,
+                    "content": debug_result.fixed_code,
+                    "mode": "w"
+                })
+                logger.info(f"[debug_error] {result}")
                 
-                if agent:
-                    pass
+                # Incremental update index (fast - only changed file)
+                incremental_update_index(project_id, task_id)
             except Exception as e:
                 logger.error(f"[debug_error] Failed to write fixed code: {e}")
         
@@ -1852,9 +2341,9 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
         debug_history.append({
             "iteration": debug_count + 1,
             "file": file_to_fix,
-            "analysis": debug_result.get("analysis", ""),
-            "root_cause": debug_result.get("root_cause", ""),
-            "fix_description": debug_result.get("fix_description", ""),
+            "analysis": debug_result.analysis,
+            "root_cause": debug_result.root_cause,
+            "fix_description": debug_result.fix_description,
         })
         
         return {

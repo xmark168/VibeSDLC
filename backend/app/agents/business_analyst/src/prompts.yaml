@@ -85,7 +85,8 @@ shared_context:
     - epic_id: Reference to parent epic
     - title: "As a [user], I want [goal] so that [benefit]"
     - description: Detailed description
-    - acceptance_criteria: List of Given/When/Then criteria
+    - requirements: List of specific, actionable requirements for developers
+    - acceptance_criteria: List of Given/When/Then criteria for testing
     - priority: Priority level (1=Critical, 2=High, 3=Medium, 4=Low, 5=Nice-to-have)
     - story_point: Estimated effort (1, 2, 3, 5, 8, 13 - Fibonacci scale)
 
@@ -244,9 +245,10 @@ tasks:
       → Cần hỏi:
       - "Khách hàng của bạn là ai?" → ["Học sinh/Sinh viên", "Người đi làm", "Phụ huynh mua cho con", "Tất cả mọi người", "Khác (vui lòng mô tả)"]
       - "Bạn bán loại sách nào?" → ["Sách giáo khoa", "Truyện/Tiểu thuyết", "Sách kỹ năng/Self-help", "Sách thiếu nhi", "Tất cả các loại trên", "Khác (vui lòng mô tả)"]
-      - "Website cần có những tính năng gì?" → ["Tìm kiếm sách", "Giỏ hàng & thanh toán", "Đánh giá/bình luận sách", "Gợi ý sách theo sở thích", "Theo dõi đơn hàng", "Tài khoản thành viên", "Khác (vui lòng mô tả)"]
+      - "Website cần có những tính năng gì?" → ["Đăng nhập/Đăng ký", "Trang chủ giới thiệu", "Tìm kiếm sách", "Giỏ hàng & thanh toán", "Đánh giá/bình luận sách", "Gợi ý sách theo sở thích", "Theo dõi đơn hàng", "Quản lý tài khoản cá nhân", "Khác (vui lòng mô tả)"]
       - "Khách thanh toán thế nào?" → ["Chuyển khoản ngân hàng", "Ví điện tử (Momo, ZaloPay...)", "Tiền mặt khi nhận hàng", "Thẻ tín dụng/ghi nợ", "Khác (vui lòng mô tả)"]
       - "Bạn có hỗ trợ giao hàng không?" → ["Giao toàn quốc", "Chỉ giao nội thành", "Khách tự đến lấy tại cửa hàng", "Khác (vui lòng mô tả)"]
+      - "Bạn lo ngại điều gì nhất khi xây dựng website?" → ["Bảo mật thanh toán", "Quản lý tồn kho", "Thu hút khách hàng", "Chi phí vận hành", "Khác (vui lòng mô tả)"]
       → SKIP: "Kiếm tiền thế nào?" (đã rõ là bán sách)
       
       ## Website tin tức:
@@ -383,7 +385,8 @@ tasks:
       - epic_id: Reference to parent epic
       - title: User story in format "As a [user], I want [goal] so that [benefit]"
       - description: Detailed description of the story
-      - acceptance_criteria: List of testable criteria (Given/When/Then format)
+      - requirements: List of specific, actionable requirements for developers (3-6 items per story)
+      - acceptance_criteria: List of testable criteria (Given/When/Then format) for QA
       - priority: Priority level (1=Critical, 2=High, 3=Medium, 4=Low, 5=Nice-to-have)
       - story_point: Estimated effort in story points (1, 2, 3, 5, 8, 13 - Fibonacci)
       
@@ -412,8 +415,10 @@ tasks:
       **RULES:**
       1. Group features into logical Epics by domain
       2. Each Epic should have 2-5 user stories
-      3. Use Given/When/Then format for acceptance criteria
-      4. Keep stories focused and testable
+      3. Each story MUST have 3-6 specific requirements for developers
+      4. Use Given/When/Then format for acceptance criteria (for QA testing)
+      5. Keep stories focused and testable
+      6. **IMPORTANT: ALL content MUST be in ENGLISH**
       
       Return ONLY valid JSON:
       ```json
@@ -421,15 +426,20 @@ tasks:
         "epics": [
           {{
             "id": "EPIC-001",
-            "title": "Tên Epic ngắn gọn",
-            "description": "Mô tả tổng quan về Epic",
+            "title": "Short Epic Title in English",
+            "description": "Overview of the epic in English",
             "domain": "Authentication|Product|Cart|Payment|Admin|Notification",
             "stories": [
               {{
                 "id": "US-001",
                 "epic_id": "EPIC-001",
                 "title": "As a [user], I want [goal] so that [benefit]",
-                "description": "Mô tả chi tiết story",
+                "description": "Detailed story description in English",
+                "requirements": [
+                  "Specific requirement 1 for developers",
+                  "Specific requirement 2 for developers",
+                  "Specific requirement 3 for developers"
+                ],
                 "acceptance_criteria": [
                   "Given [context] when [action] then [expected result]",
                   "Given [context] when [edge case] then [handling]"
@@ -449,18 +459,25 @@ tasks:
         "epics": [
           {{
             "id": "EPIC-001",
-            "title": "Quản lý giỏ hàng",
-            "description": "Cho phép khách hàng quản lý sản phẩm trong giỏ hàng",
+            "title": "Shopping Cart Management",
+            "description": "Allow customers to manage products in their shopping cart before checkout",
             "domain": "Cart",
             "stories": [
               {{
                 "id": "US-001",
                 "epic_id": "EPIC-001",
                 "title": "As a customer, I want to add products to cart so that I can purchase multiple items",
-                "description": "Thêm sản phẩm vào giỏ hàng từ trang chi tiết",
+                "description": "Users can add products to their shopping cart from the product detail page",
+                "requirements": [
+                  "Display Add to Cart button on product detail page",
+                  "Store cart data in user session or database for logged-in users",
+                  "Update cart icon badge with total item count",
+                  "Show success toast notification after adding",
+                  "Prevent adding out-of-stock products with disabled button"
+                ],
                 "acceptance_criteria": [
-                  "Given I am on product page when I click Add to Cart then product is added",
-                  "Given product is out of stock when I click Add then I see error message"
+                  "Given I am on product page when I click Add to Cart then product is added and cart badge updates",
+                  "Given product is out of stock when I view page then Add to Cart button is disabled"
                 ],
                 "priority": 2,
                 "story_point": 5
@@ -469,10 +486,17 @@ tasks:
                 "id": "US-002",
                 "epic_id": "EPIC-001",
                 "title": "As a customer, I want to update quantity so that I can buy the amount I need",
-                "description": "Cập nhật số lượng sản phẩm trong giỏ",
+                "description": "Users can update the quantity of products in their cart",
+                "requirements": [
+                  "Display quantity input field with +/- buttons for each cart item",
+                  "Validate quantity against available stock",
+                  "Auto-recalculate subtotal and total when quantity changes",
+                  "Remove item automatically when quantity is set to 0",
+                  "Show stock availability warning if quantity exceeds stock"
+                ],
                 "acceptance_criteria": [
-                  "Given I have items in cart when I change quantity then total updates",
-                  "Given quantity is 0 when I confirm then item is removed"
+                  "Given I have items in cart when I change quantity then subtotal and total update immediately",
+                  "Given quantity exceeds stock when I increase then I see stock limit warning"
                 ],
                 "priority": 3,
                 "story_point": 3
@@ -568,7 +592,8 @@ tasks:
       - epic_id: Reference to parent epic
       - title: "As a [user], I want [goal] so that [benefit]"
       - description: Detailed description
-      - acceptance_criteria: List of Given/When/Then criteria
+      - requirements: List of specific, actionable requirements for developers (3-6 items)
+      - acceptance_criteria: List of Given/When/Then criteria for QA testing
       - priority: Priority level (1=Critical, 2=High, 3=Medium, 4=Low, 5=Nice-to-have)
       - story_point: Estimated effort in story points (1, 2, 3, 5, 8, 13 - Fibonacci)
       
@@ -577,6 +602,8 @@ tasks:
       - Add new stories with sequential IDs
       - Keep stories INVEST-compliant
       - Maintain epic/story relationships
+      - Each story MUST have 3-6 specific requirements
+      - **IMPORTANT: ALL content MUST be in ENGLISH**
 
     user_prompt: |
       Current Epics & Stories:
@@ -589,21 +616,24 @@ tasks:
       # YOUR TASK
       Update the Epics and Stories based on user feedback.
       
+      **IMPORTANT: ALL output content MUST be in ENGLISH. Each story MUST have requirements field.**
+      
       Return ONLY valid JSON:
       ```json
       {{
         "epics": [
           {{
             "id": "EPIC-001",
-            "title": "Tên Epic",
-            "description": "Mô tả",
+            "title": "Epic Title in English",
+            "description": "Description in English",
             "domain": "Cart|Product|...",
             "stories": [
               {{
                 "id": "US-001",
                 "epic_id": "EPIC-001",
                 "title": "As a [user], I want [goal] so that [benefit]",
-                "description": "Mô tả chi tiết",
+                "description": "Detailed description in English",
+                "requirements": ["Requirement 1", "Requirement 2", "Requirement 3"],
                 "acceptance_criteria": ["Given X when Y then Z"],
                 "priority": 3,
                 "story_point": 3
@@ -611,6 +641,6 @@ tasks:
             ]
           }}
         ],
-        "change_summary": "Tóm tắt những thay đổi đã thực hiện"
+        "change_summary": "Summary of changes made"
       }}
       ```
