@@ -100,20 +100,33 @@ async def router(state: TesterState, agent=None) -> dict:
 # ============================================================================
 
 async def query_stories(state: TesterState, agent=None) -> dict:
-    """Query stories with REVIEW status."""
+    """Query stories with REVIEW status that haven't been processed yet."""
+    from sqlalchemy import or_
+    
     project_id = state.get("project_id")
     story_ids = state.get("story_ids", [])
     
     try:
         with Session(engine) as session:
+            # Only query stories that are NOT already processing/finished
+            # This prevents duplicate test generation when multiple stories are dragged at once
             query = select(Story).where(
                 Story.project_id == UUID(project_id),
-                Story.status == StoryStatus.REVIEW
+                Story.status == StoryStatus.REVIEW,
+                or_(
+                    Story.agent_state.is_(None),  # Never processed
+                    Story.agent_state.in_(["pending", "canceled"])  # Can be reprocessed
+                )
             )
             if story_ids:
                 query = query.where(Story.id.in_([UUID(sid) for sid in story_ids]))
             
             stories = session.exec(query).all()
+            
+            if not stories:
+                logger.info(f"[query_stories] No new stories to process (all may be processing/finished)")
+                return {"stories": []}
+            
             stories_data = [
                 {
                     "id": str(s.id),
@@ -123,6 +136,7 @@ async def query_stories(state: TesterState, agent=None) -> dict:
                 }
                 for s in stories
             ]
+            logger.info(f"[query_stories] Found {len(stories_data)} stories to process")
         
         # Update agent_state to "processing"
         if agent and stories_data:
