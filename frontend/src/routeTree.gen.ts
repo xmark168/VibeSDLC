@@ -13,12 +13,14 @@ import { Route as LayoutRouteImport } from './routes/_layout'
 import { Route as AuthRouteRouteImport } from './routes/_auth/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as AdminPlansRouteImport } from './routes/admin/plans'
 import { Route as AdminAgentsRouteImport } from './routes/admin/agents'
 import { Route as UserUpgradeRouteImport } from './routes/_user/upgrade'
 import { Route as UserProjectsRouteImport } from './routes/_user/projects'
 import { Route as UserHihiRouteImport } from './routes/_user/hihi'
 import { Route as AuthVerifyOtpRouteImport } from './routes/_auth/verify-otp'
+import { Route as AuthVerify2faRouteImport } from './routes/_auth/verify-2fa'
 import { Route as AuthSignupRouteImport } from './routes/_auth/signup'
 import { Route as AuthResetPasswordRouteImport } from './routes/_auth/reset-password'
 import { Route as AuthOauthSuccessRouteImport } from './routes/_auth/oauth-success'
@@ -44,6 +46,11 @@ const IndexRoute = IndexRouteImport.update({
 const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/admin/',
   path: '/admin/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminUsersRoute = AdminUsersRouteImport.update({
+  id: '/admin/users',
+  path: '/admin/users',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminPlansRoute = AdminPlansRouteImport.update({
@@ -74,6 +81,11 @@ const UserHihiRoute = UserHihiRouteImport.update({
 const AuthVerifyOtpRoute = AuthVerifyOtpRouteImport.update({
   id: '/verify-otp',
   path: '/verify-otp',
+  getParentRoute: () => AuthRouteRoute,
+} as any)
+const AuthVerify2faRoute = AuthVerify2faRouteImport.update({
+  id: '/verify-2fa',
+  path: '/verify-2fa',
   getParentRoute: () => AuthRouteRoute,
 } as any)
 const AuthSignupRoute = AuthSignupRouteImport.update({
@@ -126,12 +138,14 @@ export interface FileRoutesByFullPath {
   '/oauth-success': typeof AuthOauthSuccessRoute
   '/reset-password': typeof AuthResetPasswordRoute
   '/signup': typeof AuthSignupRoute
+  '/verify-2fa': typeof AuthVerify2faRoute
   '/verify-otp': typeof AuthVerifyOtpRoute
   '/hihi': typeof UserHihiRoute
   '/projects': typeof UserProjectsRoute
   '/upgrade': typeof UserUpgradeRoute
   '/admin/agents': typeof AdminAgentsRoute
   '/admin/plans': typeof AdminPlansRoute
+  '/admin/users': typeof AdminUsersRoute
   '/admin': typeof AdminIndexRoute
   '/chat/$chatId': typeof UserChatChatIdRoute
   '/workspace/$workspaceId': typeof UserWorkspaceWorkspaceIdRoute
@@ -144,12 +158,14 @@ export interface FileRoutesByTo {
   '/oauth-success': typeof AuthOauthSuccessRoute
   '/reset-password': typeof AuthResetPasswordRoute
   '/signup': typeof AuthSignupRoute
+  '/verify-2fa': typeof AuthVerify2faRoute
   '/verify-otp': typeof AuthVerifyOtpRoute
   '/hihi': typeof UserHihiRoute
   '/projects': typeof UserProjectsRoute
   '/upgrade': typeof UserUpgradeRoute
   '/admin/agents': typeof AdminAgentsRoute
   '/admin/plans': typeof AdminPlansRoute
+  '/admin/users': typeof AdminUsersRoute
   '/admin': typeof AdminIndexRoute
   '/chat/$chatId': typeof UserChatChatIdRoute
   '/workspace/$workspaceId': typeof UserWorkspaceWorkspaceIdRoute
@@ -165,12 +181,14 @@ export interface FileRoutesById {
   '/_auth/oauth-success': typeof AuthOauthSuccessRoute
   '/_auth/reset-password': typeof AuthResetPasswordRoute
   '/_auth/signup': typeof AuthSignupRoute
+  '/_auth/verify-2fa': typeof AuthVerify2faRoute
   '/_auth/verify-otp': typeof AuthVerifyOtpRoute
   '/_user/hihi': typeof UserHihiRoute
   '/_user/projects': typeof UserProjectsRoute
   '/_user/upgrade': typeof UserUpgradeRoute
   '/admin/agents': typeof AdminAgentsRoute
   '/admin/plans': typeof AdminPlansRoute
+  '/admin/users': typeof AdminUsersRoute
   '/admin/': typeof AdminIndexRoute
   '/_user/chat/$chatId': typeof UserChatChatIdRoute
   '/_user/workspace/$workspaceId': typeof UserWorkspaceWorkspaceIdRoute
@@ -185,12 +203,14 @@ export interface FileRouteTypes {
     | '/oauth-success'
     | '/reset-password'
     | '/signup'
+    | '/verify-2fa'
     | '/verify-otp'
     | '/hihi'
     | '/projects'
     | '/upgrade'
     | '/admin/agents'
     | '/admin/plans'
+    | '/admin/users'
     | '/admin'
     | '/chat/$chatId'
     | '/workspace/$workspaceId'
@@ -203,12 +223,14 @@ export interface FileRouteTypes {
     | '/oauth-success'
     | '/reset-password'
     | '/signup'
+    | '/verify-2fa'
     | '/verify-otp'
     | '/hihi'
     | '/projects'
     | '/upgrade'
     | '/admin/agents'
     | '/admin/plans'
+    | '/admin/users'
     | '/admin'
     | '/chat/$chatId'
     | '/workspace/$workspaceId'
@@ -223,12 +245,14 @@ export interface FileRouteTypes {
     | '/_auth/oauth-success'
     | '/_auth/reset-password'
     | '/_auth/signup'
+    | '/_auth/verify-2fa'
     | '/_auth/verify-otp'
     | '/_user/hihi'
     | '/_user/projects'
     | '/_user/upgrade'
     | '/admin/agents'
     | '/admin/plans'
+    | '/admin/users'
     | '/admin/'
     | '/_user/chat/$chatId'
     | '/_user/workspace/$workspaceId'
@@ -243,6 +267,7 @@ export interface RootRouteChildren {
   UserUpgradeRoute: typeof UserUpgradeRoute
   AdminAgentsRoute: typeof AdminAgentsRoute
   AdminPlansRoute: typeof AdminPlansRoute
+  AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
   UserChatChatIdRoute: typeof UserChatChatIdRoute
   UserWorkspaceWorkspaceIdRoute: typeof UserWorkspaceWorkspaceIdRoute
@@ -276,6 +301,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/users': {
+      id: '/admin/users'
+      path: '/admin/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AdminUsersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/plans': {
@@ -318,6 +350,13 @@ declare module '@tanstack/react-router' {
       path: '/verify-otp'
       fullPath: '/verify-otp'
       preLoaderRoute: typeof AuthVerifyOtpRouteImport
+      parentRoute: typeof AuthRouteRoute
+    }
+    '/_auth/verify-2fa': {
+      id: '/_auth/verify-2fa'
+      path: '/verify-2fa'
+      fullPath: '/verify-2fa'
+      preLoaderRoute: typeof AuthVerify2faRouteImport
       parentRoute: typeof AuthRouteRoute
     }
     '/_auth/signup': {
@@ -386,6 +425,7 @@ interface AuthRouteRouteChildren {
   AuthOauthSuccessRoute: typeof AuthOauthSuccessRoute
   AuthResetPasswordRoute: typeof AuthResetPasswordRoute
   AuthSignupRoute: typeof AuthSignupRoute
+  AuthVerify2faRoute: typeof AuthVerify2faRoute
   AuthVerifyOtpRoute: typeof AuthVerifyOtpRoute
 }
 
@@ -396,6 +436,7 @@ const AuthRouteRouteChildren: AuthRouteRouteChildren = {
   AuthOauthSuccessRoute: AuthOauthSuccessRoute,
   AuthResetPasswordRoute: AuthResetPasswordRoute,
   AuthSignupRoute: AuthSignupRoute,
+  AuthVerify2faRoute: AuthVerify2faRoute,
   AuthVerifyOtpRoute: AuthVerifyOtpRoute,
 }
 
@@ -412,6 +453,7 @@ const rootRouteChildren: RootRouteChildren = {
   UserUpgradeRoute: UserUpgradeRoute,
   AdminAgentsRoute: AdminAgentsRoute,
   AdminPlansRoute: AdminPlansRoute,
+  AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
   UserChatChatIdRoute: UserChatChatIdRoute,
   UserWorkspaceWorkspaceIdRoute: UserWorkspaceWorkspaceIdRoute,

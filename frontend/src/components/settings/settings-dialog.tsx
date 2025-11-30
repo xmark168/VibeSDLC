@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { User, CreditCard, LogOut, Pencil, Info, Sun, Moon, Monitor, AlertTriangle, RefreshCw } from "lucide-react"
+import { User, CreditCard, LogOut, Pencil, Info, Sun, Moon, Monitor, AlertTriangle, RefreshCw, ShieldCheck } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -15,6 +15,7 @@ import { useTheme } from "@/components/provider/theme-provider"
 import { cn } from "@/lib/utils"
 import { useCurrentSubscription } from "@/queries/subscription"
 import { subscriptionApi } from "@/apis/subscription"
+import { TwoFactorSettings } from "./two-factor-settings"
 import { format } from "date-fns"
 import { useQueryClient } from "@tanstack/react-query"
 import toast from "react-hot-toast"
@@ -24,7 +25,7 @@ interface SettingsDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-type SettingsTab = "profile" | "billing" | "theme"
+type SettingsTab = "profile" | "security" | "billing" | "theme"
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile")
@@ -151,6 +152,19 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               </button>
 
               <button
+                onClick={() => setActiveTab("security")}
+                className={cn(
+                  "w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                  activeTab === "security"
+                    ? "bg-secondary text-foreground"
+                    : "text-muted-foreground hover:bg-secondary/50"
+                )}
+              >
+                <ShieldCheck className="h-4 w-4" />
+                Security
+              </button>
+
+              <button
                 onClick={() => setActiveTab("billing")}
                 className={cn(
                   "w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors",
@@ -223,6 +237,17 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     <LogOut className="h-4 w-4" />
                     Sign out
                   </Button>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "security" && (
+              <div className="flex-1 flex flex-col overflow-y-auto min-h-0">
+                <div className="p-8 pb-6">
+                  <h2 className="text-2xl font-semibold">Security</h2>
+                </div>
+                <div className="px-8 pb-8">
+                  <TwoFactorSettings />
                 </div>
               </div>
             )}

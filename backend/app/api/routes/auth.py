@@ -95,11 +95,11 @@ def login_access_token(
     )
 
 
-@router.post("/login", response_model=LoginResponse)
+@router.post("/login")
 # @limiter.limit("5/minute")  # Temporarily disabled for debugging
 def login(
     request: Request, response: Response, login_data: LoginRequest, session: SessionDep
-) -> LoginResponse:
+):
     """
     Login API - supports both credential and OAuth provider login
     """
@@ -188,7 +188,25 @@ def login(
             status_code=status.HTTP_423_LOCKED, detail="Tài khoản đã bị khóa"
         )
 
-    # Create tokens
+    # Check if 2FA is enabled
+    if user.two_factor_enabled and user.totp_secret:
+        # Generate temp token for 2FA verification
+        import secrets
+        temp_token = secrets.token_urlsafe(32)
+        temp_token_key = f"2fa_temp:{temp_token}"
+        
+        # Store user_id in Redis with 5 minute TTL
+        redis_client.set(temp_token_key, str(user.id), ttl=300)
+        
+        # Return response indicating 2FA is required
+        from app.schemas import LoginRequires2FAResponse
+        return LoginRequires2FAResponse(
+            requires_2fa=True,
+            temp_token=temp_token,
+            message="Two-factor authentication required"
+        )
+
+    # Create tokens (only if 2FA not enabled)
     access_token = security.create_access_token(
         subject=str(user.id),
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),

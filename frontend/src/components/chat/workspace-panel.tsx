@@ -362,23 +362,32 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
         />
       )}
       {/* Tab bar */}
-      <div className="flex items-center gap-1 px-2 pt-2 bg-background mb-2">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTabId(tab.id)}
-            className={`rounded-md group flex items-center gap-2 px-3 py-1.5 text-sm font-medium transition-colors ${activeTabId === tab.id
-              ? "bg-muted text-foreground"
-              : "bg-transparent text-muted-foreground hover:bg-muted/50"
-              }`}
-          >
-            {getViewIcon(tab.view)}
-            <span className="max-w-[120px] truncate">{tab.label}</span>
-          </button>
-        ))}
+      <div className="flex items-center gap-1 px-2 pt-2 bg-background mb-2 justify-between">
+        <div className="flex gap-1">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTabId(tab.id)}
+              className={`rounded-md group flex items-center gap-2 px-3 py-1.5 text-sm font-medium transition-colors ${activeTabId === tab.id
+                ? "bg-muted text-foreground"
+                : "bg-transparent text-muted-foreground hover:bg-muted/50"
+                }`}
+            >
+              {getViewIcon(tab.view)}
+              <span className="max-w-[120px] truncate">{tab.label}</span>
+            </button>
+          ))}
+
+        </div>
+        {agentItems.length > 0 ? (
+          <AnimatedTooltip items={agentItems} />
+        ) : agentsLoading ? (
+          <span className="text-xs text-muted-foreground">Loading agents...</span>
+        ) : null}
       </div>
       <div className="border border-3 mb-3 mr-3 shadow-2xs rounded-2xl h-screen overflow-auto">
         {renderView()}
+
       </div>
 
       {/* Agent Detail Sheet */}

@@ -16,12 +16,14 @@ from app.api.routes import (
     project_rules,  # Project-specific rules and configurations
     projects,
     stories,  # Story management (Kanban with Todo/InProgress/Review/Done)
+    two_factor,  # Two-factor authentication
     users,
     utils,
 )
 
 api_router = APIRouter()
 api_router.include_router(auth.router)
+api_router.include_router(two_factor.router)  # 2FA routes
 api_router.include_router(oauth.router)  # OAuth routes
 api_router.include_router(users.router)
 api_router.include_router(utils.router)

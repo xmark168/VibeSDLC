@@ -73,24 +73,31 @@ function RouteComponent() {
           </Card>
         </Link>
 
-        <Card className="opacity-50">
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-muted rounded-lg">
-                <Users className="w-6 h-6 text-muted-foreground" />
+        <Link to="/admin/users">
+          <Card className="hover:bg-accent/50 transition-colors cursor-pointer">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-primary/10 rounded-lg">
+                  <Users className="w-6 h-6 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">User Management</CardTitle>
+                  <CardDescription>
+                    Manage users, roles, and permissions
+                  </CardDescription>
+                </div>
               </div>
-              <div>
-                <CardTitle className="text-lg">User Management</CardTitle>
-                <CardDescription>
-                  Manage users, roles, and permissions
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">Coming soon...</p>
-          </CardContent>
-        </Card>
+            </CardHeader>
+            <CardContent>
+              <ul className="text-sm text-muted-foreground space-y-1">
+                <li>• Create and manage user accounts</li>
+                <li>• Assign roles (Admin/User)</li>
+                <li>• Lock/unlock accounts</li>
+                <li>• Bulk user operations</li>
+              </ul>
+            </CardContent>
+          </Card>
+        </Link>
 
         <Card className="opacity-50">
           <CardHeader>

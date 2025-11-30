@@ -28,15 +28,16 @@ export const Header = () => {
     <header className="sticky top-0 z-50 w-full bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center justify-between px-4 md:px-8">
         {/* Logo */}
-        <a 
-          href="#" 
+        <a
+          href="#"
           onClick={(e) => scrollToSection(e, "#")}
           className="flex items-center cursor-pointer"
         >
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary">
+          <img src="/assets/images/logo.png" alt="VibeSDLC" className="h-36 w-36 object-contain" />
+          {/* <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary">
             <span className="text-primary-foreground font-bold text-sm">VS</span>
           </div>
-          <span className="ml-2 text-lg font-semibold text-foreground">VibeSDLC</span>
+          <span className="ml-2 text-lg font-semibold text-foreground">VibeSDLC</span> */}
         </a>
 
         {/* Desktop Navigation */}

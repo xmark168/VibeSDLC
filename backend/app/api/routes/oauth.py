@@ -12,8 +12,11 @@ from fastapi.responses import RedirectResponse
 from app.api.deps import SessionDep
 from app.core.config import settings
 from app.core.security import create_access_token
+from app.core.redis_client import get_redis_client
 from app.models import User
 from app.services import UserService
+
+redis_client = get_redis_client()
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["oauth"])
@@ -233,7 +236,22 @@ async def oauth_callback(
         else:
             logger.info(f"Found existing user: {user.id} for {provider_name}")
 
-        # Create tokens
+        # Check if 2FA is enabled for this user
+        if user.two_factor_enabled and user.totp_secret:
+            # Generate temp token for 2FA verification
+            temp_token = secrets.token_urlsafe(32)
+            temp_token_key = f"2fa_temp:{temp_token}"
+            
+            # Store user_id in Redis with 5 minute TTL
+            redis_client.set(temp_token_key, str(user.id), ttl=300)
+            
+            logger.info(f"User {user.id} has 2FA enabled, redirecting to 2FA verification")
+            
+            # Redirect to frontend 2FA verification page
+            redirect_url = f"{settings.FRONTEND_HOST}/verify-2fa?token={temp_token}"
+            return RedirectResponse(redirect_url)
+
+        # Create tokens (only if 2FA not enabled)
         access_token = create_access_token(
             subject=str(user.id),
             expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),

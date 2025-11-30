@@ -86,6 +86,8 @@ class User(BaseModel, table=True):
     failed_login_attempts: int = Field(default=0, nullable=False)
     locked_until: datetime | None = Field(default=None)
     two_factor_enabled: bool = Field(default=False, nullable=True)
+    totp_secret: str | None = Field(default=None, nullable=True)
+    backup_codes: list[str] | None = Field(default=None, sa_column=Column(JSON))
 
     role: Role = Field(default=Role.USER, nullable=False)
     is_locked: bool = Field(default=False, nullable=False)

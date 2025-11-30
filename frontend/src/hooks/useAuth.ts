@@ -14,8 +14,7 @@ import { handleError } from "@/utils"
 import toast from "react-hot-toast"
 import { useAppStore } from "@/stores/auth-store"
 import { getRedirectPathByRole } from "@/utils/auth"
-
-// import { handleError } from "@/utils"
+import { isLoginRequires2FA, type LoginResult } from "@/types/two-factor"
 
 const isLoggedIn = () => {
   return localStorage.getItem("access_token") !== null
@@ -48,23 +47,44 @@ export const useAuth = () => {
     },
   })
 
-  const login = async (data: AuthenticationLoginData) => {
-    const response = await AuthenticationService.login(data)
+  const login = async (data: AuthenticationLoginData): Promise<{ userData?: UserPublic; requires2FA?: boolean; tempToken?: string }> => {
+    const response = await AuthenticationService.login(data) as LoginResult
+    
+    // Check if 2FA is required
+    if (isLoginRequires2FA(response)) {
+      return {
+        requires2FA: true,
+        tempToken: response.temp_token,
+      }
+    }
+
+    // Normal login flow
     localStorage.setItem("access_token", response.access_token)
     localStorage.setItem("refresh_token", response.refresh_token)
 
     // Fetch user data after login to get role
     const userData = await UsersService.readUserMe()
     setUser(userData)
-    return userData
+    return { userData }
   }
 
   const loginMutation = useMutation({
     mutationFn: login,
-    onSuccess: (userData) => {
-      // Redirect based on user role
-      const redirectPath = getRedirectPathByRole(userData.role)
-      navigate({ to: redirectPath })
+    onSuccess: (result) => {
+      // If 2FA is required, redirect to 2FA verification page
+      if (result.requires2FA && result.tempToken) {
+        navigate({ 
+          to: "/verify-2fa",
+          search: { token: result.tempToken }
+        })
+        return
+      }
+
+      // Normal login success - redirect based on user role
+      if (result.userData) {
+        const redirectPath = getRedirectPathByRole(result.userData.role)
+        navigate({ to: redirectPath })
+      }
     },
     onError: (err: ApiError) => {
       handleError(err)
