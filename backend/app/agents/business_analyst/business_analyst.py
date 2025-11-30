@@ -9,6 +9,7 @@ from langfuse import get_client
 from langfuse.langchain import CallbackHandler
 
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
+from app.agents.core.project_context import ProjectContext
 from app.models import Agent as AgentModel, Project, AgentQuestion, QuestionStatus, ArtifactType
 from app.utils.project_files import ProjectFiles
 from app.kafka.event_schemas import AgentTaskType
@@ -34,6 +35,9 @@ class BusinessAnalyst(BaseAgent):
     def __init__(self, agent_model: AgentModel, **kwargs):
         super().__init__(agent_model, **kwargs)
         logger.info(f"[{self.name}] Initializing Business Analyst LangGraph")
+        
+        # Shared project context (memory + preferences) - same as Team Leader
+        self.context = ProjectContext.get(self.project_id)
         
         # Initialize project files
         self.project_files = None
@@ -192,6 +196,7 @@ class BusinessAnalyst(BaseAgent):
             "batch_answers": batch_answers,
             "waiting_for_answer": False,
             "all_questions_answered": False,
+            "research_loop_count": interview_state.get("research_loop_count", 0),  # Restore loop count
         }
         
         # Process all batch answers
@@ -346,6 +351,12 @@ class BusinessAnalyst(BaseAgent):
         """Handle new task - run full LangGraph."""
         logger.info(f"[{self.name}] Handling NEW task for project_id={self.project_id}, message: {task.content[:100] if task.content else 'empty'}")
         
+        # Load shared context (cached, parallel loading) - same as Team Leader
+        await self.context.ensure_loaded()
+        
+        # Add user message to shared memory
+        self.context.add_message("user", task.content)
+        
         # Load existing PRD from database
         existing_prd = self._load_existing_prd()
         
@@ -388,6 +399,7 @@ class BusinessAnalyst(BaseAgent):
             "project_path": str(self.project_files.project_path) if self.project_files else "",
             "collected_info": {},
             "existing_prd": existing_prd,
+            "conversation_context": self.context.format_memory(),  # Conversation history from ProjectContext
             "intent": "",
             "reasoning": "",
             "questions": [],
@@ -438,6 +450,14 @@ class BusinessAnalyst(BaseAgent):
         action = final_state.get("intent", "completed")
         
         logger.info(f"[{self.name}] Graph completed: action={action}")
+        
+        # Add response to shared memory (for conversation context)
+        response_summary = result_data.get("summary", "") if isinstance(result_data, dict) else str(result_data)[:200]
+        if response_summary:
+            self.context.add_message("assistant", response_summary)
+        
+        # Check if we should create a conversation summary
+        await self.context.maybe_summarize()
         
         return TaskResult(
             success=True,

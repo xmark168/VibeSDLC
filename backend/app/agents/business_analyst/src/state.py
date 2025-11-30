@@ -25,8 +25,11 @@ class BAState(TypedDict, total=False):
     personality_traits: list[str]
     communication_style: str
     
+    # Conversation memory (rolling summary + recent messages)
+    conversation_context: str
+    
     # Intent & Routing
-    intent: Literal["interview", "prd_create", "prd_update", "extract_stories", "domain_analysis"]
+    intent: Literal["interview", "prd_create", "prd_update", "extract_stories", "domain_analysis", "conversational"]
     reasoning: str  # Why this intent was chosen
     
     # Interview workflow - Sequential questions (legacy)

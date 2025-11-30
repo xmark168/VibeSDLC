@@ -45,7 +45,38 @@ def list_messages(
 
     count = session.exec(count_stmt).one()
     rows = session.exec(stmt.offset(skip).limit(limit)).all()
-    return ChatMessagesPublic(data=rows, count=count)
+    
+    # Populate agent_name for each message
+    result = []
+    for msg in rows:
+        msg_dict = {
+            "id": msg.id,
+            "project_id": msg.project_id,
+            "author_type": msg.author_type,
+            "user_id": msg.user_id,
+            "agent_id": msg.agent_id,
+            "agent_name": None,
+            "content": msg.content,
+            "message_type": msg.message_type,
+            "structured_data": msg.structured_data,
+            "message_metadata": msg.message_metadata,
+            "created_at": msg.created_at,
+            "updated_at": msg.updated_at,
+        }
+        
+        # Get agent name if agent_id exists
+        if msg.agent_id:
+            agent = session.get(AgentModel, msg.agent_id)
+            if agent:
+                msg_dict["agent_name"] = agent.human_name or agent.name
+        
+        # Also check message_metadata for agent_name (fallback)
+        if not msg_dict["agent_name"] and msg.message_metadata:
+            msg_dict["agent_name"] = msg.message_metadata.get("agent_name")
+        
+        result.append(ChatMessagePublic(**msg_dict))
+    
+    return ChatMessagesPublic(data=result, count=count)
 
 
 @router.post("/", response_model=ChatMessagePublic, status_code=status.HTTP_201_CREATED)

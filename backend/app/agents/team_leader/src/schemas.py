@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field
 
 class RoutingDecision(BaseModel):
     """Structured routing decision from LLM."""
-    action: Literal["DELEGATE", "RESPOND", "CONVERSATION", "STATUS_CHECK", "CLARIFY"] = Field(
-        description="DELEGATE=technical work, RESPOND=quick ack, CONVERSATION=chat/questions, STATUS_CHECK=board queries, CLARIFY=need more info"
+    action: Literal["DELEGATE", "RESPOND", "CONVERSATION", "STATUS_CHECK", "CLARIFY", "CONFIRM_REPLACE"] = Field(
+        description="DELEGATE=technical work, RESPOND=quick ack, CONVERSATION=chat/questions, STATUS_CHECK=board queries, CLARIFY=need more info, CONFIRM_REPLACE=ask to replace existing project"
     )
     target_role: Optional[Literal["business_analyst", "developer", "tester"]] = Field(
         default=None,

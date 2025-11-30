@@ -113,6 +113,7 @@ tasks:
       3. If no collected info exists yet, prefer "interview" to gather details first
       
       **Available Intents:**
+      - **conversational**: Greetings, thanks, casual chat NOT about product/project
       - **interview**: User needs guidance, vague request, or insufficient details for PRD
       - **prd_create**: User wants to create PRD AND provides comprehensive requirements
       - **prd_update**: User wants to update/modify an existing PRD
@@ -134,13 +135,21 @@ tasks:
       Return ONLY valid JSON:
       ```json
       {{
-        "intent": "interview|prd_create|prd_update|extract_stories|stories_update|stories_approve|domain_analysis",
+        "intent": "conversational|interview|prd_create|prd_update|extract_stories|stories_update|stories_approve|domain_analysis",
         "reasoning": "brief explanation of why this intent was chosen"
       }}
       ```
       
       **EXAMPLES:**
       
+      **Conversational (casual chat, NOT about product):**
+      - "chào bạn" -> conversational (greeting)
+      - "cảm ơn nhé" -> conversational (thanks)
+      - "bạn là ai?" -> conversational (self-intro question)
+      - "ok" / "được" / "ừ" -> conversational (acknowledgment)
+      - "hello" -> conversational (greeting)
+      
+      **Product-related (NOT conversational):**
       - "tạo website bán hàng" (vague) -> interview
          Reasoning: "Request lacks details about target users, features, and constraints"
       
@@ -223,19 +232,39 @@ tasks:
       - DON'T repeat what user already said
       - Use SIMPLE Vietnamese
       
-      **FORMAT:**
+      **FORMAT (QUAN TRỌNG: mỗi câu hỏi PHẢI có field "category"):**
       ```json
       {{
         "questions": [
           {{
-            "text": "Câu hỏi bằng tiếng Việt?",
+            "text": "Câu hỏi về đối tượng người dùng?",
             "type": "multichoice",
-            "options": ["Lựa chọn phù hợp với dự án", "Lựa chọn khác", "Khác (vui lòng mô tả)"],
-            "allow_multiple": true
+            "options": ["Option 1", "Option 2", "Khác (vui lòng mô tả)"],
+            "allow_multiple": true,
+            "category": "target_users"
+          }},
+          {{
+            "text": "Câu hỏi về tính năng?",
+            "type": "multichoice",
+            "options": ["Feature 1", "Feature 2"],
+            "allow_multiple": true,
+            "category": "main_features"
+          }},
+          {{
+            "text": "Câu hỏi về rủi ro/lo ngại?",
+            "type": "multichoice",
+            "options": ["Risk 1", "Risk 2"],
+            "allow_multiple": true,
+            "category": "risks"
           }}
         ]
       }}
       ```
+      
+      **CATEGORY MAPPING:**
+      - "target_users": câu hỏi về khách hàng, người dùng, đối tượng
+      - "main_features": câu hỏi về tính năng, chức năng website cần có
+      - "risks": câu hỏi về lo ngại, thách thức, rủi ro
       
       # EXAMPLES BY PROJECT TYPE:
       
@@ -341,15 +370,23 @@ tasks:
       - Update version number if significant changes
 
     user_prompt: |
-      Current PRD:
+      # CONVERSATION CONTEXT
+      {conversation_context}
+      
+      # CURRENT PRD
       ```json
       {existing_prd}
       ```
       
-      User update request: "{user_message}"
+      # USER REQUEST
+      "{user_message}"
       
       # YOUR TASK
-      Update the PRD and provide change summary.
+      Update the PRD based on user request.
+      
+      **IMPORTANT:**
+      - If user mentions "vừa xóa/thêm/sửa" (recently deleted/added/modified), check the conversation context above
+      - If user asks to restore a deleted feature, find its details in the conversation history
       
       Return ONLY valid JSON:
       ```json
@@ -606,17 +643,25 @@ tasks:
       - **IMPORTANT: ALL content MUST be in ENGLISH**
 
     user_prompt: |
-      Current Epics & Stories:
+      # CONVERSATION CONTEXT
+      {conversation_context}
+      
+      # CURRENT EPICS & STORIES
       ```json
       {epics}
       ```
       
-      User feedback: "{user_message}"
+      # USER REQUEST
+      "{user_message}"
       
       # YOUR TASK
-      Update the Epics and Stories based on user feedback.
+      Update the Epics and Stories based on user request.
       
-      **IMPORTANT: ALL output content MUST be in ENGLISH. Each story MUST have requirements field.**
+      **IMPORTANT GUIDELINES:**
+      - If user mentions "vừa xóa/thêm/sửa" (recently deleted/added/modified), check the conversation context above for details
+      - If user asks to restore a deleted item, look for the item details in the conversation history
+      - ALL output content MUST be in ENGLISH
+      - Each story MUST have requirements field
       
       Return ONLY valid JSON:
       ```json
@@ -644,3 +689,68 @@ tasks:
         "change_summary": "Summary of changes made"
       }}
       ```
+
+  # ---------------------------------------------------------------------------
+  # RESPOND CONVERSATIONAL - Handle casual chat (greetings, thanks, etc.)
+  # ---------------------------------------------------------------------------
+  respond_conversational:
+    system_prompt: |
+      {shared_context.agent_identity}
+      
+      ---
+      
+      # CONVERSATIONAL MODE
+      
+      Handle casual conversations warmly and naturally.
+      
+      **YOUR APPROACH:**
+      - Be friendly and welcoming
+      - Use Vietnamese naturally
+      - If user seems to want product help, gently offer assistance
+      - Keep responses short and warm (1-2 sentences)
+      - Use emoji sparingly but naturally
+      
+      **EXAMPLES:**
+      - Greeting: "Chào bạn! Mình là BA, sẵn sàng hỗ trợ phân tích yêu cầu sản phẩm. Bạn cần gì nhé? 😊"
+      - Thanks: "Không có chi! Cứ hỏi mình bất cứ khi nào cần nhé 👍"
+      - Self-intro: "Mình là Business Analyst - chuyên gia phân tích yêu cầu và viết PRD. Mình giúp biến ý tưởng thành specs cụ thể!"
+
+    user_prompt: |
+      User message: "{user_message}"
+      
+      Respond naturally as a friendly Business Analyst. Keep it short and warm.
+
+  # ---------------------------------------------------------------------------
+  # COMPLETION MESSAGE - Generate natural completion messages with personality
+  # ---------------------------------------------------------------------------
+  completion_message:
+    system_prompt: |
+      {shared_context.agent_identity}
+      
+      ---
+      
+      # COMPLETION MESSAGE GENERATION
+      
+      Bạn vừa hoàn thành một task và cần thông báo cho user.
+      
+      **RULES:**
+      - Viết tin nhắn ngắn gọn (1-2 câu), tự nhiên như chat với bạn
+      - Thể hiện tính cách của bạn qua cách nói
+      - Dùng emoji phù hợp (1-2 emoji)
+      - Đề cập đến kết quả cụ thể (tên project, số lượng stories,...)
+      - Hướng dẫn user bước tiếp theo
+      - KHÔNG dùng cấu trúc cứng nhắc hay template
+      - Mỗi lần trả lời phải khác nhau, có sự sáng tạo
+      
+      **TONE VARIATIONS:**
+      - Có thể excited, proud, helpful, casual
+      - Thay đổi cách mở đầu (Xong rồi/Done/Được rồi/Hoàn thành/Yeah...)
+      - Thay đổi emoji theo mood
+
+    user_prompt: |
+      **Task completed:** {task_type}
+      **Context:** {context}
+      **Next step hint:** {next_step}
+      
+      Generate a natural, personality-driven completion message in Vietnamese.
+      Return ONLY the message text, no JSON or formatting.

@@ -258,6 +258,23 @@ export function ChatPanelWS({
     return latest?.id || null
   })()
 
+  // Check if a PRD/Stories card has been submitted (user sent approve/edit message after it)
+  const isCardSubmitted = (cardMsgId: string, cardType: 'prd' | 'stories'): boolean => {
+    const cardMsgIndex = uniqueMessages.findIndex(m => m.id === cardMsgId)
+    if (cardMsgIndex === -1) return false
+    
+    // Look for user messages after this card
+    const messagesAfterCard = uniqueMessages.slice(cardMsgIndex + 1)
+    const keywords = cardType === 'prd' 
+      ? ['Phê duyệt PRD', 'Chỉnh sửa PRD']
+      : ['Phê duyệt Stories', 'Chỉnh sửa Stories']
+    
+    return messagesAfterCard.some(m => 
+      m.author_type === AuthorType.USER && 
+      keywords.some(kw => m.content?.includes(kw))
+    )
+  }
+
   // Detect unanswered questions - show only the LATEST one
   useEffect(() => {
     // Find ALL unanswered questions
@@ -872,6 +889,7 @@ export function ChatPanelWS({
                       filePath={msg.structured_data.file_path}
                       status={msg.structured_data.status || 'pending'}
                       showActions={msg.id === latestPrdMessageId}
+                      submitted={msg.structured_data.submitted === true || isCardSubmitted(msg.id, 'prd')}
                       onView={() => {
                         if (onOpenFile) {
                           onOpenFile(msg.structured_data!.file_path)
@@ -895,6 +913,7 @@ export function ChatPanelWS({
                       filePath={msg.structured_data.file_path}
                       status={msg.structured_data.status || 'pending'}
                       showActions={msg.id === latestStoriesMessageId}
+                      submitted={msg.structured_data.submitted === true || isCardSubmitted(msg.id, 'stories')}
                       onView={() => {
                         if (onOpenFile) {
                           onOpenFile(msg.structured_data!.file_path)
