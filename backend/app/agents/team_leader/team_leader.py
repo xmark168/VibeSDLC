@@ -1,17 +1,19 @@
 """Team Leader Agent - LangGraph-based Routing."""
 
 import logging
+from pathlib import Path
 from uuid import UUID
 
 from sqlmodel import Session
 
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
 from app.agents.core.project_context import ProjectContext
-from app.models import Agent as AgentModel, ArtifactType, Epic, Story
+from app.models import Agent as AgentModel, ArtifactType, Epic, Story, Project
 from app.agents.team_leader.src import TeamLeaderGraph
 from app.kafka.event_schemas import AgentTaskType
 from app.core.db import engine
 from app.services.artifact_service import ArtifactService
+from app.utils.project_files import ProjectFiles
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,18 @@ class TeamLeader(BaseAgent):
         
         # Shared project context (memory + preferences)
         self.context = ProjectContext.get(self.project_id)
+        
+        # Initialize project files for archiving
+        self.project_files = None
+        if self.project_id:
+            with Session(engine) as session:
+                project = session.get(Project, self.project_id)
+                if project and project.project_path:
+                    self.project_files = ProjectFiles(Path(project.project_path))
+                else:
+                    default_path = Path("projects") / str(self.project_id)
+                    default_path.mkdir(parents=True, exist_ok=True)
+                    self.project_files = ProjectFiles(default_path)
         
         # Pass self to graph for delegation and Langfuse callback access
         self.graph_engine = TeamLeaderGraph(agent=self)
@@ -302,6 +316,11 @@ class TeamLeader(BaseAgent):
                     f"{prd_count} PRD artifacts, {stories_artifact_count} stories artifacts, "
                     f"{len(epics)} epics, {len(stories)} stories"
                 )
+            
+            # Archive docs files (move to docs/archive/)
+            if self.project_files:
+                await self.project_files.archive_docs()
+                logger.info(f"[{self.name}] Archived docs files to docs/archive/")
                 
         except Exception as e:
             logger.error(f"[{self.name}] Error deleting project data: {e}", exc_info=True)

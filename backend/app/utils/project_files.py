@@ -15,6 +15,7 @@ File Structure:
 from pathlib import Path
 from typing import Optional
 import aiofiles
+import shutil
 from datetime import datetime, timezone
 
 
@@ -33,6 +34,40 @@ class ProjectFiles:
     def _ensure_directories(self):
         """Create necessary directories if they don't exist."""
         self.docs_path.mkdir(parents=True, exist_ok=True)
+    
+    async def archive_docs(self) -> bool:
+        """Move existing docs to archive folder with timestamp.
+        
+        Used when user chooses to replace project with a new one.
+        Files are moved to docs/archive/ with timestamp suffix.
+        
+        Returns:
+            True if archiving was successful
+        """
+        archive_path = self.docs_path / "archive"
+        archive_path.mkdir(parents=True, exist_ok=True)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        archived_files = []
+        
+        # Move prd.md
+        if self.prd_path.exists():
+            dest = archive_path / f"prd_{timestamp}.md"
+            shutil.move(str(self.prd_path), str(dest))
+            archived_files.append(f"prd.md -> archive/prd_{timestamp}.md")
+        
+        # Move user-stories.md
+        if self.user_stories_path.exists():
+            dest = archive_path / f"user-stories_{timestamp}.md"
+            shutil.move(str(self.user_stories_path), str(dest))
+            archived_files.append(f"user-stories.md -> archive/user-stories_{timestamp}.md")
+        
+        if archived_files:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"[ProjectFiles] Archived: {', '.join(archived_files)}")
+        
+        return True
     
     async def save_prd(self, prd_data: dict) -> Path:
         """Save PRD to Markdown file (for human reading).
