@@ -5,7 +5,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Label } from '@/components/ui/label'
-import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 
 interface AgentQuestionCardProps {
   question: string
@@ -92,23 +92,53 @@ export function AgentQuestionCard({
     )
   }
   
+  // State for showing/hiding Q&A in answered view
+  const [showQA, setShowQA] = useState(false)
+  
   // Answered state (agent has processed the answer)
   if (answered) {
     return (
-      <Card className="border-green-200 bg-green-50 dark:bg-green-950/20">
-        <CardContent className="pt-6 space-y-2">
-          <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
-            <CheckCircle2 className="w-5 h-5" />
-            <span className="text-sm font-medium">Answered</span>
-          </div>
-          {userSelectedOptions && userSelectedOptions.length > 0 && (
-            <div className="text-sm text-gray-700 dark:text-gray-300">
-              <strong>You selected:</strong> {userSelectedOptions.join(', ')}
+      <Card className="p-4 bg-gradient-to-r from-green-500/10 to-emerald-500/10 border-green-500/20">
+        <CardContent className="p-0 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+              <CheckCircle2 className="w-5 h-5" />
+              <span className="text-sm font-medium">Answered</span>
             </div>
-          )}
-          {userAnswer && userAnswer.trim() && (
-            <div className="text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 rounded p-2 border">
-              {userAnswer}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowQA(!showQA)}
+              className="text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50"
+            >
+              {showQA ? (
+                <>
+                  Ẩn <ChevronUp className="w-4 h-4 ml-1" />
+                </>
+              ) : (
+                <>
+                  Xem <ChevronDown className="w-4 h-4 ml-1" />
+                </>
+              )}
+            </Button>
+          </div>
+          
+          {/* Show Q&A - collapsible */}
+          {showQA && (
+            <div className="space-y-2 mt-3 border-l-2 border-green-300 dark:border-green-600 pl-3">
+              <p className="text-sm text-muted-foreground">
+                <span className="font-medium text-green-600 dark:text-green-400">Question:</span> {question}
+              </p>
+              {userSelectedOptions && userSelectedOptions.length > 0 && (
+                <p className="text-sm text-foreground">
+                  <span className="font-medium">→</span> {userSelectedOptions.join(', ')}
+                </p>
+              )}
+              {userAnswer && userAnswer.trim() && (
+                <p className="text-sm text-foreground">
+                  <span className="font-medium">→</span> {userAnswer}
+                </p>
+              )}
             </div>
           )}
         </CardContent>
