@@ -218,33 +218,71 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                         )
                         
                         if existing_prd:
-                            # Check if domains are different
-                            is_different = await _check_domain_change(
-                                state["user_message"],
-                                existing_prd.title,
-                                state
-                            )
+                            # Check if there are any previous user messages
+                            # If no messages (project was reset), skip domain check and auto-replace
+                            from app.models import Message
+                            from sqlmodel import select
                             
-                            if is_different:
-                                # Count existing stories
-                                from sqlmodel import select
-                                stories_count = session.exec(
-                                    select(Story).where(Story.project_id == project_id)
-                                ).all()
-                                
+                            message_count = len(session.exec(
+                                select(Message).where(
+                                    Message.project_id == project_id,
+                                    Message.author_type == "user"
+                                )
+                            ).all())
+                            
+                            # If only 1 message (current one) or no messages, skip domain check
+                            # This handles the case where user cleared messages via API
+                            if message_count <= 1:
                                 logger.info(
-                                    f"[router] Domain change detected: '{existing_prd.title}' → new request. "
-                                    f"Asking for confirmation."
+                                    f"[router] No previous messages found, skipping domain check. "
+                                    f"Will auto-replace old PRD '{existing_prd.title}'"
+                                )
+                                # Auto-delete old data and proceed
+                                from app.services.artifact_service import ArtifactService
+                                artifact_service.delete_by_type(project_id, ArtifactType.PRD)
+                                artifact_service.delete_by_type(project_id, ArtifactType.USER_STORIES)
+                                
+                                # Delete epics and stories
+                                epics = session.exec(select(Epic).where(Epic.project_id == project_id)).all()
+                                for epic in epics:
+                                    session.delete(epic)
+                                stories = session.exec(select(Story).where(Story.project_id == project_id)).all()
+                                for story in stories:
+                                    session.delete(story)
+                                session.commit()
+                                
+                                # Archive docs if available
+                                if agent and hasattr(agent, 'project_files') and agent.project_files:
+                                    await agent.project_files.archive_docs()
+                                
+                                # Continue with normal delegation (no confirmation needed)
+                            else:
+                                # Check if domains are different
+                                is_different = await _check_domain_change(
+                                    state["user_message"],
+                                    existing_prd.title,
+                                    state
                                 )
                                 
-                                return {
-                                    **state,
-                                    "action": "CONFIRM_REPLACE",
-                                    "existing_prd_title": existing_prd.title,
-                                    "existing_stories_count": len(stories_count),
-                                    "needs_replace_confirm": True,
-                                    "wip_blocked": False
-                                }
+                                if is_different:
+                                    # Count existing stories
+                                    stories_count = session.exec(
+                                        select(Story).where(Story.project_id == project_id)
+                                    ).all()
+                                    
+                                    logger.info(
+                                        f"[router] Domain change detected: '{existing_prd.title}' → new request. "
+                                        f"Asking for confirmation."
+                                    )
+                                    
+                                    return {
+                                        **state,
+                                        "action": "CONFIRM_REPLACE",
+                                        "existing_prd_title": existing_prd.title,
+                                        "existing_stories_count": len(stories_count),
+                                        "needs_replace_confirm": True,
+                                        "wip_blocked": False
+                                    }
                 except Exception as e:
                     logger.error(f"[router] Error checking domain change: {e}", exc_info=True)
         
