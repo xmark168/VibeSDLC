@@ -5,7 +5,7 @@ import os
 import re
 import subprocess
 import time
-from typing import ClassVar, List
+from typing import  List
 from langchain_core.tools import tool
 
 # Global context

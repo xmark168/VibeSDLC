@@ -34,6 +34,9 @@ shared_context:
     
     1. **Imports** - Add ALL necessary import statements at the top
     2. **Dependencies** - Use packages already in project's package.json/requirements.txt
+       - If you need a NEW package: ADD it to package.json FIRST before importing
+       - Edit package.json to add the package with appropriate version
+       - Example: Add "msw": "^2.7.0" to devDependencies for API mocking
     3. **Complete Code** - NEVER leave TODOs, placeholders, or "// add more here"
     4. **Follow Conventions** - Match existing code style exactly (see PROJECT GUIDELINES)
     5. **Error Handling** - Include proper error handling and edge cases
@@ -63,6 +66,10 @@ shared_context:
     3. **Test Framework**: Use project's existing test framework (from project_config)
     4. **Minimum**: Every new function/component needs at least 1 test file with 3 test cases
     5. **NEVER skip tests** - Include test file in implementation plan
+    6. **Available Test Packages** (already in boilerplate):
+       - jest, @testing-library/react, @testing-library/jest-dom
+       - @testing-library/user-event for user interactions
+       - msw for API mocking (Mock Service Worker)
 
   task_types: |
     **Task Types:**

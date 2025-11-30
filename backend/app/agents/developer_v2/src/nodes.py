@@ -98,110 +98,6 @@ _code_llm = ChatOpenAI(model="gpt-4.1", temperature=0.2, timeout=120)
 # RULE-BASED HELPERS (No LLM)
 # =============================================================================
 
-def _detect_project_type(workspace_path: str) -> dict:
-    """Detect project type by checking config files (no LLM needed).
-    
-    Returns dict with:
-        - type: project type (node, python, rust, go, java, unknown)
-        - install_cmd: command to install dependencies
-        - test_cmd: command to run tests
-        - needs_db: whether project requires database (Prisma, Drizzle, etc.)
-        - db_cmds: database setup commands (generate, push, migrate)
-    """
-    ws = Path(workspace_path)
-    
-    # Node.js / JavaScript / TypeScript
-    if (ws / "package.json").exists():
-        try:
-            pkg = json.loads((ws / "package.json").read_text(encoding="utf-8"))
-            scripts = pkg.get("scripts", {})
-            
-            # Detect test command from package.json
-            test_cmd = "npm test"
-            if "test" in scripts:
-                test_cmd = "npm test"
-            elif "test:unit" in scripts:
-                test_cmd = "npm run test:unit"
-            elif "jest" in scripts.get("test", ""):
-                test_cmd = "npm test"
-            
-            # Detect package manager
-            install_cmd = "npm install"
-            pkg_manager = "npx"
-            if (ws / "bun.lockb").exists():
-                install_cmd = "bun install"
-                test_cmd = test_cmd.replace("npm", "bun")
-                pkg_manager = "bunx"
-            elif (ws / "yarn.lock").exists():
-                install_cmd = "yarn install"
-                test_cmd = test_cmd.replace("npm", "yarn")
-                pkg_manager = "yarn"
-            elif (ws / "pnpm-lock.yaml").exists():
-                install_cmd = "pnpm install"
-                test_cmd = test_cmd.replace("npm", "pnpm")
-                pkg_manager = "pnpm"
-            
-            # Detect DB requirements (Prisma, Drizzle, etc.)
-            needs_db = False
-            db_cmds = []
-            
-            # Prisma detection
-            if (ws / "prisma" / "schema.prisma").exists():
-                needs_db = True
-                db_cmds = [
-                    f"{pkg_manager} prisma generate",
-                    f"{pkg_manager} prisma db push --accept-data-loss",
-                ]
-            
-            # Drizzle detection
-            elif (ws / "drizzle.config.ts").exists() or (ws / "drizzle.config.js").exists():
-                needs_db = True
-                db_cmds = [
-                    f"{pkg_manager} drizzle-kit generate",
-                    f"{pkg_manager} drizzle-kit push",
-                ]
-            
-            return {
-                "type": "node",
-                "install_cmd": install_cmd,
-                "test_cmd": test_cmd,
-                "needs_db": needs_db,
-                "db_cmds": db_cmds,
-            }
-        except Exception:
-            return {"type": "node", "test_cmd": "npm test", "install_cmd": "npm install", "needs_db": False, "db_cmds": []}
-    
-    # Python
-    if (ws / "pyproject.toml").exists():
-        needs_db = (ws / "alembic.ini").exists() or (ws / "alembic").exists()
-        db_cmds = ["alembic upgrade head"] if needs_db else []
-        return {"type": "python", "test_cmd": "pytest -v", "install_cmd": "pip install -e .", "needs_db": needs_db, "db_cmds": db_cmds}
-    if (ws / "requirements.txt").exists():
-        needs_db = (ws / "alembic.ini").exists()
-        db_cmds = ["alembic upgrade head"] if needs_db else []
-        return {"type": "python", "test_cmd": "pytest -v", "install_cmd": "pip install -r requirements.txt", "needs_db": needs_db, "db_cmds": db_cmds}
-    if (ws / "setup.py").exists():
-        return {"type": "python", "test_cmd": "pytest -v", "install_cmd": "pip install -e .", "needs_db": False, "db_cmds": []}
-    
-    # Rust
-    if (ws / "Cargo.toml").exists():
-        return {"type": "rust", "test_cmd": "cargo test", "install_cmd": "cargo build", "needs_db": False, "db_cmds": []}
-    
-    # Go
-    if (ws / "go.mod").exists():
-        return {"type": "go", "test_cmd": "go test ./...", "install_cmd": "go mod download", "needs_db": False, "db_cmds": []}
-    
-    # Java / Maven
-    if (ws / "pom.xml").exists():
-        return {"type": "java", "test_cmd": "mvn test", "install_cmd": "mvn install -DskipTests", "needs_db": False, "db_cmds": []}
-    
-    # Java / Gradle
-    if (ws / "build.gradle").exists() or (ws / "build.gradle.kts").exists():
-        return {"type": "java", "test_cmd": "./gradlew test", "install_cmd": "./gradlew build -x test", "needs_db": False, "db_cmds": []}
-    
-    # Default fallback
-    return {"type": "unknown", "test_cmd": "", "install_cmd": "", "needs_db": False, "db_cmds": []}
-
 
 def _analyze_test_output(stdout: str, stderr: str, project_type: str = "") -> dict:
     """Analyze test results using regex patterns (no LLM needed)."""
@@ -1489,10 +1385,22 @@ async def cleanup_workspace(state: DeveloperState, agent=None) -> DeveloperState
     NOTE: Everything is PRESERVED for potential future use:
     - Git worktree and branch (can resume work)
     - CocoIndex task index (can search without re-indexing)
-    - Dev containers are stopped (not removed) - can restart quickly
+    - Dev containers: kept running if dev server started, otherwise stopped
     """
     try:
         branch_name = state.get("branch_name")
+        app_url = state.get("app_url")
+        
+        # Keep container running if dev server is active (user testing)
+        if app_url:
+            logger.info(f"[cleanup_workspace] Dev server running at {app_url} - container kept alive")
+            return {
+                **state,
+                "workspace_ready": False,
+                "index_ready": False,
+                "container_stopped": False,
+                "message": f"✅ Implementation complete! Dev server running at {app_url}",
+            }
         
         # Stop dev container (not remove - preserve for resume)
         if branch_name:
@@ -1712,16 +1620,15 @@ async def lint_and_format(state: DeveloperState, agent=None) -> DeveloperState:
     project_config = state.get("project_config", {})
     services = project_config.get("services", [])
     
-    # If no services config, try to detect and use default commands
+    # If no services config, use project_config tech_stack
+    if not services and project_config.get("tech_stack"):
+        tech_stack = project_config.get("tech_stack", "").lower()
+        runtime = "pnpm" if "next" in tech_stack or "node" in tech_stack else "python" if "python" in tech_stack else "node"
+        services = [{"name": "app", "path": ".", "runtime": runtime}]
+    
     if not services:
-        # Fallback: detect project type and use default fix commands
-        if Path(workspace_path, "package.json").exists():
-            services = [{"name": "app", "path": ".", "runtime": "bun"}]
-        elif Path(workspace_path, "pyproject.toml").exists():
-            services = [{"name": "app", "path": ".", "runtime": "python"}]
-        else:
-            logger.info("[lint_and_format] No services config, skipping")
-            return state
+        logger.info("[lint_and_format] No services config, skipping")
+        return state
     
     fixed_count = 0
     lint_output = ""
@@ -1737,7 +1644,10 @@ async def lint_and_format(state: DeveloperState, agent=None) -> DeveloperState:
         
         if not lint_fix_cmd and not format_cmd:
             # Default commands based on runtime
-            if runtime in ["bun", "node"]:
+            if runtime in ["pnpm", "node"]:
+                lint_fix_cmd = "pnpm exec eslint --fix . --ext .ts,.tsx,.js,.jsx 2>/dev/null || true"
+                format_cmd = "pnpm exec prettier --write . 2>/dev/null || true"
+            elif runtime == "bun":
                 lint_fix_cmd = "bunx eslint --fix . --ext .ts,.tsx,.js,.jsx 2>/dev/null || true"
                 format_cmd = "bunx prettier --write . 2>/dev/null || true"
             elif runtime == "python":
@@ -2085,6 +1995,23 @@ async def _run_code_multi_service(state: DeveloperState, workspace_path: str, se
         
         logger.info(f"[run_code] Multi-service result: {run_status} ({summary})")
         
+        # Start dev server if tests pass
+        app_url = None
+        if run_status == "PASS":
+            try:
+                container_info = dev_container_manager.get_or_create(
+                    branch_name=branch_name,
+                    workspace_path=workspace_path,
+                    project_type="node",
+                )
+                # Start dev server in background
+                dev_container_manager.exec(branch_name, "nohup pnpm run dev > /tmp/dev.log 2>&1 &", timeout=10)
+                host_port = container_info.get("host_port", 3000)
+                app_url = f"http://localhost:{host_port}"
+                logger.info(f"[run_code] Dev server started at {app_url}")
+            except Exception as dev_err:
+                logger.warning(f"[run_code] Failed to start dev server: {dev_err}")
+        
         # End parent span
         if parent_span:
             parent_span.end(output={"status": run_status, "summary": summary, "services": summaries})
@@ -2099,6 +2026,8 @@ async def _run_code_multi_service(state: DeveloperState, workspace_path: str, se
                 "summary": f"Multi-service: {summary}",
                 "services": summaries,
             },
+            "app_url": app_url,
+            "message": f"✅ Tests passed! Dev server running at {app_url}" if app_url else None,
         }
     except Exception as e:
         if parent_span:
@@ -2107,15 +2036,11 @@ async def _run_code_multi_service(state: DeveloperState, workspace_path: str, se
 
 
 async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
-    """Execute tests in workspace using rule-based detection (no LLM).
+    """Execute tests using project_config (required).
     
-    Fast approach:
-    1. Detect project type by checking config files
-    2. If needs_db: Run in isolated container (Prisma, Drizzle safe)
-    3. Else: Direct execution
-    4. Analyze results using regex patterns
+    Requires project_config with tech_stack and commands.
     """
-    print("[NODE] run_code - Running tests (rule-based, no LLM)...")
+    print("[NODE] run_code - Running tests...")
     
     workspace_path = state.get("workspace_path", "")
     project_id = state.get("project_id", "default")
@@ -2141,236 +2066,40 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         # Setup tool context for shell tools
         _setup_tool_context(workspace_path, project_id, task_id)
         
-        # 1. Use project_config services array if provided, otherwise auto-detect
+        # Require project_config
         project_config = state.get("project_config", {})
-        services = project_config.get("services", [])
+        if not project_config or not project_config.get("tech_stack"):
+            logger.error("[run_code] Missing project_config.tech_stack")
+            if run_code_span:
+                run_code_span.end(output={"status": "ERROR", "reason": "Missing project_config"})
+            return {
+                **state,
+                "run_status": "ERROR",
+                "run_result": {"status": "ERROR", "summary": "Missing project_config.tech_stack"},
+            }
         
-        # Services array config (single or multi-service)
+        # Multi-service (has services array)
+        services = project_config.get("services", [])
         if services:
             svc_names = [s.get("name", "app") for s in services]
-            logger.info(f"[run_code] Services config: {svc_names}")
+            logger.info(f"[run_code] Multi-service config: {svc_names}")
             if run_code_span:
                 run_code_span.end(output={"mode": "multi_service", "services": svc_names})
             return await _run_code_multi_service(state, workspace_path, services)
         
-        # Fallback to auto-detection (no services array provided)
-        project_info = _detect_project_type(workspace_path)
-        project_type = project_info["type"]
-        test_cmd = project_info["test_cmd"]
-        install_cmd = project_info["install_cmd"]
-        needs_db = project_info.get("needs_db", False)
-        db_cmds = project_info.get("db_cmds", [])
-        logger.info(f"[run_code] Auto-detected: {project_type}, test_cmd: {test_cmd}, needs_db: {needs_db}")
-        
-        if project_type == "unknown" or not test_cmd:
-            logger.warning("[run_code] Unknown project type, skipping tests")
-            if run_code_span:
-                run_code_span.end(output={"status": "PASS", "reason": "Unknown project type"})
-            return {
-                **state,
-                "run_status": "PASS",
-                "run_result": {"status": "PASS", "summary": "Unknown project type, skipped tests"},
-            }
-        
-        stdout_combined = ""
-        stderr_combined = ""
-        
-        # 2. If needs_db: Run in persistent container (parallel-safe, reusable)
-        if needs_db:
-            branch_name = state.get("branch_name") or task_id
-            logger.info(f"[run_code] Project needs DB, using persistent container for {branch_name}...")
-            
-            # Container execution span
-            container_span = run_code_span.span(name="container_execution", input={
-                "branch": branch_name,
-                "project_type": project_type,
-            }) if run_code_span else None
-            
-            try:
-                # Set container context for LLM tools
-                set_container_context(branch_name=branch_name, workspace_path=workspace_path)
-                
-                # Get or create persistent container
-                container_info = dev_container_manager.get_or_create(
-                    branch_name=branch_name,
-                    workspace_path=workspace_path,
-                    project_type=project_type,
-                )
-                logger.info(f"[run_code] Container ready: {container_info.get('name')} ({container_info.get('status')})")
-                
-                # Build command sequence: install -> db_cmds -> test
-                commands = [install_cmd] + db_cmds + [test_cmd]
-                
-                # Execute commands in container
-                for cmd in commands:
-                    if not cmd:
-                        continue
-                    
-                    # Command-level span
-                    cmd_span = container_span.span(name=f"exec:{cmd[:40]}...") if container_span else None
-                    
-                    # Longer timeout for install commands (300s vs 120s default)
-                    timeout = 300 if "install" in cmd else 120
-                    logger.info(f"[run_code] Container exec: {cmd}")
-                    result = dev_container_manager.exec(branch_name, cmd, timeout=timeout)
-                    
-                    exit_code = result.get("exit_code", 0)
-                    if cmd_span:
-                        cmd_span.end(output={"exit_code": exit_code, "output_len": len(result.get("output", ""))})
-                    
-                    stdout_combined += f"\n=== {cmd} ===\n{result.get('output', '')}"
-                    
-                    # Check for test failures (continue on other failures)
-                    if exit_code != 0 and "test" in cmd.lower():
-                        test_output = result.get("output", "")
-                        stderr_combined += test_output
-                        # Log test failure details
-                        logger.error(f"[run_code] TEST FAILED:\n{test_output[:2000]}")
-                        # Write to log file
-                        _write_test_log(task_id, test_output, "FAIL")
-                        break
-                
-                # Analyze results
-                analysis = _analyze_test_output(stdout_combined, stderr_combined, project_type)
-                run_status = analysis["status"]
-                summary = analysis["summary"]
-                
-                logger.info(f"[run_code] Container execution: {run_status} - {summary}")
-                
-                # End container span
-                if container_span:
-                    container_span.end(output={"status": run_status, "summary": summary})
-                
-                # End run_code span
-                if run_code_span:
-                    run_code_span.end(output={"status": run_status, "mode": "container"})
-                
-                # Note: Container stays running for reuse!
-                
-                # Return early for container execution
-                file_to_fix = ""
-                if run_status == "FAIL":
-                    file_patterns = [
-                        r"File [\"']([^\"']+)[\"']",
-                        r"at\s+([^\s:]+):\d+",
-                        r"([^\s]+\.(py|js|ts|jsx|tsx|rs|go)):\d+",
-                    ]
-                    for pattern in file_patterns:
-                        match = re.search(pattern, stderr_combined)
-                        if match:
-                            file_to_fix = match.group(1)
-                            break
-                
-                return {
-                    **state,
-                    "run_status": run_status,
-                    "run_stdout": stdout_combined,
-                    "run_stderr": stderr_combined,
-                    "run_result": {
-                        "status": run_status,
-                        "summary": summary,
-                        "file_to_fix": file_to_fix,
-                        "send_to": "NoOne" if run_status == "PASS" else "Engineer",
-                        "fix_instructions": "",
-                        "error_type": "test_failure" if run_status == "FAIL" else "none",
-                    },
-                    "test_command": [test_cmd],
-                    "container_name": container_info.get("name"),
-                }
-                
-            except Exception as container_err:
-                logger.warning(f"[run_code] Container failed, falling back: {container_err}")
-                if container_span:
-                    container_span.end(output={"error": str(container_err)})
-                # Fall through to direct execution
-        
-        # 3. Direct execution (no DB needed)
-        direct_span = run_code_span.span(name="direct_execution", input={
-            "test_cmd": test_cmd,
-            "install_cmd": install_cmd,
-        }) if run_code_span else None
-        
-        # Install dependencies (optional, skip errors)
-        if install_cmd:
-            install_span = direct_span.span(name=f"exec:{install_cmd[:40]}...") if direct_span else None
-            try:
-                logger.info(f"[run_code] Installing dependencies: {install_cmd}")
-                install_result = execute_shell.invoke({"command": install_cmd, "timeout": 120})
-                if isinstance(install_result, dict):
-                    stdout_combined += install_result.get("stdout", "") + "\n"
-                    stderr_combined += install_result.get("stderr", "") + "\n"
-                    if install_span:
-                        install_span.end(output={"exit_code": install_result.get("exit_code", 0)})
-                logger.info("[run_code] Dependencies installed")
-            except Exception as install_err:
-                logger.warning(f"[run_code] Install failed (continuing): {install_err}")
-                if install_span:
-                    install_span.end(output={"error": str(install_err)})
-        
-        # Run tests
-        test_span = direct_span.span(name=f"exec:{test_cmd[:40]}...") if direct_span else None
-        logger.info(f"[run_code] Running tests: {test_cmd}")
-        try:
-            test_result = execute_shell.invoke({"command": test_cmd, "timeout": 300})
-            
-            if isinstance(test_result, dict):
-                stdout_combined += test_result.get("stdout", "") + "\n"
-                stderr_combined += test_result.get("stderr", "") + "\n"
-                if test_span:
-                    test_span.end(output={"exit_code": test_result.get("exit_code", 0)})
-            elif isinstance(test_result, str):
-                stdout_combined += test_result + "\n"
-                if test_span:
-                    test_span.end(output={"output_len": len(test_result)})
-        except Exception as test_err:
-            logger.error(f"[run_code] Test execution failed: {test_err}")
-            stderr_combined += f"Test execution error: {str(test_err)}\n"
-            if test_span:
-                test_span.end(output={"error": str(test_err)})
-        
-        # 4. Analyze results (rule-based, no LLM)
-        analysis = _analyze_test_output(stdout_combined, stderr_combined, project_type)
-        run_status = analysis["status"]
-        summary = analysis["summary"]
-        
-        logger.info(f"[run_code] Final status: {run_status} - {summary}")
-        
-        # End spans
-        if direct_span:
-            direct_span.end(output={"status": run_status, "summary": summary})
+        # Single service - build from project_config
+        single_service = [{
+            "name": "app",
+            "path": ".",
+            "install_cmd": project_config.get("install_cmd", "pnpm install --frozen-lockfile"),
+            "test_cmd": project_config.get("test_cmd", "pnpm test"),
+            "needs_db": project_config.get("needs_db", False),
+            "db_cmds": project_config.get("db_cmds", []),
+        }]
+        logger.info(f"[run_code] Single service from project_config: {project_config.get('tech_stack')}")
         if run_code_span:
-            run_code_span.end(output={"status": run_status, "mode": "direct"})
-        
-        # Detect file to fix from error output
-        file_to_fix = ""
-        if run_status == "FAIL":
-            # Try to extract file path from error messages
-            file_patterns = [
-                r"File [\"']([^\"']+)[\"']",  # Python traceback
-                r"at\s+([^\s:]+):\d+",  # Node.js stack trace
-                r"([^\s]+\.(py|js|ts|jsx|tsx|rs|go)):\d+",  # Generic file:line
-            ]
-            for pattern in file_patterns:
-                match = re.search(pattern, stderr_combined)
-                if match:
-                    file_to_fix = match.group(1)
-                    break
-        
-        return {
-            **state,
-            "run_status": run_status,
-            "run_stdout": stdout_combined,
-            "run_stderr": stderr_combined,
-            "run_result": {
-                "status": run_status,
-                "summary": summary,
-                "file_to_fix": file_to_fix,
-                "send_to": "NoOne" if run_status == "PASS" else "Engineer",
-                "fix_instructions": "",
-                "error_type": "test_failure" if run_status == "FAIL" else "none",
-            },
-            "test_command": [test_cmd],
-        }
+            run_code_span.end(output={"mode": "single_service", "tech_stack": project_config.get("tech_stack")})
+        return await _run_code_multi_service(state, workspace_path, single_service)
         
     except Exception as e:
         logger.error(f"[run_code] Error: {e}", exc_info=True)
