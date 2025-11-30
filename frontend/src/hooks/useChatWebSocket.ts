@@ -702,6 +702,23 @@ export function useChatWebSocket(
       })
       
       console.log('[WS] 📨 Sent answer:', { question_id, answer, selected_options })
+      
+      // Immediately update local state to show "answered" (don't wait for server)
+      setMessages(prev => prev.map(m => {
+        if (m.structured_data?.question_id === question_id || m.id === question_id) {
+          return {
+            ...m,
+            structured_data: {
+              ...m.structured_data,
+              answered: true,
+              user_answer: answer || '',
+              user_selected_options: selected_options || [],
+            }
+          }
+        }
+        return m
+      }))
+      
       return true
     } catch (error) {
       console.error('[WS] Failed to send answer:', error)
