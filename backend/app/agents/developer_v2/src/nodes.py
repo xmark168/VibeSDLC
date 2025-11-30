@@ -442,12 +442,12 @@ async def router(state: DeveloperState, agent=None) -> DeveloperState:
         structured_llm = _fast_llm.with_structured_output(RoutingDecision)
         result = await structured_llm.ainvoke(messages, config=_cfg(state, "router"))
         
-        action = result['action']
-        task_type = result['task_type']
-        complexity = result['complexity']
-        message = result['message']
-        reason = result['reason']
-        confidence = result['confidence']
+        action = result.action
+        task_type = result.task_type
+        complexity = result.complexity
+        message = result.message
+        reason = result.reason
+        confidence = result.confidence
         
         if is_story_task:
             # Never return RESPOND or CLARIFY for story tasks

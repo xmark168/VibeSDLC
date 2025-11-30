@@ -1,10 +1,55 @@
 """Workspace management tools for Developer V2."""
 
 import logging
+import shutil
 from pathlib import Path
 from app.agents.developer.tools.git_python_tool import GitPythonTool
 
 logger = logging.getLogger(__name__)
+
+
+def cleanup_old_worktree(main_workspace: Path, branch_name: str, agent_name: str = "Developer"):
+    """
+    Clean up existing worktree directory and branch before creating a new one.
+    Also unregisters the old CocoIndex task if exists.
+    """
+    short_id = branch_name.replace("story_", "")
+    worktree_path = main_workspace.parent / f"ws_story_{short_id}"
+    
+    # Remove worktree directory if exists
+    if worktree_path.exists():
+        logger.info(f"[{agent_name}] Removing existing worktree directory: {worktree_path}")
+        try:
+            # First try to remove git worktree properly
+            git_tool = GitPythonTool(root_dir=str(main_workspace))
+            git_tool._run("remove_worktree", worktree_path=str(worktree_path))
+        except Exception as e:
+            logger.warning(f"[{agent_name}] Git worktree remove failed: {e}")
+        
+        # Force remove directory if still exists
+        if worktree_path.exists():
+            try:
+                shutil.rmtree(worktree_path)
+                logger.info(f"[{agent_name}] Removed directory: {worktree_path}")
+            except Exception as e:
+                logger.error(f"[{agent_name}] Failed to remove directory: {e}")
+    
+    # Try to delete the old branch if exists
+    try:
+        git_tool = GitPythonTool(root_dir=str(main_workspace))
+        git_tool._run("delete_branch", branch_name=branch_name)
+        logger.info(f"[{agent_name}] Deleted old branch: {branch_name}")
+    except Exception as e:
+        logger.debug(f"[{agent_name}] Branch delete (may not exist): {e}")
+    
+    # Unregister old CocoIndex task
+    try:
+        from app.agents.developer.project_manager import project_manager
+        # Use branch_name as task_id approximation
+        project_manager.unregister_task("", branch_name)
+        logger.info(f"[{agent_name}] Unregistered old CocoIndex task: {branch_name}")
+    except Exception as e:
+        logger.debug(f"[{agent_name}] CocoIndex unregister (may not exist): {e}")
 
 
 def setup_git_worktree(
@@ -18,6 +63,8 @@ def setup_git_worktree(
     
     NOTE: Git should already be initialized in the workspace (copied from template).
     If not, worktree creation will fail and we fallback to main workspace.
+    
+    Auto-cleans up existing worktree directory if it exists.
     """
     main_workspace = Path(main_workspace)
     short_id = story_id.split('-')[-1][:8] if '-' in story_id else story_id[:8]
@@ -45,6 +92,9 @@ def setup_git_worktree(
             "main_workspace": str(main_workspace),
             "workspace_ready": False,
         }
+    
+    # Clean up existing worktree/branch before creating new one
+    cleanup_old_worktree(main_workspace, branch_name, agent_name)
     
     # Create worktree for this story
     logger.info(f"[{agent_name}] Creating worktree for branch '{branch_name}'")

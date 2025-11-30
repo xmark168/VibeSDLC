@@ -129,6 +129,8 @@ class DevContainerManager:
             env=env,
             capture_output=True,
             text=True,
+            encoding='utf-8',
+            errors='replace',
             timeout=120,
         )
     
@@ -169,14 +171,48 @@ class DevContainerManager:
         
         logger.info(f"[DevContainerManager] Started: {app_name}")
         
-        # Install bun/pnpm in node containers (one-time setup)
+        # Setup node containers: copy node_modules or install tools
         if project_type == "node":
-            self._setup_node_tools(branch_name)
+            self._setup_node_env(branch_name, workspace_path)
         
         return self._get_container_info(branch_name)
     
+    def _copy_to_container(self, branch_name: str, src: Path, dest: str):
+        """Copy directory from host to container."""
+        app_name = self._get_app_container_name(branch_name)
+        
+        try:
+            result = subprocess.run(
+                ["docker", "cp", str(src), f"{app_name}:{dest}"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if result.returncode == 0:
+                logger.info(f"[DevContainerManager] Copied {src.name} to container")
+            else:
+                logger.warning(f"[DevContainerManager] Copy failed: {result.stderr}")
+        except subprocess.TimeoutExpired:
+            logger.warning(f"[DevContainerManager] Copy timeout for {src.name}")
+        except Exception as e:
+            logger.warning(f"[DevContainerManager] Copy error: {e}")
+    
+    def _setup_node_env(self, branch_name: str, workspace_path: str):
+        """Setup node environment: copy node_modules if exists, else install tools."""
+        app_name = self._get_app_container_name(branch_name)
+        
+        # Check if node_modules exists on host - copy instead of install (much faster)
+        node_modules = Path(workspace_path) / "node_modules"
+        if node_modules.exists() and node_modules.is_dir():
+            logger.info("[DevContainerManager] Copying node_modules from host (faster than install)...")
+            self._copy_to_container(branch_name, node_modules, "/app/node_modules")
+            return
+        
+        # No node_modules on host - install bun
+        self._setup_node_tools(branch_name)
+    
     def _setup_node_tools(self, branch_name: str):
-        """Install bun and pnpm in node container (if not already installed)."""
+        """Install bun in node container (if not already installed)."""
         app_name = self._get_app_container_name(branch_name)
         
         # Check if bun already installed
@@ -190,13 +226,13 @@ class DevContainerManager:
             logger.info("[DevContainerManager] bun already installed")
             return
         
-        logger.info("[DevContainerManager] Installing bun and pnpm...")
+        logger.info("[DevContainerManager] Installing bun...")
         
-        # Install bun and pnpm
+        # Install bun only (skip pnpm to save time), with CI=1 for non-interactive
         subprocess.run(
-            ["docker", "exec", app_name, "npm", "install", "-g", "bun", "pnpm"],
+            ["docker", "exec", "-e", "CI=1", app_name, "npm", "install", "-g", "bun"],
             capture_output=True,
-            timeout=120,
+            timeout=60,
         )
     
     def _wait_for_db(self, branch_name: str, timeout: int = 30) -> bool:
@@ -248,13 +284,14 @@ class DevContainerManager:
             "db_url": f"postgresql://dev:dev@{db_name}:5432/app",
         }
     
-    def exec(self, branch_name: str, command: str, workdir: str = "/app") -> dict:
+    def exec(self, branch_name: str, command: str, workdir: str = "/app", timeout: int = 120) -> dict:
         """Execute command in app container using subprocess (fast).
         
         Args:
             branch_name: Branch name to identify container
             command: Shell command to execute
             workdir: Working directory inside container
+            timeout: Command timeout in seconds (default 120s)
             
         Returns:
             Dict with exit_code and output
@@ -263,8 +300,11 @@ class DevContainerManager:
         
         try:
             # Always use bash -c for reliable command execution
+            # Add CI=1 for non-interactive mode
             full_cmd = [
                 "docker", "exec",
+                "-e", "CI=1",
+                "-e", "BUN_NO_UPDATE_NOTIFIER=1",
                 "-w", workdir,
                 app_name,
                 "bash", "-c", command
@@ -276,7 +316,9 @@ class DevContainerManager:
                 full_cmd,
                 capture_output=True,
                 text=True,
-                timeout=300,
+                encoding='utf-8',
+                errors='replace',  # Handle non-UTF8 chars gracefully
+                timeout=timeout,
             )
             
             output = result.stdout + result.stderr
@@ -293,7 +335,7 @@ class DevContainerManager:
             logger.error(f"[DevContainerManager] Command timeout: {command}")
             return {
                 "exit_code": -1,
-                "output": f"Error: Command timed out after 300s",
+                "output": f"Error: Command timed out after {timeout}s",
                 "command": command,
             }
         except Exception as e:

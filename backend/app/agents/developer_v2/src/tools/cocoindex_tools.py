@@ -117,8 +117,8 @@ def search_codebase(project_id: str, query: str, top_k: int = 5, task_id: str = 
 
 def index_workspace(project_id: str, workspace_path: str, task_id: str = None) -> bool:
     """
-    Index workspace using CocoIndex.
-    Creates vector embeddings for all source files in the workspace,
+    Index workspace using CocoIndex (sync version).
+    Blocks for 2-5s but simple and reliable.
     """
     import os
     
@@ -126,7 +126,6 @@ def index_workspace(project_id: str, workspace_path: str, task_id: str = None) -
     db_url = os.environ.get("COCOINDEX_DATABASE_URL")
     if not db_url:
         logger.error("COCOINDEX_DATABASE_URL environment variable not set!")
-        logger.error("Please set it in .env file, e.g.: COCOINDEX_DATABASE_URL=postgresql://user:pass@localhost:5432/cocoindex")
         return False
     
     workspace = Path(workspace_path)
@@ -143,11 +142,11 @@ def index_workspace(project_id: str, workspace_path: str, task_id: str = None) -
         
         if task_id:
             logger.info(f"[CocoIndex] Registering task: {project_id}/{task_id}")
-            project_manager.register_task(project_id, task_id, workspace_path)
+            project_manager._register_task_sync(project_id, task_id, workspace_path)
             logger.info(f"[CocoIndex] Indexed task workspace: {project_id}/{task_id}")
         else:
             logger.info(f"[CocoIndex] Registering project: {project_id}")
-            project_manager.register_project(project_id, workspace_path)
+            project_manager._register_project_sync(project_id, workspace_path)
             logger.info(f"[CocoIndex] Indexed project workspace: {project_id}")
         return True
     except ImportError as e:
@@ -366,9 +365,9 @@ def reindex_workspace() -> str:
         from app.agents.developer.project_manager import project_manager
         
         if task_id:
-            project_manager.register_task(project_id, task_id, workspace_path)
+            project_manager._register_task_sync(project_id, task_id, workspace_path)
         else:
-            project_manager.register_project(project_id, workspace_path)
+            project_manager._register_project_sync(project_id, workspace_path)
         
         return f"Successfully reindexed workspace: {workspace_path}"
         

@@ -16,7 +16,6 @@ from .filesystem_tools import (
 # Git tools
 from .git_tools import (
     set_git_context,
-    git_init,
     git_status,
     git_commit,
     git_create_branch,

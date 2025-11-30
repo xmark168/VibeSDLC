@@ -31,42 +31,6 @@ def _get_root_dir() -> str:
     return _git_context.get("root_dir") or os.getcwd()
 
 
-@tool
-def git_init(message: str = "Initial commit") -> str:
-    """
-    Initialize a git repository with initial commit.
-    """
-    if not GIT_AVAILABLE:
-        return "Error: GitPython not installed"
-    
-    root_dir = _get_root_dir()
-    original_dir = os.getcwd()
-    os.chdir(root_dir)
-    
-    try:
-        try:
-            repo = Repo(root_dir)
-            return "Git repository already exists"
-        except InvalidGitRepositoryError:
-            repo = Repo.init(root_dir)
-            
-            with repo.config_writer() as git_config:
-                git_config.set_value("user", "name", "AI-Agent")
-                git_config.set_value("user", "email", "ai-agent@vibesdlc.com")
-            
-            if not repo.heads:
-                gitkeep_path = os.path.join(root_dir, ".gitkeep")
-                with open(gitkeep_path, "w") as f:
-                    f.write("# Initial commit by AI agent\n")
-                repo.index.add([".gitkeep"])
-                repo.index.commit(message)
-            
-            return "Git repository initialized successfully"
-    except Exception as e:
-        return f"Git init failed: {str(e)}"
-    finally:
-        os.chdir(original_dir)
-
 
 @tool
 def git_status() -> str:

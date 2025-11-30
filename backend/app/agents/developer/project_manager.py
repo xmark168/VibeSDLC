@@ -143,15 +143,12 @@ class AdvancedProjectManager:
         """Register and index a new project.
         
         Auto-detects async context and uses appropriate method.
+        If in event loop, returns coroutine that caller must await.
         """
         if self._is_in_event_loop():
-            # Use run_in_executor to avoid blocking and warnings
-            loop = asyncio.get_running_loop()
-            future = asyncio.run_coroutine_threadsafe(
-                self.register_project_async(project_id, project_path),
-                loop
-            )
-            return future.result()
+            # Return coroutine - caller must await to avoid deadlock
+            # DO NOT use run_coroutine_threadsafe + future.result() - causes deadlock
+            return self.register_project_async(project_id, project_path)
         
         return self._register_project_sync(project_id, project_path)
 
@@ -213,14 +210,12 @@ class AdvancedProjectManager:
         """Register and index a specific task workspace.
         
         Auto-detects async context and uses appropriate method.
+        If in event loop, returns coroutine that caller must await.
         """
         if self._is_in_event_loop():
-            loop = asyncio.get_running_loop()
-            future = asyncio.run_coroutine_threadsafe(
-                self.register_task_async(project_id, task_id, task_path),
-                loop
-            )
-            return future.result()
+            # Return coroutine - caller must await to avoid deadlock
+            # DO NOT use run_coroutine_threadsafe + future.result() - causes deadlock
+            return self.register_task_async(project_id, task_id, task_path)
         
         return self._register_task_sync(project_id, task_id, task_path)
 
