@@ -101,9 +101,11 @@ export function AgentQuestionCard({
       <Card className="p-4 bg-gradient-to-r from-green-500/10 to-emerald-500/10 border-green-500/20">
         <CardContent className="p-0 space-y-2">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
-              <CheckCircle2 className="w-5 h-5" />
-              <span className="text-sm font-medium">Answered</span>
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-green-500/20">
+                <CheckCircle2 className="w-5 h-5 text-green-600" />
+              </div>
+              <span className="text-sm font-medium text-green-700 dark:text-green-400">Đã trả lời</span>
             </div>
             <Button
               variant="ghost"
