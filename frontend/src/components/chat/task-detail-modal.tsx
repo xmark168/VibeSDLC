@@ -252,10 +252,8 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
                 <div>
                   <div className="text-xs text-muted-foreground">Priority</div>
                   <div className="text-sm font-medium">
-                    {card.priority === 1 ? 'Critical' : 
-                     card.priority === 2 ? 'High' : 
-                     card.priority === 3 ? 'Medium' : 
-                     card.priority === 4 ? 'Low' : 'Nice-to-have'}
+                    {card.priority === 1 ? 'High' : 
+                     card.priority === 2 ? 'Medium' : 'Low'}
                   </div>
                 </div>
               </div>

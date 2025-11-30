@@ -41,7 +41,7 @@ class StoryService:
             description=story_data.get("description"),
             type=story_data.get("story_type", StoryType.USER_STORY),
             status=StoryStatus.TODO,  # Default to TODO when creating
-            priority=story_data.get("priority"),  # 1-5, from input
+            priority=story_data.get("priority"),  # 1-3 (1=High, 2=Medium, 3=Low)
             story_point=story_data.get("story_point"),  # Fibonacci scale
             acceptance_criteria=story_data.get("acceptance_criteria"),
             assignee_id=story_data.get("assigned_to"),

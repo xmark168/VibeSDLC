@@ -415,7 +415,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         description: storyData.description,
         story_type: storyData.type,
         estimated_hours: storyData.story_point,
-        priority: storyData.priority === "High" ? 5 : storyData.priority === "Medium" ? 3 : 1,
+        priority: storyData.priority === "High" ? 1 : storyData.priority === "Medium" ? 2 : 3,
         acceptance_criteria: storyData.acceptance_criteria.join('\n'), // Join criteria into a single string
         tags: [], // Add any tags if needed
         labels: [], // Add any labels if needed
@@ -431,14 +431,14 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
               cards: [
                 ...col.cards,
                 {
-                  id: createdStory.id, // UUID thật của story trong database
+                  id: createdStory.id,
                   content: createdStory.title,
                   description: createdStory.description || "",
                   columnId: "todo",
                   type: createdStory.type,
-                  story_point: createdStory.story_point || undefined,
-                  rank: createdStory.priority,
-                  taskId: `STORY-${createdStory.id.substring(0, 4).toUpperCase()}`, // ID tạm thời để hiển thị
+                  story_point: createdStory.story_point ?? undefined,
+                  rank: createdStory.priority ?? undefined,
+                  taskId: `STORY-${createdStory.id.substring(0, 4).toUpperCase()}`,
                 },
               ],
             }
