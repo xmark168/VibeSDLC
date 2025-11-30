@@ -4,7 +4,7 @@ from typing import Optional
 from uuid import UUID, uuid4
 
 from pydantic import EmailStr
-from sqlalchemy import JSON, BigInteger, Text, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Text, UniqueConstraint, String
 from sqlalchemy import Enum as SQLEnum
 from sqlmodel import Column, Field, Relationship, SQLModel
 
@@ -92,6 +92,7 @@ class User(BaseModel, table=True):
     role: Role = Field(default=Role.USER, nullable=False)
     is_locked: bool = Field(default=False, nullable=False)
     login_provider: str | None = Field(default=None, nullable=True)
+    avatar_url: str | None = Field(default=None, max_length=500, nullable=True)
 
     owned_projects: list["Project"] = Relationship(
         back_populates="owner", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
@@ -103,6 +104,35 @@ class User(BaseModel, table=True):
     user_subscriptions: list["Subscription"] = Relationship(
         back_populates="user",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    linked_accounts: list["LinkedAccount"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+
+
+class OAuthProvider(str, Enum):
+    GOOGLE = "google"
+    GITHUB = "github"
+    FACEBOOK = "facebook"
+
+
+class LinkedAccount(BaseModel, table=True):
+    """Linked OAuth accounts for a user"""
+    __tablename__ = "linked_accounts"
+
+    user_id: UUID = Field(foreign_key="users.id", nullable=False, index=True)
+    provider: OAuthProvider = Field(
+        sa_column=Column(String(20), nullable=False)
+    )
+    provider_user_id: str = Field(nullable=False, max_length=255)
+    provider_email: str = Field(nullable=False, max_length=255)
+
+    user: User = Relationship(back_populates="linked_accounts")
+
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_user_id", name="uq_provider_user"),
+        UniqueConstraint("user_id", "provider", name="uq_user_provider"),
     )
 
 

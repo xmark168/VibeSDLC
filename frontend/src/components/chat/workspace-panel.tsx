@@ -377,13 +377,23 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
               <span className="max-w-[120px] truncate">{tab.label}</span>
             </button>
           ))}
-
         </div>
-        {agentItems.length > 0 ? (
-          <AnimatedTooltip items={agentItems} />
-        ) : agentsLoading ? (
-          <span className="text-xs text-muted-foreground">Loading agents...</span>
-        ) : null}
+        <div className="flex gap-6 items-center">
+
+          <div>
+            {agentItems.length > 0 ? (
+              <AnimatedTooltip items={agentItems} />
+            ) : agentsLoading ? (
+              <span className="text-xs text-muted-foreground">Loading agents...</span>
+            ) : null}
+
+          </div>
+          <div>
+            <Button size="sm" className="h-8 text-xs bg-[#6366f1] hover:bg-[#5558e3]">
+              Share
+            </Button>
+          </div>
+        </div>
       </div>
       <div className="border border-3 mb-3 mr-3 shadow-2xs rounded-2xl h-screen overflow-auto">
         {renderView()}

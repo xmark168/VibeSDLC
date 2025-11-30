@@ -13,8 +13,8 @@ from app.api.deps import SessionDep
 from app.core.config import settings
 from app.core.security import create_access_token
 from app.core.redis_client import get_redis_client
-from app.models import User
-from app.services import UserService
+from app.models import User, OAuthProvider, LinkedAccount
+from app.services import UserService, LinkedAccountService
 
 redis_client = get_redis_client()
 
@@ -26,26 +26,34 @@ router = APIRouter(tags=["oauth"])
 _oauth_state_store: dict[str, dict] = {}
 
 
-def set_oauth_state(state: str, provider: str):
+def set_oauth_state(state: str, provider: str, mode: str = "login", user_id: str | None = None):
     """Save OAuth state to in-memory store"""
     import time
     _oauth_state_store[state] = {
         "provider": provider,
+        "mode": mode,  # "login" or "link"
+        "user_id": user_id,  # Only set for "link" mode
         "created_at": time.time()
     }
-    logger.info(f"Saved OAuth state: {state} for {provider}")
+    logger.info(f"Saved OAuth state: {state} for {provider} (mode={mode})")
     # Clean up old states (older than 10 minutes)
     _cleanup_old_states()
 
 
-def get_oauth_state(state: str) -> str | None:
-    """Get OAuth state from in-memory store"""
+def get_oauth_state_data(state: str) -> dict | None:
+    """Get full OAuth state data from in-memory store"""
     state_data = _oauth_state_store.get(state)
     if state_data:
-        logger.info(f"Retrieved OAuth state: {state} for {state_data['provider']}")
-        return state_data["provider"]
+        logger.info(f"Retrieved OAuth state: {state} for {state_data['provider']} (mode={state_data.get('mode', 'login')})")
+        return state_data
     logger.warning(f"OAuth state not found: {state}")
     return None
+
+
+def get_oauth_state(state: str) -> str | None:
+    """Get OAuth provider from state (backward compatible)"""
+    state_data = get_oauth_state_data(state)
+    return state_data["provider"] if state_data else None
 
 
 def delete_oauth_state(state: str):
@@ -171,18 +179,22 @@ async def oauth_callback(
     response: Response,
     session: SessionDep,
 ):
-    """Handle OAuth callback from providers"""
+    """Handle OAuth callback from providers - supports both login and link modes"""
     logger.info(f"OAuth callback - code: {code[:20]}..., state: {state}")
     
-    # Verify state
-    provider = get_oauth_state(state)
+    # Verify state and get full state data
+    state_data = get_oauth_state_data(state)
 
-    if not provider:
+    if not state_data:
         logger.error(f"Invalid OAuth state - Available states: {len(_oauth_state_store)}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired OAuth state. Please try again.",
         )
+
+    provider = state_data["provider"]
+    mode = state_data.get("mode", "login")  # "login" or "link"
+    link_user_id = state_data.get("user_id")  # Only set for "link" mode
 
     # Clean up state immediately after verification
     delete_oauth_state(state)
@@ -201,40 +213,81 @@ async def oauth_callback(
                 detail=f"Unsupported provider: {provider}",
             )
 
-        logger.info(f"Successfully retrieved user info from {provider}: {user_info['email']}")
+        logger.info(f"Successfully retrieved user info from {provider}: {user_info['email']} (mode={mode})")
 
         provider_name = provider.upper()
-        
-        # Create unique email by adding provider suffix
-        # Example: test@gmail.com + GOOGLE → test+google@gmail.com
+        provider_enum = OAuthProvider(provider.lower())
+        provider_user_id = user_info.get("id", user_info["email"])
         original_email = user_info["email"]
-        email_parts = original_email.rsplit('@', 1)
-        if len(email_parts) == 2:
-            unique_email = f"{email_parts[0]}+{provider.lower()}@{email_parts[1]}"
-        else:
-            unique_email = f"{original_email}+{provider.lower()}"
         
-        logger.info(f"Original email: {original_email}, Unique email for DB: {unique_email}")
+        linked_service = LinkedAccountService(session)
 
-        # Find or create user with provider-specific email
-        user_service = UserService(session)
-        user = user_service.get_by_email(unique_email)
+        # ========== LINK MODE ==========
+        if mode == "link" and link_user_id:
+            logger.info(f"Processing link mode for user {link_user_id}")
+            
+            try:
+                linked_service.link_account(
+                    user_id=link_user_id,
+                    provider=provider_enum,
+                    provider_user_id=provider_user_id,
+                    provider_email=original_email,
+                )
+                logger.info(f"Successfully linked {provider} account for user {link_user_id}")
+                return RedirectResponse(
+                    f"{settings.FRONTEND_HOST}/projects?success=account_linked&provider={provider}&tab=security"
+                )
+            except HTTPException as e:
+                logger.error(f"Link error: {e.detail}")
+                return RedirectResponse(
+                    f"{settings.FRONTEND_HOST}/projects?error={e.detail}&tab=security"
+                )
 
-        if not user:
-            logger.info(f"Creating new user for {provider_name}: {unique_email}")
-            user = User(
-                email=unique_email,  # Unique email with provider suffix
-                full_name=user_info["name"],
-                login_provider=provider_name,  # Save provider name: GOOGLE, GITHUB, FACEBOOK
-                is_active=True,
-                is_locked=False,
-            )
-            session.add(user)
-            session.commit()
-            session.refresh(user)
-            logger.info(f"Created new user with ID: {user.id} via {provider_name}")
+        # ========== LOGIN MODE ==========
+        # First, check if this provider account is linked to an existing user
+        user = linked_service.find_user_by_provider(provider_enum, provider_user_id)
+        
+        if user:
+            logger.info(f"Found user {user.id} via linked {provider} account")
         else:
-            logger.info(f"Found existing user: {user.id} for {provider_name}")
+            # Fallback: Check legacy OAuth users (email with provider suffix)
+            email_parts = original_email.rsplit('@', 1)
+            if len(email_parts) == 2:
+                unique_email = f"{email_parts[0]}+{provider.lower()}@{email_parts[1]}"
+            else:
+                unique_email = f"{original_email}+{provider.lower()}"
+            
+            user_service = UserService(session)
+            user = user_service.get_by_email(unique_email)
+
+            if not user:
+                # Create new user with provider-specific email
+                logger.info(f"Creating new user for {provider_name}: {unique_email}")
+                user = User(
+                    email=unique_email,
+                    full_name=user_info["name"],
+                    login_provider=provider_name,
+                    avatar_url=user_info.get("avatar_url"),  # Save OAuth avatar
+                    is_active=True,
+                    is_locked=False,
+                )
+                session.add(user)
+                session.commit()
+                session.refresh(user)
+                
+                # Also create a linked account entry for the new user
+                linked_account = LinkedAccount(
+                    user_id=user.id,
+                    provider=provider_enum.value,  # Store as string value
+                    provider_user_id=provider_user_id,
+                    provider_email=original_email,
+                )
+                session.add(linked_account)
+                session.commit()
+                
+                logger.info(f"Created new user {user.id} with linked {provider} account")
+            else:
+                logger.info(f"Found existing legacy user: {user.id} for {provider_name}")
 
         # Check if 2FA is enabled for this user
         if user.two_factor_enabled and user.totp_secret:
@@ -317,8 +370,10 @@ async def _get_google_user(code: str) -> dict:
 
         user_data = user_response.json()
         return {
+            "id": user_data["id"],
             "email": user_data["email"],
             "name": user_data.get("name", user_data["email"].split("@")[0]),
+            "avatar_url": user_data.get("picture"),  # Google profile picture
         }
 
 
@@ -379,9 +434,11 @@ async def _get_github_user(code: str) -> dict:
             )
 
         return {
+            "id": str(user_data["id"]),
             "email": email,
             "name": user_data.get("name")
             or user_data.get("login", email.split("@")[0]),
+            "avatar_url": user_data.get("avatar_url"),  # GitHub avatar
         }
 
 
@@ -416,11 +473,11 @@ async def _get_facebook_user(code: str) -> dict:
         token_data = token_response.json()
         access_token = token_data["access_token"]
 
-        # Get user info
+        # Get user info with picture
         user_response = await client.get(
             "https://graph.facebook.com/v18.0/me",
             params={
-                "fields": "id,name,email",
+                "fields": "id,name,email,picture.type(large)",
                 "access_token": access_token,
             },
         )
@@ -439,7 +496,14 @@ async def _get_facebook_user(code: str) -> dict:
                 detail="Facebook account has no email. Please grant email permission.",
             )
 
+        # Extract Facebook picture URL
+        avatar_url = None
+        if user_data.get("picture", {}).get("data", {}).get("url"):
+            avatar_url = user_data["picture"]["data"]["url"]
+
         return {
+            "id": user_data["id"],
             "email": user_data["email"],
             "name": user_data.get("name", user_data["email"].split("@")[0]),
+            "avatar_url": avatar_url,  # Facebook profile picture
         }

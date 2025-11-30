@@ -174,6 +174,16 @@ from .two_factor import (
     LoginRequires2FAResponse,
 )
 
+# Linked Account schemas
+from .linked_account import (
+    LinkedAccountPublic,
+    LinkedAccountsResponse,
+    LinkAccountRequest,
+    UnlinkAccountRequest,
+    UnlinkAccountResponse,
+    LinkCallbackResponse,
+)
+
 __all__ = [
     # User
     "UserPublic",
@@ -318,4 +328,12 @@ __all__ = [
     "TwoFactorStatusResponse",
     "TwoFactorBackupCodesResponse",
     "LoginRequires2FAResponse",
+    
+    # Linked Account
+    "LinkedAccountPublic",
+    "LinkedAccountsResponse",
+    "LinkAccountRequest",
+    "UnlinkAccountRequest",
+    "UnlinkAccountResponse",
+    "LinkCallbackResponse",
 ]

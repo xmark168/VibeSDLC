@@ -300,6 +300,15 @@ export function ChatPanelWS({
         undefined
       )
       setMessage("");
+      // Scroll to bottom after answering
+      setTimeout(() => {
+        if (messagesContainerRef.current) {
+          messagesContainerRef.current.scrollTo({
+            top: messagesContainerRef.current.scrollHeight,
+            behavior: 'smooth'
+          });
+        }
+      }, 100);
       return;
     }
 
@@ -308,9 +317,17 @@ export function ChatPanelWS({
 
     setMessage("");
     setMentionedAgent(null);  // Clear mentioned agent after sending
+    
+    // Always scroll to bottom when user sends a message
     setTimeout(() => {
       textareaRef.current?.focus();
-    }, 0);
+      if (messagesContainerRef.current) {
+        messagesContainerRef.current.scrollTo({
+          top: messagesContainerRef.current.scrollHeight,
+          behavior: 'smooth'
+        });
+      }
+    }, 100);
   };
 
   // Reset waiting state when we receive agent messages or agent starts typing/processing

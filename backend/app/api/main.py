@@ -8,11 +8,13 @@ from app.api.routes import (
     chat,  # WebSocket chat endpoint
     files,  # Project file management
     lean_kanban,  # Lean Kanban features: WIP limits, policies, flow metrics
+    linked_accounts,  # OAuth account linking
     messages,
     oauth,  # OAuth authentication
     payments,  # Payment and PayOS integration
     personas,  # Persona template management
     plans,  # Plan management
+    profile,  # User profile management
     project_rules,  # Project-specific rules and configurations
     projects,
     stories,  # Story management (Kanban with Todo/InProgress/Review/Done)
@@ -25,6 +27,8 @@ api_router = APIRouter()
 api_router.include_router(auth.router)
 api_router.include_router(two_factor.router)  # 2FA routes
 api_router.include_router(oauth.router)  # OAuth routes
+api_router.include_router(linked_accounts.router)  # Linked accounts
+api_router.include_router(profile.router)  # User profile management
 api_router.include_router(users.router)
 api_router.include_router(utils.router)
 api_router.include_router(
