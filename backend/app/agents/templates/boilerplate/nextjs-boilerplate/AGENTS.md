@@ -564,6 +564,21 @@ import { createProduct } from '@/actions/product-actions';
 
 ## Testing Guidelines
 
+### CRITICAL: Import Rules for Tests
+
+**This project uses NAMED EXPORTS. Tests MUST use NAMED IMPORTS.**
+
+```typescript
+// CORRECT - named import matching named export
+import { SearchBar } from '@/components/SearchBar';
+import { createUser } from '@/lib/auth-helpers';
+import { prisma } from '@/lib/prisma';
+
+// WRONG - will cause "Missing default export" error
+import SearchBar from '@/components/SearchBar';
+import createUser from '@/lib/auth-helpers';
+```
+
 ### Available Test Packages
 | Package | Purpose |
 |---------|---------|
@@ -575,49 +590,162 @@ import { createProduct } from '@/actions/product-actions';
 | `node-mocks-http` | Next.js API routes testing |
 | `@faker-js/faker` | Generate fake test data |
 
+### Test File Structure
+
+```
+src/__tests__/
+├── components/
+│   └── SearchBar.test.tsx
+├── lib/
+│   └── auth-helpers.test.ts
+├── api/
+│   └── products.test.ts
+└── hooks/
+    └── useSearch.test.ts
+```
+
+### Mocking External Dependencies (IMPORTANT)
+
+**Always mock Prisma, bcrypt, and other external services:**
+
+```typescript
+// Mock Prisma - MUST be before imports that use it
+jest.mock('@/lib/prisma', () => ({
+  prisma: {
+    user: {
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    },
+    // Add other models as needed
+  },
+}));
+
+// Mock bcrypt
+jest.mock('bcryptjs', () => ({
+  hash: jest.fn(),
+  compare: jest.fn(),
+}));
+
+// Import AFTER mocks
+import { createUser } from '@/lib/auth-helpers';
+import { prisma } from '@/lib/prisma';
+import bcrypt from 'bcryptjs';
+```
+
 ### Component Testing
 
 ```typescript
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { SearchBar } from '@/components/SearchBar';  // Named import!
 
-describe('ProductForm', () => {
-  it('submits form data', async () => {
+describe('SearchBar', () => {
+  it('calls onSearch when form submitted', async () => {
+    const mockOnSearch = jest.fn();
     const user = userEvent.setup();
-    render(<ProductForm action={mockAction} />);
     
-    await user.type(screen.getByLabelText('Name'), 'Test Product');
-    await user.click(screen.getByRole('button', { name: /create/i }));
+    render(<SearchBar onSearch={mockOnSearch} />);
     
-    expect(mockAction).toHaveBeenCalled();
+    await user.type(screen.getByRole('textbox'), 'test query');
+    await user.click(screen.getByRole('button', { name: /search/i }));
+    
+    expect(mockOnSearch).toHaveBeenCalledWith('test query');
   });
 });
 ```
 
-### API Route Testing (node-mocks-http)
+### Service/Helper Testing (with Mocks)
+
+```typescript
+import { prisma } from '@/lib/prisma';
+import bcrypt from 'bcryptjs';
+
+// Mocks MUST be before the import of the module being tested
+jest.mock('@/lib/prisma', () => ({
+  prisma: {
+    user: {
+      create: jest.fn(),
+      findUnique: jest.fn(),
+    },
+  },
+}));
+
+jest.mock('bcryptjs', () => ({
+  hash: jest.fn(),
+  compare: jest.fn(),
+}));
+
+// Import the module being tested AFTER mocks
+import { createUser, verifyPassword } from '@/lib/auth-helpers';
+
+describe('auth-helpers', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('createUser', () => {
+    it('should create user with hashed password', async () => {
+      const mockUser = {
+        id: 'user-123',
+        username: 'testuser',
+        email: 'test@example.com',
+        password: 'hashed-password',
+        createdAt: new Date(),
+      };
+
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-password');
+      (prisma.user.create as jest.Mock).mockResolvedValue(mockUser);
+
+      const result = await createUser({
+        username: 'testuser',
+        password: 'plainpassword',
+        email: 'test@example.com',
+      });
+
+      expect(bcrypt.hash).toHaveBeenCalledWith('plainpassword', 10);
+      expect(prisma.user.create).toHaveBeenCalled();
+      expect(result).not.toHaveProperty('password');
+    });
+  });
+});
+```
+
+### API Route Testing
 
 ```typescript
 import { createMocks } from 'node-mocks-http';
+
+// Mock dependencies first
+jest.mock('@/lib/prisma', () => ({
+  prisma: {
+    product: {
+      findMany: jest.fn(),
+      create: jest.fn(),
+    },
+  },
+}));
+
 import { GET, POST } from '@/app/api/products/route';
+import { prisma } from '@/lib/prisma';
 
 describe('/api/products', () => {
-  it('GET returns products list', async () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('GET returns products', async () => {
+    const mockProducts = [{ id: '1', name: 'Product 1' }];
+    (prisma.product.findMany as jest.Mock).mockResolvedValue(mockProducts);
+
     const { req } = createMocks({ method: 'GET' });
     const response = await GET(req);
     const data = await response.json();
-    
-    expect(response.status).toBe(200);
-    expect(data.success).toBe(true);
-  });
 
-  it('POST creates a product', async () => {
-    const { req } = createMocks({
-      method: 'POST',
-      body: { name: 'Test Product', price: 100 },
-    });
-    const response = await POST(req);
-    
-    expect(response.status).toBe(201);
+    expect(response.status).toBe(200);
+    expect(data.data).toEqual(mockProducts);
   });
 });
 ```
@@ -633,14 +761,6 @@ const mockUser = {
   name: faker.person.fullName(),
   email: faker.internet.email(),
   avatar: faker.image.avatar(),
-};
-
-// Generate mock product
-const mockProduct = {
-  id: faker.string.uuid(),
-  name: faker.commerce.productName(),
-  price: faker.number.float({ min: 10, max: 1000, fractionDigits: 2 }),
-  description: faker.commerce.productDescription(),
 };
 
 // Generate array of items
