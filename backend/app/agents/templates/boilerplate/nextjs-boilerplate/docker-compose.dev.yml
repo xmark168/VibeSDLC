@@ -2,11 +2,12 @@ version: '3.8'
 
 services:
   app:
-    image: ${APP_IMAGE:-oven/bun:1}
-    container_name: ${CONTAINER_PREFIX:-dev}-app
+    image: oven/bun:1
+    container_name: ${COMPOSE_PROJECT_NAME:-dev}-app
     working_dir: /app
     volumes:
-      - ${WORKSPACE_PATH:-.}:/app
+      - .:/app
+      - /app/node_modules
     ports:
       - "${APP_PORT:-3000}:3000"
     environment:
@@ -25,11 +26,12 @@ services:
 
   db:
     image: postgres:16-alpine
-    container_name: ${CONTAINER_PREFIX:-dev}-db
+    container_name: ${COMPOSE_PROJECT_NAME:-dev}-db
     environment:
       POSTGRES_USER: dev
       POSTGRES_PASSWORD: dev
       POSTGRES_DB: app
+    # No public port - only accessible within devnet network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dev -d app"]
       interval: 2s
@@ -38,9 +40,12 @@ services:
       start_period: 5s
     networks:
       - devnet
-    tmpfs:
-      - /var/lib/postgresql/data
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
 
 networks:
   devnet:
     driver: bridge
+
+volumes:
+  postgres_data:
