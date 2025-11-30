@@ -39,33 +39,49 @@ class ProjectFiles:
         """Move existing docs to archive folder with timestamp.
         
         Used when user chooses to replace project with a new one.
-        Files are moved to docs/archive/ with timestamp suffix.
+        Files are moved to docs/archive/{timestamp}/ folder.
+        
+        Structure:
+            docs/archive/20231130_172100/
+            ├── prd.md
+            └── user-stories.md
         
         Returns:
             True if archiving was successful
         """
-        archive_path = self.docs_path / "archive"
-        archive_path.mkdir(parents=True, exist_ok=True)
+        # Check if there are any files to archive
+        files_to_archive = []
+        if self.prd_path.exists():
+            files_to_archive.append(self.prd_path)
+        if self.user_stories_path.exists():
+            files_to_archive.append(self.user_stories_path)
         
+        if not files_to_archive:
+            return True  # Nothing to archive
+        
+        # Create timestamped folder
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        archive_folder = self.docs_path / "archive" / timestamp
+        archive_folder.mkdir(parents=True, exist_ok=True)
+        
         archived_files = []
         
         # Move prd.md
         if self.prd_path.exists():
-            dest = archive_path / f"prd_{timestamp}.md"
+            dest = archive_folder / "prd.md"
             shutil.move(str(self.prd_path), str(dest))
-            archived_files.append(f"prd.md -> archive/prd_{timestamp}.md")
+            archived_files.append("prd.md")
         
         # Move user-stories.md
         if self.user_stories_path.exists():
-            dest = archive_path / f"user-stories_{timestamp}.md"
+            dest = archive_folder / "user-stories.md"
             shutil.move(str(self.user_stories_path), str(dest))
-            archived_files.append(f"user-stories.md -> archive/user-stories_{timestamp}.md")
+            archived_files.append("user-stories.md")
         
         if archived_files:
             import logging
             logger = logging.getLogger(__name__)
-            logger.info(f"[ProjectFiles] Archived: {', '.join(archived_files)}")
+            logger.info(f"[ProjectFiles] Archived to archive/{timestamp}/: {', '.join(archived_files)}")
         
         return True
     
