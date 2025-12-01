@@ -668,13 +668,30 @@ class StoryEventRouter(BaseEventRouter):
         return event_type.startswith("story.")
 
     async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
-        """Route based on story status change.
+        """Route based on story event type.
 
-        Logic: If story moves to In Progress → route to Developer
+        Logic:
+        - story.created → BA verifies the new story
+        - story.status_changed (Todo → InProgress) → route to Developer
         """
         event_dict = event if isinstance(event, dict) else event.model_dump()
+        event_type = event_dict.get("event_type", "")
         story_id = event_dict.get("story_id")
         project_id = event_dict.get("project_id")
+
+        # Handle story.created → BA auto-verify
+        if event_type == "story.created":
+            self.logger.info(f"New story created: {story_id} in project {project_id}")
+            await self._verify_new_story(event_dict, project_id)
+            return
+
+        # Handle story.review_action → BA sends response message
+        if event_type == "story.review_action":
+            self.logger.info(f"Story review action: {event_dict.get('action')} for {story_id}")
+            await self._handle_review_action(event_dict, project_id)
+            return
+
+        # Handle status changes
         new_status = event_dict.get("new_status")
         old_status = event_dict.get("old_status")
 
@@ -722,6 +739,174 @@ class StoryEventRouter(BaseEventRouter):
                 self.logger.warning(
                     f"No Developer found in project {project_id} for story status change"
                 )
+
+    async def _verify_new_story(self, event_dict: Dict[str, Any], project_id: str | UUID) -> None:
+        """Verify a newly created story using BA agent."""
+        from app.models import Story, ArtifactType
+        from app.services import AgentService
+        from app.services.artifact_service import ArtifactService
+        from app.agents.business_analyst.src.nodes import verify_story_simple
+        from app.kafka.event_schemas import AgentEvent
+
+        story_id = event_dict.get("story_id")
+        user_id = event_dict.get("user_id")
+
+        if isinstance(project_id, str):
+            project_id = UUID(project_id)
+
+        ba_agent = None
+        agent_name = "Business Analyst"
+        agent_id = None
+
+        try:
+            with Session(engine) as session:
+                # Load new story
+                new_story = session.get(Story, story_id)
+                if not new_story:
+                    self.logger.error(f"Story {story_id} not found for verification")
+                    return
+
+                # Load PRD
+                artifact_service = ArtifactService(session)
+                prd_artifact = artifact_service.get_latest_version(
+                    project_id=project_id,
+                    artifact_type=ArtifactType.PRD
+                )
+                full_prd = prd_artifact.content if prd_artifact else None
+
+                # Load existing stories (exclude the new one)
+                from sqlmodel import select
+                existing_stories = session.exec(
+                    select(Story).where(
+                        Story.project_id == project_id,
+                        Story.id != story_id
+                    )
+                ).all()
+
+                # Get BA agent for messaging
+                agent_service = AgentService(session)
+                ba_model = agent_service.get_by_project_and_role(
+                    project_id=project_id,
+                    role_type="business_analyst"
+                )
+
+                if ba_model:
+                    agent_name = ba_model.human_name or ba_model.name
+                    agent_id = str(ba_model.id)
+                    from app.agents.business_analyst import BusinessAnalyst
+                    ba_agent = BusinessAnalyst(
+                        agent_model=ba_model,
+                        user_id=UUID(user_id) if user_id else None
+                    )
+
+            # Generate execution_id for tracking
+            execution_id = str(uuid4())
+            
+            # Send "thinking" event to show typing indicator
+            start_event = AgentEvent(
+                event_type="agent.thinking",
+                agent_name=agent_name,
+                agent_id=agent_id or "ba-auto-verify",
+                project_id=str(project_id),
+                execution_id=execution_id,
+                content="Processing request...",
+                execution_context={
+                    "mode": "background",
+                    "task_type": "story_verify",
+                    "display_mode": "chat",
+                }
+            )
+            await self.producer.publish(topic=KafkaTopics.AGENT_EVENTS, event=start_event)
+
+            # Build state and run verification
+            state = {
+                "new_story": new_story,
+                "project_id": project_id,
+                "full_prd": full_prd,
+                "existing_stories": existing_stories,
+                "execution_id": execution_id,  # Pass to nodes for response event
+            }
+
+            self.logger.info(
+                f"Verifying story: {new_story.title} "
+                f"(PRD: {'yes' if full_prd else 'no'}, existing: {len(existing_stories)})"
+            )
+
+            await verify_story_simple(state, agent=ba_agent)
+            
+            # Send "completed" event to hide typing indicator
+            finish_event = AgentEvent(
+                event_type="agent.completed",
+                agent_name=agent_name,
+                agent_id=agent_id or "ba-auto-verify",
+                project_id=str(project_id),
+                execution_id=execution_id,
+                content="Story verification complete",
+                execution_context={
+                    "mode": "background",
+                    "task_type": "story_verify",
+                    "display_mode": "chat",
+                }
+            )
+            await self.producer.publish(topic=KafkaTopics.AGENT_EVENTS, event=finish_event)
+
+            self.logger.info(f"Story verification complete for {story_id}")
+
+        except Exception as e:
+            self.logger.error(f"Error verifying story {story_id}: {e}", exc_info=True)
+
+    async def _handle_review_action(self, event_dict: Dict[str, Any], project_id: str | UUID) -> None:
+        """Handle user action on story review and send natural response."""
+        from app.agents.business_analyst.src.nodes import send_review_action_response
+        from app.services import AgentService
+        from app.kafka.event_schemas import AgentEvent
+
+        story_id = event_dict.get("story_id")
+        story_title = event_dict.get("story_title")
+        action = event_dict.get("action")
+        user_id = event_dict.get("user_id")
+
+        if isinstance(project_id, str):
+            project_id = UUID(project_id)
+
+        ba_agent = None
+        agent_name = "Business Analyst"
+        agent_id = None
+
+        try:
+            with Session(engine) as session:
+                # Find BA agent
+                agent_service = AgentService(session)
+                ba_model = agent_service.get_by_project_and_role(
+                    project_id=project_id,
+                    role_type="business_analyst"
+                )
+
+                if ba_model:
+                    agent_name = ba_model.human_name or ba_model.name
+                    agent_id = str(ba_model.id)
+                    
+                    # Initialize BA agent
+                    from app.agents.business_analyst import BusinessAnalyst
+                    ba_agent = BusinessAnalyst(
+                        agent_model=ba_model,
+                        project_id=project_id,
+                        user_id=UUID(user_id) if user_id else None
+                    )
+
+            # Call the response generator
+            await send_review_action_response(
+                story_id=story_id,
+                story_title=story_title,
+                action=action,
+                project_id=project_id,
+                agent=ba_agent
+            )
+
+            self.logger.info(f"Review action response sent for story {story_id}, action: {action}")
+
+        except Exception as e:
+            self.logger.error(f"Error handling review action for {story_id}: {e}", exc_info=True)
 
 
 class AgentStatusRouter(BaseEventRouter):

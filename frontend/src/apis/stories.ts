@@ -135,5 +135,26 @@ export const storiesApi = {
       method: 'DELETE',
       url: `/api/v1/stories/${storyId}`,
     })
+  },
+
+  /**
+   * Handle review action (apply/keep/remove)
+   */
+  reviewAction: async (
+    storyId: string,
+    action: 'apply' | 'keep' | 'remove',
+    suggestions?: {
+      suggested_title?: string
+      suggested_acceptance_criteria?: string[]
+    }
+  ): Promise<{ message: string; story_id: string }> => {
+    return __request<{ message: string; story_id: string }>(OpenAPI, {
+      method: 'POST',
+      url: `/api/v1/stories/${storyId}/review-action`,
+      body: {
+        action,
+        ...suggestions
+      },
+    })
   }
 }

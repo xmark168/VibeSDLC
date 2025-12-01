@@ -23,7 +23,7 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateS
     title: "",
     description: "",
     type: "UserStory",
-    story_point: undefined,
+    story_point: 1,
     priority: "Medium",
     acceptance_criteria: []
   })
@@ -46,7 +46,7 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateS
       title: "",
       description: "",
       type: "UserStory",
-      story_point: undefined,
+      story_point: 1,
       priority: "Medium",
       acceptance_criteria: []
     })
