@@ -80,6 +80,10 @@ class DeveloperState(TypedDict, total=False):
     project_context: Optional[str]  # Loaded from AGENTS.md in workspace
     agents_md: Optional[str]  # Raw AGENTS.md content
     
+    # Project conventions (detected from existing code - Phase 2)
+    conventions: Optional[Dict[str, Any]]  # export_style, import_style, etc.
+    conventions_prompt: Optional[str]  # Formatted for LLM prompt
+    
     # Project config (passed in, not auto-detected)
     # tech_stack format: {"name": "project_name", "service": [...]}
     # Single:  {"tech_stack": {"name": "my-app", "service": [{"name": "app", "install_cmd": "bun install", "test_cmd": "bun test", "needs_db": true}]}}
@@ -132,6 +136,7 @@ class DeveloperState(TypedDict, total=False):
     max_debug: int  # Max debug attempts (default: 5, MetaGPT pattern)
     last_debug_file: Optional[str]
     debug_history: Optional[List[Dict[str, Any]]]
+    error_analysis: Optional[Dict[str, Any]]  # From analyze_error node: error_type, file_to_fix, root_cause, fix_strategy
     
     # ==========================================================================
     # React Loop Mode (MetaGPT Engineer2 pattern)
@@ -139,5 +144,12 @@ class DeveloperState(TypedDict, total=False):
     react_loop_count: int  # Current iteration in react loop
     max_react_loop: int  # Max iterations (default: 40, MetaGPT Engineer2 pattern)
     react_mode: bool  # Whether in react mode
+    
+    # ==========================================================================
+    # Plan Validation (Phase 3 upgrade)
+    # ==========================================================================
+    plan_valid: bool  # Whether plan passed validation
+    validation_errors: Optional[List[str]]  # Critical errors blocking implementation
+    validation_warnings: Optional[List[str]]  # Non-blocking warnings
     
 

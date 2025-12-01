@@ -96,5 +96,6 @@ class DebugResult(BaseModel):
     analysis: str = Field(description="Analysis of the error")
     root_cause: str = Field(description="Root cause of the error")
     fix_description: str = Field(description="Description of the fix")
-    fixed_code: str = Field(default="", description="The corrected code")
+    file_to_fix: str = Field(default="", description="Which file to write the fix to (source or test)")
+    fixed_code: str = Field(default="", description="Complete fixed code for file_to_fix")
 

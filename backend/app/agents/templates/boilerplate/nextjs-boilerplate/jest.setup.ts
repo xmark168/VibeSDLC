@@ -70,3 +70,35 @@ global.ResizeObserver = class ResizeObserver {
   unobserve() {}
 } as any;
 
+// Mock next/server for API route testing
+jest.mock('next/server', () => {
+  return {
+    NextResponse: {
+      json: (data: any, init?: ResponseInit) => {
+        const response = new Response(JSON.stringify(data), {
+          ...init,
+          headers: {
+            'content-type': 'application/json',
+            ...init?.headers,
+          },
+        });
+        return response;
+      },
+      redirect: (url: string | URL) => {
+        return new Response(null, {
+          status: 307,
+          headers: { Location: url.toString() },
+        });
+      },
+      next: () => new Response(null),
+    },
+    NextRequest: class NextRequest extends Request {
+      nextUrl: URL;
+      constructor(input: RequestInfo | URL, init?: RequestInit) {
+        super(input, init);
+        this.nextUrl = new URL(typeof input === 'string' ? input : input.url);
+      }
+    },
+  };
+});
+

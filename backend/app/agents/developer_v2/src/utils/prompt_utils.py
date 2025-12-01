@@ -24,6 +24,11 @@ def format_input_template(task: str, **kwargs) -> str:
     return template.strip()
 
 
+def get_shared_context(key: str) -> str:
+    """Get value from shared_context in prompts.yaml."""
+    return _PROMPTS.get("shared_context", {}).get(key, "")
+
+
 def build_system_prompt(task: str, agent=None) -> str:
     """Build system prompt with shared context."""
     prompt = get_prompt(task, "system_prompt")

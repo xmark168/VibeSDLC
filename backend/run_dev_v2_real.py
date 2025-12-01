@@ -476,15 +476,8 @@ class SimpleDeveloperRunner:
             "confidence": None,
             "reason": None,
             
-            # Design document
+            # Design document (merged into plan node)
             "design_doc": None,
-            "code_plan_doc": None,
-            
-            # Code review - reduce iterations for faster completion
-            "code_review_k": 1,  # Only 1 review iteration
-            "code_review_passed": False,
-            "code_review_iteration": 0,
-            "code_review_results": [],
             
             # Run code - let detect_test_command figure out the right command
             "run_status": None,
@@ -504,15 +497,6 @@ class SimpleDeveloperRunner:
             "react_mode": True,
             "react_loop_count": 0,
             "max_react_loop": 40,
-            
-            # Summarize code (MetaGPT SummarizeCode pattern)
-            "summarize_feedback": None,
-            "summarize_count": 0,
-            "max_summarize": 3,
-            
-            # Revision tracking
-            "revision_count": 0,
-            "max_revisions": 3,
             
             # Project context
             "project_context": None,
@@ -549,7 +533,6 @@ class SimpleDeveloperRunner:
                         "complexity": final_state.get("complexity"),
                         "files_created": len(final_state.get("files_created", [])),
                         "files_modified": len(final_state.get("files_modified", [])),
-                        "code_review_passed": final_state.get("code_review_passed"),
                         "run_status": final_state.get("run_status"),
                         "debug_count": final_state.get("debug_count", 0),
                         "react_loop_count": final_state.get("react_loop_count", 0)
@@ -879,7 +862,6 @@ def print_result(result: dict, workspace_path: Path):
     print(f"Complexity: {result.get('complexity')}")
     print(f"Files Created: {len(result.get('files_created', []))}")
     print(f"Files Modified: {len(result.get('files_modified', []))}")
-    print(f"Code Review: {'PASSED' if result.get('code_review_passed') else 'PENDING'}")
     print(f"Tests: {result.get('run_status', 'N/A')}")
     print(f"Debug Iterations: {result.get('debug_count', 0)}")
     print(f"React Loops: {result.get('react_loop_count', 0)}")

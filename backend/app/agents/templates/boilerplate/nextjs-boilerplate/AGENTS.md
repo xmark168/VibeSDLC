@@ -1,9 +1,9 @@
 ## Project Overview
 
-Next.js 15 boilerplate with TypeScript, App Router, Prisma, NextAuth v5, Tailwind CSS 4, and shadcn/ui components. Uses Bun as package manager.
+Next.js 16 boilerplate with TypeScript, App Router, Prisma, NextAuth v5, Tailwind CSS 4, and shadcn/ui components. Uses Bun as package manager.
 
 **Key Stack:**
-- Next.js 15 + React 19
+- Next.js 16 + React 19.2
 - NextAuth v5 (beta) with Credentials provider + Prisma adapter
 - Prisma ORM + PostgreSQL
 - Tailwind CSS 4 + 50+ shadcn/ui components (Radix UI)
@@ -11,35 +11,7 @@ Next.js 15 boilerplate with TypeScript, App Router, Prisma, NextAuth v5, Tailwin
 - Zustand for state management
 - Jest + React Testing Library
 
-## Common Commands
-
-```bash
-# Development
-bun dev                   # Start dev server with Turbopack
-bun dev:webpack           # Start dev server with Webpack (fallback)
-
-# Build & Deploy
-bun run build             # Production build
-bun start                 # Start production server
-
-# Testing
-bun test                  # Run all tests
-bun test:watch            # Run tests in watch mode
-bun test:coverage         # Run tests with coverage report
-
-# Linting & Formatting
-bun lint                  # Run ESLint
-bun lint:fix              # Fix ESLint errors
-bun format                # Format with Prettier
-
-# Database (Prisma)
-bunx prisma generate      # Generate Prisma Client (after schema changes)
-bunx prisma db push       # Push schema changes to database (dev)
-bunx prisma migrate dev   # Create and apply migrations (production-ready)
-bunx prisma studio        # Open Prisma Studio GUI
-```
-
-## Next.js 15 App Router Conventions
+## Next.js 16 App Router Conventions
 
 ### Special Files (MUST follow these conventions)
 
@@ -52,6 +24,7 @@ bunx prisma studio        # Open Prisma Studio GUI
 | `not-found.tsx` | 404 page for route segment |
 | `route.ts` | API endpoint (GET, POST, PUT, DELETE handlers) |
 | `template.tsx` | Like layout but re-renders on navigation |
+| `proxy.ts` | **NEW** Network proxy (replaces middleware.ts) |
 
 ### Naming Conventions
 
@@ -144,7 +117,7 @@ Always follow this flow when implementing features:
    - Server Components for data fetching
    - Pass data to Client Components via props
 
-## Server Actions (Next.js 15) - CRITICAL
+## Server Actions (Next.js 16) - CRITICAL
 
 ### When to Use Server Actions
 - ✅ Form submissions
@@ -450,8 +423,10 @@ export default async function ProductPage({ params }: Props) {
 
 **Key Files:**
 - `src/auth.ts` - NextAuth configuration
-- `src/middleware.ts` - Route protection
+- `src/proxy.ts` - Route-level proxy (routing only, not auth)
 - `prisma/schema.prisma` - Auth models (DO NOT modify)
+
+**Note:** Auth checks should be in Server Components/Actions, not proxy.
 
 ```typescript
 // Server Component
@@ -487,23 +462,64 @@ export function UserMenu() {
 }
 ```
 
+## Cache Components (Next.js 16 - NEW)
+
+Enable in `next.config.ts`:
+```typescript
+const config = { cacheComponents: true };
+```
+
+### Using `use cache` Directive
+
+```typescript
+// Component level caching
+export async function ProductList() {
+  'use cache'
+  const products = await prisma.product.findMany();
+  return <div>{products.map(p => <ProductCard key={p.id} product={p} />)}</div>;
+}
+
+// Function level caching
+export async function getCategories() {
+  'use cache'
+  return await prisma.category.findMany();
+}
+
+// File level - cache all exports
+'use cache'
+export async function Page() {
+  // This entire page is cached
+}
+```
+
+## Proxy (Replaces Middleware)
+
+```typescript
+// src/proxy.ts (replaces middleware.ts)
+import { NextResponse, NextRequest } from 'next/server';
+
+export function proxy(request: NextRequest) {
+  // Use for route-level proxying only
+  // Auth logic should be in Route Handlers or Server Actions
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: ['/dashboard/:path*', '/api/:path*'],
+};
+```
+
+**Note:** `middleware.ts` is deprecated. Use `proxy.ts` for routing/rewrites only. Move auth checks to data layer.
+
 ## Caching & Revalidation
 
 ```typescript
 // Revalidate specific path after mutation
-import { revalidatePath } from 'next/cache';
-revalidatePath('/products');
+import { revalidatePath, revalidateTag, updateTag } from 'next/cache';
 
-// Revalidate by tag
-import { revalidateTag } from 'next/cache';
-
-// In data fetching
-const products = await prisma.product.findMany();
-// Tag this data
-export const dynamic = 'force-dynamic'; // or use unstable_cache with tags
-
-// After mutation
-revalidateTag('products');
+revalidatePath('/products');      // Revalidate path
+revalidateTag('products');        // Revalidate by tag
+updateTag('products', newData);   // Update tag with new data (NEW in 16)
 ```
 
 ## Code Conventions
@@ -586,23 +602,91 @@ import createUser from '@/lib/auth-helpers';
 | `@testing-library/react` | React component testing |
 | `@testing-library/jest-dom` | DOM matchers (toBeInTheDocument, etc.) |
 | `@testing-library/user-event` | User interaction simulation |
-| `msw` | API mocking (Mock Service Worker) |
 | `node-mocks-http` | Next.js API routes testing |
 | `@faker-js/faker` | Generate fake test data |
+
+### CRITICAL: Use Jest Only (NOT Vitest)
+
+**This project uses Jest. DO NOT use Vitest.**
+
+```typescript
+// WRONG - will fail
+import { describe, it, expect, vi } from 'vitest';
+vi.mock(...)
+
+// CORRECT - use Jest globals (no import needed)
+jest.mock(...)
+```
+
+**Jest globals available without import:**
+- `describe`, `it`, `test`, `expect`
+- `jest.fn()`, `jest.mock()`, `jest.spyOn()`
+- `beforeEach`, `afterEach`, `beforeAll`, `afterAll`
+
+### API Mocking (IMPORTANT - Use jest.mock, NOT MSW)
+
+**DO NOT use MSW** - it requires BroadcastChannel polyfills and is complex to setup.
+
+**Instead, use jest.mock() for API calls:**
+
+```typescript
+// Mock API module BEFORE imports
+jest.mock('@/lib/api', () => ({
+  searchProducts: jest.fn(),
+  fetchUser: jest.fn(),
+}));
+
+// Import after mock
+import { searchProducts } from '@/lib/api';
+
+describe('ProductSearch', () => {
+  it('displays search results', async () => {
+    // Setup mock return value
+    (searchProducts as jest.Mock).mockResolvedValue([
+      { id: '1', name: 'Product 1' },
+      { id: '2', name: 'Product 2' },
+    ]);
+
+    render(<ProductSearch />);
+    
+    // Trigger search
+    await userEvent.type(screen.getByRole('textbox'), 'test');
+    await userEvent.click(screen.getByRole('button'));
+    
+    // Assert results
+    expect(await screen.findByText('Product 1')).toBeInTheDocument();
+  });
+});
+```
 
 ### Test File Structure
 
 ```
 src/__tests__/
-├── components/
-│   └── SearchBar.test.tsx
-├── lib/
-│   └── auth-helpers.test.ts
-├── api/
-│   └── products.test.ts
-└── hooks/
-    └── useSearch.test.ts
+├── components/    # Component tests
+├── lib/           # Utility/helper tests  
+├── api/           # API route tests
+└── hooks/         # Custom hook tests
 ```
+
+### Test Path Mapping (MUST FOLLOW)
+
+| Source File | Test File |
+|-------------|-----------|
+| `src/components/X.tsx` | `src/__tests__/components/X.test.tsx` |
+| `src/components/ui/X.tsx` | `src/__tests__/components/X.test.tsx` |
+| `src/lib/x.ts` | `src/__tests__/lib/x.test.ts` |
+| `src/lib/data/x.ts` | `src/__tests__/lib/x.test.ts` |
+| `src/app/api/x/route.ts` | `src/__tests__/api/x.test.ts` |
+| `src/hooks/useX.ts` | `src/__tests__/hooks/useX.test.ts` |
+
+**WRONG:**
+- `src/__tests__/SearchBar.test.tsx` (missing /components/)
+- `src/__tests__/auth.test.ts` (missing /lib/)
+
+**CORRECT:**
+- `src/__tests__/components/SearchBar.test.tsx`
+- `src/__tests__/lib/auth.test.ts`
 
 ### Mocking External Dependencies (IMPORTANT)
 
@@ -715,9 +799,21 @@ describe('auth-helpers', () => {
 
 ### API Route Testing
 
-```typescript
-import { createMocks } from 'node-mocks-http';
+**CRITICAL: Always provide full URL in Request constructor!**
 
+```typescript
+// WRONG - will cause "Invalid URL: undefined" error
+const req = new Request('/api/products');
+const req = { url: undefined };  // Missing URL
+
+// CORRECT - always use full URL with http://localhost
+const req = new Request('http://localhost/api/products');
+const req = new Request('http://localhost/api/products?search=test');  // With query params
+```
+
+Mock `next/server` is pre-configured in jest.setup.ts. Use standard `Request` objects:
+
+```typescript
 // Mock dependencies first
 jest.mock('@/lib/prisma', () => ({
   prisma: {
@@ -740,12 +836,41 @@ describe('/api/products', () => {
     const mockProducts = [{ id: '1', name: 'Product 1' }];
     (prisma.product.findMany as jest.Mock).mockResolvedValue(mockProducts);
 
-    const { req } = createMocks({ method: 'GET' });
+    // CRITICAL: Use full URL - "http://localhost" prefix required!
+    const req = new Request('http://localhost/api/products');
     const response = await GET(req);
     const data = await response.json();
 
     expect(response.status).toBe(200);
     expect(data.data).toEqual(mockProducts);
+  });
+
+  it('GET with query params', async () => {
+    const mockProducts = [{ id: '1', name: 'Test Product' }];
+    (prisma.product.findMany as jest.Mock).mockResolvedValue(mockProducts);
+
+    // Query params example - full URL required
+    const req = new Request('http://localhost/api/products?search=test&limit=10');
+    const response = await GET(req);
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+  });
+
+  it('POST creates product', async () => {
+    const newProduct = { id: '1', name: 'New Product', price: 100 };
+    (prisma.product.create as jest.Mock).mockResolvedValue(newProduct);
+
+    const req = new Request('http://localhost/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'New Product', price: 100 }),
+    });
+    const response = await POST(req);
+    const data = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(data.data).toEqual(newProduct);
   });
 });
 ```
@@ -774,54 +899,47 @@ const mockProducts = faker.helpers.multiple(
 );
 ```
 
-### MSW for API Mocking
-
-```typescript
-// src/__tests__/mocks/handlers.ts
-import { http, HttpResponse } from 'msw';
-
-export const handlers = [
-  http.get('/api/products', () => {
-    return HttpResponse.json({
-      success: true,
-      data: [{ id: '1', name: 'Product 1' }],
-    });
-  }),
-];
-
-// In test file
-import { server } from './mocks/server';
-
-beforeAll(() => server.listen());
-afterEach(() => server.resetHandlers());
-afterAll(() => server.close());
-```
-
 ## Error Handling
 
-### API Response Helpers
+### API Response Functions (EXACT names - DO NOT change)
+
+| Function | Usage | Status |
+|----------|-------|--------|
+| `successResponse(data)` | Return success | 200 |
+| `successResponse(data, msg, 201)` | Created | 201 |
+| `handleError(error)` | Catch-all error handler | varies |
+| `ApiErrors.badRequest(msg)` | Bad request | 400 |
+| `ApiErrors.unauthorized()` | Not logged in | 401 |
+| `ApiErrors.forbidden()` | No permission | 403 |
+| `ApiErrors.notFound(resource)` | Not found | 404 |
+| `ApiErrors.conflict(msg)` | Conflict | 409 |
+
+**WRONG - These do NOT exist:**
+- `apiSuccess()` - Use `successResponse()`
+- `apiError()` - Use `handleError()` or throw `ApiErrors.xxx()`
+- `createResponse()` - Use `successResponse()`
+
+### API Route Example
 
 ```typescript
 import { successResponse, handleError, ApiErrors } from '@/lib/api-response';
 
-// Success responses
-return successResponse(data);                    // 200 OK
-return successResponse(data, 'Created', 201);    // 201 Created
+export async function GET() {
+  try {
+    const data = await prisma.product.findMany();
+    return successResponse(data);  // 200 OK
+  } catch (error) {
+    return handleError(error);
+  }
+}
 
-// Error responses (throw these, handleError will catch)
-throw ApiErrors.badRequest('Invalid input');     // 400
-throw ApiErrors.unauthorized();                  // 401
-throw ApiErrors.forbidden();                     // 403
-throw ApiErrors.notFound('Product');             // 404
-throw ApiErrors.conflict('Email already exists'); // 409
-
-// In route handler
 export async function POST(request: NextRequest) {
   try {
-    // ... logic
-    return successResponse(result, 'Created', 201);
+    const body = await request.json();
+    const product = await prisma.product.create({ data: body });
+    return successResponse(product, 'Created', 201);
   } catch (error) {
-    return handleError(error); // Automatically formats error response
+    return handleError(error);
   }
 }
 ```
@@ -1064,7 +1182,7 @@ src/
 ├── types/
 │   └── api.types.ts      # Types & Zod schemas
 ├── auth.ts               # NextAuth config
-└── middleware.ts         # Route protection
+└── proxy.ts              # Network proxy (routing/rewrites)
 ```
 
 ## Critical Rules
