@@ -9,7 +9,13 @@ OpenAPI.TOKEN = async () => {
 }
 
 let isRefreshing = false
+let isLoggingOut = false
 let refreshSubscribers: Array<(token: string) => void> = []
+
+// Export function to set logout state - call this before logout
+export const setLoggingOut = (value: boolean) => {
+    isLoggingOut = value
+}
 
 const subscribeTokenRefresh = (callback: (token: string) => void) => {
     refreshSubscribers.push(callback)
@@ -21,6 +27,11 @@ const onTokenRefreshed = (token: string) => {
 }
 
 const refreshAccessToken = async (): Promise<string | null> => {
+    // Don't try to refresh if user is logging out
+    if (isLoggingOut) {
+        return null
+    }
+
     const refreshToken = localStorage.getItem('refresh_token')
 
     if (!refreshToken) {
@@ -39,6 +50,10 @@ const refreshAccessToken = async (): Promise<string | null> => {
 
         return response.access_token
     } catch (error) {
+        // Don't redirect if user is intentionally logging out
+        if (isLoggingOut) {
+            return null
+        }
         localStorage.removeItem('access_token')
         localStorage.removeItem('refresh_token')
         window.location.href = '/login'

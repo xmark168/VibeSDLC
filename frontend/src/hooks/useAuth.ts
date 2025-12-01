@@ -15,6 +15,7 @@ import toast from "react-hot-toast"
 import { useAppStore } from "@/stores/auth-store"
 import { getRedirectPathByRole } from "@/utils/auth"
 import { isLoginRequires2FA, type LoginResult } from "@/types/two-factor"
+import { setLoggingOut } from "@/config/setup"
 
 const isLoggedIn = () => {
   return localStorage.getItem("access_token") !== null
@@ -92,16 +93,25 @@ export const useAuth = () => {
   })
 
   const logout = useMutation({
-    mutationFn: () => AuthenticationService.logout(),
+    mutationFn: async () => {
+      // Set flag to prevent token refresh during logout
+      setLoggingOut(true)
+      // Cancel all pending queries to prevent 401 errors triggering refresh
+      await queryClient.cancelQueries()
+      return AuthenticationService.logout()
+    },
     onSuccess: () => {
       toast.success("Logout successful")
       localStorage.removeItem("access_token")
       localStorage.removeItem("refresh_token")
       setUser(undefined)
-      queryClient.invalidateQueries({ queryKey: ["currentUser"] })
+      queryClient.clear() // Clear all cached data
       navigate({ to: "/login" })
+      // Reset flag after navigation
+      setTimeout(() => setLoggingOut(false), 100)
     },
     onError: (err: ApiError) => {
+      setLoggingOut(false)
       handleError(err)
     },
   })

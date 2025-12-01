@@ -100,6 +100,7 @@ import {
 } from "@/components/charts"
 import { TimeRangeSelector, type TimeRange, MetricCard } from "@/components/admin"
 import { PersonasTab } from "@/components/admin/agents"
+import { AdminLayout } from "@/components/admin/AdminLayout"
 
 export const Route = createFileRoute("/admin/agents")({
   beforeLoad: async () => {
@@ -122,6 +123,7 @@ function AgentAdminPage() {
   const isLoading = dashboardLoading || poolsLoading || healthLoading
 
   return (
+    <AdminLayout>
     <div className="container mx-auto p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -210,6 +212,7 @@ function AgentAdminPage() {
         </TabsContent>
       </Tabs>
     </div>
+    </AdminLayout>
   )
 }
 

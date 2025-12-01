@@ -1,7 +1,9 @@
 import { ProjectPublic } from "@/client"
-import { ProjectCard } from "./project-card"
+import { ProjectCard } from "./project-card-v2"
 import { useQueryClient } from "@tanstack/react-query"
 import { motion } from "framer-motion"
+import { formatDistanceToNow } from "date-fns"
+import { vi } from "date-fns/locale"
 
 import { useAppStore } from "@/stores/auth-store"
 import { useNavigate } from "@tanstack/react-router"
@@ -148,7 +150,21 @@ export const ProjectList = ({ projects, onCreateProject }: ProjectListProps) => 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {projects.map((project) => (
-        <ProjectCard onClick={() => handleClickProject(project)} key={project.code} project={project} />
+        <div 
+          key={project.code} 
+          onClick={() => handleClickProject(project)}
+          className="cursor-pointer"
+        >
+          <ProjectCard
+            title={project.name}
+            code={project.code}
+            status={project.is_init ? "in-progress" : "planning"}
+            techStack={project.tech_stack || []}
+            agents={["Team Leader", "Developer"]}
+            lastUpdated={formatDistanceToNow(new Date(project.updated_at), { addSuffix: true, locale: vi })}
+            githubUrl={project.repository_url || undefined}
+          />
+        </div>
       ))}
     </div>
   )

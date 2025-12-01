@@ -140,3 +140,20 @@ class LinkedAccountService:
         Returns the user if found, None otherwise.
         """
         return self.find_user_by_provider(provider, provider_user_id)
+
+    def find_linked_account_by_email(
+        self, provider: OAuthProvider, provider_email: str
+    ) -> LinkedAccount | None:
+        """Find a linked account by provider and email."""
+        statement = select(LinkedAccount).where(
+            LinkedAccount.provider == provider.value,
+            LinkedAccount.provider_email == provider_email
+        )
+        return self.session.exec(statement).first()
+
+    def is_provider_email_linked(self, provider_email: str) -> bool:
+        """Check if a provider email is already linked to any account."""
+        statement = select(LinkedAccount).where(
+            LinkedAccount.provider_email == provider_email
+        )
+        return self.session.exec(statement).first() is not None

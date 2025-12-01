@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -25,27 +25,56 @@ import {
   use2FAStatus,
   useSetup2FA,
   useVerifySetup2FA,
+  useRequestDisable2FA,
   useDisable2FA,
-  useRegenerateBackupCodes,
 } from "@/queries/two-factor"
-import { ShieldCheck, ShieldOff, Copy, Check, RefreshCw, Loader2, AlertTriangle } from "lucide-react"
+import { ShieldCheck, ShieldOff, Copy, Check, Loader2, AlertTriangle, Mail } from "lucide-react"
 import toast from "react-hot-toast"
+import { withToast } from "@/utils"
 
 export function TwoFactorSettings() {
   const { data: status, isLoading: statusLoading } = use2FAStatus()
   const setup2FA = useSetup2FA()
   const verifySetup = useVerifySetup2FA()
+  const requestDisable2FA = useRequestDisable2FA()
   const disable2FA = useDisable2FA()
-  const regenerateBackupCodes = useRegenerateBackupCodes()
 
   const [setupDialogOpen, setSetupDialogOpen] = useState(false)
-  const [disableDialogOpen, setDisableDialogOpen] = useState(false)
+  const [disableConfirmDialogOpen, setDisableConfirmDialogOpen] = useState(false)
+  const [disableCodeDialogOpen, setDisableCodeDialogOpen] = useState(false)
   const [backupCodesDialogOpen, setBackupCodesDialogOpen] = useState(false)
   const [verifyCode, setVerifyCode] = useState("")
   const [disablePassword, setDisablePassword] = useState("")
   const [disableCode, setDisableCode] = useState("")
+  const [maskedEmail, setMaskedEmail] = useState("")
   const [backupCodes, setBackupCodes] = useState<string[]>([])
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
+  const [codeExpiry, setCodeExpiry] = useState(0) // Countdown for code expiry (seconds)
+  const [resendCooldown, setResendCooldown] = useState(0) // Cooldown before can resend (seconds)
+
+  // Countdown timer effect
+  useEffect(() => {
+    if (codeExpiry <= 0) return
+    const timer = setInterval(() => {
+      setCodeExpiry((prev) => (prev > 0 ? prev - 1 : 0))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [codeExpiry])
+
+  // Resend cooldown effect
+  useEffect(() => {
+    if (resendCooldown <= 0) return
+    const timer = setInterval(() => {
+      setResendCooldown((prev) => (prev > 0 ? prev - 1 : 0))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [resendCooldown])
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}:${secs.toString().padStart(2, "0")}`
+  }
 
   const handleSetup = async () => {
     try {
@@ -69,29 +98,69 @@ export function TwoFactorSettings() {
     }
   }
 
-  const handleDisable = async () => {
+  const requiresPassword = status?.requires_password ?? true
+
+  const handleRequestDisable = async () => {
     try {
-      await disable2FA.mutateAsync({
-        password: disablePassword,
-        code: disableCode.replace(/[-\s]/g, ""),
-      })
-      setDisableDialogOpen(false)
-      setDisablePassword("")
-      setDisableCode("")
-      toast.success("Đã tắt xác thực hai bước")
-    } catch (error) {
-      toast.error("Không thể tắt 2FA. Kiểm tra mật khẩu và mã xác thực.")
+      const result = await withToast(
+        requestDisable2FA.mutateAsync({ 
+          password: requiresPassword ? disablePassword : undefined 
+        }),
+        {
+          loading: "Đang gửi mã xác thực...",
+          success: "Mã xác thực đã được gửi đến email của bạn!",
+          error: "Không thể gửi mã xác thực. Vui lòng thử lại.",
+        }
+      )
+      setMaskedEmail(result.masked_email)
+      setCodeExpiry(result.expires_in || 180) // 3 minutes
+      setResendCooldown(30) // 30 seconds cooldown before can resend
+      setDisableConfirmDialogOpen(false)
+      setDisableCodeDialogOpen(true)
+    } catch (error: any) {
+      const errorMessage = error?.body?.detail || "Không thể gửi mã xác thực. Kiểm tra mật khẩu."
+      toast.error(errorMessage)
     }
   }
 
-  const handleRegenerateBackupCodes = async () => {
+  const handleResendCode = async () => {
     try {
-      const result = await regenerateBackupCodes.mutateAsync()
-      setBackupCodes(result.backup_codes)
-      setBackupCodesDialogOpen(true)
-      toast.success("Đã tạo mã backup mới!")
-    } catch (error) {
-      toast.error("Không thể tạo mã backup mới.")
+      const result = await withToast(
+        requestDisable2FA.mutateAsync({ 
+          password: requiresPassword ? disablePassword : undefined 
+        }),
+        {
+          loading: "Đang gửi lại mã xác thực...",
+          success: "Mã xác thực mới đã được gửi!",
+          error: "Không thể gửi lại mã. Vui lòng thử lại.",
+        }
+      )
+      setMaskedEmail(result.masked_email)
+      setCodeExpiry(result.expires_in || 180)
+      setResendCooldown(30)
+      setDisableCode("") // Clear old code
+    } catch (error: any) {
+      const errorMessage = error?.body?.detail || "Không thể gửi lại mã xác thực."
+      toast.error(errorMessage)
+    }
+  }
+
+  const handleDisable = async () => {
+    try {
+      await disable2FA.mutateAsync({
+        password: requiresPassword ? disablePassword : undefined,
+        code: disableCode.replace(/[-\s]/g, ""),
+      })
+      setDisableCodeDialogOpen(false)
+      setDisablePassword("")
+      setDisableCode("")
+      setMaskedEmail("")
+      setCodeExpiry(0)
+      setResendCooldown(0)
+      toast.success("Đã tắt xác thực hai bước")
+    } catch (error: any) {
+      const errorMessage = error?.body?.detail || "Mã xác thực không đúng hoặc đã hết hạn."
+      toast.error(errorMessage)
     }
   }
 
@@ -152,28 +221,13 @@ export function TwoFactorSettings() {
               </div>
             </div>
             {status?.enabled ? (
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleRegenerateBackupCodes}
-                  disabled={regenerateBackupCodes.isPending}
-                >
-                  {regenerateBackupCodes.isPending ? (
-                    <Loader2 className="w-4 h-4 animate-spin mr-1" />
-                  ) : (
-                    <RefreshCw className="w-4 h-4 mr-1" />
-                  )}
-                  Tạo mã backup mới
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => setDisableDialogOpen(true)}
-                >
-                  Tắt 2FA
-                </Button>
-              </div>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setDisableConfirmDialogOpen(true)}
+              >
+                Tắt 2FA
+              </Button>
             ) : (
               <Button onClick={handleSetup} disabled={setup2FA.isPending}>
                 {setup2FA.isPending ? (
@@ -258,50 +312,137 @@ export function TwoFactorSettings() {
         </DialogContent>
       </Dialog>
 
-      {/* Disable Dialog */}
-      <Dialog open={disableDialogOpen} onOpenChange={setDisableDialogOpen}>
+      {/* Disable Confirm Dialog - Step 1: Enter password (if required) and confirm */}
+      <Dialog open={disableConfirmDialogOpen} onOpenChange={(open) => {
+        setDisableConfirmDialogOpen(open)
+        if (!open) {
+          setDisablePassword("")
+        }
+      }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Tắt xác thực hai bước</DialogTitle>
             <DialogDescription>
-              Nhập mật khẩu và mã xác thực để tắt 2FA
+              {requiresPassword 
+                ? "Bạn có chắc chắn muốn tắt xác thực hai bước? Nhập mật khẩu để xác nhận."
+                : "Bạn có chắc chắn muốn tắt xác thực hai bước? Mã xác thực sẽ được gửi đến email của bạn."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                Tắt 2FA sẽ làm giảm bảo mật tài khoản của bạn
+                Tắt 2FA sẽ làm giảm bảo mật tài khoản của bạn. Mã xác thực sẽ được gửi đến email của bạn.
+              </AlertDescription>
+            </Alert>
+            {requiresPassword && (
+              <div className="space-y-2">
+                <Label htmlFor="disable-password">Mật khẩu</Label>
+                <Input
+                  id="disable-password"
+                  type="password"
+                  value={disablePassword}
+                  onChange={(e) => setDisablePassword(e.target.value)}
+                  placeholder="Nhập mật khẩu của bạn"
+                />
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setDisableConfirmDialogOpen(false)
+              setDisablePassword("")
+            }}>
+              Hủy
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleRequestDisable}
+              disabled={requestDisable2FA.isPending || (requiresPassword && !disablePassword)}
+            >
+              {requestDisable2FA.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-1" />
+              ) : (
+                <Mail className="w-4 h-4 mr-1" />
+              )}
+              Gửi mã xác thực
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Disable Code Dialog - Step 2: Enter verification code from email */}
+      <Dialog open={disableCodeDialogOpen} onOpenChange={(open) => {
+        setDisableCodeDialogOpen(open)
+        if (!open) {
+          setDisableCode("")
+          setCodeExpiry(0)
+          setResendCooldown(0)
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nhập mã xác thực</DialogTitle>
+            <DialogDescription>
+              Mã xác thực đã được gửi đến email <span className="font-medium">{maskedEmail}</span>. Vui lòng nhập mã để hoàn tất.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Alert variant={codeExpiry > 0 ? "default" : "destructive"}>
+              <Mail className="h-4 w-4" />
+              <AlertDescription>
+                {codeExpiry > 0 ? (
+                  <>Mã xác thực hết hạn sau <span className="font-semibold">{formatTime(codeExpiry)}</span>. Kiểm tra hộp thư đến hoặc thư rác.</>
+                ) : (
+                  <>Mã xác thực đã hết hạn. Vui lòng gửi lại mã mới.</>
+                )}
               </AlertDescription>
             </Alert>
             <div className="space-y-2">
-              <Label htmlFor="disable-password">Mật khẩu</Label>
-              <Input
-                id="disable-password"
-                type="password"
-                value={disablePassword}
-                onChange={(e) => setDisablePassword(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="disable-code">Mã xác thực hoặc mã backup</Label>
+              <Label htmlFor="disable-code">Mã xác thực</Label>
               <Input
                 id="disable-code"
                 type="text"
-                placeholder="000000 hoặc XXXX-XXXX"
+                inputMode="numeric"
+                placeholder="000000"
                 value={disableCode}
-                onChange={(e) => setDisableCode(e.target.value)}
+                onChange={(e) => setDisableCode(e.target.value.replace(/[^0-9]/g, ""))}
+                maxLength={6}
+                className="text-center text-lg tracking-widest"
+                disabled={codeExpiry === 0}
               />
+            </div>
+            {/* Resend button */}
+            <div className="flex justify-center">
+              <Button
+                variant="link"
+                size="sm"
+                onClick={handleResendCode}
+                disabled={resendCooldown > 0 || requestDisable2FA.isPending}
+                className="text-muted-foreground"
+              >
+                {requestDisable2FA.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                ) : null}
+                {resendCooldown > 0 
+                  ? `Gửi lại mã sau ${resendCooldown}s` 
+                  : "Gửi lại mã xác thực"}
+              </Button>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDisableDialogOpen(false)}>
+            <Button variant="outline" onClick={() => {
+              setDisableCodeDialogOpen(false)
+              setDisableCode("")
+              setCodeExpiry(0)
+              setResendCooldown(0)
+            }}>
               Hủy
             </Button>
             <Button
               variant="destructive"
               onClick={handleDisable}
-              disabled={disable2FA.isPending || !disablePassword || !disableCode}
+              disabled={disable2FA.isPending || disableCode.length !== 6 || codeExpiry === 0}
             >
               {disable2FA.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin mr-1" />

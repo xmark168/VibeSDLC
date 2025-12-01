@@ -24,8 +24,20 @@ class TwoFactorVerifySetupResponse(BaseModel):
 
 class TwoFactorDisableRequest(BaseModel):
     """Request to disable 2FA."""
-    password: str = Field(..., min_length=1, description="Current password for verification")
-    code: str = Field(..., min_length=6, max_length=6, description="6-digit TOTP code or backup code")
+    password: str | None = Field(default=None, description="Current password for verification (optional for OAuth users)")
+    code: str = Field(..., min_length=6, max_length=8, description="6-digit verification code from email")
+
+
+class TwoFactorRequestDisableRequest(BaseModel):
+    """Request to send disable 2FA verification code to email."""
+    password: str | None = Field(default=None, description="Current password for verification (optional for OAuth users)")
+
+
+class TwoFactorRequestDisableResponse(BaseModel):
+    """Response after sending disable 2FA verification code."""
+    message: str = "Mã xác thực đã được gửi đến email của bạn"
+    masked_email: str
+    expires_in: int = 180
 
 
 class TwoFactorDisableResponse(BaseModel):
@@ -50,6 +62,7 @@ class TwoFactorStatusResponse(BaseModel):
     """Response for 2FA status check."""
     enabled: bool
     has_backup_codes: bool
+    requires_password: bool = True  # False for OAuth users
 
 
 class TwoFactorBackupCodesResponse(BaseModel):

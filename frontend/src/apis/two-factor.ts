@@ -6,6 +6,8 @@ import type {
   TwoFactorVerifySetupResponse,
   TwoFactorDisableRequest,
   TwoFactorDisableResponse,
+  TwoFactorRequestDisableRequest,
+  TwoFactorRequestDisableResponse,
   TwoFactorVerifyRequest,
   TwoFactorVerifyResponse,
   TwoFactorStatusResponse,
@@ -32,6 +34,16 @@ export async function verifySetup2FA(
   return __request<TwoFactorVerifySetupResponse>(OpenAPI, {
     method: "POST",
     url: "/api/v1/2fa/verify-setup",
+    body: data,
+  })
+}
+
+export async function requestDisable2FA(
+  data: TwoFactorRequestDisableRequest
+): Promise<TwoFactorRequestDisableResponse> {
+  return __request<TwoFactorRequestDisableResponse>(OpenAPI, {
+    method: "POST",
+    url: "/api/v1/2fa/request-disable",
     body: data,
   })
 }

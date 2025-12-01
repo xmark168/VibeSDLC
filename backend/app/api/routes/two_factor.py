@@ -1,6 +1,7 @@
 """Two-Factor Authentication API routes."""
 
 import logging
+import random
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -19,12 +20,15 @@ from app.schemas import (
     TwoFactorVerifySetupResponse,
     TwoFactorDisableRequest,
     TwoFactorDisableResponse,
+    TwoFactorRequestDisableRequest,
+    TwoFactorRequestDisableResponse,
     TwoFactorVerifyRequest,
     TwoFactorVerifyResponse,
     TwoFactorStatusResponse,
     TwoFactorBackupCodesResponse,
 )
 from app.services import TwoFactorService
+from app.utils import send_email
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/2fa", tags=["two-factor-authentication"])
@@ -106,8 +110,120 @@ def verify_2fa_setup(
     )
 
 
-@router.post("/disable", response_model=TwoFactorDisableResponse)
+def generate_verification_code() -> str:
+    """Generate 6-digit verification code"""
+    return str(random.randint(100000, 999999))
+
+
+def mask_email(email: str) -> str:
+    """Mask email for display (e.g., t***@gmail.com)"""
+    if "@" not in email:
+        return email
+    local, domain = email.rsplit("@", 1)
+    if len(local) <= 2:
+        masked_local = local[0] + "***"
+    else:
+        masked_local = local[0] + "***" + local[-1]
+    return f"{masked_local}@{domain}"
+
+
+def generate_disable_2fa_email(email_to: str, code: str) -> tuple[str, str]:
+    """Generate email content for 2FA disable verification."""
+    from app.core.config import settings
+    project_name = settings.PROJECT_NAME
+    subject = f"{project_name} - Mã xác thực tắt 2FA"
+    html_content = f"""
+    <html>
+    <body>
+        <h2>Xác thực tắt xác thực hai bước (2FA)</h2>
+        <p>Chào bạn,</p>
+        <p>Bạn đã yêu cầu tắt xác thực hai bước cho tài khoản của mình.</p>
+        <p>Mã xác thực của bạn là: <strong style="font-size: 24px; color: #dc3545;">{code}</strong></p>
+        <p>Mã này có hiệu lực trong 3 phút.</p>
+        <p><strong>Cảnh báo:</strong> Nếu bạn không yêu cầu tắt 2FA, vui lòng bỏ qua email này và kiểm tra bảo mật tài khoản của bạn.</p>
+        <br>
+        <p>Trân trọng,<br>{project_name} Team</p>
+    </body>
+    </html>
+    """
+    return subject, html_content
+
+
+DISABLE_2FA_CODE_PREFIX = "disable_2fa_code:"
+DISABLE_2FA_CODE_TTL = 180  # 3 minutes
+
+
+@router.post("/request-disable", response_model=TwoFactorRequestDisableResponse)
 @limiter.limit("3/minute")
+def request_disable_2fa(
+    request: Request,
+    request_data: TwoFactorRequestDisableRequest,
+    current_user: CurrentUser,
+    session: SessionDep
+) -> TwoFactorRequestDisableResponse:
+    """
+    Request to disable 2FA - sends verification code to email.
+    User must call /disable with the code to complete.
+    Password is required for credential users, optional for OAuth users.
+    """
+    if not current_user.two_factor_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Two-factor authentication is not enabled"
+        )
+    
+    # Check if user has password - if yes, require password verification
+    has_password = current_user.hashed_password is not None
+    
+    # Verify password for users who have password set
+    if has_password:
+        if not request_data.password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Mật khẩu không được để trống"
+            )
+        if not verify_password(request_data.password, current_user.hashed_password):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Mật khẩu không đúng"
+            )
+    
+    # Generate verification code
+    code = generate_verification_code()
+    
+    # Store code in Redis
+    code_key = f"{DISABLE_2FA_CODE_PREFIX}{current_user.id}"
+    if not redis_client.set(code_key, code, ttl=DISABLE_2FA_CODE_TTL):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Lỗi hệ thống, vui lòng thử lại"
+        )
+    
+    # Send verification email
+    try:
+        subject, html_content = generate_disable_2fa_email(current_user.email, code)
+        send_email(
+            email_to=current_user.email,
+            subject=subject,
+            html_content=html_content,
+        )
+    except Exception as e:
+        logger.error(f"Failed to send disable 2FA email: {e}")
+        redis_client.delete(code_key)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Không thể gửi email xác thực"
+        )
+    
+    return TwoFactorRequestDisableResponse(
+        message="Mã xác thực đã được gửi đến email của bạn",
+        masked_email=mask_email(current_user.email),
+        expires_in=DISABLE_2FA_CODE_TTL
+    )
+
+
+@router.post("/disable", response_model=TwoFactorDisableResponse)
+@limiter.limit("5/minute")
 def disable_2fa(
     request: Request,
     disable_data: TwoFactorDisableRequest,
@@ -116,7 +232,7 @@ def disable_2fa(
 ) -> TwoFactorDisableResponse:
     """
     Disable 2FA for the authenticated user.
-    Requires password and valid TOTP/backup code.
+    Requires email verification code. Password required for non-OAuth users.
     """
     if not current_user.two_factor_enabled:
         raise HTTPException(
@@ -124,13 +240,42 @@ def disable_2fa(
             detail="Two-factor authentication is not enabled"
         )
     
-    # Verify password
-    if not verify_password(disable_data.password, current_user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid password"
-        )
+    # Check if user is OAuth user (no password required)
+    is_oauth_user = current_user.login_provider is not None
     
+    # Verify password for non-OAuth users
+    if not is_oauth_user:
+        if not disable_data.password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Mật khẩu không được để trống"
+            )
+        if not verify_password(disable_data.password, current_user.hashed_password):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Mật khẩu không đúng"
+            )
+    
+    code = disable_data.code.replace("-", "").replace(" ", "")
+    
+    # First, check if the code matches email verification code
+    code_key = f"{DISABLE_2FA_CODE_PREFIX}{current_user.id}"
+    stored_code = redis_client.get(code_key)
+    
+    if stored_code and str(stored_code).strip() == code.strip():
+        # Email verification code is valid - disable 2FA directly
+        current_user.two_factor_enabled = False
+        current_user.totp_secret = None
+        current_user.backup_codes = None
+        session.add(current_user)
+        session.commit()
+        
+        # Clean up Redis
+        redis_client.delete(code_key)
+        
+        return TwoFactorDisableResponse(message="Đã tắt xác thực hai bước thành công")
+    
+    # If not email code, try TOTP/backup code
     two_factor_service = TwoFactorService(session)
     
     try:
@@ -138,10 +283,10 @@ def disable_2fa(
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+            detail="Mã xác thực không đúng hoặc đã hết hạn"
         )
     
-    return TwoFactorDisableResponse(message="Two-factor authentication disabled successfully")
+    return TwoFactorDisableResponse(message="Đã tắt xác thực hai bước thành công")
 
 
 @router.post("/verify", response_model=TwoFactorVerifyResponse)

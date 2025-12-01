@@ -193,5 +193,6 @@ class TwoFactorService:
         """Get 2FA status for a user."""
         return {
             "enabled": user.two_factor_enabled,
-            "has_backup_codes": bool(user.backup_codes and len(user.backup_codes) > 0)
+            "has_backup_codes": bool(user.backup_codes and len(user.backup_codes) > 0),
+            "requires_password": user.hashed_password is not None  # Users with password need to enter it
         }

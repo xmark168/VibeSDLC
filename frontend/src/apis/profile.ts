@@ -1,6 +1,6 @@
 import { request as __request } from "@client/core/request"
 import { OpenAPI } from "@/client"
-import type { Profile, ProfileUpdate, AvatarUploadResponse } from "@/types/profile"
+import type { Profile, ProfileUpdate, AvatarUploadResponse, PasswordStatusResponse, PasswordChangeResponse } from "@/types/profile"
 
 export async function getProfile(): Promise<Profile> {
   return __request<Profile>(OpenAPI, {
@@ -43,5 +43,35 @@ export async function deleteAvatar(): Promise<{ message: string; avatar_url: str
   return __request(OpenAPI, {
     method: "DELETE",
     url: "/api/v1/profile/avatar",
+  })
+}
+
+export async function getPasswordStatus(): Promise<PasswordStatusResponse> {
+  return __request<PasswordStatusResponse>(OpenAPI, {
+    method: "GET",
+    url: "/api/v1/profile/password-status",
+  })
+}
+
+export async function changePassword(data: {
+  current_password: string
+  new_password: string
+  confirm_password: string
+}): Promise<PasswordChangeResponse> {
+  return __request<PasswordChangeResponse>(OpenAPI, {
+    method: "POST",
+    url: "/api/v1/profile/change-password",
+    body: data,
+  })
+}
+
+export async function setPassword(data: {
+  new_password: string
+  confirm_password: string
+}): Promise<PasswordChangeResponse> {
+  return __request<PasswordChangeResponse>(OpenAPI, {
+    method: "POST",
+    url: "/api/v1/profile/set-password",
+    body: data,
   })
 }

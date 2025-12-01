@@ -59,6 +59,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { PlanDialog } from "@/components/admin/PlanDialog"
+import { AdminLayout } from "@/components/admin/AdminLayout"
 
 export const Route = createFileRoute("/admin/plans")({
   beforeLoad: async () => {
@@ -116,6 +117,7 @@ function PlansAdminPage() {
     : { total: 0, active: 0, featured: 0, totalRevenue: 0 }
 
   return (
+    <AdminLayout>
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 relative overflow-hidden">
       {/* Texture overlay */}
       <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cGF0aCBkPSJNIDQwIDAgTCAwIDAgMCA0MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDIpIiBzdHJva2Utd2lkdGg9IjEiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjZ3JpZCkiLz48L3N2Zz4=')] opacity-40" />
@@ -452,6 +454,7 @@ function PlansAdminPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+    </AdminLayout>
   )
 }
 

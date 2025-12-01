@@ -69,6 +69,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { UserDialog } from "@/components/admin/users"
 import { formatDistanceToNow } from "date-fns"
+import { AdminLayout } from "@/components/admin/AdminLayout"
 
 export const Route = createFileRoute("/admin/users")({
   beforeLoad: async () => {
@@ -184,6 +185,7 @@ function UsersAdminPage() {
   }
 
   return (
+    <AdminLayout>
     <div className="container mx-auto p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -564,5 +566,6 @@ function UsersAdminPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+    </AdminLayout>
   )
 }

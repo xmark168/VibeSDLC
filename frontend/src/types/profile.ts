@@ -14,3 +14,12 @@ export interface AvatarUploadResponse {
   avatar_url: string
   message: string
 }
+
+export interface PasswordStatusResponse {
+  has_password: boolean
+  login_provider: string | null
+}
+
+export interface PasswordChangeResponse {
+  message: string
+}

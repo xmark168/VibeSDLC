@@ -19,6 +19,7 @@ import { subscriptionApi } from "@/apis/subscription"
 import { TwoFactorSettings } from "./two-factor-settings"
 import { LinkedAccountsSettings } from "./linked-accounts-settings"
 import { AvatarUploadDialog } from "./avatar-upload-dialog"
+import { PasswordSettings } from "./password-settings"
 import { useProfile, useUpdateProfile } from "@/queries/profile"
 import { format } from "date-fns"
 import { useQueryClient } from "@tanstack/react-query"
@@ -340,6 +341,7 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                   <h2 className="text-2xl font-semibold">Security</h2>
                 </div>
                 <div className="px-8 pb-8 space-y-6">
+                  <PasswordSettings />
                   <TwoFactorSettings />
                   <LinkedAccountsSettings />
                 </div>

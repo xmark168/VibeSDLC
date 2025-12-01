@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import { requireRole } from "@/utils/auth"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Users, Server, Settings, Activity, CreditCard } from "lucide-react"
+import { AdminLayout } from "@/components/admin/AdminLayout"
 
 export const Route = createFileRoute("/admin/")({
   beforeLoad: async () => {
@@ -12,6 +13,7 @@ export const Route = createFileRoute("/admin/")({
 
 function RouteComponent() {
   return (
+    <AdminLayout>
     <div className="container mx-auto p-6 space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Admin Dashboard</h1>
@@ -120,5 +122,6 @@ function RouteComponent() {
         
       </div>
     </div>
+    </AdminLayout>
   )
 }

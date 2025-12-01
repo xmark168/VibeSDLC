@@ -139,14 +139,22 @@ def login(
             # Find user with credential login
             user_service = UserService(session)
             user = user_service.get_by_email(str(login_data.email))
-            if not user or user.login_provider:
+            
+            if not user:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Email hoặc mật khẩu không đúng",
                 )
+            
+            # Check if user registered via OAuth (no password)
+            if user.login_provider and not user.hashed_password:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail=f"Tài khoản này được đăng ký thông qua {user.login_provider}. Vui lòng đăng nhập bằng {user.login_provider}.",
+                )
 
             # Verify password
-            if not verify_password(login_data.password, user.hashed_password):
+            if not user.hashed_password or not verify_password(login_data.password, user.hashed_password):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Email hoặc mật khẩu không đúng",
@@ -274,13 +282,21 @@ def register(
             detail="Mật khẩu xác nhận không khớp",
         )
 
-    # Check if email already exists with credential login
+    # Check if email already exists in the system (any provider)
     user_service = UserService(session)
     existing_user = user_service.get_by_email(str(register_data.email))
-    if existing_user and not existing_user.login_provider:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Email này đã được đăng ký"
-        )
+    if existing_user:
+        # Email already exists - block registration
+        if existing_user.login_provider:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Email này đã được đăng ký thông qua {existing_user.login_provider}. Vui lòng đăng nhập bằng {existing_user.login_provider}."
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email này đã được đăng ký"
+            )
 
     # Generate verification code
     code = generate_verification_code()

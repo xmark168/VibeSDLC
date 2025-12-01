@@ -14,12 +14,22 @@ export interface TwoFactorVerifySetupResponse {
 }
 
 export interface TwoFactorDisableRequest {
-  password: string;
+  password?: string;
   code: string;
 }
 
 export interface TwoFactorDisableResponse {
   message: string;
+}
+
+export interface TwoFactorRequestDisableRequest {
+  password?: string;
+}
+
+export interface TwoFactorRequestDisableResponse {
+  message: string;
+  masked_email: string;
+  expires_in: number;
 }
 
 export interface TwoFactorVerifyRequest {
@@ -36,6 +46,7 @@ export interface TwoFactorVerifyResponse {
 export interface TwoFactorStatusResponse {
   enabled: boolean;
   has_backup_codes: boolean;
+  requires_password: boolean;
 }
 
 export interface TwoFactorBackupCodesResponse {

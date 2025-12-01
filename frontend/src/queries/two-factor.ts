@@ -3,12 +3,14 @@ import {
   get2FAStatus,
   setup2FA,
   verifySetup2FA,
+  requestDisable2FA,
   disable2FA,
   verify2FALogin,
   regenerateBackupCodes,
 } from "@/apis/two-factor";
 import type {
   TwoFactorVerifySetupRequest,
+  TwoFactorRequestDisableRequest,
   TwoFactorDisableRequest,
   TwoFactorVerifyRequest,
 } from "@/types/two-factor";
@@ -39,6 +41,12 @@ export function useVerifySetup2FA() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: twoFactorKeys.status() });
     },
+  });
+}
+
+export function useRequestDisable2FA() {
+  return useMutation({
+    mutationFn: (data: TwoFactorRequestDisableRequest) => requestDisable2FA(data),
   });
 }
 

@@ -244,30 +244,46 @@ async def oauth_callback(
                 )
 
         # ========== LOGIN MODE ==========
-        # First, check if this provider account is linked to an existing user
+        user_service = UserService(session)
+        user = None
+        
+        # Step 1: Check if this provider account (by provider_user_id) is already linked
         user = linked_service.find_user_by_provider(provider_enum, provider_user_id)
         
         if user:
-            logger.info(f"Found user {user.id} via linked {provider} account")
+            logger.info(f"Found user {user.id} via linked {provider} account (provider_user_id)")
         else:
-            # Fallback: Check legacy OAuth users (email with provider suffix)
-            email_parts = original_email.rsplit('@', 1)
-            if len(email_parts) == 2:
-                unique_email = f"{email_parts[0]}+{provider.lower()}@{email_parts[1]}"
-            else:
-                unique_email = f"{original_email}+{provider.lower()}"
+            # Step 2: Check if email already exists in User table
+            user = user_service.get_by_email(original_email)
             
-            user_service = UserService(session)
-            user = user_service.get_by_email(unique_email)
-
-            if not user:
-                # Create new user with provider-specific email
-                logger.info(f"Creating new user for {provider_name}: {unique_email}")
+            if user:
+                # Email exists - auto-link this provider to existing user
+                logger.info(f"Email {original_email} exists, auto-linking {provider} to user {user.id}")
+                
+                # Check if this provider is already linked (by different provider_user_id)
+                existing_linked = linked_service.get_linked_account_by_provider(user.id, provider_enum)
+                
+                if not existing_linked:
+                    # Link the provider account
+                    linked_account = LinkedAccount(
+                        user_id=user.id,
+                        provider=provider_enum.value,
+                        provider_user_id=provider_user_id,
+                        provider_email=original_email,
+                    )
+                    session.add(linked_account)
+                    session.commit()
+                    logger.info(f"Auto-linked {provider} account to user {user.id}")
+                else:
+                    logger.info(f"Provider {provider} already linked to user {user.id}")
+            else:
+                # Step 3: Email doesn't exist - create new user with original email
+                logger.info(f"Creating new user with email: {original_email}")
                 user = User(
-                    email=unique_email,
+                    email=original_email,
                     full_name=user_info["name"],
                     login_provider=provider_name,
-                    avatar_url=user_info.get("avatar_url"),  # Save OAuth avatar
+                    avatar_url=user_info.get("avatar_url"),
                     is_active=True,
                     is_locked=False,
                 )
@@ -275,10 +291,10 @@ async def oauth_callback(
                 session.commit()
                 session.refresh(user)
                 
-                # Also create a linked account entry for the new user
+                # Create linked account entry
                 linked_account = LinkedAccount(
                     user_id=user.id,
-                    provider=provider_enum.value,  # Store as string value
+                    provider=provider_enum.value,
                     provider_user_id=provider_user_id,
                     provider_email=original_email,
                 )
@@ -286,8 +302,6 @@ async def oauth_callback(
                 session.commit()
                 
                 logger.info(f"Created new user {user.id} with linked {provider} account")
-            else:
-                logger.info(f"Found existing legacy user: {user.id} for {provider_name}")
 
         # Check if 2FA is enabled for this user
         if user.two_factor_enabled and user.totp_secret:
