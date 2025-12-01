@@ -1,6 +1,6 @@
 ## Project Overview
 
-Next.js 15 boilerplate with TypeScript, App Router, Prisma, NextAuth v5, Tailwind CSS 4, and shadcn/ui components. Uses pnpm as package manager.
+Next.js 15 boilerplate with TypeScript, App Router, Prisma, NextAuth v5, Tailwind CSS 4, and shadcn/ui components. Uses Bun as package manager.
 
 **Key Stack:**
 - Next.js 15 + React 19
@@ -15,28 +15,28 @@ Next.js 15 boilerplate with TypeScript, App Router, Prisma, NextAuth v5, Tailwin
 
 ```bash
 # Development
-pnpm dev                  # Start dev server with Turbopack
-pnpm dev:webpack          # Start dev server with Webpack (fallback)
+bun dev                   # Start dev server with Turbopack
+bun dev:webpack           # Start dev server with Webpack (fallback)
 
 # Build & Deploy
-pnpm run build            # Production build
-pnpm start                # Start production server
+bun run build             # Production build
+bun start                 # Start production server
 
 # Testing
-pnpm test                 # Run all tests
-pnpm test:watch           # Run tests in watch mode
-pnpm test:coverage        # Run tests with coverage report
+bun test                  # Run all tests
+bun test:watch            # Run tests in watch mode
+bun test:coverage         # Run tests with coverage report
 
 # Linting & Formatting
-pnpm lint                 # Run ESLint
-pnpm lint:fix             # Fix ESLint errors
-pnpm format               # Format with Prettier
+bun lint                  # Run ESLint
+bun lint:fix              # Fix ESLint errors
+bun format                # Format with Prettier
 
 # Database (Prisma)
-pnpm exec prisma generate     # Generate Prisma Client (after schema changes)
-pnpm exec prisma db push      # Push schema changes to database (dev)
-pnpm exec prisma migrate dev  # Create and apply migrations (production-ready)
-pnpm exec prisma studio       # Open Prisma Studio GUI
+bunx prisma generate      # Generate Prisma Client (after schema changes)
+bunx prisma db push       # Push schema changes to database (dev)
+bunx prisma migrate dev   # Create and apply migrations (production-ready)
+bunx prisma studio        # Open Prisma Studio GUI
 ```
 
 ## Next.js 15 App Router Conventions
@@ -110,7 +110,7 @@ Always follow this flow when implementing features:
 1. **Database Schema** (`prisma/schema.prisma`)
    - **APPEND new models at end of file, PRESERVE existing models**
    - Auth models (User, Account, Session, VerificationToken) are REQUIRED
-   - Run `pnpm exec prisma generate && pnpm exec prisma db push`
+   - Run `bunx prisma generate && bunx prisma db push`
 
 2. **Type Definitions** (`src/types/api.types.ts`)
    - **NEVER overwrite existing types**
@@ -513,6 +513,43 @@ revalidateTag('products');
 - Use `unknown` instead of `any`
 - Always define explicit types
 
+### Import/Export Conventions (CRITICAL)
+
+This project uses **named exports** (NOT default exports).
+
+**Export Pattern:**
+```typescript
+// Components - named export
+export function SearchBar() { ... }
+
+// Services/Utils - named export
+export const textbookService = { ... };
+export function formatPrice() { ... }
+
+// Types - named export
+export interface Textbook { ... }
+export type SearchResult = { ... };
+```
+
+**Import Pattern (MUST match export):**
+```typescript
+// CORRECT - named imports
+import { SearchBar } from '@/components/SearchBar';
+import { textbookService } from '@/lib/data/textbook-service';
+import { Textbook } from '@/types/api.types';
+```
+
+**WRONG - These will cause errors:**
+```typescript
+// WRONG - default imports (will fail with "Missing default export")
+import SearchBar from '@/components/SearchBar';
+import textbookService from '@/lib/data/textbook-service';
+
+// WRONG - default exports (don't use)
+export default function SearchBar() { ... }
+export default { ... };
+```
+
 ### Import Paths
 ```typescript
 import { Button } from '@/components/ui/button';
@@ -527,8 +564,20 @@ import { createProduct } from '@/actions/product-actions';
 
 ## Testing Guidelines
 
+### Available Test Packages
+| Package | Purpose |
+|---------|---------|
+| `jest` | Test runner |
+| `@testing-library/react` | React component testing |
+| `@testing-library/jest-dom` | DOM matchers (toBeInTheDocument, etc.) |
+| `@testing-library/user-event` | User interaction simulation |
+| `msw` | API mocking (Mock Service Worker) |
+| `node-mocks-http` | Next.js API routes testing |
+| `@faker-js/faker` | Generate fake test data |
+
+### Component Testing
+
 ```typescript
-// Component test
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -543,6 +592,329 @@ describe('ProductForm', () => {
     expect(mockAction).toHaveBeenCalled();
   });
 });
+```
+
+### API Route Testing (node-mocks-http)
+
+```typescript
+import { createMocks } from 'node-mocks-http';
+import { GET, POST } from '@/app/api/products/route';
+
+describe('/api/products', () => {
+  it('GET returns products list', async () => {
+    const { req } = createMocks({ method: 'GET' });
+    const response = await GET(req);
+    const data = await response.json();
+    
+    expect(response.status).toBe(200);
+    expect(data.success).toBe(true);
+  });
+
+  it('POST creates a product', async () => {
+    const { req } = createMocks({
+      method: 'POST',
+      body: { name: 'Test Product', price: 100 },
+    });
+    const response = await POST(req);
+    
+    expect(response.status).toBe(201);
+  });
+});
+```
+
+### Using Faker for Test Data
+
+```typescript
+import { faker } from '@faker-js/faker';
+
+// Generate mock user
+const mockUser = {
+  id: faker.string.uuid(),
+  name: faker.person.fullName(),
+  email: faker.internet.email(),
+  avatar: faker.image.avatar(),
+};
+
+// Generate mock product
+const mockProduct = {
+  id: faker.string.uuid(),
+  name: faker.commerce.productName(),
+  price: faker.number.float({ min: 10, max: 1000, fractionDigits: 2 }),
+  description: faker.commerce.productDescription(),
+};
+
+// Generate array of items
+const mockProducts = faker.helpers.multiple(
+  () => ({
+    id: faker.string.uuid(),
+    name: faker.commerce.productName(),
+    price: faker.number.float({ min: 10, max: 100 }),
+  }),
+  { count: 5 }
+);
+```
+
+### MSW for API Mocking
+
+```typescript
+// src/__tests__/mocks/handlers.ts
+import { http, HttpResponse } from 'msw';
+
+export const handlers = [
+  http.get('/api/products', () => {
+    return HttpResponse.json({
+      success: true,
+      data: [{ id: '1', name: 'Product 1' }],
+    });
+  }),
+];
+
+// In test file
+import { server } from './mocks/server';
+
+beforeAll(() => server.listen());
+afterEach(() => server.resetHandlers());
+afterAll(() => server.close());
+```
+
+## Error Handling
+
+### API Response Helpers
+
+```typescript
+import { successResponse, handleError, ApiErrors } from '@/lib/api-response';
+
+// Success responses
+return successResponse(data);                    // 200 OK
+return successResponse(data, 'Created', 201);    // 201 Created
+
+// Error responses (throw these, handleError will catch)
+throw ApiErrors.badRequest('Invalid input');     // 400
+throw ApiErrors.unauthorized();                  // 401
+throw ApiErrors.forbidden();                     // 403
+throw ApiErrors.notFound('Product');             // 404
+throw ApiErrors.conflict('Email already exists'); // 409
+
+// In route handler
+export async function POST(request: NextRequest) {
+  try {
+    // ... logic
+    return successResponse(result, 'Created', 201);
+  } catch (error) {
+    return handleError(error); // Automatically formats error response
+  }
+}
+```
+
+### Server Action Error Handling
+
+```typescript
+'use server';
+
+export async function createProduct(formData: FormData) {
+  const validated = productSchema.safeParse(data);
+  
+  if (!validated.success) {
+    return { error: validated.error.flatten().fieldErrors };
+  }
+  
+  try {
+    const product = await prisma.product.create({ data: validated.data });
+    revalidatePath('/products');
+    return { success: true, data: product };
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === 'P2002') {
+        return { error: 'Product already exists' };
+      }
+    }
+    return { error: 'Failed to create product' };
+  }
+}
+```
+
+## Form Handling (React Hook Form + Zod)
+
+### Basic Form Pattern
+
+```typescript
+'use client';
+
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { productSchema, ProductRequest } from '@/types/api.types';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+
+export function ProductForm() {
+  const form = useForm<ProductRequest>({
+    resolver: zodResolver(productSchema),
+    defaultValues: {
+      name: '',
+      price: 0,
+    },
+  });
+
+  async function onSubmit(data: ProductRequest) {
+    // Handle submission
+  }
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <FormField
+          control={form.control}
+          name="name"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Name</FormLabel>
+              <FormControl>
+                <Input placeholder="Product name" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <Button type="submit" disabled={form.formState.isSubmitting}>
+          {form.formState.isSubmitting ? 'Creating...' : 'Create'}
+        </Button>
+      </form>
+    </Form>
+  );
+}
+```
+
+## State Management (Zustand)
+
+### Creating a Store
+
+```typescript
+// src/store/cart-store.ts
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+
+interface CartItem {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+}
+
+interface CartStore {
+  items: CartItem[];
+  addItem: (item: Omit<CartItem, 'quantity'>) => void;
+  removeItem: (id: string) => void;
+  updateQuantity: (id: string, quantity: number) => void;
+  clearCart: () => void;
+  total: () => number;
+}
+
+export const useCartStore = create<CartStore>()(
+  persist(
+    (set, get) => ({
+      items: [],
+      
+      addItem: (item) => set((state) => {
+        const existing = state.items.find((i) => i.id === item.id);
+        if (existing) {
+          return {
+            items: state.items.map((i) =>
+              i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i
+            ),
+          };
+        }
+        return { items: [...state.items, { ...item, quantity: 1 }] };
+      }),
+      
+      removeItem: (id) => set((state) => ({
+        items: state.items.filter((i) => i.id !== id),
+      })),
+      
+      updateQuantity: (id, quantity) => set((state) => ({
+        items: state.items.map((i) =>
+          i.id === id ? { ...i, quantity } : i
+        ),
+      })),
+      
+      clearCart: () => set({ items: [] }),
+      
+      total: () => get().items.reduce(
+        (sum, item) => sum + item.price * item.quantity, 0
+      ),
+    }),
+    { name: 'cart-storage' }
+  )
+);
+```
+
+### Using Store in Components
+
+```typescript
+'use client';
+
+import { useCartStore } from '@/store/cart-store';
+
+export function CartButton() {
+  const { items, total } = useCartStore();
+  
+  return (
+    <button>
+      Cart ({items.length}) - ${total()}
+    </button>
+  );
+}
+
+export function AddToCartButton({ product }: { product: Product }) {
+  const addItem = useCartStore((state) => state.addItem);
+  
+  return (
+    <button onClick={() => addItem(product)}>
+      Add to Cart
+    </button>
+  );
+}
+```
+
+## Environment Variables
+
+### Required Variables
+
+```bash
+# .env (DO NOT commit to git)
+DATABASE_URL="postgresql://user:password@localhost:5432/mydb"
+AUTH_SECRET="your-random-secret-key"
+
+# Optional
+NEXTAUTH_URL="http://localhost:3000"
+```
+
+### Usage in Code
+
+```typescript
+// Server-side only (default)
+const dbUrl = process.env.DATABASE_URL;
+
+// Client-side (must prefix with NEXT_PUBLIC_)
+const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+
+// Type-safe env validation (recommended)
+// src/lib/env.ts
+import { z } from 'zod';
+
+const envSchema = z.object({
+  DATABASE_URL: z.string().url(),
+  AUTH_SECRET: z.string().min(32),
+});
+
+export const env = envSchema.parse(process.env);
 ```
 
 ## Project Structure
@@ -581,7 +953,7 @@ src/
 2. **Server Components for data fetching** - Use Prisma directly, no API calls
 3. **Always validate inputs** - Use Zod on server side
 4. **Always use revalidatePath/revalidateTag** - After mutations
-5. **Never skip Prisma generation** - Run `pnpm exec prisma generate` after schema changes
+5. **Never skip Prisma generation** - Run `bunx prisma generate` after schema changes
 6. **PRESERVE existing code** - Append new types/models, don't overwrite
 7. **Use existing shadcn/ui components** - Before creating custom ones
 8. **Test new features** - Write tests before committing

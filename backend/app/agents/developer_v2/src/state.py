@@ -81,8 +81,9 @@ class DeveloperState(TypedDict, total=False):
     agents_md: Optional[str]  # Raw AGENTS.md content
     
     # Project config (passed in, not auto-detected)
-    # Single service: {"tech_stack": "nextjs", "install_cmd": "bun install", "test_cmd": "bun test"}
-    # Multi-service:  {"tech_stack": "fullstack", "services": {"frontend": {...}, "backend": {...}}}
+    # tech_stack format: {"name": "project_name", "service": [...]}
+    # Single:  {"tech_stack": {"name": "my-app", "service": [{"name": "app", "install_cmd": "bun install", "test_cmd": "bun test", "needs_db": true}]}}
+    # Multi:   {"tech_stack": {"name": "my-monorepo", "service": [{"name": "frontend", ...}, {"name": "backend", ...}]}}
     project_config: Optional[Dict[str, Any]]
     
     # Debug and feedback logs

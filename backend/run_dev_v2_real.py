@@ -119,12 +119,19 @@ def copy_boilerplate(template_name: str, target_path: Path) -> bool:
         target_path.mkdir(parents=True, exist_ok=True)
         return False
     
+    # Directories to ignore when copying
+    IGNORE_DIRS = {'node_modules', '.next', '__pycache__', '.bun'}
+    
+    def ignore_patterns(directory, files):
+        """Return list of files/dirs to ignore."""
+        return [f for f in files if f in IGNORE_DIRS]
+    
     try:
-        # Copy entire template directory
+        # Copy entire template directory (excluding node_modules, .git, etc.)
         if target_path.exists():
             shutil.rmtree(target_path)
         
-        shutil.copytree(source_path, target_path)
+        shutil.copytree(source_path, target_path, ignore=ignore_patterns)
         logger.info(f"Copied boilerplate '{template_dir}' to {target_path}")
         
         # Count files copied
@@ -270,130 +277,113 @@ class SimpleDeveloperRunner:
         """Get project config based on template type.
         
         Returns:
-            Always uses services array format:
-            {"tech_stack": "...", "services": [{...}, {...}]}
+            tech_stack format: {"name": "project_name", "service": [...]}
+            {"tech_stack": {"name": "my-app", "service": [{"name": "app", ...}, ...]}}
         """
         # Default config for NextJS boilerplate (single service)
         if self.template in ["nextjs", "react"]:
             return {
-                "tech_stack": "nextjs",
-                "services": [
-                    {
-                        "name": "app",
-                        "path": ".",
-                        # Runtime & Framework
-                        "runtime": "bun",
-                        "framework": "nextjs",
-                        # ORM & Database
-                        "orm": "prisma",
-                        "db_type": "postgresql",
-                        # Validation & Auth
-                        "validation": "zod",
-                        "auth": "next-auth",
-                        # Commands
-                        "install_cmd": "bun install",
-                        "test_cmd": "bun test",
-                        "run_cmd": "bun dev",
-                        "build_cmd": "bun run build",
-                        "lint_cmd": "bun run lint",
-                        # Auto-fix commands (run before code review)
-                        "lint_fix_cmd": "bunx eslint --fix . --ext .ts,.tsx,.js,.jsx",
-                        "format_cmd": "bunx prettier --write .",
-                        # DB setup
-                        "needs_db": True,
-                        "db_cmds": ["bunx prisma generate", "bunx prisma db push --accept-data-loss"],
-                    }
-                ]
+                "tech_stack": {
+                    "name": "nextjs-app",
+                    "service": [
+                        {
+                            "name": "app",
+                            "path": ".",
+                            "runtime": "bun",
+                            "framework": "nextjs",
+                            "orm": "prisma",
+                            "db_type": "postgresql",
+                            "validation": "zod",
+                            "auth": "next-auth",
+                            "install_cmd": "bun install",
+                            "test_cmd": "bun run test",
+                            "run_cmd": "bun dev",
+                            "build_cmd": "bun run build",
+                            "lint_cmd": "bun run lint",
+                            "lint_fix_cmd": "bunx eslint --fix . --ext .ts,.tsx,.js,.jsx",
+                            "format_cmd": "bunx prettier --write .",
+                            "needs_db": True,
+                            "db_cmds": ["bunx prisma generate", "bunx prisma db push --accept-data-loss"],
+                        }
+                    ]
+                }
             }
         
         # Python projects (single service)
         if self.template == "python":
             return {
-                "tech_stack": "python",
-                "services": [
-                    {
-                        "name": "app",
-                        "path": ".",
-                        # Runtime & Framework
-                        "runtime": "python",
-                        "framework": "fastapi",
-                        # ORM & Database
-                        "orm": "sqlalchemy",
-                        "db_type": "postgresql",
-                        # Validation
-                        "validation": "pydantic",
-                        # Commands
-                        "install_cmd": "pip install -e .",
-                        "test_cmd": "pytest -v",
-                        "run_cmd": "uvicorn app.main:app --reload",
-                        "build_cmd": "",
-                        "lint_cmd": "ruff check .",
-                        # Auto-fix commands (run before code review)
-                        "lint_fix_cmd": "ruff check --fix .",
-                        "format_cmd": "ruff format .",
-                        # DB setup
-                        "needs_db": False,
-                        "db_cmds": [],
-                    }
-                ]
+                "tech_stack": {
+                    "name": "python-app",
+                    "service": [
+                        {
+                            "name": "app",
+                            "path": ".",
+                            "runtime": "python",
+                            "framework": "fastapi",
+                            "orm": "sqlalchemy",
+                            "db_type": "postgresql",
+                            "validation": "pydantic",
+                            "install_cmd": "pip install -e .",
+                            "test_cmd": "pytest -v",
+                            "run_cmd": "uvicorn app.main:app --reload",
+                            "build_cmd": "",
+                            "lint_cmd": "ruff check .",
+                            "lint_fix_cmd": "ruff check --fix .",
+                            "format_cmd": "ruff format .",
+                            "needs_db": False,
+                            "db_cmds": [],
+                        }
+                    ]
+                }
             }
         
         # Fullstack monorepo (multi-service)
         if self.template == "fullstack":
             return {
-                "tech_stack": "fullstack",
-                "services": [
-                    {
-                        "name": "frontend",
-                        "path": "frontend",
-                        # Runtime & Framework
-                        "runtime": "bun",
-                        "framework": "nextjs",
-                        # Validation & Auth
-                        "validation": "zod",
-                        "auth": "next-auth",
-                        # Commands
-                        "install_cmd": "bun install",
-                        "test_cmd": "bun test",
-                        "run_cmd": "bun dev",
-                        "build_cmd": "bun run build",
-                        "lint_cmd": "bun run lint",
-                        # Auto-fix commands
-                        "lint_fix_cmd": "bunx eslint --fix . --ext .ts,.tsx,.js,.jsx",
-                        "format_cmd": "bunx prettier --write .",
-                        # No DB for frontend
-                        "needs_db": False,
-                        "db_cmds": [],
-                    },
-                    {
-                        "name": "backend",
-                        "path": "backend",
-                        # Runtime & Framework
-                        "runtime": "python",
-                        "framework": "fastapi",
-                        # ORM & Database
-                        "orm": "sqlalchemy",
-                        "db_type": "postgresql",
-                        # Validation
-                        "validation": "pydantic",
-                        # Commands
-                        "install_cmd": "pip install -e .",
-                        "test_cmd": "pytest -v",
-                        "run_cmd": "uvicorn app.main:app --reload",
-                        "build_cmd": "",
-                        "lint_cmd": "ruff check .",
-                        # Auto-fix commands
-                        "lint_fix_cmd": "ruff check --fix .",
-                        "format_cmd": "ruff format .",
-                        # DB setup
-                        "needs_db": True,
-                        "db_cmds": ["alembic upgrade head"],
-                    },
-                ]
+                "tech_stack": {
+                    "name": "fullstack-monorepo",
+                    "service": [
+                        {
+                            "name": "frontend",
+                            "path": "frontend",
+                            "runtime": "bun",
+                            "framework": "nextjs",
+                            "validation": "zod",
+                            "auth": "next-auth",
+                            "install_cmd": "bun install",
+                            "test_cmd": "bun run test",
+                            "run_cmd": "bun dev",
+                            "build_cmd": "bun run build",
+                            "lint_cmd": "bun run lint",
+                            "lint_fix_cmd": "bunx eslint --fix . --ext .ts,.tsx,.js,.jsx",
+                            "format_cmd": "bunx prettier --write .",
+                            "needs_db": False,
+                            "db_cmds": [],
+                        },
+                        {
+                            "name": "backend",
+                            "path": "backend",
+                            "runtime": "python",
+                            "framework": "fastapi",
+                            "orm": "sqlalchemy",
+                            "db_type": "postgresql",
+                            "validation": "pydantic",
+                            "install_cmd": "pip install -e .",
+                            "test_cmd": "pytest -v",
+                            "run_cmd": "uvicorn app.main:app --reload",
+                            "build_cmd": "",
+                            "lint_cmd": "ruff check .",
+                            "lint_fix_cmd": "ruff check --fix .",
+                            "format_cmd": "ruff format .",
+                            "needs_db": True,
+                            "db_cmds": ["alembic upgrade head"],
+                        },
+                    ]
+                }
             }
         
-        # Default: auto-detect (empty services triggers fallback)
-        return {"services": []}
+        # Default: empty service triggers error in nodes.py
+        return {"tech_stack": {"name": "", "service": []}}
     
     async def run_story(self, story: dict) -> dict:
         """Run a story through the graph."""
@@ -501,7 +491,7 @@ class SimpleDeveloperRunner:
             "run_result": None,
             "run_stdout": "",
             "run_stderr": "",
-            "test_command": None,  # Auto-detect test framework (pnpm/npm/jest/pytest)
+            "test_command": None,  # Auto-detect test framework (bun/npm/jest/pytest)
             "error_logs": "",
             
             # Debug

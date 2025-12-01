@@ -294,46 +294,6 @@ def _setup_tool_context(workspace_path: str = None, project_id: str = None, task
     if project_id:
         set_tool_context(project_id=project_id, task_id=task_id, workspace_path=workspace_path)
 
-
-
-def _detect_task_type(story_title: str, story_content: str) -> str:
-    """Detect task type from story content using keyword matching."""
-    text = f"{story_title} {story_content}".lower()
-    
-    # Bug fix keywords
-    if any(kw in text for kw in ["bug", "fix", "error", "issue", "broken", "crash", "lỗi", "sửa"]):
-        return "bugfix"
-    
-    # Refactor keywords
-    if any(kw in text for kw in ["refactor", "optimize", "improve", "clean", "restructure", "tối ưu"]):
-        return "refactor"
-    
-    # Test keywords
-    if any(kw in text for kw in ["test", "unit test", "e2e", "coverage", "kiểm thử"]):
-        return "test"
-    
-    # Documentation keywords
-    if any(kw in text for kw in ["document", "readme", "comment", "tài liệu"]):
-        return "documentation"
-    
-    # Default to feature
-    return "feature"
-
-
-def _estimate_complexity(story_content: str, acceptance_criteria: list) -> str:
-    """Estimate task complexity based on content analysis."""
-    content_len = len(story_content)
-    ac_count = len(acceptance_criteria)
-    
-    # Simple heuristics
-    if content_len < 200 and ac_count <= 2:
-        return "low"
-    elif content_len > 1000 or ac_count > 5:
-        return "high"
-    else:
-        return "medium"
-
-
 async def router(state: DeveloperState, agent=None) -> DeveloperState:
     """
     Route story to appropriate processing node.
@@ -636,6 +596,22 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
 {chr(10).join(f'- {f}' for f in design_result.file_structure)}
 """
         
+        # Save design doc to workspace
+        story_id = state.get("story_id", "unknown")
+        design_id = state.get("task_id") or story_id
+        if workspace_path:
+            design_dir = f"docs/story_{story_id}"
+            design_file = f"{design_dir}/design-{design_id}.md"
+            try:
+                result = write_file_safe.invoke({
+                    "file_path": design_file,
+                    "content": design_doc,
+                    "mode": "w"
+                })
+                logger.info(f"[design] Saved design doc: {design_file}")
+            except Exception as e:
+                logger.warning(f"[design] Failed to save design doc: {e}")
+        
         return {
             **state,
             "system_design": design_result.model_dump(),
@@ -673,14 +649,15 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
         # Build structure guidance from project_config if provided
         structure_guidance = ""
         if project_config:
-            tech_stack = project_config.get("tech_stack", "")
-            if tech_stack:
+            tech_stack = project_config.get("tech_stack", {})
+            if tech_stack and isinstance(tech_stack, dict):
+                tech_name = tech_stack.get("name", "")
+                services = tech_stack.get("service", [])
+                services_info = ", ".join(s.get("name", "") for s in services) if services else "N/A"
                 structure_guidance = f"""
 === PROJECT CONFIG ===
-Tech Stack: {tech_stack}
-Install Command: {project_config.get('install_cmd', 'npm install')}
-Test Command: {project_config.get('test_cmd', 'npm test')}
-Run Command: {project_config.get('run_cmd', 'npm run dev')}
+Tech Stack: {tech_name}
+Services: {services_info}
 
 IMPORTANT: Follow AGENTS.md conventions for file paths!
 """
@@ -860,10 +837,13 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         
         # Add project config info if provided
         if project_config:
+            tech_stack = project_config.get('tech_stack', {})
+            tech_name = tech_stack.get('name', 'unknown') if isinstance(tech_stack, dict) else 'unknown'
+            services = tech_stack.get('service', []) if isinstance(tech_stack, dict) else []
+            services_info = ", ".join(s.get("name", "") for s in services) if services else "N/A"
             config_info = f"""## PROJECT CONFIG
-Tech Stack: {project_config.get('tech_stack', 'unknown')}
-Install: {project_config.get('install_cmd', 'npm install')}
-Test: {project_config.get('test_cmd', 'npm test')}
+Tech Stack: {tech_name}
+Services: {services_info}
 """
             full_related_context = f"{config_info}\n---\n\n{full_related_context}"
         
@@ -943,12 +923,17 @@ Test: {project_config.get('test_cmd', 'npm test')}
                 code_snippet=code_change.code_snippet,
                 description=code_change.description or step.get("description", "")
             )
+        
+        # Normalize path separators for Windows compatibility
+        if code_change.file_path:
+            code_change.file_path = code_change.file_path.replace("/", os.sep)
+        
         logger.info(f"[implement] Got code from structured output")
         
         logger.info(f"[implement] Step {current_step + 1}: {code_change.action} {code_change.file_path}")
         
         # IMPORTANT: Write the generated code to file using write_file_safe tool
-        if workspace_path and code_change.code_snippet:
+        if workspace_path and code_change.code_snippet and code_change.file_path:
             try:
                 result = write_file_safe.invoke({
                     "file_path": code_change.file_path,
@@ -1618,16 +1603,11 @@ async def lint_and_format(state: DeveloperState, agent=None) -> DeveloperState:
         return state
     
     project_config = state.get("project_config", {})
-    services = project_config.get("services", [])
-    
-    # If no services config, use project_config tech_stack
-    if not services and project_config.get("tech_stack"):
-        tech_stack = project_config.get("tech_stack", "").lower()
-        runtime = "pnpm" if "next" in tech_stack or "node" in tech_stack else "python" if "python" in tech_stack else "node"
-        services = [{"name": "app", "path": ".", "runtime": runtime}]
+    tech_stack = project_config.get("tech_stack", {})
+    services = tech_stack.get("service", []) if isinstance(tech_stack, dict) else []
     
     if not services:
-        logger.info("[lint_and_format] No services config, skipping")
+        logger.info("[lint_and_format] No tech_stack.service config, skipping")
         return state
     
     fixed_count = 0
@@ -1638,21 +1618,48 @@ async def lint_and_format(state: DeveloperState, agent=None) -> DeveloperState:
         svc_path = str(Path(workspace_path) / svc.get("path", "."))
         runtime = svc.get("runtime", "node")
         
+        # Run install first (before lint/format)
+        install_cmd = svc.get("install_cmd")
+        if install_cmd:
+            logger.info(f"[lint_and_format] Installing deps for {svc_name}: {install_cmd}")
+            try:
+                execute_shell.invoke({
+                    "command": install_cmd,
+                    "working_directory": svc_path,
+                    "timeout": 180
+                })
+            except Exception as e:
+                logger.warning(f"[lint_and_format] Install error: {e}")
+        
+        # Run db_cmds (prisma generate) if needed
+        db_cmds = svc.get("db_cmds", [])
+        for db_cmd in db_cmds:
+            if "prisma generate" in db_cmd:
+                logger.info(f"[lint_and_format] Running: {db_cmd}")
+                try:
+                    execute_shell.invoke({
+                        "command": db_cmd,
+                        "working_directory": svc_path,
+                        "timeout": 60
+                    })
+                except Exception as e:
+                    logger.warning(f"[lint_and_format] DB cmd error: {e}")
+        
         # Use custom commands if provided, otherwise use defaults
         lint_fix_cmd = svc.get("lint_fix_cmd")
         format_cmd = svc.get("format_cmd")
         
         if not lint_fix_cmd and not format_cmd:
-            # Default commands based on runtime
-            if runtime in ["pnpm", "node"]:
-                lint_fix_cmd = "pnpm exec eslint --fix . --ext .ts,.tsx,.js,.jsx 2>/dev/null || true"
-                format_cmd = "pnpm exec prettier --write . 2>/dev/null || true"
-            elif runtime == "bun":
-                lint_fix_cmd = "bunx eslint --fix . --ext .ts,.tsx,.js,.jsx 2>/dev/null || true"
-                format_cmd = "bunx prettier --write . 2>/dev/null || true"
+            # Default commands based on runtime (no Unix redirects for Windows compatibility)
+            if runtime in ["bun"]:
+                lint_fix_cmd = "bunx eslint --fix . --ext .ts,.tsx,.js,.jsx"
+                format_cmd = "bunx prettier --write ."
+            elif runtime in ["pnpm", "node"]:
+                lint_fix_cmd = "pnpm exec eslint --fix . --ext .ts,.tsx,.js,.jsx"
+                format_cmd = "pnpm exec prettier --write ."
             elif runtime == "python":
-                lint_fix_cmd = "ruff check --fix . 2>/dev/null || true"
-                format_cmd = "ruff format . 2>/dev/null || true"
+                lint_fix_cmd = "ruff check --fix ."
+                format_cmd = "ruff format ."
             else:
                 continue
         
@@ -1661,8 +1668,7 @@ async def lint_and_format(state: DeveloperState, agent=None) -> DeveloperState:
         # Execute lint fix
         if lint_fix_cmd:
             try:
-                cmd = f"cd {svc_path} && {lint_fix_cmd}"
-                result = execute_shell.invoke({"command": cmd, "timeout": 60})
+                result = execute_shell.invoke({"command": lint_fix_cmd, "working_directory": workspace_path, "timeout": 60})
                 if isinstance(result, dict):
                     output = result.get("stdout", "") + result.get("stderr", "")
                     lint_output += f"\n=== {svc_name} lint ===\n{output}"
@@ -1675,8 +1681,7 @@ async def lint_and_format(state: DeveloperState, agent=None) -> DeveloperState:
         # Execute format
         if format_cmd:
             try:
-                cmd = f"cd {svc_path} && {format_cmd}"
-                result = execute_shell.invoke({"command": cmd, "timeout": 60})
+                result = execute_shell.invoke({"command": format_cmd, "working_directory": workspace_path, "timeout": 60})
                 if isinstance(result, dict):
                     output = result.get("stdout", "") + result.get("stderr", "")
                     lint_output += f"\n=== {svc_name} format ===\n{output}"
@@ -1902,89 +1907,69 @@ async def _run_code_multi_service(state: DeveloperState, workspace_path: str, se
             logger.info(f"[run_code] Running tests for {svc_name} at {svc_path}")
             all_stdout += f"\n\n{'='*40}\n SERVICE: {svc_name}\n{'='*40}\n"
             
-            # Build commands for this service
+            # Build commands for this service (no cd, use working_directory instead)
             commands = []
             if install_cmd:
-                commands.append(f"cd {svc_config.get('path', svc_name)} && {install_cmd}")
+                commands.append(install_cmd)
             for db_cmd in db_cmds:
-                commands.append(f"cd {svc_config.get('path', svc_name)} && {db_cmd}")
-            commands.append(f"cd {svc_config.get('path', svc_name)} && {test_cmd}")
+                commands.append(db_cmd)
+            commands.append(test_cmd)
             
             svc_passed = True
             
-            # If any service needs DB, use container
+            # Start DB container if needed (just for database connection)
             if needs_db:
                 try:
                     set_container_context(branch_name=branch_name, workspace_path=workspace_path)
-                    container_info = dev_container_manager.get_or_create(
+                    dev_container_manager.get_or_create(
                         branch_name=branch_name,
                         workspace_path=workspace_path,
                         project_type="node",
                     )
+                    logger.info(f"[run_code] DB container started for {svc_name}")
+                except Exception as e:
+                    logger.warning(f"[run_code] DB container error (continuing anyway): {e}")
+            
+            # Always run commands directly on host
+            # Use working_directory parameter for Windows compatibility
+            for base_cmd in commands:
+                cmd_span = svc_span.span(name=f"exec:{base_cmd[:40]}...") if svc_span else None
+                
+                try:
+                    timeout = 300 if "install" in base_cmd else 120
+                    result = execute_shell.invoke({"command": base_cmd, "working_directory": workspace_path, "timeout": timeout})
                     
-                    for cmd in commands:
-                        # Command-level span
-                        cmd_span = svc_span.span(name=f"exec:{cmd[:40]}...") if svc_span else None
-                        
-                        # Longer timeout for install commands (300s vs 120s default)
-                        timeout = 300 if "install" in cmd else 120
-                        result = dev_container_manager.exec(branch_name, cmd, timeout=timeout)
-                        all_stdout += f"\n$ {cmd}\n{result.get('output', '')}"
-                        
+                    if isinstance(result, str):
+                        import json
+                        result = json.loads(result)
+                    
+                    if isinstance(result, dict):
+                        all_stdout += f"\n$ {base_cmd}\n{result.get('stdout', '')}"
                         exit_code = result.get("exit_code", 0)
-                        if cmd_span:
-                            cmd_span.end(output={"exit_code": exit_code, "output_len": len(result.get("output", ""))})
                         
-                        if exit_code != 0 and "test" in cmd.lower():
-                            test_output = result.get("output", "")
+                        if cmd_span:
+                            cmd_span.end(output={"exit_code": exit_code})
+                        
+                        if exit_code != 0 and "test" in base_cmd.lower():
+                            test_output = result.get("stdout", "") + result.get("stderr", "")
                             all_stderr += test_output
                             all_passed = False
                             svc_passed = False
                             summaries.append(f"{svc_name}: FAIL")
-                            # Log test failure details
                             logger.error(f"[run_code] TEST FAILED for {svc_name}:\n{test_output[:2000]}")
-                            # Write to log file
                             task_id = state.get("task_id") or state.get("story_id", "unknown")
                             _write_test_log(task_id, test_output, "FAIL")
                             break
-                    else:
-                        summaries.append(f"{svc_name}: PASS")
-                        
                 except Exception as e:
-                    logger.error(f"[run_code] Container error for {svc_name}: {e}")
+                    if cmd_span:
+                        cmd_span.end(output={"error": str(e)})
+                    all_stderr += f"\nError: {e}"
                     all_passed = False
                     svc_passed = False
                     summaries.append(f"{svc_name}: ERROR")
+                    break
             else:
-                # Direct execution for services without DB
-                for cmd in commands:
-                    cmd_span = svc_span.span(name=f"exec:{cmd[:40]}...") if svc_span else None
-                    
-                    try:
-                        result = execute_shell.invoke({"command": cmd, "timeout": 300})
-                        if isinstance(result, dict):
-                            all_stdout += f"\n$ {cmd}\n{result.get('stdout', '')}"
-                            exit_code = result.get("exit_code", 0)
-                            
-                            if cmd_span:
-                                cmd_span.end(output={"exit_code": exit_code})
-                            
-                            if exit_code != 0 and "test" in cmd.lower():
-                                all_stderr += result.get("stderr", "")
-                                all_passed = False
-                                svc_passed = False
-                                summaries.append(f"{svc_name}: FAIL")
-                                break
-                    except Exception as e:
-                        if cmd_span:
-                            cmd_span.end(output={"error": str(e)})
-                        all_stderr += f"\nError: {e}"
-                        all_passed = False
-                        svc_passed = False
-                        summaries.append(f"{svc_name}: ERROR")
-                        break
-                else:
-                    summaries.append(f"{svc_name}: PASS")
+                summaries.append(f"{svc_name}: PASS")
             
             # End service span
             if svc_span:
@@ -1998,19 +1983,7 @@ async def _run_code_multi_service(state: DeveloperState, workspace_path: str, se
         # Start dev server if tests pass
         app_url = None
         if run_status == "PASS":
-            try:
-                container_info = dev_container_manager.get_or_create(
-                    branch_name=branch_name,
-                    workspace_path=workspace_path,
-                    project_type="node",
-                )
-                # Start dev server in background
-                dev_container_manager.exec(branch_name, "nohup pnpm run dev > /tmp/dev.log 2>&1 &", timeout=10)
-                host_port = container_info.get("host_port", 3000)
-                app_url = f"http://localhost:{host_port}"
-                logger.info(f"[run_code] Dev server started at {app_url}")
-            except Exception as dev_err:
-                logger.warning(f"[run_code] Failed to start dev server: {dev_err}")
+           print('completed tests successfully')
         
         # End parent span
         if parent_span:
@@ -2066,40 +2039,27 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         # Setup tool context for shell tools
         _setup_tool_context(workspace_path, project_id, task_id)
         
-        # Require project_config
+        # Require project_config.tech_stack.service (array of service configs)
         project_config = state.get("project_config", {})
-        if not project_config or not project_config.get("tech_stack"):
-            logger.error("[run_code] Missing project_config.tech_stack")
+        tech_stack = project_config.get("tech_stack", {})
+        services = tech_stack.get("service", []) if isinstance(tech_stack, dict) else []
+        
+        if not services:
+            logger.error("[run_code] Missing project_config.tech_stack.service")
             if run_code_span:
-                run_code_span.end(output={"status": "ERROR", "reason": "Missing project_config"})
+                run_code_span.end(output={"status": "ERROR", "reason": "Missing tech_stack.service"})
             return {
                 **state,
                 "run_status": "ERROR",
-                "run_result": {"status": "ERROR", "summary": "Missing project_config.tech_stack"},
+                "run_result": {"status": "ERROR", "summary": "Missing project_config.tech_stack.service"},
             }
         
-        # Multi-service (has services array)
-        services = project_config.get("services", [])
-        if services:
-            svc_names = [s.get("name", "app") for s in services]
-            logger.info(f"[run_code] Multi-service config: {svc_names}")
-            if run_code_span:
-                run_code_span.end(output={"mode": "multi_service", "services": svc_names})
-            return await _run_code_multi_service(state, workspace_path, services)
-        
-        # Single service - build from project_config
-        single_service = [{
-            "name": "app",
-            "path": ".",
-            "install_cmd": project_config.get("install_cmd", "pnpm install --frozen-lockfile"),
-            "test_cmd": project_config.get("test_cmd", "pnpm test"),
-            "needs_db": project_config.get("needs_db", False),
-            "db_cmds": project_config.get("db_cmds", []),
-        }]
-        logger.info(f"[run_code] Single service from project_config: {project_config.get('tech_stack')}")
+        # tech_stack.service is array of service configs
+        svc_names = [s.get("name", "app") for s in services]
+        logger.info(f"[run_code] tech_stack services: {svc_names}")
         if run_code_span:
-            run_code_span.end(output={"mode": "single_service", "tech_stack": project_config.get("tech_stack")})
-        return await _run_code_multi_service(state, workspace_path, single_service)
+            run_code_span.end(output={"mode": "tech_stack", "services": svc_names})
+        return await _run_code_multi_service(state, workspace_path, services)
         
     except Exception as e:
         logger.error(f"[run_code] Error: {e}", exc_info=True)
@@ -2192,6 +2152,19 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
         # Setup tool context
         _setup_tool_context(workspace_path, project_id, task_id)
         
+        # Get tech_stack info for install commands
+        project_config = state.get("project_config", {})
+        tech_stack = project_config.get("tech_stack", {})
+        services = tech_stack.get("service", []) if isinstance(tech_stack, dict) else []
+        
+        # Build tech_stack context for prompt
+        tech_stack_info = ""
+        if services:
+            for svc in services:
+                runtime = svc.get("runtime", "node")
+                install_cmd = svc.get("install_cmd", "npm install")
+                tech_stack_info += f"- Runtime: {runtime}, Install command pattern: {install_cmd}\n"
+        
         # Build debug prompt
         sys_prompt = _build_system_prompt("debug_error", agent)
         user_prompt = _get_prompt("debug_error", "user_prompt").format(
@@ -2203,10 +2176,12 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
             error_logs=state.get("run_stderr", "")[:8000],
             error_summary=run_result.get("summary", ""),
             file_to_fix=file_to_fix,
+            tech_stack_info=tech_stack_info or "Not specified",
         )
         
-        # Tools for debugging exploration
-        tools = [read_file_safe, list_directory_safe, semantic_code_search, execute_shell]
+        # Tools for debugging exploration (including Tavily for web search)
+        tavily_tool = TavilySearch(max_results=3)
+        tools = [read_file_safe, list_directory_safe, semantic_code_search, execute_shell, tavily_tool]
         
         # Step 1: Explore with tools
         messages = [

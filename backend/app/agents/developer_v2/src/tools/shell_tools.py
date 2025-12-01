@@ -107,6 +107,8 @@ def execute_shell(command: str, working_directory: str = ".", timeout: int = 60)
             text=True,
             timeout=timeout,
             env=os.environ.copy(),
+            encoding='utf-8',
+            errors='replace',
         )
         
         execution_time = time.time() - start_time

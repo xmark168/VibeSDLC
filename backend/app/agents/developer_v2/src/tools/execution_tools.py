@@ -69,10 +69,10 @@ async def install_dependencies(workspace_path: str) -> bool:
             logger.info(f"Installing Node.js dependencies from {package_json}")
             use_shell = sys.platform == 'win32'
             
-            if (workspace / "pnpm-lock.yaml").exists():
-                subprocess.run("pnpm install", cwd=workspace_path, check=False, timeout=180, shell=use_shell)
-            elif (workspace / "bun.lockb").exists():
+            if (workspace / "bun.lock").exists() or (workspace / "bun.lockb").exists():
                 subprocess.run("bun install", cwd=workspace_path, check=False, timeout=180, shell=use_shell)
+            elif (workspace / "pnpm-lock.yaml").exists():
+                subprocess.run("pnpm install", cwd=workspace_path, check=False, timeout=180, shell=use_shell)
             else:
                 subprocess.run("npm install", cwd=workspace_path, check=False, timeout=180, shell=use_shell)
             installed = True
