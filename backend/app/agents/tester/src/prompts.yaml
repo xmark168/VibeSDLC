@@ -39,7 +39,7 @@ tasks:
       }}
 
   # ---------------------------------------------------------------------------
-  # ANALYZE STORIES - Create scenarios for Integration tests
+  # ANALYZE STORIES - Create scenarios for Integration tests (with CocoIndex)
   # ---------------------------------------------------------------------------
   analyze_stories:
     system_prompt: |
@@ -47,6 +47,9 @@ tasks:
       
       Analyze user stories and create comprehensive test scenarios for integration tests.
       Focus on testing API endpoints with real database interactions.
+      
+      IMPORTANT: Use the RELATED CODE from the codebase to understand the actual implementation.
+      This ensures your test scenarios match the real code structure, function names, and endpoints.
 
     user_prompt: |
       Analyze these stories and create integration test scenarios:
@@ -54,9 +57,16 @@ tasks:
       STORIES:
       {stories}
 
-      For each story, identify:
-      1. API endpoints to test
+      RELATED CODE FROM CODEBASE:
+      {related_code}
+
+      PROJECT CONTEXT:
+      {project_context}
+
+      Based on the actual code above, identify for each story:
+      1. API endpoints to test (use exact paths from code)
       2. Test scenarios: happy path, error cases, edge cases
+      3. Use actual function/method names from the code
 
       Output JSON array:
       [
@@ -116,21 +126,38 @@ tasks:
     system_prompt: |
       {shared_context.tester_identity}
       
-      Generate complete TypeScript integration test file using Jest + Prisma.
+      Generate complete TypeScript integration test file using Jest.
       This file is for a single user story.
+      
+      CRITICAL RULES:
+      1. NEVER import from routes that don't exist (e.g., /api/auth/callback/*)
+      2. For auth testing: replicate the authorize() logic in your test file
+      3. Use the TESTING CONTEXT below for auth patterns, mock patterns, ESM warnings
+      4. Follow the project conventions from PROJECT CONTEXT if provided
 
     user_prompt: |
-      Generate Jest + Prisma integration test file for story: "{story_title}"
+      Generate Jest integration test file for story: "{story_title}"
 
       TEST CASES:
       {test_cases}
 
+      PROJECT CONTEXT (follow these conventions):
+      {project_context}
+
+      EXISTING CODE EXAMPLES (follow this style):
+      {test_examples}
+
+      TESTING CONTEXT (MUST FOLLOW):
+      {testing_context}
+
       Requirements:
-      - Use NextRequest for API testing
-      - Use PrismaClient for DB setup/verification
       - AAA pattern (Arrange, Act, Assert)
-      - beforeAll/afterAll for DB cleanup
+      - beforeAll/afterAll for cleanup
       - describe block should reference the story name
+      - Follow mock patterns from TESTING CONTEXT
+      - Use import alias @/ for project imports
+      - DO NOT use ESM packages listed in warnings (uuid, nanoid, etc.)
+      - For unique IDs: use hardcoded strings like "test-id-123"
 
       Output TypeScript code only (no markdown):
 
@@ -142,6 +169,11 @@ tasks:
       {shared_context.tester_identity}
       
       Generate integration test functions to append to existing story test file.
+      
+      CRITICAL RULES:
+      1. DO NOT use ESM packages (uuid, nanoid, etc.) - use hardcoded test IDs
+      2. Follow the same patterns as existing tests in the file
+      3. Use mock functions that are already defined (mockFindUnique, etc.)
 
     user_prompt: |
       Generate only new test functions for story: "{story_title}"
@@ -152,7 +184,11 @@ tasks:
       NEW TEST CASES:
       {test_cases}
 
-      Output test functions only (no imports, no describe wrapper):
+      TESTING CONTEXT:
+      {testing_context}
+
+      Output test functions only (no imports, no describe wrapper).
+      Use hardcoded IDs like "test-id-123" instead of uuid.
 
   # ---------------------------------------------------------------------------
   # CONVERSATION

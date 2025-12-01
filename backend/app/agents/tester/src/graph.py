@@ -9,6 +9,7 @@ from app.agents.tester.src.nodes import (
     setup_context,
     router,
     query_stories,
+    search_related_code,
     analyze_stories,
     generate_test_cases,
     generate_integration_tests,
@@ -47,6 +48,7 @@ class TesterGraph:
         
         # Generate tests flow - integration tests only
         graph.add_node("query_stories", partial(query_stories, agent=agent))
+        graph.add_node("search_related_code", partial(search_related_code, agent=agent))
         graph.add_node("analyze_stories", analyze_stories)
         graph.add_node("generate_test_cases", generate_test_cases)
         graph.add_node("generate_integration_tests", generate_integration_tests)
@@ -68,8 +70,9 @@ class TesterGraph:
             "conversation": "conversation",
         })
         
-        # Generate tests flow (integration tests only)
-        graph.add_edge("query_stories", "analyze_stories")
+        # Generate tests flow (with CocoIndex)
+        graph.add_edge("query_stories", "search_related_code")
+        graph.add_edge("search_related_code", "analyze_stories")
         graph.add_edge("analyze_stories", "generate_test_cases")
         graph.add_edge("generate_test_cases", "generate_integration_tests")
         graph.add_edge("generate_integration_tests", "execute_and_verify")
@@ -81,4 +84,4 @@ class TesterGraph:
         graph.add_edge("conversation", END)
         
         self.graph = graph.compile()
-        logger.info("[TesterGraph] Compiled with integration tests only")
+        logger.info("[TesterGraph] Compiled with CocoIndex integration")

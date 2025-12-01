@@ -1,5 +1,6 @@
 """Node functions for Tester graph."""
 
+import asyncio
 import json
 import logging
 import re
@@ -16,7 +17,145 @@ from app.models import Story, StoryStatus, Project
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 
+# CocoIndex imports
+from app.agents.developer_v2.src.tools.cocoindex_tools import (
+    search_codebase_async,
+    index_workspace,
+    get_project_context,
+    get_boilerplate_examples,
+    detect_project_structure,
+)
+
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# TESTING CONTEXT DETECTION
+# ============================================================================
+
+def detect_testing_context(project_path: str) -> dict:
+    """Detect testing setup and patterns from the project.
+    
+    Returns context about:
+    - Auth library (NextAuth, Clerk, custom)
+    - Existing mocks in jest.setup.ts
+    - ORM (Prisma, Drizzle, etc.)
+    - ESM packages to avoid
+    """
+    workspace = Path(project_path)
+    context = {
+        "auth_library": None,
+        "auth_pattern": "",
+        "orm": None,
+        "existing_mocks": [],
+        "esm_warning": "",
+        "prisma_mock_pattern": "",
+        "import_alias": "@/",
+    }
+    
+    if not workspace.exists():
+        return context
+    
+    # 1. Detect from package.json
+    package_json = workspace / "package.json"
+    if package_json.exists():
+        try:
+            data = json.loads(package_json.read_text(encoding='utf-8'))
+            deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
+            
+            # Auth detection
+            if "next-auth" in deps:
+                context["auth_library"] = "nextauth"
+                context["auth_pattern"] = """
+NEXTAUTH TESTING PATTERN:
+- DO NOT import from /api/auth/callback/* routes (NextAuth handles internally)
+- Test the authorize() logic directly by replicating it in test file
+- Mock Prisma's user.findUnique for auth tests
+- Use bcryptjs for password hashing (already installed)
+
+Example authorize test:
+```typescript
+async function authorize(credentials) {
+  if (!credentials?.username || !credentials?.password) return null;
+  const user = await mockFindUnique({ where: { username: credentials.username } });
+  if (!user) return null;
+  const isValid = await bcrypt.compare(credentials.password, user.password);
+  return isValid ? { id: user.id, username: user.username, email: user.email } : null;
+}
+```"""
+            elif "clerk" in deps or "@clerk/nextjs" in deps:
+                context["auth_library"] = "clerk"
+                context["auth_pattern"] = "Clerk auth - mock @clerk/nextjs hooks"
+            
+            # ORM detection
+            if "@prisma/client" in deps or "prisma" in deps:
+                context["orm"] = "prisma"
+                context["prisma_mock_pattern"] = """
+PRISMA MOCK PATTERN (use this exact pattern):
+```typescript
+const mockFindUnique = jest.fn();
+const mockCreate = jest.fn();
+const mockFindMany = jest.fn();
+const mockDelete = jest.fn();
+
+jest.mock("@/lib/prisma", () => ({
+  prisma: {
+    user: {
+      findUnique: (...args: unknown[]) => mockFindUnique(...args),
+      create: (...args: unknown[]) => mockCreate(...args),
+      findMany: (...args: unknown[]) => mockFindMany(...args),
+      delete: (...args: unknown[]) => mockDelete(...args),
+    },
+    // Add other models as needed
+  },
+}));
+```"""
+            elif "drizzle-orm" in deps:
+                context["orm"] = "drizzle"
+                
+        except Exception as e:
+            logger.warning(f"[detect_testing_context] Failed to parse package.json: {e}")
+    
+    # 2. Read jest.setup.ts for existing mocks
+    jest_setup = workspace / "jest.setup.ts"
+    if not jest_setup.exists():
+        jest_setup = workspace / "jest.setup.js"
+    
+    if jest_setup.exists():
+        try:
+            setup_content = jest_setup.read_text(encoding='utf-8')
+            
+            # Detect mocked modules
+            mock_patterns = [
+                ("next/navigation", "useRouter, usePathname, useSearchParams"),
+                ("next/router", "useRouter"),
+                ("matchMedia", "window.matchMedia"),
+                ("IntersectionObserver", "IntersectionObserver"),
+                ("ResizeObserver", "ResizeObserver"),
+            ]
+            
+            for module, description in mock_patterns:
+                if module in setup_content:
+                    context["existing_mocks"].append(f"{module} ({description})")
+                    
+        except Exception as e:
+            logger.warning(f"[detect_testing_context] Failed to read jest.setup: {e}")
+    
+    # 3. ESM warning (packages that break Jest)
+    context["esm_warning"] = """
+ESM PACKAGES TO AVOID (break Jest):
+- uuid → Use hardcoded strings: "test-id-123" or `test-${Date.now()}`
+- nanoid → Use hardcoded strings
+- node-fetch → Use native fetch
+- chalk → Don't use in tests
+
+SAFE PACKAGES:
+- bcryptjs ✅
+- date-fns ✅ (but mock if needed)
+- zod ✅
+"""
+    
+    return context
 
 _llm = ChatOpenAI(model="gpt-4.1", temperature=0)
 _chat_llm = ChatOpenAI(model="gpt-4.1", temperature=0.7)
@@ -109,6 +248,106 @@ async def router(state: TesterState, agent=None) -> dict:
 
 
 # ============================================================================
+# COCOINDEX - SEARCH RELATED CODE
+# ============================================================================
+
+async def search_related_code(state: TesterState, agent=None) -> dict:
+    """Search codebase for code related to stories using CocoIndex.
+    
+    This helps generate more accurate tests by understanding the actual implementation.
+    """
+    project_id = state.get("project_id")
+    project_path = state.get("project_path", "")
+    stories = state.get("stories", [])
+    
+    if not project_path or not stories:
+        logger.info("[search_related_code] No project path or stories, skipping CocoIndex search")
+        return {"related_code": {}, "project_context": "", "index_ready": False}
+    
+    # Try to index workspace
+    index_ready = False
+    try:
+        task_id = state.get("task_id")
+        index_ready = index_workspace(project_id, project_path, task_id)
+        if index_ready:
+            logger.info(f"[search_related_code] CocoIndex ready for {project_path}")
+        else:
+            logger.warning(f"[search_related_code] CocoIndex indexing failed, will skip semantic search")
+    except Exception as e:
+        logger.warning(f"[search_related_code] CocoIndex not available: {e}")
+    
+    # Get project context (structure, AGENTS.md, etc.)
+    project_context = ""
+    try:
+        project_context = get_project_context(project_path)
+        logger.info(f"[search_related_code] Got project context ({len(project_context)} chars)")
+    except Exception as e:
+        logger.warning(f"[search_related_code] Failed to get project context: {e}")
+    
+    # Get test examples from project
+    test_examples = ""
+    try:
+        # Look for existing test patterns
+        test_examples = get_boilerplate_examples(project_path, "api")
+        if not test_examples:
+            test_examples = get_boilerplate_examples(project_path, "page")
+        logger.info(f"[search_related_code] Got test examples ({len(test_examples)} chars)")
+    except Exception as e:
+        logger.warning(f"[search_related_code] Failed to get test examples: {e}")
+    
+    # Detect testing context (auth, ORM, existing mocks, ESM warnings)
+    testing_context = {}
+    try:
+        testing_context = detect_testing_context(project_path)
+        logger.info(f"[search_related_code] Detected testing context: auth={testing_context.get('auth_library')}, orm={testing_context.get('orm')}, mocks={len(testing_context.get('existing_mocks', []))}")
+    except Exception as e:
+        logger.warning(f"[search_related_code] Failed to detect testing context: {e}")
+    
+    # Search for code related to each story (parallel)
+    related_code = {}
+    
+    if index_ready:
+        async def search_for_story(story: dict) -> tuple[str, str]:
+            story_id = story["id"]
+            story_title = story.get("title", "")
+            story_desc = story.get("description", "")[:300]
+            
+            # Build search query from story
+            query = f"{story_title} {story_desc}"
+            
+            try:
+                task_id = state.get("task_id")
+                code = await search_codebase_async(project_id, query, top_k=5, task_id=task_id)
+                return story_id, code
+            except Exception as e:
+                logger.warning(f"[search_related_code] Search failed for story {story_id}: {e}")
+                return story_id, ""
+        
+        # Search all stories in parallel
+        tasks = [search_for_story(s) for s in stories]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for r in results:
+            if isinstance(r, Exception):
+                logger.error(f"[search_related_code] Search task error: {r}")
+                continue
+            if r:
+                story_id, code = r
+                if code and code != "No relevant code found." and code != "CocoIndex not available.":
+                    related_code[story_id] = code
+        
+        logger.info(f"[search_related_code] Found related code for {len(related_code)}/{len(stories)} stories")
+    
+    return {
+        "related_code": related_code,
+        "project_context": project_context,
+        "test_examples": test_examples,
+        "testing_context": testing_context,
+        "index_ready": index_ready,
+    }
+
+
+# ============================================================================
 # GENERATE TESTS FLOW
 # ============================================================================
 
@@ -170,15 +409,34 @@ async def query_stories(state: TesterState, agent=None) -> dict:
 
 
 async def analyze_stories(state: TesterState) -> dict:
-    """Analyze stories → test scenarios for both integration and unit tests."""
+    """Analyze stories → test scenarios using CocoIndex context."""
     stories = state.get("stories", [])
     if not stories:
         return {"test_scenarios": []}
     
+    # Get CocoIndex context
+    related_code = state.get("related_code", {})
+    project_context = state.get("project_context", "")
+    
+    # Format related code for prompt
+    related_code_text = ""
+    if related_code:
+        for story_id, code in related_code.items():
+            story = next((s for s in stories if s["id"] == story_id), None)
+            if story:
+                related_code_text += f"\n### Code related to '{story['title']}':\n{code}\n"
+    else:
+        related_code_text = "No related code found (CocoIndex not available or no matches)"
+    
     try:
         response = await _llm.ainvoke([
             SystemMessage(content=get_system_prompt("analyze_stories")),
-            HumanMessage(content=get_user_prompt("analyze_stories", stories=json.dumps(stories, indent=2)))
+            HumanMessage(content=get_user_prompt(
+                "analyze_stories",
+                stories=json.dumps(stories, indent=2),
+                related_code=related_code_text,
+                project_context=project_context[:3000] if project_context else "No project context available"
+            ))
         ], config=_cfg(state, "analyze_stories"))
         
         return {"test_scenarios": _parse_json(response.content)}
@@ -231,6 +489,11 @@ async def generate_integration_tests(state: TesterState) -> dict:
     project_path = state.get("project_path", "")
     stories = state.get("stories", [])
     
+    # Get CocoIndex context for code generation
+    project_context = state.get("project_context", "")
+    test_examples = state.get("test_examples", "")
+    testing_context = state.get("testing_context", {})
+    
     if not test_cases or not project_path:
         return {"result": {"integration": {"test_count": 0, "files": []}}}
     
@@ -276,13 +539,28 @@ async def generate_integration_tests(state: TesterState) -> dict:
         # Generate code
         task = "generate_integration_test_append" if existing_content else "generate_integration_test_new"
         try:
+            # Build testing context string
+            testing_ctx_str = ""
+            if testing_context:
+                if testing_context.get("auth_pattern"):
+                    testing_ctx_str += f"\n{testing_context['auth_pattern']}\n"
+                if testing_context.get("prisma_mock_pattern"):
+                    testing_ctx_str += f"\n{testing_context['prisma_mock_pattern']}\n"
+                if testing_context.get("esm_warning"):
+                    testing_ctx_str += f"\n{testing_context['esm_warning']}\n"
+                if testing_context.get("existing_mocks"):
+                    testing_ctx_str += f"\nEXISTING MOCKS (already in jest.setup.ts - DO NOT recreate):\n- " + "\n- ".join(testing_context["existing_mocks"]) + "\n"
+            
             response = await _llm.ainvoke([
                 SystemMessage(content=get_system_prompt(task)),
                 HumanMessage(content=get_user_prompt(
                     task,
                     test_cases=json.dumps(new_cases, indent=2),
                     story_title=story_title,
-                    existing_titles=str(list(existing_titles)[:20]) if existing_content else ""
+                    existing_titles=str(list(existing_titles)[:20]) if existing_content else "",
+                    project_context=project_context[:2000] if project_context else "",
+                    test_examples=test_examples[:1500] if test_examples else "",
+                    testing_context=testing_ctx_str
                 ))
             ], config=_cfg(state, f"generate_integration_tests_{story_slug}"))
             

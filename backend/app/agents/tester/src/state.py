@@ -26,6 +26,13 @@ class TesterState(TypedDict, total=False):
     tech_stack: str
     timestamp: str
     
+    # CocoIndex context
+    related_code: dict  # {story_id: "related code markdown"}
+    project_context: str  # Project structure, AGENTS.md, etc.
+    test_examples: str  # Existing test examples from project
+    testing_context: dict  # Auth library, ORM, existing mocks, ESM warnings
+    index_ready: bool  # Whether CocoIndex is available
+    
     # Processing
     stories: list[dict]
     test_scenarios: list[dict]
