@@ -34,6 +34,7 @@ export type KanbanCardData = {
   reviewer_id?: string
   epic_id?: string
   acceptance_criteria?: string
+  requirements?: string[]
   // Flow metrics
   created_at?: string
   updated_at?: string

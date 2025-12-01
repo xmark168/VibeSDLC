@@ -209,6 +209,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         reviewer_id: item.reviewer_id,
         epic_id: item.epic_id,
         acceptance_criteria: item.acceptance_criteria,
+        requirements: item.requirements,
         created_at: item.created_at,
         updated_at: item.updated_at,
         parent: item.parent ? {
@@ -232,6 +233,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
           rank: child.rank,
           assignee_id: child.assignee_id,
           reviewer_id: child.reviewer_id,
+          requirements: child.requirements,
           title: child.title,
         })) : [],
       })
@@ -318,6 +320,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         reviewer_id: item.reviewer_id,
         epic_id: item.epic_id,
         acceptance_criteria: item.acceptance_criteria,
+        requirements: item.requirements,
         created_at: item.created_at,
         updated_at: item.updated_at,
         parent: item.parent ? {
@@ -341,6 +344,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
           rank: child.rank,
           assignee_id: child.assignee_id,
           reviewer_id: child.reviewer_id,
+          requirements: child.requirements,
           title: child.title,
         })) : [],
       })
@@ -430,6 +434,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         story_point: storyData.story_point,
         priority: storyData.priority === "High" ? 1 : storyData.priority === "Medium" ? 2 : 3,
         acceptance_criteria: storyData.acceptance_criteria.map(ac => `- ${ac}`).join('\n'),
+        requirements: storyData.requirements,
         tags: [],
         labels: [],
       })
@@ -454,6 +459,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
                   rank: createdStory.rank ?? undefined,
                   epic_id: createdStory.epic_id ?? undefined,
                   acceptance_criteria: createdStory.acceptance_criteria ?? undefined,
+                  requirements: createdStory.requirements ?? undefined,
                   created_at: createdStory.created_at ?? new Date().toISOString(),
                   taskId: `STORY-${createdStory.id.substring(0, 4).toUpperCase()}`,
                 },

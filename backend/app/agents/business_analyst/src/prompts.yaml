@@ -780,20 +780,20 @@ tasks:
       {{
         "is_duplicate": true/false,
         "duplicate_of": "title of similar story if duplicate, else null",
-        "duplicate_reason": "explanation in Vietnamese",
+        "duplicate_reason": "explanation in Vietnamese if duplicate, else null",
         "invest_score": 1-6,
         "invest_issues": [
           {{"code": "I|N|V|E|S|T", "issue": "detailed explanation in Vietnamese"}}
         ],
         "suggested_title": "improved title if needed, else null",
         "suggested_description": "improved description if needed, else null",
-        "suggested_acceptance_criteria": [
-          "Given [context]\nWhen [action]\nThen [result]",
-          "Given [context]\nWhen [action]\nThen [result]"
-        ],
+        "suggested_requirements": ["requirement 1", "requirement 2"] or null,
+        "suggested_acceptance_criteria": ["Given X When Y Then Z"] or null,
         "summary": "brief summary of review in Vietnamese (1-2 sentences)"
       }}
       ```
+      
+      **NOTE:** Only provide suggested_requirements/suggested_acceptance_criteria if improvements are needed. Set to null if the story is already good.
 
   # ---------------------------------------------------------------------------
   # COMPLETION MESSAGE - Generate natural completion messages with personality

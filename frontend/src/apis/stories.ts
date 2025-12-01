@@ -31,6 +31,7 @@ export const storiesApi = {
     story_point?: number
     priority?: number
     acceptance_criteria?: string
+    requirements?: string[]
     tags?: string[]
     labels?: string[]
   }): Promise<Story> => {
@@ -45,6 +46,7 @@ export const storiesApi = {
         story_point: data.story_point,
         priority: data.priority || 3, // Default to medium priority (3)
         acceptance_criteria: data.acceptance_criteria,
+        requirements: data.requirements || [],
         tags: data.tags || [],
         labels: data.labels || [],
       },
@@ -146,6 +148,7 @@ export const storiesApi = {
     suggestions?: {
       suggested_title?: string
       suggested_acceptance_criteria?: string[]
+      suggested_requirements?: string[]
     }
   ): Promise<{ message: string; story_id: string }> => {
     return __request<{ message: string; story_id: string }>(OpenAPI, {

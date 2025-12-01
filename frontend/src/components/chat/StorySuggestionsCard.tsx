@@ -28,6 +28,7 @@ interface StorySuggestionsCardProps {
   investIssues?: InvestIssue[]
   suggestedTitle?: string
   suggestedAcceptanceCriteria?: string[]
+  suggestedRequirements?: string[]
   hasSuggestions?: boolean
   initialActionTaken?: 'applied' | 'kept' | 'removed' | null
   onApplied?: () => void
@@ -44,6 +45,7 @@ export function StorySuggestionsCard({
   investIssues = [],
   suggestedTitle,
   suggestedAcceptanceCriteria,
+  suggestedRequirements,
   hasSuggestions = false,
   initialActionTaken = null,
   onApplied,
@@ -74,7 +76,8 @@ export function StorySuggestionsCard({
     try {
       await storiesApi.reviewAction(storyId, 'apply', {
         suggested_title: suggestedTitle,
-        suggested_acceptance_criteria: suggestedAcceptanceCriteria
+        suggested_acceptance_criteria: suggestedAcceptanceCriteria,
+        suggested_requirements: suggestedRequirements
       })
       setActionTaken('applied')
       onApplied?.()
@@ -250,7 +253,7 @@ export function StorySuggestionsCard({
             </div>
 
             {/* 3. Suggestions - Only if available */}
-            {hasSuggestions && (suggestedTitle || (suggestedAcceptanceCriteria && suggestedAcceptanceCriteria.length > 0)) && (
+            {hasSuggestions && (suggestedTitle || (suggestedAcceptanceCriteria && suggestedAcceptanceCriteria.length > 0) || (suggestedRequirements && suggestedRequirements.length > 0)) && (
               <div className="space-y-2">
                 <p className="text-sm font-bold">Gợi ý cải thiện:</p>
 
@@ -258,6 +261,17 @@ export function StorySuggestionsCard({
                   <div className="space-y-1">
                     <p className="text-sm font-medium pl-4">Title đề xuất:</p>
                     <p className="text-sm pl-8">- {suggestedTitle}</p>
+                  </div>
+                )}
+
+                {suggestedRequirements && suggestedRequirements.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium pl-4">Requirements đề xuất:</p>
+                    {suggestedRequirements.map((req, idx) => (
+                      <p key={idx} className="text-sm pl-8">
+                        {idx + 1}. {req}
+                      </p>
+                    ))}
                   </div>
                 )}
 

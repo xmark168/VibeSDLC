@@ -1398,6 +1398,7 @@ async def _send_verify_message(agent, story, result: dict, project_id=None) -> N
     invest_score = result.get("invest_score", 6)
     invest_issues = result.get("invest_issues", [])
     suggested_title = result.get("suggested_title")
+    suggested_requirements = result.get("suggested_requirements")
     suggested_ac = result.get("suggested_acceptance_criteria")
     summary = result.get("summary", "")
     
@@ -1420,8 +1421,9 @@ async def _send_verify_message(agent, story, result: dict, project_id=None) -> N
         "invest_score": invest_score,
         "invest_issues": invest_issues,
         "suggested_title": suggested_title,
+        "suggested_requirements": suggested_requirements,
         "suggested_acceptance_criteria": suggested_ac,
-        "has_suggestions": bool(suggested_title or suggested_ac)
+        "has_suggestions": bool(suggested_title or suggested_requirements or suggested_ac)
     }
     
     # Get agent info (agent.name is already human_name from base_agent)

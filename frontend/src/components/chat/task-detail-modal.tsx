@@ -225,6 +225,21 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
             </div>
           )}
 
+          {/* Requirements */}
+          {card.requirements && card.requirements.length > 0 && (
+            <div>
+              <h4 className="text-sm font-semibold text-foreground mb-2">Requirements</h4>
+              <ul className="space-y-1">
+                {card.requirements.map((req: string, idx: number) => (
+                  <li key={idx} className="text-sm text-muted-foreground flex items-start gap-2">
+                    <span className="text-xs font-semibold text-muted-foreground mt-0.5">{idx + 1}.</span>
+                    <span>{req}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {/* Acceptance Criteria */}
           {card.acceptance_criteria && (
             <div>

@@ -23,6 +23,7 @@ class StoryBase(SQLModel):
     parent_story_id: Optional[UUID] = None
     tags: Optional[list[str]] = Field(default_factory=list)
     acceptance_criteria: Optional[str] = None
+    requirements: Optional[list[str]] = Field(default_factory=list)
     business_value: Optional[int] = Field(None, ge=1, le=100)
     risk_level: Optional[Literal["low", "medium", "high", "critical"]] = None
     target_release: Optional[str] = None
@@ -68,6 +69,7 @@ class StoryUpdate(SQLModel):
     parent_story_id: Optional[UUID] = None
     tags: Optional[list[str]] = None
     acceptance_criteria: Optional[str] = None
+    requirements: Optional[list[str]] = None
     business_value: Optional[int] = Field(None, ge=1, le=100)
     risk_level: Optional[Literal["low", "medium", "high", "critical"]] = None
     target_release: Optional[str] = None

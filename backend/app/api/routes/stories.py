@@ -29,6 +29,7 @@ class ReviewActionRequest(BaseModel):
     action: ReviewActionType
     suggested_title: Optional[str] = None
     suggested_acceptance_criteria: Optional[list[str]] = None
+    suggested_requirements: Optional[list[str]] = None
 
 
 # ===== Story Creation =====
@@ -262,7 +263,8 @@ async def handle_review_action(
             action=action_request.action.value,
             user_id=current_user.id,
             suggested_title=action_request.suggested_title,
-            suggested_acceptance_criteria=action_request.suggested_acceptance_criteria
+            suggested_acceptance_criteria=action_request.suggested_acceptance_criteria,
+            suggested_requirements=action_request.suggested_requirements
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

@@ -960,6 +960,7 @@ export function ChatPanelWS({
                       investIssues={msg.structured_data.invest_issues || []}
                       suggestedTitle={msg.structured_data.suggested_title}
                       suggestedAcceptanceCriteria={msg.structured_data.suggested_acceptance_criteria}
+                      suggestedRequirements={msg.structured_data.suggested_requirements}
                       hasSuggestions={msg.structured_data.has_suggestions}
                       initialActionTaken={msg.structured_data.action_taken}
                       onApplied={() => {

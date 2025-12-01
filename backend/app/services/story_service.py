@@ -501,7 +501,8 @@ class StoryService:
         action: str,
         user_id: UUID,
         suggested_title: Optional[str] = None,
-        suggested_acceptance_criteria: Optional[List[str]] = None
+        suggested_acceptance_criteria: Optional[List[str]] = None,
+        suggested_requirements: Optional[List[str]] = None
     ) -> Story:
         """Handle user action on story review (apply/keep/remove).
         
@@ -513,6 +514,7 @@ class StoryService:
             user_id: UUID of the user taking action
             suggested_title: Suggested title (for apply action)
             suggested_acceptance_criteria: Suggested AC (for apply action)
+            suggested_requirements: Suggested requirements (for apply action)
 
         Returns:
             Story: Updated story instance
@@ -533,6 +535,8 @@ class StoryService:
                 story.title = suggested_title
             if suggested_acceptance_criteria:
                 story.acceptance_criteria = "\n".join(f"- {ac}" for ac in suggested_acceptance_criteria)
+            if suggested_requirements:
+                story.requirements = suggested_requirements
             self.session.add(story)
             self.session.commit()
             self.session.refresh(story)
