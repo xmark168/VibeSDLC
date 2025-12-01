@@ -532,16 +532,16 @@ class StoryService:
             if suggested_title:
                 story.title = suggested_title
             if suggested_acceptance_criteria:
-                story.acceptance_criteria = "\n".join(suggested_acceptance_criteria)
+                story.acceptance_criteria = "\n".join(f"- {ac}" for ac in suggested_acceptance_criteria)
             self.session.add(story)
             self.session.commit()
             self.session.refresh(story)
 
         elif action == "remove":
-            story.status = StoryStatus.ARCHIVED
-            self.session.add(story)
+            # Delete story permanently
+            self.session.delete(story)
             self.session.commit()
-            self.session.refresh(story)
+            story = None  # Story no longer exists
 
         # action == "keep" → no changes needed
 

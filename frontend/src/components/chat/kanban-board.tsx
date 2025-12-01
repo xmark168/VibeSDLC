@@ -91,6 +91,17 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     }
   }, [projectId])
 
+  // Sync selectedCard with updated data from columns
+  useEffect(() => {
+    if (selectedCard) {
+      const allCards = columns.flatMap(col => col.cards)
+      const updatedCard = allCards.find(c => c.id === selectedCard.id)
+      if (updatedCard && JSON.stringify(updatedCard) !== JSON.stringify(selectedCard)) {
+        setSelectedCard(updatedCard)
+      }
+    }
+  }, [columns, selectedCard])
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
