@@ -1,11 +1,11 @@
 """
 Developer V2 LangGraph - Story Implementation Flow.
 
-Flow: setup → analyze → design → plan → implement ⟷ run_code → END
-                                   ↑                    ↓
-                                   └── analyze_error ───┘
-
-Bug fix flow reuses plan + implement nodes with skill system.
+Story flow: setup → analyze → plan → implement ⟷ run_code → END
+                                       ↑              ↓
+Bug fix flow:                 analyze_error ──────────┘
+                                    ↓
+                                implement → run_code
 """
 
 from functools import partial
@@ -15,7 +15,7 @@ from langgraph.graph import StateGraph, END
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.nodes import (
-    setup_workspace, analyze, design, plan, implement,
+    setup_workspace, analyze, plan, implement,
     run_code, analyze_error,
 )
 
@@ -44,57 +44,54 @@ def route_after_test(state: DeveloperState) -> Literal["analyze_error", "__end__
     return "__end__"
 
 
-def route_after_analyze_error(state: DeveloperState) -> Literal["debug_error", "__end__"]:
-    """Route after error analysis."""
-    error_analysis = state.get("error_analysis", {})
-    if error_analysis.get("should_continue", True):
-        return "debug_error"
+def route_after_analyze_error(state: DeveloperState) -> Literal["implement", "__end__"]:
+    """Route after error analysis - goes directly to implement with fix plan."""
+    action = state.get("action")
+    if action == "IMPLEMENT":
+        return "implement"
     return "__end__"
 
 
 class DeveloperGraph:
-    """Story implementation workflow (8 nodes).
+    """Story implementation workflow (6 nodes).
     
     Nodes:
     1. setup_workspace - Git + CocoIndex
     2. analyze - Story analysis
-    3. design - Technical design
-    4. plan - Implementation plan
-    5. implement - Code generation
-    6. run_code - Lint + tests
-    7. analyze_error - Pre-debug analysis
-    8. debug_error - Fix errors
+    3. plan - Implementation plan
+    4. implement - Code generation
+    5. run_code - Lint + tests
+    6. analyze_error - Error analysis + fix planning
+    
+    Story flow: setup -> analyze -> plan -> implement -> run_code -> END
+    Bug fix flow: run_code FAIL -> analyze_error -> implement -> run_code
     """
     
     def __init__(self, agent=None):
         self.agent = agent
         g = StateGraph(DeveloperState)
         
-        # 8 nodes
+        # 6 nodes
         g.add_node("setup_workspace", partial(setup_workspace, agent=agent))
         g.add_node("analyze", partial(analyze, agent=agent))
-        g.add_node("design", partial(design, agent=agent))
         g.add_node("plan", partial(plan, agent=agent))
         g.add_node("implement", partial(implement, agent=agent))
         g.add_node("run_code", partial(run_code, agent=agent))
         g.add_node("analyze_error", partial(analyze_error, agent=agent))
-        g.add_node("debug_error", partial(debug_error, agent=agent))
         
-        # Entry point: directly to setup
+        # Entry point
         g.set_entry_point("setup_workspace")
         
-        # Linear flow
+        # Linear flow: setup -> analyze -> plan -> implement
         g.add_edge("setup_workspace", "analyze")
-        g.add_edge("analyze", "design")
-        g.add_edge("design", "plan")
+        g.add_edge("analyze", "plan")
         g.add_edge("plan", "implement")
         
         # Implement loop
         g.add_conditional_edges("implement", route_after_implement)
         
-        # Test + debug loop
+        # Test + bug fix loop
         g.add_conditional_edges("run_code", route_after_test)
         g.add_conditional_edges("analyze_error", route_after_analyze_error)
-        g.add_edge("debug_error", "run_code")
         
         self.graph = g.compile()

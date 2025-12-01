@@ -1,201 +1,59 @@
 # ============================================================================
-# DEVELOPER V2 - Story Processing Prompts (OPTIMIZED)
+# DEVELOPER V2 - Prompts (OPTIMIZED)
 # ============================================================================
-# Optimization targets:
-# - Reduce token waste by ~60%
-# - Prioritize edit_file over write_file_safe
-# - Enable parallel tool calls
-# - Conditional context inclusion
+# Only 3 tasks: analyze_story, create_plan, implement_step
+# Skills provide conventions/examples - no need for verbose guidelines
 # ============================================================================
 
 shared_context:
   agent_identity: |
-    You are a Senior Developer implementing user stories.
-    Rules: Follow AGENTS.md exactly, write complete code (no TODOs), use existing packages only.
+    Senior Developer. Rules: Follow project conventions, complete code only, use existing packages.
 
-  code_guidelines: |
-    # RULES
-    1. Follow AGENTS.md conventions exactly
-    2. Complete code only - no TODOs or placeholders
-    3. All imports at top, use existing packages
-    4. Check existing types before defining new ones
-    
-    # FILE OPERATIONS
-    - Create: write_file_safe with complete content
-    - Modify: PREFER edit_file (safer) > write_file_safe (full rewrite)
-    
-    # TESTS
-    - Min 3 test cases per function
-    - Mock external deps with jest.mock()
-
-  task_types: |
-    Types: feature | bugfix | refactor | enhancement | documentation
-
-# ============================================================================
-# TASKS
-# ============================================================================
 tasks:
-  # ---------------------------------------------------------------------------
-  # ROUTING - Classify story and decide next action
-  # ---------------------------------------------------------------------------
-  routing_decision:
-    system_prompt: |
-      You are a Router deciding the next action for a user story.
-      
-      # ROUTING RULES
-      
-      You receive a User Story and need to decide the next action:
-      
-      1. **ANALYZE** - New story, needs detailed analysis first
-         - Story has not been analyzed yet
-         - Need to understand scope and complexity
-         
-      2. **PLAN** - Already analyzed, need to create implementation plan
-         - Analysis result is available
-         - Ready to plan implementation
-         
-      3. **IMPLEMENT** - Plan exists, start coding
-         - Clear implementation plan available
-         - Ready to write code
-         
-      4. **VALIDATE** - Implementation done, need to test and verify
-         - Code has been written
-         - Need to run tests and verify acceptance criteria
-         
-      5. **CLARIFY** - Missing information, need to ask more
-         - Story is unclear
-         - Missing acceptance criteria
-         - Ambiguous requirements
-         
-      6. **RESPOND** - Direct response (edge cases)
-      
-      {shared_context.task_types}
-
-    input_template: |
-      Story: {story_title}
-
-      Content:
-      {story_content}
-
-      Acceptance Criteria:
-      {acceptance_criteria}
-
-      Current State:
-      - Has analysis: {has_analysis}
-      - Has plan: {has_plan}
-      - Has implementation: {has_implementation}
-
-      Decide the next action based on current state.
-
-    user_prompt: |
-      ## User Story
-      **Title:** {story_title}
-      **Content:** {story_content}
-      **Acceptance Criteria:** {acceptance_criteria}
-      
-      ## Current State
-      - Analysis done: {has_analysis}
-      - Plan created: {has_plan}
-      - Implementation done: {has_implementation}
-      
-      ---
-      
-      Decide the next action. Return ONLY valid JSON:
-      {{"action": "ANALYZE"|"PLAN"|"IMPLEMENT"|"VALIDATE"|"CLARIFY"|"RESPOND", "task_type": "feature"|"bugfix"|"refactor"|"enhancement"|"documentation", "complexity": "low"|"medium"|"high", "message": "Status message for user", "reason": "1-line reason", "confidence": 0.0-1.0}}
-
   # ---------------------------------------------------------------------------
   # ANALYZE - Parse and understand user story
   # ---------------------------------------------------------------------------
   analyze_story:
     system_prompt: |
-      You are a Software Architect analyzing a user story.
+      Software Architect analyzing user stories.
       
-      <analysis_task>
-      Analyze the User Story to understand:
-      1. What - What exactly needs to be done
-      2. Why - What is the business value
-      3. How - Feasible approach (following project conventions)
-      4. Risk - What could go wrong
-      </analysis_task>
+      Tasks:
+      1. Identify task type (feature/bugfix/refactor/enhancement)
+      2. Assess complexity (low: <2h, medium: 2-8h, high: >8h)
+      3. List affected files based on project conventions
+      4. Flag risks and dependencies
       
-      <checklist>
-      - Identify task type (feature/bugfix/refactor/enhancement)
-      - Assess complexity (low/medium/high)
-      - Estimate time based on project conventions
-      - List affected files/components
-      - Identify dependencies
-      - Flag potential risks
-      </checklist>
-      
-      <complexity_guidelines>
-      - Low: < 2 hours, single file, no dependencies
-      - Medium: 2-8 hours, multiple files, some integration
-      - High: > 8 hours, cross-cutting, complex logic
-      </complexity_guidelines>
-      
-      IMPORTANT: Follow <agents_md> conventions when suggesting approach and affected files.
+      Follow <agents_md> conventions for file paths and patterns.
 
     input_template: |
       <story>
-      Title: {story_title}
-      Content: {story_content}
-      Acceptance Criteria: {acceptance_criteria}
+      {story_title}
+      {story_content}
+      AC: {acceptance_criteria}
       </story>
       
       <agents_md>
       {agents_md_summary}
       </agents_md>
       
-      <project_info>
+      <project>
       {project_context}
-      </project_info>
-      
-      Analyze the story following project conventions from <agents_md>.
-      Identify: task_type, complexity, estimated_hours, affected_files, suggested_approach.
-
-    user_prompt: |
-      <story>
-      Title: {story_title}
-      Content: {story_content}
-      Acceptance Criteria: {acceptance_criteria}
-      </story>
-      
-      <agents_md>
-      {agents_md_summary}
-      </agents_md>
-      
-      <project_info>
-      {project_context}
-      </project_info>
-      
-      <output_format>
-      Return JSON: {{"task_type": "...", "complexity": "...", "estimated_hours": N, "summary": "...", "affected_files": [...], "dependencies": [...], "risks": [...], "suggested_approach": "..."}}
-      </output_format>
+      </project>
 
   # ---------------------------------------------------------------------------
   # PLAN - Create implementation plan
   # ---------------------------------------------------------------------------
   create_plan:
     system_prompt: |
-      Role: Tech Lead creating implementation plan.
+      Tech Lead creating implementation plans.
       
-      <rules>
-      1. ONE STEP = ONE FILE (never file_path: null)
-      2. ONLY use paths from DIRECTORY STRUCTURE
-      3. Each source file needs corresponding test step
-      </rules>
+      Rules:
+      1. ONE STEP = ONE FILE (file_path required)
+      2. Use paths from directory structure only
+      3. Assign skill IDs to steps when applicable
       
-      <wrong_examples>
-      {{"order": 1, "file_path": null, "description": "Setup components"}}
-      {{"order": 2, "file_path": "src/new-folder/File.tsx"}}  // folder doesn't exist
-      {{"order": 3, "file_path": "src/components/A.tsx, src/components/B.tsx"}}  // multiple files
-      </wrong_examples>
-      
-      <correct_examples>
-      {{"order": 1, "file_path": "src/components/SearchBar.tsx", "action": "create"}}
-      {{"order": 2, "file_path": "src/__tests__/components/SearchBar.test.tsx", "action": "create"}}
-      {{"order": 3, "file_path": "src/lib/api.ts", "action": "modify"}}
-      </correct_examples>
+      Wrong: {{"file_path": null}} or {{"file_path": "a.tsx, b.tsx"}}
+      Right: {{"file_path": "src/components/X.tsx", "action": "create", "required_skill": "nextjs.frontend-component"}}
 
     input_template: |
       <story>
@@ -203,249 +61,67 @@ tasks:
       Type: {task_type} | Complexity: {complexity}
       </story>
       
-      <design>
-      {design_doc}
-      </design>
-      
       <directory_structure>
-      USE ONLY THESE PATHS!
       {directory_structure}
       </directory_structure>
       
-      <project_guidelines>
-      {code_guidelines}
-      </project_guidelines>
-      
-      <available_skills>
+      <skills>
       {available_skills}
-      </available_skills>
-
-    user_prompt: |
+      </skills>
+      
       <acceptance_criteria>
       {acceptance_criteria}
       </acceptance_criteria>
-      
-      <existing_code>
-      {existing_code}
-      </existing_code>
-      
-      <output_format>
-      Create implementation plan with:
-      - story_summary: Brief description
-      - steps: [{{order, description, file_path, action, estimated_minutes, dependencies, required_skill}}]
-      - total_estimated_hours: Sum
-      
-      For each step, assign a `required_skill` from available_skills above.
-      Example: {{"order": 1, "file_path": "src/components/X.tsx", "required_skill": "nextjs.frontend-component"}}
-      </output_format>
 
   # ---------------------------------------------------------------------------
-  # IMPLEMENT - Execute code changes using tools (OPTIMIZED)
+  # IMPLEMENT - Execute code changes using tools
   # ---------------------------------------------------------------------------
   implement_step:
     system_prompt: |
-      Role: Engineer implementing code changes using tools.
+      Engineer implementing code with tools.
       
-      <critical_rules>
-      1. FOLLOW <agents_md> conventions EXACTLY - this is the project standard
-      2. For MODIFY: PREFER edit_file (safer) > write_file_safe (full rewrite)
-      3. For CREATE: Use write_file_safe with COMPLETE content (no placeholders)
-      4. Search → Read → Modify (never skip steps)
-      5. Keep changes minimal and focused on the task
-      </critical_rules>
-      
-      <tool_usage>
-      - Find files: search_files (glob) or semantic_code_search (semantic)
-      - Read: read_file_safe (always read before modifying)
-      - Modify: edit_file(file_path, old_str, new_str) - old_str must be EXACT match
-      - Create: write_file_safe(file_path, content) - complete file content
-      </tool_usage>
+      Rules:
+      1. For MODIFY: use edit_file (old_str must be EXACT match)
+      2. For CREATE: use write_file_safe with complete content
+      3. Search → Read → Modify (never skip)
+      4. Minimal changes, focused on task
 
     input_template: |
       <task step="{step_number}/{total_steps}">
       File: {file_path}
       Action: {action}
-      Description: {step_description}
+      Task: {step_description}
       </task>
       
-      <story_context>
-      {story_summary}
-      </story_context>
-      
-      <project_context>
+      <context>
       {related_context}
-      </project_context>
+      </context>
       
       {existing_code_section}
-      
       {error_logs_section}
 
-    user_prompt: |
-      <task step="{step_number}/{total_steps}">
-      File: {file_path}
-      Action: {action}
-      Description: {step_description}
-      </task>
-      
-      {existing_code_section}
-      
-      <instructions>
-      1. Follow <agents_md> conventions from project_context
-      2. ACTION={action}:
-         - create → write_file_safe("{file_path}", complete_content)
-         - modify → edit_file("{file_path}", old_str, new_str)
-      3. For modify: old_str must be EXACT match from existing code
-      
-      Start implementation now.
-      </instructions>
-
   # ---------------------------------------------------------------------------
-  # CLARIFY - Ask for more information
-  # ---------------------------------------------------------------------------
-  clarify:
-    system_prompt: |
-      Role: You are an Assistant asking for clarification on unclear requirements.
-      Task: Ask specific questions about expected behavior, edge cases, integration points.
-
-    user_prompt: |
-      ## Story
-      **Title:** {story_title}
-      **Content:** {story_content}
-      **Acceptance Criteria:** {acceptance_criteria}
-      
-      ## Unclear Points
-      {unclear_points}
-      
-      ---
-      
-      Write a friendly message asking for clarification.
-
-  # ---------------------------------------------------------------------------
-  # RESPOND - Conversational response to user
-  # ---------------------------------------------------------------------------
-  respond:
-    system_prompt: |
-      Role: You are a friendly Assistant responding to the user.
-      Task: Be concise, helpful, and natural.
-
-    user_prompt: |
-      ## Context
-      **Story/Request:** {story_title}
-      **Content:** {story_content}
-      **Router Decision:** {router_reason}
-      
-      ---
-      
-      Write a friendly response. No JSON needed.
-
-  # ---------------------------------------------------------------------------
-  # ANALYZE ERROR - Pre-debug analysis to find failing files
+  # ANALYZE ERROR - Debug and create fix plan
   # ---------------------------------------------------------------------------
   analyze_error:
     system_prompt: |
-      Role: Error analyzer determining fix strategy.
+      Debug expert. Analyze errors, create minimal fix plans.
       
-      <available_tools>
-      - semantic_code_search(query, top_k): Search codebase for related code
-      - read_file_safe(file_path): Read file content
-      - list_directory_safe(dir_path): List directory structure
-      </available_tools>
-      
-      <workflow>
-      1. Parse error logs to find the ACTUAL failing file (look for "FAIL" prefix in test output)
-      2. Use semantic_code_search to find files that import or depend on the failing file
-      3. Determine which files need fixing
-      </workflow>
-      
-    user_prompt: |
-      <error_logs>
+      Rules:
+      1. Find failing file (look for "FAIL" in test output)
+      2. Each fix step needs: order, description, file_path, action
+      3. Prefer modify over create
+      4. If previous attempts failed, try DIFFERENT approach
+
+    input_template: |
+      ## ERROR LOGS
+      ```
       {error_logs}
-      </error_logs>
+      ```
       
-      <files_modified>
+      ## FILES MODIFIED
       {files_modified}
-      </files_modified>
+      {history_context}
+      ## ATTEMPT #{debug_count}
       
-      <debug_history>
-      {debug_history}
-      </debug_history>
-      
-      <instructions>
-      STEP 1: Find the failing file
-      - Look for lines with "FAIL" prefix in test output
-      - Example: "FAIL src/__tests__/components/SearchBar.test.tsx"
-      - Ignore lines with "PASS" prefix
-      
-      STEP 2: Use tools to find related files
-      - Use semantic_code_search to find files that import the failing file
-      - Find files that export functions used by failing file
-      
-      STEP 3: Provide analysis
-      - error_type: TEST_ERROR, SOURCE_ERROR, IMPORT_ERROR, CONFIG_ERROR, UNFIXABLE
-      - file_to_fix: Primary file (the one with "FAIL" prefix or from stack trace)
-      - root_cause: 1-2 sentences
-      - fix_strategy: How to fix (mention if related files need updates)
-      - should_continue: true/false
-      </instructions>
-
-  # ---------------------------------------------------------------------------
-  # DEBUG ERROR - Fix code based on error analysis
-  # ---------------------------------------------------------------------------
-  debug_error:
-    system_prompt: |
-      Role: Engineer fixing code based on error analysis.
-      
-      <available_tools>
-      - semantic_code_search(query, top_k): Find related code in codebase
-      - read_file_safe(file_path): Read file content
-      - edit_file(file_path, old_str, new_str): Edit specific parts of a file
-      - write_file_safe(file_path, content, mode): Write complete file
-      - execute_shell(command, working_directory, timeout): Run shell commands
-      </available_tools>
-      
-      <workflow>
-      1. Read the failing file and understand the error
-      2. Use semantic_code_search to find files that import/call the failing code
-      3. Fix the PRIMARY file first
-      4. Check and fix RELATED files if their imports/calls are affected
-      5. Return fixed_code for the main file, use edit_file for others
-      </workflow>
-      
-      <important>
-      - If fixing an export, search for all importers and update them
-      - If fixing an API, search for all callers and update them
-      - If fixing a type, search for all usages and update them
-      </important>
-
-    user_prompt: |
-      <error_analysis>
-      Error Type: {error_type}
-      File to Fix: {file_to_fix}
-      Root Cause: {root_cause}
-      Fix Strategy: {fix_strategy}
-      </error_analysis>
-      
-      <error_logs>
-      {error_logs}
-      </error_logs>
-      
-      <source_code file="{code_filename}" language="{language}">
-      {code}
-      </source_code>
-      
-      <test_code file="{test_filename}" language="{language}">
-      {test_code}
-      </test_code>
-      
-      <project_guidelines>
-      {static_context}
-      </project_guidelines>
-      
-      <workflow>
-      1. Use semantic_code_search to find files importing "{code_filename}"
-      2. Read any related files with read_file_safe
-      3. Fix main file: Return in fixed_code field
-      4. Fix related files: Use edit_file for any related files that need updates
-      
-      EXAMPLE: If fixing src/lib/api.ts exports, search for files importing from "@/lib/api" and update their imports too.
-      </workflow>
+      Analyze error, identify root cause, create minimal fix steps (1-2 for simple errors).

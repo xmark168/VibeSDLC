@@ -34,7 +34,7 @@ class SkillMetadata:
         context_lower = context.lower()
         score = 0
         for trigger in self.triggers:
-            if trigger.lower() in context_lower:
+            if trigger and trigger.lower() in context_lower:
                 score += 1
         return score
 

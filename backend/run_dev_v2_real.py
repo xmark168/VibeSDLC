@@ -1,25 +1,7 @@
-"""Run Developer V2 with a real task - no mocking.
+"""Developer V2 Interactive Runner.
 
-This script sends a real task to DeveloperV2 and lets it process
-with actual LLM calls.
-
-Features:
-- Interactive mode: After each run, waits for more commands
-- Container persistence: Reuses containers between runs
-- Graceful cleanup: Ctrl+C cleans up containers before exit
-
-Usage:
-    cd backend
-    python run_dev_v2_real.py
-
-Commands (after first run):
-    run     - Run another story
-    test    - Run tests in container
-    exec    - Execute command in container
-    logs    - Show container logs
-    status  - Show container status
-    clear   - Remove containers and exit
-    exit    - Stop containers and exit (can resume later)
+Usage: cd backend && python run_dev_v2_real.py
+Commands: run, test, exec, logs, status, clear, exit
 """
 
 # Load environment variables FIRST
@@ -104,15 +86,7 @@ AVAILABLE_TEMPLATES = {
 
 
 def copy_boilerplate(template_name: str, target_path: Path) -> bool:
-    """Copy boilerplate template to target workspace.
-    
-    Args:
-        template_name: Name of template (nextjs, react, python)
-        target_path: Destination workspace path
-        
-    Returns:
-        True if copied successfully, False otherwise
-    """
+    """Copy boilerplate template to target workspace."""
     template_dir = AVAILABLE_TEMPLATES.get(template_name.lower())
     
     if not template_dir:
@@ -154,14 +128,7 @@ def copy_boilerplate(template_name: str, target_path: Path) -> bool:
 
 
 def detect_template_type(story: dict) -> str:
-    """Detect which template to use based on story content.
-    
-    Args:
-        story: Story dictionary with title and content
-        
-    Returns:
-        Template type: 'nextjs', 'react', or 'python'
-    """
+    """Detect template type from story content."""
     title = story.get("title", "").lower()
     content = story.get("content", "").lower()
     combined = f"{title} {content}"
@@ -181,15 +148,7 @@ def detect_template_type(story: dict) -> str:
 
 
 class SimpleDeveloperRunner:
-    """Simple runner for DeveloperV2 without full agent infrastructure.
-    
-    This runner provides the `_setup_workspace` method that the graph's
-    `setup_workspace` node expects. It handles:
-    - Git init and branch creation
-    - CocoIndex indexing for semantic search
-    
-    Note: message_user calls in nodes.py are disabled for this mode.
-    """
+    """Runner for DeveloperV2 without full agent infrastructure."""
     
     def __init__(self, workspace_path: str = None, template: str = None):
         self.name = "DeveloperV2"
@@ -219,20 +178,7 @@ class SimpleDeveloperRunner:
         logger.info(f"[{self.name}] Workspace ready: False (will be setup by graph)")
     
     def _setup_workspace(self, story_id: str) -> dict:
-        """Setup workspace for the graph's setup_workspace node.
-        
-        This method is called by the setup_workspace node in graph.py.
-        It handles:
-        1. Git init (if not already)
-        2. Create and checkout feature branch
-        3. Initial commit of boilerplate (if any)
-        
-        Args:
-            story_id: Story ID for branch naming
-            
-        Returns:
-            dict with workspace_path, branch_name, main_workspace, workspace_ready
-        """
+        """Setup git workspace and branch."""
         short_id = story_id.split('-')[-1][:8] if '-' in story_id else story_id[:8]
         branch_name = f"story_{short_id}"
         
@@ -287,13 +233,7 @@ class SimpleDeveloperRunner:
         pass  # Disabled for local runner mode
     
     def _get_project_config(self) -> dict:
-        """Get project config based on template type.
-        
-        Returns:
-            tech_stack format: {"name": "project_name", "service": [...]}
-            {"tech_stack": {"name": "my-app", "service": [{"name": "app", ...}, ...]}}
-        """
-        # Default config for NextJS boilerplate (single service)
+        """Get project config based on template type."""
         if self.template in ["nextjs", "react"]:
             return {
                 "tech_stack": {
@@ -322,7 +262,6 @@ class SimpleDeveloperRunner:
                 }
             }
         
-        # Python projects (single service)
         if self.template == "python":
             return {
                 "tech_stack": {
@@ -350,7 +289,6 @@ class SimpleDeveloperRunner:
                 }
             }
         
-        # Fullstack monorepo (multi-service)
         if self.template == "fullstack":
             return {
                 "tech_stack": {
@@ -395,34 +333,22 @@ class SimpleDeveloperRunner:
                 }
             }
         
-        # Default: empty service triggers error in nodes.py
         return {"tech_stack": {"name": "", "service": []}}
     
     async def run_story(self, story: dict) -> dict:
         """Run a story through the graph."""
-        
-        # Setup Langfuse tracing (controlled by ENABLE_LANGFUSE env var)
         langfuse_handler = None
         langfuse_span = None
         langfuse_ctx = None
-        enable_langfuse = os.getenv("ENABLE_LANGFUSE", "false").lower() == "true"
         
-        if enable_langfuse:
+        if os.getenv("ENABLE_LANGFUSE", "false").lower() == "true":
             try:
                 from langfuse import get_client
                 from langfuse.langchain import CallbackHandler
                 
-                # Create parent span for entire graph execution (Team Leader pattern)
                 langfuse = get_client()
-                langfuse_ctx = langfuse.start_as_current_observation(
-                    as_type="span",
-                    name="developer_v2_story_execution"
-                )
-                
-                # Enter context and get span object
+                langfuse_ctx = langfuse.start_as_current_observation(as_type="span", name="developer_v2_story_execution")
                 langfuse_span = langfuse_ctx.__enter__()
-                
-                # Update trace with metadata
                 langfuse_span.update_trace(
                     user_id=str(uuid4()),
                     session_id=str(self.project_id),
@@ -432,14 +358,8 @@ class SimpleDeveloperRunner:
                         "content": story.get("content", "")[:200]
                     },
                     tags=["developer_v2", "story_execution", self.template or "no_template"],
-                    metadata={
-                        "agent": self.name,
-                        "template": self.template,
-                        "template_applied": self.template_applied
-                    }
+                    metadata={"agent": self.name, "template": self.template}
                 )
-                
-                # Handler inherits trace context automatically
                 langfuse_handler = CallbackHandler()
                 
                 logger.info(f"[{self.name}] Langfuse tracing enabled (session={self.project_id})")
@@ -448,12 +368,6 @@ class SimpleDeveloperRunner:
         else:
             logger.info(f"[{self.name}] Langfuse disabled (set ENABLE_LANGFUSE=true to enable)")
         
-        # Build initial state
-        # Note: workspace_path is provided but workspace_ready=False
-        # The setup_workspace node will call agent._setup_workspace() to:
-        # - Initialize git
-        # - Create and checkout feature branch
-        # - Index codebase with CocoIndex
         initial_state = {
             "story_id": story.get("story_id", str(uuid4())),
             "story_title": story.get("title", "Untitled"),
@@ -463,65 +377,47 @@ class SimpleDeveloperRunner:
             "task_id": str(uuid4()),
             "user_id": str(uuid4()),
             "langfuse_handler": langfuse_handler,
-            
-            # Workspace - setup_workspace node will handle git/branch/indexing
-            "workspace_path": str(self.workspace_path),  # Pre-set path (may have boilerplate)
-            "branch_name": None,  # Will be set by setup_workspace node
+            "workspace_path": str(self.workspace_path),
+            "branch_name": "",
             "main_workspace": str(self.workspace_path),
-            "workspace_ready": False,  # Will be set to True by setup_workspace node
-            "index_ready": False,  # Will be set to True after CocoIndex indexing
+            "workspace_ready": False,
+            "index_ready": False,
             "merged": False,
-            
-            # Workflow state
             "action": None,
             "task_type": None,
             "complexity": None,
             "analysis_result": None,
-            "implementation_plan": [],
-            "files_created": [],
-            "files_modified": [],
             "affected_files": [],
+            "dependencies": [],
+            "risks": [],
+            "estimated_hours": 0.0,
+            "implementation_plan": [],
             "current_step": 0,
             "total_steps": 0,
-            "validation_result": None,
+            "files_created": [],
+            "files_modified": [],
             "message": None,
-            "confidence": None,
-            "reason": None,
-            
-            # Design document (merged into plan node)
-            "design_doc": None,
-            
-            # Run code - let detect_test_command figure out the right command
-            "run_status": None,
+            "error": None,
             "run_result": None,
             "run_stdout": "",
             "run_stderr": "",
-            "test_command": None,  # Auto-detect test framework (bun/npm/jest/pytest)
-            "error_logs": "",
-            
-            # Debug
+            "run_status": None,
+            "test_command": None,
             "debug_count": 0,
-            "max_debug": 5,  # Allow 5 debug attempts (MetaGPT pattern)
+            "max_debug": 5,
             "debug_history": [],
-            "last_debug_file": None,
-            "error_analysis": None,  # From analyze_error node
-            
-            # React mode (MetaGPT Engineer2 pattern)
+            "error_analysis": None,
             "react_mode": True,
             "react_loop_count": 0,
             "max_react_loop": 40,
-            
-            # Project context
+            "tech_stack": "nextjs" if self.template in ["nextjs", "react"] else "python",
+            "skill_registry": None,
+            "available_skills": [],
             "project_context": None,
             "agents_md": None,
-            "related_code_context": "",
-            "research_context": "",
-            
-            # Tech stack for skills
-            "tech_stack": "nextjs" if self.template in ["nextjs", "react"] else "python",
-            
-            # Project config (tech stack, commands)
             "project_config": self._get_project_config(),
+            "related_code_context": "",
+            "summarize_feedback": None,
         }
         
         logger.info(f"[{self.name}] Starting story: {story.get('title', 'Untitled')}")
@@ -533,14 +429,11 @@ class SimpleDeveloperRunner:
         sys.stdout.flush()
         
         try:
-            # Run graph with high recursion limit for multi-step workflows
             final_state = await self.graph.graph.ainvoke(
                 initial_state,
                 config={"recursion_limit": 100}
             )
             print("\n[*] Graph completed!")
-            
-            # Update trace output and close span (Team Leader pattern)
             if langfuse_span and langfuse_ctx:
                 try:
                     langfuse_span.update_trace(output={
@@ -562,8 +455,6 @@ class SimpleDeveloperRunner:
             
         except Exception as e:
             logger.error(f"[{self.name}] Graph error: {e}", exc_info=True)
-            
-            # Cleanup langfuse span on error (Team Leader pattern)
             if langfuse_ctx:
                 try:
                     langfuse_ctx.__exit__(type(e), e, e.__traceback__)

@@ -1,180 +1,142 @@
-"""Analyze error node - Pre-debug analysis.
-
-Routes to plan node for bug fix implementation (reuses skill system).
-"""
+"""Analyze error node - Error analysis + fix planning in ONE LLM call."""
 import logging
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel, Field
-from typing import Literal, List, Optional
+from typing import Literal, List
 
 from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, list_directory_safe
+from app.agents.developer_v2.src.schemas import PlanStep
+from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, list_directory_safe, search_files
 from app.agents.developer_v2.src.tools.shell_tools import semantic_code_search
 from app.agents.developer_v2.src.utils.llm_utils import (
     get_langfuse_config as _cfg,
     execute_llm_with_tools as _llm_with_tools,
 )
+from app.agents.developer_v2.src.utils.prompt_utils import (
+    format_input_template as _format_input_template,
+    build_system_prompt as _build_system_prompt,
+)
 from app.agents.developer_v2.src.nodes._llm import code_llm
 from app.agents.developer_v2.src.nodes._helpers import setup_tool_context
+from app.agents.developer_v2.src.skills import SkillRegistry
 
 logger = logging.getLogger(__name__)
 
 
-class ErrorAnalysis(BaseModel):
-    """Error analysis result."""
+class ErrorAnalysisAndPlan(BaseModel):
+    """Combined error analysis and fix plan."""
     error_type: Literal["TEST_ERROR", "SOURCE_ERROR", "IMPORT_ERROR", "CONFIG_ERROR", "UNFIXABLE"] = Field(
         description="Type of error"
     )
-    file_to_fix: str = Field(description="Path to file that needs fixing")
-    related_files: List[str] = Field(default_factory=list, description="Other files that may need updates")
-    root_cause: str = Field(description="Brief description of root cause")
-    fix_strategy: str = Field(description="How to fix this error")
-    complexity: Literal["low", "medium", "high"] = Field(
-        default="low", description="Estimated fix complexity"
+    file_to_fix: str = Field(description="Primary file that needs fixing")
+    root_cause: str = Field(description="Root cause (1-2 sentences)")
+    should_continue: bool = Field(description="True if fixable")
+    fix_steps: List[PlanStep] = Field(
+        default_factory=list,
+        description="Fix steps: order, description, file_path, action (create/modify)"
     )
-    should_continue: bool = Field(description="True if fixable, False if should give up")
-
-
-def _estimate_complexity(error_type: str, related_files: List[str]) -> str:
-    """Estimate fix complexity based on error type and affected files."""
-    if error_type == "UNFIXABLE":
-        return "high"
-    if error_type == "CONFIG_ERROR":
-        return "low"
-    if len(related_files) > 2:
-        return "high"
-    if len(related_files) > 0:
-        return "medium"
-    return "low"
 
 
 async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
-    """Analyze error before attempting fix."""
+    """Analyze error and create fix plan in ONE LLM call."""
     print("[NODE] analyze_error")
     
     try:
         error_logs = state.get("run_stderr", "")
         files_modified = state.get("files_modified", [])
         debug_count = state.get("debug_count", 0)
+        debug_history = state.get("debug_history", [])
         workspace_path = state.get("workspace_path", "")
         project_id = state.get("project_id", "default")
         task_id = state.get("task_id") or state.get("story_id", "")
         
         if not error_logs:
-            logger.info("[analyze_error] No error logs, skipping")
+            logger.info("[analyze_error] No error logs")
             return {**state, "action": "RESPOND"}
         
         setup_tool_context(workspace_path, project_id, task_id)
         
-        # Get debug history to avoid repeating failed fixes
-        debug_history = state.get("debug_history", [])
-        history_str = "\n".join([
-            f"- Attempt #{h.get('iteration', '?')}: Fixed {h.get('file', 'unknown')} - {h.get('fix_description', '')[:60]}"
-            for h in debug_history[-3:]
-        ]) if debug_history else "None"
+        # Load skill registry
+        tech_stack = state.get("tech_stack", "nextjs")
+        skill_registry = state.get("skill_registry")
+        if not skill_registry:
+            skill_registry = SkillRegistry.load(tech_stack)
         
-        prompt = f"""Analyze this error and determine the fix strategy.
-
-## Error Logs
-```
-{error_logs[:5000]}
-```
-
-## Files Modified in This Task
-{', '.join(files_modified) if files_modified else 'None'}
-
-## Previous Debug Attempts (avoid repeating these!)
-{history_str}
-
-## Debug Attempt
-This is attempt #{debug_count + 1}
-
-## INSTRUCTIONS
-1. **Find the ACTUAL failing file**: Look for "FAIL" prefix in Jest/test output
-   - "FAIL src/__tests__/X.test.ts" = this is the failing test file
-   - "PASS src/__tests__/Y.test.ts" = ignore, this passed
-   
-2. **Use semantic_code_search** to find related files:
-   - Search for imports of the failing module
-   - Search for functions/types used by the failing code
-   
-3. **Analyze the relationship** between files and estimate complexity
-
-After exploration, provide your analysis with:
-- error_type: TEST_ERROR, SOURCE_ERROR, IMPORT_ERROR, CONFIG_ERROR, or UNFIXABLE
-- file_to_fix: exact path to the PRIMARY file that needs fixing
-- related_files: list of other files that may need updates (imports, dependencies)
-- root_cause: brief description (1-2 sentences)
-- fix_strategy: detailed steps to fix (will be used to create implementation plan)
-- complexity: low (single file), medium (2-3 files), high (complex multi-file)
-- should_continue: true if fixable, false if should give up
-"""
+        # Build history context
+        history_context = ""
+        if debug_history:
+            history_context = "\n## PREVIOUS ATTEMPTS (DO NOT REPEAT!)\n"
+            for h in debug_history[-3:]:
+                history_context += f"- #{h.get('iteration')}: {h.get('fix_description', '')[:80]} -> FAILED\n"
         
-        # Tool exploration for better error analysis
-        tools = [read_file_safe, list_directory_safe, semantic_code_search]
-        messages = [HumanMessage(content=prompt)]
+        # Use prompts from yaml
+        input_text = _format_input_template(
+            "analyze_error",
+            error_logs=error_logs[:4000],
+            files_modified=', '.join(files_modified) if files_modified else 'None',
+            history_context=history_context,
+            debug_count=debug_count + 1,
+        )
+
+        tools = [read_file_safe, list_directory_safe, semantic_code_search, search_files]
+        messages = [
+            SystemMessage(content=_build_system_prompt("analyze_error")),
+            HumanMessage(content=input_text)
+        ]
         
+        # Tool exploration
         exploration = await _llm_with_tools(
             llm=code_llm,
             tools=tools,
             messages=messages,
             state=state,
-            name="analyze_error_explore",
+            name="analyze_error",
             max_iterations=2
         )
         
-        messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:3000]}\n\nNow provide your error analysis."))
-        structured_llm = code_llm.with_structured_output(ErrorAnalysis)
-        analysis = await structured_llm.ainvoke(messages, config=_cfg(state, "analyze_error"))
+        # Single structured output
+        messages.append(HumanMessage(content=f"Context:\n{exploration[:3000]}\n\nProvide analysis and fix plan."))
+        structured_llm = code_llm.with_structured_output(ErrorAnalysisAndPlan)
+        result = await structured_llm.ainvoke(messages, config=_cfg(state, "analyze_error"))
         
-        logger.info(f"[analyze_error] Type: {analysis.error_type}, File: {analysis.file_to_fix}")
-        logger.info(f"[analyze_error] Related files: {analysis.related_files}")
-        logger.info(f"[analyze_error] Root cause: {analysis.root_cause}")
-        logger.info(f"[analyze_error] Strategy: {analysis.fix_strategy}")
-        logger.info(f"[analyze_error] Complexity: {analysis.complexity}")
-        logger.info(f"[analyze_error] Should continue: {analysis.should_continue}")
+        logger.info(f"[analyze_error] {result.error_type}: {result.root_cause}")
         
-        if not analysis.should_continue:
+        if not result.should_continue or not result.fix_steps:
             return {
                 **state,
-                "error_analysis": analysis.model_dump(),
+                "error_analysis": {"error_type": result.error_type, "root_cause": result.root_cause},
                 "action": "RESPOND",
             }
         
-        # Build affected_files list (primary + related)
-        affected_files = [analysis.file_to_fix]
-        for f in analysis.related_files:
-            if f not in affected_files:
-                affected_files.append(f)
+        logger.info(f"[analyze_error] {len(result.fix_steps)} fix steps")
         
-        # Build analysis_result compatible with plan node
-        analysis_result = {
-            "summary": f"Fix {analysis.error_type}: {analysis.root_cause}",
-            "task_type": "bug_fix",
-            "complexity": analysis.complexity,
-            "affected_files": affected_files,
-            "dependencies": [],
-            "risks": [f"Previous {debug_count} fix attempts failed"] if debug_count > 0 else [],
-            "fix_strategy": analysis.fix_strategy,
-            "error_type": analysis.error_type,
-        }
-        
-        # Override story_title for plan node context
-        original_title = state.get("story_title", "")
-        bug_fix_title = f"[BugFix] {analysis.root_cause[:80]}"
+        steps_text = "\n".join(f"  {s.order}. [{s.action}] {s.description}" for s in result.fix_steps)
+        msg = f"""🔧 **Bug Fix** (Attempt #{debug_count + 1})
+
+**Error:** {result.error_type}
+**Cause:** {result.root_cause[:100]}
+
+{steps_text}
+"""
         
         return {
             **state,
-            "error_analysis": analysis.model_dump(),
-            "analysis_result": analysis_result,
+            "error_analysis": {
+                "error_type": result.error_type,
+                "file_to_fix": result.file_to_fix,
+                "root_cause": result.root_cause,
+            },
             "task_type": "bug_fix",
-            "complexity": analysis.complexity,
-            "affected_files": affected_files,
-            "story_title": bug_fix_title,
-            "original_story_title": original_title,
-            "summarize_feedback": f"Error: {analysis.root_cause}\nStrategy: {analysis.fix_strategy}",
+            "complexity": "low",
+            "affected_files": [result.file_to_fix],
+            "summarize_feedback": f"Error: {result.root_cause}",
+            "implementation_plan": [s.model_dump() for s in result.fix_steps],
+            "total_steps": len(result.fix_steps),
             "current_step": 0,
-            "action": "PLAN",
+            "message": msg,
+            "action": "IMPLEMENT",
+            "skill_registry": skill_registry,
+            "tech_stack": tech_stack,
         }
         
     except Exception as e:

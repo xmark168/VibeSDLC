@@ -38,7 +38,7 @@ class LegacySkill:
     def matches(self, file_path: str, description: str) -> int:
         """Return match score based on triggers."""
         combined = f"{file_path} {description}".lower()
-        return sum(1 for t in self.triggers if t.lower() in combined)
+        return sum(1 for t in self.triggers if t and t.lower() in combined)
     
     def to_prompt_section(self, include_content: bool = True) -> str:
         """Format skill for prompt injection."""

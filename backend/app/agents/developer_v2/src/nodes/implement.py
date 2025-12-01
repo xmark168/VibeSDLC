@@ -92,12 +92,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             except Exception:
                 pass
         
-        implementation_plan = state.get("code_plan_doc") or ""
-        if not implementation_plan:
-            implementation_plan = "\n".join(
-                f"{s.get('order', i+1)}. [{s.get('action')}] {s.get('description')}"
-                for i, s in enumerate(plan_steps)
-            )
+
         
         # Build context - simplified (skill provides conventions/examples/best practices)
         context_parts = []
@@ -127,8 +122,8 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             existing_code_section = f"<existing_code>\n{existing_code}\n</existing_code>"
         
         error_logs_section = ""
-        if state.get('error_logs'):
-            error_logs_section = f"<previous_errors>\n{state.get('error_logs')}\n</previous_errors>"
+        if state.get('run_stderr'):
+            error_logs_section = f"<previous_errors>\n{state.get('run_stderr')}\n</previous_errors>"
         
         # Tools for implementation - LLM uses these directly to create/edit files
         tools = [read_file_safe, write_file_safe, edit_file, list_directory_safe, semantic_code_search, execute_shell, search_files]
