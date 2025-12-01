@@ -297,6 +297,20 @@ IMPORTANT: For CONFIG_ERROR like "command not found: next", use commands_to_run 
                 previous_attempts += f"- Attempt #{attempt['iteration']}: {attempt['fix_description']} -> FAILED\n"
             user_prompt += previous_attempts
         
+        # Add tool usage guidance
+        module_name = file_to_fix.replace(".tsx", "").replace(".ts", "").replace(".js", "").split("/")[-1]
+        tool_guidance = f"""
+
+## TOOL USAGE WORKFLOW
+1. **First**: Use semantic_code_search to find files that import or use "{module_name}"
+2. **Then**: Read any related files with read_file_safe to understand dependencies
+3. **Fix main file**: Return complete code in fixed_code field
+4. **Fix related files**: Use edit_file for any related files that need updates
+
+IMPORTANT: If you're fixing an export/API/type, search for all usages and update them too!
+"""
+        user_prompt += tool_guidance
+        
         tavily_tool = TavilySearch(max_results=3)
         tools = [read_file_safe, list_directory_safe, semantic_code_search, execute_shell, tavily_tool, edit_file, write_file_safe]
         

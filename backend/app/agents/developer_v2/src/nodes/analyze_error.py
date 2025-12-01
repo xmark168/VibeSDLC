@@ -46,14 +46,12 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
         
         setup_tool_context(workspace_path, project_id, task_id)
         
-        # Get existing files for context
-        existing_files = ""
-        try:
-            result = list_directory_safe.invoke({"dir_path": "src"})
-            if result and not result.startswith("Error:"):
-                existing_files = result[:2000]
-        except Exception:
-            pass
+        # Get debug history to avoid repeating failed fixes
+        debug_history = state.get("debug_history", [])
+        history_str = "\n".join([
+            f"- Attempt #{h.get('iteration', '?')}: Fixed {h.get('file', 'unknown')} - {h.get('fix_description', '')[:60]}"
+            for h in debug_history[-3:]
+        ]) if debug_history else "None"
         
         prompt = f"""Analyze this error and determine the fix strategy.
 
@@ -65,19 +63,29 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
 ## Files Modified in This Task
 {', '.join(files_modified) if files_modified else 'None'}
 
-## Existing Files
-{existing_files or 'N/A'}
+## Previous Debug Attempts (avoid repeating these!)
+{history_str}
 
 ## Debug Attempt
 This is attempt #{debug_count + 1}
 
-Use the tools to explore the codebase and understand the error context.
-Then determine:
-1. error_type: TEST_ERROR (test assertion), SOURCE_ERROR (source code bug), IMPORT_ERROR (wrong import/path), CONFIG_ERROR (config issue), or UNFIXABLE
-2. file_to_fix: exact path to the file that needs fixing
-3. root_cause: brief description (1-2 sentences)
-4. fix_strategy: how to fix (1-2 sentences)
-5. should_continue: true if fixable, false if should give up (e.g., requires manual intervention)
+## INSTRUCTIONS
+1. **Find the ACTUAL failing file**: Look for "FAIL" prefix in Jest/test output
+   - "FAIL src/__tests__/X.test.ts" = this is the failing test file
+   - "PASS src/__tests__/Y.test.ts" = ignore, this passed
+   
+2. **Use semantic_code_search** to find related files:
+   - Search for imports of the failing module
+   - Search for functions/types used by the failing code
+   
+3. **Analyze the relationship** between files
+
+After exploration, provide your analysis with:
+- error_type: TEST_ERROR, SOURCE_ERROR, IMPORT_ERROR, CONFIG_ERROR, or UNFIXABLE
+- file_to_fix: exact path to the PRIMARY file that needs fixing
+- root_cause: brief description (1-2 sentences)
+- fix_strategy: how to fix (mention if related files need updates too)
+- should_continue: true if fixable, false if should give up
 """
         
         # Tool exploration for better error analysis
