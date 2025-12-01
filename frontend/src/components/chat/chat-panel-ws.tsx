@@ -962,6 +962,23 @@ export function ChatPanelWS({
                       suggestedAcceptanceCriteria={msg.structured_data.suggested_acceptance_criteria}
                       hasSuggestions={msg.structured_data.has_suggestions}
                       initialActionTaken={msg.structured_data.action_taken}
+                      onApplied={() => {
+                        if (projectId) {
+                          queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+                          queryClient.invalidateQueries({ queryKey: ['messages', projectId] })
+                        }
+                      }}
+                      onKeep={() => {
+                        if (projectId) {
+                          queryClient.invalidateQueries({ queryKey: ['messages', projectId] })
+                        }
+                      }}
+                      onRemove={() => {
+                        if (projectId) {
+                          queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+                          queryClient.invalidateQueries({ queryKey: ['messages', projectId] })
+                        }
+                      }}
                     />
                   )}
                 </div>
@@ -1107,7 +1124,7 @@ export function ChatPanelWS({
                       size="icon"
                       className="h-8 w-8 hover:bg-accent"
                       onClick={triggerMention}
-                      disabled={!isConnected || shouldBlockChat}
+                      disabled={!isConnected || !!shouldBlockChat}
                     >
                       <AtSign className="w-4 h-4" />
                     </Button>

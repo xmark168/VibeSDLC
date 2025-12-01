@@ -589,8 +589,6 @@ class StoryService:
             )
             await producer.publish(topic=KafkaTopics.STORY_EVENTS, event=event)
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"Failed to publish review action event: {e}")
 
         return story
