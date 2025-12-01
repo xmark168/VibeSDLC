@@ -98,7 +98,7 @@ export function StoriesFileCard({
 
         {/* Submitted state */}
         {showActions && hasSubmitted && (
-          <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+          <div className="flex items-center gap-2 text-sm">
             <Check className="w-4 h-4" />
             <span>Đã gửi yêu cầu</span>
           </div>

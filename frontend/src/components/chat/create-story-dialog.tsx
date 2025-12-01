@@ -23,7 +23,7 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateS
     title: "",
     description: "",
     type: "UserStory",
-    story_point: undefined,
+    story_point: 1,
     priority: "Medium",
     acceptance_criteria: []
   })
@@ -46,7 +46,7 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateS
       title: "",
       description: "",
       type: "UserStory",
-      story_point: undefined,
+      story_point: 1,
       priority: "Medium",
       acceptance_criteria: []
     })
@@ -164,12 +164,12 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateS
                   <SelectValue placeholder="Not estimated" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="1">1 (1 day)</SelectItem>
-                  <SelectItem value="2">2 (2 days)</SelectItem>
-                  <SelectItem value="3">3 (3 days)</SelectItem>
-                  <SelectItem value="5">5 (1 week)</SelectItem>
-                  <SelectItem value="8">8 (2 weeks)</SelectItem>
-                  <SelectItem value="13">13 (Too large - split!)</SelectItem>
+                  <SelectItem value="1">1 - XS (Extra Small)</SelectItem>
+                  <SelectItem value="2">2 - S (Small)</SelectItem>
+                  <SelectItem value="3">3 - M (Medium)</SelectItem>
+                  <SelectItem value="5">5 - L (Large)</SelectItem>
+                  <SelectItem value="8">8 - XL (Extra Large)</SelectItem>
+                  <SelectItem value="13">13 - XXL (Too large - split!)</SelectItem>
                 </SelectContent>
               </Select>
             </div>

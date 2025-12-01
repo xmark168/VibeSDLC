@@ -175,6 +175,15 @@ class StoryEvent(BaseKafkaEvent):
     assigned_by: Optional[str] = None
 
 
+class StoryReviewActionEvent(BaseKafkaEvent):
+    """User action on story review (apply/keep/remove)."""
+    
+    event_type: str = "story.review_action"
+    story_id: str
+    story_title: str
+    action: str  # "apply", "keep", "remove"
+
+
 class QuestionAskedEvent(BaseKafkaEvent):
     """Agent clarification question."""
     
@@ -377,6 +386,7 @@ EVENT_TYPE_TO_SCHEMA = {
     StoryEventType.STATUS_CHANGED.value: StoryEvent,
     StoryEventType.ASSIGNED.value: StoryEvent,
     StoryEventType.DELETED.value: StoryEvent,
+    "story.review_action": StoryReviewActionEvent,
     "agent.question_asked": QuestionAskedEvent,
     "user.question_answer": QuestionAnswerEvent,
     "agent.question_batch_asked": BatchQuestionsAskedEvent,

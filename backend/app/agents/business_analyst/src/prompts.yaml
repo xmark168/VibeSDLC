@@ -87,7 +87,7 @@ shared_context:
     - description: Detailed description
     - requirements: List of specific, actionable requirements for developers
     - acceptance_criteria: List of Given/When/Then criteria for testing
-    - priority: Priority level (1=Critical, 2=High, 3=Medium, 4=Low, 5=Nice-to-have)
+    - priority: Priority level (1=High, 2=Medium, 3=Low)
     - story_point: Estimated effort (1, 2, 3, 5, 8, 13 - Fibonacci scale)
 
 # ============================================================================
@@ -424,7 +424,7 @@ tasks:
       - description: Detailed description of the story
       - requirements: List of specific, actionable requirements for developers (3-6 items per story)
       - acceptance_criteria: List of testable criteria (Given/When/Then format) for QA
-      - priority: Priority level (1=Critical, 2=High, 3=Medium, 4=Low, 5=Nice-to-have)
+      - priority: Priority level (1=High, 2=Medium, 3=Low)
       - story_point: Estimated effort in story points (1, 2, 3, 5, 8, 13 - Fibonacci)
       
       **Guidelines (follow INVEST principles):**
@@ -481,7 +481,7 @@ tasks:
                   "Given [context] when [action] then [expected result]",
                   "Given [context] when [edge case] then [handling]"
                 ],
-                "priority": 3,
+                "priority": 2,
                 "story_point": 3
               }}
             ]
@@ -516,7 +516,7 @@ tasks:
                   "Given I am on product page when I click Add to Cart then product is added and cart badge updates",
                   "Given product is out of stock when I view page then Add to Cart button is disabled"
                 ],
-                "priority": 2,
+                "priority": 1,
                 "story_point": 5
               }},
               {{
@@ -535,7 +535,7 @@ tasks:
                   "Given I have items in cart when I change quantity then subtotal and total update immediately",
                   "Given quantity exceeds stock when I increase then I see stock limit warning"
                 ],
-                "priority": 3,
+                "priority": 2,
                 "story_point": 3
               }}
             ]
@@ -631,7 +631,7 @@ tasks:
       - description: Detailed description
       - requirements: List of specific, actionable requirements for developers (3-6 items)
       - acceptance_criteria: List of Given/When/Then criteria for QA testing
-      - priority: Priority level (1=Critical, 2=High, 3=Medium, 4=Low, 5=Nice-to-have)
+      - priority: Priority level (1=High, 2=Medium, 3=Low)
       - story_point: Estimated effort in story points (1, 2, 3, 5, 8, 13 - Fibonacci)
       
       **Update Guidelines:**
@@ -680,7 +680,7 @@ tasks:
                 "description": "Detailed description in English",
                 "requirements": ["Requirement 1", "Requirement 2", "Requirement 3"],
                 "acceptance_criteria": ["Given X when Y then Z"],
-                "priority": 3,
+                "priority": 2,
                 "story_point": 3
               }}
             ]
@@ -719,6 +719,81 @@ tasks:
       User message: "{user_message}"
       
       Respond naturally as a friendly Business Analyst. Keep it short and warm.
+
+  # ---------------------------------------------------------------------------
+  # VERIFY STORY - Auto-review newly created story
+  # ---------------------------------------------------------------------------
+  verify_story:
+    system_prompt: |
+      {shared_context.agent_identity}
+      
+      ---
+      
+      # STORY VERIFICATION
+      
+      You are reviewing a newly created user story.
+      
+      **YOUR TASKS:**
+      1. **CHECK DUPLICATE FIRST**: Compare with existing stories - is this story already covered?
+         - If DUPLICATE: Stop here, no need for INVEST analysis or suggestions
+         - If NOT duplicate: Continue to step 2
+      2. **CHECK INVEST** (only if NOT duplicate): Evaluate against INVEST criteria
+         - **I**ndependent: Story can be developed separately
+         - **N**egotiable: Details can be discussed
+         - **V**aluable: Delivers clear user/business value
+         - **E**stimable: Clear enough to estimate effort
+         - **S**mall: Completable within 1 sprint
+         - **T**estable: Has clear acceptance criteria
+      3. **SUGGEST IMPROVEMENTS** (only if NOT duplicate): If issues found, provide specific suggestions
+      
+      **RESPONSE GUIDELINES:**
+      - Respond in Vietnamese
+      - Be helpful and constructive
+      - If duplicate: just explain why it's duplicate, skip INVEST and suggestions
+      - If not duplicate: provide full INVEST analysis and suggestions if needed
+
+    user_prompt: |
+      # PROJECT CONTEXT
+      {prd_context}
+      
+      # EXISTING STORIES
+      {stories_context}
+      
+      # NEW STORY TO VERIFY
+      - Title: {story_title}
+      - Description: {story_description}
+      - Acceptance Criteria: {story_acceptance_criteria}
+      - Type: {story_type}
+      
+      # YOUR TASK
+      Review this story and provide feedback.
+      
+      **ACCEPTANCE CRITERIA FORMAT:**
+      Each AC must follow Given/When/Then format with line breaks:
+      "Given [context]\nWhen [action]\nThen [expected result]"
+      
+      Example:
+      "Given tôi đang ở màn hình tạo công việc mới\nWhen tôi nhập tiêu đề, mô tả và hạn hoàn thành hợp lệ và bấm Lưu\nThen công việc mới được tạo và hiển thị ngay trong danh sách công việc."
+      
+      Return ONLY valid JSON:
+      ```json
+      {{
+        "is_duplicate": true/false,
+        "duplicate_of": "title of similar story if duplicate, else null",
+        "duplicate_reason": "explanation in Vietnamese",
+        "invest_score": 1-6,
+        "invest_issues": [
+          {{"code": "I|N|V|E|S|T", "issue": "detailed explanation in Vietnamese"}}
+        ],
+        "suggested_title": "improved title if needed, else null",
+        "suggested_description": "improved description if needed, else null",
+        "suggested_acceptance_criteria": [
+          "Given [context]\nWhen [action]\nThen [result]",
+          "Given [context]\nWhen [action]\nThen [result]"
+        ],
+        "summary": "brief summary of review in Vietnamese (1-2 sentences)"
+      }}
+      ```
 
   # ---------------------------------------------------------------------------
   # COMPLETION MESSAGE - Generate natural completion messages with personality

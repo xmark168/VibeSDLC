@@ -28,7 +28,7 @@ export const storiesApi = {
     title: string
     description?: string
     story_type: StoryType
-    estimated_hours?: number
+    story_point?: number
     priority?: number
     acceptance_criteria?: string
     tags?: string[]
@@ -42,7 +42,7 @@ export const storiesApi = {
         title: data.title,
         description: data.description,
         story_type: data.story_type,
-        estimated_hours: data.estimated_hours,
+        story_point: data.story_point,
         priority: data.priority || 3, // Default to medium priority (3)
         acceptance_criteria: data.acceptance_criteria,
         tags: data.tags || [],
@@ -134,6 +134,27 @@ export const storiesApi = {
     return __request<void>(OpenAPI, {
       method: 'DELETE',
       url: `/api/v1/stories/${storyId}`,
+    })
+  },
+
+  /**
+   * Handle review action (apply/keep/remove)
+   */
+  reviewAction: async (
+    storyId: string,
+    action: 'apply' | 'keep' | 'remove',
+    suggestions?: {
+      suggested_title?: string
+      suggested_acceptance_criteria?: string[]
+    }
+  ): Promise<{ message: string; story_id: string }> => {
+    return __request<{ message: string; story_id: string }>(OpenAPI, {
+      method: 'POST',
+      url: `/api/v1/stories/${storyId}/review-action`,
+      body: {
+        action,
+        ...suggestions
+      },
     })
   }
 }
