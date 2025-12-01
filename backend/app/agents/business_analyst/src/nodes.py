@@ -776,10 +776,8 @@ async def approve_stories(state: BAState, agent=None) -> dict:
                 epic_string_id = story_data.get("epic_id", "")
                 epic_uuid = epic_id_map.get(epic_string_id)
                 
-                # Parse acceptance criteria
+                # Get acceptance criteria list (keep as list for JSON storage)
                 acceptance_criteria = story_data.get("acceptance_criteria", [])
-                if isinstance(acceptance_criteria, list):
-                    acceptance_criteria = "\n".join(f"- {ac}" for ac in acceptance_criteria)
                 
                 # Get requirements list (keep as list for JSON storage)
                 requirements = story_data.get("requirements", [])

@@ -157,7 +157,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-start justify-between gap-3">
             <div className="flex-1">
@@ -198,7 +198,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
         <Separator />
 
         {/* Tabs Navigation */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="detail" className="gap-2">
               <FileText className="w-4 h-4" />
@@ -215,7 +215,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
           </TabsList>
 
           {/* Detail Tab */}
-          <TabsContent value="detail" className="flex-1 overflow-y-auto mt-4">
+          <TabsContent value="detail" className="flex-1 overflow-y-auto mt-4 min-h-0">
             <div className="space-y-4 text-sm">
           {/* Description */}
           {card.description && (
@@ -232,7 +232,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
               <ul className="space-y-1">
                 {card.requirements.map((req: string, idx: number) => (
                   <li key={idx} className="text-sm text-muted-foreground flex items-start gap-2">
-                    <span className="text-xs font-semibold text-muted-foreground mt-0.5">{idx + 1}.</span>
+                    <span className="text-muted-foreground">-</span>
                     <span>{req}</span>
                   </li>
                 ))}
@@ -241,10 +241,17 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
           )}
 
           {/* Acceptance Criteria */}
-          {card.acceptance_criteria && (
+          {card.acceptance_criteria && card.acceptance_criteria.length > 0 && (
             <div>
               <h4 className="text-sm font-semibold text-foreground mb-2">Acceptance Criteria</h4>
-              <p className="text-sm text-muted-foreground whitespace-pre-wrap">{card.acceptance_criteria}</p>
+              <ul className="space-y-1">
+                {card.acceptance_criteria.map((ac: string, idx: number) => (
+                  <li key={idx} className="text-sm text-muted-foreground flex items-start gap-2">
+                    <span className="text-muted-foreground">-</span>
+                    <span className="whitespace-pre-wrap">{ac}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 
@@ -448,7 +455,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
           </TabsContent>
 
           {/* Chat Tab */}
-          <TabsContent value="chat" className="flex-1 flex flex-col mt-4 h-[500px]">
+          <TabsContent value="chat" className="flex-1 flex flex-col mt-4 min-h-0 overflow-hidden">
             {/* Chat Header */}
             <div className="flex items-center justify-between pb-3 border-b">
               <div className="flex items-center gap-2">
@@ -572,7 +579,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
           </TabsContent>
 
           {/* Logs Tab */}
-          <TabsContent value="logs" className="flex-1 overflow-y-auto mt-4">
+          <TabsContent value="logs" className="flex-1 overflow-y-auto mt-4 min-h-0">
             <div className="space-y-4">
               <div className="text-center text-muted-foreground py-8">
                 <ScrollText className="w-12 h-12 mx-auto mb-3 opacity-50" />

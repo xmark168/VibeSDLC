@@ -30,7 +30,7 @@ export const storiesApi = {
     story_type: StoryType
     story_point?: number
     priority?: number
-    acceptance_criteria?: string
+    acceptance_criteria?: string[]
     requirements?: string[]
     tags?: string[]
     labels?: string[]
@@ -45,7 +45,7 @@ export const storiesApi = {
         story_type: data.story_type,
         story_point: data.story_point,
         priority: data.priority || 3, // Default to medium priority (3)
-        acceptance_criteria: data.acceptance_criteria,
+        acceptance_criteria: data.acceptance_criteria || [],
         requirements: data.requirements || [],
         tags: data.tags || [],
         labels: data.labels || [],

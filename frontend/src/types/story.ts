@@ -14,7 +14,7 @@ export interface Story {
   epic_id?: string | null;
   assignee_id?: string | null;
   reviewer_id?: string | null;
-  acceptance_criteria?: string;
+  acceptance_criteria?: string[];
   requirements?: string[];
   rank?: number | null;
   story_point?: number | null;
@@ -53,7 +53,7 @@ export interface UpdateStoryParams {
   epic_id?: string;
   parent_story_id?: string;
   tags?: string[];
-  acceptance_criteria?: string;
+  acceptance_criteria?: string[];
   requirements?: string[];
   business_value?: number;
   risk_level?: 'low' | 'medium' | 'high' | 'critical';

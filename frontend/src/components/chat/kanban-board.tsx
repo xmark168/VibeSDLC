@@ -433,7 +433,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         story_type: storyData.type,
         story_point: storyData.story_point,
         priority: storyData.priority === "High" ? 1 : storyData.priority === "Medium" ? 2 : 3,
-        acceptance_criteria: storyData.acceptance_criteria.map(ac => `- ${ac}`).join('\n'),
+        acceptance_criteria: storyData.acceptance_criteria,
         requirements: storyData.requirements,
         tags: [],
         labels: [],

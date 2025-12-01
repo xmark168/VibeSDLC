@@ -269,7 +269,7 @@ export function StorySuggestionsCard({
                     <p className="text-sm font-medium pl-4">Requirements đề xuất:</p>
                     {suggestedRequirements.map((req, idx) => (
                       <p key={idx} className="text-sm pl-8">
-                        {idx + 1}. {req}
+                        - {req}
                       </p>
                     ))}
                   </div>
@@ -280,7 +280,7 @@ export function StorySuggestionsCard({
                     <p className="text-sm font-medium pl-4">Acceptance Criteria đề xuất:</p>
                     {suggestedAcceptanceCriteria.map((ac, idx) => (
                       <div key={idx} className="text-sm pl-8 space-y-0.5">
-                        <p>{idx + 1}. {ac.split('\n')[0]}</p>
+                        <p>- {ac.split('\n')[0]}</p>
                         {ac.split('\n').slice(1).map((line, lineIdx) => (
                           <p key={lineIdx} className="pl-4">{line}</p>
                         ))}

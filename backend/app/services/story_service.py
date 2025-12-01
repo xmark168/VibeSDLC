@@ -534,7 +534,7 @@ class StoryService:
             if suggested_title:
                 story.title = suggested_title
             if suggested_acceptance_criteria:
-                story.acceptance_criteria = "\n".join(f"- {ac}" for ac in suggested_acceptance_criteria)
+                story.acceptance_criteria = suggested_acceptance_criteria
             if suggested_requirements:
                 story.requirements = suggested_requirements
             self.session.add(story)
