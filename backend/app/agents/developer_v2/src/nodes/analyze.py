@@ -31,11 +31,17 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
         
         setup_tool_context(workspace_path, project_id, task_id)
         
+        # Get AGENTS.md and project context for analysis (loaded in setup_workspace)
+        agents_md = state.get("agents_md", "")
+        project_context = state.get("project_context", "")
+        
         input_text = _format_input_template(
             "analyze_story",
             story_title=state.get("story_title", "Untitled"),
             story_content=state.get("story_content", ""),
-            acceptance_criteria=chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", []))
+            acceptance_criteria=chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", [])),
+            agents_md_summary=agents_md[:3000] if agents_md else "No AGENTS.md found",
+            project_context=project_context[:2000] if project_context else "No project context",
         )
 
         tools = [read_file_safe, list_directory_safe, semantic_code_search, execute_shell, search_files]

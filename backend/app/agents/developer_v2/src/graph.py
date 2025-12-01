@@ -2,8 +2,10 @@
 Developer V2 LangGraph - Story Implementation Flow.
 
 Flow: setup → analyze → design → plan → implement ⟷ run_code → END
-                                            ↑          ↓
-                                            └── analyze_error → debug ──┘
+                                   ↑                    ↓
+                                   └── analyze_error ───┘
+
+Bug fix flow reuses plan + implement nodes with skill system.
 """
 
 from functools import partial
@@ -14,7 +16,7 @@ from langgraph.graph import StateGraph, END
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.nodes import (
     setup_workspace, analyze, design, plan, implement,
-    run_code, analyze_error, debug_error
+    run_code, analyze_error,
 )
 
 

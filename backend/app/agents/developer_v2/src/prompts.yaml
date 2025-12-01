@@ -114,14 +114,14 @@ tasks:
       Analyze the User Story to understand:
       1. What - What exactly needs to be done
       2. Why - What is the business value
-      3. How - Feasible approach
+      3. How - Feasible approach (following project conventions)
       4. Risk - What could go wrong
       </analysis_task>
       
       <checklist>
       - Identify task type (feature/bugfix/refactor/enhancement)
       - Assess complexity (low/medium/high)
-      - Estimate time
+      - Estimate time based on project conventions
       - List affected files/components
       - Identify dependencies
       - Flag potential risks
@@ -132,6 +132,8 @@ tasks:
       - Medium: 2-8 hours, multiple files, some integration
       - High: > 8 hours, cross-cutting, complex logic
       </complexity_guidelines>
+      
+      IMPORTANT: Follow <agents_md> conventions when suggesting approach and affected files.
 
     input_template: |
       <story>
@@ -140,6 +142,15 @@ tasks:
       Acceptance Criteria: {acceptance_criteria}
       </story>
       
+      <agents_md>
+      {agents_md_summary}
+      </agents_md>
+      
+      <project_info>
+      {project_context}
+      </project_info>
+      
+      Analyze the story following project conventions from <agents_md>.
       Identify: task_type, complexity, estimated_hours, affected_files, suggested_approach.
 
     user_prompt: |
@@ -149,9 +160,13 @@ tasks:
       Acceptance Criteria: {acceptance_criteria}
       </story>
       
-      <project_context>
+      <agents_md>
+      {agents_md_summary}
+      </agents_md>
+      
+      <project_info>
       {project_context}
-      </project_context>
+      </project_info>
       
       <output_format>
       Return JSON: {{"task_type": "...", "complexity": "...", "estimated_hours": N, "summary": "...", "affected_files": [...], "dependencies": [...], "risks": [...], "suggested_approach": "..."}}
@@ -231,48 +246,57 @@ tasks:
     system_prompt: |
       Role: Engineer implementing code changes using tools.
       
-      <rules>
-      1. PARALLEL CALLS: Call independent tools together (search_files + list_directory_safe)
-      2. Search → Read → Modify (never skip steps)
-      3. For MODIFY: MUST use edit_file (safer) - only use write_file_safe if edit_file fails
-      4. For CREATE: Use write_file_safe with complete content
-      5. Keep changes minimal and focused
-      </rules>
+      <critical_rules>
+      1. FOLLOW <agents_md> conventions EXACTLY - this is the project standard
+      2. For MODIFY: PREFER edit_file (safer) > write_file_safe (full rewrite)
+      3. For CREATE: Use write_file_safe with COMPLETE content (no placeholders)
+      4. Search → Read → Modify (never skip steps)
+      5. Keep changes minimal and focused on the task
+      </critical_rules>
       
-      <tool_priority>
-      - Find files: search_files (fast) > semantic_code_search (slow)
-      - Modify: edit_file (preferred) > write_file_safe (last resort)
-      </tool_priority>
+      <tool_usage>
+      - Find files: search_files (glob) or semantic_code_search (semantic)
+      - Read: read_file_safe (always read before modifying)
+      - Modify: edit_file(file_path, old_str, new_str) - old_str must be EXACT match
+      - Create: write_file_safe(file_path, content) - complete file content
+      </tool_usage>
 
     input_template: |
-      <task step="{step_number}/{total_steps}" file="{file_path}" action="{action}">
-      {step_description}
+      <task step="{step_number}/{total_steps}">
+      File: {file_path}
+      Action: {action}
+      Description: {step_description}
       </task>
       
-      <story>{story_summary}</story>
+      <story_context>
+      {story_summary}
+      </story_context>
       
-      <project_guidelines>
+      <project_context>
       {related_context}
-      </project_guidelines>
+      </project_context>
       
       {existing_code_section}
       
       {error_logs_section}
 
     user_prompt: |
-      <task step="{step_number}/{total_steps}" file="{file_path}" action="{action}">
-      {step_description}
+      <task step="{step_number}/{total_steps}">
+      File: {file_path}
+      Action: {action}
+      Description: {step_description}
       </task>
       
       {existing_code_section}
       
       <instructions>
-      ACTION={action}:
-      - create → write_file_safe("{file_path}", complete_content)
-      - modify → edit_file("{file_path}", old_str, new_str) [PREFERRED]
+      1. Follow <agents_md> conventions from project_context
+      2. ACTION={action}:
+         - create → write_file_safe("{file_path}", complete_content)
+         - modify → edit_file("{file_path}", old_str, new_str)
+      3. For modify: old_str must be EXACT match from existing code
       
-      CRITICAL: For modify, use edit_file with EXACT old_str match from existing code.
-      Start now.
+      Start implementation now.
       </instructions>
 
   # ---------------------------------------------------------------------------

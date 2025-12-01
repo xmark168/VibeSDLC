@@ -6,7 +6,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, write_file_safe, edit_file, list_directory_safe, search_files
 from app.agents.developer_v2.src.tools.shell_tools import execute_shell, semantic_code_search
-from app.agents.developer_v2.src.tools import get_related_code_indexed, get_boilerplate_examples, get_agents_md
+from app.agents.developer_v2.src.tools import get_related_code_indexed
 from app.agents.developer_v2.src.utils.llm_utils import (
     get_langfuse_config as _cfg,
     execute_llm_with_tools as _llm_with_tools,
@@ -16,8 +16,8 @@ from app.agents.developer_v2.src.utils.prompt_utils import (
     build_system_prompt as _build_system_prompt,
 )
 from app.agents.developer_v2.src.nodes._llm import code_llm
-from app.agents.developer_v2.src.nodes._helpers import setup_tool_context, build_static_context
-from app.agents.developer_v2.src.skills import SkillRegistry
+from app.agents.developer_v2.src.nodes._helpers import setup_tool_context
+from app.agents.developer_v2.src.skills import SkillRegistry, get_project_structure
 
 logger = logging.getLogger(__name__)
 
@@ -99,44 +99,25 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
                 for i, s in enumerate(plan_steps)
             )
         
-        # Build context (pass current_file for smart section extraction)
-        static_context = build_static_context(state, current_file)
+        # Build context - simplified (skill provides conventions/examples/best practices)
+        context_parts = []
         
-        # Always include AGENTS.md directly (not from search)
-        agents_md = state.get("agents_md", "")
-        if not agents_md and workspace_path:
-            agents_md = get_agents_md(workspace_path)
-        if agents_md:
-            static_context = f"## AGENTS.MD (MUST FOLLOW!)\n{agents_md}\n\n---\n\n{static_context}" if static_context else f"## AGENTS.MD (MUST FOLLOW!)\n{agents_md}"
+        # 1. Project structure (where to create files)
+        tech_stack = state.get("tech_stack", "nextjs")
+        project_structure = get_project_structure(tech_stack)
+        if project_structure:
+            context_parts.append(f"<project_structure>\n{project_structure}\n</project_structure>")
         
-        if workspace_path:
-            task_type = "page"
-            if "component" in current_file.lower():
-                task_type = "component"
-            elif "api" in current_file.lower() or "route" in current_file.lower():
-                task_type = "api"
-            elif "layout" in current_file.lower():
-                task_type = "layout"
-            
-            boilerplate = get_boilerplate_examples(workspace_path, task_type)
-            if boilerplate:
-                static_context = f"{static_context}\n\n---\n\n{boilerplate}" if static_context else boilerplate
-        
-        dynamic_parts = []
-        
+        # 2. Related code from CocoIndex (project-specific, unique per task)
         if related_context:
-            dynamic_parts.append(f"## RELATED CODE\n{related_context}")
+            context_parts.append(f"<related_code>\n{related_context}\n</related_code>")
         
-        research_context = state.get("research_context", "")
-        if research_context:
-            dynamic_parts.append(f"## Best Practices (from web research)\n{research_context[:1500]}")
-        
+        # 3. Feedback from previous attempt (critical for debug loops)
         summarize_feedback = state.get("summarize_feedback", "")
         if summarize_feedback:
-            dynamic_parts.append(f"## FEEDBACK FROM PREVIOUS ATTEMPT (MUST ADDRESS)\n{summarize_feedback}")
+            context_parts.append(f"<feedback_must_address>\n{summarize_feedback}\n</feedback_must_address>")
         
-        dynamic_context = "\n\n---\n\n".join(dynamic_parts) if dynamic_parts else "No additional context"
-        full_related_context = f"{static_context}\n\n{'='*60}\n\n{dynamic_context}" if static_context else dynamic_context
+        full_related_context = "\n\n".join(context_parts) if context_parts else ""
         
         setup_tool_context(workspace_path, project_id, task_id)
         
@@ -190,13 +171,9 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         system_prompt = _build_system_prompt("implement_step")
         
         if skill:
-            # Inject skill as additional section (not replace)
-            skill_section = f"""
-<skill name="{skill.id}">
-{skill.system_prompt}
-</skill>
-"""
-            system_prompt += f"\n\n{skill_section}"
+            # Inject skill using to_prompt_section() for proper formatting
+            skill_content = skill.to_prompt_section(include_content=True)
+            system_prompt += f"\n\n{skill_content}"
             logger.info(f"[implement] Injected skill: {skill.id} for {current_file}")
         else:
             logger.info(f"[implement] No skill found, using generic only for {current_file}")

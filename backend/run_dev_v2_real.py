@@ -517,6 +517,9 @@ class SimpleDeveloperRunner:
             "related_code_context": "",
             "research_context": "",
             
+            # Tech stack for skills
+            "tech_stack": "nextjs" if self.template in ["nextjs", "react"] else "python",
+            
             # Project config (tech stack, commands)
             "project_config": self._get_project_config(),
         }

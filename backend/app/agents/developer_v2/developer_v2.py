@@ -155,27 +155,62 @@ class DeveloperV2(BaseAgent):
                 "task_id": str(task.task_id),
                 "user_id": str(task.user_id) if task.user_id else "",
                 "langfuse_handler": langfuse_handler,
+                
                 # Workspace context - will be populated by setup_workspace node
                 "workspace_path": "",
                 "branch_name": "",
                 "main_workspace": str(self.main_workspace),
                 "workspace_ready": False,
-                # React mode (MetaGPT Engineer2 pattern) - retry full cycle on failure
-                "react_mode": True,
-                "react_loop_count": 0,
-                "max_react_loop": 40,
-                # Initialize other fields
+                "index_ready": False,
+                "merged": False,
+                
+                # Workflow state
                 "action": None,
                 "task_type": None,
                 "complexity": None,
                 "analysis_result": None,
-                "implementation_plan": None,
-                "code_changes": [],
+                "implementation_plan": [],
                 "files_created": [],
                 "files_modified": [],
+                "affected_files": [],
+                "current_step": 0,
+                "total_steps": 0,
                 "validation_result": None,
                 "message": None,
                 "confidence": None,
+                "reason": None,
+                
+                # Design document
+                "design_doc": None,
+                
+                # Run/test state
+                "run_status": None,
+                "run_result": None,
+                "run_stdout": "",
+                "run_stderr": "",
+                "test_command": None,
+                "error_logs": "",
+                
+                # Debug state
+                "debug_count": 0,
+                "max_debug": 5,
+                "debug_history": [],
+                "last_debug_file": None,
+                "error_analysis": None,
+                
+                # React mode (MetaGPT Engineer2 pattern)
+                "react_mode": True,
+                "react_loop_count": 0,
+                "max_react_loop": 40,
+                
+                # Project context
+                "project_context": None,
+                "agents_md": None,
+                "related_code_context": "",
+                "research_context": "",
+                
+                # Tech stack for skills
+                "tech_stack": "nextjs",
             }
             
             logger.info(f"[{self.name}] Invoking LangGraph for story: {story_data.get('title', 'Untitled')}")
