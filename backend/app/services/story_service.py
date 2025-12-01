@@ -520,9 +520,6 @@ class StoryService:
         Raises:
             ValueError: If story not found
         """
-        from app.kafka import get_kafka_producer, KafkaTopics
-        from app.kafka.event_schemas import StoryReviewActionEvent
-
         story = self.session.get(Story, story_id)
         if not story:
             raise ValueError(f"Story {story_id} not found")
@@ -576,20 +573,30 @@ class StoryService:
         except Exception as e:
             logger.warning(f"Failed to update message structured_data: {e}")
 
-        # Publish event to trigger BA agent response
+        # Save confirmation message directly (sync) instead of async Kafka flow
+        # This ensures message exists when frontend refetches after API returns
         try:
-            producer = await get_kafka_producer()
-            event = StoryReviewActionEvent(
-                event_type="story.review_action",
-                story_id=str(story_id),
-                story_title=story_title,
-                project_id=str(project_id),
-                user_id=str(user_id),
-                action=action
+            from app.models import Message, AuthorType
+            
+            confirmation_messages = {
+                "apply": f"Áp dụng gợi ý cho story \"{story_title}\".",
+                "keep": f"Giữ nguyên story \"{story_title}\".",
+                "remove": f"Loại bỏ story \"{story_title}\"."
+            }
+            content = confirmation_messages.get(action, f"Đã xử lý story \"{story_title}\".")
+            
+            confirmation_msg = Message(
+                project_id=project_id,
+                content=content,
+                author_type=AuthorType.AGENT,
+                message_type="text",
+                message_metadata={"agent_name": "Business Analyst"}
             )
-            await producer.publish(topic=KafkaTopics.STORY_EVENTS, event=event)
+            self.session.add(confirmation_msg)
+            self.session.commit()
+            logger.info(f"Saved confirmation message for {action} action on story {story_id}")
         except Exception as e:
-            logger.error(f"Failed to publish review action event: {e}")
+            logger.error(f"Failed to save confirmation message: {e}")
 
         return story
 

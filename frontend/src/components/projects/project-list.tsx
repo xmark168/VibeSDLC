@@ -7,8 +7,6 @@ import { useNavigate } from "@tanstack/react-router"
 
 interface ProjectListProps {
   projects: ProjectPublic[]
-  openLinkGithubModal: React.Dispatch<React.SetStateAction<boolean>>
-  openInstallGithubModal: React.Dispatch<React.SetStateAction<boolean>>
 }
 
 export const ProjectList = ({ projects }: ProjectListProps) => {

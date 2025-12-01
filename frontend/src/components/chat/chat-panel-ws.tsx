@@ -965,18 +965,18 @@ export function ChatPanelWS({
                       onApplied={() => {
                         if (projectId) {
                           queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
-                          queryClient.invalidateQueries({ queryKey: ['messages', projectId] })
+                          queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
                         }
                       }}
                       onKeep={() => {
                         if (projectId) {
-                          queryClient.invalidateQueries({ queryKey: ['messages', projectId] })
+                          queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
                         }
                       }}
                       onRemove={() => {
                         if (projectId) {
                           queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
-                          queryClient.invalidateQueries({ queryKey: ['messages', projectId] })
+                          queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
                         }
                       }}
                     />
@@ -1151,7 +1151,7 @@ export function ChatPanelWS({
               size="icon"
               className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90"
               onClick={handleSend}
-              disabled={!isConnected || !message.trim() || shouldBlockChat}
+              disabled={!isConnected || !message.trim() || !!shouldBlockChat}
             >
               <ArrowUp className="w-4 h-4" />
             </Button>

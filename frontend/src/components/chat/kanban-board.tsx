@@ -18,6 +18,7 @@ import { useKanbanBoard } from "@/queries/backlog-items"
 import { backlogItemsApi } from "@/apis/backlog-items"
 import { storiesApi } from "@/apis/stories"
 import { toast } from "sonner"
+import { useQueryClient } from "@tanstack/react-query"
 
 interface KanbanBoardProps {
   kanbanData?: any
@@ -61,6 +62,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
 
   // Load initial data from database
   const { data: dbKanbanData, isLoading } = useKanbanBoard(projectId)
+  const queryClient = useQueryClient()
 
   // Load flow metrics for alerts
   useEffect(() => {
@@ -456,7 +458,8 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     }
   }, [projectId])
 
-  const handleDeleteCard = useCallback((columnId: string, cardId: string) => {
+  const handleDeleteCard = useCallback(async (columnId: string, cardId: string) => {
+    // Optimistic update - remove from UI immediately
     setColumns((prev) =>
       prev.map((col) => {
         if (col.id === columnId) {
@@ -468,7 +471,22 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         return col
       }),
     )
-  }, [])
+    
+    // Call API to delete from database
+    try {
+      console.log("[Kanban] Deleting story:", cardId)
+      await storiesApi.delete(cardId)
+      console.log("[Kanban] Delete success")
+      toast.success("Đã xóa story")
+    } catch (error) {
+      console.error("[Kanban] Failed to delete story:", error)
+      toast.error("Không thể xóa story")
+      // Refetch to restore state on error
+      if (projectId) {
+        queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+      }
+    }
+  }, [projectId, queryClient])
 
   const handleDuplicateCard = useCallback((cardId: string) => {
     setColumns((prev) =>
