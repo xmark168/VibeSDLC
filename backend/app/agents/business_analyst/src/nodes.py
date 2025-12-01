@@ -832,9 +832,14 @@ async def approve_stories(state: BAState, agent=None) -> dict:
 
 # Categories for clarity check
 REQUIRED_CATEGORIES = {
-    "target_users": ["khách hàng", "người dùng", "đối tượng", "ai sẽ dùng", "ai dùng"],
+    "target_users": [
+        "khách hàng", "người dùng", "đối tượng", "ai sẽ dùng", "ai dùng",
+        "cá nhân", "mình tôi", "chỉ mình", "một mình", "cho ai", "dùng cho",
+        "sử dụng cho", "ai sử dụng", "người sử dụng", "dùng cho ai",
+        "chia sẻ", "đồng nghiệp", "gia đình", "bạn bè", "nhóm", "team"
+    ],
     "main_features": ["tính năng", "chức năng", "website cần có", "cần có gì"],
-    "risks": ["lo ngại", "thách thức", "rủi ro", "khó khăn", "lo lắng"],
+    "risks": ["lo ngại", "thách thức", "rủi ro", "khó khăn", "lo lắng", "bảo mật"],
 }
 
 OPTIONAL_CATEGORIES = {
@@ -856,28 +861,31 @@ def check_clarity(state: BAState) -> dict:
     
     for answer in answers:
         question_text = answer.get("question_text", "").lower()
-        answer_text = answer.get("answer", "")
+        answer_text = str(answer.get("answer", "")).lower()
         category = answer.get("category", "")  # Check explicit category first
         
         # Skip empty answers
-        if not answer_text or len(answer_text.strip()) < 5:
+        if not answer_text or len(answer_text.strip()) < 3:
             continue
         
         # Method 1: Check explicit category field (preferred)
         if category and category in covered:
             covered[category] = True
+            logger.debug(f"[BA] Category '{category}' covered by explicit field")
             continue
         
         # Method 2: Fallback to keyword matching in question + answer
-        combined_text = f"{question_text} {answer_text}".lower()
+        combined_text = f"{question_text} {answer_text}"
         for cat, keywords in REQUIRED_CATEGORIES.items():
-            if any(kw in combined_text for kw in keywords):
-                covered[cat] = True
+            if not covered[cat]:  # Only check if not already covered
+                if any(kw in combined_text for kw in keywords):
+                    covered[cat] = True
+                    logger.debug(f"[BA] Category '{cat}' covered by keyword match in: {combined_text[:100]}")
     
     missing = [cat for cat, is_covered in covered.items() if not is_covered]
     is_clear = len(missing) == 0
     
-    logger.info(f"[BA] Clarity check: covered={[c for c, v in covered.items() if v]}, missing={missing}")
+    logger.info(f"[BA] Clarity check: covered={[c for c, v in covered.items() if v]}, missing={missing}, total_answers={len(answers)}")
     
     return {
         "is_clear": is_clear,
@@ -951,29 +959,31 @@ Thông tin đã thu thập: {json.dumps(collected_info, ensure_ascii=False)}
 
 Kết quả tìm hiểu thêm từ web: {json.dumps(domain_research, ensure_ascii=False)[:1500]}
 
-CẦN HỎI THÊM VỀ CÁC CATEGORY SAU:
+**QUAN TRỌNG - KIỂM TRA KỸ TRƯỚC KHI HỎI:**
+Xem kỹ "Thông tin đã thu thập" ở trên. NẾU user đã trả lời về:
+- Đối tượng sử dụng (ví dụ: "cá nhân", "chỉ mình tôi", "cho bản thân") → KHÔNG hỏi lại về target_users
+- Tính năng (ví dụ: đã liệt kê các features) → KHÔNG hỏi lại về main_features  
+- Rủi ro/lo ngại (ví dụ: "bảo mật", "an toàn") → KHÔNG hỏi lại về risks
+
+CẦN HỎI THÊM VỀ CÁC CATEGORY SAU (NẾU CHƯA CÓ trong collected_info):
 {categories_str}
 
-Hãy tạo 1-2 câu hỏi CHO MỖI CATEGORY còn thiếu.
-QUAN TRỌNG: Mỗi question PHẢI có field "category" để tracking.
+Hãy tạo 1-2 câu hỏi CHO MỖI CATEGORY thực sự còn thiếu.
+QUAN TRỌNG: 
+- Mỗi question PHẢI có field "category" để tracking
+- KHÔNG hỏi lại những gì user đã trả lời
+- Nếu tất cả categories đã có thông tin, trả về questions: []
 
 Return JSON format:
 ```json
 {{
   "questions": [
     {{
-      "text": "Câu hỏi tiếng Việt về người dùng?",
+      "text": "Câu hỏi cụ thể khác với những gì đã hỏi?",
       "type": "multichoice",
       "options": ["Option 1", "Option 2", "Khác"],
       "allow_multiple": true,
-      "category": "target_users"
-    }},
-    {{
-      "text": "Câu hỏi về rủi ro?",
-      "type": "multichoice", 
-      "options": ["Rủi ro 1", "Rủi ro 2"],
-      "allow_multiple": true,
-      "category": "risks"
+      "category": "category_name"
     }}
   ]
 }}
