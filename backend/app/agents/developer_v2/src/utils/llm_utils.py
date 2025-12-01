@@ -1,8 +1,53 @@
 """LLM execution utilities for Developer V2."""
 
 import re
+import time
+from typing import Dict, Tuple, Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import ToolMessage
+
+
+# ============================================================================
+# FILE CACHE - Avoid redundant file reads within session
+# ============================================================================
+class FileCache:
+    """Simple in-memory file cache to reduce redundant reads.
+    
+    Cache invalidated after TTL or when file is written.
+    """
+    _cache: Dict[str, Tuple[str, float]] = {}
+    TTL = 120  # seconds - cache valid for 2 minutes
+    
+    @classmethod
+    def get(cls, file_path: str) -> Optional[str]:
+        """Get cached file content if still valid."""
+        if file_path in cls._cache:
+            content, timestamp = cls._cache[file_path]
+            if time.time() - timestamp < cls.TTL:
+                return content
+            # Expired, remove from cache
+            del cls._cache[file_path]
+        return None
+    
+    @classmethod
+    def set(cls, file_path: str, content: str) -> None:
+        """Cache file content."""
+        cls._cache[file_path] = (content, time.time())
+    
+    @classmethod
+    def invalidate(cls, file_path: str) -> None:
+        """Invalidate cache for a file (call after write)."""
+        if file_path in cls._cache:
+            del cls._cache[file_path]
+    
+    @classmethod
+    def clear(cls) -> None:
+        """Clear entire cache."""
+        cls._cache.clear()
+
+
+# Global instance
+file_cache = FileCache()
 
 
 def get_langfuse_config(state: dict, run_name: str) -> dict:

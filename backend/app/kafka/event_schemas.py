@@ -207,6 +207,13 @@ class StoryAgentStateEvent(BaseKafkaEvent):
     agent_id: Optional[UUID] = None
     agent_name: Optional[str] = None
     progress_message: Optional[str] = None  # Optional status message
+class StoryReviewActionEvent(BaseKafkaEvent):
+    """User action on story review (apply/keep/remove)."""
+    
+    event_type: str = "story.review_action"
+    story_id: str
+    story_title: str
+    action: str  # "apply", "keep", "remove"
 
 
 class QuestionAskedEvent(BaseKafkaEvent):
@@ -413,6 +420,7 @@ EVENT_TYPE_TO_SCHEMA = {
     StoryEventType.DELETED.value: StoryEvent,
     "story.message.created": StoryMessageEvent,
     "story.agent_state.changed": StoryAgentStateEvent,
+    "story.review_action": StoryReviewActionEvent,
     "agent.question_asked": QuestionAskedEvent,
     "user.question_answer": QuestionAnswerEvent,
     "agent.question_batch_asked": BatchQuestionsAskedEvent,

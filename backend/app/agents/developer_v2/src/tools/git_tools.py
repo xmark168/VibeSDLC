@@ -32,23 +32,18 @@ def _get_root_dir() -> str:
 
 
 
-@tool
-def git_status() -> str:
-    """Get git status of the repository showing modified, staged, and untracked files."""
+def _git_status() -> str:
+    """Internal: Get git status."""
     if not GIT_AVAILABLE:
         return "Error: GitPython not installed"
-    
     root_dir = _get_root_dir()
     original_dir = os.getcwd()
     os.chdir(root_dir)
-    
     try:
         repo = Repo(root_dir)
-        
         untracked = repo.untracked_files
         modified = [item.a_path for item in repo.index.diff(None)]
         staged = [item.a_path for item in repo.index.diff("HEAD")]
-        
         status_lines = []
         if staged:
             status_lines.append("Staged files:")
@@ -59,42 +54,34 @@ def git_status() -> str:
         if untracked:
             status_lines.append("Untracked files:")
             status_lines.extend([f"  ?? {f}" for f in untracked])
-        
         if not (staged or modified or untracked):
             status_lines.append("Working directory clean")
-        
         return "\n".join(status_lines)
     except Exception as e:
         return f"Git status failed: {str(e)}"
     finally:
         os.chdir(original_dir)
 
-
 @tool
-def git_commit(message: str = "Auto-commit by AI agent", files: str = ".") -> str:
-    """Commit changes to git repository.
+def git_status() -> str:
+    """Get git status of the repository."""
+    return _git_status()
 
-    Args:
-        message: Commit message
-        files: Files to commit, comma-separated or '.' for all changes
-    """
+
+def _git_commit(message: str = "Auto-commit by AI agent", files: str = ".") -> str:
+    """Internal: Commit changes."""
     if not GIT_AVAILABLE:
         return "Error: GitPython not installed"
-    
     root_dir = _get_root_dir()
     original_dir = os.getcwd()
     os.chdir(root_dir)
-    
     try:
         repo = Repo(root_dir)
-        
         file_list = [f.strip() for f in files.split(",")] if files != "." else ["."]
-        
         if file_list == ["."]:
             repo.git.add(A=True)
         else:
             repo.index.add(file_list)
-        
         if repo.is_dirty(untracked_files=True) or repo.index.diff("HEAD"):
             repo.index.commit(message)
             return f"Committed changes: {message}"
@@ -103,6 +90,11 @@ def git_commit(message: str = "Auto-commit by AI agent", files: str = ".") -> st
         return f"Git commit failed: {str(e)}"
     finally:
         os.chdir(original_dir)
+
+@tool
+def git_commit(message: str = "Auto-commit by AI agent", files: str = ".") -> str:
+    """Commit changes to git repository."""
+    return _git_commit(message, files)
 
 
 @tool
@@ -211,30 +203,19 @@ def git_merge(branch_name: str) -> str:
         os.chdir(original_dir)
 
 
-@tool
-def git_delete_branch(branch_name: str, force: bool = False) -> str:
-    """Delete a local git branch.
-
-    Args:
-        branch_name: Name of branch to delete
-        force: Force delete even if not merged
-    """
+def _git_delete_branch(branch_name: str, force: bool = False) -> str:
+    """Internal: Delete a branch."""
     if not GIT_AVAILABLE:
         return "Error: GitPython not installed"
-    
     root_dir = _get_root_dir()
     original_dir = os.getcwd()
     os.chdir(root_dir)
-    
     try:
         repo = Repo(root_dir)
-        
         if branch_name not in [h.name for h in repo.heads]:
             return f"Error: Branch '{branch_name}' does not exist"
-        
         if repo.active_branch.name == branch_name:
             return f"Error: Cannot delete current branch '{branch_name}'"
-        
         repo.delete_head(branch_name, force=force)
         return f"Deleted branch '{branch_name}'"
     except Exception as e:
@@ -242,38 +223,32 @@ def git_delete_branch(branch_name: str, force: bool = False) -> str:
     finally:
         os.chdir(original_dir)
 
-
 @tool
-def git_create_worktree(branch_name: str) -> str:
-    """Create a worktree for isolated development on a branch.
+def git_delete_branch(branch_name: str, force: bool = False) -> str:
+    """Delete a local git branch."""
+    return _git_delete_branch(branch_name, force)
 
-    Args:
-        branch_name: Name of branch for worktree
-    """
+
+def _git_create_worktree(branch_name: str) -> str:
+    """Internal: Create a worktree."""
     root_dir = _get_root_dir()
     original_dir = os.getcwd()
     os.chdir(root_dir)
-    
     try:
         repo = Repo(root_dir)
-        
         if branch_name.startswith("story_"):
             story_id = branch_name.replace("story_", "")
             worktree_name = f"ws_story_{story_id}"
         else:
             worktree_name = f"ws_{branch_name}"
-        
         worktree_path = Path(root_dir).parent / worktree_name
-        
         if worktree_path.exists() and any(worktree_path.iterdir()):
             return f"Worktree directory '{worktree_path}' already exists"
-        
         if branch_name not in repo.heads:
             current_branch = repo.active_branch
             new_branch = repo.create_head(branch_name, current_branch.commit)
         else:
             new_branch = repo.heads[branch_name]
-        
         repo.git.worktree('add', str(worktree_path), str(new_branch))
         return f"Created worktree at '{worktree_path}' for branch '{branch_name}'"
     except Exception as e:
@@ -281,18 +256,17 @@ def git_create_worktree(branch_name: str) -> str:
     finally:
         os.chdir(original_dir)
 
-
 @tool
-def git_remove_worktree(worktree_path: str) -> str:
-    """Remove a git worktree.
+def git_create_worktree(branch_name: str) -> str:
+    """Create a worktree for isolated development."""
+    return _git_create_worktree(branch_name)
 
-    Args:
-        worktree_path: Path to the worktree to remove
-    """ 
+
+def _git_remove_worktree(worktree_path: str) -> str:
+    """Internal: Remove a worktree."""
     root_dir = _get_root_dir()
     original_dir = os.getcwd()
     os.chdir(root_dir)
-    
     try:
         repo = Repo(root_dir)
         repo.git.worktree('remove', worktree_path)
@@ -301,6 +275,11 @@ def git_remove_worktree(worktree_path: str) -> str:
         return f"Failed to remove worktree: {str(e)}"
     finally:
         os.chdir(original_dir)
+
+@tool
+def git_remove_worktree(worktree_path: str) -> str:
+    """Remove a git worktree."""
+    return _git_remove_worktree(worktree_path)
 
 
 @tool

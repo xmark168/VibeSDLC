@@ -55,7 +55,7 @@ class Story(BaseModel, table=True):
 
     epic_id: UUID | None = Field(default=None, foreign_key="epics.id", ondelete="SET NULL")
 
-    acceptance_criteria: str | None = Field(default=None, sa_column=Column(Text))
+    acceptance_criteria: list | None = Field(default=None, sa_column=Column(JSON))
     requirements: list | None = Field(default=None, sa_column=Column(JSON))
 
     assignee_id: UUID | None = Field(

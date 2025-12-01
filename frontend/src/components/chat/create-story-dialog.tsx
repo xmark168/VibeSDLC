@@ -23,12 +23,14 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateS
     title: "",
     description: "",
     type: "UserStory",
-    story_point: undefined,
+    story_point: 1,
     priority: "Medium",
-    acceptance_criteria: []
+    acceptance_criteria: [],
+    requirements: []
   })
 
   const [currentCriteria, setCurrentCriteria] = useState("")
+  const [currentRequirement, setCurrentRequirement] = useState("")
 
   const handleSubmit = () => {
     if (!formData.title.trim()) {
@@ -46,11 +48,13 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateS
       title: "",
       description: "",
       type: "UserStory",
-      story_point: undefined,
+      story_point: 1,
       priority: "Medium",
-      acceptance_criteria: []
+      acceptance_criteria: [],
+      requirements: []
     })
     setCurrentCriteria("")
+    setCurrentRequirement("")
   }
 
   const handleAddCriteria = () => {
@@ -67,6 +71,23 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateS
     setFormData(prev => ({
       ...prev,
       acceptance_criteria: prev.acceptance_criteria.filter((_, i) => i !== index)
+    }))
+  }
+
+  const handleAddRequirement = () => {
+    if (currentRequirement.trim()) {
+      setFormData(prev => ({
+        ...prev,
+        requirements: [...prev.requirements, currentRequirement.trim()]
+      }))
+      setCurrentRequirement("")
+    }
+  }
+
+  const handleRemoveRequirement = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      requirements: prev.requirements.filter((_, i) => i !== index)
     }))
   }
 
@@ -164,12 +185,12 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateS
                   <SelectValue placeholder="Not estimated" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="1">1 (1 day)</SelectItem>
-                  <SelectItem value="2">2 (2 days)</SelectItem>
-                  <SelectItem value="3">3 (3 days)</SelectItem>
-                  <SelectItem value="5">5 (1 week)</SelectItem>
-                  <SelectItem value="8">8 (2 weeks)</SelectItem>
-                  <SelectItem value="13">13 (Too large - split!)</SelectItem>
+                  <SelectItem value="1">1 - XS (Extra Small)</SelectItem>
+                  <SelectItem value="2">2 - S (Small)</SelectItem>
+                  <SelectItem value="3">3 - M (Medium)</SelectItem>
+                  <SelectItem value="5">5 - L (Large)</SelectItem>
+                  <SelectItem value="8">8 - XL (Extra Large)</SelectItem>
+                  <SelectItem value="13">13 - XXL (Too large - split!)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -245,6 +266,60 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateS
                 size="sm"
                 variant="outline"
                 onClick={handleAddCriteria}
+                className="h-9 px-3 text-xs"
+              >
+                Add
+              </Button>
+            </div>
+          </div>
+
+          {/* Requirements */}
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold">Requirements</Label>
+
+            {/* Existing requirements */}
+            {formData.requirements.length > 0 && (
+              <div className="space-y-2 mb-2">
+                {formData.requirements.map((requirement, index) => (
+                  <div
+                    key={index}
+                    className="flex items-start gap-2 p-2 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                  >
+                    <span className="text-xs font-semibold text-muted-foreground mt-0.5">
+                      {index + 1}.
+                    </span>
+                    <span className="flex-1 text-sm text-foreground">{requirement}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveRequirement(index)}
+                      className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add new requirement */}
+            <div className="flex gap-2">
+              <Input
+                placeholder="Specific requirement for developers..."
+                value={currentRequirement}
+                onChange={(e) => setCurrentRequirement(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault()
+                    handleAddRequirement()
+                  }
+                }}
+                className="h-9 text-sm"
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleAddRequirement}
                 className="h-9 px-3 text-xs"
               >
                 Add

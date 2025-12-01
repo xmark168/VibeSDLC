@@ -5,7 +5,7 @@ import os
 import re
 import subprocess
 import time
-from typing import ClassVar, List
+from typing import  List
 from langchain_core.tools import tool
 
 # Global context
@@ -107,6 +107,8 @@ def execute_shell(command: str, working_directory: str = ".", timeout: int = 60)
             text=True,
             timeout=timeout,
             env=os.environ.copy(),
+            encoding='utf-8',
+            errors='replace',
         )
         
         execution_time = time.time() - start_time
@@ -152,39 +154,6 @@ def execute_shell(command: str, working_directory: str = ".", timeout: int = 60)
 
 
 @tool
-def web_search_ddg(query: str, max_results: int = 5) -> str:
-    """Search the web using DuckDuckGo.
-
-    Args:
-        query: Search query
-        max_results: Maximum number of results to return
-    """
-    try:
-        from duckduckgo_search import DDGS
-        
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=max_results))
-        
-        if not results:
-            return f"No results found for query: {query}"
-        
-        formatted_results = []
-        for i, result in enumerate(results, 1):
-            formatted_results.append(
-                f"{i}. {result.get('title', 'No title')}\n"
-                f"   URL: {result.get('href', 'No URL')}\n"
-                f"   Snippet: {result.get('body', 'No description')}\n"
-            )
-        
-        return "\n".join(formatted_results)
-    
-    except ImportError:
-        return "Error: duckduckgo-search not installed. Run: pip install duckduckgo-search"
-    except Exception as e:
-        return f"Error performing web search: {str(e)}"
-
-
-@tool
 def semantic_code_search(query: str, top_k: int = 5) -> str:
     """Search codebase using semantic search via CocoIndex.
 
@@ -193,7 +162,7 @@ def semantic_code_search(query: str, top_k: int = 5) -> str:
         top_k: Number of results to return
     """
     try:
-        from app.agents.developer.project_manager import project_manager
+        from app.agents.developer_v2.project_manager import project_manager
         from app.agents.developer_v2.src.tools.cocoindex_tools import _tool_context
         
         project_id = _tool_context.get("project_id")

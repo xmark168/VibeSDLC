@@ -80,14 +80,29 @@ shared_context:
     - description: Overview of the epic
     - domain: Feature category (Authentication, Product, Cart, Payment, Admin, Notification)
     
-    **Story Structure:**
+    **Story Structure (Senior BA Quality):**
     - id: Unique identifier (US-001, US-002, ...)
     - epic_id: Reference to parent epic
-    - title: "As a [user], I want [goal] so that [benefit]"
-    - description: Detailed description
-    - requirements: List of specific, actionable requirements for developers
-    - acceptance_criteria: List of Given/When/Then criteria for testing
-    - priority: Priority level (1=Critical, 2=High, 3=Medium, 4=Low, 5=Nice-to-have)
+    - title: "As a [specific user type], I want [business goal] so that [business benefit]"
+      - Focus on WHAT user needs, not HOW (solution)
+      - Be specific about user type (e.g., "new customer" not just "user")
+    - description: Business-focused description explaining:
+      - What capability user gains
+      - Why it matters to user/business
+      - NOT technical implementation details
+    - requirements: Comprehensive list covering:
+      - Core functionality (what the feature does)
+      - UX requirements (user flow, messages, navigation)
+      - Validation rules (input validation, business rules)
+      - Security considerations (if applicable)
+      - Edge cases to handle
+    - acceptance_criteria: MUST cover multiple scenarios:
+      - Happy path (successful flow)
+      - Validation errors (invalid input)
+      - Business rule violations (duplicate, unauthorized, etc.)
+      - Edge cases (empty state, boundary conditions)
+      - Error handling (system errors, network issues)
+    - priority: Priority level (1=High, 2=Medium, 3=Low)
     - story_point: Estimated effort (1, 2, 3, 5, 8, 13 - Fibonacci scale)
 
 # ============================================================================
@@ -194,15 +209,17 @@ tasks:
       
       **CRITICAL RULES:**
       1. ANALYZE user's request first - understand what type of project
-      2. SKIP questions already answered in user's message
+      2. SKIP questions already answered in user's message or collected_info
       3. CUSTOMIZE options based on project context
       4. Use SIMPLE Vietnamese - no technical jargon
+      5. NEVER ask the same category twice - check collected_info carefully
       
       **DO NOT ASK ABOUT:**
       - Platform (web-only by default)
       - Technology stack (not BA scope)
       - Timeline (not PRD scope)
       - Things user already mentioned
+      - Categories already answered in collected_info (e.g., if user said "cá nhân/chỉ mình tôi" → target_users is DONE)
       
       **PRD CATEGORIES (cover if not already known):**
       | Category | Ask if... | Skip if... |
@@ -232,19 +249,39 @@ tasks:
       - DON'T repeat what user already said
       - Use SIMPLE Vietnamese
       
-      **FORMAT:**
+      **FORMAT (QUAN TRỌNG: mỗi câu hỏi PHẢI có field "category"):**
       ```json
       {{
         "questions": [
           {{
-            "text": "Câu hỏi bằng tiếng Việt?",
+            "text": "Câu hỏi về đối tượng người dùng?",
             "type": "multichoice",
-            "options": ["Lựa chọn phù hợp với dự án", "Lựa chọn khác", "Khác (vui lòng mô tả)"],
-            "allow_multiple": true
+            "options": ["Option 1", "Option 2", "Khác (vui lòng mô tả)"],
+            "allow_multiple": true,
+            "category": "target_users"
+          }},
+          {{
+            "text": "Câu hỏi về tính năng?",
+            "type": "multichoice",
+            "options": ["Feature 1", "Feature 2"],
+            "allow_multiple": true,
+            "category": "main_features"
+          }},
+          {{
+            "text": "Câu hỏi về rủi ro/lo ngại?",
+            "type": "multichoice",
+            "options": ["Risk 1", "Risk 2"],
+            "allow_multiple": true,
+            "category": "risks"
           }}
         ]
       }}
       ```
+      
+      **CATEGORY MAPPING:**
+      - "target_users": câu hỏi về khách hàng, người dùng, đối tượng
+      - "main_features": câu hỏi về tính năng, chức năng website cần có
+      - "risks": câu hỏi về lo ngại, thách thức, rủi ro
       
       # EXAMPLES BY PROJECT TYPE:
       
@@ -397,14 +434,25 @@ tasks:
       - description: Overview of the epic and its business value
       - domain: Feature category (Authentication, Product, Cart, Payment, Admin, Notification, etc.)
       
-      **Story Structure:**
+      **Story Structure (Senior BA Quality):**
       - id: Unique identifier (e.g., US-001)
       - epic_id: Reference to parent epic
-      - title: User story in format "As a [user], I want [goal] so that [benefit]"
-      - description: Detailed description of the story
-      - requirements: List of specific, actionable requirements for developers (3-6 items per story)
-      - acceptance_criteria: List of testable criteria (Given/When/Then format) for QA
-      - priority: Priority level (1=Critical, 2=High, 3=Medium, 4=Low, 5=Nice-to-have)
+      - title: "As a [specific user type], I want [business goal] so that [business benefit]"
+        - Focus on WHAT user needs, NOT how (solution details go in requirements)
+        - Be specific: "new customer" not just "user"
+      - description: Business-focused explanation (NOT technical implementation)
+      - requirements: Comprehensive list (5-8 items) covering:
+        - Core functionality
+        - UX flow and messages
+        - Validation rules
+        - Security considerations
+        - Edge cases
+      - acceptance_criteria: MUST have 4-6 scenarios covering:
+        - Happy path (successful flow)
+        - Validation errors (invalid email, weak password, etc.)
+        - Business rule violations (duplicate account, etc.)
+        - Edge cases and error handling
+      - priority: Priority level (1=High, 2=Medium, 3=Low)
       - story_point: Estimated effort in story points (1, 2, 3, 5, 8, 13 - Fibonacci)
       
       **Guidelines (follow INVEST principles):**
@@ -413,12 +461,12 @@ tasks:
       - **V**aluable: Each story delivers clear user/business value
       - **E**stimable: Story is clear enough to estimate effort
       - **S**mall: Completable within 1 sprint, focused scope
-      - **T**estable: Has clear acceptance criteria (Given/When/Then)
+      - **T**estable: Has comprehensive acceptance criteria
       
       **Additional Rules:**
       - Group related features into Epics by domain
       - Each Epic should have 2-5 user stories
-      - Use Given/When/Then format for acceptance criteria
+      - Acceptance criteria MUST cover happy path + at least 3 error/edge cases
 
     user_prompt: |
       PRD:
@@ -429,13 +477,14 @@ tasks:
       # YOUR TASK
       Extract Epics and user stories from this PRD.
       
-      **RULES:**
+      **RULES (Senior BA Quality):**
       1. Group features into logical Epics by domain
       2. Each Epic should have 2-5 user stories
-      3. Each story MUST have 3-6 specific requirements for developers
-      4. Use Given/When/Then format for acceptance criteria (for QA testing)
-      5. Keep stories focused and testable
-      6. **IMPORTANT: ALL content MUST be in ENGLISH**
+      3. Story title: Focus on BUSINESS NEED, not technical solution
+      4. Description: Explain WHAT and WHY, not HOW (implementation)
+      5. Requirements: 5-8 items covering functionality, UX, validation, security, edge cases
+      6. Acceptance Criteria: 4-6 scenarios (happy path + validation + errors + edge cases)
+      7. **IMPORTANT: ALL content MUST be in ENGLISH**
       
       Return ONLY valid JSON:
       ```json
@@ -443,25 +492,18 @@ tasks:
         "epics": [
           {{
             "id": "EPIC-001",
-            "title": "Short Epic Title in English",
-            "description": "Overview of the epic in English",
+            "title": "Epic Title",
+            "description": "Business value overview",
             "domain": "Authentication|Product|Cart|Payment|Admin|Notification",
             "stories": [
               {{
                 "id": "US-001",
                 "epic_id": "EPIC-001",
-                "title": "As a [user], I want [goal] so that [benefit]",
-                "description": "Detailed story description in English",
-                "requirements": [
-                  "Specific requirement 1 for developers",
-                  "Specific requirement 2 for developers",
-                  "Specific requirement 3 for developers"
-                ],
-                "acceptance_criteria": [
-                  "Given [context] when [action] then [expected result]",
-                  "Given [context] when [edge case] then [handling]"
-                ],
-                "priority": 3,
+                "title": "As a [specific user], I want [business goal] so that [business benefit]",
+                "description": "Business-focused description (not technical)",
+                "requirements": ["5-8 comprehensive requirements"],
+                "acceptance_criteria": ["4-6 scenarios covering happy path + errors"],
+                "priority": 2,
                 "story_point": 3
               }}
             ]
@@ -470,53 +512,72 @@ tasks:
       }}
       ```
       
-      **EXAMPLE:**
+      **EXAMPLE (Senior BA Quality):**
       ```json
       {{
         "epics": [
           {{
             "id": "EPIC-001",
+            "title": "User Account Management",
+            "description": "Enable customers to create and manage their accounts for personalized shopping experience",
+            "domain": "Authentication",
+            "stories": [
+              {{
+                "id": "US-001",
+                "epic_id": "EPIC-001",
+                "title": "As a new customer, I want to create an account so that I can view and manage my orders and personal information",
+                "description": "Allow first-time customers to create an account to access personalized services including order history, saved addresses, and preferences. New customer means a person who does not have an existing account in the system.",
+                "requirements": [
+                  "Provide registration form with email (mandatory) and password (mandatory) fields",
+                  "Validate email format using standard email regex pattern",
+                  "Enforce password policy: minimum 8 characters, at least 1 uppercase, 1 lowercase, 1 number",
+                  "Display real-time validation feedback as user types",
+                  "Prevent duplicate registration with error message and link to login/forgot password",
+                  "Store credentials securely using industry-standard hashing",
+                  "Send verification email after successful registration",
+                  "Show clear success message with next steps after registration"
+                ],
+                "acceptance_criteria": [
+                  "Given I am on registration page and enter valid email and password meeting policy when I submit then account is created and I see success message with verification email sent",
+                  "Given I enter an email that is already registered when I submit then I see error message with options to login or recover password",
+                  "Given I enter invalid email format when I type then I see inline validation error about email format",
+                  "Given I enter password not meeting policy when I type then I see inline feedback showing missing requirements",
+                  "Given the system encounters an internal error when creating account then I see a friendly error message and no partial account is created"
+                ],
+                "priority": 1,
+                "story_point": 5
+              }}
+            ]
+          }},
+          {{
+            "id": "EPIC-002",
             "title": "Shopping Cart Management",
             "description": "Allow customers to manage products in their shopping cart before checkout",
             "domain": "Cart",
             "stories": [
               {{
-                "id": "US-001",
-                "epic_id": "EPIC-001",
-                "title": "As a customer, I want to add products to cart so that I can purchase multiple items",
-                "description": "Users can add products to their shopping cart from the product detail page",
-                "requirements": [
-                  "Display Add to Cart button on product detail page",
-                  "Store cart data in user session or database for logged-in users",
-                  "Update cart icon badge with total item count",
-                  "Show success toast notification after adding",
-                  "Prevent adding out-of-stock products with disabled button"
-                ],
-                "acceptance_criteria": [
-                  "Given I am on product page when I click Add to Cart then product is added and cart badge updates",
-                  "Given product is out of stock when I view page then Add to Cart button is disabled"
-                ],
-                "priority": 2,
-                "story_point": 5
-              }},
-              {{
                 "id": "US-002",
-                "epic_id": "EPIC-001",
-                "title": "As a customer, I want to update quantity so that I can buy the amount I need",
-                "description": "Users can update the quantity of products in their cart",
+                "epic_id": "EPIC-002",
+                "title": "As a customer, I want to add products to my cart so that I can purchase multiple items in one transaction",
+                "description": "Enable customers to collect products they wish to purchase before proceeding to checkout. Cart persists across sessions for logged-in users, guest users have session-based cart.",
                 "requirements": [
-                  "Display quantity input field with +/- buttons for each cart item",
-                  "Validate quantity against available stock",
-                  "Auto-recalculate subtotal and total when quantity changes",
-                  "Remove item automatically when quantity is set to 0",
-                  "Show stock availability warning if quantity exceeds stock"
+                  "Display prominent Add to Cart button on product detail page",
+                  "Update cart icon badge with total item count immediately after adding",
+                  "Show success toast notification confirming product was added",
+                  "Disable Add to Cart button for out-of-stock products with clear messaging",
+                  "Allow adding same product multiple times (increment quantity)",
+                  "Persist cart data for logged-in users across devices",
+                  "Handle concurrent cart updates gracefully"
                 ],
                 "acceptance_criteria": [
-                  "Given I have items in cart when I change quantity then subtotal and total update immediately",
-                  "Given quantity exceeds stock when I increase then I see stock limit warning"
+                  "Given I am on product page with available stock when I click Add to Cart then product is added and cart badge updates immediately",
+                  "Given product is out of stock when I view page then Add to Cart button is disabled with Out of Stock label",
+                  "Given I add same product twice when I check cart then quantity is incremented not duplicated",
+                  "Given I am logged in and add items on mobile when I view cart on desktop then same items appear",
+                  "Given network error occurs when adding to cart then I see retry option and cart state is preserved"
                 ],
-                "priority": 3,
-                "story_point": 3
+                "priority": 1,
+                "story_point": 5
               }}
             ]
           }}
@@ -611,7 +672,7 @@ tasks:
       - description: Detailed description
       - requirements: List of specific, actionable requirements for developers (3-6 items)
       - acceptance_criteria: List of Given/When/Then criteria for QA testing
-      - priority: Priority level (1=Critical, 2=High, 3=Medium, 4=Low, 5=Nice-to-have)
+      - priority: Priority level (1=High, 2=Medium, 3=Low)
       - story_point: Estimated effort in story points (1, 2, 3, 5, 8, 13 - Fibonacci)
       
       **Update Guidelines:**
@@ -660,7 +721,7 @@ tasks:
                 "description": "Detailed description in English",
                 "requirements": ["Requirement 1", "Requirement 2", "Requirement 3"],
                 "acceptance_criteria": ["Given X when Y then Z"],
-                "priority": 3,
+                "priority": 2,
                 "story_point": 3
               }}
             ]
@@ -699,6 +760,81 @@ tasks:
       User message: "{user_message}"
       
       Respond naturally as a friendly Business Analyst. Keep it short and warm.
+
+  # ---------------------------------------------------------------------------
+  # VERIFY STORY - Auto-review newly created story
+  # ---------------------------------------------------------------------------
+  verify_story:
+    system_prompt: |
+      {shared_context.agent_identity}
+      
+      ---
+      
+      # STORY VERIFICATION
+      
+      You are reviewing a newly created user story.
+      
+      **YOUR TASKS:**
+      1. **CHECK DUPLICATE FIRST**: Compare with existing stories - is this story already covered?
+         - If DUPLICATE: Stop here, no need for INVEST analysis or suggestions
+         - If NOT duplicate: Continue to step 2
+      2. **CHECK INVEST** (only if NOT duplicate): Evaluate against INVEST criteria
+         - **I**ndependent: Story can be developed separately
+         - **N**egotiable: Details can be discussed
+         - **V**aluable: Delivers clear user/business value
+         - **E**stimable: Clear enough to estimate effort
+         - **S**mall: Completable within 1 sprint
+         - **T**estable: Has clear acceptance criteria
+      3. **SUGGEST IMPROVEMENTS** (only if NOT duplicate): If issues found, provide specific suggestions
+      
+      **RESPONSE GUIDELINES:**
+      - Respond in Vietnamese
+      - Be helpful and constructive
+      - If duplicate: just explain why it's duplicate, skip INVEST and suggestions
+      - If not duplicate: provide full INVEST analysis and suggestions if needed
+
+    user_prompt: |
+      # PROJECT CONTEXT
+      {prd_context}
+      
+      # EXISTING STORIES
+      {stories_context}
+      
+      # NEW STORY TO VERIFY
+      - Title: {story_title}
+      - Description: {story_description}
+      - Acceptance Criteria: {story_acceptance_criteria}
+      - Type: {story_type}
+      
+      # YOUR TASK
+      Review this story and provide feedback.
+      
+      **ACCEPTANCE CRITERIA FORMAT:**
+      Each AC must follow Given/When/Then format with line breaks:
+      "Given [context]\nWhen [action]\nThen [expected result]"
+      
+      Example:
+      "Given tôi đang ở màn hình tạo công việc mới\nWhen tôi nhập tiêu đề, mô tả và hạn hoàn thành hợp lệ và bấm Lưu\nThen công việc mới được tạo và hiển thị ngay trong danh sách công việc."
+      
+      Return ONLY valid JSON:
+      ```json
+      {{
+        "is_duplicate": true/false,
+        "duplicate_of": "title of similar story if duplicate, else null",
+        "duplicate_reason": "explanation in Vietnamese if duplicate, else null",
+        "invest_score": 1-6,
+        "invest_issues": [
+          {{"code": "I|N|V|E|S|T", "issue": "detailed explanation in Vietnamese"}}
+        ],
+        "suggested_title": "improved title if needed, else null",
+        "suggested_description": "improved description if needed, else null",
+        "suggested_requirements": ["requirement 1", "requirement 2"] or null,
+        "suggested_acceptance_criteria": ["Given X When Y Then Z"] or null,
+        "summary": "brief summary of review in Vietnamese (1-2 sentences)"
+      }}
+      ```
+      
+      **NOTE:** Only provide suggested_requirements/suggested_acceptance_criteria if improvements are needed. Set to null if the story is already good.
 
   # ---------------------------------------------------------------------------
   # COMPLETION MESSAGE - Generate natural completion messages with personality

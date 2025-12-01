@@ -85,7 +85,7 @@ def search_codebase(project_id: str, query: str, top_k: int = 5, task_id: str = 
         task_id: Optional task ID for task-specific search
     """
     try:
-        from app.agents.developer.project_manager import project_manager
+        from app.agents.developer_v2.project_manager import project_manager
         
         if task_id:
             results = project_manager.search_task(project_id, task_id, query, top_k=top_k)
@@ -138,11 +138,11 @@ def index_workspace(project_id: str, workspace_path: str, task_id: str = None) -
     logger.info(f"[CocoIndex] Found {len(source_files)} source files in {workspace_path}")
     
     try:
-        from app.agents.developer.project_manager import project_manager
+        from app.agents.developer_v2.project_manager import project_manager
         
         if task_id:
             logger.info(f"[CocoIndex] Registering task: {project_id}/{task_id}")
-            project_manager._register_task_sync(project_id, task_id, workspace_path)
+            project_manager.register_task(project_id, task_id, workspace_path)
             logger.info(f"[CocoIndex] Indexed task workspace: {project_id}/{task_id}")
         else:
             logger.info(f"[CocoIndex] Registering project: {project_id}")
@@ -171,7 +171,7 @@ async def update_workspace_index(project_id: str, task_id: str = None) -> bool:
         True if update successful, False otherwise
     """
     try:
-        from app.agents.developer.project_manager import project_manager
+        from app.agents.developer_v2.project_manager import project_manager
         
         if task_id:
             await project_manager.update_task(project_id, task_id)
@@ -221,7 +221,7 @@ async def index_workspace_async(project_id: str, workspace_path: str, task_id: s
     logger.info(f"[CocoIndex] Found {len(source_files)} source files in {workspace_path}")
     
     try:
-        from app.agents.developer.project_manager import project_manager
+        from app.agents.developer_v2.project_manager import project_manager
         
         if task_id:
             logger.info(f"[CocoIndex] Registering task: {project_id}/{task_id}")
@@ -324,10 +324,10 @@ def reindex_workspace() -> str:
         return "Error: project_id or workspace_path not set in tool context"
     
     try:
-        from app.agents.developer.project_manager import project_manager
+        from app.agents.developer_v2.project_manager import project_manager
         
         if task_id:
-            project_manager._register_task_sync(project_id, task_id, workspace_path)
+            project_manager.register_task(project_id, task_id, workspace_path)
         else:
             project_manager._register_project_sync(project_id, workspace_path)
         

@@ -37,20 +37,25 @@ export function AgentQuestionCard({
   const [selectedOptions, setSelectedOptions] = useState<Set<string>>(new Set())
   const [customInput, setCustomInput] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [showQA, setShowQA] = useState(false)  // Moved here from below
+  const [showQA, setShowQA] = useState(false)
+  const [submitted, setSubmitted] = useState(false)  // Track if user has submitted
+  
+  // Store submitted answer for display
+  const [submittedAnswer, setSubmittedAnswer] = useState('')
+  const [submittedOptions, setSubmittedOptions] = useState<string[]>([])
   
   const handleSubmit = async () => {
     setIsSubmitting(true)
     
     try {
       if (questionType === 'open') {
+        setSubmittedAnswer(textAnswer)
         await onSubmit(textAnswer, undefined)
       } else {
         // If "Other" is selected, replace with custom input
         let finalOptions = Array.from(selectedOptions)
         if (selectedOptions.has("Other (Khác - vui lòng mô tả)")) {
           if (!customInput.trim()) {
-            // Show error or just return
             setIsSubmitting(false)
             return
           }
@@ -58,8 +63,11 @@ export function AgentQuestionCard({
             opt === "Other (Khác - vui lòng mô tả)" ? customInput.trim() : opt
           )
         }
+        setSubmittedOptions(finalOptions)
         await onSubmit('', finalOptions)
       }
+      // Mark as submitted immediately after sending
+      setSubmitted(true)
     } finally {
       setIsSubmitting(false)
     }
@@ -70,32 +78,12 @@ export function AgentQuestionCard({
     ? textAnswer.trim().length > 0 
     : selectedOptions.size > 0 && (!hasOtherSelected || customInput.trim().length > 0)
   
-  // Processing state (after answer, agent is working on it)
-  if (answered && processing) {
-    return (
-      <Card className="border-yellow-200 bg-yellow-50 dark:bg-yellow-950/20">
-        <CardContent className="pt-6 space-y-2">
-          <div className="flex items-center gap-2 text-yellow-600 dark:text-yellow-400">
-            <Loader2 className="w-5 h-5 animate-spin" />
-            <span className="text-sm font-medium">Processing your answer...</span>
-          </div>
-          {userSelectedOptions && userSelectedOptions.length > 0 && (
-            <div className="text-sm text-gray-700 dark:text-gray-300">
-              <strong>You selected:</strong> {userSelectedOptions.join(', ')}
-            </div>
-          )}
-          {userAnswer && userAnswer.trim() && (
-            <div className="text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 rounded p-2 border">
-              <strong>Your answer:</strong> {userAnswer}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    )
-  }
+  // Get display values - use submitted values if available, otherwise use props
+  const displayAnswer = submittedAnswer || userAnswer || ''
+  const displayOptions = submittedOptions.length > 0 ? submittedOptions : (userSelectedOptions || [])
   
-  // Answered state (agent has processed the answer)
-  if (answered) {
+  // Answered state - show when submitted locally OR when answered from server
+  if (submitted || answered) {
     return (
       <Card className="p-4 bg-gradient-to-r from-green-500/10 to-emerald-500/10 border-green-500/20">
         <CardContent className="p-0 space-y-2">
@@ -130,14 +118,14 @@ export function AgentQuestionCard({
               <p className="text-sm text-muted-foreground">
                 <span className="font-medium text-green-600 dark:text-green-400">Question:</span> {question}
               </p>
-              {userSelectedOptions && userSelectedOptions.length > 0 && (
+              {displayOptions.length > 0 && (
                 <p className="text-sm text-foreground">
-                  <span className="font-medium">→</span> {userSelectedOptions.join(', ')}
+                  <span className="font-medium">→</span> {displayOptions.join(', ')}
                 </p>
               )}
-              {userAnswer && userAnswer.trim() && (
+              {displayAnswer.trim() && (
                 <p className="text-sm text-foreground">
-                  <span className="font-medium">→</span> {userAnswer}
+                  <span className="font-medium">→</span> {displayAnswer}
                 </p>
               )}
             </div>

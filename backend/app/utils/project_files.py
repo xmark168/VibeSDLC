@@ -15,6 +15,7 @@ File Structure:
 from pathlib import Path
 from typing import Optional
 import aiofiles
+import shutil
 from datetime import datetime, timezone
 
 
@@ -33,6 +34,56 @@ class ProjectFiles:
     def _ensure_directories(self):
         """Create necessary directories if they don't exist."""
         self.docs_path.mkdir(parents=True, exist_ok=True)
+    
+    async def archive_docs(self) -> bool:
+        """Move existing docs to archive folder with timestamp.
+        
+        Used when user chooses to replace project with a new one.
+        Files are moved to docs/archive/{timestamp}/ folder.
+        
+        Structure:
+            docs/archive/20231130_172100/
+            ├── prd.md
+            └── user-stories.md
+        
+        Returns:
+            True if archiving was successful
+        """
+        # Check if there are any files to archive
+        files_to_archive = []
+        if self.prd_path.exists():
+            files_to_archive.append(self.prd_path)
+        if self.user_stories_path.exists():
+            files_to_archive.append(self.user_stories_path)
+        
+        if not files_to_archive:
+            return True  # Nothing to archive
+        
+        # Create timestamped folder
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        archive_folder = self.docs_path / "archive" / timestamp
+        archive_folder.mkdir(parents=True, exist_ok=True)
+        
+        archived_files = []
+        
+        # Move prd.md
+        if self.prd_path.exists():
+            dest = archive_folder / "prd.md"
+            shutil.move(str(self.prd_path), str(dest))
+            archived_files.append("prd.md")
+        
+        # Move user-stories.md
+        if self.user_stories_path.exists():
+            dest = archive_folder / "user-stories.md"
+            shutil.move(str(self.user_stories_path), str(dest))
+            archived_files.append("user-stories.md")
+        
+        if archived_files:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"[ProjectFiles] Archived to archive/{timestamp}/: {', '.join(archived_files)}")
+        
+        return True
     
     async def save_prd(self, prd_data: dict) -> Path:
         """Save PRD to Markdown file (for human reading).

@@ -18,6 +18,7 @@ import { useKanbanBoard } from "@/queries/backlog-items"
 import { backlogItemsApi } from "@/apis/backlog-items"
 import { storiesApi } from "@/apis/stories"
 import { toast } from "sonner"
+import { useQueryClient } from "@tanstack/react-query"
 
 interface KanbanBoardProps {
   kanbanData?: any
@@ -61,6 +62,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
 
   // Load initial data from database
   const { data: dbKanbanData, isLoading } = useKanbanBoard(projectId)
+  const queryClient = useQueryClient()
 
   // Load flow metrics for alerts
   useEffect(() => {
@@ -88,6 +90,17 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
       setColumns(initialColumns)
     }
   }, [projectId])
+
+  // Sync selectedCard with updated data from columns
+  useEffect(() => {
+    if (selectedCard) {
+      const allCards = columns.flatMap(col => col.cards)
+      const updatedCard = allCards.find(c => c.id === selectedCard.id)
+      if (updatedCard && JSON.stringify(updatedCard) !== JSON.stringify(selectedCard)) {
+        setSelectedCard(updatedCard)
+      }
+    }
+  }, [columns, selectedCard])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -196,6 +209,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         reviewer_id: item.reviewer_id,
         epic_id: item.epic_id,
         acceptance_criteria: item.acceptance_criteria,
+        requirements: item.requirements,
         created_at: item.created_at,
         updated_at: item.updated_at,
         parent: item.parent ? {
@@ -219,6 +233,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
           rank: child.rank,
           assignee_id: child.assignee_id,
           reviewer_id: child.reviewer_id,
+          requirements: child.requirements,
           title: child.title,
         })) : [],
       })
@@ -305,6 +320,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         reviewer_id: item.reviewer_id,
         epic_id: item.epic_id,
         acceptance_criteria: item.acceptance_criteria,
+        requirements: item.requirements,
         created_at: item.created_at,
         updated_at: item.updated_at,
         parent: item.parent ? {
@@ -328,6 +344,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
           rank: child.rank,
           assignee_id: child.assignee_id,
           reviewer_id: child.reviewer_id,
+          requirements: child.requirements,
           title: child.title,
         })) : [],
       })
@@ -414,15 +431,16 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         title: storyData.title,
         description: storyData.description,
         story_type: storyData.type,
-        estimated_hours: storyData.story_point,
-        priority: storyData.priority === "High" ? 5 : storyData.priority === "Medium" ? 3 : 1,
-        acceptance_criteria: storyData.acceptance_criteria.join('\n'), // Join criteria into a single string
-        tags: [], // Add any tags if needed
-        labels: [], // Add any labels if needed
+        story_point: storyData.story_point,
+        priority: storyData.priority === "High" ? 1 : storyData.priority === "Medium" ? 2 : 3,
+        acceptance_criteria: storyData.acceptance_criteria,
+        requirements: storyData.requirements,
+        tags: [],
+        labels: [],
       })
       console.log("Story created successfully:", createdStory)
 
-      // Add the created story to the frontend UI
+      // Add the created story to the frontend UI with all fields
       setColumns((prev) =>
         prev.map((col) => {
           if (col.id === "todo") {
@@ -431,14 +449,19 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
               cards: [
                 ...col.cards,
                 {
-                  id: createdStory.id, // UUID thật của story trong database
+                  id: createdStory.id,
                   content: createdStory.title,
                   description: createdStory.description || "",
                   columnId: "todo",
                   type: createdStory.type,
-                  story_point: createdStory.story_point || undefined,
-                  rank: createdStory.priority,
-                  taskId: `STORY-${createdStory.id.substring(0, 4).toUpperCase()}`, // ID tạm thời để hiển thị
+                  story_point: createdStory.story_point ?? undefined,
+                  priority: createdStory.priority ?? undefined,
+                  rank: createdStory.rank ?? undefined,
+                  epic_id: createdStory.epic_id ?? undefined,
+                  acceptance_criteria: createdStory.acceptance_criteria ?? undefined,
+                  requirements: createdStory.requirements ?? undefined,
+                  created_at: createdStory.created_at ?? new Date().toISOString(),
+                  taskId: `STORY-${createdStory.id.substring(0, 4).toUpperCase()}`,
                 },
               ],
             }
@@ -456,7 +479,8 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     }
   }, [projectId])
 
-  const handleDeleteCard = useCallback((columnId: string, cardId: string) => {
+  const handleDeleteCard = useCallback(async (columnId: string, cardId: string) => {
+    // Optimistic update - remove from UI immediately
     setColumns((prev) =>
       prev.map((col) => {
         if (col.id === columnId) {
@@ -468,7 +492,22 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         return col
       }),
     )
-  }, [])
+    
+    // Call API to delete from database
+    try {
+      console.log("[Kanban] Deleting story:", cardId)
+      await storiesApi.delete(cardId)
+      console.log("[Kanban] Delete success")
+      toast.success("Đã xóa story")
+    } catch (error) {
+      console.error("[Kanban] Failed to delete story:", error)
+      toast.error("Không thể xóa story")
+      // Refetch to restore state on error
+      if (projectId) {
+        queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+      }
+    }
+  }, [projectId, queryClient])
 
   const handleDuplicateCard = useCallback((cardId: string) => {
     setColumns((prev) =>

@@ -24,19 +24,31 @@ def format_input_template(task: str, **kwargs) -> str:
     return template.strip()
 
 
-def build_system_prompt(task: str, agent=None) -> str:
-    """Build system prompt with shared context."""
+def get_shared_context(key: str) -> str:
+    """Get value from shared_context in prompts.yaml."""
+    return _PROMPTS.get("shared_context", {}).get(key, "")
+
+
+def build_system_prompt(task: str, agent=None, **kwargs) -> str:
+    """Build system prompt with shared context and custom variables."""
     prompt = get_prompt(task, "system_prompt")
     shared = _PROMPTS.get("shared_context", {})
     
+    # Replace shared context
     for key, value in shared.items():
         prompt = prompt.replace(f"{{shared_context.{key}}}", value)
     
+    # Replace agent info
     if agent:
         prompt = prompt.replace("{name}", agent.name or "Developer")
         prompt = prompt.replace("{role}", agent.role_type or "Software Developer")
     else:
         prompt = prompt.replace("{name}", "Developer")
         prompt = prompt.replace("{role}", "Software Developer")
+    
+    # Replace custom kwargs (e.g., skill_catalog)
+    for key, value in kwargs.items():
+        placeholder = "{" + key + "}"
+        prompt = prompt.replace(placeholder, str(value) if value else "")
     
     return prompt

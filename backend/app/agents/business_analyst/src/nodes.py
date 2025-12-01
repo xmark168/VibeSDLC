@@ -362,6 +362,7 @@ async def ask_batch_questions(state: BAState, agent=None) -> dict:
                         "question_ids": [str(qid) for qid in question_ids],
                         "collected_info": state.get("collected_info", {}),
                         "user_message": state.get("user_message", ""),  # Save original request for PRD generation
+                        "research_loop_count": state.get("research_loop_count", 0),  # Track research loops
                     }
                 }
                 first_question.task_context = new_task_context
@@ -411,6 +412,7 @@ async def process_batch_answers(state: BAState, agent=None) -> dict:
         # Find matching question by index or question_id
         q_idx = ans.get("question_index", len(collected_answers))
         if q_idx < len(questions):
+            question = questions[q_idx]
             answer_text = ans.get("answer", "")
             selected_options = ans.get("selected_options", [])
             
@@ -420,9 +422,10 @@ async def process_batch_answers(state: BAState, agent=None) -> dict:
             
             collected_answers.append({
                 "question_index": q_idx,
-                "question_text": questions[q_idx]["text"],
+                "question_text": question.get("text", ""),
                 "answer": answer_text,
-                "selected_options": selected_options
+                "selected_options": selected_options,
+                "category": question.get("category", "")  # Preserve category for clarity check
             })
     
     logger.info(f"[BA] Processed {len(collected_answers)} answers from batch")
@@ -773,10 +776,8 @@ async def approve_stories(state: BAState, agent=None) -> dict:
                 epic_string_id = story_data.get("epic_id", "")
                 epic_uuid = epic_id_map.get(epic_string_id)
                 
-                # Parse acceptance criteria
+                # Get acceptance criteria list (keep as list for JSON storage)
                 acceptance_criteria = story_data.get("acceptance_criteria", [])
-                if isinstance(acceptance_criteria, list):
-                    acceptance_criteria = "\n".join(f"- {ac}" for ac in acceptance_criteria)
                 
                 # Get requirements list (keep as list for JSON storage)
                 requirements = story_data.get("requirements", [])
@@ -831,9 +832,14 @@ async def approve_stories(state: BAState, agent=None) -> dict:
 
 # Categories for clarity check
 REQUIRED_CATEGORIES = {
-    "target_users": ["khách hàng", "người dùng", "đối tượng", "ai sẽ dùng", "ai dùng"],
+    "target_users": [
+        "khách hàng", "người dùng", "đối tượng", "ai sẽ dùng", "ai dùng",
+        "cá nhân", "mình tôi", "chỉ mình", "một mình", "cho ai", "dùng cho",
+        "sử dụng cho", "ai sử dụng", "người sử dụng", "dùng cho ai",
+        "chia sẻ", "đồng nghiệp", "gia đình", "bạn bè", "nhóm", "team"
+    ],
     "main_features": ["tính năng", "chức năng", "website cần có", "cần có gì"],
-    "risks": ["lo ngại", "thách thức", "rủi ro", "khó khăn", "lo lắng"],
+    "risks": ["lo ngại", "thách thức", "rủi ro", "khó khăn", "lo lắng", "bảo mật"],
 }
 
 OPTIONAL_CATEGORIES = {
@@ -855,20 +861,31 @@ def check_clarity(state: BAState) -> dict:
     
     for answer in answers:
         question_text = answer.get("question_text", "").lower()
-        answer_text = answer.get("answer", "")
+        answer_text = str(answer.get("answer", "")).lower()
+        category = answer.get("category", "")  # Check explicit category first
         
         # Skip empty answers
-        if not answer_text or len(answer_text.strip()) < 5:
+        if not answer_text or len(answer_text.strip()) < 3:
             continue
         
-        for category, keywords in REQUIRED_CATEGORIES.items():
-            if any(kw in question_text for kw in keywords):
-                covered[category] = True
+        # Method 1: Check explicit category field (preferred)
+        if category and category in covered:
+            covered[category] = True
+            logger.debug(f"[BA] Category '{category}' covered by explicit field")
+            continue
+        
+        # Method 2: Fallback to keyword matching in question + answer
+        combined_text = f"{question_text} {answer_text}"
+        for cat, keywords in REQUIRED_CATEGORIES.items():
+            if not covered[cat]:  # Only check if not already covered
+                if any(kw in combined_text for kw in keywords):
+                    covered[cat] = True
+                    logger.debug(f"[BA] Category '{cat}' covered by keyword match in: {combined_text[:100]}")
     
     missing = [cat for cat, is_covered in covered.items() if not is_covered]
     is_clear = len(missing) == 0
     
-    logger.info(f"[BA] Clarity check: covered={[c for c, v in covered.items() if v]}, missing={missing}")
+    logger.info(f"[BA] Clarity check: covered={[c for c, v in covered.items() if v]}, missing={missing}, total_answers={len(answers)}")
     
     return {
         "is_clear": is_clear,
@@ -928,29 +945,45 @@ async def analyze_domain(state: BAState, agent=None) -> dict:
     missing_info = ", ".join([category_prompts.get(cat, cat) for cat in missing_categories])
     
     system_prompt = _sys_prompt(agent, "interview_requirements")
+    
+    # Build category info for prompt
+    categories_to_ask = []
+    for cat in missing_categories:
+        cat_name = category_prompts.get(cat, cat)
+        categories_to_ask.append(f'- category: "{cat}", về: {cat_name}')
+    categories_str = "\n".join(categories_to_ask)
+    
     user_prompt = f"""Dựa trên cuộc trò chuyện trước, user muốn: "{user_message}"
 
 Thông tin đã thu thập: {json.dumps(collected_info, ensure_ascii=False)}
 
 Kết quả tìm hiểu thêm từ web: {json.dumps(domain_research, ensure_ascii=False)[:1500]}
 
-THIẾU THÔNG TIN VỀ: {missing_info}
+**QUAN TRỌNG - KIỂM TRA KỸ TRƯỚC KHI HỎI:**
+Xem kỹ "Thông tin đã thu thập" ở trên. NẾU user đã trả lời về:
+- Đối tượng sử dụng (ví dụ: "cá nhân", "chỉ mình tôi", "cho bản thân") → KHÔNG hỏi lại về target_users
+- Tính năng (ví dụ: đã liệt kê các features) → KHÔNG hỏi lại về main_features  
+- Rủi ro/lo ngại (ví dụ: "bảo mật", "an toàn") → KHÔNG hỏi lại về risks
 
-Hãy tạo 2-3 câu hỏi BỔ SUNG để làm rõ những thông tin còn thiếu.
-Dựa vào kết quả research, đề xuất các options phù hợp với xu hướng hiện tại.
+CẦN HỎI THÊM VỀ CÁC CATEGORY SAU (NẾU CHƯA CÓ trong collected_info):
+{categories_str}
 
-Ví dụ: Nếu research thấy nhiều website bán sách có ebook/audiobook, 
-hãy hỏi: "Ngoài sách giấy, bạn có muốn bán thêm?" với options ["Ebook", "Audiobook", "Cả hai", "Không cần"]
+Hãy tạo 1-2 câu hỏi CHO MỖI CATEGORY thực sự còn thiếu.
+QUAN TRỌNG: 
+- Mỗi question PHẢI có field "category" để tracking
+- KHÔNG hỏi lại những gì user đã trả lời
+- Nếu tất cả categories đã có thông tin, trả về questions: []
 
 Return JSON format:
 ```json
 {{
   "questions": [
     {{
-      "text": "Câu hỏi tiếng Việt?",
+      "text": "Câu hỏi cụ thể khác với những gì đã hỏi?",
       "type": "multichoice",
       "options": ["Option 1", "Option 2", "Khác"],
-      "allow_multiple": true
+      "allow_multiple": true,
+      "category": "category_name"
     }}
   ]
 }}
@@ -1244,3 +1277,285 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
         "result": result,
         "is_complete": True
     }
+
+
+# =============================================================================
+# STORY VERIFY NODE - Simple 1-Phase LLM
+# =============================================================================
+
+async def verify_story_simple(state: dict, agent=None) -> dict:
+    """Verify a newly created story with single LLM call.
+    
+    Loads PRD + existing stories, then asks LLM to:
+    1. Check for duplicates
+    2. Evaluate INVEST compliance
+    3. Suggest improvements
+    
+    Args:
+        state: Must contain:
+            - new_story: Story object to verify
+            - project_id: UUID of the project
+            - full_prd: PRD dict (optional)
+            - existing_stories: List of existing stories (optional)
+        agent: BA agent instance for messaging
+    
+    Returns:
+        dict with verification results
+    """
+    logger.info("[BA] Starting simple story verification...")
+    
+    new_story = state.get("new_story")
+    project_id = state.get("project_id")
+    full_prd = state.get("full_prd")
+    existing_stories = state.get("existing_stories", [])
+    
+    if not new_story:
+        logger.error("[BA] No new_story in state")
+        return {"error": "No story provided", "is_complete": True}
+    
+    # Build story info
+    story_info = {
+        "title": new_story.title,
+        "description": new_story.description or "(empty)",
+        "acceptance_criteria": new_story.acceptance_criteria or "(empty)",
+        "type": new_story.type.value if new_story.type else "UserStory"
+    }
+    
+    # Build PRD context
+    prd_context = "No PRD available for this project."
+    if full_prd:
+        prd_context = f"""PROJECT PRD:
+- Project Name: {full_prd.get('project_name', 'Unknown')}
+- Overview: {full_prd.get('overview', 'N/A')[:500]}
+- Target Users: {json.dumps(full_prd.get('target_users', []), ensure_ascii=False)}
+- Core Features: {json.dumps(full_prd.get('features', [])[:5], ensure_ascii=False)}
+"""
+    
+    # Build existing stories context
+    stories_context = "No existing stories in this project."
+    if existing_stories:
+        stories_list = []
+        for s in existing_stories[:20]:  # Limit to 20 stories
+            title = s.title if hasattr(s, 'title') else s.get('title', 'Unknown')
+            desc = s.description if hasattr(s, 'description') else s.get('description', '')
+            desc_preview = (desc or "")[:100]
+            stories_list.append(f"- {title}: {desc_preview}")
+        stories_context = f"EXISTING STORIES ({len(existing_stories)} total):\n" + "\n".join(stories_list)
+    
+    # Build prompts from YAML
+    system_prompt = _sys_prompt(agent, "verify_story")
+    user_prompt = _user_prompt(
+        "verify_story",
+        prd_context=prd_context,
+        stories_context=stories_context,
+        story_title=story_info['title'],
+        story_description=story_info['description'],
+        story_acceptance_criteria=story_info['acceptance_criteria'],
+        story_type=story_info['type']
+    )
+
+    try:
+        response = await _default_llm.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ],
+            config=_cfg(state, "verify_story_simple")
+        )
+        
+        # Parse JSON response
+        content = response.content.strip()
+        
+        # Extract JSON from markdown code block if present
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+        
+        result = json.loads(content)
+        
+        logger.info(f"[BA] Story verification complete: invest_score={result.get('invest_score')}, "
+                    f"is_duplicate={result.get('is_duplicate')}")
+        
+        # Send suggestions to user (always send, even without agent)
+        await _send_verify_message(agent, new_story, result, project_id=project_id)
+        
+        return {
+            "verification_result": result,
+            "is_complete": True
+        }
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"[BA] Failed to parse LLM response: {e}")
+        return {"error": str(e), "is_complete": True}
+        
+    except Exception as e:
+        logger.error(f"[BA] Story verification failed: {e}", exc_info=True)
+        return {"error": str(e), "is_complete": True}
+
+
+async def _send_verify_message(agent, story, result: dict, project_id=None) -> None:
+    """Send verification result message to user via Kafka."""
+    from uuid import uuid4
+    from app.kafka import get_kafka_producer, KafkaTopics
+    from app.kafka.event_schemas import AgentEvent
+    from app.models import Message, AuthorType
+    
+    is_duplicate = result.get("is_duplicate", False)
+    duplicate_of = result.get("duplicate_of")
+    invest_score = result.get("invest_score", 6)
+    invest_issues = result.get("invest_issues", [])
+    suggested_title = result.get("suggested_title")
+    suggested_requirements = result.get("suggested_requirements")
+    suggested_ac = result.get("suggested_acceptance_criteria")
+    summary = result.get("summary", "")
+    
+    # Build natural message based on result
+    if is_duplicate:
+        content = f"Mình vừa kiểm tra story \"{story.title}\" và thấy có vẻ trùng với story đã có. Bạn xem chi tiết bên dưới nhé!"
+    elif invest_score >= 5:
+        content = f"Story \"{story.title}\" của bạn đã đạt chuẩn INVEST rồi đó! 👍"
+    elif invest_score >= 3:
+        content = f"Mình đã review story \"{story.title}\". Có một vài điểm cần cải thiện, bạn xem gợi ý bên dưới nhé!"
+    else:
+        content = f"Story \"{story.title}\" cần được cải thiện khá nhiều. Mình có một số gợi ý cho bạn!"
+    
+    details = {
+        "message_type": "story_review",
+        "story_id": str(story.id),
+        "story_title": story.title,
+        "is_duplicate": is_duplicate,
+        "duplicate_of": duplicate_of,
+        "invest_score": invest_score,
+        "invest_issues": invest_issues,
+        "suggested_title": suggested_title,
+        "suggested_requirements": suggested_requirements,
+        "suggested_acceptance_criteria": suggested_ac,
+        "has_suggestions": bool(suggested_title or suggested_requirements or suggested_ac)
+    }
+    
+    # Get agent info (agent.name is already human_name from base_agent)
+    agent_name = agent.name if agent else "Business Analyst"
+    agent_id = str(agent.agent_id) if agent else None
+    proj_id = str(project_id) if project_id else (str(agent.project_id) if agent else None)
+    
+    # Save to DB
+    message_id = None
+    try:
+        with Session(engine) as session:
+            db_message = Message(
+                project_id=project_id or (agent.project_id if agent else None),
+                content=content,
+                author_type=AuthorType.AGENT,
+                agent_id=agent.agent_id if agent else None,
+                message_type="story_review",
+                structured_data=details,
+                message_metadata={"agent_name": agent_name}  # Fallback for agent_name
+            )
+            session.add(db_message)
+            session.commit()
+            session.refresh(db_message)
+            message_id = db_message.id
+            logger.info(f"[BA] Saved story review message to DB: {message_id}")
+    except Exception as e:
+        logger.error(f"[BA] Failed to save message to DB: {e}")
+    
+    # Publish to Kafka
+    try:
+        producer = await get_kafka_producer()
+        event = AgentEvent(
+            event_type="agent.response",
+            agent_name=agent_name,
+            agent_id=agent_id or "ba-auto-verify",
+            project_id=proj_id,
+            content=content,
+            details={
+                **details,
+                "message_id": str(message_id) if message_id else None,
+            },
+            execution_context={
+                "mode": "background",
+                "task_type": "story_verify",
+                "display_mode": "chat",
+            }
+        )
+        await producer.publish(topic=KafkaTopics.AGENT_EVENTS, event=event)
+        logger.info(f"[BA] Published story review to Kafka for story {story.id}")
+    except Exception as e:
+        logger.error(f"[BA] Failed to publish to Kafka: {e}")
+
+
+async def send_review_action_response(
+    story_id: str,
+    story_title: str,
+    action: str,
+    project_id,
+    agent = None
+) -> None:
+    """
+    Send natural response message when user takes action on story review.
+    Uses LLM to generate personality-driven message.
+    """
+    from app.models import Message, AuthorType
+    from sqlmodel import Session
+    from app.core.db import engine
+    
+    logger.info(f"[BA] Generating review action response for story {story_id}, action: {action}")
+    
+    # Get agent info
+    agent_name = agent.name if agent else "Business Analyst"
+    agent_id = str(agent.agent_id) if agent else None
+    proj_id = str(project_id) if project_id else (str(agent.project_id) if agent else None)
+    
+    # Simple confirmation messages (no LLM needed)
+    confirmation_messages = {
+        "apply": f"Áp dụng gợi ý cho story \"{story_title}\".",
+        "keep": f"Giữ nguyên story \"{story_title}\".",
+        "remove": f"Loại bỏ story \"{story_title}\"."
+    }
+    content = confirmation_messages.get(action, f"Đã xử lý story \"{story_title}\".")
+    
+    # Save to DB
+    message_id = None
+    try:
+        with Session(engine) as session:
+            db_message = Message(
+                project_id=project_id,
+                content=content,
+                author_type=AuthorType.AGENT,
+                agent_id=agent.agent_id if agent else None,
+                message_type="text",
+                message_metadata={"agent_name": agent_name}
+            )
+            session.add(db_message)
+            session.commit()
+            session.refresh(db_message)
+            message_id = db_message.id
+            logger.info(f"[BA] Saved review action response to DB: {message_id}")
+    except Exception as e:
+        logger.error(f"[BA] Failed to save message to DB: {e}")
+    
+    # Publish to Kafka
+    try:
+        producer = await get_kafka_producer()
+        event = AgentEvent(
+            event_type="agent.response",
+            agent_name=agent_name,
+            agent_id=agent_id or "ba-auto-verify",
+            project_id=proj_id,
+            content=content,
+            details={
+                "message_id": str(message_id) if message_id else None,
+                "action": action,
+                "story_id": story_id,
+            },
+            execution_context={
+                "mode": "background",
+                "task_type": "review_action_response",
+                "display_mode": "chat",
+            }
+        )
+        await producer.publish(topic=KafkaTopics.AGENT_EVENTS, event=event)
+        logger.info(f"[BA] Published review action response to Kafka")
+    except Exception as e:
+        logger.error(f"[BA] Failed to publish to Kafka: {e}")

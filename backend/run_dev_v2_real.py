@@ -1,25 +1,7 @@
-"""Run Developer V2 with a real task - no mocking.
+"""Developer V2 Interactive Runner.
 
-This script sends a real task to DeveloperV2 and lets it process
-with actual LLM calls.
-
-Features:
-- Interactive mode: After each run, waits for more commands
-- Container persistence: Reuses containers between runs
-- Graceful cleanup: Ctrl+C cleans up containers before exit
-
-Usage:
-    cd backend
-    python run_dev_v2_real.py
-
-Commands (after first run):
-    run     - Run another story
-    test    - Run tests in container
-    exec    - Execute command in container
-    logs    - Show container logs
-    status  - Show container status
-    clear   - Remove containers and exit
-    exit    - Stop containers and exit (can resume later)
+Usage: cd backend && python run_dev_v2_real.py
+Commands: run, test, exec, logs, status, clear, exit
 """
 
 # Load environment variables FIRST
@@ -80,6 +62,14 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from app.agents.developer_v2.src.graph import DeveloperGraph
 from app.agents.developer_v2.src.state import DeveloperState
+from app.agents.developer_v2.src.tools.git_tools import set_git_context, git_create_branch, _git_commit
+
+try:
+    from git import Repo
+    GIT_AVAILABLE = True
+except ImportError:
+    GIT_AVAILABLE = False
+    Repo = None
 
 
 # =============================================================================
@@ -96,15 +86,7 @@ AVAILABLE_TEMPLATES = {
 
 
 def copy_boilerplate(template_name: str, target_path: Path) -> bool:
-    """Copy boilerplate template to target workspace.
-    
-    Args:
-        template_name: Name of template (nextjs, react, python)
-        target_path: Destination workspace path
-        
-    Returns:
-        True if copied successfully, False otherwise
-    """
+    """Copy boilerplate template to target workspace."""
     template_dir = AVAILABLE_TEMPLATES.get(template_name.lower())
     
     if not template_dir:
@@ -119,12 +101,19 @@ def copy_boilerplate(template_name: str, target_path: Path) -> bool:
         target_path.mkdir(parents=True, exist_ok=True)
         return False
     
+    # Directories to ignore when copying
+    IGNORE_DIRS = {'node_modules', '.next', '__pycache__', '.bun'}
+    
+    def ignore_patterns(directory, files):
+        """Return list of files/dirs to ignore."""
+        return [f for f in files if f in IGNORE_DIRS]
+    
     try:
-        # Copy entire template directory
+        # Copy entire template directory (excluding node_modules, .git, etc.)
         if target_path.exists():
             shutil.rmtree(target_path)
         
-        shutil.copytree(source_path, target_path)
+        shutil.copytree(source_path, target_path, ignore=ignore_patterns)
         logger.info(f"Copied boilerplate '{template_dir}' to {target_path}")
         
         # Count files copied
@@ -139,14 +128,7 @@ def copy_boilerplate(template_name: str, target_path: Path) -> bool:
 
 
 def detect_template_type(story: dict) -> str:
-    """Detect which template to use based on story content.
-    
-    Args:
-        story: Story dictionary with title and content
-        
-    Returns:
-        Template type: 'nextjs', 'react', or 'python'
-    """
+    """Detect template type from story content."""
     title = story.get("title", "").lower()
     content = story.get("content", "").lower()
     combined = f"{title} {content}"
@@ -166,15 +148,7 @@ def detect_template_type(story: dict) -> str:
 
 
 class SimpleDeveloperRunner:
-    """Simple runner for DeveloperV2 without full agent infrastructure.
-    
-    This runner provides the `_setup_workspace` method that the graph's
-    `setup_workspace` node expects. It handles:
-    - Git init and branch creation
-    - CocoIndex indexing for semantic search
-    
-    Note: message_user calls in nodes.py are disabled for this mode.
-    """
+    """Runner for DeveloperV2 without full agent infrastructure."""
     
     def __init__(self, workspace_path: str = None, template: str = None):
         self.name = "DeveloperV2"
@@ -204,49 +178,41 @@ class SimpleDeveloperRunner:
         logger.info(f"[{self.name}] Workspace ready: False (will be setup by graph)")
     
     def _setup_workspace(self, story_id: str) -> dict:
-        """Setup workspace for the graph's setup_workspace node.
-        
-        This method is called by the setup_workspace node in graph.py.
-        It handles:
-        1. Git init (if not already)
-        2. Create and checkout feature branch
-        3. Initial commit of boilerplate (if any)
-        
-        Args:
-            story_id: Story ID for branch naming
-            
-        Returns:
-            dict with workspace_path, branch_name, main_workspace, workspace_ready
-        """
+        """Setup git workspace and branch."""
         short_id = story_id.split('-')[-1][:8] if '-' in story_id else story_id[:8]
         branch_name = f"story_{short_id}"
         
         workspace_ready = False
         
         try:
-            from app.agents.developer.tools.git_python_tool import GitPythonTool
+            if not GIT_AVAILABLE:
+                logger.warning(f"[{self.name}] GitPython not installed")
+                return {
+                    "workspace_path": str(self.workspace_path),
+                    "branch_name": branch_name,
+                    "main_workspace": str(self.workspace_path),
+                    "workspace_ready": False,
+                }
             
-            git_tool = GitPythonTool(root_dir=str(self.workspace_path))
+            # Set git context for git_tools
+            set_git_context(str(self.workspace_path))
             
             # 1. Initialize git if needed
             git_dir = self.workspace_path / ".git"
             if not git_dir.exists():
-                result = git_tool._run("init")
-                logger.info(f"[{self.name}] Git init: {result}")
+                repo = Repo.init(str(self.workspace_path))
+                logger.info(f"[{self.name}] Git init: {self.workspace_path}")
+            else:
+                repo = Repo(str(self.workspace_path))
             
             # 2. Initial commit if there are files (from boilerplate)
-            status = git_tool._run("status")
-            if "nothing to commit" not in status.lower() and "untracked files" in status.lower():
-                # Stage all files
-                commit_result = git_tool._run("commit", message="Initial boilerplate", files=["."])
-                logger.info(f"[{self.name}] Initial commit: {commit_result}")
+            if repo.untracked_files or repo.is_dirty():
+                result = _git_commit("Initial boilerplate", ".")
+                logger.info(f"[{self.name}] Initial commit: {result}")
             
             # 3. Create and checkout feature branch
-            create_result = git_tool._run("create_branch", branch_name=branch_name)
-            logger.info(f"[{self.name}] Create branch '{branch_name}': {create_result}")
-            
-            checkout_result = git_tool._run("checkout_branch", branch_name=branch_name)
-            logger.info(f"[{self.name}] Checkout branch '{branch_name}': {checkout_result}")
+            result = git_create_branch.invoke({"branch_name": branch_name})
+            logger.info(f"[{self.name}] Branch '{branch_name}': {result}")
             
             workspace_ready = True
             logger.info(f"[{self.name}] Workspace setup complete: branch={branch_name}")
@@ -267,159 +233,122 @@ class SimpleDeveloperRunner:
         pass  # Disabled for local runner mode
     
     def _get_project_config(self) -> dict:
-        """Get project config based on template type.
-        
-        Returns:
-            Always uses services array format:
-            {"tech_stack": "...", "services": [{...}, {...}]}
-        """
-        # Default config for NextJS boilerplate (single service)
+        """Get project config based on template type."""
         if self.template in ["nextjs", "react"]:
             return {
-                "tech_stack": "nextjs",
-                "services": [
-                    {
-                        "name": "app",
-                        "path": ".",
-                        # Runtime & Framework
-                        "runtime": "bun",
-                        "framework": "nextjs",
-                        # ORM & Database
-                        "orm": "prisma",
-                        "db_type": "postgresql",
-                        # Validation & Auth
-                        "validation": "zod",
-                        "auth": "next-auth",
-                        # Commands
-                        "install_cmd": "bun install",
-                        "test_cmd": "bun test",
-                        "run_cmd": "bun dev",
-                        "build_cmd": "bun run build",
-                        "lint_cmd": "bun run lint",
-                        # Auto-fix commands (run before code review)
-                        "lint_fix_cmd": "bunx eslint --fix . --ext .ts,.tsx,.js,.jsx",
-                        "format_cmd": "bunx prettier --write .",
-                        # DB setup
-                        "needs_db": True,
-                        "db_cmds": ["bunx prisma generate", "bunx prisma db push --accept-data-loss"],
-                    }
-                ]
+                "tech_stack": {
+                    "name": "nextjs-app",
+                    "service": [
+                        {
+                            "name": "app",
+                            "path": ".",
+                            "runtime": "bun",
+                            "framework": "nextjs",
+                            "orm": "prisma",
+                            "db_type": "postgresql",
+                            "validation": "zod",
+                            "auth": "next-auth",
+                            "install_cmd": "bun install",
+                            "test_cmd": "bun run test",
+                            "run_cmd": "bun dev",
+                            "build_cmd": "bun run build",
+                            "lint_cmd": "bun run lint",
+                            "lint_fix_cmd": "bunx eslint --fix . --ext .ts,.tsx,.js,.jsx",
+                            "format_cmd": "bunx prettier --write .",
+                            "needs_db": True,
+                            "db_cmds": ["bunx prisma generate", "bunx prisma db push --accept-data-loss"],
+                        }
+                    ]
+                }
             }
         
-        # Python projects (single service)
         if self.template == "python":
             return {
-                "tech_stack": "python",
-                "services": [
-                    {
-                        "name": "app",
-                        "path": ".",
-                        # Runtime & Framework
-                        "runtime": "python",
-                        "framework": "fastapi",
-                        # ORM & Database
-                        "orm": "sqlalchemy",
-                        "db_type": "postgresql",
-                        # Validation
-                        "validation": "pydantic",
-                        # Commands
-                        "install_cmd": "pip install -e .",
-                        "test_cmd": "pytest -v",
-                        "run_cmd": "uvicorn app.main:app --reload",
-                        "build_cmd": "",
-                        "lint_cmd": "ruff check .",
-                        # Auto-fix commands (run before code review)
-                        "lint_fix_cmd": "ruff check --fix .",
-                        "format_cmd": "ruff format .",
-                        # DB setup
-                        "needs_db": False,
-                        "db_cmds": [],
-                    }
-                ]
+                "tech_stack": {
+                    "name": "python-app",
+                    "service": [
+                        {
+                            "name": "app",
+                            "path": ".",
+                            "runtime": "python",
+                            "framework": "fastapi",
+                            "orm": "sqlalchemy",
+                            "db_type": "postgresql",
+                            "validation": "pydantic",
+                            "install_cmd": "pip install -e .",
+                            "test_cmd": "pytest -v",
+                            "run_cmd": "uvicorn app.main:app --reload",
+                            "build_cmd": "",
+                            "lint_cmd": "ruff check .",
+                            "lint_fix_cmd": "ruff check --fix .",
+                            "format_cmd": "ruff format .",
+                            "needs_db": False,
+                            "db_cmds": [],
+                        }
+                    ]
+                }
             }
         
-        # Fullstack monorepo (multi-service)
         if self.template == "fullstack":
             return {
-                "tech_stack": "fullstack",
-                "services": [
-                    {
-                        "name": "frontend",
-                        "path": "frontend",
-                        # Runtime & Framework
-                        "runtime": "bun",
-                        "framework": "nextjs",
-                        # Validation & Auth
-                        "validation": "zod",
-                        "auth": "next-auth",
-                        # Commands
-                        "install_cmd": "bun install",
-                        "test_cmd": "bun test",
-                        "run_cmd": "bun dev",
-                        "build_cmd": "bun run build",
-                        "lint_cmd": "bun run lint",
-                        # Auto-fix commands
-                        "lint_fix_cmd": "bunx eslint --fix . --ext .ts,.tsx,.js,.jsx",
-                        "format_cmd": "bunx prettier --write .",
-                        # No DB for frontend
-                        "needs_db": False,
-                        "db_cmds": [],
-                    },
-                    {
-                        "name": "backend",
-                        "path": "backend",
-                        # Runtime & Framework
-                        "runtime": "python",
-                        "framework": "fastapi",
-                        # ORM & Database
-                        "orm": "sqlalchemy",
-                        "db_type": "postgresql",
-                        # Validation
-                        "validation": "pydantic",
-                        # Commands
-                        "install_cmd": "pip install -e .",
-                        "test_cmd": "pytest -v",
-                        "run_cmd": "uvicorn app.main:app --reload",
-                        "build_cmd": "",
-                        "lint_cmd": "ruff check .",
-                        # Auto-fix commands
-                        "lint_fix_cmd": "ruff check --fix .",
-                        "format_cmd": "ruff format .",
-                        # DB setup
-                        "needs_db": True,
-                        "db_cmds": ["alembic upgrade head"],
-                    },
-                ]
+                "tech_stack": {
+                    "name": "fullstack-monorepo",
+                    "service": [
+                        {
+                            "name": "frontend",
+                            "path": "frontend",
+                            "runtime": "bun",
+                            "framework": "nextjs",
+                            "validation": "zod",
+                            "auth": "next-auth",
+                            "install_cmd": "bun install",
+                            "test_cmd": "bun run test",
+                            "run_cmd": "bun dev",
+                            "build_cmd": "bun run build",
+                            "lint_cmd": "bun run lint",
+                            "lint_fix_cmd": "bunx eslint --fix . --ext .ts,.tsx,.js,.jsx",
+                            "format_cmd": "bunx prettier --write .",
+                            "needs_db": False,
+                            "db_cmds": [],
+                        },
+                        {
+                            "name": "backend",
+                            "path": "backend",
+                            "runtime": "python",
+                            "framework": "fastapi",
+                            "orm": "sqlalchemy",
+                            "db_type": "postgresql",
+                            "validation": "pydantic",
+                            "install_cmd": "pip install -e .",
+                            "test_cmd": "pytest -v",
+                            "run_cmd": "uvicorn app.main:app --reload",
+                            "build_cmd": "",
+                            "lint_cmd": "ruff check .",
+                            "lint_fix_cmd": "ruff check --fix .",
+                            "format_cmd": "ruff format .",
+                            "needs_db": True,
+                            "db_cmds": ["alembic upgrade head"],
+                        },
+                    ]
+                }
             }
         
-        # Default: auto-detect (empty services triggers fallback)
-        return {"services": []}
+        return {"tech_stack": {"name": "", "service": []}}
     
     async def run_story(self, story: dict) -> dict:
         """Run a story through the graph."""
-        
-        # Setup Langfuse tracing (controlled by ENABLE_LANGFUSE env var)
         langfuse_handler = None
         langfuse_span = None
         langfuse_ctx = None
-        enable_langfuse = os.getenv("ENABLE_LANGFUSE", "false").lower() == "true"
         
-        if enable_langfuse:
+        if os.getenv("ENABLE_LANGFUSE", "false").lower() == "true":
             try:
                 from langfuse import get_client
                 from langfuse.langchain import CallbackHandler
                 
-                # Create parent span for entire graph execution (Team Leader pattern)
                 langfuse = get_client()
-                langfuse_ctx = langfuse.start_as_current_observation(
-                    as_type="span",
-                    name="developer_v2_story_execution"
-                )
-                
-                # Enter context and get span object
+                langfuse_ctx = langfuse.start_as_current_observation(as_type="span", name="developer_v2_story_execution")
                 langfuse_span = langfuse_ctx.__enter__()
-                
-                # Update trace with metadata
                 langfuse_span.update_trace(
                     user_id=str(uuid4()),
                     session_id=str(self.project_id),
@@ -429,14 +358,8 @@ class SimpleDeveloperRunner:
                         "content": story.get("content", "")[:200]
                     },
                     tags=["developer_v2", "story_execution", self.template or "no_template"],
-                    metadata={
-                        "agent": self.name,
-                        "template": self.template,
-                        "template_applied": self.template_applied
-                    }
+                    metadata={"agent": self.name, "template": self.template}
                 )
-                
-                # Handler inherits trace context automatically
                 langfuse_handler = CallbackHandler()
                 
                 logger.info(f"[{self.name}] Langfuse tracing enabled (session={self.project_id})")
@@ -445,12 +368,6 @@ class SimpleDeveloperRunner:
         else:
             logger.info(f"[{self.name}] Langfuse disabled (set ENABLE_LANGFUSE=true to enable)")
         
-        # Build initial state
-        # Note: workspace_path is provided but workspace_ready=False
-        # The setup_workspace node will call agent._setup_workspace() to:
-        # - Initialize git
-        # - Create and checkout feature branch
-        # - Index codebase with CocoIndex
         initial_state = {
             "story_id": story.get("story_id", str(uuid4())),
             "story_title": story.get("title", "Untitled"),
@@ -460,78 +377,47 @@ class SimpleDeveloperRunner:
             "task_id": str(uuid4()),
             "user_id": str(uuid4()),
             "langfuse_handler": langfuse_handler,
-            
-            # Workspace - setup_workspace node will handle git/branch/indexing
-            "workspace_path": str(self.workspace_path),  # Pre-set path (may have boilerplate)
-            "branch_name": None,  # Will be set by setup_workspace node
+            "workspace_path": str(self.workspace_path),
+            "branch_name": "",
             "main_workspace": str(self.workspace_path),
-            "workspace_ready": False,  # Will be set to True by setup_workspace node
-            "index_ready": False,  # Will be set to True after CocoIndex indexing
+            "workspace_ready": False,
+            "index_ready": False,
             "merged": False,
-            
-            # Workflow state
             "action": None,
             "task_type": None,
             "complexity": None,
             "analysis_result": None,
-            "implementation_plan": [],
-            "code_changes": [],
-            "files_created": [],
-            "files_modified": [],
             "affected_files": [],
+            "dependencies": [],
+            "risks": [],
+            "estimated_hours": 0.0,
+            "implementation_plan": [],
             "current_step": 0,
             "total_steps": 0,
-            "validation_result": None,
+            "files_created": [],
+            "files_modified": [],
             "message": None,
-            "confidence": None,
-            "reason": None,
-            
-            # Design document
-            "design_doc": None,
-            "code_plan_doc": None,
-            
-            # Code review - reduce iterations for faster completion
-            "code_review_k": 1,  # Only 1 review iteration
-            "code_review_passed": False,
-            "code_review_iteration": 0,
-            "code_review_results": [],
-            
-            # Run code - let detect_test_command figure out the right command
-            "run_status": None,
+            "error": None,
             "run_result": None,
             "run_stdout": "",
             "run_stderr": "",
-            "test_command": None,  # Auto-detect test framework (pnpm/npm/jest/pytest)
-            "error_logs": "",
-            
-            # Debug
+            "run_status": None,
+            "test_command": None,
             "debug_count": 0,
-            "max_debug": 5,  # Allow 5 debug attempts (MetaGPT pattern)
+            "max_debug": 5,
             "debug_history": [],
-            "last_debug_file": None,
-            
-            # React mode (MetaGPT Engineer2 pattern)
+            "error_analysis": None,
             "react_mode": True,
             "react_loop_count": 0,
             "max_react_loop": 40,
-            
-            # Summarize code (MetaGPT SummarizeCode pattern)
-            "summarize_feedback": None,
-            "summarize_count": 0,
-            "max_summarize": 3,
-            
-            # Revision tracking
-            "revision_count": 0,
-            "max_revisions": 3,
-            
-            # Project context
+            "tech_stack": "nextjs" if self.template in ["nextjs", "react"] else "python",
+            "skill_registry": None,
+            "available_skills": [],
             "project_context": None,
             "agents_md": None,
-            "related_code_context": "",
-            "research_context": "",
-            
-            # Project config (tech stack, commands)
             "project_config": self._get_project_config(),
+            "related_code_context": "",
+            "summarize_feedback": None,
         }
         
         logger.info(f"[{self.name}] Starting story: {story.get('title', 'Untitled')}")
@@ -543,14 +429,11 @@ class SimpleDeveloperRunner:
         sys.stdout.flush()
         
         try:
-            # Run graph with high recursion limit for multi-step workflows
             final_state = await self.graph.graph.ainvoke(
                 initial_state,
                 config={"recursion_limit": 100}
             )
             print("\n[*] Graph completed!")
-            
-            # Update trace output and close span (Team Leader pattern)
             if langfuse_span and langfuse_ctx:
                 try:
                     langfuse_span.update_trace(output={
@@ -559,7 +442,6 @@ class SimpleDeveloperRunner:
                         "complexity": final_state.get("complexity"),
                         "files_created": len(final_state.get("files_created", [])),
                         "files_modified": len(final_state.get("files_modified", [])),
-                        "code_review_passed": final_state.get("code_review_passed"),
                         "run_status": final_state.get("run_status"),
                         "debug_count": final_state.get("debug_count", 0),
                         "react_loop_count": final_state.get("react_loop_count", 0)
@@ -573,8 +455,6 @@ class SimpleDeveloperRunner:
             
         except Exception as e:
             logger.error(f"[{self.name}] Graph error: {e}", exc_info=True)
-            
-            # Cleanup langfuse span on error (Team Leader pattern)
             if langfuse_ctx:
                 try:
                     langfuse_ctx.__exit__(type(e), e, e.__traceback__)
@@ -838,10 +718,15 @@ async def handle_command(cmd: str, branch_name: str, workspace_path: Path) -> bo
     elif cmd == "test":
         try:
             print("\n[*] Running tests in container...")
-            # Detect test command
-            from app.agents.developer_v2.src.nodes import _detect_project_type
-            project_info = _detect_project_type(str(workspace_path))
-            test_cmd = project_info.get("test_cmd", "npm test")
+            # Detect test command based on files
+            if (workspace_path / "bun.lock").exists():
+                test_cmd = "bun run test"
+            elif (workspace_path / "package.json").exists():
+                test_cmd = "npm test"
+            elif (workspace_path / "pytest.ini").exists() or (workspace_path / "pyproject.toml").exists():
+                test_cmd = "pytest -v"
+            else:
+                test_cmd = "npm test"
             
             print(f"[*] Executing: {test_cmd}")
             result = dev_container_manager.exec(branch_name, test_cmd)
@@ -889,7 +774,6 @@ def print_result(result: dict, workspace_path: Path):
     print(f"Complexity: {result.get('complexity')}")
     print(f"Files Created: {len(result.get('files_created', []))}")
     print(f"Files Modified: {len(result.get('files_modified', []))}")
-    print(f"Code Review: {'PASSED' if result.get('code_review_passed') else 'PENDING'}")
     print(f"Tests: {result.get('run_status', 'N/A')}")
     print(f"Debug Iterations: {result.get('debug_count', 0)}")
     print(f"React Loops: {result.get('react_loop_count', 0)}")

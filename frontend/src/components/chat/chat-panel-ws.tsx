@@ -40,6 +40,7 @@ import { ConversationOwnerBadge } from "./ConversationOwnerBadge";
 import { AgentHandoffNotification } from "./AgentHandoffNotification";
 import { ArtifactCard } from "./ArtifactCard";
 import { StoriesCreatedCard } from "./StoriesCreatedCard";
+import { StorySuggestionsCard } from "./StorySuggestionsCard";
 import { PrdCreatedCard } from "./PrdCreatedCard";
 import { StoriesFileCard } from "./StoriesFileCard";
 import { useProjectAgents } from "@/queries/agents";
@@ -111,7 +112,7 @@ export function ChatPanelWS({
   };
 
   // Transform database agents to dropdown format
-  const AGENTS = (projectAgents || []).map((agent) => {
+  const AGENTS = (projectAgents?.data || []).map((agent) => {
     const roleInfo = getRoleInfo(agent.role_type);
     return {
       id: agent.id,
@@ -152,7 +153,7 @@ export function ChatPanelWS({
     sendMessage: wsSendMessage,
     sendQuestionAnswer,
     sendBatchAnswers,
-  } = useChatWebSocket(projectId, token || '');
+  } = useChatWebSocket(projectId ?? null, token || '');
 
   // Combine existing messages with WebSocket messages
   const apiMessages = messagesData?.data || [];
@@ -840,27 +841,32 @@ export function ChatPanelWS({
                 </div>
 
                 <div className="space-y-1.5">
-                  <div className="rounded-lg px-3 py-2 bg-muted w-fit">
-                    <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
-                      {msg.content || ''}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 px-1">
-                    <span className="text-xs text-muted-foreground">
-                      {formatTimestamp(msg.created_at)}
-                    </span>
-                    <button
-                      onClick={() => copyToClipboard(msg.content, msg.id)}
-                      className="p-1 rounded hover:bg-accent transition-colors"
-                      title="Copy message"
-                    >
-                      {copiedMessageId === msg.id ? (
-                        <Check className="w-3.5 h-3.5 text-green-500" />
-                      ) : (
-                        <Copy className="w-3.5 h-3.5 text-muted-foreground" />
-                      )}
-                    </button>
-                  </div>
+                  {/* Only show content bubble if there's actual content */}
+                  {msg.content && msg.content.trim() && (
+                    <>
+                      <div className="rounded-lg px-3 py-2 bg-muted w-fit">
+                        <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
+                          {msg.content}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 px-1">
+                        <span className="text-xs text-muted-foreground">
+                          {formatTimestamp(msg.created_at)}
+                        </span>
+                        <button
+                          onClick={() => copyToClipboard(msg.content, msg.id)}
+                          className="p-1 rounded hover:bg-accent transition-colors"
+                          title="Copy message"
+                        >
+                          {copiedMessageId === msg.id ? (
+                            <Check className="w-3.5 h-3.5 text-green-500" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+                          )}
+                        </button>
+                      </div>
+                    </>
+                  )}
                   
                   {/* Show artifact card if message type is artifact_created */}
                   {msg.message_type === 'artifact_created' && msg.structured_data?.artifact_id && (
@@ -940,6 +946,40 @@ export function ChatPanelWS({
                         prd_artifact_id: msg.structured_data.prd_artifact_id,
                       }}
                       projectId={projectId || ''}
+                    />
+                  )}
+                  
+                  {/* Show story review card from BA auto-verify */}
+                  {msg.structured_data?.message_type === 'story_review' && (
+                    <StorySuggestionsCard
+                      storyId={msg.structured_data.story_id || ''}
+                      storyTitle={msg.structured_data.story_title || ''}
+                      isDuplicate={msg.structured_data.is_duplicate}
+                      duplicateOf={msg.structured_data.duplicate_of}
+                      investScore={msg.structured_data.invest_score || 0}
+                      investIssues={msg.structured_data.invest_issues || []}
+                      suggestedTitle={msg.structured_data.suggested_title}
+                      suggestedAcceptanceCriteria={msg.structured_data.suggested_acceptance_criteria}
+                      suggestedRequirements={msg.structured_data.suggested_requirements}
+                      hasSuggestions={msg.structured_data.has_suggestions}
+                      initialActionTaken={msg.structured_data.action_taken}
+                      onApplied={() => {
+                        if (projectId) {
+                          queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+                          queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
+                        }
+                      }}
+                      onKeep={() => {
+                        if (projectId) {
+                          queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
+                        }
+                      }}
+                      onRemove={() => {
+                        if (projectId) {
+                          queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+                          queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
+                        }
+                      }}
                     />
                   )}
                 </div>
@@ -1066,7 +1106,7 @@ export function ChatPanelWS({
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
             className="min-h-[40px] resize-none bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground p-1 focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
-            disabled={!isConnected || shouldBlockChat}
+            disabled={!isConnected || !!shouldBlockChat}
             placeholder={
               shouldBlockChat
                 ? "⏸️ Please select options in the question above..."
@@ -1085,7 +1125,7 @@ export function ChatPanelWS({
                       size="icon"
                       className="h-8 w-8 hover:bg-accent"
                       onClick={triggerMention}
-                      disabled={!isConnected || shouldBlockChat}
+                      disabled={!isConnected || !!shouldBlockChat}
                     >
                       <AtSign className="w-4 h-4" />
                     </Button>
@@ -1112,7 +1152,7 @@ export function ChatPanelWS({
               size="icon"
               className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90"
               onClick={handleSend}
-              disabled={!isConnected || !message.trim() || shouldBlockChat}
+              disabled={!isConnected || !message.trim() || !!shouldBlockChat}
             >
               <ArrowUp className="w-4 h-4" />
             </Button>
