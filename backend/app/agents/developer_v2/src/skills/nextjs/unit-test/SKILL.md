@@ -1,18 +1,32 @@
 ---
 name: unit-test
-description: Write unit tests with Vitest and React Testing Library. Use when creating tests for components, utilities, or server actions.
+description: Write unit tests with Jest and React Testing Library. Use when creating tests for components, utilities, or server actions.
 ---
 
-# Unit Test (Vitest + Testing Library)
+# Unit Test (Jest + Testing Library)
+
+⚠️ **CRITICAL: This project uses JEST, NOT Vitest!**
+
+## NEVER USE (Will Cause Import Error):
+- ❌ `import { vi } from 'vitest'`
+- ❌ `vi.fn()`, `vi.mock()`, `vi.spyOn()`
+- ❌ `import { describe, it, expect } from 'vitest'`
+
+## ALWAYS USE:
+- ✅ `jest.fn()`, `jest.mock()`, `jest.spyOn()`
+- ✅ `jest.clearAllMocks()`
+- ✅ No import for describe/it/expect (Jest globals)
+
+---
 
 ## Critical Rules
 
-1. **File**: `*.test.tsx` or `__tests__/*.test.tsx`
-2. **Structure**: `describe` + `it` blocks
-3. **User events**: Use `userEvent` over `fireEvent`
+1. **File**: `__tests__/*.test.ts` or `__tests__/*.test.tsx`
+2. **Structure**: `describe` + `it` blocks with `beforeEach`
+3. **Mocks**: Use `jest.fn()`, `jest.mock()` (NOT vitest)
 4. **Queries**: Prefer `getByRole`, `getByLabelText`
 5. **Async**: Always `await` userEvent and async ops
-6. **Run**: `bun test` before committing
+6. **Setup**: `jest.setup.ts` pre-mocks next/navigation, next/server
 
 ## Quick Reference
 
@@ -30,7 +44,7 @@ describe('Button', () => {
 
   it('handles click', async () => {
     const user = userEvent.setup();
-    const onClick = vi.fn();
+    const onClick = jest.fn();
 
     render(<Button onClick={onClick}>Click</Button>);
     await user.click(screen.getByRole('button'));
@@ -52,9 +66,13 @@ import userEvent from '@testing-library/user-event';
 import { LoginForm } from '@/components/LoginForm';
 
 describe('LoginForm', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('submits with valid data', async () => {
     const user = userEvent.setup();
-    const onSubmit = vi.fn();
+    const onSubmit = jest.fn();
 
     render(<LoginForm onSubmit={onSubmit} />);
 
@@ -89,19 +107,36 @@ describe('cn', () => {
 
 ### Mock Patterns
 ```typescript
+// Mock module (at top of file, outside describe)
+jest.mock('@/lib/prisma', () => ({
+  prisma: {
+    user: {
+      findUnique: jest.fn(),
+      create: jest.fn(),
+    },
+  },
+}));
+
 // Mock fetch
-global.fetch = vi.fn();
+global.fetch = jest.fn();
 
-// Mock next/navigation
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
-}));
+// Clear mocks in beforeEach
+beforeEach(() => {
+  jest.clearAllMocks();
+});
 
-// Mock prisma
-vi.mock('@/lib/prisma', () => ({
-  prisma: { user: { create: vi.fn(), delete: vi.fn() } },
-}));
+// Mock implementation per test
+(prisma.user.findUnique as jest.Mock).mockResolvedValue({ id: '1', name: 'Test' });
 ```
+
+## Pre-configured Mocks (jest.setup.ts)
+
+These are already mocked in `jest.setup.ts`:
+- `next/navigation` (useRouter, usePathname, useSearchParams)
+- `next/server` (NextResponse, NextRequest)
+- `window.matchMedia`
+- `IntersectionObserver`
+- `ResizeObserver`
 
 ## Query Priority
 
@@ -114,11 +149,12 @@ vi.mock('@/lib/prisma', () => ({
 
 ## Commands
 ```bash
-bun test           # Run tests
-bun test:watch     # Watch mode
-bun test:coverage  # With coverage
+bun test              # Run all tests
+bun test --watch      # Watch mode
+bun test --coverage   # With coverage
+bun test path/to/file # Run specific file
 ```
 
 ## References
 
-- `testing-patterns.md` - Mocks, async, server actions
+- `testing-patterns.md` - API routes, server actions, advanced mocks

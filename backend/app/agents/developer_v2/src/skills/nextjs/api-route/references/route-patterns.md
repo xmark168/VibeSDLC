@@ -1,102 +1,152 @@
-# Advanced Route Patterns
+# API Route Patterns
 
-## Nested Dynamic Routes
+## Types (from api.types.ts)
 
 ```typescript
-// app/api/users/[userId]/posts/[postId]/route.ts
-interface RouteContext {
-  params: Promise<{ userId: string; postId: string }>;
+// Response wrapper
+interface ApiResponse<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: ApiError;
+  message?: string;
+  meta?: PaginationMeta;
 }
 
-export async function GET(request: NextRequest, context: RouteContext) {
-  const { userId, postId } = await context.params;
+interface ApiError {
+  code: string;
+  message: string;
+  details?: Record<string, unknown>;
+}
 
-  const post = await prisma.post.findFirst({
-    where: { id: postId, authorId: userId },
-  });
+interface PaginationMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
 
-  if (!post) return errorResponse('Post not found', 404);
-  return successResponse(post);
+// HTTP Status
+enum HttpStatus {
+  OK = 200,
+  CREATED = 201,
+  BAD_REQUEST = 400,
+  UNAUTHORIZED = 401,
+  FORBIDDEN = 403,
+  NOT_FOUND = 404,
+  UNPROCESSABLE_ENTITY = 422,
+  INTERNAL_SERVER_ERROR = 500,
+}
+
+// Error Codes
+enum ApiErrorCode {
+  VALIDATION_ERROR = 'VALIDATION_ERROR',
+  UNAUTHORIZED = 'UNAUTHORIZED',
+  FORBIDDEN = 'FORBIDDEN',
+  NOT_FOUND = 'NOT_FOUND',
+  CONFLICT = 'CONFLICT',
+  INTERNAL_ERROR = 'INTERNAL_ERROR',
 }
 ```
 
-## Protected Routes
+## Pagination Pattern
 
 ```typescript
-// app/api/admin/users/route.ts
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+// app/api/items/route.ts
+import { NextRequest } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { successResponse, handleError } from '@/lib/api-response';
 
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
+  try {
+    const { searchParams } = new URL(request.url);
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = parseInt(searchParams.get('limit') || '10');
+    const search = searchParams.get('q') || '';
 
-  if (!session) return errorResponse('Unauthorized', 401);
-  if (session.user.role !== 'ADMIN') return errorResponse('Forbidden', 403);
+    const where = search
+      ? { name: { contains: search, mode: 'insensitive' as const } }
+      : {};
 
-  const users = await prisma.user.findMany();
-  return successResponse(users);
+    const [items, total] = await Promise.all([
+      prisma.item.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.item.count({ where }),
+    ]);
+
+    return NextResponse.json({
+      success: true,
+      data: items,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    return handleError(error);
+  }
 }
 ```
 
-## Pagination with Search
+## Auth Protected Route
 
 ```typescript
-export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const page = parseInt(searchParams.get('page') || '1');
-  const limit = parseInt(searchParams.get('limit') || '10');
-  const search = searchParams.get('search') || '';
+import { auth } from '@/auth';
+import { ApiErrors } from '@/lib/api-response';
 
-  const where = search ? {
-    OR: [
-      { name: { contains: search, mode: 'insensitive' as const } },
-      { email: { contains: search, mode: 'insensitive' as const } },
-    ],
-  } : undefined;
-
-  const [items, total] = await Promise.all([
-    prisma.user.findMany({
-      where,
-      skip: (page - 1) * limit,
-      take: limit,
-      orderBy: { createdAt: 'desc' },
-    }),
-    prisma.user.count({ where }),
-  ]);
-
-  return successResponse({ items, total, page, limit });
+export async function POST(request: NextRequest) {
+  try {
+    const session = await auth();
+    if (!session) throw ApiErrors.unauthorized();
+    
+    // Only admins
+    if (session.user.role !== 'ADMIN') throw ApiErrors.forbidden();
+    
+    // ... rest of handler
+  } catch (error) {
+    return handleError(error);
+  }
 }
 ```
 
-## Full API Response Helper
+## Predefined ApiErrors
 
 ```typescript
-// lib/api-response.ts
-import { NextResponse } from 'next/server';
-import { ZodError } from 'zod';
+// lib/api-response.ts exports:
+ApiErrors.unauthorized()        // 401 - Need login
+ApiErrors.forbidden()           // 403 - No permission
+ApiErrors.notFound('Resource')  // 404 - Not found
+ApiErrors.badRequest('msg')     // 400 - Bad request
+ApiErrors.conflict('msg')       // 409 - Conflict
+ApiErrors.validation('msg')     // 422 - Validation error
+ApiErrors.tooManyRequests()     // 429 - Rate limit
+ApiErrors.database('msg')       // 500 - DB error
+```
 
-export function successResponse<T>(data: T, status = 200) {
-  return NextResponse.json({ success: true, data }, { status });
-}
+## File Upload
 
-export function errorResponse(message: string, status = 400) {
-  return NextResponse.json({ success: false, error: message }, { status });
-}
-
-export function handleZodError(error: ZodError) {
-  return NextResponse.json(
-    {
-      success: false,
-      error: 'Validation failed',
-      details: error.flatten().fieldErrors,
-    },
-    { status: 400 }
-  );
-}
-
-export class ApiException extends Error {
-  constructor(public message: string, public status: number = 400) {
-    super(message);
+```typescript
+export async function POST(request: NextRequest) {
+  try {
+    const formData = await request.formData();
+    const file = formData.get('file') as File;
+    
+    if (!file) throw ApiErrors.badRequest('No file provided');
+    
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+    
+    // Save to disk or cloud storage
+    // ...
+    
+    return successResponse({ filename: file.name });
+  } catch (error) {
+    return handleError(error);
   }
 }
 ```

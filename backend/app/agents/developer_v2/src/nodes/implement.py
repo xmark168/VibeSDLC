@@ -23,8 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 async def implement(state: DeveloperState, agent=None) -> DeveloperState:
-    """Execute implementation step (Claude activates skills as needed)."""
-    # Reset skill cache at start of each step (prevents duplicate activations)
+    """Execute implementation step (Claude decides what/where to implement)."""
     reset_skill_cache()
     
     current_step = state.get("current_step", 0)
@@ -54,62 +53,59 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             return {**state, "message": "Implementation done", "action": "VALIDATE"}
         
         step = plan_steps[current_step]
-        current_file = step.get("file_path") or ""
-        step_action = step.get("action", "modify")
+        step_description = step.get("description", "")
+        file_path = step.get("file_path", "")
+        action = step.get("action", "")
         
         setup_tool_context(workspace_path, project_id, task_id)
         
-        # Build minimal context (Claude will search for more via tools)
+        # Build context
         context_parts = []
         
-        # Project structure only
+        # Project structure (Claude uses this to find correct paths)
         project_structure = get_project_structure(tech_stack)
         if project_structure:
             context_parts.append(f"<project_structure>\n{project_structure}\n</project_structure>")
         
-        # Feedback from previous attempt (critical for debug loops)
+        # Feedback from previous attempt
+        feedback_section = ""
         if state.get("summarize_feedback"):
-            context_parts.append(f"<feedback>\n{state.get('summarize_feedback')}\n</feedback>")
-        
-        # Existing code for modify
-        existing_code_section = ""
-        if step_action == "modify" and current_file:
-            try:
-                result = read_file_safe.invoke({"file_path": current_file})
-                if result and not result.startswith("Error:"):
-                    code = result.split("\n\n", 1)[1] if "\n\n" in result else result
-                    existing_code_section = f"<existing_code>\n{code}\n</existing_code>"
-            except Exception:
-                pass
-        
-        # Error logs
-        error_logs_section = ""
+            feedback_section = f"<feedback>\n{state.get('summarize_feedback')}\n</feedback>"
         if state.get('run_stderr'):
-            error_logs_section = f"<errors>\n{state.get('run_stderr')[:2000]}\n</errors>"
+            feedback_section += f"\n<errors>\n{state.get('run_stderr')[:2000]}\n</errors>"
         
         # Load skill registry
         skill_registry = state.get("skill_registry") or SkillRegistry.load(tech_stack)
         set_skill_context(skill_registry)
         
-        # Tools (Claude searches codebase and activates skills as needed)
+        # Tools (Claude searches, reads, and writes as needed)
         tools = [
             read_file_safe, write_file_safe, edit_file, list_directory_safe,
             semantic_code_search, execute_shell, search_files,
-            search_codebase_tool,  # Semantic search via CocoIndex
+            search_codebase_tool,
             activate_skill, read_skill_file, list_skill_files,
         ]
         
-        # Build prompt
+        # Build prompt with file path and action context
+        if file_path and action:
+            task_desc = f"[{action}] {file_path}\n{step_description}"
+        else:
+            task_desc = step_description
+        
+        # Get modified files from previous steps
+        files_modified = state.get("files_modified", [])
+        modified_files_text = "\n".join(f"- {f}" for f in files_modified) if files_modified else "None yet"
+        
         input_text = _format_input_template(
             "implement_step",
             step_number=current_step + 1,
             total_steps=len(plan_steps),
-            step_description=step.get("description", ""),
-            file_path=current_file,
-            action=step_action,
+            file_path=file_path or "N/A",
+            action=action or "N/A",
+            step_description=task_desc,
+            modified_files=modified_files_text,
             related_context="\n\n".join(context_parts)[:4000],
-            existing_code_section=existing_code_section,
-            error_logs_section=error_logs_section
+            feedback_section=feedback_section,
         )
         
         skill_catalog = skill_registry.get_skill_catalog_for_prompt()
@@ -120,9 +116,9 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             HumanMessage(content=input_text)
         ]
         
-        logger.info(f"[implement] Step {current_step + 1}: {current_file}")
+        logger.info(f"[implement] Step {current_step + 1}: {step_description[:50]}...")
         
-        # Execute
+        # Execute (Claude decides files to create/modify)
         await _llm_with_tools(
             llm=code_llm,
             tools=tools,
@@ -132,24 +128,20 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             max_iterations=10
         )
         
-        # Track files
-        files_created = state.get("files_created", [])
-        files_modified = state.get("files_modified", [])
-        if step_action == "create" and current_file and current_file not in files_created:
-            files_created.append(current_file)
-        elif step_action == "modify" and current_file and current_file not in files_modified:
-            files_modified.append(current_file)
+        # Track modified files
+        updated_files_modified = files_modified.copy()
+        if file_path and file_path not in updated_files_modified:
+            updated_files_modified.append(file_path)
         
         return {
             **state,
-            "files_created": files_created,
-            "files_modified": files_modified,
             "current_step": current_step + 1,
             "react_loop_count": react_loop_count,
             "debug_count": debug_count,
             "run_status": None,
             "skill_registry": skill_registry,
-            "message": f"✅ Step {current_step + 1}: {step.get('description', '')}",
+            "files_modified": updated_files_modified,
+            "message": f"✅ Step {current_step + 1}: {step_description}",
             "action": "IMPLEMENT" if current_step + 1 < len(plan_steps) else "VALIDATE",
         }
         

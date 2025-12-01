@@ -1,4 +1,4 @@
-# Advanced Testing Patterns
+# Advanced Testing Patterns (Jest)
 
 ## Testing with Mocks
 
@@ -6,26 +6,22 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { UserProfile } from '@/components/UserProfile';
 
-global.fetch = vi.fn();
-
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
-  usePathname: () => '/users/1',
-}));
+// Mock at module level
+global.fetch = jest.fn();
 
 describe('UserProfile', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    jest.clearAllMocks();
   });
 
   it('displays loading state', () => {
-    (fetch as any).mockImplementation(() => new Promise(() => {}));
+    (fetch as jest.Mock).mockImplementation(() => new Promise(() => {}));
     render(<UserProfile userId="1" />);
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
   });
 
   it('displays user after loading', async () => {
-    (fetch as any).mockResolvedValueOnce({
+    (fetch as jest.Mock).mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ name: 'John', email: 'john@example.com' }),
     });
@@ -38,7 +34,7 @@ describe('UserProfile', () => {
   });
 
   it('displays error on failure', async () => {
-    (fetch as any).mockRejectedValueOnce(new Error('Network error'));
+    (fetch as jest.Mock).mockRejectedValueOnce(new Error('Network error'));
     render(<UserProfile userId="1" />);
 
     await waitFor(() => {
@@ -55,24 +51,24 @@ import { createUser, deleteUser } from '@/app/actions/user';
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 
-vi.mock('@/lib/prisma', () => ({
+jest.mock('@/lib/prisma', () => ({
   prisma: {
-    user: { create: vi.fn(), delete: vi.fn() },
+    user: { create: jest.fn(), delete: jest.fn() },
   },
 }));
 
-vi.mock('next/cache', () => ({
-  revalidatePath: vi.fn(),
+jest.mock('next/cache', () => ({
+  revalidatePath: jest.fn(),
 }));
 
 describe('User Actions', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    jest.clearAllMocks();
   });
 
   describe('createUser', () => {
     it('creates user with valid data', async () => {
-      (prisma.user.create as any).mockResolvedValueOnce({ id: '1' });
+      (prisma.user.create as jest.Mock).mockResolvedValueOnce({ id: '1' });
 
       const formData = new FormData();
       formData.append('name', 'John');
@@ -98,12 +94,65 @@ describe('User Actions', () => {
 
   describe('deleteUser', () => {
     it('deletes successfully', async () => {
-      (prisma.user.delete as any).mockResolvedValueOnce({});
+      (prisma.user.delete as jest.Mock).mockResolvedValueOnce({});
 
       const result = await deleteUser('id');
 
       expect(result.success).toBe(true);
       expect(prisma.user.delete).toHaveBeenCalledWith({ where: { id: 'id' } });
+    });
+  });
+});
+```
+
+## Testing API Routes
+
+```typescript
+import { GET, POST } from '@/app/api/users/route';
+import { prisma } from '@/lib/prisma';
+
+jest.mock('@/lib/prisma', () => ({
+  prisma: {
+    user: {
+      findMany: jest.fn(),
+      create: jest.fn(),
+    },
+  },
+}));
+
+describe('Users API', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('GET /api/users', () => {
+    it('returns users list', async () => {
+      const mockUsers = [{ id: '1', name: 'John' }];
+      (prisma.user.findMany as jest.Mock).mockResolvedValue(mockUsers);
+
+      const request = new Request('http://localhost/api/users');
+      const response = await GET(request);
+      const data = await response.json();
+
+      expect(data.success).toBe(true);
+      expect(data.data).toEqual(mockUsers);
+    });
+  });
+
+  describe('POST /api/users', () => {
+    it('creates user', async () => {
+      const mockUser = { id: '1', name: 'John', email: 'john@test.com' };
+      (prisma.user.create as jest.Mock).mockResolvedValue(mockUser);
+
+      const request = new Request('http://localhost/api/users', {
+        method: 'POST',
+        body: JSON.stringify({ name: 'John', email: 'john@test.com' }),
+      });
+      const response = await POST(request);
+      const data = await response.json();
+
+      expect(response.status).toBe(201);
+      expect(data.success).toBe(true);
     });
   });
 });
@@ -148,4 +197,15 @@ const element = await screen.findByText('Loaded');
 
 // Wait for removal
 await waitForElementToBeRemoved(() => screen.queryByText('Loading'));
+```
+
+## Type Casting for Mocks
+
+```typescript
+// Correct way to cast jest mocks
+(prisma.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
+(fetch as jest.Mock).mockResolvedValueOnce({ ok: true });
+
+// For spies
+const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
 ```

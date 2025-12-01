@@ -16,6 +16,8 @@ from app.agents.developer_v2.src.utils.prompt_utils import (
 )
 from app.agents.developer_v2.src.nodes._llm import code_llm
 from app.agents.developer_v2.src.nodes._helpers import setup_tool_context
+from app.agents.developer_v2.src.skills.registry import SkillRegistry
+from app.agents.developer_v2.src.skills import get_project_structure
 
 logger = logging.getLogger(__name__)
 
@@ -41,18 +43,31 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
             except Exception:
                 pass
         
+        # Get project structure for path guidance
+        tech_stack = state.get("tech_stack", "nextjs")
+        project_structure = get_project_structure(tech_stack)
+        
         input_text = _format_input_template(
             "create_plan",
             story_title=state.get("story_title", "Untitled"),
             analysis_summary=analysis.get("summary", ""),
-            directory_structure=dir_structure,
+            project_structure=project_structure,
             acceptance_criteria=chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", [])),
         )
 
         tools = [list_directory_safe, search_files]
         
+        # Load feature-plan skill for completeness guidance
+        system_prompt = _build_system_prompt("create_plan")
+        skill_registry = SkillRegistry.load(tech_stack)
+        plan_skill = skill_registry.get_skill("feature-plan")
+        if plan_skill:
+            skill_content = plan_skill.load_content()
+            system_prompt += f"\n\n<skill>\n{skill_content}\n</skill>"
+            logger.info("[plan] Loaded feature-plan skill")
+        
         messages = [
-            SystemMessage(content=_build_system_prompt("create_plan")),
+            SystemMessage(content=system_prompt),
             HumanMessage(content=input_text)
         ]
         
@@ -72,7 +87,16 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
         
         logger.info(f"[plan] {len(plan_result.steps)} steps")
         
-        steps_text = "\n".join(f"  {s.order}. [{s.action}] {s.description}" for s in plan_result.steps)
+        def format_step(s):
+            # Show [action] file_path if available
+            if s.file_path and s.action:
+                text = f"  {s.order}. [{s.action}] {s.file_path}"
+                text += f"\n      {s.description}"
+            else:
+                text = f"  {s.order}. {s.description}"
+            return text
+        
+        steps_text = "\n".join(format_step(s) for s in plan_result.steps)
         msg = f"📋 **Plan** ({len(plan_result.steps)} steps)\n{steps_text}"
         
         return {

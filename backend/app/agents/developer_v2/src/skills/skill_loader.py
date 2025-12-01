@@ -27,6 +27,7 @@ class SkillMetadata:
     """Level 1: Skill metadata from YAML frontmatter."""
     name: str
     description: str
+    internal: bool = False  # If True, skill is hidden from catalog (used internally by nodes)
     
     def matches(self, context: str) -> int:
         """Return match score based on description keywords."""
@@ -55,6 +56,10 @@ class Skill:
     def description(self) -> str:
         return self.metadata.description
     
+    @property
+    def internal(self) -> bool:
+        return self.metadata.internal
+    
     def load_content(self) -> str:
         """Level 2: Load full SKILL.md body (lazy loading)."""
         if self._content is not None:
@@ -81,23 +86,23 @@ class Skill:
     
     def load_reference(self, filename: str) -> str:
         """Level 3: Load file from references/ directory."""
-        if filename in self._bundled_files:
-            return self._bundled_files[filename]
+        return self.load_bundled_file(f"references/{filename}")
+    
+    def load_bundled_file(self, filepath: str) -> str:
+        """Load any bundled file by path (e.g., 'references/forms.md')."""
+        if filepath in self._bundled_files:
+            return self._bundled_files[filepath]
         
-        file_path = self.skill_dir / "references" / filename
-        if not file_path.exists():
-            # Try direct path
-            file_path = self.skill_dir / filename
-        
+        file_path = self.skill_dir / filepath
         if not file_path.exists():
             return ""
         
         try:
             content = file_path.read_text(encoding='utf-8')
-            self._bundled_files[filename] = content
+            self._bundled_files[filepath] = content
             return content
         except Exception as e:
-            logger.error(f"[Skill] Failed to load {filename}: {e}")
+            logger.error(f"[Skill] Failed to load {filepath}: {e}")
             return ""
     
     def list_references(self) -> List[str]:
@@ -120,6 +125,14 @@ class Skill:
         if not assets_dir.exists():
             return []
         return [f.name for f in assets_dir.iterdir() if f.is_file()]
+    
+    def list_bundled_files(self) -> List[str]:
+        """List all bundled files (references + scripts + assets)."""
+        files = []
+        files.extend([f"references/{f}" for f in self.list_references()])
+        files.extend([f"scripts/{f}" for f in self.list_scripts()])
+        files.extend([f"assets/{f}" for f in self.list_assets()])
+        return files
     
     def to_prompt_section(self, include_content: bool = True) -> str:
         """Format skill for prompt injection."""
@@ -171,6 +184,7 @@ def load_skill_metadata(skill_dir: Path) -> Optional[SkillMetadata]:
         return SkillMetadata(
             name=frontmatter.get('name', skill_dir.name),
             description=frontmatter.get('description', ''),
+            internal=frontmatter.get('internal', False),
         )
     except Exception as e:
         logger.error(f"[SkillLoader] Failed to load metadata from {skill_file}: {e}")
