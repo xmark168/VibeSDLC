@@ -5,6 +5,7 @@ type BlurTextProps = {
   text?: string;
   delay?: number;
   className?: string;
+  spanClassName?: string;
   animateBy?: 'words' | 'letters';
   direction?: 'top' | 'bottom';
   threshold?: number;
@@ -14,6 +15,7 @@ type BlurTextProps = {
   easing?: Easing | Easing[];
   onAnimationComplete?: () => void;
   stepDuration?: number;
+  as?: 'p' | 'span' | 'div' | 'h1' | 'h2' | 'h3';
 };
 
 const buildKeyframes = (
@@ -33,6 +35,7 @@ const BlurText: React.FC<BlurTextProps> = ({
   text = '',
   delay = 200,
   className = '',
+  spanClassName = '',
   animateBy = 'words',
   direction = 'top',
   threshold = 0.1,
@@ -41,11 +44,12 @@ const BlurText: React.FC<BlurTextProps> = ({
   animationTo,
   easing = (t: number) => t,
   onAnimationComplete,
-  stepDuration = 0.35
+  stepDuration = 0.35,
+  as: Component = 'p'
 }) => {
   const elements = animateBy === 'words' ? text.split(' ') : text.split('');
   const [inView, setInView] = useState(false);
-  const ref = useRef<HTMLParagraphElement>(null);
+  const ref = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -88,7 +92,7 @@ const BlurText: React.FC<BlurTextProps> = ({
   const times = Array.from({ length: stepCount }, (_, i) => (stepCount === 1 ? 0 : i / (stepCount - 1)));
 
   return (
-    <p ref={ref} className={`blur-text ${className} flex flex-wrap`}>
+    <Component ref={ref} className={`blur-text ${className} flex flex-wrap`}>
       {elements.map((segment, index) => {
         const animateKeyframes = buildKeyframes(fromSnapshot, toSnapshots);
 
@@ -106,6 +110,7 @@ const BlurText: React.FC<BlurTextProps> = ({
             animate={inView ? animateKeyframes : fromSnapshot}
             transition={spanTransition}
             onAnimationComplete={index === elements.length - 1 ? onAnimationComplete : undefined}
+            className={spanClassName}
             style={{
               display: 'inline-block',
               willChange: 'transform, filter, opacity'
@@ -116,7 +121,7 @@ const BlurText: React.FC<BlurTextProps> = ({
           </motion.span>
         );
       })}
-    </p>
+    </Component>
   );
 };
 

@@ -1,10 +1,12 @@
 import asyncio
 import logging
+import os
 
 import sentry_sdk
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
+from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session
 from starlette.middleware.cors import CORSMiddleware
 
@@ -12,6 +14,11 @@ from app.api.main import api_router
 from app.core.config import settings
 from app.core.db import init_db, engine
 from app.core.logging_config import setup_logging
+
+# Ensure uploads directory exists
+UPLOADS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
+AVATARS_DIR = os.path.join(UPLOADS_DIR, "avatars")
+os.makedirs(AVATARS_DIR, exist_ok=True)
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -139,3 +146,6 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# Mount static files for uploads
+app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")

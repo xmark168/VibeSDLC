@@ -95,11 +95,11 @@ def login_access_token(
     )
 
 
-@router.post("/login", response_model=LoginResponse)
+@router.post("/login")
 # @limiter.limit("5/minute")  # Temporarily disabled for debugging
 def login(
     request: Request, response: Response, login_data: LoginRequest, session: SessionDep
-) -> LoginResponse:
+):
     """
     Login API - supports both credential and OAuth provider login
     """
@@ -139,14 +139,22 @@ def login(
             # Find user with credential login
             user_service = UserService(session)
             user = user_service.get_by_email(str(login_data.email))
-            if not user or user.login_provider:
+            
+            if not user:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Email hoặc mật khẩu không đúng",
                 )
+            
+            # Check if user registered via OAuth (no password)
+            if user.login_provider and not user.hashed_password:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail=f"Tài khoản này được đăng ký thông qua {user.login_provider}. Vui lòng đăng nhập bằng {user.login_provider}.",
+                )
 
             # Verify password
-            if not verify_password(login_data.password, user.hashed_password):
+            if not user.hashed_password or not verify_password(login_data.password, user.hashed_password):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Email hoặc mật khẩu không đúng",
@@ -188,7 +196,25 @@ def login(
             status_code=status.HTTP_423_LOCKED, detail="Tài khoản đã bị khóa"
         )
 
-    # Create tokens
+    # Check if 2FA is enabled
+    if user.two_factor_enabled and user.totp_secret:
+        # Generate temp token for 2FA verification
+        import secrets
+        temp_token = secrets.token_urlsafe(32)
+        temp_token_key = f"2fa_temp:{temp_token}"
+        
+        # Store user_id in Redis with 5 minute TTL
+        redis_client.set(temp_token_key, str(user.id), ttl=300)
+        
+        # Return response indicating 2FA is required
+        from app.schemas import LoginRequires2FAResponse
+        return LoginRequires2FAResponse(
+            requires_2fa=True,
+            temp_token=temp_token,
+            message="Two-factor authentication required"
+        )
+
+    # Create tokens (only if 2FA not enabled)
     access_token = security.create_access_token(
         subject=str(user.id),
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
@@ -256,13 +282,21 @@ def register(
             detail="Mật khẩu xác nhận không khớp",
         )
 
-    # Check if email already exists with credential login
+    # Check if email already exists in the system (any provider)
     user_service = UserService(session)
     existing_user = user_service.get_by_email(str(register_data.email))
-    if existing_user and not existing_user.login_provider:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Email này đã được đăng ký"
-        )
+    if existing_user:
+        # Email already exists - block registration
+        if existing_user.login_provider:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Email này đã được đăng ký thông qua {existing_user.login_provider}. Vui lòng đăng nhập bằng {existing_user.login_provider}."
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email này đã được đăng ký"
+            )
 
     # Generate verification code
     code = generate_verification_code()

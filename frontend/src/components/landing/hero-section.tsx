@@ -1,108 +1,123 @@
-import BlurText from "../BlurText"
-import { Button } from "../ui/button"
-import { InkBrushButton } from "../ui/ink_brush_button"
-import { AnimatedSection } from "./animated-section"
-import { Header } from "./header"
+"use client";
 
-export function HeroSection() {
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { ArrowRightIcon } from "lucide-react";
+
+import { Glow } from "@/components/ui/glow";
+import { useTheme } from "next-themes";
+import { cn } from "@/lib/utils";
+import { Mockup, MockupFrame } from "../ui/mock-up";
+import BlurText from "../BlurText";
+
+interface HeroAction {
+  text: string;
+  href: string;
+  icon?: React.ReactNode;
+  variant?: "default" | "glow";
+}
+
+interface HeroProps {
+  badge?: {
+    text: string;
+    action: {
+      text: string;
+      href: string;
+    };
+  };
+  title: string;
+  description: string;
+  actions: HeroAction[];
+  image: {
+    light: string;
+    dark: string;
+    alt: string;
+  };
+}
+
+export function HeroSection({
+  badge,
+  title,
+  description,
+  actions,
+  image,
+}: HeroProps) {
+  const { resolvedTheme } = useTheme();
+  const imageSrc = resolvedTheme === "light" ? image.light : image.dark;
+
   return (
-    <>
-      <div className="z-20"><Header /></div>
+    <section
+      className={cn(
+        "bg-background text-foreground",
+        "py-10 sm:py-24 md:py-7 px-4",
+        "fade-bottom overflow-hidden pb-0"
+      )}
+    >
+      <div className="mx-auto flex max-w-container flex-col gap-12 pt-8 sm:gap-24">
+        <div className="flex flex-col items-center gap-6 text-center sm:gap-12">
+          {/* Badge */}
+          {badge && (
+            <Badge variant="outline" className="animate-appear gap-2">
+              <span className="text-muted-foreground">{badge.text}</span>
+              <a href={badge.action.href} className="flex items-center gap-1">
+                {badge.action.text}
+                <ArrowRightIcon className="h-3 w-3" />
+              </a>
+            </Badge>
+          )}
 
-      <div className="relative w-full mt-7 overflow-hidden">
+          {/* Title */}
+          <BlurText
+            text={title}
+            delay={150}
+            animateBy="words"
+            direction="top"
+            as="h1"
+            className="relative z-10 text-4xl font-semibold leading-tight drop-shadow-2xl sm:text-6xl sm:leading-tight md:text-8xl md:leading-tight justify-center"
+            spanClassName="bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-transparent"
+          />
 
-        {/* BG mountains */}
-        <div className="absolute inset-0 pointer-events-none">
+          {/* Description */}
+          <p className="text-md relative z-10 max-w-[550px] animate-appear font-medium text-muted-foreground delay-100 sm:text-xl">
+            {description}
+          </p>
 
-          <AnimatedSection className="absolute inset-0" delay={0.1}>
-            <img
-              src="/assets/images/mountain/6.png"
-              className="absolute top-0 left-1/2 -translate-x-1/2 
-              w-[300px] sm:w-[400px] md:w-[500px] opacity-60"
-            />
-          </AnimatedSection>
-
-          <AnimatedSection className="absolute inset-0" delay={0.2}>
-            <img
-              src="/assets/images/mountain/1.png"
-              className="absolute right-5 sm:right-10 top-10 
-              w-[250px] sm:w-[350px] md:w-[600px] opacity-80"
-            />
-          </AnimatedSection>
-
-          <AnimatedSection className="absolute inset-0" delay={0.3}>
-            <img
-              src="/assets/images/mountain/4.png"
-              className="absolute left-5 bottom-0
-              w-[220px] sm:w-[300px] md:w-[450px] opacity-80"
-            />
-          </AnimatedSection>
-
-          <AnimatedSection className="absolute inset-0" delay={0.4}>
-            <img
-              src="/assets/images/cloud/6.png"
-              className="absolute right-5 bottom-0
-              w-[200px] sm:w-[280px] md:w-[450px] opacity-80 z-50"
-            />
-          </AnimatedSection>
-
-          <AnimatedSection className="absolute inset-0" delay={0.5}>
-            <img
-              src="/assets/images/cloud/8.png"
-              className="absolute left-5 top-5
-              w-[120px] sm:w-[200px] md:w-[250px] opacity-30"
-            />
-          </AnimatedSection>
-        </div>
-
-        {/* MAIN CONTENT */}
-        <div className="
-          relative z-20 flex flex-col-reverse md:flex-row 
-          items-center gap-8 md:gap-0 px-4 sm:px-8
-        ">
-
-          {/* Left text */}
-          <div className="max-w-[600px] text-center md:text-left">
-
-            <BlurText
-              text="Isn't this so cool?!"
-              delay={150}
-              animateBy="words"
-              direction="top"
-              className="text-3xl sm:text-4xl md:text-6xl mb-2 md:mb-4 font-bold"
-            />
-
-            <BlurText
-              text="This is the second line"
-              delay={300}
-              animateBy="words"
-              direction="top"
-              className="text-3xl sm:text-4xl md:text-6xl mb-2 md:mb-4 font-bold"
-            />
-
-            <p className="mt-4 text-sm sm:text-base md:text-lg">
-              Lorem ipsum dolor sit amet consectetur adipisicing elit.
-            </p>
-            <InkBrushButton>
-              Let start
-            </InkBrushButton>
-            {/* <Button className="mt-4 text-sm sm:text-base px-6 py-3">
-              Let start
-            </Button> */}
+          {/* Actions */}
+          <div className="relative z-10 flex animate-appear justify-center gap-4 delay-300">
+            <div className="relative z-10 flex animate-appear justify-center gap-4  delay-300">
+              {actions.map((action, index) => (
+                <Button key={index} variant={action.variant} size="lg" asChild>
+                  <a href={action.href} className="flex items-center gap-2">
+                    {action.icon}
+                    {action.text}
+                  </a>
+                </Button>
+              ))}
+            </div>
           </div>
 
-          {/* Dragon */}
-          <AnimatedSection delay={0.6}>
-            <div className="z-30">
-              <img
-                src="/assets/images/rong.png"
-                className="w-[220px] sm:w-[350px] md:w-[600px]"
-                alt="shenlong"
-              />
-            </div>
-          </AnimatedSection>
+          {/* Image with Glow */}
+          <div className="relative pt-12">
+            <MockupFrame
+              className="animate-appear delay-700"
+              size="small"
+            >
+              <Mockup type="responsive">
+                <img
+                  src={imageSrc}
+                  alt={image.alt}
+                  width={1248}
+                  height={765}
+                />
+              </Mockup>
+            </MockupFrame>
+            <Glow
+              variant="top"
+              className="animate-appear-zoom delay-1000"
+            />
+          </div>
         </div>
       </div>
-    </>
-  )
+    </section>
+  );
 }

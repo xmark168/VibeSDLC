@@ -26,7 +26,7 @@ export const ProjectCard = ({ project, onClick }: ProjectCardProps) => {
   return (
     <div
       onClick={onClick}
-      className="group relative overflow-hidden rounded-xl bg-gradient-to-b from-card to-card/80 p-6 shadow-[var(--shadow-sm)] transition-all duration-300 hover:shadow-[var(--shadow-hover)] hover:-translate-y-1 cursor-pointer">
+      className="group relative overflow-hidden rounded-xl bg-card border border-border p-6 shadow-sm transition-all duration-300 hover:shadow-lg hover:border-primary/30 hover:bg-accent/50 hover:-translate-y-1 cursor-pointer">
       {/* Gradient accent bar */}
       <div className="absolute top-0 left-0 right-0 h-1 bg-[var(--gradient-primary)] opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
 

@@ -3,13 +3,19 @@
 # User schemas
 from .user import (
     UserPublic,
+    UserAdminPublic,
     UsersPublic,
+    UsersAdminPublic,
     UserCreate,
+    UserAdminCreate,
     UserLogin,
     UserUpdate,
+    UserAdminUpdate,
     UserUpdateMe,
     UpdatePassword,
     UserRegister,
+    BulkUserIds,
+    UserStatsResponse,
 )
 
 # Auth schemas
@@ -154,16 +160,48 @@ from .persona import (
     PersonaWithUsageStats,
 )
 
+# Two-Factor Authentication schemas
+from .two_factor import (
+    TwoFactorSetupResponse,
+    TwoFactorVerifySetupRequest,
+    TwoFactorVerifySetupResponse,
+    TwoFactorDisableRequest,
+    TwoFactorDisableResponse,
+    TwoFactorRequestDisableRequest,
+    TwoFactorRequestDisableResponse,
+    TwoFactorVerifyRequest,
+    TwoFactorVerifyResponse,
+    TwoFactorStatusResponse,
+    TwoFactorBackupCodesResponse,
+    LoginRequires2FAResponse,
+)
+
+# Linked Account schemas
+from .linked_account import (
+    LinkedAccountPublic,
+    LinkedAccountsResponse,
+    LinkAccountRequest,
+    UnlinkAccountRequest,
+    UnlinkAccountResponse,
+    LinkCallbackResponse,
+)
+
 __all__ = [
     # User
     "UserPublic",
+    "UserAdminPublic",
     "UsersPublic",
+    "UsersAdminPublic",
     "UserCreate",
+    "UserAdminCreate",
     "UserLogin",
     "UserUpdate",
+    "UserAdminUpdate",
     "UserUpdateMe",
     "UpdatePassword",
     "UserRegister",
+    "BulkUserIds",
+    "UserStatsResponse",
     
     # Auth
     "Token",
@@ -280,4 +318,26 @@ __all__ = [
     "PersonaResponse",
     "PersonaWithUsageStats",
     "UpdateAutoRenew",
+    
+    # Two-Factor Authentication
+    "TwoFactorSetupResponse",
+    "TwoFactorVerifySetupRequest",
+    "TwoFactorVerifySetupResponse",
+    "TwoFactorDisableRequest",
+    "TwoFactorDisableResponse",
+    "TwoFactorRequestDisableRequest",
+    "TwoFactorRequestDisableResponse",
+    "TwoFactorVerifyRequest",
+    "TwoFactorVerifyResponse",
+    "TwoFactorStatusResponse",
+    "TwoFactorBackupCodesResponse",
+    "LoginRequires2FAResponse",
+    
+    # Linked Account
+    "LinkedAccountPublic",
+    "LinkedAccountsResponse",
+    "LinkAccountRequest",
+    "UnlinkAccountRequest",
+    "UnlinkAccountResponse",
+    "LinkCallbackResponse",
 ]

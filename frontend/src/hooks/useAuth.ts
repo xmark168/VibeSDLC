@@ -14,8 +14,8 @@ import { handleError } from "@/utils"
 import toast from "react-hot-toast"
 import { useAppStore } from "@/stores/auth-store"
 import { getRedirectPathByRole } from "@/utils/auth"
-
-// import { handleError } from "@/utils"
+import { isLoginRequires2FA, type LoginResult } from "@/types/two-factor"
+import { setLoggingOut } from "@/config/setup"
 
 const isLoggedIn = () => {
   return localStorage.getItem("access_token") !== null
@@ -48,23 +48,44 @@ export const useAuth = () => {
     },
   })
 
-  const login = async (data: AuthenticationLoginData) => {
-    const response = await AuthenticationService.login(data)
+  const login = async (data: AuthenticationLoginData): Promise<{ userData?: UserPublic; requires2FA?: boolean; tempToken?: string }> => {
+    const response = await AuthenticationService.login(data) as LoginResult
+    
+    // Check if 2FA is required
+    if (isLoginRequires2FA(response)) {
+      return {
+        requires2FA: true,
+        tempToken: response.temp_token,
+      }
+    }
+
+    // Normal login flow
     localStorage.setItem("access_token", response.access_token)
     localStorage.setItem("refresh_token", response.refresh_token)
 
     // Fetch user data after login to get role
     const userData = await UsersService.readUserMe()
     setUser(userData)
-    return userData
+    return { userData }
   }
 
   const loginMutation = useMutation({
     mutationFn: login,
-    onSuccess: (userData) => {
-      // Redirect based on user role
-      const redirectPath = getRedirectPathByRole(userData.role)
-      navigate({ to: redirectPath })
+    onSuccess: (result) => {
+      // If 2FA is required, redirect to 2FA verification page
+      if (result.requires2FA && result.tempToken) {
+        navigate({ 
+          to: "/verify-2fa",
+          search: { token: result.tempToken }
+        })
+        return
+      }
+
+      // Normal login success - redirect based on user role
+      if (result.userData) {
+        const redirectPath = getRedirectPathByRole(result.userData.role)
+        navigate({ to: redirectPath })
+      }
     },
     onError: (err: ApiError) => {
       handleError(err)
@@ -72,16 +93,25 @@ export const useAuth = () => {
   })
 
   const logout = useMutation({
-    mutationFn: () => AuthenticationService.logout(),
+    mutationFn: async () => {
+      // Set flag to prevent token refresh during logout
+      setLoggingOut(true)
+      // Cancel all pending queries to prevent 401 errors triggering refresh
+      await queryClient.cancelQueries()
+      return AuthenticationService.logout()
+    },
     onSuccess: () => {
       toast.success("Logout successful")
       localStorage.removeItem("access_token")
       localStorage.removeItem("refresh_token")
       setUser(undefined)
-      queryClient.invalidateQueries({ queryKey: ["currentUser"] })
+      queryClient.clear() // Clear all cached data
       navigate({ to: "/login" })
+      // Reset flag after navigation
+      setTimeout(() => setLoggingOut(false), 100)
     },
     onError: (err: ApiError) => {
+      setLoggingOut(false)
       handleError(err)
     },
   })

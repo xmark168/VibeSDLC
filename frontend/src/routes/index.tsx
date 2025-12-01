@@ -1,30 +1,393 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { AIAgentsSection } from "@/components/landing/ai-agents-section"
-import { AnimatedSection } from "@/components/landing/animated-section"
-import { BentoSection } from "@/components/landing/bento-section"
-import { DashboardPreview } from "@/components/landing/dashboard-preview"
-import { FAQSection } from "@/components/landing/faq-section"
-import { FooterSection } from "@/components/landing/footer-section"
 import { HeroSection } from "@/components/landing/hero-section"
-import { LargeTestimonial } from "@/components/landing/large-testimonial"
-import { PricingSection } from "@/components/landing/pricing-section"
-import IntroduceAgents from "@/components/landing/introduce"
+import { AnimatedSection } from "@/components/landing/animated-section"
+import { GlowingEffect } from "@/components/ui/glow-effect-card"
+import { StaggerTestimonials } from "@/components/ui/stagger-testitermonials"
+import { Footer } from "@/components/ui/footer"
+import {
+  Users, Code, FileText, Shield, ArrowRight, Sparkles,
+  Workflow, MessageSquare, BarChart3, Zap, GitBranch, CheckCircle2, Quote
+} from "lucide-react"
+import { useState } from "react"
+import { cn } from "@/lib/utils"
+import { Header } from "@/components/landing/header"
 
 export const Route = createFileRoute("/")({
   component: RouteComponent,
 })
+
+// Features for GlowingEffect cards
+const features = [
+  {
+    icon: <Workflow className="h-4 w-4 text-primary" />,
+    title: "Lean Kanban Workflow",
+    description: "Quản lý công việc theo mô hình Kanban với WIP limits, giúp team tập trung và tránh overload.",
+    area: "md:[grid-area:1/1/2/7] xl:[grid-area:1/1/2/5]",
+  },
+  {
+    icon: <MessageSquare className="h-4 w-4 text-primary" />,
+    title: "Chat tự nhiên bằng Tiếng Việt",
+    description: "Giao tiếp với AI agents như đồng nghiệp thật, không cần học cú pháp phức tạp.",
+    area: "md:[grid-area:1/7/2/13] xl:[grid-area:2/1/3/5]",
+  },
+  {
+    icon: <GitBranch className="h-4 w-4 text-primary" />,
+    title: "Smart Task Routing",
+    description: "Team Leader tự động phân tích yêu cầu và chuyển đến agent phù hợp nhất, đảm bảo hiệu quả tối ưu.",
+    area: "md:[grid-area:2/1/3/7] xl:[grid-area:1/5/3/8]",
+  },
+  {
+    icon: <BarChart3 className="h-4 w-4 text-primary" />,
+    title: "Flow Metrics & Analytics",
+    description: "Theo dõi cycle time, throughput và bottlenecks để liên tục cải thiện quy trình.",
+    area: "md:[grid-area:2/7/3/13] xl:[grid-area:1/8/2/13]",
+  },
+  {
+    icon: <Zap className="h-4 w-4 text-primary" />,
+    title: "Tăng tốc 10x Development",
+    description: "Từ idea đến PRD, User Stories, Code và Test - tất cả được AI hỗ trợ song song.",
+    area: "md:[grid-area:3/1/4/13] xl:[grid-area:2/8/3/13]",
+  },
+]
+
+interface GridItemProps {
+  area: string
+  icon: React.ReactNode
+  title: string
+  description: React.ReactNode
+}
+
+const GridItem = ({ area, icon, title, description }: GridItemProps) => {
+  return (
+    <li className={cn("min-h-[14rem] list-none", area)}>
+      <div className="relative h-full rounded-2xl border border-border p-2 md:rounded-3xl md:p-3">
+        <GlowingEffect
+          spread={40}
+          glow={true}
+          disabled={false}
+          proximity={64}
+          inactiveZone={0.01}
+          borderWidth={3}
+        />
+        <div className="relative flex h-full flex-col justify-between gap-6 overflow-hidden rounded-xl border border-border/50 bg-background p-6 shadow-sm dark:shadow-[0px_0px_27px_0px_rgba(45,45,45,0.3)]">
+          <div className="relative flex flex-1 flex-col justify-between gap-3">
+            <div className="w-fit rounded-lg border border-border bg-muted p-2.5">
+              {icon}
+            </div>
+            <div className="space-y-3">
+              <h3 className="text-xl font-semibold tracking-tight text-foreground md:text-2xl">
+                {title}
+              </h3>
+              <p className="text-sm leading-relaxed text-muted-foreground md:text-base">
+                {description}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </li>
+  )
+}
+
+const agents = [
+  {
+    icon: Users,
+    title: "Team Leader",
+    subtitle: "Routing Coordinator",
+    description: "Điều phối công việc và tư vấn Agile/Kanban cho team",
+    image: "/assets/images/agent/1.webp",
+    gradient: "from-amber-500 to-orange-600",
+    bgGradient: "from-amber-500/10 to-orange-500/5",
+    features: ["Smart Routing", "WIP Management", "Agile Coaching", "Flow Metrics"],
+  },
+  {
+    icon: Code,
+    title: "Developer",
+    subtitle: "Software Engineer",
+    description: "Implement features, code review và technical solutions",
+    image: "/assets/images/agent/2.png",
+    gradient: "from-violet-500 to-purple-600",
+    bgGradient: "from-violet-500/10 to-purple-500/5",
+    features: ["Code Generation", "Bug Fixing", "Architecture", "Code Review"],
+  },
+  {
+    icon: FileText,
+    title: "Business Analyst",
+    subtitle: "Requirements Specialist",
+    description: "Phân tích requirements, tạo PRD và viết user stories",
+    image: "/assets/images/agent/3.png",
+    gradient: "from-cyan-500 to-blue-600",
+    bgGradient: "from-cyan-500/10 to-blue-500/5",
+    features: ["PRD Creation", "User Stories", "Requirements", "Domain Analysis"],
+  },
+  {
+    icon: Shield,
+    title: "Tester",
+    subtitle: "QA Engineer",
+    description: "Tạo test plans, thực hiện QA và đảm bảo chất lượng",
+    image: "/assets/images/agent/4.webp",
+    gradient: "from-rose-500 to-red-600",
+    bgGradient: "from-rose-500/10 to-red-500/5",
+    features: ["Test Planning", "QA Automation", "Bug Reporting", "Quality Gates"],
+  },
+]
+
+function AgentFlipCard({ agent }: { agent: typeof agents[0] }) {
+  const [isFlipped, setIsFlipped] = useState(false)
+  const Icon = agent.icon
+
+  return (
+    <div
+      className="relative w-full max-w-[300px] h-[380px] group [perspective:2000px] cursor-pointer"
+      onMouseEnter={() => setIsFlipped(true)}
+      onMouseLeave={() => setIsFlipped(false)}
+    >
+      <div
+        className={cn(
+          "relative w-full h-full [transform-style:preserve-3d] transition-all duration-700",
+          isFlipped ? "[transform:rotateY(180deg)]" : "[transform:rotateY(0deg)]"
+        )}
+      >
+        {/* Front */}
+        <div
+          className={cn(
+            "absolute inset-0 w-full h-full [backface-visibility:hidden]",
+            "overflow-hidden rounded-3xl",
+            "bg-gradient-to-b dark:from-zinc-900 dark:to-zinc-950 from-white to-zinc-50",
+            "border border-zinc-200 dark:border-zinc-800",
+            "shadow-xl"
+          )}
+        >
+          <div className={`absolute inset-0 bg-gradient-to-br ${agent.bgGradient} opacity-50`} />
+
+          <div className="relative h-full flex flex-col">
+            <div className="flex-1 flex items-center justify-center pt-6">
+              <div className="relative">
+                <div className={`absolute inset-0 bg-gradient-to-br ${agent.gradient} rounded-full blur-2xl opacity-30 scale-150`} />
+                <img
+                  src={agent.image}
+                  alt={agent.title}
+                  className="w-40 h-40 rounded-full object-cover border-4 border-white/20 shadow-2xl relative z-10"
+                />
+                <div className={`absolute -bottom-2 -right-2 p-2.5 rounded-xl bg-gradient-to-br ${agent.gradient} shadow-lg z-20`}>
+                  <Icon className="w-5 h-5 text-white" />
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 text-center space-y-2">
+              <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r ${agent.gradient} text-white text-xs font-medium`}>
+                <Sparkles className="w-3 h-3" />
+                AI Agent
+              </div>
+              <h3 className="text-xl font-bold text-zinc-900 dark:text-white">{agent.title}</h3>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">{agent.subtitle}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Back */}
+        <div
+          className={cn(
+            "absolute inset-0 w-full h-full [backface-visibility:hidden] [transform:rotateY(180deg)]",
+            "overflow-hidden rounded-3xl p-6",
+            "bg-gradient-to-b dark:from-zinc-900 dark:to-zinc-950 from-white to-zinc-50",
+            "border border-zinc-200 dark:border-zinc-800",
+            "shadow-xl flex flex-col"
+          )}
+        >
+          <div className={`absolute inset-0 bg-gradient-to-br ${agent.bgGradient} opacity-30`} />
+
+          <div className="relative flex-1 flex flex-col">
+            <div className="flex items-center gap-3 mb-4">
+              <div className={`p-2.5 rounded-xl bg-gradient-to-br ${agent.gradient}`}>
+                <Icon className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="font-bold text-zinc-900 dark:text-white">{agent.title}</h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">{agent.subtitle}</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-zinc-600 dark:text-zinc-300 mb-6 leading-relaxed">
+              {agent.description}
+            </p>
+
+            <div className="space-y-2.5 flex-1">
+              <p className="text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">Capabilities</p>
+              {agent.features.map((feature, idx) => (
+                <div
+                  key={feature}
+                  className="flex items-center gap-2.5 text-sm text-zinc-700 dark:text-zinc-300"
+                  style={{
+                    transform: isFlipped ? "translateX(0)" : "translateX(-10px)",
+                    opacity: isFlipped ? 1 : 0,
+                    transition: `all 0.4s ease ${idx * 80 + 150}ms`,
+                  }}
+                >
+                  <div className={`w-1.5 h-1.5 rounded-full bg-gradient-to-r ${agent.gradient}`} />
+                  {feature}
+                </div>
+              ))}
+            </div>
+
+            <div className={cn(
+              "mt-4 flex items-center justify-between p-3 -mx-1 rounded-xl",
+              "bg-zinc-100 dark:bg-zinc-800/50",
+              "hover:bg-gradient-to-r hover:from-zinc-100 hover:to-transparent",
+              "dark:hover:from-zinc-800 dark:hover:to-transparent",
+              "transition-all duration-300 cursor-pointer group/cta"
+            )}>
+              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-200 group-hover/cta:text-zinc-900 dark:group-hover/cta:text-white transition-colors">
+                Chat với {agent.title}
+              </span>
+              <ArrowRight className={`w-4 h-4 text-zinc-400 group-hover/cta:translate-x-1 transition-all bg-gradient-to-r ${agent.gradient} bg-clip-text`} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function RouteComponent() {
   return (
     <div className="min-h-screen bg-background relative overflow-hidden pb-0">
       <div className="relative z-10">
         <main className="max-w-[1320px] mx-auto relative">
-          <HeroSection />
+          <Header />
+          <HeroSection
+            badge={{
+              text: "AI-Powered Software Development",
+              action: {
+                text: "Explore Agents",
+                href: "#agents",
+              },
+            }}
+            title="VibeSDLC - Vibe coding cùng AI Agents"
+            description="Hệ thống multi-agent thông minh với Lean Kanban workflow. Team Leader, Developer, Business Analyst và Tester - sẵn sàng hỗ trợ bạn trong toàn bộ vòng đời phát triển phần mềm."
+            actions={[
+              {
+                text: "Bắt đầu ngay",
+                href: "/login",
+                variant: "glow",
+              },
+            ]}
+            image={{
+              light: "https://www.launchuicomponents.com/app-light.png",
+              dark: "https://www.launchuicomponents.com/app-dark.png",
+              alt: "VibeSDLC Dashboard Preview",
+            }}
+          />
 
-          {/* Dashboard Preview Wrapper */}
+          {/* Agents Section */}
+          <AnimatedSection>
+            <section id="agents" className="py-12 relative">
+              <div className="text-center mb-10 px-4">
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-6">
+                  <Sparkles className="w-4 h-4" />
+                  AI-Powered Team
+                </div>
+                <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">
+                  Gặp gỡ đội ngũ AI Agents
+                </h2>
+                <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                  4 AI agents chuyên biệt, phối hợp nhịp nhàng theo mô hình Lean Kanban
+                  để đưa dự án của bạn từ ý tưởng đến sản phẩm hoàn chỉnh.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 px-4 justify-items-center">
+                {agents.map((agent, index) => (
+                  <AgentFlipCard key={index} agent={agent} />
+                ))}
+              </div>
+
+              <div className="flex flex-wrap justify-center gap-8 mt-10 px-4">
+                <div className="flex items-center gap-3 text-muted-foreground">
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                    <Users className="w-5 h-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-foreground">Smart Routing</p>
+                    <p className="text-sm">Tự động phân công</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 text-muted-foreground">
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                    <Shield className="w-5 h-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-foreground">WIP Limits</p>
+                    <p className="text-sm">Kiểm soát luồng công việc</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 text-muted-foreground">
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                    <Code className="w-5 h-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-foreground">Conversational</p>
+                    <p className="text-sm">Giao tiếp tiếng Việt</p>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </AnimatedSection>
+
+          {/* Features Section with Glow Effect */}
+          <AnimatedSection delay={0.1}>
+            <section id="features" className="py-12 relative px-4">
+              <div className="text-center mb-10">
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-6">
+                  <CheckCircle2 className="w-4 h-4" />
+                  Tính năng nổi bật
+                </div>
+                <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">
+                  Tại sao chọn VibeSDLC?
+                </h2>
+                <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                  Kết hợp sức mạnh AI với quy trình Agile/Kanban để tối ưu hóa
+                  toàn bộ vòng đời phát triển phần mềm.
+                </p>
+              </div>
+
+              <ul className="grid grid-cols-1 grid-rows-none gap-4 md:grid-cols-12 md:grid-rows-3 lg:gap-4 xl:max-h-[34rem] xl:grid-rows-2">
+                {features.map((feature, index) => (
+                  <GridItem
+                    key={index}
+                    area={feature.area}
+                    icon={feature.icon}
+                    title={feature.title}
+                    description={feature.description}
+                  />
+                ))}
+              </ul>
+            </section>
+          </AnimatedSection>
+
+          {/* Testimonials Section */}
+          <AnimatedSection delay={0.2}>
+            <section id="testimonials" className="py-12 relative">
+              <div className="text-center mb-10 px-4">
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-6">
+                  <Quote className="w-4 h-4" />
+                  Đánh giá từ cộng đồng
+                </div>
+                <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">
+                  Developers nói gì về VibeSDLC?
+                </h2>
+                <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                  Phản hồi từ các beta testers và early adopters trong cộng đồng tech Việt Nam.
+                </p>
+              </div>
+              <StaggerTestimonials />
+            </section>
+          </AnimatedSection>
 
         </main>
-        <IntroduceAgents />
+        
+        <Footer />
       </div>
     </div>
   )

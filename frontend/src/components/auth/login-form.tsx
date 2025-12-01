@@ -10,15 +10,18 @@ import { Label } from "@/components/ui/label"
 import useAuth from "@/hooks/useAuth"
 import { account } from "@/lib/appwrite"
 import { withToast } from "@/utils"
-import { Chrome, Facebook, Github } from "lucide-react"
+import { Chrome, Facebook, Github, Loader2 } from "lucide-react"
 import { FaGooglePlusG } from "react-icons/fa6";
 
 const REMEMBER_EMAIL_KEY = "vibeSDLC_remembered_email"
+
+type OAuthLoadingProvider = "google" | "github" | "facebook" | null
 
 export function LoginForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [rememberMe, setRememberMe] = useState(false)
+  const [oauthLoading, setOauthLoading] = useState<OAuthLoadingProvider>(null)
   const { loginMutation } = useAuth()
 
   // Load remembered email on mount
@@ -66,23 +69,24 @@ export function LoginForm() {
   }
 
   const handleLoginGoogle = () => {
-    console.log('OAuth redirect starting:', `${import.meta.env.VITE_API_URL}/api/v1/auth/google`);
-    console.time('oauth-redirect');
-    // Redirect to backend OAuth endpoint
+    if (oauthLoading) return
+    setOauthLoading("google")
     window.location.href = `${import.meta.env.VITE_API_URL}/api/v1/auth/google`;
   };
 
   const handleLoginGithub = () => {
-    console.log('OAuth redirect starting:', `${import.meta.env.VITE_API_URL}/api/v1/auth/github`);
-    console.time('oauth-redirect');
+    if (oauthLoading) return
+    setOauthLoading("github")
     window.location.href = `${import.meta.env.VITE_API_URL}/api/v1/auth/github`;
   };
 
   const handleLoginFacebook = () => {
-    console.log('OAuth redirect starting:', `${import.meta.env.VITE_API_URL}/api/v1/auth/facebook`);
-    console.time('oauth-redirect');
+    if (oauthLoading) return
+    setOauthLoading("facebook")
     window.location.href = `${import.meta.env.VITE_API_URL}/api/v1/auth/facebook`;
   };
+
+  const isOAuthDisabled = oauthLoading !== null
 
 
   return (
@@ -211,25 +215,40 @@ export function LoginForm() {
               <Button
                 onClick={handleLoginGoogle}
                 variant="outline"
-                className="flex-1 h-12 border-2 border-border hover:bg-transparent hover:border-border"
+                disabled={isOAuthDisabled}
+                className="flex-1 h-12 border-2 border-border hover:bg-transparent hover:border-border disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <FaGooglePlusG className="mr-2 h-5 w-5 text-[#EA4335]" />
+                {oauthLoading === "google" ? (
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                ) : (
+                  <FaGooglePlusG className="mr-2 h-5 w-5 text-[#EA4335]" />
+                )}
                 <span className="font-medium">Google</span>
               </Button>
               <Button
                 onClick={handleLoginGithub}
                 variant="outline"
-                className="flex-1 h-12 border-2 border-border hover:bg-transparent hover:border-border"
+                disabled={isOAuthDisabled}
+                className="flex-1 h-12 border-2 border-border hover:bg-transparent hover:border-border disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Github className="mr-2 h-5 w-5" />
+                {oauthLoading === "github" ? (
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                ) : (
+                  <Github className="mr-2 h-5 w-5" />
+                )}
                 <span className="font-medium">GitHub</span>
               </Button>
               <Button
                 onClick={handleLoginFacebook}
                 variant="outline"
-                className="flex-1 h-12 border-2 border-border hover:bg-transparent hover:border-border"
+                disabled={isOAuthDisabled}
+                className="flex-1 h-12 border-2 border-border hover:bg-transparent hover:border-border disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Facebook className="mr-2 h-5 w-5 text-[#1877F2]" />
+                {oauthLoading === "facebook" ? (
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                ) : (
+                  <Facebook className="mr-2 h-5 w-5 text-[#1877F2]" />
+                )}
                 <span className="font-medium">Facebook</span>
               </Button>
             </div>

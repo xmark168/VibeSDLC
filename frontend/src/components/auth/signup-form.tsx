@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router"
 import { motion } from "framer-motion"
-import { Check, Eye, EyeOff, Facebook, Github, X } from "lucide-react"
+import { Check, Eye, EyeOff, Facebook, Github, Loader2, X } from "lucide-react"
 import type React from "react"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -9,6 +9,8 @@ import { Label } from "@/components/ui/label"
 import useAuth from "@/hooks/useAuth"
 import { withToast } from "@/utils"
 import { FaGooglePlusG } from "react-icons/fa6"
+
+type OAuthLoadingProvider = "google" | "github" | "facebook" | null
 
 export function SignUpForm() {
   const [formData, setFormData] = useState({
@@ -20,6 +22,7 @@ export function SignUpForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [passwordFocused, setPasswordFocused] = useState(false)
+  const [oauthLoading, setOauthLoading] = useState<OAuthLoadingProvider>(null)
   const { signUpMutation } = useAuth()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -49,23 +52,24 @@ export function SignUpForm() {
     )
   }
   const handleLoginGoogle = () => {
-    console.log('OAuth redirect starting:', `${import.meta.env.VITE_API_URL}/api/v1/auth/google`);
-    console.time('oauth-redirect');
-    // Redirect to backend OAuth endpoint
+    if (oauthLoading) return
+    setOauthLoading("google")
     window.location.href = `${import.meta.env.VITE_API_URL}/api/v1/auth/google`;
   };
 
   const handleLoginGithub = () => {
-    console.log('OAuth redirect starting:', `${import.meta.env.VITE_API_URL}/api/v1/auth/github`);
-    console.time('oauth-redirect');
+    if (oauthLoading) return
+    setOauthLoading("github")
     window.location.href = `${import.meta.env.VITE_API_URL}/api/v1/auth/github`;
   };
 
   const handleLoginFacebook = () => {
-    console.log('OAuth redirect starting:', `${import.meta.env.VITE_API_URL}/api/v1/auth/facebook`);
-    console.time('oauth-redirect');
+    if (oauthLoading) return
+    setOauthLoading("facebook")
     window.location.href = `${import.meta.env.VITE_API_URL}/api/v1/auth/facebook`;
   };
+
+  const isOAuthDisabled = oauthLoading !== null
   const passwordRequirements = [
     { label: "Ít nhất 8 ký tự", met: formData.password.length >= 8 },
     {
@@ -129,25 +133,40 @@ export function SignUpForm() {
             <Button
               onClick={handleLoginGoogle}
               variant="outline"
-              className="flex-1 h-12 border-2 border-border hover:bg-transparent hover:border-border"
+              disabled={isOAuthDisabled}
+              className="flex-1 h-12 border-2 border-border hover:bg-transparent hover:border-border disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <FaGooglePlusG className="mr-2 h-5 w-5 text-[#EA4335]" />
+              {oauthLoading === "google" ? (
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+              ) : (
+                <FaGooglePlusG className="mr-2 h-5 w-5 text-[#EA4335]" />
+              )}
               <span className="font-medium">Google</span>
             </Button>
             <Button
               onClick={handleLoginGithub}
               variant="outline"
-              className="flex-1 h-12 border-2 border-border hover:bg-transparent hover:border-border"
+              disabled={isOAuthDisabled}
+              className="flex-1 h-12 border-2 border-border hover:bg-transparent hover:border-border disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Github className="mr-2 h-5 w-5" />
+              {oauthLoading === "github" ? (
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+              ) : (
+                <Github className="mr-2 h-5 w-5" />
+              )}
               <span className="font-medium">GitHub</span>
             </Button>
             <Button
               onClick={handleLoginFacebook}
               variant="outline"
-              className="flex-1 h-12 border-2 border-border hover:bg-transparent hover:border-border"
+              disabled={isOAuthDisabled}
+              className="flex-1 h-12 border-2 border-border hover:bg-transparent hover:border-border disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Facebook className="mr-2 h-5 w-5 text-[#1877F2]" />
+              {oauthLoading === "facebook" ? (
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+              ) : (
+                <Facebook className="mr-2 h-5 w-5 text-[#1877F2]" />
+              )}
               <span className="font-medium">Facebook</span>
             </Button>
           </div>
