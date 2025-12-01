@@ -6,7 +6,6 @@ import {
   XCircle,
   Sparkles,
   ChevronDown,
-  ChevronUp,
   Check
 } from "lucide-react"
 import { Card } from "@/components/ui/card"
@@ -55,15 +54,15 @@ export function StorySuggestionsCard({
   const [actionTaken, setActionTaken] = useState<'applied' | 'kept' | 'removed' | null>(null)
 
   const getScoreStyle = () => {
-    return "from-orange-500/10 to-amber-500/10 border-orange-500/20"
+    return "from-blue-500/10 to-blue-500/10 border-blue-500/20"
   }
 
   const getScoreIconBg = () => {
-    return "bg-orange-500/20"
+    return "bg-blue-500/20"
   }
 
   const getScoreIconColor = () => {
-    return "text-orange-600"
+    return "text-blue-600"
   }
 
   const handleApplySuggestions = async () => {
@@ -120,31 +119,27 @@ export function StorySuggestionsCard({
           </div>
           <div className="flex-1 min-w-0">
             <h4 className="text-sm font-medium text-foreground">
-              🔍 BA Review
+              🔍 Review Story
             </h4>
-            <p className="text-xs text-muted-foreground truncate">{storyTitle}</p>
           </div>
           {/* Only show INVEST score if not duplicate */}
           {!isDuplicate && (
             <Badge 
               variant="outline" 
-              className="border-orange-500/50 text-orange-600"
+              className="rounded-full px-3 py-1 border-border font-normal bg-background"
             >
               INVEST: {investScore}/6
             </Badge>
           )}
-          {/* Only show expand button if NOT duplicate */}
+          {/* Expand button - only show if NOT duplicate */}
           {!isDuplicate && (
             <Button 
-              size="sm" 
+              size="icon"
               variant="outline" 
+              className="rounded-full h-8 w-8"
               onClick={() => setIsExpanded(!isExpanded)}
             >
-              {isExpanded ? (
-                <ChevronUp className="w-3.5 h-3.5" />
-              ) : (
-                <ChevronDown className="w-3.5 h-3.5" />
-              )}
+              <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
             </Button>
           )}
         </div>
@@ -159,7 +154,7 @@ export function StorySuggestionsCard({
 
         {/* Action taken state */}
         {actionTaken && (
-          <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+          <div className="flex items-center gap-2 text-sm ">
             <Check className="w-4 h-4" />
             <span>
               {actionTaken === 'applied' && 'Đã áp dụng gợi ý'}
@@ -217,11 +212,17 @@ export function StorySuggestionsCard({
         {/* Expanded content */}
         {isExpanded && (
           <div className="space-y-3 pt-2 border-t border-border/50">
-            {/* INVEST Issues */}
-            {investIssues.length > 0 && (
-              <div className="space-y-3">
-                <p className="text-sm font-bold text-orange-600">Vấn đề cần cải thiện:</p>
-                {investIssues.map((issue, idx) => {
+            {/* 1. User Story Content */}
+            <div className="space-y-1">
+              <p className="text-sm font-bold">Story:</p>
+              <p className="text-sm pl-4">{storyTitle}</p>
+            </div>
+
+            {/* 2. Issues - Always show */}
+            <div className="space-y-2">
+              <p className="text-sm font-bold">Vấn đề:</p>
+              {investIssues.length > 0 ? (
+                investIssues.map((issue, idx) => {
                   const codeNames: Record<string, string> = {
                     'I': 'Independent',
                     'N': 'Negotiable', 
@@ -232,49 +233,47 @@ export function StorySuggestionsCard({
                   }
                   return (
                     <div key={idx} className="space-y-1">
-                      <p className="text-sm font-medium text-muted-foreground">
+                      <p className="text-sm font-medium pl-4">
                         {issue.code} – {codeNames[issue.code] || issue.code}:
                       </p>
-                      <p className="text-sm text-muted-foreground pl-4">
+                      <p className="text-sm pl-8">
                         - {issue.issue}
                       </p>
                     </div>
                   )
-                })}
-              </div>
-            )}
+                })
+              ) : (
+                <p className="text-sm pl-4">✓ Story đạt chuẩn INVEST</p>
+              )}
+            </div>
 
-            {/* Suggestions */}
+            {/* 3. Suggestions - Only if available */}
             {hasSuggestions && (suggestedTitle || (suggestedAcceptanceCriteria && suggestedAcceptanceCriteria.length > 0)) && (
-              <div className="space-y-3">
-                <p className="text-sm font-bold text-green-600">Gợi ý cải thiện:</p>
+              <div className="space-y-2">
+                <p className="text-sm font-bold">Gợi ý cải thiện:</p>
 
                 {suggestedTitle && (
                   <div className="space-y-1">
-                    <p className="text-sm font-medium text-orange-600">Title:</p>
-                    <p className="text-sm text-muted-foreground pl-4">- {suggestedTitle}</p>
+                    <p className="text-sm font-medium pl-4">Title đề xuất:</p>
+                    <p className="text-sm pl-8">- {suggestedTitle}</p>
                   </div>
                 )}
 
                 {suggestedAcceptanceCriteria && suggestedAcceptanceCriteria.length > 0 && (
                   <div className="space-y-2">
-                    {suggestedAcceptanceCriteria.slice(0, 3).map((ac, idx) => (
-                      <div key={idx} className="text-sm text-muted-foreground pl-4 space-y-0.5">
+                    <p className="text-sm font-medium pl-4">Acceptance Criteria đề xuất:</p>
+                    {suggestedAcceptanceCriteria.map((ac, idx) => (
+                      <div key={idx} className="text-sm pl-8 space-y-0.5">
                         <p>{idx + 1}. {ac.split('\n')[0]}</p>
                         {ac.split('\n').slice(1).map((line, lineIdx) => (
                           <p key={lineIdx} className="pl-4">{line}</p>
                         ))}
                       </div>
                     ))}
-                    {suggestedAcceptanceCriteria.length > 3 && (
-                      <p className="text-xs text-muted-foreground pl-4">+{suggestedAcceptanceCriteria.length - 3} more...</p>
-                    )}
                   </div>
                 )}
               </div>
             )}
-
-
           </div>
         )}
       </div>

@@ -1497,46 +1497,13 @@ async def send_review_action_response(
     agent_id = str(agent.agent_id) if agent else None
     proj_id = str(project_id) if project_id else (str(agent.project_id) if agent else None)
     
-    # Build prompt for LLM
-    action_context = {
-        "apply": "User đã áp dụng các gợi ý cải thiện cho story",
-        "keep": "User đã chọn giữ nguyên story như ban đầu",
-        "remove": "User đã chọn loại bỏ/archive story này"
+    # Simple confirmation messages (no LLM needed)
+    confirmation_messages = {
+        "apply": f"Áp dụng gợi ý cho story \"{story_title}\".",
+        "keep": f"Giữ nguyên story \"{story_title}\".",
+        "remove": f"Loại bỏ story \"{story_title}\"."
     }
-    
-    system_prompt = f"""Bạn là {agent_name}, một Business Analyst thân thiện.
-    
-Tạo một tin nhắn ngắn gọn, tự nhiên để phản hồi hành động của user.
-
-Yêu cầu:
-- Viết bằng tiếng Việt
-- Ngắn gọn (1-2 câu)
-- Tự nhiên, thân thiện
-- Đề cập đến story title
-- Không dùng emoji quá nhiều (tối đa 1)
-"""
-    
-    user_prompt = f"""Story: "{story_title}"
-Action: {action_context.get(action, action)}
-
-Viết tin nhắn phản hồi:"""
-
-    # Call LLM
-    try:
-        response = await _default_llm.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_prompt)
-        ])
-        content = response.content.strip()
-    except Exception as e:
-        logger.error(f"[BA] LLM call failed: {e}")
-        # Fallback messages
-        fallback_messages = {
-            "apply": f"Mình đã cập nhật story \"{story_title}\" theo các gợi ý.",
-            "keep": f"Ok, mình sẽ giữ nguyên story \"{story_title}\" như bạn viết.",
-            "remove": f"Mình đã đánh dấu story \"{story_title}\" là loại bỏ."
-        }
-        content = fallback_messages.get(action, f"Đã xử lý story \"{story_title}\".")
+    content = confirmation_messages.get(action, f"Đã xử lý story \"{story_title}\".")
     
     # Save to DB
     message_id = None
