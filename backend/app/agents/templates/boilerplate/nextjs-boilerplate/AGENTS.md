@@ -1,959 +1,175 @@
-## Project Overview
+# Project Guidelines
 
-Next.js 15 boilerplate with TypeScript, App Router, Prisma, NextAuth v5, Tailwind CSS 4, and shadcn/ui components. Uses Bun as package manager.
+## Stack
+Next.js 16 | React 19.2 | TypeScript | Prisma ORM | NextAuth v5 | Tailwind CSS 4 | shadcn/ui | Jest | Bun
 
-**Key Stack:**
-- Next.js 15 + React 19
-- NextAuth v5 (beta) with Credentials provider + Prisma adapter
-- Prisma ORM + PostgreSQL
-- Tailwind CSS 4 + 50+ shadcn/ui components (Radix UI)
-- React Hook Form + Zod validation
-- Zustand for state management
-- Jest + React Testing Library
-
-## Common Commands
-
-```bash
-# Development
-bun dev                   # Start dev server with Turbopack
-bun dev:webpack           # Start dev server with Webpack (fallback)
-
-# Build & Deploy
-bun run build             # Production build
-bun start                 # Start production server
-
-# Testing
-bun test                  # Run all tests
-bun test:watch            # Run tests in watch mode
-bun test:coverage         # Run tests with coverage report
-
-# Linting & Formatting
-bun lint                  # Run ESLint
-bun lint:fix              # Fix ESLint errors
-bun format                # Format with Prettier
-
-# Database (Prisma)
-bunx prisma generate      # Generate Prisma Client (after schema changes)
-bunx prisma db push       # Push schema changes to database (dev)
-bunx prisma migrate dev   # Create and apply migrations (production-ready)
-bunx prisma studio        # Open Prisma Studio GUI
+## Architecture (MANDATORY)
+```
+Prisma Schema → Types → API/Actions → Components → Pages
 ```
 
-## Next.js 15 App Router Conventions
-
-### Special Files (MUST follow these conventions)
-
-| File | Purpose |
-|------|---------|
-| `page.tsx` | Route page (makes folder publicly accessible) |
-| `layout.tsx` | Shared layout (wraps children, persists across navigation) |
-| `loading.tsx` | Loading UI (automatic Suspense boundary) |
-| `error.tsx` | Error boundary (must be Client Component) |
-| `not-found.tsx` | 404 page for route segment |
-| `route.ts` | API endpoint (GET, POST, PUT, DELETE handlers) |
-| `template.tsx` | Like layout but re-renders on navigation |
-
-### Naming Conventions
-
+## Naming Conventions
 | Type | Convention | Example |
 |------|-----------|---------|
-| Files | `kebab-case` | `user-profile.tsx`, `api-response.ts` |
-| Components | `PascalCase` | `UserProfile`, `LoginForm` |
-| Variables/Props | `camelCase` | `userData`, `isLoading` |
-| Route folders | `lowercase` | `dashboard`, `user-settings` |
-| Constants | `UPPER_SNAKE_CASE` | `MAX_ITEMS`, `API_URL` |
+| Files | kebab-case | `user-profile.tsx` |
+| Components | PascalCase | `UserProfile` |
+| Variables | camelCase | `userData` |
+| Constants | UPPER_SNAKE | `MAX_ITEMS` |
+| Route folders | lowercase | `dashboard` |
 
-### Route Groups (Organize without affecting URL)
+## Special Files (Next.js 16)
+| File | Purpose |
+|------|---------|
+| `page.tsx` | Route page |
+| `layout.tsx` | Shared layout |
+| `loading.tsx` | Loading UI |
+| `error.tsx` | Error boundary (must be Client Component) |
+| `route.ts` | API endpoint |
+| `proxy.ts` | Network proxy (replaces middleware.ts) |
+| `not-found.tsx` | 404 page |
 
-```
-src/app/
-├── (auth)/                 # Group: /login, /register (no /auth prefix)
-│   ├── login/
-│   │   └── page.tsx        # → /login
-│   └── register/
-│       └── page.tsx        # → /register
-├── (dashboard)/            # Group: dashboard routes
-│   ├── layout.tsx          # Shared dashboard layout
-│   ├── page.tsx            # → / (dashboard home)
-│   └── settings/
-│       └── page.tsx        # → /settings
-└── api/                    # API routes
-    └── users/
-        └── route.ts        # → /api/users
-```
+## Critical Rules
+1. **Named exports ONLY** - No default exports
+2. **Server Components default** - Add `'use client'` only when using hooks
+3. **Zod validation** - Always validate on server
+4. **Revalidate** - Call `revalidatePath`/`revalidateTag` after mutations
+5. **Append only** - Don't overwrite existing types/models
+6. **Prisma generate** - Run after schema changes
 
-### Dynamic Routes
-
-```
-src/app/
-├── users/
-│   └── [id]/               # Dynamic: /users/123
-│       └── page.tsx
-├── blog/
-│   └── [...slug]/          # Catch-all: /blog/a/b/c
-│       └── page.tsx
-└── shop/
-    └── [[...categories]]/  # Optional catch-all: /shop or /shop/a/b
-        └── page.tsx
-```
-
-## Architecture & Development Flow
-
-### Layered Architecture (MANDATORY)
-
-```
-Prisma Schema → Types → Server Actions/API Routes → Components → Pages
-```
-
-Always follow this flow when implementing features:
-
-1. **Database Schema** (`prisma/schema.prisma`)
-   - **APPEND new models at end of file, PRESERVE existing models**
-   - Auth models (User, Account, Session, VerificationToken) are REQUIRED
-   - Run `bunx prisma generate && bunx prisma db push`
-
-2. **Type Definitions** (`src/types/api.types.ts`)
-   - **NEVER overwrite existing types**
-   - **ADD new types at the end of file**
-   
-   ```typescript
-   // Zod schema for input validation
-   export const productSchema = z.object({
-     name: z.string().min(1, 'Name is required'),
-     price: z.number().positive(),
-   });
-   
-   // Request type (infer from Zod)
-   export type ProductRequest = z.infer<typeof productSchema>;
-   
-   // Response type
-   export interface ProductResponse {
-     id: string;
-     name: string;
-     price: number;
-   }
-   ```
-
-3. **Server Actions** (for mutations) OR **API Routes** (for external APIs)
-
-4. **Components** (`src/components/`)
-   - Server Components by default
-   - Add `'use client'` only when needed
-
-5. **Pages** (`src/app/[route]/page.tsx`)
-   - Server Components for data fetching
-   - Pass data to Client Components via props
-
-## Server Actions (Next.js 15) - CRITICAL
-
-### When to Use Server Actions
-- ✅ Form submissions
-- ✅ Database mutations (create, update, delete)
-- ✅ Revalidating cached data
-- ❌ **NEVER use for data fetching** (use Server Components instead)
-
-### Server Action Pattern
-
+## Import Paths
 ```typescript
-// src/actions/product-actions.ts
-'use server';
-
-import { revalidatePath } from 'next/cache';
+import { Button } from '@/components/ui/button';
 import { prisma } from '@/lib/prisma';
-import { productSchema } from '@/types/api.types';
-
-export async function createProduct(formData: FormData) {
-  // 1. Parse and validate input (ALWAYS validate on server)
-  const rawData = {
-    name: formData.get('name'),
-    price: Number(formData.get('price')),
-  };
-  
-  const validated = productSchema.safeParse(rawData);
-  if (!validated.success) {
-    return { error: validated.error.flatten().fieldErrors };
-  }
-  
-  // 2. Perform mutation
-  try {
-    const product = await prisma.product.create({
-      data: validated.data,
-    });
-    
-    // 3. Revalidate cache
-    revalidatePath('/products');
-    
-    return { success: true, data: product };
-  } catch (error) {
-    return { error: 'Failed to create product' };
-  }
-}
-
-export async function deleteProduct(id: string) {
-  try {
-    await prisma.product.delete({ where: { id } });
-    revalidatePath('/products');
-    return { success: true };
-  } catch (error) {
-    return { error: 'Failed to delete product' };
-  }
-}
-```
-
-### Using Server Actions in Components
-
-```typescript
-// src/app/products/new/page.tsx (Server Component)
-import { createProduct } from '@/actions/product-actions';
-import { ProductForm } from '@/components/product-form';
-
-export default function NewProductPage() {
-  return <ProductForm action={createProduct} />;
-}
-
-// src/components/product-form.tsx (Client Component)
-'use client';
-
-import { useFormStatus } from 'react-dom';
-import { useActionState } from 'react';
-
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <button type="submit" disabled={pending}>
-      {pending ? 'Creating...' : 'Create Product'}
-    </button>
-  );
-}
-
-export function ProductForm({ action }: { action: typeof createProduct }) {
-  const [state, formAction] = useActionState(action, null);
-  
-  return (
-    <form action={formAction}>
-      <input name="name" required />
-      <input name="price" type="number" required />
-      {state?.error && <p className="text-red-500">{state.error}</p>}
-      <SubmitButton />
-    </form>
-  );
-}
-```
-
-## Data Fetching (Server-First Approach)
-
-### Fetch in Server Components (RECOMMENDED)
-
-```typescript
-// src/app/products/page.tsx (Server Component - NO 'use client')
-import { prisma } from '@/lib/prisma';
-import { ProductList } from '@/components/product-list';
-
-export default async function ProductsPage() {
-  // Fetch directly in Server Component - no API needed!
-  const products = await prisma.product.findMany({
-    orderBy: { createdAt: 'desc' },
-  });
-  
-  return (
-    <div>
-      <h1>Products</h1>
-      <ProductList products={products} />
-    </div>
-  );
-}
-
-// src/app/products/loading.tsx (Loading state)
-export default function Loading() {
-  return <div>Loading products...</div>;
-}
-
-// src/app/products/error.tsx (Error boundary - MUST be Client Component)
-'use client';
-
-export default function Error({
-  error,
-  reset,
-}: {
-  error: Error;
-  reset: () => void;
-}) {
-  return (
-    <div>
-      <h2>Something went wrong!</h2>
-      <button onClick={() => reset()}>Try again</button>
-    </div>
-  );
-}
-```
-
-### With Dynamic Params
-
-```typescript
-// src/app/products/[id]/page.tsx
-import { prisma } from '@/lib/prisma';
-import { notFound } from 'next/navigation';
-
-interface Props {
-  params: Promise<{ id: string }>;
-}
-
-export default async function ProductPage({ params }: Props) {
-  const { id } = await params;
-  
-  const product = await prisma.product.findUnique({
-    where: { id },
-  });
-  
-  if (!product) {
-    notFound(); // Shows not-found.tsx
-  }
-  
-  return <ProductDetail product={product} />;
-}
-
-// Generate static params for SSG
-export async function generateStaticParams() {
-  const products = await prisma.product.findMany({ select: { id: true } });
-  return products.map((p) => ({ id: p.id }));
-}
-```
-
-## API Routes (Use when needed for external APIs)
-
-```typescript
-// src/app/api/products/route.ts
-import { NextRequest } from 'next/server';
 import { successResponse, handleError, ApiErrors } from '@/lib/api-response';
-import { prisma } from '@/lib/prisma';
-import { productSchema } from '@/types/api.types';
-
-export async function GET() {
-  try {
-    const products = await prisma.product.findMany();
-    return successResponse(products);
-  } catch (error) {
-    return handleError(error);
-  }
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const validated = productSchema.parse(body); // Throws if invalid
-    
-    const product = await prisma.product.create({ data: validated });
-    return successResponse(product, 'Product created', 201);
-  } catch (error) {
-    return handleError(error);
-  }
-}
-
-// src/app/api/products/[id]/route.ts
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params;
-    const product = await prisma.product.findUnique({ where: { id } });
-    
-    if (!product) {
-      throw ApiErrors.notFound('Product');
-    }
-    
-    return successResponse(product);
-  } catch (error) {
-    return handleError(error);
-  }
-}
 ```
+
+## API Response Functions
+| Function | Status | Usage |
+|----------|--------|-------|
+| `successResponse(data)` | 200 | Success |
+| `successResponse(data, msg, 201)` | 201 | Created |
+| `handleError(error)` | varies | Catch-all |
+| `ApiErrors.notFound(resource)` | 404 | Not found |
+| `ApiErrors.badRequest(msg)` | 400 | Bad request |
+| `ApiErrors.unauthorized()` | 401 | Not logged in |
 
 ## Component Patterns
 
-### Server Component (Default)
-
-```typescript
-// src/components/product-card.tsx (Server Component - no directive needed)
-import { Product } from '@prisma/client';
-import { formatPrice } from '@/lib/utils';
-
-interface Props {
-  product: Product;
-}
-
-export function ProductCard({ product }: Props) {
-  return (
-    <div className="rounded-lg border p-4">
-      <h3 className="font-semibold">{product.name}</h3>
-      <p className="text-muted-foreground">{formatPrice(product.price)}</p>
-    </div>
-  );
-}
-```
-
-### Client Component (Only when needed)
-
-```typescript
-// src/components/add-to-cart-button.tsx
+### Client Component (hooks required)
+```tsx
 'use client';
-
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-
-interface Props {
-  productId: string;
-}
-
-export function AddToCartButton({ productId }: Props) {
-  const [isLoading, setIsLoading] = useState(false);
-  
-  async function handleClick() {
-    setIsLoading(true);
-    // Add to cart logic
-    setIsLoading(false);
-  }
-  
-  return (
-    <Button onClick={handleClick} disabled={isLoading}>
-      {isLoading ? 'Adding...' : 'Add to Cart'}
-    </Button>
-  );
+export function MyComponent() {
+  const [state, setState] = useState('');
+  return <div>{state}</div>;
 }
 ```
 
-### Combining Server and Client Components
-
-```typescript
-// src/app/products/[id]/page.tsx (Server Component)
+### Server Component (default)
+```tsx
 import { prisma } from '@/lib/prisma';
-import { ProductCard } from '@/components/product-card';
-import { AddToCartButton } from '@/components/add-to-cart-button';
-
-export default async function ProductPage({ params }: Props) {
-  const { id } = await params;
-  const product = await prisma.product.findUnique({ where: { id } });
-  
-  return (
-    <div>
-      {/* Server Component - renders on server */}
-      <ProductCard product={product} />
-      
-      {/* Client Component - hydrates on client */}
-      <AddToCartButton productId={product.id} />
-    </div>
-  );
+export async function ProductList() {
+  const products = await prisma.product.findMany();
+  return <div>{/* render */}</div>;
 }
 ```
 
-## Authentication (NextAuth v5)
-
-**Key Files:**
-- `src/auth.ts` - NextAuth configuration
-- `src/middleware.ts` - Route protection
-- `prisma/schema.prisma` - Auth models (DO NOT modify)
-
+## API Route Pattern
 ```typescript
-// Server Component
-import { auth } from '@/auth';
-import { redirect } from 'next/navigation';
-
-export default async function DashboardPage() {
-  const session = await auth();
-  
-  if (!session) {
-    redirect('/login');
-  }
-  
-  return <div>Welcome {session.user.name}</div>;
-}
-
-// Client Component
-'use client';
-import { useSession, signOut } from 'next-auth/react';
-
-export function UserMenu() {
-  const { data: session, status } = useSession();
-  
-  if (status === 'loading') return <div>Loading...</div>;
-  if (!session) return <LoginButton />;
-  
-  return (
-    <div>
-      <span>{session.user.name}</span>
-      <button onClick={() => signOut()}>Sign out</button>
-    </div>
-  );
-}
-```
-
-## Caching & Revalidation
-
-```typescript
-// Revalidate specific path after mutation
-import { revalidatePath } from 'next/cache';
-revalidatePath('/products');
-
-// Revalidate by tag
-import { revalidateTag } from 'next/cache';
-
-// In data fetching
-const products = await prisma.product.findMany();
-// Tag this data
-export const dynamic = 'force-dynamic'; // or use unstable_cache with tags
-
-// After mutation
-revalidateTag('products');
-```
-
-## Code Conventions
-
-### TypeScript
-- Strict mode enabled - no implicit `any`
-- Use `unknown` instead of `any`
-- Always define explicit types
-
-### Import/Export Conventions (CRITICAL)
-
-This project uses **named exports** (NOT default exports).
-
-**Export Pattern:**
-```typescript
-// Components - named export
-export function SearchBar() { ... }
-
-// Services/Utils - named export
-export const textbookService = { ... };
-export function formatPrice() { ... }
-
-// Types - named export
-export interface Textbook { ... }
-export type SearchResult = { ... };
-```
-
-**Import Pattern (MUST match export):**
-```typescript
-// CORRECT - named imports
-import { SearchBar } from '@/components/SearchBar';
-import { textbookService } from '@/lib/data/textbook-service';
-import { Textbook } from '@/types/api.types';
-```
-
-**WRONG - These will cause errors:**
-```typescript
-// WRONG - default imports (will fail with "Missing default export")
-import SearchBar from '@/components/SearchBar';
-import textbookService from '@/lib/data/textbook-service';
-
-// WRONG - default exports (don't use)
-export default function SearchBar() { ... }
-export default { ... };
-```
-
-### Import Paths
-```typescript
-import { Button } from '@/components/ui/button';
+import { NextRequest } from 'next/server';
+import { successResponse, handleError } from '@/lib/api-response';
 import { prisma } from '@/lib/prisma';
-import { createProduct } from '@/actions/product-actions';
-```
 
-### Styling
-- Use Tailwind utility classes
-- Use `cn()` from `@/lib/utils` for conditional classes
-- shadcn/ui components use "new-york" style
-
-## Testing Guidelines
-
-### Available Test Packages
-| Package | Purpose |
-|---------|---------|
-| `jest` | Test runner |
-| `@testing-library/react` | React component testing |
-| `@testing-library/jest-dom` | DOM matchers (toBeInTheDocument, etc.) |
-| `@testing-library/user-event` | User interaction simulation |
-| `msw` | API mocking (Mock Service Worker) |
-| `node-mocks-http` | Next.js API routes testing |
-| `@faker-js/faker` | Generate fake test data |
-
-### Component Testing
-
-```typescript
-import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-
-describe('ProductForm', () => {
-  it('submits form data', async () => {
-    const user = userEvent.setup();
-    render(<ProductForm action={mockAction} />);
-    
-    await user.type(screen.getByLabelText('Name'), 'Test Product');
-    await user.click(screen.getByRole('button', { name: /create/i }));
-    
-    expect(mockAction).toHaveBeenCalled();
-  });
-});
-```
-
-### API Route Testing (node-mocks-http)
-
-```typescript
-import { createMocks } from 'node-mocks-http';
-import { GET, POST } from '@/app/api/products/route';
-
-describe('/api/products', () => {
-  it('GET returns products list', async () => {
-    const { req } = createMocks({ method: 'GET' });
-    const response = await GET(req);
-    const data = await response.json();
-    
-    expect(response.status).toBe(200);
-    expect(data.success).toBe(true);
-  });
-
-  it('POST creates a product', async () => {
-    const { req } = createMocks({
-      method: 'POST',
-      body: { name: 'Test Product', price: 100 },
-    });
-    const response = await POST(req);
-    
-    expect(response.status).toBe(201);
-  });
-});
-```
-
-### Using Faker for Test Data
-
-```typescript
-import { faker } from '@faker-js/faker';
-
-// Generate mock user
-const mockUser = {
-  id: faker.string.uuid(),
-  name: faker.person.fullName(),
-  email: faker.internet.email(),
-  avatar: faker.image.avatar(),
-};
-
-// Generate mock product
-const mockProduct = {
-  id: faker.string.uuid(),
-  name: faker.commerce.productName(),
-  price: faker.number.float({ min: 10, max: 1000, fractionDigits: 2 }),
-  description: faker.commerce.productDescription(),
-};
-
-// Generate array of items
-const mockProducts = faker.helpers.multiple(
-  () => ({
-    id: faker.string.uuid(),
-    name: faker.commerce.productName(),
-    price: faker.number.float({ min: 10, max: 100 }),
-  }),
-  { count: 5 }
-);
-```
-
-### MSW for API Mocking
-
-```typescript
-// src/__tests__/mocks/handlers.ts
-import { http, HttpResponse } from 'msw';
-
-export const handlers = [
-  http.get('/api/products', () => {
-    return HttpResponse.json({
-      success: true,
-      data: [{ id: '1', name: 'Product 1' }],
-    });
-  }),
-];
-
-// In test file
-import { server } from './mocks/server';
-
-beforeAll(() => server.listen());
-afterEach(() => server.resetHandlers());
-afterAll(() => server.close());
-```
-
-## Error Handling
-
-### API Response Helpers
-
-```typescript
-import { successResponse, handleError, ApiErrors } from '@/lib/api-response';
-
-// Success responses
-return successResponse(data);                    // 200 OK
-return successResponse(data, 'Created', 201);    // 201 Created
-
-// Error responses (throw these, handleError will catch)
-throw ApiErrors.badRequest('Invalid input');     // 400
-throw ApiErrors.unauthorized();                  // 401
-throw ApiErrors.forbidden();                     // 403
-throw ApiErrors.notFound('Product');             // 404
-throw ApiErrors.conflict('Email already exists'); // 409
-
-// In route handler
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    // ... logic
-    return successResponse(result, 'Created', 201);
+    const data = await prisma.model.findMany();
+    return successResponse(data);
   } catch (error) {
-    return handleError(error); // Automatically formats error response
+    return handleError(error);
   }
 }
 ```
 
-### Server Action Error Handling
-
+## Server Action Pattern
 ```typescript
 'use server';
+import { revalidatePath } from 'next/cache';
+import { prisma } from '@/lib/prisma';
+import { mySchema } from '@/types/api.types';
 
-export async function createProduct(formData: FormData) {
-  const validated = productSchema.safeParse(data);
+export async function createItem(formData: FormData) {
+  const validated = mySchema.safeParse(Object.fromEntries(formData));
+  if (!validated.success) return { error: validated.error.flatten() };
   
-  if (!validated.success) {
-    return { error: validated.error.flatten().fieldErrors };
-  }
-  
-  try {
-    const product = await prisma.product.create({ data: validated.data });
-    revalidatePath('/products');
-    return { success: true, data: product };
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      if (error.code === 'P2002') {
-        return { error: 'Product already exists' };
-      }
-    }
-    return { error: 'Failed to create product' };
-  }
+  const item = await prisma.item.create({ data: validated.data });
+  revalidatePath('/items');
+  return { success: true, data: item };
 }
 ```
 
-## Form Handling (React Hook Form + Zod)
-
-### Basic Form Pattern
-
+## Type Definition Pattern
 ```typescript
-'use client';
+import { z } from 'zod';
 
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { productSchema, ProductRequest } from '@/types/api.types';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+export const itemSchema = z.object({
+  name: z.string().min(1),
+  price: z.number().positive(),
+});
 
-export function ProductForm() {
-  const form = useForm<ProductRequest>({
-    resolver: zodResolver(productSchema),
-    defaultValues: {
-      name: '',
-      price: 0,
-    },
-  });
+export type ItemRequest = z.infer<typeof itemSchema>;
 
-  async function onSubmit(data: ProductRequest) {
-    // Handle submission
-  }
-
-  return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-        <FormField
-          control={form.control}
-          name="name"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Name</FormLabel>
-              <FormControl>
-                <Input placeholder="Product name" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <Button type="submit" disabled={form.formState.isSubmitting}>
-          {form.formState.isSubmitting ? 'Creating...' : 'Create'}
-        </Button>
-      </form>
-    </Form>
-  );
-}
-```
-
-## State Management (Zustand)
-
-### Creating a Store
-
-```typescript
-// src/store/cart-store.ts
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-
-interface CartItem {
+export interface Item {
   id: string;
   name: string;
   price: number;
-  quantity: number;
+  createdAt: Date;
 }
-
-interface CartStore {
-  items: CartItem[];
-  addItem: (item: Omit<CartItem, 'quantity'>) => void;
-  removeItem: (id: string) => void;
-  updateQuantity: (id: string, quantity: number) => void;
-  clearCart: () => void;
-  total: () => number;
-}
-
-export const useCartStore = create<CartStore>()(
-  persist(
-    (set, get) => ({
-      items: [],
-      
-      addItem: (item) => set((state) => {
-        const existing = state.items.find((i) => i.id === item.id);
-        if (existing) {
-          return {
-            items: state.items.map((i) =>
-              i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i
-            ),
-          };
-        }
-        return { items: [...state.items, { ...item, quantity: 1 }] };
-      }),
-      
-      removeItem: (id) => set((state) => ({
-        items: state.items.filter((i) => i.id !== id),
-      })),
-      
-      updateQuantity: (id, quantity) => set((state) => ({
-        items: state.items.map((i) =>
-          i.id === id ? { ...i, quantity } : i
-        ),
-      })),
-      
-      clearCart: () => set({ items: [] }),
-      
-      total: () => get().items.reduce(
-        (sum, item) => sum + item.price * item.quantity, 0
-      ),
-    }),
-    { name: 'cart-storage' }
-  )
-);
 ```
 
-### Using Store in Components
+## Testing Rules
+- **Jest only** - NO vitest
+- **Named imports** - No default imports
+- **Mock before imports** - `jest.mock()` at top
+- **Full URL in Request** - `new Request('http://localhost/api/...')`
 
+### Test Pattern
 ```typescript
-'use client';
+jest.mock('@/lib/prisma', () => ({
+  prisma: { model: { findMany: jest.fn() } }
+}));
 
-import { useCartStore } from '@/store/cart-store';
+import { GET } from '@/app/api/route';
+import { prisma } from '@/lib/prisma';
 
-export function CartButton() {
-  const { items, total } = useCartStore();
-  
-  return (
-    <button>
-      Cart ({items.length}) - ${total()}
-    </button>
-  );
-}
-
-export function AddToCartButton({ product }: { product: Product }) {
-  const addItem = useCartStore((state) => state.addItem);
-  
-  return (
-    <button onClick={() => addItem(product)}>
-      Add to Cart
-    </button>
-  );
-}
-```
-
-## Environment Variables
-
-### Required Variables
-
-```bash
-# .env (DO NOT commit to git)
-DATABASE_URL="postgresql://user:password@localhost:5432/mydb"
-AUTH_SECRET="your-random-secret-key"
-
-# Optional
-NEXTAUTH_URL="http://localhost:3000"
-```
-
-### Usage in Code
-
-```typescript
-// Server-side only (default)
-const dbUrl = process.env.DATABASE_URL;
-
-// Client-side (must prefix with NEXT_PUBLIC_)
-const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-
-// Type-safe env validation (recommended)
-// src/lib/env.ts
-import { z } from 'zod';
-
-const envSchema = z.object({
-  DATABASE_URL: z.string().url(),
-  AUTH_SECRET: z.string().min(32),
+describe('API', () => {
+  it('returns data', async () => {
+    (prisma.model.findMany as jest.Mock).mockResolvedValue([]);
+    const req = new Request('http://localhost/api/route');
+    const res = await GET(req);
+    expect(res.status).toBe(200);
+  });
 });
-
-export const env = envSchema.parse(process.env);
 ```
 
-## Project Structure
-
+## Directory Structure
 ```
 src/
 ├── app/
-│   ├── (auth)/           # Auth route group
-│   │   ├── login/
-│   │   └── register/
-│   ├── (dashboard)/      # Dashboard route group
-│   │   └── settings/
-│   ├── api/              # API routes
-│   ├── layout.tsx        # Root layout
-│   ├── page.tsx          # Home page
-│   ├── loading.tsx       # Global loading
-│   └── error.tsx         # Global error
-├── actions/              # Server Actions
-│   └── product-actions.ts
+│   ├── api/          # API routes
+│   ├── (auth)/       # Auth routes group
+│   └── page.tsx      # Home page
 ├── components/
-│   ├── ui/               # shadcn/ui components
-│   └── [feature]/        # Feature components
-├── lib/
-│   ├── api-response.ts   # API helpers
-│   ├── prisma.ts         # Prisma client
-│   └── utils.ts          # Utilities
-├── types/
-│   └── api.types.ts      # Types & Zod schemas
-├── auth.ts               # NextAuth config
-└── middleware.ts         # Route protection
+│   └── ui/           # shadcn/ui
+├── actions/          # Server Actions
+├── lib/              # Utilities
+├── types/            # TypeScript types
+└── __tests__/        # Tests
 ```
 
-## Critical Rules
-
-1. **Server Actions for mutations ONLY** - Never fetch data with Server Actions
-2. **Server Components for data fetching** - Use Prisma directly, no API calls
-3. **Always validate inputs** - Use Zod on server side
-4. **Always use revalidatePath/revalidateTag** - After mutations
-5. **Never skip Prisma generation** - Run `bunx prisma generate` after schema changes
-6. **PRESERVE existing code** - Append new types/models, don't overwrite
-7. **Use existing shadcn/ui components** - Before creating custom ones
-8. **Test new features** - Write tests before committing
+## Commands
+```bash
+bun dev              # Development
+bun test             # Run tests
+bunx prisma generate # Generate Prisma client
+bunx prisma db push  # Push schema to DB
+```

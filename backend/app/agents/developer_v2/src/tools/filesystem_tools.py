@@ -1,10 +1,17 @@
-"""File System Tools using LangChain @tool decorator."""
+"""File System Tools using LangChain @tool decorator.
+
+Optimizations:
+- File cache to avoid redundant reads
+- Cache invalidation on write/edit
+"""
 
 import os
 import shutil
 import glob as glob_module
 from typing import Optional
 from langchain_core.tools import tool
+
+from app.agents.developer_v2.src.utils.llm_utils import file_cache
 
 # Global context for workspace-scoped tools
 _fs_context = {
@@ -46,9 +53,16 @@ def read_file_safe(file_path: str) -> str:
     if not _is_safe_path(full_path, root_dir):
         return f"Error: Access denied. Path outside root directory: {file_path}"
     
+    # Check cache first (OPTIMIZATION)
+    cached = file_cache.get(full_path)
+    if cached is not None:
+        return f"Content of {file_path}:\n\n{cached}"
+    
     try:
         with open(full_path, 'r', encoding='utf-8') as f:
             content = f.read()
+        # Cache the content
+        file_cache.set(full_path, content)
         return f"Content of {file_path}:\n\n{content}"
     except FileNotFoundError:
         return f"Error: File not found: {file_path}"
@@ -80,6 +94,8 @@ def write_file_safe(file_path: str, content: str, mode: str = "w") -> str:
             os.makedirs(dir_name, exist_ok=True)
         with open(full_path, mode, encoding='utf-8') as f:
             f.write(content)
+        # Invalidate cache after write (OPTIMIZATION)
+        file_cache.invalidate(full_path)
         action = "Appended to" if mode == "a" else "Written to"
         return f"{action} file: {file_path} ({len(content)} characters)"
     except Exception as e:
@@ -265,6 +281,9 @@ def edit_file(file_path: str, old_str: str, new_str: str, replace_all: bool = Fa
         
         with open(full_path, 'w', encoding='utf-8') as f:
             f.write(new_content)
+        
+        # Invalidate cache after edit (OPTIMIZATION)
+        file_cache.invalidate(full_path)
         
         return result_msg
     except PermissionError:

@@ -195,7 +195,7 @@ def semantic_code_search(query: str, top_k: int = 5) -> str:
         top_k: Number of results to return
     """
     try:
-        from app.agents.developer.project_manager import project_manager
+        from app.agents.developer_v2.project_manager import project_manager
         from app.agents.developer_v2.src.tools.cocoindex_tools import _tool_context
         
         project_id = _tool_context.get("project_id")

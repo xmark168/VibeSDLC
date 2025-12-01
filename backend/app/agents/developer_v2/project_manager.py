@@ -47,13 +47,6 @@ def create_project_flow(project_id: str, project_path: str):
     # Sanitize the project_id to create a valid flow name (alphanumeric and underscores only)
     sanitized_project_id = "".join(c if c.isalnum() else "_" for c in project_id)
 
-    # Create and write the project structure file before defining the flow
-    structure_file_path = os.path.join(project_path, "PROJECT_STRUCTURE.md")
-    if os.path.exists(project_path):
-        structure_content = create_structure_document(project_path)
-        with open(structure_file_path, "w", encoding="utf-8") as f:
-            f.write(structure_content)
-
     @cocoindex.flow_def(name=f"code_embeddings_{sanitized_project_id}")
     def project_flow(
         flow_builder: FlowBuilder, data_scope: cocoindex.DataScope
@@ -70,7 +63,6 @@ def create_project_flow(project_id: str, project_path: str):
                     "*.json",
                     "*.md",
                     "*.prisma",
-                    "PROJECT_STRUCTURE.md",
                 ],
                 excluded_patterns=[
                     "**/.*",
@@ -85,7 +77,9 @@ def create_project_flow(project_id: str, project_path: str):
                     "bun.lock",
                     "pnpm-lock.yaml",
                     "package-lock.json",
-                    "node_modules"
+                    "node_modules",
+                    "AGENTS.md",
+                    "**/AGENTS.md",
                 ],
             )
         )
