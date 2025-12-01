@@ -548,6 +548,34 @@ class StoryService:
 
         # action == "keep" → no changes needed
 
+        # Update original message's structured_data to persist the action
+        try:
+            from app.models import Message
+            from sqlalchemy.orm.attributes import flag_modified
+            
+            # Find the original story_review message for this story
+            statement = select(Message).where(
+                Message.project_id == project_id,
+                Message.message_type == "story_review"
+            ).order_by(Message.created_at.desc())
+            
+            messages = self.session.exec(statement).all()
+            for msg in messages:
+                if msg.structured_data and msg.structured_data.get("story_id") == str(story_id):
+                    # Map action to actionTaken format
+                    action_map = {"apply": "applied", "keep": "kept", "remove": "removed"}
+                    msg.structured_data = {
+                        **msg.structured_data,
+                        "action_taken": action_map.get(action, action)
+                    }
+                    flag_modified(msg, "structured_data")
+                    self.session.add(msg)
+                    self.session.commit()
+                    logger.info(f"Updated message {msg.id} with action_taken: {action}")
+                    break
+        except Exception as e:
+            logger.warning(f"Failed to update message structured_data: {e}")
+
         # Publish event to trigger BA agent response
         try:
             producer = await get_kafka_producer()

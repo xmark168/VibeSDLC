@@ -29,6 +29,7 @@ interface StorySuggestionsCardProps {
   suggestedTitle?: string
   suggestedAcceptanceCriteria?: string[]
   hasSuggestions?: boolean
+  initialActionTaken?: 'applied' | 'kept' | 'removed' | null
   onApplied?: () => void
   onKeep?: () => void
   onRemove?: () => void
@@ -44,6 +45,7 @@ export function StorySuggestionsCard({
   suggestedTitle,
   suggestedAcceptanceCriteria,
   hasSuggestions = false,
+  initialActionTaken = null,
   onApplied,
   onKeep,
   onRemove
@@ -51,7 +53,7 @@ export function StorySuggestionsCard({
   const [isExpanded, setIsExpanded] = useState(false)
   const [isApplying, setIsApplying] = useState(false)
   const [isRemoving, setIsRemoving] = useState(false)
-  const [actionTaken, setActionTaken] = useState<'applied' | 'kept' | 'removed' | null>(null)
+  const [actionTaken, setActionTaken] = useState<'applied' | 'kept' | 'removed' | null>(initialActionTaken)
 
   const getScoreStyle = () => {
     return "from-blue-500/10 to-blue-500/10 border-blue-500/20"

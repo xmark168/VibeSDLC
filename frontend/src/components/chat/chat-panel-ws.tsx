@@ -961,6 +961,7 @@ export function ChatPanelWS({
                       suggestedTitle={msg.structured_data.suggested_title}
                       suggestedAcceptanceCriteria={msg.structured_data.suggested_acceptance_criteria}
                       hasSuggestions={msg.structured_data.has_suggestions}
+                      initialActionTaken={msg.structured_data.action_taken}
                     />
                   )}
                 </div>
