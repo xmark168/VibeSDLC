@@ -152,4 +152,11 @@ class DeveloperState(TypedDict, total=False):
     validation_errors: Optional[List[str]]  # Critical errors blocking implementation
     validation_warnings: Optional[List[str]]  # Non-blocking warnings
     
+    # ==========================================================================
+    # Skill Registry (Skills System)
+    # ==========================================================================
+    tech_stack: str  # Tech stack identifier (e.g., "nextjs", "django", "fastapi")
+    skill_registry: Any  # SkillRegistry instance
+    available_skills: List[str]  # List of skill IDs for prompt injection
+    
 

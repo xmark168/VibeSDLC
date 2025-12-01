@@ -41,6 +41,10 @@ class PlanStep(BaseModel):
     action: Literal["create", "modify", "delete", "test", "config"] = Field(default="modify")
     estimated_minutes: int = Field(default=30, ge=5, le=480)
     dependencies: List[int] = Field(default_factory=list, description="Order numbers of dependent steps")
+    required_skill: Optional[str] = Field(
+        default=None,
+        description="Skill ID to use for this step (e.g., 'nextjs.frontend-component'). If null, auto-detect."
+    )
 
 
 class ImplementationPlan(BaseModel):

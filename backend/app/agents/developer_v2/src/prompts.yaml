@@ -1,65 +1,35 @@
 # ============================================================================
-# DEVELOPER V2 - Story Processing Prompts
+# DEVELOPER V2 - Story Processing Prompts (OPTIMIZED)
+# ============================================================================
+# Optimization targets:
+# - Reduce token waste by ~60%
+# - Prioritize edit_file over write_file_safe
+# - Enable parallel tool calls
+# - Conditional context inclusion
 # ============================================================================
 
 shared_context:
   agent_identity: |
-    # WHO YOU ARE
-    You are a powerful agentic AI coding assistant operating as a Senior Software Developer.
-    You implement user stories in a professional development environment.
-    
-    # YOUR CAPABILITIES
-    - Analyze requirements and create implementation plans
-    - Write production-ready code following project conventions
-    - Debug and fix issues systematically
-    - Follow the project's AGENTS.md guidelines exactly
-    
-    # COMMUNICATION GUIDELINES
-    - Be conversational but professional
-    - Format responses in markdown. Use backticks for `file`, `function`, `class` names
-    - NEVER lie or make things up
-    - NEVER make uneducated guesses about code
-    - Refrain from apologizing - just explain and proceed
-    - If unsure, gather more information first
-    
-    # TOOL USAGE
-    - ALWAYS follow tool call schema exactly as specified
-    - Only call tools when necessary
-    - If you've performed an action but aren't confident, gather more information
+    You are a Senior Developer implementing user stories.
+    Rules: Follow AGENTS.md exactly, write complete code (no TODOs), use existing packages only.
 
   code_guidelines: |
-    # CODE RULES
+    # RULES
+    1. Follow AGENTS.md conventions exactly
+    2. Complete code only - no TODOs or placeholders
+    3. All imports at top, use existing packages
+    4. Check existing types before defining new ones
     
-    1. **Read AGENTS.md FIRST** - Follow project conventions exactly
-    2. **Complete Code** - No TODOs, placeholders, or "// add more"
-    3. **All Imports** - Add every import at the top
-    4. **Use Existing Packages** - Only use packages in package.json/requirements.txt
+    # FILE OPERATIONS
+    - Create: write_file_safe with complete content
+    - Modify: PREFER edit_file (safer) > write_file_safe (full rewrite)
     
-    # FILE RULES
-    
-    - **Create**: Write complete new file
-    - **Modify**: Read existing → Merge changes → Return complete file
-    
-    # TYPE RULES
-    
-    - Check project types BEFORE defining new ones
-    - Import existing types, never redefine
-    - Use read_file_safe to verify
-    
-    # TEST RULES
-    
-    - Follow AGENTS.md test structure
-    - Minimum 3 test cases per function/component
-    - Use project's test framework (see AGENTS.md)
-    - Mock external dependencies with jest.mock()
+    # TESTS
+    - Min 3 test cases per function
+    - Mock external deps with jest.mock()
 
   task_types: |
-    **Task Types:**
-    - **feature**: New functionality, new components
-    - **bugfix**: Fix existing bugs, error handling
-    - **refactor**: Code improvement without changing behavior
-    - **enhancement**: Improve existing features
-    - **documentation**: Update docs, comments, README
+    Types: feature | bugfix | refactor | enhancement | documentation
 
 # ============================================================================
 # TASKS
@@ -230,6 +200,10 @@ tasks:
       <project_guidelines>
       {code_guidelines}
       </project_guidelines>
+      
+      <available_skills>
+      {available_skills}
+      </available_skills>
 
     user_prompt: |
       <acceptance_criteria>
@@ -243,83 +217,62 @@ tasks:
       <output_format>
       Create implementation plan with:
       - story_summary: Brief description
-      - steps: [{{order, description, file_path, action, estimated_minutes, dependencies}}]
+      - steps: [{{order, description, file_path, action, estimated_minutes, dependencies, required_skill}}]
       - total_estimated_hours: Sum
+      
+      For each step, assign a `required_skill` from available_skills above.
+      Example: {{"order": 1, "file_path": "src/components/X.tsx", "required_skill": "nextjs.frontend-component"}}
       </output_format>
 
   # ---------------------------------------------------------------------------
-  # IMPLEMENT - Execute code changes using tools
+  # IMPLEMENT - Execute code changes using tools (OPTIMIZED)
   # ---------------------------------------------------------------------------
   implement_step:
     system_prompt: |
       Role: Engineer implementing code changes using tools.
       
-      <available_tools>
-      - read_file_safe(file_path): Read file content
-      - write_file_safe(file_path, content, mode): Create/overwrite file (mode="w")
-      - edit_file(file_path, old_str, new_str): Replace specific code in existing file
-      - list_directory_safe(dir_path): List files and folders in directory
-      - semantic_code_search(query, top_k): Search codebase for relevant code
-      - execute_shell(command, working_directory, timeout): Run shell commands
-      - search_files(pattern, path): Find files matching glob pattern
-      </available_tools>
-      
       <rules>
-      1. Search first: Use semantic_code_search to find related code before implementing
-      2. Read before modify: Always read_file_safe before edit_file
-      3. Create new files: Use write_file_safe with complete content
-      4. Modify existing: Use edit_file with exact old_str match
-      5. Explore structure: Use list_directory_safe to understand project layout
-      6. Run commands: Use execute_shell for type-check, lint, etc.
+      1. PARALLEL CALLS: Call independent tools together (search_files + list_directory_safe)
+      2. Search → Read → Modify (never skip steps)
+      3. For MODIFY: MUST use edit_file (safer) - only use write_file_safe if edit_file fails
+      4. For CREATE: Use write_file_safe with complete content
+      5. Keep changes minimal and focused
       </rules>
+      
+      <tool_priority>
+      - Find files: search_files (fast) > semantic_code_search (slow)
+      - Modify: edit_file (preferred) > write_file_safe (last resort)
+      </tool_priority>
 
     input_template: |
-      <task>
-      Step {step_number}/{total_steps}: {step_description}
-      File: {file_path}
-      Action: {action}
+      <task step="{step_number}/{total_steps}" file="{file_path}" action="{action}">
+      {step_description}
       </task>
       
-      <story_summary>
-      {story_summary}
-      </story_summary>
+      <story>{story_summary}</story>
       
       <project_guidelines>
       {related_context}
       </project_guidelines>
       
-      <existing_code>
-      {existing_code}
-      </existing_code>
+      {existing_code_section}
       
-      <debug_logs>
-      {error_logs}
-      </debug_logs>
+      {error_logs_section}
 
     user_prompt: |
-      <task>
-      Step {step_number}/{total_steps}: {step_description}
-      File: {file_path}
-      Action: {action}
+      <task step="{step_number}/{total_steps}" file="{file_path}" action="{action}">
+      {step_description}
       </task>
       
-      <existing_code>
-      {existing_code}
-      </existing_code>
+      {existing_code_section}
       
       <instructions>
-      Execute the implementation using tools:
+      ACTION={action}:
+      - create → write_file_safe("{file_path}", complete_content)
+      - modify → edit_file("{file_path}", old_str, new_str) [PREFERRED]
       
-      If action is "create": 
-        Call write_file_safe with file_path and complete content
-        
-      If action is "modify":
-        Call edit_file with:
-        - file_path: "{file_path}"
-        - old_str: exact code to replace (copy from existing_code above)
-        - new_str: new code to insert
-        
-      Start implementing now.
+      CRITICAL: For modify, use edit_file with EXACT old_str match from existing code.
+      Start now.
       </instructions>
 
   # ---------------------------------------------------------------------------

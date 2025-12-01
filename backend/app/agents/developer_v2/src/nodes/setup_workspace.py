@@ -8,6 +8,7 @@ from app.agents.developer_v2.src.tools import (
     get_agents_md,
     get_project_context,
 )
+from app.agents.developer_v2.src.skills import SkillRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,11 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             except Exception as ctx_err:
                 logger.warning(f"[setup_workspace] Failed to load project context: {ctx_err}")
         
+        # Load skill registry based on tech stack
+        tech_stack = state.get("tech_stack", "nextjs")  # Default to nextjs
+        skill_registry = SkillRegistry.load(tech_stack)
+        logger.info(f"[setup_workspace] Loaded SkillRegistry for '{tech_stack}' with {len(skill_registry.skills)} skills")
+        
         return {
             **state,
             "workspace_path": workspace_info["workspace_path"],
@@ -75,6 +81,10 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             "index_ready": index_ready,
             "agents_md": agents_md,
             "project_context": project_context,
+            # Skill registry
+            "tech_stack": tech_stack,
+            "skill_registry": skill_registry,
+            "available_skills": skill_registry.get_skill_ids(),
         }
         
     except Exception as e:

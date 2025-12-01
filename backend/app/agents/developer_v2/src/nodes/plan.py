@@ -17,6 +17,7 @@ from app.agents.developer_v2.src.utils.prompt_utils import (
 )
 from app.agents.developer_v2.src.nodes._llm import code_llm
 from app.agents.developer_v2.src.nodes._helpers import setup_tool_context, build_static_context
+from app.agents.developer_v2.src.skills import SkillRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,16 @@ Based on analysis: {analysis.get("summary", "N/A")}
         project_id = state.get("project_id", "default")
         task_id = state.get("task_id") or state.get("story_id", "")
         
+        # Load skill registry (or get from state if already loaded)
+        tech_stack = state.get("tech_stack", "nextjs")
+        skill_registry = state.get("skill_registry")
+        if not skill_registry:
+            skill_registry = SkillRegistry.load(tech_stack)
+            logger.info(f"[plan] Loaded SkillRegistry for '{tech_stack}' with {len(skill_registry.skills)} skills")
+        
+        # Get available skills for prompt
+        available_skills = skill_registry.get_skill_list() if skill_registry else ""
+        
         setup_tool_context(workspace_path, project_id, task_id)
         
         # Get actual directory structure
@@ -77,7 +88,8 @@ Based on analysis: {analysis.get("summary", "N/A")}
             directory_structure=directory_structure + actual_structure,
             code_guidelines=_get_shared_context("code_guidelines"),
             acceptance_criteria=chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", [])),
-            existing_code="Use search_codebase and read_file tools to explore existing code"
+            existing_code="Use search_codebase and read_file tools to explore existing code",
+            available_skills=available_skills,  # Skills for LLM to assign to steps
         )
 
         tools = [read_file_safe, list_directory_safe, semantic_code_search, search_files]
@@ -128,6 +140,10 @@ Based on analysis: {analysis.get("summary", "N/A")}
             "design_doc": design_doc,
             "message": msg,
             "action": "IMPLEMENT",
+            # Skill registry for implement node
+            "skill_registry": skill_registry,
+            "available_skills": skill_registry.get_skill_ids() if skill_registry else [],
+            "tech_stack": tech_stack,
         }
         
     except Exception as e:

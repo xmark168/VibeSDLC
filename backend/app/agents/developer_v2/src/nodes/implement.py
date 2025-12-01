@@ -17,6 +17,7 @@ from app.agents.developer_v2.src.utils.prompt_utils import (
 )
 from app.agents.developer_v2.src.nodes._llm import code_llm
 from app.agents.developer_v2.src.nodes._helpers import setup_tool_context, build_static_context
+from app.agents.developer_v2.src.skills import SkillRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +140,39 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         
         setup_tool_context(workspace_path, project_id, task_id)
         
-        error_logs_text = f"Previous Errors:{chr(10)}{state.get('error_logs', '')}" if state.get('error_logs') else ""
+        # Build conditional sections (OPTIMIZED - only include when needed)
+        existing_code_section = ""
+        if step.get("action") == "modify" and existing_code:
+            existing_code_section = f"<existing_code>\n{existing_code}\n</existing_code>"
+        
+        error_logs_section = ""
+        if state.get('error_logs'):
+            error_logs_section = f"<previous_errors>\n{state.get('error_logs')}\n</previous_errors>"
+        
+        # Tools for implementation - LLM uses these directly to create/edit files
+        tools = [read_file_safe, write_file_safe, edit_file, list_directory_safe, semantic_code_search, execute_shell, search_files]
+        
+        # Get skill from registry (or load if not available)
+        skill_registry: SkillRegistry = state.get("skill_registry")
+        if not skill_registry:
+            tech_stack = state.get("tech_stack", "nextjs")
+            skill_registry = SkillRegistry.load(tech_stack)
+        
+        # Try to get skill: first from step's required_skill, then auto-detect
+        skill = None
+        required_skill_id = step.get("required_skill")
+        
+        if required_skill_id and skill_registry:
+            skill = skill_registry.get_skill(required_skill_id)
+            if skill:
+                logger.info(f"[implement] Using assigned skill: {skill.id}")
+        
+        if not skill and skill_registry:
+            skill = skill_registry.detect_skill(current_file, step.get("description", ""))
+            if skill:
+                logger.info(f"[implement] Auto-detected skill: {skill.id}")
+        
+        # ALWAYS use generic prompt structure from prompts.yaml
         input_text = _format_input_template(
             "implement_step",
             step_number=current_step + 1,
@@ -148,16 +181,28 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             file_path=current_file,
             action=step.get("action", "modify"),
             story_summary=state.get("analysis_result", {}).get("summary", ""),
-            related_context=full_related_context[:8000],
-            existing_code=existing_code if existing_code else "No existing code (new file)",
-            error_logs=error_logs_text
+            related_context=full_related_context[:6000],  # Full context including AGENTS.md
+            existing_code_section=existing_code_section,
+            error_logs_section=error_logs_section
         )
-
-        # Tools for implementation - LLM uses these directly to create/edit files
-        tools = [read_file_safe, write_file_safe, edit_file, list_directory_safe, semantic_code_search, execute_shell, search_files]
+        
+        # Build system prompt with optional skill injection
+        system_prompt = _build_system_prompt("implement_step")
+        
+        if skill:
+            # Inject skill as additional section (not replace)
+            skill_section = f"""
+<skill name="{skill.id}">
+{skill.system_prompt}
+</skill>
+"""
+            system_prompt += f"\n\n{skill_section}"
+            logger.info(f"[implement] Injected skill: {skill.id} for {current_file}")
+        else:
+            logger.info(f"[implement] No skill found, using generic only for {current_file}")
         
         messages = [
-            SystemMessage(content=_build_system_prompt("implement_step")),
+            SystemMessage(content=system_prompt),
             HumanMessage(content=input_text)
         ]
         
