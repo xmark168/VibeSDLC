@@ -28,7 +28,7 @@ export const storiesApi = {
     title: string
     description?: string
     story_type: StoryType
-    estimated_hours?: number
+    story_point?: number
     priority?: number
     acceptance_criteria?: string
     tags?: string[]
@@ -42,7 +42,7 @@ export const storiesApi = {
         title: data.title,
         description: data.description,
         story_type: data.story_type,
-        estimated_hours: data.estimated_hours,
+        story_point: data.story_point,
         priority: data.priority || 3, // Default to medium priority (3)
         acceptance_criteria: data.acceptance_criteria,
         tags: data.tags || [],

@@ -416,15 +416,15 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         title: storyData.title,
         description: storyData.description,
         story_type: storyData.type,
-        estimated_hours: storyData.story_point,
+        story_point: storyData.story_point,
         priority: storyData.priority === "High" ? 1 : storyData.priority === "Medium" ? 2 : 3,
-        acceptance_criteria: storyData.acceptance_criteria.join('\n'), // Join criteria into a single string
-        tags: [], // Add any tags if needed
-        labels: [], // Add any labels if needed
+        acceptance_criteria: storyData.acceptance_criteria.join('\n'),
+        tags: [],
+        labels: [],
       })
       console.log("Story created successfully:", createdStory)
 
-      // Add the created story to the frontend UI
+      // Add the created story to the frontend UI with all fields
       setColumns((prev) =>
         prev.map((col) => {
           if (col.id === "todo") {
@@ -439,7 +439,11 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
                   columnId: "todo",
                   type: createdStory.type,
                   story_point: createdStory.story_point ?? undefined,
-                  rank: createdStory.priority ?? undefined,
+                  priority: createdStory.priority ?? undefined,
+                  rank: createdStory.rank ?? undefined,
+                  epic_id: createdStory.epic_id ?? undefined,
+                  acceptance_criteria: createdStory.acceptance_criteria ?? undefined,
+                  created_at: createdStory.created_at ?? new Date().toISOString(),
                   taskId: `STORY-${createdStory.id.substring(0, 4).toUpperCase()}`,
                 },
               ],
