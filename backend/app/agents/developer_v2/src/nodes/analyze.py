@@ -5,8 +5,8 @@ from langchain_tavily import TavilySearch
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import StoryAnalysis
-from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, list_directory_safe
-from app.agents.developer_v2.src.tools.shell_tools import semantic_code_search
+from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, list_directory_safe, search_files
+from app.agents.developer_v2.src.tools.shell_tools import execute_shell, semantic_code_search
 from app.agents.developer_v2.src.utils.llm_utils import (
     get_langfuse_config as _cfg,
     execute_llm_with_tools as _llm_with_tools,
@@ -38,7 +38,7 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
             acceptance_criteria=chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", []))
         )
 
-        tools = [read_file_safe, list_directory_safe, semantic_code_search]
+        tools = [read_file_safe, list_directory_safe, semantic_code_search, execute_shell, search_files]
         
         messages = [
             SystemMessage(content=_build_system_prompt("analyze_story")),
@@ -51,7 +51,7 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
             messages=messages,
             state=state,
             name="analyze_explore",
-            max_iterations=2
+            max_iterations=3
         )
         
         messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:5000]}\n\nNow provide your final analysis."))

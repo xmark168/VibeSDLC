@@ -25,6 +25,19 @@ async def router(state: DeveloperState, agent=None) -> DeveloperState:
         story_content = state.get("story_content", "")
         is_story_task = len(story_content) > 50
         
+        # FAST PATH: Skip LLM for obvious story tasks (save tokens)
+        if is_story_task and not has_analysis:
+            logger.info("[router] Fast path: story task without analysis -> ANALYZE")
+            return {
+                **state,
+                "action": "ANALYZE",
+                "task_type": "feature",
+                "complexity": "medium",
+                "message": "Bắt đầu phân tích story...",
+                "reason": "Story task detected, skipping to analyze",
+                "confidence": 0.9,
+            }
+        
         input_text = _format_input_template(
             "routing_decision",
             story_title=state.get("story_title", "Untitled"),

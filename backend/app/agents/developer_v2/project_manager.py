@@ -77,7 +77,9 @@ def create_project_flow(project_id: str, project_path: str):
                     "bun.lock",
                     "pnpm-lock.yaml",
                     "package-lock.json",
-                    "node_modules"
+                    "node_modules",
+                    "AGENTS.md",
+                    "**/AGENTS.md",
                 ],
             )
         )

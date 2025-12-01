@@ -1,13 +1,12 @@
-"""Implement node - Execute implementation step by step."""
+"""Implement node - Execute implementation step by step using tools."""
 import logging
 import os
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.schemas import CodeChange
-from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, write_file_safe, list_directory_safe
-from app.agents.developer_v2.src.tools.shell_tools import semantic_code_search
-from app.agents.developer_v2.src.tools import get_related_code_indexed, get_boilerplate_examples
+from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, write_file_safe, edit_file, list_directory_safe, search_files
+from app.agents.developer_v2.src.tools.shell_tools import execute_shell, semantic_code_search
+from app.agents.developer_v2.src.tools import get_related_code_indexed, get_boilerplate_examples, get_agents_md
 from app.agents.developer_v2.src.utils.llm_utils import (
     get_langfuse_config as _cfg,
     execute_llm_with_tools as _llm_with_tools,
@@ -102,6 +101,13 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         # Build context (pass current_file for smart section extraction)
         static_context = build_static_context(state, current_file)
         
+        # Always include AGENTS.md directly (not from search)
+        agents_md = state.get("agents_md", "")
+        if not agents_md and workspace_path:
+            agents_md = get_agents_md(workspace_path)
+        if agents_md:
+            static_context = f"## AGENTS.MD (MUST FOLLOW!)\n{agents_md}\n\n---\n\n{static_context}" if static_context else f"## AGENTS.MD (MUST FOLLOW!)\n{agents_md}"
+        
         if workspace_path:
             task_type = "page"
             if "component" in current_file.lower():
@@ -147,119 +153,42 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             error_logs=error_logs_text
         )
 
-        tools = [read_file_safe, list_directory_safe, semantic_code_search]
+        # Tools for implementation - LLM uses these directly to create/edit files
+        tools = [read_file_safe, write_file_safe, edit_file, list_directory_safe, semantic_code_search, execute_shell, search_files]
         
         messages = [
             SystemMessage(content=_build_system_prompt("implement_step")),
             HumanMessage(content=input_text)
         ]
         
-        exploration = await _llm_with_tools(
+        # Let LLM use tools directly to implement the code
+        result = await _llm_with_tools(
             llm=code_llm,
             tools=tools,
             messages=messages,
             state=state,
-            name="implement_explore",
-            max_iterations=2
+            name="implement_code",
+            max_iterations=10  # Allow multiple tool calls for complex changes
         )
         
-        messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:5000]}\n\nNow provide the code implementation."))
-        structured_llm = code_llm.with_structured_output(CodeChange)
-        code_change = await structured_llm.ainvoke(messages, config=_cfg(state, "implement"))
+        logger.info(f"[implement] Step {current_step + 1} completed via tool usage")
         
-        if not code_change.file_path:
-            code_change = CodeChange(
-                file_path=current_file,
-                action=code_change.action or step.get("action", "create"),
-                code_snippet=code_change.code_snippet,
-                description=code_change.description or step.get("description", "")
-            )
-        
-        if code_change.file_path:
-            code_change.file_path = code_change.file_path.replace("/", os.sep)
-        
-        logger.info(f"[implement] Got code from structured output")
-        logger.info(f"[implement] Step {current_step + 1}: {code_change.action} {code_change.file_path}")
-        
-        if workspace_path and code_change.code_snippet and code_change.file_path:
-            try:
-                if code_change.action == "create":
-                    # Create new file
-                    result = write_file_safe.invoke({
-                        "file_path": code_change.file_path,
-                        "content": code_change.code_snippet,
-                        "mode": "w"
-                    })
-                elif code_change.action == "modify":
-                    if code_change.line_start:
-                        # Line-based modify
-                        existing = read_file_safe.invoke({"file_path": code_change.file_path})
-                        if existing and not existing.startswith("Error:"):
-                            # Remove metadata prefix
-                            if "\n\n" in existing:
-                                existing = existing.split("\n\n", 1)[1]
-                            
-                            lines = existing.split('\n')
-                            total_lines = len(lines)
-                            
-                            if code_change.line_start > total_lines:
-                                # Append at end
-                                result = write_file_safe.invoke({
-                                    "file_path": code_change.file_path,
-                                    "content": code_change.code_snippet,
-                                    "mode": "a"
-                                })
-                            else:
-                                # Replace lines
-                                start = code_change.line_start - 1
-                                end = code_change.line_end if code_change.line_end else code_change.line_start
-                                new_lines = lines[:start] + code_change.code_snippet.split('\n') + lines[end:]
-                                result = write_file_safe.invoke({
-                                    "file_path": code_change.file_path,
-                                    "content": '\n'.join(new_lines),
-                                    "mode": "w"
-                                })
-                        else:
-                            # File doesn't exist, create it
-                            result = write_file_safe.invoke({
-                                "file_path": code_change.file_path,
-                                "content": code_change.code_snippet,
-                                "mode": "w"
-                            })
-                    else:
-                        # No line numbers, write whole file
-                        result = write_file_safe.invoke({
-                            "file_path": code_change.file_path,
-                            "content": code_change.code_snippet,
-                            "mode": "w"
-                        })
-                else:
-                    # Default: write whole file
-                    result = write_file_safe.invoke({
-                        "file_path": code_change.file_path,
-                        "content": code_change.code_snippet,
-                        "mode": "w"
-                    })
-                logger.info(f"[implement] {result}")
-            except Exception as write_err:
-                logger.warning(f"[implement] Failed to write {code_change.file_path}: {write_err}")
-        
-        code_changes = state.get("code_changes", [])
-        code_changes.append(code_change.model_dump())
-        
+        # Track file changes
+        action = step.get("action", "create")
         files_created = state.get("files_created", [])
         files_modified = state.get("files_modified", [])
         
-        if code_change.action == "create":
-            files_created.append(code_change.file_path)
-        elif code_change.action == "modify":
-            files_modified.append(code_change.file_path)
+        if action == "create" and current_file:
+            if current_file not in files_created:
+                files_created.append(current_file)
+        elif action == "modify" and current_file:
+            if current_file not in files_modified:
+                files_modified.append(current_file)
         
-        msg = f"✅ Step {current_step + 1}: {code_change.description}"
+        msg = f"✅ Step {current_step + 1}: {step.get('description', '')}"
         
         return {
             **state,
-            "code_changes": code_changes,
             "files_created": files_created,
             "files_modified": files_modified,
             "current_step": current_step + 1,

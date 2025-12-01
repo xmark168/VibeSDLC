@@ -98,4 +98,5 @@ class DebugResult(BaseModel):
     fix_description: str = Field(description="Description of the fix")
     file_to_fix: str = Field(default="", description="Which file to write the fix to (source or test)")
     fixed_code: str = Field(default="", description="Complete fixed code for file_to_fix")
+    commands_to_run: List[str] = Field(default_factory=list, description="Shell commands to run to fix the error (e.g., 'bun install', 'bun add next')")
 

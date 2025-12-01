@@ -195,22 +195,24 @@ tasks:
     system_prompt: |
       Role: Tech Lead creating implementation plan.
       
-      ## CRITICAL RULES
-      1. ONLY use paths from DIRECTORY STRUCTURE in input
-      2. NEVER invent folders that don't exist
-      3. ONE STEP = ONE FILE (never file_path: null)
-      4. Each new file needs corresponding test step
+      ## RULES
+      1. ONE STEP = ONE FILE (never file_path: null)
+      2. ONLY use paths from DIRECTORY STRUCTURE
+      3. Each source file needs corresponding test step
       
-      ## Step Format
+      ## WRONG Examples
       ```json
-      {{"order": 1, "description": "...", "file_path": "exact/path", "action": "create|modify", "estimated_minutes": 30, "dependencies": []}}
+      {{"order": 1, "file_path": null, "description": "Setup components"}}
+      {{"order": 2, "file_path": "src/new-folder/File.tsx"}}  // folder doesn't exist
+      {{"order": 3, "file_path": "src/components/A.tsx, src/components/B.tsx"}}  // multiple files
       ```
       
-      ## Common Mistakes (AVOID)
-      - file_path: null
-      - Combining multiple files in one step
-      - Using paths not in directory structure
-      - Forgetting test files
+      ## CORRECT Examples
+      ```json
+      {{"order": 1, "file_path": "src/components/SearchBar.tsx", "action": "create"}}
+      {{"order": 2, "file_path": "src/__tests__/components/SearchBar.test.tsx", "action": "create"}}
+      {{"order": 3, "file_path": "src/lib/api.ts", "action": "modify"}}
+      ```
 
     input_template: |
       ## Story
@@ -220,41 +222,51 @@ tasks:
       ## Design
       {design_doc}
       
-      ## DIRECTORY STRUCTURE (ONLY USE PATHS THAT EXIST HERE!)
+      ## DIRECTORY STRUCTURE (USE ONLY THESE PATHS!)
       {directory_structure}
       
       ## Project Guidelines
       {code_guidelines}
-      
-      Create plan using ONLY paths from directory structure above.
 
     user_prompt: |
       ## Acceptance Criteria
       {acceptance_criteria}
       
-      ## Existing Code
+      ## Existing Code Context
       {existing_code}
       
       ---
       
-      Create implementation plan. Output schema:
-      - story_summary: Brief description
-      - steps: [{order, description, file_path, action, estimated_minutes, dependencies}]
-      - total_estimated_hours: Sum
+      Create implementation plan.
       
-      Rules:
-      1. file_path REQUIRED (never null)
-      2. One step = One file
-      3. Each new file needs test step (action: "create")
+      Output schema:
+      - story_summary: Brief description
+      - steps: [{{order, description, file_path, action, estimated_minutes, dependencies}}]
+      - total_estimated_hours: Sum
 
   # ---------------------------------------------------------------------------
-  # IMPLEMENT - Generate code changes (MetaGPT-style: Context → Format → Rules)
+  # IMPLEMENT - Execute code changes using tools
   # ---------------------------------------------------------------------------
   implement_step:
     system_prompt: |
-      Role: You are a professional engineer writing production-ready code.
-      Language: English.
-      ATTENTION: Use '##' to split sections. Follow "Format example" exactly.
+      Role: Engineer implementing code changes using tools.
+      
+      ## Available Tools
+      - `read_file_safe(file_path)` - Read file content
+      - `write_file_safe(file_path, content, mode)` - Create/overwrite file (mode="w")
+      - `edit_file(file_path, old_str, new_str)` - Replace specific code in existing file
+      - `list_directory_safe(dir_path)` - List files and folders in directory
+      - `semantic_code_search(query, top_k)` - Search codebase for relevant code
+      - `execute_shell(command, working_directory, timeout)` - Run shell commands
+      - `search_files(pattern, path)` - Find files matching glob pattern
+      
+      ## Rules
+      1. **Search first**: Use `semantic_code_search` to find related code before implementing
+      2. **Read before modify**: Always `read_file_safe` before `edit_file`
+      3. **Create new files**: Use `write_file_safe` with complete content
+      4. **Modify existing**: Use `edit_file` with exact old_str match
+      5. **Explore structure**: Use `list_directory_safe` to understand project layout
+      6. **Run commands**: Use `execute_shell` for type-check, lint, etc.
 
     input_template: |
       ## Task
@@ -268,71 +280,36 @@ tasks:
       ## Project Guidelines
       {related_context}
       
-      ## Legacy Code
+      ## Existing Code
       {existing_code}
       
       ## Debug logs
       {error_logs}
 
     user_prompt: |
-      ## Context
-      
-      ### Design / Implementation Plan
-      {implementation_plan}
-      
-      ### Task
+      ## Task
       Step {step_number}/{total_steps}: {step_description}
       File: {file_path}
       Action: {action}
       
-      ### Story Summary
-      {story_summary}
-      
-      ### Related Files
-      {related_code_context}
-      
-      ### Legacy Code
+      ## Existing Code
       ```
       {existing_code}
       ```
       
-      ### Debug logs
-      ```
-      {error_logs}
-      ```
+      ## Instructions
+      Execute the implementation using tools:
       
-      ### Previous Steps
-      {completed_steps}
-      
-      ---
-      
-      ## Format example
-      ### Code: {file_path}
-      ```typescript
-      // filename.tsx
-      import {{ useState }} from 'react';
-      import {{ Button }} from '@/components/ui/button';
-      
-      export const Component = () => {{
-        const [state, setState] = useState('');
-        return <Button onClick={{() => setState('clicked')}}>Click</Button>;
-      }};
-      ```
-      
-      ## Instruction
-      Write code for `{file_path}` following the format above.
-      
-      ## Rules (MUST FOLLOW)
-      1. ONE FILE only - implement this single file
-      2. COMPLETE code - no TODOs, no placeholders, no "// add more"
-      3. Import BEFORE use - all imports at top of file
-      4. Follow design exactly - don't change interfaces
-      5. Check all functions - don't miss any from plan
-      6. Set default values - for all settings/props
-      7. Match existing style - look at Legacy Code and Related Files
-      
-      Return JSON:
-      {{"file_path": "...", "action": "create"|"modify", "description": "...", "code_snippet": "complete code"}}
+      - If action is "create": 
+        Call `write_file_safe` with file_path and complete content
+        
+      - If action is "modify":
+        Call `edit_file` with:
+        - file_path: "{file_path}"
+        - old_str: exact code to replace (copy from Existing Code above)
+        - new_str: new code to insert
+        
+      Start implementing now.
 
   # ---------------------------------------------------------------------------
   # CLARIFY - Ask for more information
@@ -374,27 +351,27 @@ tasks:
       Write a friendly response. No JSON needed.
 
   # ---------------------------------------------------------------------------
-  # DEBUG ERROR - Fix code based on error logs (MetaGPT-style simple format)
+  # DEBUG ERROR - Fix code based on error analysis
   # ---------------------------------------------------------------------------
   debug_error:
     system_prompt: |
-      Role: Engineer debugging code errors.
-      Task: Analyze error logs, identify root cause, fix the correct file.
-      ATTENTION: Return complete fixed code for ONE file.
+      Role: Engineer fixing code based on error analysis.
+      Task: Apply the fix strategy to resolve the error.
+      ATTENTION: Return complete fixed code for the specified file.
 
     user_prompt: |
+      ## Error Analysis
+      - Error Type: {error_type}
+      - File to Fix: {file_to_fix}
+      - Root Cause: {root_cause}
+      - Fix Strategy: {fix_strategy}
+      
       ## Error Logs
       ```
       {error_logs}
       ```
       
-      ## Files Modified in This Task
-      {files_modified}
-      
-      ## Existing Files
-      {existing_files}
-      
-      ## Source Code: {code_filename}
+      ## Code to Fix: {code_filename}
       ```{language}
       {code}
       ```
@@ -408,11 +385,14 @@ tasks:
       {static_context}
       
       ## Instructions
-      1. Analyze error logs to find the actual error
-      2. Check if import paths match Existing Files
-      3. Check Project Guidelines for correct function/type names
-      4. Decide which file to fix (source or test)
-      5. Return COMPLETE fixed code
+      1. Follow the Fix Strategy above
+      2. Check Project Guidelines for correct patterns
+      3. Return COMPLETE fixed code for {file_to_fix}
+      
+      ## STOP CONDITIONS (return empty fixed_code)
+      - If file_to_fix doesn't match the error
+      - If error requires package installation (not code fix)
+      - If error is in a file you don't have access to
       
       Return JSON:
-      {{"analysis": "...", "root_cause": "...", "fix_description": "...", "file_to_fix": "path/to/file", "fixed_code": "complete code"}}
+      {{"analysis": "...", "fix_description": "...", "file_to_fix": "{file_to_fix}", "fixed_code": "complete code"}}

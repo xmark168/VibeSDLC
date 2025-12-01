@@ -49,8 +49,11 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         if workspace_path:
             index_ready = index_workspace(project_id, workspace_path, task_id)
             if not index_ready:
-                raise RuntimeError(f"CocoIndex indexing failed for workspace: {workspace_path}")
-            logger.info(f"[setup_workspace] Indexed workspace with CocoIndex")
+                # Soft fail - continue without semantic search instead of crashing
+                logger.warning(f"[setup_workspace] CocoIndex indexing failed, continuing without semantic search")
+                index_ready = False
+            else:
+                logger.info(f"[setup_workspace] Indexed workspace with CocoIndex")
         
         project_context = ""
         agents_md = ""

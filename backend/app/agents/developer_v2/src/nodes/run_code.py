@@ -52,10 +52,28 @@ async def _run_code_multi_service(state: DeveloperState, workspace_path: str, se
             all_stdout += f"\n\n{'='*40}\n SERVICE: {svc_name}\n{'='*40}\n"
             
             commands = []
-            if install_cmd:
-                commands.append(install_cmd)
             for db_cmd in db_cmds:
                 commands.append(db_cmd)
+            
+            # Install dependencies first (required before build)
+            if install_cmd:
+                logger.info(f"[run_code] Installing deps for {svc_name}: {install_cmd}")
+                try:
+                    install_result = execute_shell.invoke({
+                        "command": install_cmd,
+                        "working_directory": workspace_path,
+                        "timeout": 300
+                    })
+                    if isinstance(install_result, str):
+                        install_result = json.loads(install_result)
+                    all_stdout += f"\n$ {install_cmd}\n{install_result.get('stdout', '')}"
+                    if install_result.get("exit_code", 0) != 0:
+                        logger.warning(f"[run_code] Install warning for {svc_name}: {install_result.get('stderr', '')}")
+                    else:
+                        logger.info(f"[run_code] Install completed for {svc_name}")
+                except Exception as e:
+                    logger.warning(f"[run_code] Install error for {svc_name}: {e}")
+            
             commands.append(test_cmd)
             
             svc_passed = True

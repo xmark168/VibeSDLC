@@ -1,10 +1,15 @@
 """Design node - Create technical design and save to workspace."""
 import logging
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.tools.filesystem_tools import write_file_safe
-from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg
+from app.agents.developer_v2.src.schemas import SystemDesign
+from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, list_directory_safe, write_file_safe
+from app.agents.developer_v2.src.tools.shell_tools import semantic_code_search
+from app.agents.developer_v2.src.utils.llm_utils import (
+    get_langfuse_config as _cfg,
+    execute_llm_with_tools as _llm_with_tools,
+)
 from app.agents.developer_v2.src.nodes._llm import code_llm
 from app.agents.developer_v2.src.nodes._helpers import setup_tool_context
 
@@ -41,20 +46,50 @@ async def design(state: DeveloperState, agent=None) -> DeveloperState:
 - Affected Files: {', '.join(analysis.get('affected_files', [])) or 'TBD'}
 - Suggested Approach: {analysis.get('suggested_approach', '')}
 
-Create a concise technical design covering:
-1. **Architecture Overview** - High-level approach
-2. **Components** - Files/modules to create or modify
-3. **Data Flow** - How data moves through the system
-4. **API Design** - Endpoints if applicable
-5. **Dependencies** - External packages or internal modules needed
+First, explore the codebase to understand existing patterns using the tools.
+Then create a concise technical design with:
+1. data_structures: Class/interface definitions in mermaid classDiagram format
+2. api_interfaces: API endpoints and methods
+3. call_flow: Sequence diagram in mermaid sequenceDiagram format
+4. design_notes: Important design decisions
+5. file_structure: List of files to create or modify"""
 
-Output as Markdown."""
-
-        response = await code_llm.ainvoke(
-            [HumanMessage(content=prompt)],
-            config=_cfg(state, "design")
+        # Exploration phase - gather context from codebase
+        tools = [read_file_safe, list_directory_safe, semantic_code_search]
+        
+        messages = [
+            SystemMessage(content="You are a software architect. Use the tools to explore the codebase and understand existing patterns before creating the design."),
+            HumanMessage(content=prompt)
+        ]
+        
+        exploration = await _llm_with_tools(
+            llm=code_llm,
+            tools=tools,
+            messages=messages,
+            state=state,
+            name="design_explore",
+            max_iterations=2
         )
-        design_doc = response.content
+        
+        # Structured output phase
+        messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:3000]}\n\nNow create the technical design."))
+        structured_llm = code_llm.with_structured_output(SystemDesign)
+        design_result = await structured_llm.ainvoke(messages, config=_cfg(state, "design"))
+        
+        design_doc = f"""## Data Structures
+{design_result.data_structures or 'N/A'}
+
+## API Interfaces
+{design_result.api_interfaces or 'N/A'}
+
+## Call Flow
+{design_result.call_flow or 'N/A'}
+
+## Design Notes
+{design_result.design_notes or 'N/A'}
+
+## Files
+{chr(10).join(f'- {f}' for f in design_result.file_structure) if design_result.file_structure else 'TBD'}"""
         
         logger.info(f"[design] Generated design: {len(design_doc)} chars")
         

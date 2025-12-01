@@ -4,7 +4,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import ImplementationPlan
-from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, list_directory_safe
+from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, list_directory_safe, search_files
 from app.agents.developer_v2.src.tools.shell_tools import semantic_code_search
 from app.agents.developer_v2.src.utils.llm_utils import (
     get_langfuse_config as _cfg,
@@ -80,7 +80,7 @@ Based on analysis: {analysis.get("summary", "N/A")}
             existing_code="Use search_codebase and read_file tools to explore existing code"
         )
 
-        tools = [read_file_safe, list_directory_safe, semantic_code_search]
+        tools = [read_file_safe, list_directory_safe, semantic_code_search, search_files]
         
         messages = [
             SystemMessage(content=_build_system_prompt("create_plan")),
@@ -93,7 +93,7 @@ Based on analysis: {analysis.get("summary", "N/A")}
             messages=messages,
             state=state,
             name="plan_explore",
-            max_iterations=2
+            max_iterations=3
         )
         
         messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:3000]}\n\nNow create the implementation plan."))

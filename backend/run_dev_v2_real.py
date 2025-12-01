@@ -80,6 +80,14 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from app.agents.developer_v2.src.graph import DeveloperGraph
 from app.agents.developer_v2.src.state import DeveloperState
+from app.agents.developer_v2.src.tools.git_tools import set_git_context, git_create_branch, _git_commit
+
+try:
+    from git import Repo
+    GIT_AVAILABLE = True
+except ImportError:
+    GIT_AVAILABLE = False
+    Repo = None
 
 
 # =============================================================================
@@ -231,29 +239,34 @@ class SimpleDeveloperRunner:
         workspace_ready = False
         
         try:
-            from app.agents.developer.tools.git_python_tool import GitPythonTool
+            if not GIT_AVAILABLE:
+                logger.warning(f"[{self.name}] GitPython not installed")
+                return {
+                    "workspace_path": str(self.workspace_path),
+                    "branch_name": branch_name,
+                    "main_workspace": str(self.workspace_path),
+                    "workspace_ready": False,
+                }
             
-            git_tool = GitPythonTool(root_dir=str(self.workspace_path))
+            # Set git context for git_tools
+            set_git_context(str(self.workspace_path))
             
             # 1. Initialize git if needed
             git_dir = self.workspace_path / ".git"
             if not git_dir.exists():
-                result = git_tool._run("init")
-                logger.info(f"[{self.name}] Git init: {result}")
+                repo = Repo.init(str(self.workspace_path))
+                logger.info(f"[{self.name}] Git init: {self.workspace_path}")
+            else:
+                repo = Repo(str(self.workspace_path))
             
             # 2. Initial commit if there are files (from boilerplate)
-            status = git_tool._run("status")
-            if "nothing to commit" not in status.lower() and "untracked files" in status.lower():
-                # Stage all files
-                commit_result = git_tool._run("commit", message="Initial boilerplate", files=["."])
-                logger.info(f"[{self.name}] Initial commit: {commit_result}")
+            if repo.untracked_files or repo.is_dirty():
+                result = _git_commit("Initial boilerplate", ".")
+                logger.info(f"[{self.name}] Initial commit: {result}")
             
             # 3. Create and checkout feature branch
-            create_result = git_tool._run("create_branch", branch_name=branch_name)
-            logger.info(f"[{self.name}] Create branch '{branch_name}': {create_result}")
-            
-            checkout_result = git_tool._run("checkout_branch", branch_name=branch_name)
-            logger.info(f"[{self.name}] Checkout branch '{branch_name}': {checkout_result}")
+            result = git_create_branch.invoke({"branch_name": branch_name})
+            logger.info(f"[{self.name}] Branch '{branch_name}': {result}")
             
             workspace_ready = True
             logger.info(f"[{self.name}] Workspace setup complete: branch={branch_name}")
@@ -465,7 +478,6 @@ class SimpleDeveloperRunner:
             "complexity": None,
             "analysis_result": None,
             "implementation_plan": [],
-            "code_changes": [],
             "files_created": [],
             "files_modified": [],
             "affected_files": [],
@@ -492,6 +504,7 @@ class SimpleDeveloperRunner:
             "max_debug": 5,  # Allow 5 debug attempts (MetaGPT pattern)
             "debug_history": [],
             "last_debug_file": None,
+            "error_analysis": None,  # From analyze_error node
             
             # React mode (MetaGPT Engineer2 pattern)
             "react_mode": True,
@@ -811,10 +824,15 @@ async def handle_command(cmd: str, branch_name: str, workspace_path: Path) -> bo
     elif cmd == "test":
         try:
             print("\n[*] Running tests in container...")
-            # Detect test command
-            from app.agents.developer_v2.src.nodes import _detect_project_type
-            project_info = _detect_project_type(str(workspace_path))
-            test_cmd = project_info.get("test_cmd", "npm test")
+            # Detect test command based on files
+            if (workspace_path / "bun.lock").exists():
+                test_cmd = "bun run test"
+            elif (workspace_path / "package.json").exists():
+                test_cmd = "npm test"
+            elif (workspace_path / "pytest.ini").exists() or (workspace_path / "pyproject.toml").exists():
+                test_cmd = "pytest -v"
+            else:
+                test_cmd = "npm test"
             
             print(f"[*] Executing: {test_cmd}")
             result = dev_container_manager.exec(branch_name, test_cmd)

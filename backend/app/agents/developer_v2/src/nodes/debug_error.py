@@ -6,7 +6,7 @@ from langchain_tavily import TavilySearch
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import DebugResult
-from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, list_directory_safe, write_file_safe
+from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, list_directory_safe, write_file_safe, edit_file
 from app.agents.developer_v2.src.tools.shell_tools import execute_shell, semantic_code_search
 from app.agents.developer_v2.src.tools import find_test_file, get_markdown_code_block_type
 from app.agents.developer_v2.src.utils.llm_utils import (
@@ -238,12 +238,20 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
         tech_stack = project_config.get("tech_stack", {})
         services = tech_stack.get("service", []) if isinstance(tech_stack, dict) else []
         
-        tech_stack_info = ""
+        # Build tech_stack context for LLM to know available commands
+        tech_stack_context = ""
         if services:
-            for svc in services:
-                runtime = svc.get("runtime", "node")
-                install_cmd = svc.get("install_cmd", "npm install")
-                tech_stack_info += f"- Runtime: {runtime}, Install command pattern: {install_cmd}\n"
+            svc = services[0]
+            tech_stack_context = f"""
+## TECH STACK (use these commands for CONFIG_ERROR!)
+- Runtime: {svc.get('runtime', 'bun')}
+- Install all deps: {svc.get('install_cmd', 'bun install')}
+- Build: {svc.get('build_cmd', 'bun run build')}
+- Test: {svc.get('test_cmd', 'bun test')}
+- Lint fix: {svc.get('lint_fix_cmd', 'bunx eslint --fix .')}
+
+IMPORTANT: For CONFIG_ERROR like "command not found: next", use commands_to_run field with the install command (e.g., ["bun install"]).
+"""
         
         # Get AGENTS.md context
         static_context = build_static_context(state, file_to_fix)
@@ -258,32 +266,39 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
             pass
         
         # Get list of modified files
-        files_modified_list = ", ".join(state.get("files_modified", []) or [])
-        
-        # Build fix guidance from analysis
-        fix_guidance = ""
-        if fix_strategy:
-            fix_guidance = f"\n## Fix Strategy (from analysis)\n{fix_strategy}\n"
+        # Get error analysis fields for prompt
+        error_type = error_analysis.get("error_type", "UNKNOWN") if error_analysis else "UNKNOWN"
+        root_cause = error_analysis.get("root_cause", "Not analyzed") if error_analysis else "Not analyzed"
         
         sys_prompt = _build_system_prompt("debug_error", agent)
         user_prompt = _get_prompt("debug_error", "user_prompt").format(
+            error_type=error_type,
+            file_to_fix=file_to_fix,
+            root_cause=root_cause,
+            fix_strategy=fix_strategy or "Analyze error and fix",
             code_filename=file_to_fix,
             language=language,
             code=code_content or "No code available",
             test_filename=test_filename or "No test file",
             test_code=test_content or "No test code available",
             error_logs=state.get("run_stderr", "")[:8000],
-            files_modified=files_modified_list or "None",
-            existing_files=existing_files or "N/A",
             static_context=static_context[:3000] if static_context else "No guidelines available",
         )
         
-        # Add fix guidance if available
-        if fix_guidance:
-            user_prompt = fix_guidance + user_prompt
+        # Add tech_stack context
+        if tech_stack_context:
+            user_prompt += tech_stack_context
+        
+        # Add debug history to prevent repeating failed fixes
+        debug_history = state.get("debug_history", [])
+        if debug_history:
+            previous_attempts = "\n\n## PREVIOUS FIX ATTEMPTS (DO NOT REPEAT THESE)\n"
+            for attempt in debug_history[-3:]:
+                previous_attempts += f"- Attempt #{attempt['iteration']}: {attempt['fix_description']} -> FAILED\n"
+            user_prompt += previous_attempts
         
         tavily_tool = TavilySearch(max_results=3)
-        tools = [read_file_safe, list_directory_safe, semantic_code_search, execute_shell, tavily_tool]
+        tools = [read_file_safe, list_directory_safe, semantic_code_search, execute_shell, tavily_tool, edit_file, write_file_safe]
         
         messages = [
             SystemMessage(content=sys_prompt),
@@ -296,16 +311,31 @@ async def debug_error(state: DeveloperState, agent=None) -> DeveloperState:
             messages=messages,
             state=state,
             name="debug_explore",
-            max_iterations=2
+            max_iterations=4  # Allow more tool usage for complex debugging
         )
         
         messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:5000]}\n\nNow provide your debug analysis and fixed code."))
         structured_llm = code_llm.with_structured_output(DebugResult)
         debug_result = await structured_llm.ainvoke(messages, config=_cfg(state, "debug_error"))
         
+        # Execute commands if any (for CONFIG_ERROR like missing dependencies)
+        if debug_result.commands_to_run and workspace_path:
+            for cmd in debug_result.commands_to_run:
+                logger.info(f"[debug_error] Executing fix command: {cmd}")
+                try:
+                    result = execute_shell.invoke({
+                        "command": cmd,
+                        "working_directory": workspace_path,
+                        "timeout": 300
+                    })
+                    logger.info(f"[debug_error] Command result: {result}")
+                except Exception as e:
+                    logger.warning(f"[debug_error] Command failed: {e}")
+        
         # Use LLM's suggested file if available, otherwise use detected file
         actual_file_to_fix = debug_result.file_to_fix or file_to_fix
         
+        # Write fixed code if any
         if debug_result.fixed_code and workspace_path:
             try:
                 result = write_file_safe.invoke({

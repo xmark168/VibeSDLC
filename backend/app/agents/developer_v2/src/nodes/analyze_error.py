@@ -5,9 +5,14 @@ from pydantic import BaseModel, Field
 from typing import Literal
 
 from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.tools.filesystem_tools import list_directory_safe
-from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg
-from app.agents.developer_v2.src.nodes._llm import fast_llm
+from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, list_directory_safe
+from app.agents.developer_v2.src.tools.shell_tools import semantic_code_search
+from app.agents.developer_v2.src.utils.llm_utils import (
+    get_langfuse_config as _cfg,
+    execute_llm_with_tools as _llm_with_tools,
+)
+from app.agents.developer_v2.src.nodes._llm import code_llm
+from app.agents.developer_v2.src.nodes._helpers import setup_tool_context
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +36,15 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
         error_logs = state.get("run_stderr", "")
         files_modified = state.get("files_modified", [])
         debug_count = state.get("debug_count", 0)
+        workspace_path = state.get("workspace_path", "")
+        project_id = state.get("project_id", "default")
+        task_id = state.get("task_id") or state.get("story_id", "")
         
         if not error_logs:
             logger.info("[analyze_error] No error logs, skipping")
             return {**state, "action": "RESPOND"}
+        
+        setup_tool_context(workspace_path, project_id, task_id)
         
         # Get existing files for context
         existing_files = ""
@@ -61,7 +71,8 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
 ## Debug Attempt
 This is attempt #{debug_count + 1}
 
-Determine:
+Use the tools to explore the codebase and understand the error context.
+Then determine:
 1. error_type: TEST_ERROR (test assertion), SOURCE_ERROR (source code bug), IMPORT_ERROR (wrong import/path), CONFIG_ERROR (config issue), or UNFIXABLE
 2. file_to_fix: exact path to the file that needs fixing
 3. root_cause: brief description (1-2 sentences)
@@ -69,8 +80,22 @@ Determine:
 5. should_continue: true if fixable, false if should give up (e.g., requires manual intervention)
 """
         
-        structured_llm = fast_llm.with_structured_output(ErrorAnalysis)
-        analysis = await structured_llm.ainvoke([HumanMessage(content=prompt)], config=_cfg(state, "analyze_error"))
+        # Tool exploration for better error analysis
+        tools = [read_file_safe, list_directory_safe, semantic_code_search]
+        messages = [HumanMessage(content=prompt)]
+        
+        exploration = await _llm_with_tools(
+            llm=code_llm,
+            tools=tools,
+            messages=messages,
+            state=state,
+            name="analyze_error_explore",
+            max_iterations=2
+        )
+        
+        messages.append(HumanMessage(content=f"Context gathered:\n{exploration[:3000]}\n\nNow provide your error analysis."))
+        structured_llm = code_llm.with_structured_output(ErrorAnalysis)
+        analysis = await structured_llm.ainvoke(messages, config=_cfg(state, "analyze_error"))
         
         logger.info(f"[analyze_error] Type: {analysis.error_type}, File: {analysis.file_to_fix}")
         logger.info(f"[analyze_error] Root cause: {analysis.root_cause}")
