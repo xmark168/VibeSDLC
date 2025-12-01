@@ -154,39 +154,6 @@ def execute_shell(command: str, working_directory: str = ".", timeout: int = 60)
 
 
 @tool
-def web_search_ddg(query: str, max_results: int = 5) -> str:
-    """Search the web using DuckDuckGo.
-
-    Args:
-        query: Search query
-        max_results: Maximum number of results to return
-    """
-    try:
-        from duckduckgo_search import DDGS
-        
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=max_results))
-        
-        if not results:
-            return f"No results found for query: {query}"
-        
-        formatted_results = []
-        for i, result in enumerate(results, 1):
-            formatted_results.append(
-                f"{i}. {result.get('title', 'No title')}\n"
-                f"   URL: {result.get('href', 'No URL')}\n"
-                f"   Snippet: {result.get('body', 'No description')}\n"
-            )
-        
-        return "\n".join(formatted_results)
-    
-    except ImportError:
-        return "Error: duckduckgo-search not installed. Run: pip install duckduckgo-search"
-    except Exception as e:
-        return f"Error performing web search: {str(e)}"
-
-
-@tool
 def semantic_code_search(query: str, top_k: int = 5) -> str:
     """Search codebase using semantic search via CocoIndex.
 

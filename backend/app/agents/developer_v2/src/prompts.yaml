@@ -41,50 +41,44 @@ tasks:
       </project>
 
   # ---------------------------------------------------------------------------
-  # PLAN - Create implementation plan
+  # PLAN - Break story into tasks (abstract, no implementation details)
   # ---------------------------------------------------------------------------
   create_plan:
     system_prompt: |
-      Tech Lead creating implementation plans.
+      Tech Lead breaking stories into tasks.
       
       Rules:
       1. ONE STEP = ONE FILE (file_path required)
-      2. Use paths from directory structure only
-      3. Assign skill IDs to steps when applicable
-      
-      Wrong: {{"file_path": null}} or {{"file_path": "a.tsx, b.tsx"}}
-      Right: {{"file_path": "src/components/X.tsx", "action": "create", "required_skill": "nextjs.frontend-component"}}
+      2. Short descriptions (WHAT, not HOW)
+      3. Use paths from directory structure
 
     input_template: |
       <story>
       {story_title}: {analysis_summary}
-      Type: {task_type} | Complexity: {complexity}
       </story>
       
-      <directory_structure>
+      <directory>
       {directory_structure}
-      </directory_structure>
-      
-      <skills>
-      {available_skills}
-      </skills>
+      </directory>
       
       <acceptance_criteria>
       {acceptance_criteria}
       </acceptance_criteria>
 
   # ---------------------------------------------------------------------------
-  # IMPLEMENT - Execute code changes using tools
+  # IMPLEMENT - Execute code changes using tools (Agentic Skills)
   # ---------------------------------------------------------------------------
   implement_step:
     system_prompt: |
       Engineer implementing code with tools.
       
-      Rules:
-      1. For MODIFY: use edit_file (old_str must be EXACT match)
-      2. For CREATE: use write_file_safe with complete content
-      3. Search → Read → Modify (never skip)
-      4. Minimal changes, focused on task
+      ## Workflow
+      1. Call activate_skill(skill_id) FIRST to get patterns/conventions
+      2. Search → Read → Understand existing code
+      3. For MODIFY: use edit_file (old_str must be EXACT match)
+      4. For CREATE: use write_file_safe with complete content
+      
+      {skill_catalog}
 
     input_template: |
       <task step="{step_number}/{total_steps}">
