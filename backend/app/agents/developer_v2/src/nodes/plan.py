@@ -40,7 +40,8 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
             skill_registry = SkillRegistry.load(tech_stack)
             logger.info(f"[plan] Loaded SkillRegistry: {len(skill_registry.skills)} skills")
         
-        available_skills = skill_registry.get_skill_list() if skill_registry else ""
+        # Get skill catalog for LLM to choose from (Phase 1: Discovery)
+        skill_catalog = skill_registry.get_skill_catalog() if skill_registry else ""
         
         # Get directory structure
         static_context = build_static_context(state)
@@ -62,7 +63,7 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
             complexity=complexity,
             directory_structure=dir_structure,
             acceptance_criteria=chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", [])),
-            available_skills=available_skills,
+            available_skills=skill_catalog,
         )
 
         tools = [read_file_safe, list_directory_safe, semantic_code_search, search_files]

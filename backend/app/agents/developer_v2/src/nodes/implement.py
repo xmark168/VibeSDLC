@@ -162,21 +162,22 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             error_logs_section=error_logs_section
         )
         
-        # Build system prompt with optional skill injection
+        # Build messages with separate skill injection (Phase 2: Context Injection)
         system_prompt = _build_system_prompt("implement_step")
+        messages = [SystemMessage(content=system_prompt)]
         
+        # Inject skill as separate hidden message (Claude Agent Skills pattern)
         if skill:
-            # Inject skill using to_prompt_section() for proper formatting
-            skill_content = skill.to_prompt_section(include_content=True)
-            system_prompt += f"\n\n{skill_content}"
-            logger.info(f"[implement] Injected skill: {skill.id} for {current_file}")
+            skill_content = skill.load_content()
+            skill_injection = f"""[SKILL ACTIVATED: {skill.id}]
+
+{skill_content}"""
+            messages.append(SystemMessage(content=skill_injection))
+            logger.info(f"[implement] Skill injected: {skill.id} for {current_file}")
         else:
-            logger.info(f"[implement] No skill found, using generic only for {current_file}")
+            logger.info(f"[implement] No skill, using generic for {current_file}")
         
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=input_text)
-        ]
+        messages.append(HumanMessage(content=input_text))
         
         # Let LLM use tools directly to implement the code
         result = await _llm_with_tools(
