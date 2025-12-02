@@ -57,7 +57,8 @@ class StoryPublic(StoryBase):
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime] = None
-    # Epic title for display
+    # Epic info for display
+    epic_code: Optional[str] = None
     epic_title: Optional[str] = None
 
 

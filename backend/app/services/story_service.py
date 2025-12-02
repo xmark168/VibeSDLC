@@ -701,8 +701,9 @@ class StoryService:
             column = story.status.value
             if column in board:
                 story_data = StoryPublic.model_validate(story)
-                # Add epic title if epic exists
+                # Add epic info if epic exists
                 if story.epic:
+                    story_data.epic_code = story.epic.epic_code
                     story_data.epic_title = story.epic.title
                 board[column].append(story_data)
 

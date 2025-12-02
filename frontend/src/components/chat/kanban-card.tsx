@@ -34,6 +34,7 @@ export type KanbanCardData = {
   assignee_id?: string
   reviewer_id?: string
   epic_id?: string
+  epic_code?: string
   epic_title?: string
   acceptance_criteria?: string[]
   requirements?: string[]

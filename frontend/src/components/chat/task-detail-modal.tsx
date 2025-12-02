@@ -367,9 +367,14 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
           {(card.epic_id || card.epic_title) && (
             <div>
               <h4 className="text-sm font-semibold text-foreground mb-2">Epic</h4>
-              <span className="text-sm text-muted-foreground">
-                {card.epic_title || 'Untitled Epic'}
-              </span>
+              <div className="text-sm text-muted-foreground">
+                {card.epic_code && (
+                  <Badge variant="outline" className="mr-2">
+                    {card.epic_code}
+                  </Badge>
+                )}
+                <span>{card.epic_title || 'None'}</span>
+              </div>
             </div>
           )}
 
