@@ -42,6 +42,7 @@ class StoryService:
             project_id=story_data["project_id"],
             title=story_data["title"],
             description=story_data.get("description"),
+            story_code=story_data.get("story_code"),  # e.g., "EPIC-001-US-001"
             type=story_data.get("story_type", StoryType.USER_STORY),
             status=StoryStatus.TODO,  # Default to TODO when creating
             priority=story_data.get("priority"),  # 1-3 (1=High, 2=Medium, 3=Low)

@@ -20,6 +20,7 @@ export type KanbanCardData = {
   agentName?: string
   agentAvatar?: string
   taskId?: string
+  story_code?: string  // e.g., "EPIC-001-US-001"
   result?: string
   subtasks?: string[]
   branch?: string
@@ -76,23 +77,29 @@ function KanbanCardComponent({
   // Get type badge color - Modern & Minimal: More subtle colors
   // Lean Kanban: Only UserStory and EnablerStory on board
   const getTypeBadgeColor = (type?: string) => {
-    switch (type) {
-      case "UserStory":
+    const normalizedType = type?.toUpperCase()
+    switch (normalizedType) {
+      case "USERSTORY":
+      case "USER_STORY":
         return "bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border-blue-200/50 dark:border-blue-800/50"
-      case "EnablerStory":
+      case "ENABLERSTORY":
+      case "ENABLER_STORY":
         return "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-200/50 dark:border-emerald-800/50"
       default:
         return "bg-slate-50 dark:bg-slate-900/30 text-slate-700 dark:text-slate-300 border-slate-200/50 dark:border-slate-800/50"
     }
   }
 
-  // Format type name for display (UserStory -> User Story)
+  // Format type name for display (UserStory/USER_STORY -> User Story)
   const formatTypeName = (type?: string) => {
     if (!type) return ""
-    switch (type) {
-      case "UserStory":
+    const normalizedType = type.toUpperCase()
+    switch (normalizedType) {
+      case "USERSTORY":
+      case "USER_STORY":
         return "User Story"
-      case "EnablerStory":
+      case "ENABLERSTORY":
+      case "ENABLER_STORY":
         return "Enabler Story"
       default:
         return type

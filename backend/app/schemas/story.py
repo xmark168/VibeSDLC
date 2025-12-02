@@ -36,6 +36,7 @@ class StoryBase(SQLModel):
 
 class StoryCreate(StoryBase):
     project_id: UUID
+    story_code: Optional[str] = Field(None, max_length=50)  # e.g., "EPIC-001-US-001"
 
 
 class StoryPublic(StoryBase):
@@ -44,6 +45,10 @@ class StoryPublic(StoryBase):
     status: StoryStatus
     # Override to allow None (model allows None, but StoryBase requires int)
     priority: Optional[int] = Field(None, ge=1, le=3)
+    # Story code for display (e.g., "EPIC-001-US-001")
+    story_code: Optional[str] = None
+    # Story type (maps from model's 'type' field)
+    type: Optional[StoryType] = None
     # Additional fields from Story model
     rank: Optional[int] = None
     agent_state: Optional[StoryAgentState] = None
@@ -61,6 +66,7 @@ class StoryUpdate(SQLModel):
     description: Optional[str] = None
     status: Optional[StoryStatus] = None
     story_type: Optional[StoryType] = None
+    story_code: Optional[str] = Field(None, max_length=50)  # e.g., "EPIC-001-US-001"
     priority: Optional[int] = Field(None, ge=1, le=3)
     story_point: Optional[int] = Field(None, ge=1, le=21)
     estimated_hours: Optional[float] = Field(None, ge=0)
