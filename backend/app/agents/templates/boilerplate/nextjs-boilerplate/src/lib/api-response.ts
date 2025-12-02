@@ -153,4 +153,48 @@ export const ApiErrors = {
       HttpStatus.UNPROCESSABLE_ENTITY,
       details
     ),
+
+  badRequest: (message: string = 'Yêu cầu không hợp lệ') =>
+    new ApiException(
+      ApiErrorCode.BAD_REQUEST,
+      message,
+      HttpStatus.BAD_REQUEST
+    ),
+
+  methodNotAllowed: (method: string) =>
+    new ApiException(
+      ApiErrorCode.METHOD_NOT_ALLOWED,
+      `Method ${method} không được hỗ trợ`,
+      HttpStatus.METHOD_NOT_ALLOWED
+    ),
+
+  tooManyRequests: (retryAfter?: number) =>
+    new ApiException(
+      ApiErrorCode.TOO_MANY_REQUESTS,
+      'Quá nhiều yêu cầu, vui lòng thử lại sau',
+      HttpStatus.TOO_MANY_REQUESTS,
+      retryAfter ? { retryAfter } : undefined
+    ),
+
+  serviceUnavailable: (message: string = 'Dịch vụ tạm thời không khả dụng') =>
+    new ApiException(
+      ApiErrorCode.SERVICE_UNAVAILABLE,
+      message,
+      HttpStatus.SERVICE_UNAVAILABLE
+    ),
+
+  timeout: (operation: string = 'Operation') =>
+    new ApiException(
+      ApiErrorCode.TIMEOUT,
+      `${operation} đã hết thời gian chờ`,
+      HttpStatus.GATEWAY_TIMEOUT
+    ),
+
+  database: (message: string = 'Lỗi cơ sở dữ liệu') =>
+    new ApiException(
+      ApiErrorCode.DATABASE_ERROR,
+      message,
+      HttpStatus.INTERNAL_SERVER_ERROR
+    ),
 };
+

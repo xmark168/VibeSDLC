@@ -12,12 +12,34 @@ export interface TypingState {
 
 export type AgentStatusType = 'idle' | 'thinking' | 'acting'
 
+// NEW: Execution context from backend
+export interface ExecutionContext {
+  mode: 'interactive' | 'background' | 'silent'
+  task_id: string
+  task_type: string
+  display_mode: 'chat' | 'progress_bar' | 'notification' | 'none'
+}
+
+// NEW: Background task tracking
+export interface BackgroundTask {
+  task_id: string
+  agent_name: string
+  status: 'in_progress' | 'completed' | 'failed'
+  current: number
+  total: number
+  percentage: number
+  message: string
+  updated_at: string
+}
+
 export interface UseChatWebSocketReturn {
   isConnected: boolean
   readyState: ReadyState
   messages: Message[]
   agentStatus: AgentStatusType
   typingAgents: Map<string, TypingState>
+  backgroundTasks: Map<string, BackgroundTask>  // NEW
+  answeredBatchIds: Set<string>  // Track answered batch question IDs
   conversationOwner: {
     agentId: string
     agentName: string

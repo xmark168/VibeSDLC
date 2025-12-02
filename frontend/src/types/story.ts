@@ -1,6 +1,6 @@
 // Story-related types
 
-export type StoryStatus = 'Todo' | 'InProgress' | 'Review' | 'Done';
+export type StoryStatus = 'Todo' | 'InProgress' | 'Review' | 'Done' | 'Archived';
 export type StoryType = 'UserStory' | 'EnablerStory';
 
 export interface Story {
@@ -14,15 +14,12 @@ export interface Story {
   epic_id?: string | null;
   assignee_id?: string | null;
   reviewer_id?: string | null;
-  acceptance_criteria?: string;
+  acceptance_criteria?: string[];
+  requirements?: string[];
   rank?: number | null;
-  estimate_value?: number | null;
   story_point?: number | null;
-  priority?: number;
-  story_priority?: 'High' | 'Medium' | 'Low';
+  priority?: number | null;
   dependencies: string[];
-  pause: boolean;
-  deadline?: string | null;
   completed_at?: string | null;
   started_at?: string | null;
   review_started_at?: string | null;
@@ -56,7 +53,8 @@ export interface UpdateStoryParams {
   epic_id?: string;
   parent_story_id?: string;
   tags?: string[];
-  acceptance_criteria?: string;
+  acceptance_criteria?: string[];
+  requirements?: string[];
   business_value?: number;
   risk_level?: 'low' | 'medium' | 'high' | 'critical';
   target_release?: string;
@@ -74,4 +72,6 @@ export interface StoryFormData {
   story_point?: number;
   priority?: "High" | "Medium" | "Low";
   acceptance_criteria: string[];
+  requirements: string[];
+  dependencies: string[];  // List of story IDs that must be completed first
 }

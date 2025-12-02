@@ -419,7 +419,7 @@ export type StoryPublic = {
     completed_at?: (string | null);
 };
 
-export type StoryStatus = 'Todo' | 'InProgress' | 'Review' | 'Done';
+export type StoryStatus = 'Todo' | 'InProgress' | 'Review' | 'Done' | 'Archived';
 
 export type StoryType = 'UserStory' | 'EnablerStory';
 

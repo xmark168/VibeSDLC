@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { KanbanColumn, type KanbanColumnData } from "./kanban-column"
 import { TaskDetailModal } from "./task-detail-modal"
-import { WIPLimitSettingsDialog } from "./wip-limit-settings-dialog"
 import { FlowMetricsDashboard } from "./flow-metrics-dashboard"
 import { PolicyValidationDialog, type PolicyViolation } from "./policy-validation-dialog"
 import { PolicySettingsDialog } from "./policy-settings-dialog"
@@ -19,6 +18,7 @@ import { useKanbanBoard } from "@/queries/backlog-items"
 import { backlogItemsApi } from "@/apis/backlog-items"
 import { storiesApi } from "@/apis/stories"
 import { toast } from "sonner"
+import { useQueryClient } from "@tanstack/react-query"
 
 interface KanbanBoardProps {
   kanbanData?: any
@@ -30,6 +30,7 @@ const initialColumns: KanbanColumnData[] = [
   { id: "inprogress", title: "InProgress", color: "border-red-500", cards: [] },
   { id: "review", title: "Review", color: "border-blue-500", cards: [] },
   { id: "done", title: "Done", color: "border-cyan-500", cards: [] },
+  { id: "archived", title: "Archived", color: "border-gray-400", cards: [] },
 ]
 
 export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
@@ -37,7 +38,6 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
   const [draggedCard, setDraggedCard] = useState<KanbanCardData | null>(null)
   const [draggedOverColumn, setDraggedOverColumn] = useState<string | null>(null)
   const [selectedCard, setSelectedCard] = useState<KanbanCardData | null>(null)
-  const [showWIPSettings, setShowWIPSettings] = useState(false)
   const [showFlowMetrics, setShowFlowMetrics] = useState(false)
   const [showPolicySettings, setShowPolicySettings] = useState(false)
   const [showCFD, setShowCFD] = useState(false)
@@ -62,6 +62,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
 
   // Load initial data from database
   const { data: dbKanbanData, isLoading } = useKanbanBoard(projectId)
+  const queryClient = useQueryClient()
 
   // Load flow metrics for alerts
   useEffect(() => {
@@ -89,6 +90,17 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
       setColumns(initialColumns)
     }
   }, [projectId])
+
+  // Sync selectedCard with updated data from columns
+  useEffect(() => {
+    if (selectedCard) {
+      const allCards = columns.flatMap(col => col.cards)
+      const updatedCard = allCards.find(c => c.id === selectedCard.id)
+      if (updatedCard && JSON.stringify(updatedCard) !== JSON.stringify(selectedCard)) {
+        setSelectedCard(updatedCard)
+      }
+    }
+  }, [columns, selectedCard])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -152,6 +164,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         InProgress: dbKanbanData.board.InProgress?.length || 0,
         Review: dbKanbanData.board.Review?.length || 0,
         Done: dbKanbanData.board.Done?.length || 0,
+        Archived: dbKanbanData.board.Archived?.length || 0,
       })
 
       // Debug: Log all story types to identify filtering issues
@@ -160,6 +173,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         ...(dbKanbanData.board.InProgress || []),
         ...(dbKanbanData.board.Review || []),
         ...(dbKanbanData.board.Done || []),
+        ...(dbKanbanData.board.Archived || []),
       ]
       const uniqueTypes = [...new Set(allItems.map((item: any) => item.type))]
       console.log('[KanbanBoard] Story types in database:', uniqueTypes)
@@ -189,10 +203,16 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         status: item.status,
         type: item.type,
         story_point: item.story_point,
-        estimate_value: item.estimate_value,
+        priority: item.priority,
         rank: item.rank,
         assignee_id: item.assignee_id,
         reviewer_id: item.reviewer_id,
+        epic_id: item.epic_id,
+        acceptance_criteria: item.acceptance_criteria,
+        requirements: item.requirements,
+        dependencies: item.dependencies,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
         parent: item.parent ? {
           id: item.parent.id,
           content: item.parent.title,
@@ -210,10 +230,12 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
           status: child.status,
           type: child.type,
           story_point: child.story_point,
-          estimate_value: child.estimate_value,
+          priority: child.priority,
           rank: child.rank,
           assignee_id: child.assignee_id,
           reviewer_id: child.reviewer_id,
+          requirements: child.requirements,
+          dependencies: child.dependencies,
           title: child.title,
         })) : [],
       })
@@ -251,6 +273,14 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
           wipLimit: dbKanbanData.wip_limits?.Done?.wip_limit,
           limitType: dbKanbanData.wip_limits?.Done?.limit_type
         },
+        {
+          id: "archived",
+          title: "Archived",
+          color: "border-gray-400",
+          cards: filterItems(dbKanbanData.board.Archived || []).map((item: any) => mapItem(item, "archived")),
+          wipLimit: undefined,
+          limitType: undefined
+        },
       ]
 
       setColumns(newColumns)
@@ -286,10 +316,16 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         status: item.status,
         type: item.type,
         story_point: item.story_point,
-        estimate_value: item.estimate_value,
+        priority: item.priority,
         rank: item.rank,
         assignee_id: item.assignee_id,
         reviewer_id: item.reviewer_id,
+        epic_id: item.epic_id,
+        acceptance_criteria: item.acceptance_criteria,
+        requirements: item.requirements,
+        dependencies: item.dependencies,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
         parent: item.parent ? {
           id: item.parent.id,
           content: item.parent.title,
@@ -307,10 +343,12 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
           status: child.status,
           type: child.type,
           story_point: child.story_point,
-          estimate_value: child.estimate_value,
+          priority: child.priority,
           rank: child.rank,
           assignee_id: child.assignee_id,
           reviewer_id: child.reviewer_id,
+          requirements: child.requirements,
+          dependencies: child.dependencies,
           title: child.title,
         })) : [],
       })
@@ -397,15 +435,17 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         title: storyData.title,
         description: storyData.description,
         story_type: storyData.type,
-        estimated_hours: storyData.story_point,
-        priority: storyData.priority === "High" ? 5 : storyData.priority === "Medium" ? 3 : 1,
-        acceptance_criteria: storyData.acceptance_criteria.join('\n'), // Join criteria into a single string
-        tags: [], // Add any tags if needed
-        labels: [], // Add any labels if needed
+        story_point: storyData.story_point,
+        priority: storyData.priority === "High" ? 1 : storyData.priority === "Medium" ? 2 : 3,
+        acceptance_criteria: storyData.acceptance_criteria,
+        requirements: storyData.requirements,
+        dependencies: storyData.dependencies,
+        tags: [],
+        labels: [],
       })
       console.log("Story created successfully:", createdStory)
 
-      // Add the created story to the frontend UI
+      // Add the created story to the frontend UI with all fields
       setColumns((prev) =>
         prev.map((col) => {
           if (col.id === "todo") {
@@ -414,14 +454,20 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
               cards: [
                 ...col.cards,
                 {
-                  id: createdStory.id, // UUID thật của story trong database
+                  id: createdStory.id,
                   content: createdStory.title,
                   description: createdStory.description || "",
                   columnId: "todo",
                   type: createdStory.type,
-                  story_point: createdStory.story_point || undefined,
-                  rank: createdStory.priority,
-                  taskId: `STORY-${createdStory.id.substring(0, 4).toUpperCase()}`, // ID tạm thời để hiển thị
+                  story_point: createdStory.story_point ?? undefined,
+                  priority: createdStory.priority ?? undefined,
+                  rank: createdStory.rank ?? undefined,
+                  epic_id: createdStory.epic_id ?? undefined,
+                  acceptance_criteria: createdStory.acceptance_criteria ?? undefined,
+                  requirements: createdStory.requirements ?? undefined,
+                  dependencies: createdStory.dependencies ?? undefined,
+                  created_at: createdStory.created_at ?? new Date().toISOString(),
+                  taskId: `STORY-${createdStory.id.substring(0, 4).toUpperCase()}`,
                 },
               ],
             }
@@ -439,7 +485,8 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     }
   }, [projectId])
 
-  const handleDeleteCard = useCallback((columnId: string, cardId: string) => {
+  const handleDeleteCard = useCallback(async (columnId: string, cardId: string) => {
+    // Optimistic update - remove from UI immediately
     setColumns((prev) =>
       prev.map((col) => {
         if (col.id === columnId) {
@@ -451,7 +498,22 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         return col
       }),
     )
-  }, [])
+    
+    // Call API to delete from database
+    try {
+      console.log("[Kanban] Deleting story:", cardId)
+      await storiesApi.delete(cardId)
+      console.log("[Kanban] Delete success")
+      toast.success("Đã xóa story")
+    } catch (error) {
+      console.error("[Kanban] Failed to delete story:", error)
+      toast.error("Không thể xóa story")
+      // Refetch to restore state on error
+      if (projectId) {
+        queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+      }
+    }
+  }, [projectId, queryClient])
 
   const handleDuplicateCard = useCallback((cardId: string) => {
     setColumns((prev) =>
@@ -555,11 +617,12 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
 
     if (projectId && draggedCard.id) {
       try {
-        const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done'> = {
+        const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done' | 'Archived'> = {
           'todo': 'Todo',
           'inprogress': 'InProgress',
           'review': 'Review',
           'done': 'Done',
+          'archived': 'Archived',
         };
 
         const fromStatus = statusMap[draggedCard.columnId.toLowerCase()] || 'Todo';
@@ -653,6 +716,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         'inprogress': 'InProgress',
         'review': 'Review',
         'done': 'Done',
+        'archived': 'Archived',
       }[targetColumnId.toLowerCase()] || 'Todo';
 
       console.log("About to update story status via API:", {
@@ -665,11 +729,12 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
       const { storiesApi } = await import('@/apis/stories');
 
       // Map column IDs to backend status format
-      const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done'> = {
+      const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done' | 'Archived'> = {
         'todo': 'Todo',
         'inprogress': 'InProgress',
         'review': 'Review',
         'done': 'Done',
+        'archived': 'Archived',
       };
 
       await storiesApi.updateStatus(
@@ -954,12 +1019,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         open={!!selectedCard}
         onOpenChange={() => setSelectedCard(null)}
         onDownloadResult={handleDownloadResult}
-      />
-
-      <WIPLimitSettingsDialog
-        projectId={projectId}
-        open={showWIPSettings}
-        onOpenChange={setShowWIPSettings}
+        allStories={columns.flatMap(col => col.cards)}
       />
 
       <FlowMetricsDashboard
@@ -991,6 +1051,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         open={showCreateStoryDialog}
         onOpenChange={setShowCreateStoryDialog}
         onCreateStory={handleCreateStory}
+        projectId={projectId}
       />
     </>
   )

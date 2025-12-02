@@ -1,3 +1,4 @@
+import asyncio
 import os
 from datetime import timedelta
 
@@ -132,9 +133,29 @@ class AdvancedProjectManager:
         self.flows = {}  # For project-level indexing
         self.task_flows = {}  # For task-level indexing
 
+    def _is_in_event_loop(self) -> bool:
+        """Check if we're inside an async event loop."""
+        try:
+            asyncio.get_running_loop()
+            return True
+        except RuntimeError:
+            return False
+
     def register_project(self, project_id: str, project_path: str):
-        """Register and index a new project."""
-        # Sanitize the project_id to create a valid flow name
+        """Register and index a new project.
+        
+        Auto-detects async context and uses appropriate method.
+        If in event loop, returns coroutine that caller must await.
+        """
+        if self._is_in_event_loop():
+            # Return coroutine - caller must await to avoid deadlock
+            # DO NOT use run_coroutine_threadsafe + future.result() - causes deadlock
+            return self.register_project_async(project_id, project_path)
+        
+        return self._register_project_sync(project_id, project_path)
+
+    def _register_project_sync(self, project_id: str, project_path: str):
+        """Sync implementation of register_project."""
         sanitized_project_id = "".join(c if c.isalnum() else "_" for c in project_id)
 
         if sanitized_project_id in self.flows:
@@ -163,16 +184,54 @@ class AdvancedProjectManager:
                 print(f"❌ An unexpected error during indexing for '{project_id}':")
                 raise e
 
+    async def register_project_async(self, project_id: str, project_path: str):
+        """Register and index a new project (async version - no warnings)."""
+        sanitized_project_id = "".join(c if c.isalnum() else "_" for c in project_id)
+
+        if sanitized_project_id in self.flows:
+            return
+
+        flow = create_project_flow(project_id, project_path)
+        self.flows[sanitized_project_id] = flow
+
+        print(f"Attempting to index project '{project_id}' (sanitized as '{sanitized_project_id}')...")
+        try:
+            stats = await flow.update_async()
+            print(f"✅ Indexing completed for '{project_id}': {stats}")
+        except Exception as e:
+            if "not up-to-date" in str(e):
+                print(
+                    f"🔄 Database setup required for flow '{project_id}'. Running setup..."
+                )
+                await flow.setup_async()
+                print("✅ Setup complete. Retrying indexing...")
+                stats = await flow.update_async()
+                print(f"✅ Indexing completed for '{project_id}' after setup: {stats}")
+            else:
+                print(f"❌ An unexpected error during indexing for '{project_id}':")
+                raise e
+
     def register_task(self, project_id: str, task_id: str, task_path: str):
-        """Register and index a specific task workspace."""
-        # Create a unique identifier for the task
-        task_identifier = f"{project_id}_task_{task_id}"
+        """Register and index a specific task workspace.
+        
+        Auto-detects async context and uses appropriate method.
+        If in event loop, returns coroutine that caller must await.
+        """
+        if self._is_in_event_loop():
+            # Return coroutine - caller must await to avoid deadlock
+            # DO NOT use run_coroutine_threadsafe + future.result() - causes deadlock
+            return self.register_task_async(project_id, task_id, task_path)
+        
+        return self._register_task_sync(project_id, task_id, task_path)
+
+    def _register_task_sync(self, project_id: str, task_id: str, task_path: str):
+        """Sync implementation of register_task."""
+        task_identifier = task_id
         sanitized_task_id = "".join(c if c.isalnum() else "_" for c in task_identifier)
 
         if sanitized_task_id in self.task_flows:
             return
 
-        # Create a flow specific to this task
         flow = create_project_flow(task_identifier, task_path)
         self.task_flows[sanitized_task_id] = flow
 
@@ -188,6 +247,34 @@ class AdvancedProjectManager:
                 flow.setup()
                 print("✅ Setup complete. Retrying indexing...")
                 stats = flow.update()
+                print(f"✅ Indexing completed for task '{task_identifier}' after setup: {stats}")
+            else:
+                print(f"❌ An unexpected error during indexing for task '{task_identifier}':")
+                raise e
+
+    async def register_task_async(self, project_id: str, task_id: str, task_path: str):
+        """Register and index a task workspace (async version - no warnings)."""
+        task_identifier = task_id
+        sanitized_task_id = "".join(c if c.isalnum() else "_" for c in task_identifier)
+
+        if sanitized_task_id in self.task_flows:
+            return
+
+        flow = create_project_flow(task_identifier, task_path)
+        self.task_flows[sanitized_task_id] = flow
+
+        print(f"Attempting to index task '{task_identifier}' (sanitized as '{sanitized_task_id}')...")
+        try:
+            stats = await flow.update_async()
+            print(f"✅ Indexing completed for task '{task_identifier}': {stats}")
+        except Exception as e:
+            if "not up-to-date" in str(e):
+                print(
+                    f"🔄 Database setup required for task '{task_identifier}'. Running setup..."
+                )
+                await flow.setup_async()
+                print("✅ Setup complete. Retrying indexing...")
+                stats = await flow.update_async()
                 print(f"✅ Indexing completed for task '{task_identifier}' after setup: {stats}")
             else:
                 print(f"❌ An unexpected error during indexing for task '{task_identifier}':")
@@ -239,7 +326,7 @@ class AdvancedProjectManager:
 
     def search_task(self, project_id: str, task_id: str, query: str, top_k: int = 5):
         """Search in a specific task workspace using the correct table name."""
-        task_identifier = f"{project_id}_task_{task_id}"
+        task_identifier = task_id
         sanitized_task_id = "".join(c if c.isalnum() else "_" for c in task_identifier)
 
         if sanitized_task_id not in self.task_flows:
@@ -270,51 +357,97 @@ class AdvancedProjectManager:
                     for row in cur.fetchall()
                 ]
 
+    def incremental_update_task(self, project_id: str, task_id: str):
+        """Perform incremental update on task index (sync, fast).
+        
+        This only reprocesses changed files since last update.
+        Call this after writing files to keep index up-to-date.
+        
+        Returns:
+            Update stats or None if task not registered
+        """
+        task_identifier = task_id
+        sanitized_task_id = "".join(c if c.isalnum() else "_" for c in task_identifier)
+
+        if sanitized_task_id not in self.task_flows:
+            return None  # Skip if not registered
+
+        try:
+            result = self.task_flows[sanitized_task_id].update()
+            print(f"[CocoIndex] Incremental update {task_id}: {result}")
+            return result
+        except Exception as e:
+            print(f"[CocoIndex] Incremental update failed for {task_identifier}: {e}")
+            return None
+
+    def incremental_update_project(self, project_id: str):
+        """Perform incremental update on project index (sync, fast).
+        
+        This only reprocesses changed files since last update.
+        
+        Returns:
+            Update stats or None if project not registered
+        """
+        sanitized_project_id = "".join(c if c.isalnum() else "_" for c in project_id)
+
+        if sanitized_project_id not in self.flows:
+            return None  # Skip if not registered
+
+        try:
+            result = self.flows[sanitized_project_id].update()
+            print(f"[CocoIndex] Incremental update {project_id}: {result}")
+            return result
+        except Exception as e:
+            print(f"[CocoIndex] Incremental update failed for {project_id}: {e}")
+            return None
+
     async def update_task(self, project_id: str, task_id: str):
-        """Re-index a specific task workspace."""
-        task_identifier = f"{project_id}_task_{task_id}"
+        """Re-index a specific task workspace (async version)."""
+        task_identifier = task_id
         sanitized_task_id = "".join(c if c.isalnum() else "_" for c in task_identifier)
 
         if sanitized_task_id not in self.task_flows:
             raise ValueError(f"Task {task_identifier} not registered")
 
-        import concurrent.futures
         import asyncio
 
-        # Run the synchronous update in a separate thread to avoid blocking the event loop
-        def run_update():
-            return self.task_flows[sanitized_task_id].update()
-
-        # Use run_in_executor to run the blocking operation in a thread pool
         loop = asyncio.get_event_loop()
-        future = loop.run_in_executor(None, run_update)
-        result = await future
+        result = await loop.run_in_executor(
+            None, 
+            lambda: self.task_flows[sanitized_task_id].update()
+        )
 
-        print(f"Updated task {task_identifier}: {result}")
+        print(f"[CocoIndex] Updated task {task_identifier}: {result}")
         return result
 
     async def update_project(self, project_id: str):
-        """Re-index a specific project."""
-        # Sanitize the project_id to match the stored flow name
+        """Re-index a specific project (async version)."""
         sanitized_project_id = "".join(c if c.isalnum() else "_" for c in project_id)
 
         if sanitized_project_id not in self.flows:
             raise ValueError(f"Project {project_id} not registered")
 
-        import concurrent.futures
         import asyncio
 
-        # Run the synchronous update in a separate thread to avoid blocking the event loop
-        def run_update():
-            return self.flows[sanitized_project_id].update()
-
-        # Use run_in_executor to run the blocking operation in a thread pool
         loop = asyncio.get_event_loop()
-        future = loop.run_in_executor(None, run_update)
-        result = await future  # Use await instead of asyncio.run
+        result = await loop.run_in_executor(
+            None,
+            lambda: self.flows[sanitized_project_id].update()
+        )
 
-        print(f"Updated {project_id}: {result}")
+        print(f"[CocoIndex] Updated project {project_id}: {result}")
         return result
+
+    def unregister_task(self, project_id: str, task_id: str):
+        """Remove a task from memory (does not delete database table)."""
+        task_identifier = task_id
+        sanitized_task_id = "".join(c if c.isalnum() else "_" for c in task_identifier)
+        
+        if sanitized_task_id in self.task_flows:
+            del self.task_flows[sanitized_task_id]
+            print(f"Unregistered task {task_identifier} from memory.")
+        else:
+            print(f"Task {task_identifier} was not registered.")
 
     def delete_project(self, project_id: str):
         """Remove a project and its index table."""

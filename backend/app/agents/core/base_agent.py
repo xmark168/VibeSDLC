@@ -9,6 +9,7 @@ This is the new simplified agent architecture where:
 
 import asyncio
 import logging
+import traceback
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
@@ -25,6 +26,18 @@ from app.kafka.event_schemas import (
 )
 from app.models import Agent as AgentModel, AgentStatus
 from datetime import datetime, timezone
+from app.core.langfuse_client import (
+    get_langfuse_client,
+    get_langfuse_context,
+    flush_langfuse, 
+    create_session_id,
+    score_current,
+    update_current_trace,
+    update_current_observation,
+    format_llm_usage,
+    format_chat_messages,
+    get_langchain_callback,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +55,7 @@ class TaskContext:
     project_id: Optional[UUID] = None
     content: str = ""
     message_type: str = "text"
+    execution_mode: str = "interactive"  # NEW: "interactive" | "background" | "silent"
     context: Dict[str, Any] = None
 
     def __post_init__(self):
@@ -56,6 +70,17 @@ class TaskResult:
     structured_data: Optional[Dict[str, Any]] = None  
     requires_approval: bool = False  
     error_message: Optional[str] = None
+
+
+# Cross-agent collaboration exceptions
+class CollaborationError(Exception):
+    """Base exception for collaboration failures."""
+    pass
+
+
+class CollaborationTimeoutError(CollaborationError):
+    """Raised when collaboration request times out."""
+    pass
 
 
 class BaseAgent(ABC):
@@ -109,6 +134,7 @@ class BaseAgent(ABC):
         self._current_task_content: Optional[str] = None
         self._current_routing_reason: Optional[str] = None
         self._current_user_id: Optional[UUID] = None
+        self._current_execution_mode: str = "interactive"  # NEW: Track execution mode
         
         # Execution tracking
         self._execution_start_time: Optional[Any] = None  # datetime object
@@ -124,6 +150,14 @@ class BaseAgent(ABC):
         self._task_queue: asyncio.Queue = asyncio.Queue(maxsize=10)
         self._queue_running: bool = False
         self._queue_worker_task: Optional[asyncio.Task] = None
+
+        # Langfuse tracing
+        self.langfuse_client = get_langfuse_client()
+        self._current_trace_id: Optional[str] = None
+        self._current_trace: Optional[Any] = None  # Current Langfuse trace object
+
+        # Cross-agent collaboration
+        self._pending_collaborations: Dict[UUID, asyncio.Future] = {}
 
         logger.info(
             f"Initialized {self.role_type} agent: {self.name} "
@@ -165,6 +199,7 @@ class BaseAgent(ABC):
         *,
         artifact_config: Optional[Dict[str, Any]] = None,
         question_config: Optional[Dict[str, Any]] = None,
+        display_mode: Optional[str] = None,  # NEW: "chat" | "progress_bar" | "notification" | "none"
         save_to_db: bool = True,
         broadcast_ws: bool = True,
         **kwargs
@@ -236,7 +271,7 @@ class BaseAgent(ABC):
                 return await self._handle_question_message(content, question_config, details, **kwargs)
             
             # Handle simple messages/events
-            return await self._handle_simple_message(event_type, content, details, save_to_db, broadcast_ws, **kwargs)
+            return await self._handle_simple_message(event_type, content, details, display_mode, save_to_db, broadcast_ws, **kwargs)
 
         except Exception as e:
             logger.error(f"[{self.name}] Failed to send message: {e}", exc_info=True)
@@ -247,12 +282,23 @@ class BaseAgent(ABC):
         event_type: str,
         content: str,
         details: Optional[Dict[str, Any]],
+        display_mode: Optional[str],
         save_to_db: bool,
         broadcast_ws: bool,
         **kwargs
     ) -> None:
-        """Handle simple message/event (existing logic)."""
+        """Handle simple message/event with execution context."""
         producer = await self._get_producer()
+        
+        # Determine display mode (smart defaults)
+        if display_mode is None:
+            display_mode = self._get_default_display_mode(event_type)
+        
+        # Save to DB first for response/completed events (single source of truth)
+        message_id = None
+        if save_to_db and event_type in ["response", "completed"]:
+            message_type = (details or {}).get("message_type", "text")
+            message_id = await self._save_message_to_db(content, message_type, details, **kwargs)
         
         event = AgentEvent(
             event_type=f"agent.{event_type}",
@@ -262,7 +308,16 @@ class BaseAgent(ABC):
             execution_id=str(self._current_execution_id) if self._current_execution_id else None,
             task_id=str(self._current_task_id) if self._current_task_id else None,
             content=content,
-            details=details or {},
+            details={
+                **(details or {}),
+                "message_id": str(message_id) if message_id else None,  # Include DB message_id
+            },
+            execution_context={
+                "mode": self._current_execution_mode,
+                "task_id": str(self._current_task_id) if self._current_task_id else None,
+                "task_type": self._current_task_type or "unknown",
+                "display_mode": display_mode,
+            },
             metadata={
                 "agent_type": self.role_type,
                 "agent_execution_id": str(self._current_execution_id) if self._current_execution_id else None,
@@ -272,11 +327,34 @@ class BaseAgent(ABC):
         
         await producer.publish(topic=KafkaTopics.AGENT_EVENTS, event=event)
         
-        # Optionally save to messages table
-        if save_to_db and event_type in ["response", "completed"]:
-            await self._save_message_to_db(content, "text", details, **kwargs)
-        
         logger.info(f"[{self.name}] {event_type}: {content[:100]}")
+    
+    def _get_default_display_mode(self, event_type: str) -> str:
+        """Determine default display mode based on execution mode and event type.
+        
+        Returns:
+            "chat" | "progress_bar" | "notification" | "none"
+        """
+        mode = self._current_execution_mode
+        
+        if mode == "interactive":
+            # Interactive: All events go to chat
+            return "chat"
+        
+        elif mode == "background":
+            # Background: Different display per event type
+            if event_type == "thinking":
+                return "none"  # Skip thinking events
+            elif event_type == "progress":
+                return "progress_bar"  # Show in progress panel
+            elif event_type in ["response", "completed"]:
+                return "notification"  # Show as toast
+            else:
+                return "none"  # Default: skip
+        
+        else:  # silent
+            # Silent: Only log, no UI
+            return "none"
     
     async def _handle_artifact_message(
         self,
@@ -344,6 +422,7 @@ class BaseAgent(ABC):
                 "artifact_type": artifact_type,
                 "artifact_title": title,
             },
+            display_mode=None,  # Use default display mode
             save_to_db=True,
             broadcast_ws=False,
             **kwargs
@@ -393,6 +472,7 @@ class BaseAgent(ABC):
         allow_multiple = question_config.get("allow_multiple", False)
         proposed_data = question_config.get("proposed_data")
         explanation = question_config.get("explanation")
+        custom_context = question_config.get("context", {})  # Custom context from caller
         
         question_id = uuid4()
         
@@ -403,6 +483,7 @@ class BaseAgent(ABC):
             "execution_id": str(self._current_execution_id) if self._current_execution_id else None,
             "original_message": self._current_task_content,
             "routing_reason": self._current_routing_reason,
+            "question_context": custom_context,  # Include custom context for resume
         }
         
         # Save to database (dual storage: agent_questions + messages)
@@ -499,15 +580,21 @@ class BaseAgent(ABC):
         message_type: str,
         structured_data: Optional[Dict[str, Any]] = None,
         **metadata
-    ) -> None:
-        """Save message to messages table for persistence."""
+    ) -> UUID:
+        """Save message to messages table for persistence.
+        
+        Returns:
+            UUID: The message ID that was created
+        """
         from sqlmodel import Session
         from app.core.db import engine
         from app.models import Message, AuthorType
         
+        message_id = uuid4()
+        
         with Session(engine) as session:
             message = Message(
-                id=uuid4(),
+                id=message_id,
                 project_id=self.project_id,
                 author_type=AuthorType.AGENT,
                 agent_id=self.agent_id,
@@ -523,6 +610,8 @@ class BaseAgent(ABC):
             )
             session.add(message)
             session.commit()
+        
+        return message_id
     
     async def start_execution(self) -> None:
         """Emit: agent.messaging.start - Notify that agent began execution"""
@@ -710,12 +799,14 @@ class BaseAgent(ABC):
         }
         
         # Save all questions to database
+        batch_message_id = uuid4()  # Single message ID for the entire batch
+        
         with Session(engine) as session:
+            # 1. Save individual AgentQuestion records (for workflow tracking)
             for idx, q_data in enumerate(questions):
                 question_id = uuid4()
                 question_ids.append(question_id)
                 
-                # 1. Save to agent_questions table (for workflow)
                 db_question = AgentQuestion(
                     id=question_id,
                     project_id=self.project_id,
@@ -738,33 +829,42 @@ class BaseAgent(ABC):
                     expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
                 )
                 session.add(db_question)
-                
-                # 2. Save to messages table (for chat history persistence)
-                question_message = Message(
-                    id=question_id,
-                    project_id=self.project_id,
-                    author_type=AuthorType.AGENT,
-                    agent_id=self.agent_id,
-                    content=q_data["question_text"],
-                    message_type="agent_question_batch",  # NEW type
-                    structured_data={
-                        "question_id": str(question_id),
-                        "question_type": q_data["question_type"],
-                        "options": q_data.get("options"),
-                        "allow_multiple": q_data.get("allow_multiple", False),
-                        "context": q_data.get("context"),
-                        "batch_id": batch_id,
-                        "batch_index": idx,
-                        "batch_total": len(questions),
-                        "status": "waiting_answer"
-                    },
-                    message_metadata={
-                        "agent_name": self.name,
-                        "task_id": str(self._current_task_id),
-                        "execution_id": str(self._current_execution_id) if self._current_execution_id else None,
-                    }
-                )
-                session.add(question_message)
+            
+            # 2. Save ONE combined message for chat history (not per-question)
+            # Build questions array for structured_data
+            combined_questions = [
+                {
+                    "question_id": str(question_ids[idx]),
+                    "question_text": q_data["question_text"],
+                    "question_type": q_data["question_type"],
+                    "options": q_data.get("options"),
+                    "allow_multiple": q_data.get("allow_multiple", False),
+                    "context": q_data.get("context"),
+                }
+                for idx, q_data in enumerate(questions)
+            ]
+            
+            batch_message = Message(
+                id=batch_message_id,
+                project_id=self.project_id,
+                author_type=AuthorType.AGENT,
+                agent_id=self.agent_id,
+                content=f"Batch of {len(questions)} questions",  # Summary text
+                message_type="agent_question_batch",
+                structured_data={
+                    "batch_id": batch_id,
+                    "questions": combined_questions,
+                    "question_ids": [str(qid) for qid in question_ids],
+                    "status": "waiting_answer",
+                    "answered": False,
+                },
+                message_metadata={
+                    "agent_name": self.name,
+                    "task_id": str(self._current_task_id),
+                    "execution_id": str(self._current_execution_id) if self._current_execution_id else None,
+                }
+            )
+            session.add(batch_message)
             
             session.commit()
         
@@ -931,15 +1031,7 @@ class BaseAgent(ABC):
                 topic=KafkaTopics.DELEGATION_REQUESTS,
                 event=delegation_event
             )
-            
-            logger.info(f"[{self.name}] Published delegation request to role: {target_role}")
-            
-            # Send notification to user
-            await self.message_user("response", delegation_message, {
-                "message_type": "text",
-                "delegation_to_role": target_role,
-            })
-            
+                        
             return TaskResult(
                 success=True,
                 output="",  # Empty output - message already sent above
@@ -957,6 +1049,382 @@ class BaseAgent(ABC):
                 error_message=f"Failed to delegate: {str(e)}"
             )
 
+    # =========================================================================
+    # CROSS-AGENT COLLABORATION
+    # =========================================================================
+
+    async def ask_specialist(
+        self,
+        target_role: str,
+        question: str,
+        request_type: str = "clarification",
+        context: Dict[str, Any] = None,
+        timeout: int = 300,
+    ) -> str:
+        """Ask another specialist agent directly for collaboration.
+        
+        This enables direct agent-to-agent communication for:
+        - Clarification requests (Dev → BA)
+        - Review requests (Tester → Dev)  
+        - Estimation requests (BA → Dev)
+        - Validation requests (any → any)
+        
+        Args:
+            target_role: Target agent role ("business_analyst", "developer", "tester")
+            question: The question or request to send
+            request_type: Type of request ("clarification", "review", "estimation", "validation")
+            context: Additional context (story_id, code_snippet, etc.)
+            timeout: Max wait time in seconds (default: 300 = 5 min)
+            
+        Returns:
+            Response string from the target agent
+            
+        Raises:
+            CollaborationTimeoutError: If target doesn't respond in time
+            CollaborationError: If collaboration fails
+            
+        Example:
+            # Developer asking BA for clarification
+            answer = await self.ask_specialist(
+                target_role="business_analyst",
+                question="What's the expected behavior for login failure?",
+                request_type="clarification",
+                context={"story_id": "123"}
+            )
+        """
+        from app.kafka.event_schemas import AgentCollaborationRequest
+        
+        request_id = uuid4()
+        
+        # Create future to wait for response
+        loop = asyncio.get_event_loop()
+        future = loop.create_future()
+        self._pending_collaborations[request_id] = future
+        
+        try:
+            producer = await self._get_producer()
+            
+            # Build collaboration request
+            request = AgentCollaborationRequest(
+                request_id=request_id,
+                from_agent_id=self.agent_id,
+                from_agent_role=self.role_type,
+                to_agent_role=target_role,
+                request_type=request_type,
+                question=question,
+                context={
+                    "task_id": str(self._current_task_id) if self._current_task_id else None,
+                    "project_id": str(self.project_id),
+                    **(context or {})
+                },
+                project_id=str(self.project_id),
+                user_id=str(self._current_user_id) if self._current_user_id else None,
+            )
+            
+            # Publish request
+            await producer.publish(
+                topic=KafkaTopics.AGENT_COLLABORATION,
+                event=request
+            )
+            
+            logger.info(
+                f"[{self.name}] Sent collaboration request to {target_role}: "
+                f"{question[:50]}..."
+            )
+            
+            # Wait for response with timeout
+            response = await asyncio.wait_for(future, timeout=timeout)
+            
+            logger.info(f"[{self.name}] Received collaboration response from {target_role}")
+            return response
+            
+        except asyncio.TimeoutError:
+            # Clean up pending collaboration
+            self._pending_collaborations.pop(request_id, None)
+            error_msg = f"No response from {target_role} after {timeout}s"
+            logger.warning(f"[{self.name}] Collaboration timeout: {error_msg}")
+            raise CollaborationTimeoutError(error_msg)
+            
+        except Exception as e:
+            self._pending_collaborations.pop(request_id, None)
+            logger.error(f"[{self.name}] Collaboration error: {e}", exc_info=True)
+            raise CollaborationError(f"Collaboration failed: {str(e)}")
+
+    async def handle_collaboration_request(
+        self,
+        request_id: UUID,
+        question: str,
+        request_type: str,
+        from_agent_role: str,
+        context: Dict[str, Any]
+    ) -> str:
+        """Handle incoming collaboration request from another agent.
+        
+        Override this method in subclasses to provide custom handling.
+        Default implementation uses LLM to generate a response based on the agent's expertise.
+        
+        Args:
+            request_id: Unique request identifier
+            question: The question being asked
+            request_type: Type of request (clarification, review, estimation, validation)
+            from_agent_role: Role of the requesting agent
+            context: Additional context provided
+            
+        Returns:
+            Response string to send back
+        """
+        # Default implementation - subclasses can override for custom behavior
+        logger.info(
+            f"[{self.name}] Handling collaboration request from {from_agent_role}: "
+            f"{question[:50]}..."
+        )
+        
+        # Generate response based on agent's expertise
+        prompt = f"""You are a {self.role_type} agent. Another agent ({from_agent_role}) is asking for {request_type}:
+
+Question: {question}
+
+Context: {context}
+
+Provide a helpful, concise response based on your expertise as a {self.role_type}.
+"""
+        
+        # Use LLM to generate response (if available)
+        try:
+            from langchain_openai import ChatOpenAI
+            from langchain_core.messages import HumanMessage
+            
+            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
+            response = await llm.ainvoke([HumanMessage(content=prompt)])
+            return response.content
+        except Exception as e:
+            logger.error(f"[{self.name}] Failed to generate collaboration response: {e}")
+            return f"I apologize, I couldn't process your {request_type} request at this time."
+
+    async def _send_collaboration_response(
+        self,
+        request_id: str,
+        to_agent_id: str,
+        response: str,
+        success: bool = True,
+        error: str = None
+    ) -> None:
+        """Send response to a collaboration request."""
+        from app.kafka.event_schemas import AgentCollaborationResponse
+        
+        producer = await self._get_producer()
+        
+        response_event = AgentCollaborationResponse(
+            request_id=UUID(request_id) if isinstance(request_id, str) else request_id,
+            from_agent_id=self.agent_id,
+            to_agent_id=UUID(to_agent_id) if isinstance(to_agent_id, str) else to_agent_id,
+            response=response,
+            success=success,
+            error=error,
+            project_id=str(self.project_id),
+        )
+        
+        await producer.publish(
+            topic=KafkaTopics.AGENT_COLLABORATION,
+            event=response_event
+        )
+        
+        logger.info(f"[{self.name}] Sent collaboration response for request {request_id}")
+
+    async def _handle_collaboration_response(
+        self,
+        request_id: UUID,
+        response: str,
+        success: bool,
+        error: str = None
+    ) -> None:
+        """Handle incoming collaboration response (resume waiting agent)."""
+        future = self._pending_collaborations.pop(request_id, None)
+        
+        if future is None:
+            logger.warning(
+                f"[{self.name}] Received response for unknown request {request_id}"
+            )
+            return
+        
+        if future.done():
+            logger.warning(
+                f"[{self.name}] Future for request {request_id} already completed"
+            )
+            return
+        
+        if success:
+            future.set_result(response)
+        else:
+            future.set_exception(CollaborationError(error or "Collaboration failed"))
+
+    def get_langfuse_callback(
+        self,
+        trace_name: str,
+        tags: List[str] = None,
+        metadata: Dict[str, Any] = None
+    ) -> Optional[Any]:
+        """Get Langfuse callback handler for LangChain integration (v3 API).
+        
+        Usage:
+            callback = self.get_langfuse_callback("my_llm_call")
+            response = await llm.ainvoke(messages, config={"callbacks": [callback]} if callback else {})
+        """
+        return get_langchain_callback(
+            trace_name=trace_name,
+            user_id=str(self._current_user_id) if self._current_user_id else None,
+            session_id=str(self.project_id),
+            tags=tags or [self.role_type],
+            metadata={
+                "agent_id": str(self.agent_id),
+                "agent_name": self.name,
+                "agent_role": self.role_type,
+                "task_id": str(self._current_task_id) if self._current_task_id else None,
+                **(metadata or {})
+            }
+        )
+
+    def track_llm_generation(
+        self,
+        name: str,
+        model: str,
+        input_messages: List[Any],
+        response: Any,
+        model_parameters: Dict[str, Any] = None,
+        duration_ms: float = None,
+    ) -> bool:
+        """Track LLM generation with timing.
+        
+        Args:
+            name: Generation name (e.g., "routing_decision")
+            model: Model name (e.g., "gpt-4o-mini")
+            input_messages: List of input messages
+            response: LLM response object
+            model_parameters: Optional model params
+            duration_ms: Execution time in milliseconds (measure around ainvoke call)
+        
+        Usage:
+            start = time.time()
+            response = await llm.ainvoke(messages)
+            duration_ms = (time.time() - start) * 1000
+            
+            agent.track_llm_generation(
+                name="routing",
+                model="gpt-4o-mini", 
+                input_messages=messages,
+                response=response,
+                duration_ms=duration_ms
+            )
+        
+        Returns:
+            True if tracked successfully
+        """
+
+        
+        try:
+            # Extract output content
+            output_content = ""
+            if hasattr(response, "content"):
+                output_content = response.content
+            elif isinstance(response, dict) and "content" in response:
+                output_content = response["content"]
+            elif isinstance(response, str):
+                output_content = response
+            
+            # Extract token usage
+            usage = format_llm_usage(response)
+            
+            # Build metadata
+            metadata = {
+                "name": name,
+                "model": model,
+                "model_parameters": model_parameters or {},
+                "input": format_chat_messages(input_messages),
+                "usage": usage,
+                "agent": self.name,
+                "agent_role": self.role_type
+            }
+            
+            # Add duration if provided
+            if duration_ms is not None:
+                metadata["duration_ms"] = round(duration_ms, 2)
+                metadata["latency_ms"] = round(duration_ms, 2)  # Alias for Langfuse
+            
+            # Update current observation if inside @observe
+            updated = update_current_observation(
+                output=output_content,
+                metadata=metadata
+            )
+            
+            if updated:
+                logger.debug(f"[{self.name}] LLM tracked: {name}, model={model}, duration={duration_ms:.0f}ms" if duration_ms else f"[{self.name}] LLM tracked: {name}, model={model}")
+            return updated
+            
+        except Exception as e:
+            logger.debug(f"[{self.name}] track_llm_generation: {e}")
+            return False
+
+    def create_span(
+        self,
+        name: str,
+        input_data: Dict[str, Any] = None,
+        parent_span: Any = None
+    ) -> Optional[Any]:
+        """Create a span - simplified for v3 API.
+        
+        Note: In v3, prefer using @observe decorator instead.
+        This method logs metadata for debugging purposes.
+        """
+        # In v3, spans are created via @observe decorator
+        # This method just logs for debugging
+        logger.debug(f"[{self.name}] Span: {name}, input={input_data}")
+        return {"name": name, "input": input_data}  # Return dummy for compatibility
+
+    def score_current_task(
+        self,
+        success: bool,
+        duration_ms: float = None,
+        comment: str = None
+    ) -> None:
+        """Score the current task (v3 API).
+        
+        Must be called inside an @observe decorated function.
+        """
+        try:
+            # Score success
+            score_current(
+                name="task_success",
+                value=1.0 if success else 0.0,
+                comment=comment
+            )
+            
+            # Score latency if provided
+            if duration_ms is not None:
+                score_current(
+                    name="latency_ms",
+                    value=duration_ms
+                )
+        except Exception as e:
+            logger.debug(f"[{self.name}] score_current_task: {e}")
+
+    def track_event(self, name: str, metadata: Dict[str, Any] = None) -> None:
+        """Track a discrete event (v3 API).
+        
+        Updates current observation with event metadata.
+        """
+        if not LANGFUSE_AVAILABLE:
+            return
+        
+        try:
+            update_current_observation(
+                metadata={
+                    f"event_{name}": metadata or {},
+                    "event_timestamp": datetime.now(timezone.utc).isoformat()
+                }
+            )
+            logger.debug(f"[{self.name}] Event tracked: {name}")
+        except Exception as e:
+            logger.debug(f"[{self.name}] track_event: {e}")
 
     async def _create_execution_record(self, task: "TaskContext") -> UUID:
         """Create AgentExecution record in database"""
@@ -1184,6 +1652,7 @@ class BaseAgent(ABC):
             # Extract task info
             task_id = task_data.get("task_id")
             self._current_task_id = task_id
+            self._current_trace_id = str(task_id)  # Use task_id as trace identifier
             
             # Extract context
             context = task_data.get("context", {})
@@ -1192,12 +1661,62 @@ class BaseAgent(ABC):
             self._current_task_type = task_data.get("task_type", "message")
             self._current_task_content = context.get("content", "")
             self._current_routing_reason = task_data.get("routing_reason", "")
-            self._current_user_id = context.get("user_id")
+            # user_id can be at top-level (RouterTaskEvent) or in context
+            self._current_user_id = task_data.get("user_id") or context.get("user_id")
+            if self._current_user_id and isinstance(self._current_user_id, str):
+                self._current_user_id = UUID(self._current_user_id)
 
-            # Create TaskContext
+            # Handle collaboration task types separately (don't create full TaskContext)
+            task_type_str = task_data.get("task_type", "message")
+            
+            if task_type_str == "collaboration_request":
+                # Handle incoming collaboration request
+                logger.info(f"[{self.name}] Handling collaboration request")
+                try:
+                    response = await self.handle_collaboration_request(
+                        request_id=UUID(context.get("request_id")),
+                        question=context.get("question", ""),
+                        request_type=context.get("request_type", "clarification"),
+                        from_agent_role=context.get("from_agent_role", "unknown"),
+                        context=context.get("collaboration_context", {})
+                    )
+                    
+                    # Send response back
+                    await self._send_collaboration_response(
+                        request_id=context.get("request_id"),
+                        to_agent_id=context.get("from_agent_id"),
+                        response=response,
+                        success=True
+                    )
+                except Exception as e:
+                    logger.error(f"[{self.name}] Collaboration request handling failed: {e}")
+                    await self._send_collaboration_response(
+                        request_id=context.get("request_id"),
+                        to_agent_id=context.get("from_agent_id"),
+                        response="",
+                        success=False,
+                        error=str(e)
+                    )
+                finally:
+                    self._current_task_id = None
+                return
+            
+            elif task_type_str == "collaboration_response":
+                # Handle incoming collaboration response (resume waiting agent)
+                logger.info(f"[{self.name}] Handling collaboration response")
+                await self._handle_collaboration_response(
+                    request_id=UUID(context.get("request_id")),
+                    response=context.get("response", ""),
+                    success=context.get("success", True),
+                    error=context.get("error")
+                )
+                self._current_task_id = None
+                return
+            
+            # Create TaskContext for normal task processing
             task = TaskContext(
                 task_id=task_id,
-                task_type=AgentTaskType(task_data.get("task_type", "message")),
+                task_type=AgentTaskType(task_type_str),
                 priority=task_data.get("priority", "medium"),
                 routing_reason=task_data.get("routing_reason", ""),
                 message_id=context.get("message_id"),
@@ -1205,8 +1724,12 @@ class BaseAgent(ABC):
                 project_id=context.get("project_id") or self.project_id,
                 content=context.get("content", ""),
                 message_type=context.get("message_type", "text"),
+                execution_mode=context.get("execution_mode", "interactive"),  # NEW: Get execution mode
                 context=context,
             )
+            
+            # Set current execution mode for display_mode logic
+            self._current_execution_mode = task.execution_mode
            
             # Create execution record in database
             self._current_execution_id = await self._create_execution_record(task)
@@ -1261,8 +1784,6 @@ class BaseAgent(ABC):
                 if actual_tokens > 0:
                     await self._record_token_usage(actual_tokens)
                 
-                # NOTE: Agents should send their own response via message_user("response", ...)
-                # inside handle_task(). Don't auto-send here to avoid duplicates.
                 
                 # Update execution record with success
                 await self._complete_execution_record(result=result, success=True)
@@ -1324,8 +1845,20 @@ class BaseAgent(ABC):
                 exc_info=True
             )
         finally:
+            # Score task completion (v3 API - non-blocking)
+            try:
+                duration_ms = (datetime.now(timezone.utc) - self._execution_start_time).total_seconds() * 1000 if self._execution_start_time else 0
+                task_success = not task_failed if 'task_failed' in locals() else True
+                self.score_current_task(success=task_success, duration_ms=duration_ms)
+                flush_langfuse()
+            except Exception as e:
+                logger.debug(f"[{self.name}] Langfuse cleanup: {e}")
+            
+            # Reset task state
             self._current_task_id = None
             self._current_execution_id = None
+            self._current_trace_id = None
+            self._current_trace = None
     
     # ===== Token Budget Methods =====
     

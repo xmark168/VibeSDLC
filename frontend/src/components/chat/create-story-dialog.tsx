@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -7,8 +7,12 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
-import { Zap, Flag, X } from "lucide-react"
-import type { StoryFormData } from "@/types"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Zap, Flag, X, Link2, ChevronsUpDown, Check } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { storiesApi } from "@/apis/stories"
+import type { StoryFormData, Story } from "@/types"
 
 export type { StoryFormData }
 
@@ -16,19 +20,42 @@ interface CreateStoryDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCreateStory: (story: StoryFormData) => void
+  projectId?: string
 }
 
-export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateStoryDialogProps) {
+export function CreateStoryDialog({ open, onOpenChange, onCreateStory, projectId }: CreateStoryDialogProps) {
   const [formData, setFormData] = useState<StoryFormData>({
     title: "",
     description: "",
     type: "UserStory",
-    story_point: undefined,
+    story_point: 1,
     priority: "Medium",
-    acceptance_criteria: []
+    acceptance_criteria: [],
+    requirements: [],
+    dependencies: []
   })
 
   const [currentCriteria, setCurrentCriteria] = useState("")
+  const [currentRequirement, setCurrentRequirement] = useState("")
+  const [dependencyPopoverOpen, setDependencyPopoverOpen] = useState(false)
+  const [existingStories, setExistingStories] = useState<Story[]>([])
+  const [loadingStories, setLoadingStories] = useState(false)
+
+  // Fetch existing stories when dialog opens
+  useEffect(() => {
+    if (open && projectId) {
+      setLoadingStories(true)
+      storiesApi.list(projectId, { limit: 100 })
+        .then(result => {
+          setExistingStories(result.data || [])
+        })
+        .catch(err => {
+          console.error("Failed to load stories:", err)
+          setExistingStories([])
+        })
+        .finally(() => setLoadingStories(false))
+    }
+  }, [open, projectId])
 
   const handleSubmit = () => {
     if (!formData.title.trim()) {
@@ -46,11 +73,15 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateS
       title: "",
       description: "",
       type: "UserStory",
-      story_point: undefined,
+      story_point: 1,
       priority: "Medium",
-      acceptance_criteria: []
+      acceptance_criteria: [],
+      requirements: [],
+      dependencies: []
     })
     setCurrentCriteria("")
+    setCurrentRequirement("")
+    setDependencyPopoverOpen(false)
   }
 
   const handleAddCriteria = () => {
@@ -68,6 +99,48 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateS
       ...prev,
       acceptance_criteria: prev.acceptance_criteria.filter((_, i) => i !== index)
     }))
+  }
+
+  const handleAddRequirement = () => {
+    if (currentRequirement.trim()) {
+      setFormData(prev => ({
+        ...prev,
+        requirements: [...prev.requirements, currentRequirement.trim()]
+      }))
+      setCurrentRequirement("")
+    }
+  }
+
+  const handleRemoveRequirement = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      requirements: prev.requirements.filter((_, i) => i !== index)
+    }))
+  }
+
+  const handleToggleDependency = (storyId: string) => {
+    setFormData(prev => {
+      const isSelected = prev.dependencies.includes(storyId)
+      return {
+        ...prev,
+        dependencies: isSelected 
+          ? prev.dependencies.filter(id => id !== storyId)
+          : [...prev.dependencies, storyId]
+      }
+    })
+  }
+
+  const handleRemoveDependency = (storyId: string) => {
+    setFormData(prev => ({
+      ...prev,
+      dependencies: prev.dependencies.filter(id => id !== storyId)
+    }))
+  }
+
+  // Get story title by ID for display
+  const getStoryTitle = (storyId: string) => {
+    const story = existingStories.find(s => s.id === storyId)
+    return story?.title || storyId
   }
 
   return (
@@ -164,12 +237,12 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateS
                   <SelectValue placeholder="Not estimated" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="1">1 (1 day)</SelectItem>
-                  <SelectItem value="2">2 (2 days)</SelectItem>
-                  <SelectItem value="3">3 (3 days)</SelectItem>
-                  <SelectItem value="5">5 (1 week)</SelectItem>
-                  <SelectItem value="8">8 (2 weeks)</SelectItem>
-                  <SelectItem value="13">13 (Too large - split!)</SelectItem>
+                  <SelectItem value="1">1 - XS (Extra Small)</SelectItem>
+                  <SelectItem value="2">2 - S (Small)</SelectItem>
+                  <SelectItem value="3">3 - M (Medium)</SelectItem>
+                  <SelectItem value="5">5 - L (Large)</SelectItem>
+                  <SelectItem value="8">8 - XL (Extra Large)</SelectItem>
+                  <SelectItem value="13">13 - XXL (Too large - split!)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -250,6 +323,146 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateS
                 Add
               </Button>
             </div>
+          </div>
+
+          {/* Requirements */}
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold">Requirements</Label>
+
+            {/* Existing requirements */}
+            {formData.requirements.length > 0 && (
+              <div className="space-y-2 mb-2">
+                {formData.requirements.map((requirement, index) => (
+                  <div
+                    key={index}
+                    className="flex items-start gap-2 p-2 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                  >
+                    <span className="text-xs font-semibold text-muted-foreground mt-0.5">
+                      {index + 1}.
+                    </span>
+                    <span className="flex-1 text-sm text-foreground">{requirement}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveRequirement(index)}
+                      className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add new requirement */}
+            <div className="flex gap-2">
+              <Input
+                placeholder="Specific requirement for developers..."
+                value={currentRequirement}
+                onChange={(e) => setCurrentRequirement(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault()
+                    handleAddRequirement()
+                  }
+                }}
+                className="h-9 text-sm"
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleAddRequirement}
+                className="h-9 px-3 text-xs"
+              >
+                Add
+              </Button>
+            </div>
+          </div>
+
+          {/* Dependencies */}
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold flex items-center gap-1.5">
+              <Link2 className="w-3.5 h-3.5 text-orange-500" />
+              Dependencies
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Select stories that must be completed before this story can start
+            </p>
+
+            {/* Selected dependencies */}
+            {formData.dependencies.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2">
+                {formData.dependencies.map((depId) => (
+                  <Badge
+                    key={depId}
+                    variant="outline"
+                    className="bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-300 border-orange-200/50 dark:border-orange-800/50 text-xs flex items-center gap-1 max-w-[250px]"
+                  >
+                    <span className="truncate">{getStoryTitle(depId)}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveDependency(depId)}
+                      className="ml-1 hover:text-destructive transition-colors flex-shrink-0"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            )}
+
+            {/* Story selector */}
+            <Popover open={dependencyPopoverOpen} onOpenChange={setDependencyPopoverOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={dependencyPopoverOpen}
+                  className="w-full justify-between h-9 text-sm font-normal"
+                  disabled={loadingStories || existingStories.length === 0}
+                >
+                  {loadingStories ? (
+                    "Loading stories..."
+                  ) : existingStories.length === 0 ? (
+                    "No stories available"
+                  ) : (
+                    "Select dependencies..."
+                  )}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[400px] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Search stories..." />
+                  <CommandList>
+                    <CommandEmpty>No story found.</CommandEmpty>
+                    <CommandGroup className="max-h-[200px] overflow-y-auto">
+                      {existingStories.map((story) => (
+                        <CommandItem
+                          key={story.id}
+                          value={story.title}
+                          onSelect={() => handleToggleDependency(story.id)}
+                          className="cursor-pointer"
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4 flex-shrink-0",
+                              formData.dependencies.includes(story.id) ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm truncate">{story.title}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {story.type} • {story.status}
+                            </p>
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
 

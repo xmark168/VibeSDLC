@@ -27,11 +27,19 @@ function WorkspacePage() {
   const [agentStatuses, setAgentStatuses] = useState<Map<string, { status: string; lastUpdate: string }>>(new Map())
   // Track selected artifact for viewing
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null)
+  // Track selected file for viewing
+  const [selectedFile, setSelectedFile] = useState<string | null>(null)
 
   const handleOpenArtifact = (artifactId: string) => {
     console.log('[Workspace] Opening artifact:', artifactId)
     setSelectedArtifactId(artifactId)
     setActiveTab('file') // Switch to file tab to show artifact viewer
+  }
+
+  const handleOpenFile = (filePath: string) => {
+    console.log('[Workspace] Opening file:', filePath)
+    setSelectedFile(filePath)
+    setActiveTab('file') // Switch to file tab
   }
 
   // Stable resize handler - directly manipulates DOM for smooth dragging
@@ -76,6 +84,7 @@ function WorkspacePage() {
                   onActiveTabChange={setActiveTab}
                   onAgentStatusesChange={setAgentStatuses}
                   onOpenArtifact={handleOpenArtifact}
+                  onOpenFile={handleOpenFile}
                 />
               </div>
 
@@ -91,6 +100,7 @@ function WorkspacePage() {
               activeTab={activeTab}
               agentStatuses={agentStatuses}
               selectedArtifactId={selectedArtifactId}
+              initialSelectedFile={selectedFile}
               onResize={handleResize}
             />
           </div>

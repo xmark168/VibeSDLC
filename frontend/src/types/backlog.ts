@@ -1,5 +1,7 @@
 // Backlog and Kanban-related types
 
+export type StoryAgentState = 'pending' | 'processing' | 'canceled' | 'finished'
+
 export interface BacklogItem {
   id: string
   project_id: string
@@ -11,14 +13,16 @@ export interface BacklogItem {
   reviewer_id?: string | null
   assignee_id?: string | null
   rank?: number | null
-  estimate_value?: number | null
   story_point?: number | null
-  pause: boolean
-  deadline?: string | null
+  priority?: number | null
   created_at: string
   updated_at: string
   parent?: BacklogItem | null
   children?: BacklogItem[]
+  // Agent tracking
+  agent_state?: StoryAgentState | null
+  assigned_agent_id?: string | null
+  branch_name?: string | null
 }
 
 export interface KanbanBoard {
@@ -29,8 +33,17 @@ export interface KanbanBoard {
   board: {
     Backlog: BacklogItem[]
     Todo: BacklogItem[]
-    Doing: BacklogItem[]
+    InProgress: BacklogItem[]
+    Doing: BacklogItem[]  // Legacy alias for InProgress
+    Review: BacklogItem[]
     Done: BacklogItem[]
+    Archived: BacklogItem[]
+  }
+  wip_limits?: {
+    [key: string]: {
+      wip_limit: number
+      limit_type: 'hard' | 'soft'
+    }
   }
 }
 
@@ -81,4 +94,6 @@ export interface StoryFormData {
   story_point?: number
   priority?: "High" | "Medium" | "Low"
   acceptance_criteria: string[]
+  requirements: string[]
+  dependencies: string[]
 }

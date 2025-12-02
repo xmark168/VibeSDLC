@@ -1,5 +1,6 @@
 import type React from "react";
 import { useState, useRef, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -40,6 +41,9 @@ import { ConversationOwnerBadge } from "./ConversationOwnerBadge";
 import { AgentHandoffNotification } from "./AgentHandoffNotification";
 import { ArtifactCard } from "./ArtifactCard";
 import { StoriesCreatedCard } from "./StoriesCreatedCard";
+import { StorySuggestionsCard } from "./StorySuggestionsCard";
+import { PrdCreatedCard } from "./PrdCreatedCard";
+import { StoriesFileCard } from "./StoriesFileCard";
 import { useProjectAgents } from "@/queries/agents";
 import { PromptInput, PromptInputButton, PromptInputSubmit, PromptInputTextarea, PromptInputToolbar, PromptInputTools } from "../ui/shadcn-io/ai/prompt-input";
 import { MentionDropdown, type Agent } from "../ui/mention-dropdown";
@@ -58,6 +62,7 @@ interface ChatPanelProps {
   onActiveTabChange?: (tab: string | null) => void;
   onAgentStatusesChange?: (statuses: Map<string, { status: string; lastUpdate: string }>) => void; // NEW
   onOpenArtifact?: (artifactId: string) => void;
+  onOpenFile?: (filePath: string) => void;
 }
 
 export function ChatPanelWS({
@@ -72,6 +77,7 @@ export function ChatPanelWS({
   onActiveTabChange,
   onAgentStatusesChange, // NEW
   onOpenArtifact,
+  onOpenFile,
 }: ChatPanelProps) {
   const [message, setMessage] = useState("");
   const [showMentions, setShowMentions] = useState(false);
@@ -82,6 +88,7 @@ export function ChatPanelWS({
   const [pendingQuestion, setPendingQuestion] = useState<Message | null>(null);
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const prevMessagesLengthRef = useRef(0);
@@ -106,7 +113,7 @@ export function ChatPanelWS({
   };
 
   // Transform database agents to dropdown format
-  const AGENTS: Agent[] = (projectAgents || []).map((agent) => {
+  const AGENTS = (projectAgents?.data || []).map((agent) => {
     const roleInfo = getRoleInfo(agent.role_type);
     return {
       id: agent.id,
@@ -143,11 +150,12 @@ export function ChatPanelWS({
     messages: wsMessages,
     agentStatus,
     typingAgents,
+    answeredBatchIds,  // Track which batches have been answered
     conversationOwner,
     sendMessage: wsSendMessage,
     sendQuestionAnswer,
     sendBatchAnswers,
-  } = useChatWebSocket(projectId, token || '');
+  } = useChatWebSocket(projectId ?? null, token || '');
 
   // Combine existing messages with WebSocket messages
   const apiMessages = messagesData?.data || [];
@@ -162,9 +170,113 @@ export function ChatPanelWS({
   )
 
   // Remove duplicates by ID (simple de-duplication)
-  const uniqueMessages = sortedMessages.filter(
+  const deduplicatedMessages = sortedMessages.filter(
     (msg, index, self) => index === self.findIndex(m => m.id === msg.id)
   );
+
+  // Group batch questions: handle both new format (1 message with all questions) and old format (multiple messages)
+  const uniqueMessages = (() => {
+    const processedBatchIds = new Set<string>();
+    const result: Message[] = [];
+
+    for (const msg of deduplicatedMessages) {
+      // If this is a batch question
+      if (msg.message_type === 'agent_question_batch' && msg.structured_data?.batch_id) {
+        const batchId = msg.structured_data.batch_id;
+        
+        // Skip if we already processed this batch
+        if (processedBatchIds.has(batchId)) {
+          continue;
+        }
+        processedBatchIds.add(batchId);
+
+        // NEW FORMAT: structured_data.questions already contains all questions
+        if (msg.structured_data?.questions && Array.isArray(msg.structured_data.questions) && msg.structured_data.questions.length > 0) {
+          // Use as-is, questions are already in correct format
+          result.push(msg);
+          continue;
+        }
+
+        // OLD FORMAT: Multiple messages per batch - need to combine them
+        const batchMessages = deduplicatedMessages.filter(
+          m => m.message_type === 'agent_question_batch' && 
+               m.structured_data?.batch_id === batchId
+        ).sort((a, b) => (a.structured_data?.batch_index || 0) - (b.structured_data?.batch_index || 0));
+
+        // Combine into single message with all questions (from old format where content = question text)
+        const combinedQuestions = batchMessages.map(m => ({
+          question_id: m.structured_data?.question_id,
+          question_text: m.content,  // Old format: content was the question text
+          question_type: m.structured_data?.question_type || 'open',
+          options: m.structured_data?.options,
+          allow_multiple: m.structured_data?.allow_multiple || false,
+        }));
+
+        const combinedQuestionIds = batchMessages.map(m => m.structured_data?.question_id || m.id);
+        const isAnswered = batchMessages.some(m => m.structured_data?.answered);
+
+        const combinedMsg: Message = {
+          ...batchMessages[0],
+          structured_data: {
+            ...batchMessages[0].structured_data,
+            batch_id: batchId,
+            questions: combinedQuestions,
+            question_ids: combinedQuestionIds,
+            answered: isAnswered,
+          }
+        };
+
+        result.push(combinedMsg);
+      } else {
+        // Non-batch message, add as-is
+        result.push(msg);
+      }
+    }
+
+    return result;
+  })();
+  
+  // Find the latest PRD card ID (only show actions on the latest one)
+  const latestPrdMessageId = (() => {
+    const prdMessages = uniqueMessages.filter(
+      msg => msg.structured_data?.message_type === 'prd_created'
+    )
+    if (prdMessages.length === 0) return null
+    // Get the one with latest timestamp
+    const latest = prdMessages.sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0]
+    return latest?.id || null
+  })()
+  
+  // Find the latest Stories card ID (only show actions on the latest one)
+  const latestStoriesMessageId = (() => {
+    const storiesMessages = uniqueMessages.filter(
+      msg => msg.structured_data?.message_type === 'stories_created'
+    )
+    if (storiesMessages.length === 0) return null
+    const latest = storiesMessages.sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0]
+    return latest?.id || null
+  })()
+
+  // Check if a PRD/Stories card has been submitted (user sent approve/edit message after it)
+  const isCardSubmitted = (cardMsgId: string, cardType: 'prd' | 'stories'): boolean => {
+    const cardMsgIndex = uniqueMessages.findIndex(m => m.id === cardMsgId)
+    if (cardMsgIndex === -1) return false
+    
+    // Look for user messages after this card
+    const messagesAfterCard = uniqueMessages.slice(cardMsgIndex + 1)
+    const keywords = cardType === 'prd' 
+      ? ['Phê duyệt PRD', 'Chỉnh sửa PRD']
+      : ['Phê duyệt Stories', 'Chỉnh sửa Stories']
+    
+    return messagesAfterCard.some(m => 
+      m.author_type === AuthorType.USER && 
+      keywords.some(kw => m.content?.includes(kw))
+    )
+  }
 
   // Detect unanswered questions - show only the LATEST one
   useEffect(() => {
@@ -188,6 +300,21 @@ export function ChatPanelWS({
       }, 100)
     }
   }, [uniqueMessages])
+
+  // Detect stories_approved message and refresh Kanban board
+  const lastApprovedMsgIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const latestApproved = uniqueMessages.find(
+      msg => msg.structured_data?.message_type === 'stories_approved'
+    )
+    
+    // Only refresh if it's a NEW approval message we haven't processed yet
+    if (latestApproved && latestApproved.id !== lastApprovedMsgIdRef.current && projectId) {
+      console.log('[ChatPanel] Stories approved, refreshing Kanban board...')
+      lastApprovedMsgIdRef.current = latestApproved.id
+      queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+    }
+  }, [uniqueMessages, projectId, queryClient])
 
   // Initial scroll to bottom on mount
   useEffect(() => {
@@ -664,7 +791,8 @@ export function ChatPanelWS({
                     questions={msg.structured_data?.questions || []}
                     questionIds={msg.structured_data?.question_ids || []}
                     agentName={msg.agent_name}
-                    answered={msg.structured_data?.answered || false}
+                    answered={msg.structured_data?.answered || answeredBatchIds.has(msg.structured_data?.batch_id || '')}
+                    submittedAnswers={msg.structured_data?.answers || []}
                     onSubmit={(answers) => {
                       sendBatchAnswers(
                         msg.structured_data!.batch_id!,
@@ -700,28 +828,33 @@ export function ChatPanelWS({
                 </div>
 
                 <div className="space-y-1.5">
-                  <div className="rounded-lg px-3 py-2 bg-muted w-fit">
-                    <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
-                      {msg.content || ''}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 px-1">
-                    <span className="text-xs text-muted-foreground">
-                      {formatTimestamp(msg.created_at)}
-                    </span>
-                    <button
-                      onClick={() => copyToClipboard(msg.content, msg.id)}
-                      className="p-1 rounded hover:bg-accent transition-colors"
-                      title="Copy message"
-                    >
-                      {copiedMessageId === msg.id ? (
-                        <Check className="w-3.5 h-3.5 text-green-500" />
-                      ) : (
-                        <Copy className="w-3.5 h-3.5 text-muted-foreground" />
-                      )}
-                    </button>
-                  </div>
-
+                  {/* Only show content bubble if there's actual content */}
+                  {msg.content && msg.content.trim() && (
+                    <>
+                      <div className="rounded-lg px-3 py-2 bg-muted w-fit">
+                        <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
+                          {msg.content}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 px-1">
+                        <span className="text-xs text-muted-foreground">
+                          {formatTimestamp(msg.created_at)}
+                        </span>
+                        <button
+                          onClick={() => copyToClipboard(msg.content, msg.id)}
+                          className="p-1 rounded hover:bg-accent transition-colors"
+                          title="Copy message"
+                        >
+                          {copiedMessageId === msg.id ? (
+                            <Check className="w-3.5 h-3.5 text-green-500" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+                          )}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  
                   {/* Show artifact card if message type is artifact_created */}
                   {msg.message_type === 'artifact_created' && msg.structured_data?.artifact_id && (
                     <ArtifactCard
@@ -741,8 +874,57 @@ export function ChatPanelWS({
                       }}
                     />
                   )}
-
-                  {/* Show stories created card if message type is stories_created */}
+                  
+                  {/* Show PRD created card if structured_data has message_type prd_created */}
+                  {msg.structured_data?.message_type === 'prd_created' && msg.structured_data?.file_path && (
+                    <PrdCreatedCard
+                      title={msg.structured_data.title || 'PRD'}
+                      filePath={msg.structured_data.file_path}
+                      status={msg.structured_data.status || 'pending'}
+                      showActions={msg.id === latestPrdMessageId}
+                      submitted={msg.structured_data.submitted === true || isCardSubmitted(msg.id, 'prd')}
+                      onView={() => {
+                        if (onOpenFile) {
+                          onOpenFile(msg.structured_data!.file_path)
+                        }
+                        if (onActiveTabChange) {
+                          onActiveTabChange('file')
+                        }
+                      }}
+                      onApprove={() => {
+                        wsSendMessage("Phê duyệt PRD này, hãy tạo user stories")
+                      }}
+                      onEdit={(feedback) => {
+                        wsSendMessage(`Chỉnh sửa PRD: ${feedback}`)
+                      }}
+                    />
+                  )}
+                  
+                  {/* Show stories file card if structured_data has message_type stories_created */}
+                  {msg.structured_data?.message_type === 'stories_created' && msg.structured_data?.file_path && (
+                    <StoriesFileCard
+                      filePath={msg.structured_data.file_path}
+                      status={msg.structured_data.status || 'pending'}
+                      showActions={msg.id === latestStoriesMessageId}
+                      submitted={msg.structured_data.submitted === true || isCardSubmitted(msg.id, 'stories')}
+                      onView={() => {
+                        if (onOpenFile) {
+                          onOpenFile(msg.structured_data!.file_path)
+                        }
+                        if (onActiveTabChange) {
+                          onActiveTabChange('file')
+                        }
+                      }}
+                      onApprove={() => {
+                        wsSendMessage("Phê duyệt Stories")
+                      }}
+                      onEdit={(feedback) => {
+                        wsSendMessage(`Chỉnh sửa Stories: ${feedback}`)
+                      }}
+                    />
+                  )}
+                  
+                  {/* Show stories created card if message type is stories_created (legacy) */}
                   {msg.message_type === 'stories_created' && msg.structured_data?.story_ids && (
                     <StoriesCreatedCard
                       stories={{
@@ -751,6 +933,40 @@ export function ChatPanelWS({
                         prd_artifact_id: msg.structured_data.prd_artifact_id,
                       }}
                       projectId={projectId || ''}
+                    />
+                  )}
+                  
+                  {/* Show story review card from BA auto-verify */}
+                  {msg.structured_data?.message_type === 'story_review' && (
+                    <StorySuggestionsCard
+                      storyId={msg.structured_data.story_id || ''}
+                      storyTitle={msg.structured_data.story_title || ''}
+                      isDuplicate={msg.structured_data.is_duplicate}
+                      duplicateOf={msg.structured_data.duplicate_of}
+                      investScore={msg.structured_data.invest_score || 0}
+                      investIssues={msg.structured_data.invest_issues || []}
+                      suggestedTitle={msg.structured_data.suggested_title}
+                      suggestedAcceptanceCriteria={msg.structured_data.suggested_acceptance_criteria}
+                      suggestedRequirements={msg.structured_data.suggested_requirements}
+                      hasSuggestions={msg.structured_data.has_suggestions}
+                      initialActionTaken={msg.structured_data.action_taken}
+                      onApplied={() => {
+                        if (projectId) {
+                          queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+                          queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
+                        }
+                      }}
+                      onKeep={() => {
+                        if (projectId) {
+                          queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
+                        }
+                      }}
+                      onRemove={() => {
+                        if (projectId) {
+                          queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+                          queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
+                        }
+                      }}
                     />
                   )}
                 </div>

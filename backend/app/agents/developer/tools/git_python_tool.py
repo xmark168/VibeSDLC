@@ -1,6 +1,5 @@
 from typing import List, Optional, Type
 from pydantic import BaseModel, Field
-from crewai.tools import BaseTool
 from git import Repo, InvalidGitRepositoryError
 import os
 from datetime import datetime
@@ -9,14 +8,16 @@ from pathlib import Path
 
 class GitPythonToolInput(BaseModel):
     """Input for git operations using GitPython"""
-    operation: str = Field(..., description="Git operation: 'init', 'create_branch', 'create_worktree', 'remove_worktree', 'checkout_branch', 'commit', 'push', 'status', 'diff'")
+    operation: str = Field(..., description="Git operation: 'init', 'create_branch', 'create_worktree', 'remove_worktree', 'checkout_branch', 'commit', 'push', 'status', 'diff', 'merge', 'delete_branch'")
     branch_name: str = Field(default=None, description="Branch name for operations")
     message: str = Field(default="Auto-commit by AI agent", description="Commit message")
     files: List[str] = Field(default=["."], description="List of files to commit, default to all changed files")
     worktree_path: str = Field(default=None, description="Path for worktree operations")
 
 
-class GitPythonTool(BaseTool):
+class GitPythonTool:
+    """Git operations using GitPython library (standalone, no CrewAI dependency)."""
+    
     name: str = "git_python_tool"
     description: str = """Git operations using GitPython library:
     - 'init': Initialize git repository
@@ -29,12 +30,11 @@ class GitPythonTool(BaseTool):
     - 'push': Push current branch to remote
     - 'status': Get git status
     - 'diff': Get git diff
+    - 'merge': Merge a branch into current branch
+    - 'delete_branch': Delete a local branch
     Usage: {'operation': 'create_branch', 'branch_name': 'feature/new-feature', 'message': 'Initial commit'}"""
-    args_schema: Type[BaseModel] = GitPythonToolInput
-    root_dir: str = Field(default_factory=os.getcwd, description="Root directory for git operations")
 
     def __init__(self, root_dir: str = None, **kwargs):
-        super().__init__(**kwargs)
         self.root_dir = root_dir or os.getcwd()
 
     def _run(self, operation: str, branch_name: str = None, message: str = "Auto-commit by AI agent", files: List[str] = ["."], worktree_path: str = None) -> str:
@@ -75,8 +75,16 @@ class GitPythonTool(BaseTool):
                 result = self._get_diff()
             elif operation == "list_worktrees":
                 result = self._list_worktrees()
+            elif operation == "merge":
+                if not branch_name:
+                    return "Error: branch_name is required for merge operation"
+                result = self._merge_branch(branch_name)
+            elif operation == "delete_branch":
+                if not branch_name:
+                    return "Error: branch_name is required for delete_branch operation"
+                result = self._delete_branch(branch_name)
             else:
-                result = f"Error: Unknown operation '{operation}'. Supported operations: init, create_branch, create_worktree, remove_worktree, list_worktrees, checkout_branch, commit, push, status, diff"
+                result = f"Error: Unknown operation '{operation}'. Supported operations: init, create_branch, create_worktree, remove_worktree, list_worktrees, checkout_branch, commit, push, status, diff, merge, delete_branch"
 
         except Exception as e:
             result = f"Error during git operation: {str(e)}"
@@ -308,3 +316,45 @@ class GitPythonTool(BaseTool):
         
         except Exception as e:
             return f"Error getting diff: {str(e)}"
+
+    def _merge_branch(self, branch_name: str) -> str:
+        """Merge a branch into the current branch using GitPython."""
+        try:
+            repo = Repo(self.root_dir)
+            current_branch = repo.active_branch.name
+            
+            # Check if branch exists
+            if branch_name not in [h.name for h in repo.heads]:
+                return f"Error: Branch '{branch_name}' does not exist"
+            
+            # Perform merge
+            repo.git.merge(branch_name, m=f"Merge branch '{branch_name}' into {current_branch}")
+            
+            return f"Merged '{branch_name}' into '{current_branch}'"
+        
+        except Exception as e:
+            error_msg = str(e)
+            if "conflict" in error_msg.lower():
+                return f"Merge conflict when merging '{branch_name}': {error_msg}"
+            return f"Merge failed: {error_msg}"
+
+    def _delete_branch(self, branch_name: str, force: bool = False) -> str:
+        """Delete a local branch using GitPython."""
+        try:
+            repo = Repo(self.root_dir)
+            
+            # Check if branch exists
+            if branch_name not in [h.name for h in repo.heads]:
+                return f"Error: Branch '{branch_name}' does not exist"
+            
+            # Cannot delete current branch
+            if repo.active_branch.name == branch_name:
+                return f"Error: Cannot delete current branch '{branch_name}'. Checkout another branch first."
+            
+            # Delete branch
+            repo.delete_head(branch_name, force=force)
+            
+            return f"Deleted branch '{branch_name}'"
+        
+        except Exception as e:
+            return f"Delete branch failed: {str(e)}"

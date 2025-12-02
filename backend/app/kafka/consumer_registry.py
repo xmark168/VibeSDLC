@@ -116,9 +116,8 @@ def setup_consumers(registry: ConsumerRegistry):
     Args:
         registry: ConsumerRegistry instance
     """
-    # WebSocket Bridge Consumer (for real-time UI updates)
-    # This will be imported from websocket.kafka_bridge
-    # We'll register it when we update that file
+    # Story events are handled by StoryEventRouter in router.py
+    # No additional consumers needed here
 
     logger.info("Consumer setup completed")
 

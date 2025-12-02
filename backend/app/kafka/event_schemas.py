@@ -21,6 +21,7 @@ class KafkaTopics(str, Enum):
     FLOW_STATUS = "flow_status"
     QUESTION_ANSWERS = "question_answers"
     DELEGATION_REQUESTS = "delegation_requests"
+    AGENT_COLLABORATION = "agent_collaboration"  # Cross-agent collaboration
     
 
 class BaseKafkaEvent(BaseModel):
@@ -88,6 +89,10 @@ class AgentTaskType(str, Enum):
     # Clarification questions
     RESUME_WITH_ANSWER = "resume_with_answer"  # Resume task with clarification answer
 
+    # Cross-agent collaboration
+    COLLABORATION_REQUEST = "collaboration_request"    # Incoming collaboration request
+    COLLABORATION_RESPONSE = "collaboration_response"  # Response to collaboration request
+
     # Generic
     CUSTOM = "custom"
 
@@ -107,6 +112,34 @@ class DelegationRequestEvent(BaseKafkaEvent):
     delegation_message: Optional[str] = None
     source_event_type: str
     source_event_id: str
+
+
+# CROSS-AGENT COLLABORATION EVENTS
+class AgentCollaborationRequest(BaseKafkaEvent):
+    """Request from one agent to another for collaboration."""
+    
+    event_type: str = "agent.collaboration.request"
+    request_id: UUID = Field(default_factory=uuid4)
+    from_agent_id: UUID
+    from_agent_role: str              # "developer", "business_analyst", "tester"
+    to_agent_role: str                # Target role to collaborate with
+    request_type: str                 # "clarification", "review", "estimation", "validation"
+    question: str                     # The question or request
+    context: Dict[str, Any] = Field(default_factory=dict)  # task_id, story_id, code_snippet, etc.
+    timeout_seconds: int = 300        # Max wait time
+    depth: int = 0                    # Loop prevention counter
+
+
+class AgentCollaborationResponse(BaseKafkaEvent):
+    """Response to a collaboration request."""
+    
+    event_type: str = "agent.collaboration.response"
+    request_id: UUID                  # Original request ID
+    from_agent_id: UUID               # Agent sending response
+    to_agent_id: UUID                 # Agent that made the request
+    response: str                     # The response content
+    success: bool = True              # Whether collaboration succeeded
+    error: Optional[str] = None       # Error message if failed
 
 
 # STORY EVENTS
@@ -140,6 +173,15 @@ class StoryEvent(BaseKafkaEvent):
     updated_by: Optional[str] = None
     changed_by: Optional[str] = None
     assigned_by: Optional[str] = None
+
+
+class StoryReviewActionEvent(BaseKafkaEvent):
+    """User action on story review (apply/keep/remove)."""
+    
+    event_type: str = "story.review_action"
+    story_id: str
+    story_title: str
+    action: str  # "apply", "keep", "remove"
 
 
 class QuestionAskedEvent(BaseKafkaEvent):
@@ -330,6 +372,7 @@ class AgentEvent(BaseKafkaEvent):
     task_id: Optional[str] = None
     content: str
     details: Dict[str, Any] = Field(default_factory=dict)
+    execution_context: Optional[Dict[str, Any]] = Field(default_factory=dict)  # NEW: mode, task_type, display_mode
 
 
 # EVENT REGISTRY
@@ -343,6 +386,7 @@ EVENT_TYPE_TO_SCHEMA = {
     StoryEventType.STATUS_CHANGED.value: StoryEvent,
     StoryEventType.ASSIGNED.value: StoryEvent,
     StoryEventType.DELETED.value: StoryEvent,
+    "story.review_action": StoryReviewActionEvent,
     "agent.question_asked": QuestionAskedEvent,
     "user.question_answer": QuestionAnswerEvent,
     "agent.question_batch_asked": BatchQuestionsAskedEvent,

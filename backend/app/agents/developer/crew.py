@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 import os
 import glob
 import yaml
@@ -25,6 +25,7 @@ from app.agents.developer.tools.filesystem_tools import (
     SafeFileWriteTool,
 )
 from app.agents.developer.project_manager import project_manager
+from app.core.langfuse_client import get_langfuse_client, flush_langfuse
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +136,10 @@ class DeveloperCrew:
         if os.path.exists(self.root_dir):
             try:
                 logger.info(f"Checking project registration for '{self.project_id}' at '{self.root_dir}'...")
-                project_manager.register_project(self.project_id, self.root_dir)
+                result = project_manager.register_project(self.project_id, self.root_dir)
+                # If in async context, register_project returns coroutine - await it
+                if asyncio.iscoroutine(result):
+                    await result
                 logger.info(f"Project index updated successfully for project '{self.project_id}'")
             except Exception as e:
                 logger.error(f"Failed to register or update project index for project '{self.project_id}': {e}")
@@ -187,7 +191,10 @@ class DeveloperCrew:
             # Register task workspace for indexing
             try:
                 logger.info(f"Registering task workspace for indexing: '{task_id}' in project '{self.project_id}'")
-                project_manager.register_task(self.project_id, task_id, active_root_dir)
+                result = project_manager.register_task(self.project_id, task_id, active_root_dir)
+                # If in async context, register_task returns coroutine - await it
+                if asyncio.iscoroutine(result):
+                    await result
             except Exception as e:
                 logger.error(f"Failed to register task workspace for indexing: {e}")
 

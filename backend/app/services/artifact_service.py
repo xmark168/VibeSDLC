@@ -268,7 +268,44 @@ class ArtifactService:
         if title:
             query = query.where(Artifact.title == title)
         
-        query = query.order_by(Artifact.version.desc()).limit(1)
+        # Order by created_at desc to get the truly latest artifact
+        query = query.order_by(Artifact.created_at.desc()).limit(1)
         
         result = self.session.exec(query).first()
+        if result:
+            logger.info(f"[ArtifactService] get_latest_version: found {artifact_type.value} artifact {result.id} (created_at={result.created_at})")
         return result
+    
+    def delete_by_type(
+        self,
+        project_id: UUID,
+        artifact_type: ArtifactType
+    ) -> int:
+        """Delete all artifacts of a type for a project.
+        
+        Args:
+            project_id: Project ID
+            artifact_type: Type of artifacts to delete
+            
+        Returns:
+            Number of artifacts deleted
+        """
+        query = select(Artifact).where(
+            Artifact.project_id == project_id,
+            Artifact.artifact_type == artifact_type
+        )
+        
+        artifacts = list(self.session.exec(query).all())
+        count = len(artifacts)
+        
+        for artifact in artifacts:
+            self.session.delete(artifact)
+        
+        self.session.commit()
+        
+        logger.info(
+            f"[ArtifactService] delete_by_type: deleted {count} {artifact_type.value} "
+            f"artifacts for project {project_id}"
+        )
+        
+        return count

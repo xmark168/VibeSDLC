@@ -1,17 +1,4 @@
 """Central Message Router for dispatching tasks to agents.
-
-This module contains the routing logic and service for the VibeSDLC system.
-The Router subscribes to various Kafka events and decides which agent should
-handle each event, then publishes RouterTaskEvent to AGENT_TASKS topic.
-
-Architecture:
-    Events (USER_MESSAGES, AGENT_RESPONSES, etc.)
-        ↓
-    Router (rule-based routing logic)
-        ↓
-    AGENT_TASKS topic (RouterTaskEvent)
-        ↓
-    Agents (consume tasks based on agent_id)
 """
 
 import asyncio
@@ -55,8 +42,6 @@ class BaseEventRouter(ABC):
     @abstractmethod
     async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
         """Route the event to appropriate agent(s).
-
-        Analyzes the event, determines target agent(s), and publishes RouterTaskEvent(s) to AGENT_TASKS topic.
         """
         pass
 
@@ -132,12 +117,8 @@ class BaseEventRouter(ABC):
 
 
 class UserMessageRouter(BaseEventRouter):
-    """Router for USER_MESSAGES events.
-
-    Routing logic:
-    1. Parse message content for @mentions
-    2. If @mention found → route to mentioned agent
-    3. If no @mention → check conversation context → route to active agent or Team Leader
+    """
+    Router for USER_MESSAGES events.
     """
 
     MENTION_PATTERN = re.compile(r"@(\w+)")
@@ -453,13 +434,27 @@ class AgentMessageRouter(BaseEventRouter):
         return event_type in ["agent.response", "agent.response.created"]
     
     async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
-        """Update conversation context when agent responds."""
+        """Update conversation context when agent responds.
+        
+        If task_completed=True in details/structured_data, CLEAR ownership instead.
+        """
         event_dict = event if isinstance(event, dict) else event.model_dump()
         
         project_id = event_dict.get("project_id")
         agent_name = event_dict.get("agent_name")
         
         if not project_id or not agent_name:
+            return
+        
+        # Check if this is a task completion (should release ownership)
+        details = event_dict.get("details", {})
+        structured_data = event_dict.get("structured_data", {})
+        task_completed = details.get("task_completed") or structured_data.get("task_completed")
+        is_greeting = details.get("is_greeting", False)
+        
+        # Skip ownership update for greeting messages
+        if is_greeting:
+            self.logger.debug(f"[CONTEXT_SKIP] Skipping ownership update for greeting message")
             return
         
         with Session(engine) as session:
@@ -475,16 +470,123 @@ class AgentMessageRouter(BaseEventRouter):
             if agent:
                 project = session.get(Project, agent.project_id)
                 if project:
-                    previous_agent_id = project.active_agent_id
-                    project.active_agent_id = agent.id
-                    project.active_agent_updated_at = datetime.now(timezone.utc)
-                    session.add(project)
-                    session.commit()
-                    
-                    self.logger.info(
-                        f"[CONTEXT_UPDATE] Agent {agent.human_name} responded, "
-                        f"set as active for project {project_id}"
-                    )
+                    if task_completed:
+                        # Task completed - CLEAR ownership
+                        previous_agent_name = agent.human_name
+                        project.active_agent_id = None
+                        project.active_agent_updated_at = None
+                        session.add(project)
+                        session.commit()
+                        
+                        self.logger.info(
+                            f"[CONTEXT_CLEAR] Agent {previous_agent_name} completed task, "
+                            f"released ownership for project {project_id}"
+                        )
+                        
+                        # Proactive greeting from Team Leader
+                        await self._send_team_leader_greeting(
+                            project_id, 
+                            previous_agent_name
+                        )
+                    else:
+                        # Normal response - set as active
+                        project.active_agent_id = agent.id
+                        project.active_agent_updated_at = datetime.now(timezone.utc)
+                        session.add(project)
+                        session.commit()
+                        
+                        self.logger.info(
+                            f"[CONTEXT_UPDATE] Agent {agent.human_name} responded, "
+                            f"set as active for project {project_id}"
+                        )
+    
+    async def _send_team_leader_greeting(
+        self, 
+        project_id: str | UUID, 
+        completed_agent_name: str
+    ) -> None:
+        """Send proactive greeting from Team Leader when specialist completes task.
+        
+        This saves message to DB and publishes through Kafka for proper ordering.
+        """
+        try:
+            from app.services import AgentService
+            from app.models import Message, AuthorType
+            from app.kafka.producer import get_kafka_producer
+            from app.kafka.event_schemas import AgentEvent, KafkaTopics
+            
+            if isinstance(project_id, str):
+                project_id = UUID(project_id)
+            
+            with Session(engine) as session:
+                agent_service = AgentService(session)
+                team_leader = agent_service.get_by_project_and_role(
+                    project_id=project_id,
+                    role_type="team_leader"
+                )
+                
+                if not team_leader:
+                    self.logger.warning(f"[GREETING] No Team Leader found for project {project_id}")
+                    return
+                
+                # Save values before session closes
+                tl_human_name = team_leader.human_name
+                tl_id = team_leader.id
+                
+                # Generate greeting message
+                greeting = (
+                    f"Tuyệt vời! {completed_agent_name} đã hoàn thành xong rồi! 🎉 "
+                    f"Bạn cần mình hỗ trợ gì tiếp theo không?"
+                )
+                
+                # 1. Save message to DB first
+                message_id = uuid4()
+                message = Message(
+                    id=message_id,
+                    project_id=project_id,
+                    author_type=AuthorType.AGENT,
+                    agent_id=tl_id,
+                    content=greeting,
+                    message_type="handoff_greeting",
+                    structured_data={
+                        "from_agent": completed_agent_name,
+                    },
+                    message_metadata={
+                        "agent_name": tl_human_name,
+                        "greeting_type": "specialist_completion",
+                    }
+                )
+                session.add(message)
+                session.commit()
+                
+                self.logger.info(f"[GREETING] Saved greeting message to DB: {message_id}")
+            
+            # 2. Publish through Kafka (will be picked up by websocket handler)
+            producer = await get_kafka_producer()
+            event = AgentEvent(
+                event_type="agent.response",
+                agent_name=tl_human_name,
+                agent_id=str(tl_id),
+                project_id=str(project_id),
+                execution_id="",
+                task_id="",
+                content=greeting,
+                details={
+                    "message_id": str(message_id),
+                    "message_type": "handoff_greeting",
+                    "from_agent": completed_agent_name,
+                    "is_greeting": True,  # Flag to skip ownership update
+                },
+            )
+            await producer.publish(topic=KafkaTopics.AGENT_EVENTS, event=event)
+            
+            self.logger.info(
+                f"[GREETING] Team Leader {tl_human_name} sent greeting "
+                f"after {completed_agent_name} completed task"
+            )
+            
+        except Exception as e:
+            self.logger.error(f"[GREETING] Failed to send Team Leader greeting: {e}", exc_info=True)
 
 
 class TaskCompletionRouter(BaseEventRouter):
@@ -566,13 +668,30 @@ class StoryEventRouter(BaseEventRouter):
         return event_type.startswith("story.")
 
     async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
-        """Route based on story status change.
+        """Route based on story event type.
 
-        Logic: If story moves to In Progress → route to Developer
+        Logic:
+        - story.created → BA verifies the new story
+        - story.status_changed (Todo → InProgress) → route to Developer
         """
         event_dict = event if isinstance(event, dict) else event.model_dump()
+        event_type = event_dict.get("event_type", "")
         story_id = event_dict.get("story_id")
         project_id = event_dict.get("project_id")
+
+        # Handle story.created → BA auto-verify
+        if event_type == "story.created":
+            self.logger.info(f"New story created: {story_id} in project {project_id}")
+            await self._verify_new_story(event_dict, project_id)
+            return
+
+        # Handle story.review_action → BA sends response message
+        if event_type == "story.review_action":
+            self.logger.info(f"Story review action: {event_dict.get('action')} for {story_id}")
+            await self._handle_review_action(event_dict, project_id)
+            return
+
+        # Handle status changes
         new_status = event_dict.get("new_status")
         old_status = event_dict.get("old_status")
 
@@ -620,6 +739,174 @@ class StoryEventRouter(BaseEventRouter):
                 self.logger.warning(
                     f"No Developer found in project {project_id} for story status change"
                 )
+
+    async def _verify_new_story(self, event_dict: Dict[str, Any], project_id: str | UUID) -> None:
+        """Verify a newly created story using BA agent."""
+        from app.models import Story, ArtifactType
+        from app.services import AgentService
+        from app.services.artifact_service import ArtifactService
+        from app.agents.business_analyst.src.nodes import verify_story_simple
+        from app.kafka.event_schemas import AgentEvent
+
+        story_id = event_dict.get("story_id")
+        user_id = event_dict.get("user_id")
+
+        if isinstance(project_id, str):
+            project_id = UUID(project_id)
+
+        ba_agent = None
+        agent_name = "Business Analyst"
+        agent_id = None
+
+        try:
+            with Session(engine) as session:
+                # Load new story
+                new_story = session.get(Story, story_id)
+                if not new_story:
+                    self.logger.error(f"Story {story_id} not found for verification")
+                    return
+
+                # Load PRD
+                artifact_service = ArtifactService(session)
+                prd_artifact = artifact_service.get_latest_version(
+                    project_id=project_id,
+                    artifact_type=ArtifactType.PRD
+                )
+                full_prd = prd_artifact.content if prd_artifact else None
+
+                # Load existing stories (exclude the new one)
+                from sqlmodel import select
+                existing_stories = session.exec(
+                    select(Story).where(
+                        Story.project_id == project_id,
+                        Story.id != story_id
+                    )
+                ).all()
+
+                # Get BA agent for messaging
+                agent_service = AgentService(session)
+                ba_model = agent_service.get_by_project_and_role(
+                    project_id=project_id,
+                    role_type="business_analyst"
+                )
+
+                if ba_model:
+                    agent_name = ba_model.human_name or ba_model.name
+                    agent_id = str(ba_model.id)
+                    from app.agents.business_analyst import BusinessAnalyst
+                    ba_agent = BusinessAnalyst(
+                        agent_model=ba_model,
+                        user_id=UUID(user_id) if user_id else None
+                    )
+
+            # Generate execution_id for tracking
+            execution_id = str(uuid4())
+            
+            # Send "thinking" event to show typing indicator
+            start_event = AgentEvent(
+                event_type="agent.thinking",
+                agent_name=agent_name,
+                agent_id=agent_id or "ba-auto-verify",
+                project_id=str(project_id),
+                execution_id=execution_id,
+                content="Processing request...",
+                execution_context={
+                    "mode": "background",
+                    "task_type": "story_verify",
+                    "display_mode": "chat",
+                }
+            )
+            await self.producer.publish(topic=KafkaTopics.AGENT_EVENTS, event=start_event)
+
+            # Build state and run verification
+            state = {
+                "new_story": new_story,
+                "project_id": project_id,
+                "full_prd": full_prd,
+                "existing_stories": existing_stories,
+                "execution_id": execution_id,  # Pass to nodes for response event
+            }
+
+            self.logger.info(
+                f"Verifying story: {new_story.title} "
+                f"(PRD: {'yes' if full_prd else 'no'}, existing: {len(existing_stories)})"
+            )
+
+            await verify_story_simple(state, agent=ba_agent)
+            
+            # Send "completed" event to hide typing indicator
+            finish_event = AgentEvent(
+                event_type="agent.completed",
+                agent_name=agent_name,
+                agent_id=agent_id or "ba-auto-verify",
+                project_id=str(project_id),
+                execution_id=execution_id,
+                content="Story verification complete",
+                execution_context={
+                    "mode": "background",
+                    "task_type": "story_verify",
+                    "display_mode": "chat",
+                }
+            )
+            await self.producer.publish(topic=KafkaTopics.AGENT_EVENTS, event=finish_event)
+
+            self.logger.info(f"Story verification complete for {story_id}")
+
+        except Exception as e:
+            self.logger.error(f"Error verifying story {story_id}: {e}", exc_info=True)
+
+    async def _handle_review_action(self, event_dict: Dict[str, Any], project_id: str | UUID) -> None:
+        """Handle user action on story review and send natural response."""
+        from app.agents.business_analyst.src.nodes import send_review_action_response
+        from app.services import AgentService
+        from app.kafka.event_schemas import AgentEvent
+
+        story_id = event_dict.get("story_id")
+        story_title = event_dict.get("story_title")
+        action = event_dict.get("action")
+        user_id = event_dict.get("user_id")
+
+        if isinstance(project_id, str):
+            project_id = UUID(project_id)
+
+        ba_agent = None
+        agent_name = "Business Analyst"
+        agent_id = None
+
+        try:
+            with Session(engine) as session:
+                # Find BA agent
+                agent_service = AgentService(session)
+                ba_model = agent_service.get_by_project_and_role(
+                    project_id=project_id,
+                    role_type="business_analyst"
+                )
+
+                if ba_model:
+                    agent_name = ba_model.human_name or ba_model.name
+                    agent_id = str(ba_model.id)
+                    
+                    # Initialize BA agent
+                    from app.agents.business_analyst import BusinessAnalyst
+                    ba_agent = BusinessAnalyst(
+                        agent_model=ba_model,
+                        project_id=project_id,
+                        user_id=UUID(user_id) if user_id else None
+                    )
+
+            # Call the response generator
+            await send_review_action_response(
+                story_id=story_id,
+                story_title=story_title,
+                action=action,
+                project_id=project_id,
+                agent=ba_agent
+            )
+
+            self.logger.info(f"Review action response sent for story {story_id}, action: {action}")
+
+        except Exception as e:
+            self.logger.error(f"Error handling review action for {story_id}: {e}", exc_info=True)
 
 
 class AgentStatusRouter(BaseEventRouter):
@@ -708,6 +995,7 @@ class QuestionAnswerRouter(BaseEventRouter):
             
             session.commit()
             original_task_context = question.task_context
+            project_id = question.project_id  # Get project_id from question
         
         context_data = {
             "question_id": str(question_id),
@@ -740,12 +1028,20 @@ class QuestionAnswerRouter(BaseEventRouter):
         )
         
         from app.websocket.connection_manager import connection_manager
+        
+        # Get agent name from database
+        agent_name = "Agent"
+        with Session(engine) as session:
+            agent = session.get(Agent, agent_id)
+            if agent:
+                agent_name = agent.human_name or agent.name or "Agent"
+        
         await connection_manager.broadcast_to_project(
             {
                 "type": "agent.resumed",
                 "question_id": str(question_id),
                 "agent_id": str(agent_id),
-                "agent_name": question.agent.human_name if question.agent else "Agent",
+                "agent_name": agent_name,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
             project_id
@@ -840,12 +1136,20 @@ class BatchAnswersRouter(BaseEventRouter):
         self.logger.info(f"Published RESUME_WITH_ANSWER task to agent {agent_id} with {len(answers)} batch answers")
         
         from app.websocket.connection_manager import connection_manager
+        
+        # Get agent name from database
+        agent_name = "Agent"
+        with Session(engine) as session:
+            agent = session.get(Agent, agent_id)
+            if agent:
+                agent_name = agent.human_name or agent.name or "Agent"
+        
         await connection_manager.broadcast_to_project(
             {
                 "type": "agent.resumed_batch",
                 "batch_id": batch_id,
                 "agent_id": str(agent_id),
-                "agent_name": first_question.agent.human_name if first_question and first_question.agent else "Agent",
+                "agent_name": agent_name,
                 "answer_count": len(answers),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
@@ -1022,6 +1326,183 @@ class DelegationRouter(BaseEventRouter):
         self.logger.info(f"[DelegationRouter] Delegation failed (no {target_role} found), sent error task back to {delegating_agent_name}")
 
 
+class AgentCollaborationRouter(BaseEventRouter):
+    """Router for cross-agent collaboration requests.
+    
+    Handles direct agent-to-agent communication for:
+    - Clarification requests (Dev → BA)
+    - Review requests (Tester → Dev)
+    - Estimation requests (BA → Dev)
+    """
+    
+    MAX_COLLABORATION_DEPTH = 3  # Prevent infinite loops
+    
+    def should_handle(self, event: BaseKafkaEvent | Dict[str, Any]) -> bool:
+        event_dict = event if isinstance(event, dict) else event.model_dump()
+        event_type = event_dict.get("event_type", "")
+        return event_type in [
+            "agent.collaboration.request",
+            "agent.collaboration.response"
+        ]
+    
+    async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
+        """Route collaboration request/response to appropriate agent."""
+        event_dict = event if isinstance(event, dict) else event.model_dump()
+        event_type = event_dict.get("event_type")
+        
+        if event_type == "agent.collaboration.request":
+            await self._handle_request(event_dict)
+        elif event_type == "agent.collaboration.response":
+            await self._handle_response(event_dict)
+    
+    async def _handle_request(self, event_dict: Dict[str, Any]) -> None:
+        """Route collaboration request to target agent by role."""
+        request_id = event_dict.get("request_id")
+        to_role = event_dict.get("to_agent_role")
+        from_role = event_dict.get("from_agent_role")
+        project_id = event_dict.get("project_id")
+        depth = event_dict.get("depth", 0)
+        question = event_dict.get("question", "")
+        
+        self.logger.info(
+            f"[COLLABORATION] Request from {from_role} → {to_role}: "
+            f"{question[:50]}..."
+        )
+        
+        # Check depth limit to prevent infinite loops
+        if depth >= self.MAX_COLLABORATION_DEPTH:
+            self.logger.warning(
+                f"[COLLABORATION] Max depth ({self.MAX_COLLABORATION_DEPTH}) exceeded, rejecting"
+            )
+            await self._send_error_response(
+                event_dict,
+                f"Max collaboration depth ({self.MAX_COLLABORATION_DEPTH}) exceeded. "
+                "Please simplify your request."
+            )
+            return
+        
+        if not project_id or not to_role:
+            self.logger.error("[COLLABORATION] Missing project_id or to_agent_role")
+            return
+        
+        if isinstance(project_id, str):
+            project_id = UUID(project_id)
+        
+        # Find target agent by role
+        agent = await self._find_agent_by_role(project_id, to_role)
+        
+        if not agent:
+            self.logger.warning(f"[COLLABORATION] No {to_role} agent found in project {project_id}")
+            await self._send_error_response(
+                event_dict,
+                f"No {to_role} agent available in this project."
+            )
+            return
+        
+        # Dispatch task to target agent
+        await self.publish_task(
+            agent_id=agent.id,
+            task_type=AgentTaskType.COLLABORATION_REQUEST,
+            source_event=event_dict,
+            routing_reason=f"collaboration_from_{from_role}",
+            priority="high",
+            additional_context={
+                "request_id": str(request_id),
+                "question": question,
+                "request_type": event_dict.get("request_type", "clarification"),
+                "from_agent_id": event_dict.get("from_agent_id"),
+                "from_agent_role": from_role,
+                "collaboration_context": event_dict.get("context", {}),
+                "depth": depth,
+            }
+        )
+        
+        self.logger.info(
+            f"[COLLABORATION] Dispatched request to {agent.human_name} ({to_role})"
+        )
+    
+    async def _handle_response(self, event_dict: Dict[str, Any]) -> None:
+        """Route collaboration response back to requesting agent."""
+        request_id = event_dict.get("request_id")
+        to_agent_id = event_dict.get("to_agent_id")
+        from_agent_id = event_dict.get("from_agent_id")
+        success = event_dict.get("success", True)
+        
+        if not to_agent_id:
+            self.logger.error("[COLLABORATION] Response missing to_agent_id")
+            return
+        
+        if isinstance(to_agent_id, str):
+            to_agent_id = UUID(to_agent_id)
+        
+        # Publish task to resume the requesting agent
+        await self.publish_task(
+            agent_id=to_agent_id,
+            task_type=AgentTaskType.COLLABORATION_RESPONSE,
+            source_event=event_dict,
+            routing_reason=f"collaboration_response:{request_id}",
+            priority="high",
+            additional_context={
+                "request_id": str(request_id),
+                "response": event_dict.get("response", ""),
+                "success": success,
+                "error": event_dict.get("error"),
+            }
+        )
+        
+        self.logger.info(
+            f"[COLLABORATION] Response for {request_id} dispatched to agent {to_agent_id}"
+        )
+    
+    async def _find_agent_by_role(self, project_id: UUID, role_type: str) -> Optional[Agent]:
+        """Find best agent for role - prefers idle agents (same as DelegationRouter)."""
+        with Session(engine) as session:
+            agents = session.exec(
+                select(Agent).where(
+                    Agent.project_id == project_id,
+                    Agent.role_type == role_type,
+                    Agent.status.not_in(["terminated", "stopped", "error"])
+                )
+            ).all()
+            
+            if not agents:
+                return None
+            
+            # Prefer idle agents
+            idle_agents = [a for a in agents if a.status == "idle"]
+            if idle_agents:
+                return idle_agents[0]
+            
+            return agents[0]
+    
+    async def _send_error_response(self, request: Dict[str, Any], error: str) -> None:
+        """Send error response back to requesting agent."""
+        from_agent_id = request.get("from_agent_id")
+        
+        if not from_agent_id:
+            self.logger.error("[COLLABORATION] Cannot send error: from_agent_id missing")
+            return
+        
+        from app.kafka.event_schemas import AgentCollaborationResponse
+        
+        response = AgentCollaborationResponse(
+            request_id=UUID(request.get("request_id")) if request.get("request_id") else uuid4(),
+            from_agent_id=UUID(request.get("to_agent_id", request.get("project_id"))),
+            to_agent_id=UUID(from_agent_id) if isinstance(from_agent_id, str) else from_agent_id,
+            response="",
+            success=False,
+            error=error,
+            project_id=request.get("project_id"),
+        )
+        
+        await self.producer.publish(
+            KafkaTopics.AGENT_COLLABORATION,
+            response
+        )
+        
+        self.logger.info(f"[COLLABORATION] Sent error response: {error}")
+
+
 # ============================================================================
 # ROUTER SERVICE
 # ============================================================================
@@ -1037,6 +1518,7 @@ class MessageRouterService(BaseKafkaConsumer):
             KafkaTopics.STORY_EVENTS.value,  # Add story events for status change routing
             KafkaTopics.QUESTION_ANSWERS.value,
             KafkaTopics.DELEGATION_REQUESTS.value,
+            KafkaTopics.AGENT_COLLABORATION.value,  # Cross-agent collaboration
         ]
 
         super().__init__(
@@ -1062,6 +1544,7 @@ class MessageRouterService(BaseKafkaConsumer):
             QuestionAnswerRouter(producer),
             BatchAnswersRouter(producer),
             DelegationRouter(producer),
+            AgentCollaborationRouter(producer),
         ]
 
         self.logger.info(f"Initialized {len(self.routers)} routers")
