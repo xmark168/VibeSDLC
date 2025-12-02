@@ -169,6 +169,7 @@ CRITICAL: Respond ONLY with the JSON in <result> tags. No other text.
             "action": "IMPLEMENT",
             "skill_registry": skill_registry,
             "tech_stack": tech_stack,
+            "debug_count": debug_count + 1,
         }
         
     except Exception as e:

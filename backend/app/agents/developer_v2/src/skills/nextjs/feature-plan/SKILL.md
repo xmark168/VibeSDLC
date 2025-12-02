@@ -50,6 +50,28 @@ description: Create implementation plans for Next.js features. Use when breaking
 - Connecting to existing pages/layouts
 - Unit tests (Jest only, no e2e)
 
+## ⚠️ CRITICAL: Test Guidelines
+
+### ONLY Unit Tests (Jest)
+- ✅ Test individual functions in isolation
+- ✅ Mock ALL external dependencies (prisma, fetch)
+- ✅ Simple assertions, no complex setup
+- ✅ Max 2-3 test tasks per feature
+
+### NEVER Write:
+- ❌ Integration tests (multiple components together)
+- ❌ E2E tests (Playwright, Cypress)
+- ❌ Tests requiring real database connection
+- ❌ Tests with complex async flows (> 3 awaits)
+
+### Good Test Tasks:
+- "Create unit tests for formatCurrency utility"
+- "Create unit tests for Button component"
+
+### Bad Test Tasks (SKIP):
+- "Create integration tests for checkout flow"
+- "Create tests for API with real database"
+
 ## Available Libraries
 
 | Purpose | Library | Usage |

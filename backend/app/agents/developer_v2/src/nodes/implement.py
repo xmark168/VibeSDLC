@@ -6,7 +6,6 @@ from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, write_file_safe, edit_file, list_directory_safe, search_files
 from app.agents.developer_v2.src.tools.shell_tools import execute_shell, semantic_code_search
 from app.agents.developer_v2.src.tools.skill_tools import activate_skills, read_skill_file, list_skill_files, set_skill_context, reset_skill_cache
-from app.agents.developer_v2.src.tools.cocoindex_tools import search_codebase_tool
 from app.agents.developer_v2.src.utils.llm_utils import (
     get_langfuse_config as _cfg,
     execute_llm_with_tools as _llm_with_tools,
@@ -53,9 +52,8 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             return {**state, "message": "Implementation done", "action": "VALIDATE"}
         
         step = plan_steps[current_step]
-        step_description = step.get("description", "")
-        file_path = step.get("file_path", "")
-        action = step.get("action", "")
+        # Support both new format (task) and legacy format (description)
+        task_description = step.get("task", step.get("description", ""))
         
         setup_tool_context(workspace_path, project_id, task_id)
         
@@ -82,15 +80,8 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         tools = [
             read_file_safe, write_file_safe, edit_file, list_directory_safe,
             semantic_code_search, execute_shell, search_files,
-            search_codebase_tool,
             activate_skills, read_skill_file, list_skill_files,
         ]
-        
-        # Build prompt with file path and action context
-        if file_path and action:
-            task_desc = f"[{action}] {file_path}\n{step_description}"
-        else:
-            task_desc = step_description
         
         # Get modified files from previous steps
         files_modified = state.get("files_modified", [])
@@ -100,9 +91,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             "implement_step",
             step_number=current_step + 1,
             total_steps=len(plan_steps),
-            file_path=file_path or "N/A",
-            action=action or "N/A",
-            step_description=task_desc,
+            task_description=task_description,
             modified_files=modified_files_text,
             related_context="\n\n".join(context_parts)[:4000],
             feedback_section=feedback_section,
@@ -116,7 +105,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             HumanMessage(content=input_text)
         ]
         
-        logger.info(f"[implement] Step {current_step + 1}: {step_description[:50]}...")
+        logger.info(f"[implement] Task {current_step + 1}: {task_description[:50]}...")
         
         # Execute (Claude decides files to create/modify)
         await _llm_with_tools(
@@ -128,11 +117,6 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             max_iterations=15
         )
         
-        # Track modified files
-        updated_files_modified = files_modified.copy()
-        if file_path and file_path not in updated_files_modified:
-            updated_files_modified.append(file_path)
-        
         return {
             **state,
             "current_step": current_step + 1,
@@ -140,8 +124,8 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             "debug_count": debug_count,
             "run_status": None,
             "skill_registry": skill_registry,
-            "files_modified": updated_files_modified,
-            "message": f"✅ Step {current_step + 1}: {step_description}",
+            "files_modified": files_modified,
+            "message": f"✅ Task {current_step + 1}: {task_description}",
             "action": "IMPLEMENT" if current_step + 1 < len(plan_steps) else "VALIDATE",
         }
         

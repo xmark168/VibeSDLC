@@ -1,0 +1,165 @@
+"""Analyze and Plan node - Combined analysis and planning in single LLM call."""
+import os
+import logging
+from langchain_core.messages import SystemMessage, HumanMessage
+
+from app.agents.developer_v2.src.state import DeveloperState
+from app.agents.developer_v2.src.utils.json_utils import extract_json_universal
+from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg
+from app.agents.developer_v2.src.nodes._llm import code_llm
+from app.agents.developer_v2.src.nodes._helpers import setup_tool_context
+from app.agents.developer_v2.src.skills.registry import SkillRegistry
+from app.agents.developer_v2.src.skills import get_project_structure
+
+logger = logging.getLogger(__name__)
+
+
+def _prefetch_context(workspace_path: str) -> str:
+    """Pre-fetch project context without LLM calls."""
+    if not workspace_path or not os.path.exists(workspace_path):
+        return ""
+    
+    context_parts = []
+    
+    # Core files to always read
+    core_files = [
+        ("package.json", 500),
+        ("prisma/schema.prisma", 1000),
+        ("src/app/layout.tsx", 300),
+    ]
+    
+    for file_path, max_len in core_files:
+        full_path = os.path.join(workspace_path, file_path)
+        if os.path.exists(full_path):
+            try:
+                with open(full_path, 'r', encoding='utf-8') as f:
+                    content = f.read()[:max_len]
+                context_parts.append(f"# {file_path}\n{content}")
+            except Exception:
+                pass
+    
+    # List key directories
+    for dir_name in ["src/app/api", "src/components", "src/lib"]:
+        dir_path = os.path.join(workspace_path, dir_name)
+        if os.path.exists(dir_path):
+            try:
+                files = os.listdir(dir_path)[:10]
+                context_parts.append(f"# {dir_name}/\n{', '.join(files)}")
+            except Exception:
+                pass
+    
+    return "\n\n".join(context_parts)
+
+
+async def analyze_and_plan(state: DeveloperState, agent=None) -> DeveloperState:
+    """Combined analyze + plan in single LLM call."""
+    print("[NODE] analyze_and_plan")
+    
+    try:
+        workspace_path = state.get("workspace_path", "")
+        project_id = state.get("project_id", "default")
+        task_id = state.get("task_id") or state.get("story_id", "")
+        tech_stack = state.get("tech_stack", "nextjs")
+        
+        setup_tool_context(workspace_path, project_id, task_id)
+        
+        # Pre-fetch context (NO LLM calls)
+        project_context = _prefetch_context(workspace_path)
+        project_structure = get_project_structure(tech_stack)
+        
+        # Load skill
+        skill_registry = SkillRegistry.load(tech_stack)
+        plan_skill = skill_registry.get_skill("feature-plan")
+        skill_content = plan_skill.load_content() if plan_skill else ""
+        
+        # Build prompt
+        system_prompt = f"""You are a Senior Tech Lead. Analyze the story and create implementation plan.
+
+<project_structure>
+{project_structure}
+</project_structure>
+
+<skill>
+{skill_content}
+</skill>
+
+Create a detailed implementation plan. Respond with JSON in <result> tags:
+<result>
+{{
+  "story_summary": "Brief summary of the feature",
+  "steps": [
+    {{"order": 1, "description": "Create Textbook database model with fields for name, author, code"}},
+    {{"order": 2, "description": "Create search API endpoint to query textbooks"}},
+    {{"order": 3, "description": "Build SearchBar component with input and results"}}
+  ]
+}}
+</result>
+
+For each step:
+- order: step number
+- description: what to do (abstract task, agent will decide files)"""
+        
+        # Format input
+        acceptance_criteria = state.get("acceptance_criteria", [])
+        ac_text = chr(10).join(f"- {ac}" for ac in acceptance_criteria)
+        
+        input_text = f"""<story>
+{state.get("story_title", "Untitled")}
+
+{state.get("story_content", "")}
+</story>
+
+<acceptance_criteria>
+{ac_text}
+</acceptance_criteria>
+
+<project_context>
+{project_context}
+</project_context>
+"""
+        
+        # Single LLM call
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=input_text)
+        ]
+        
+        response = await code_llm.ainvoke(messages, config=_cfg(state, "analyze_and_plan"))
+        data = extract_json_universal(response.content, "analyze_and_plan")
+        
+        # Parse results - use LLM's native format (steps)
+        story_summary = data.get("story_summary", "")
+        steps = data.get("steps", [])
+        
+        # Build analysis from summary
+        analysis = {
+            "task_type": "feature",
+            "complexity": "medium" if len(steps) <= 5 else "high",
+            "summary": story_summary,
+        }
+        
+        logger.info(f"[analyze_and_plan] {len(steps)} steps")
+        
+        # Format message
+        steps_text = "\n".join(f"  {s.get('order', i+1)}. {s.get('description', '')}" for i, s in enumerate(steps))
+        msg = f"📋 **{story_summary}**\n\n{steps_text}"
+        
+        return {
+            **state,
+            # Analysis results
+            "analysis_result": analysis,
+            "task_type": "feature",
+            "complexity": analysis["complexity"],
+            "affected_files": [s.get("file_path") for s in steps if s.get("file_path")],
+            # Plan results - use steps directly
+            "implementation_plan": steps,
+            "total_steps": len(steps),
+            "current_step": 0,
+            "message": msg,
+            "skill_registry": skill_registry,
+            "action": "IMPLEMENT",
+        }
+        
+    except Exception as e:
+        logger.error(f"[analyze_and_plan] Error: {e}", exc_info=True)
+        return {**state, "error": str(e), "action": "RESPOND"}
