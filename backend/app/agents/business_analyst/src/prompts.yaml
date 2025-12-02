@@ -38,27 +38,32 @@ shared_context:
 
   # PRD structure template
   prd_structure: |
-    **PRD Structure:**
+    **PRD JSON Structure (keep it simple):**
     ```json
     {{
-      "project_name": "...",
+      "project_name": "Tên dự án",
       "version": "1.0",
-      "overview": "Brief overview of the project",
-      "objectives": ["Objective 1", "Objective 2"],
-      "target_users": ["User persona 1", "User persona 2"],
+      "overview": "Mô tả ngắn gọn 1-2 câu",
+      "objectives": ["Mục tiêu 1", "Mục tiêu 2"],
+      "target_users": ["Người dùng 1", "Người dùng 2"],
       "features": [
         {{
-          "name": "Feature name",
-          "description": "Detailed description",
-          "priority": "high|medium|low",
-          "requirements": ["Req 1", "Req 2"]
+          "name": "Tên tính năng",
+          "description": "Mô tả ngắn",
+          "priority": "high",
+          "requirements": ["Yêu cầu 1", "Yêu cầu 2"]
         }}
       ],
-      "constraints": ["Technical constraint 1", "Business constraint 2"],
-      "success_metrics": ["Metric 1", "Metric 2"],
-      "risks": ["Risk 1", "Risk 2"]
+      "constraints": ["Ràng buộc 1"],
+      "success_metrics": ["Metric 1"],
+      "risks": ["Rủi ro 1"]
     }}
     ```
+    
+    **NOTES:**
+    - Keep each array to 2-5 items max
+    - Each description should be 1-2 sentences
+    - priority: only "high", "medium", or "low"
 
   # Epic and User Story format following INVEST criteria
   story_format: |
@@ -250,6 +255,11 @@ tasks:
       - DON'T repeat what user already said
       - Use SIMPLE Vietnamese
       
+      **VALID QUESTION TYPES (CHỈ DÙNG 3 LOẠI NÀY):**
+      - `"open"` - Câu hỏi mở, user tự nhập text (KHÔNG có options)
+      - `"multichoice"` - Câu hỏi chọn từ danh sách (PHẢI có options)
+      - `"approval"` - Câu hỏi xác nhận Có/Không
+      
       **FORMAT (QUAN TRỌNG: mỗi câu hỏi PHẢI có field "category"):**
       ```json
       {{
@@ -269,10 +279,8 @@ tasks:
             "category": "main_features"
           }},
           {{
-            "text": "Câu hỏi về rủi ro/lo ngại?",
-            "type": "multichoice",
-            "options": ["Risk 1", "Risk 2"],
-            "allow_multiple": true,
+            "text": "Câu hỏi mở không có options?",
+            "type": "open",
             "category": "risks"
           }}
         ]
@@ -356,14 +364,22 @@ tasks:
       Collected information: {collected_info}
       
       # YOUR TASK
-      Generate a comprehensive PRD in JSON format.
+      Generate a PRD in JSON format.
       
-      Return ONLY valid JSON following the PRD structure.
+      **JSON RULES (CRITICAL):**
+      - Return ONLY valid JSON, no markdown, no explanation
+      - Use double quotes " for all strings (not single quotes)
+      - NO trailing commas before ] or }}
+      - Escape special characters in strings: use \" for quotes, \\n for newlines
+      - Keep descriptions SHORT (1-2 sentences each)
+      - Maximum 5-7 features for MVP
       
-      **IMPORTANT:**
-      - Use Vietnamese for descriptions when appropriate
-      - Be comprehensive but concise
-      - Focus on MVP features for phase 1
+      **CONTENT RULES:**
+      - Use Vietnamese for descriptions
+      - Be concise, avoid long paragraphs
+      - Focus on MVP features only
+      
+      Return valid JSON:
 
   # ---------------------------------------------------------------------------
   # UPDATE PRD - Modify existing PRD

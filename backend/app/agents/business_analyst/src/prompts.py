@@ -31,9 +31,39 @@ BA_DEFAULTS = {
 }
 
 
+def _repair_json(json_str: str) -> str:
+    """
+    Attempt to repair common JSON syntax errors from LLM output.
+    
+    Common issues:
+    - Trailing commas before ] or }
+    - Missing commas between elements
+    - Unescaped newlines in strings
+    - Single quotes instead of double quotes
+    """
+    # Remove trailing commas before ] or }
+    json_str = re.sub(r',\s*([}\]])', r'\1', json_str)
+    
+    # Fix missing commas between } and { or } and "
+    json_str = re.sub(r'}\s*{', r'},{', json_str)
+    json_str = re.sub(r'}\s*"', r'},"', json_str)
+    
+    # Fix missing commas between ] and { or ] and "
+    json_str = re.sub(r']\s*{', r'],{', json_str)
+    json_str = re.sub(r']\s*"', r'],"', json_str)
+    
+    # Fix missing commas between string values: "value" "key"
+    json_str = re.sub(r'"\s+"', r'","', json_str)
+    
+    # Fix missing commas after true/false/null/numbers before "
+    json_str = re.sub(r'(true|false|null|\d)\s+"', r'\1,"', json_str)
+    
+    return json_str
+
+
 def parse_json_response(response: str) -> dict:
     """
-    Parse JSON from LLM response.
+    Parse JSON from LLM response with automatic repair for common errors.
     
     Handles cases where JSON is wrapped in markdown code blocks.
     
@@ -44,7 +74,7 @@ def parse_json_response(response: str) -> dict:
         Parsed JSON as dict
     
     Raises:
-        json.JSONDecodeError: If JSON parsing fails
+        json.JSONDecodeError: If JSON parsing fails after repair attempts
     """
     # Try to extract JSON from markdown code block
     json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', response, re.DOTALL)
@@ -58,7 +88,19 @@ def parse_json_response(response: str) -> dict:
         else:
             json_str = response
     
-    return json.loads(json_str)
+    # First attempt: parse as-is
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError as first_error:
+        logger.debug(f"[parse_json] First parse failed: {first_error}, attempting repair...")
+    
+    # Second attempt: repair and parse
+    try:
+        repaired = _repair_json(json_str)
+        return json.loads(repaired)
+    except json.JSONDecodeError as second_error:
+        logger.warning(f"[parse_json] Repair failed: {second_error}")
+        raise second_error
 
 
 def parse_intent_response(response: str) -> dict:

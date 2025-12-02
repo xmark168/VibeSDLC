@@ -34,9 +34,9 @@ logger = logging.getLogger(__name__)
 
 # LLM instances (shared, like Team Leader)
 # Using same model naming as team_leader (claude-haiku/sonnet without prefix)
-_fast_llm = ChatOpenAI(model="claude-haiku-4-5-20251001", temperature=0.1, timeout=30)
-_default_llm = ChatOpenAI(model="claude-haiku-4-5-20251001", temperature=0.3, timeout=90)
-_story_llm = ChatOpenAI(model="claude-haiku-4-5-20251001", temperature=0.3, timeout=180)
+_fast_llm = ChatOpenAI(model="claude-sonnet-4-5-20250929", temperature=0.1, timeout=30)
+_default_llm = ChatOpenAI(model="claude-sonnet-4-5-20250929", temperature=0.3, timeout=90)
+_story_llm = ChatOpenAI(model="claude-sonnet-4-5-20250929", temperature=0.3, timeout=180)
 
 
 def _cfg(state: dict, name: str) -> dict:
@@ -888,7 +888,7 @@ async def update_stories(state: BAState, agent=None) -> dict:
 
 
 async def approve_stories(state: BAState, agent=None) -> dict:
-    """Node: Approve stories and save them to database."""
+    """Node: Approve stories and save them to database (batch operation)."""
     logger.info(f"[BA] Approving stories and saving to database...")
     
     epics_data = state.get("epics", [])
@@ -905,10 +905,10 @@ async def approve_stories(state: BAState, agent=None) -> dict:
         created_stories = []
         epic_id_map = {}  # Map string ID (EPIC-001) to UUID
         story_id_map = {}  # Map string ID (EPIC-001-US-001) to actual UUID
-        stories_with_deps = []  # Stories that have dependencies to resolve
         
         with Session(engine) as session:
-            # 1. Create Epics first
+            # 1. Create all Epics at once
+            epic_objects = []
             for epic_data in epics_data:
                 epic = Epic(
                     title=epic_data.get("title", epic_data.get("name", "Unknown Epic")),
@@ -917,21 +917,24 @@ async def approve_stories(state: BAState, agent=None) -> dict:
                     project_id=agent.project_id,
                     epic_status=EpicStatus.PLANNED
                 )
+                epic_objects.append((epic, epic_data.get("id", "")))
                 session.add(epic)
-                session.flush()  # Get the UUID
-                
-                # Map string ID to UUID
-                string_id = epic_data.get("id", "")
+            
+            # Single flush for all epics
+            session.flush()
+            
+            # Build epic ID map after flush
+            for epic, string_id in epic_objects:
                 epic_id_map[string_id] = epic.id
                 created_epics.append({
                     "id": str(epic.id),
                     "title": epic.title,
                     "domain": epic.domain
                 })
-                logger.info(f"[BA] Created Epic: {epic.title} (id={epic.id})")
             
-            # 2. Create Stories linked to their Epics (first pass - without resolved dependencies)
-            # Get current max rank for TODO stories
+            logger.info(f"[BA] Created {len(created_epics)} epics in batch")
+            
+            # 2. Create all Stories at once
             max_rank_result = session.exec(
                 select(func.max(Story.rank)).where(
                     Story.project_id == agent.project_id,
@@ -940,85 +943,63 @@ async def approve_stories(state: BAState, agent=None) -> dict:
             ).one()
             current_rank = (max_rank_result or 0)
             
+            story_objects = []  # (story, string_id, original_deps)
             for story_data in stories_data:
-                # Get the epic UUID from the string ID
                 epic_string_id = story_data.get("epic_id", "")
                 epic_uuid = epic_id_map.get(epic_string_id)
-                
-                # Get acceptance criteria list (keep as list for JSON storage)
-                acceptance_criteria = story_data.get("acceptance_criteria", [])
-                
-                # Get requirements list (keep as list for JSON storage)
-                requirements = story_data.get("requirements", [])
-                
-                # Auto-increment rank for ordering
                 current_rank += 1
-                
-                # Get priority and story_point from LLM
-                priority = story_data.get("priority")
-                story_point = story_data.get("story_point")
-                original_dependencies = story_data.get("dependencies", [])
-                
-                # Get the string ID for this story
                 story_string_id = story_data.get("id", "")
-                
-                logger.info(f"[BA] Creating story: '{story_data.get('title', '')[:50]}' - string_id={story_string_id}, deps={original_dependencies}")
+                original_dependencies = story_data.get("dependencies", [])
                 
                 story = Story(
                     title=story_data.get("title", "Unknown Story"),
                     description=story_data.get("description"),
-                    acceptance_criteria=acceptance_criteria,
-                    requirements=requirements,
+                    acceptance_criteria=story_data.get("acceptance_criteria", []),
+                    requirements=story_data.get("requirements", []),
                     project_id=agent.project_id,
                     epic_id=epic_uuid,
                     status=StoryStatus.TODO,
                     type=StoryType.USER_STORY,
-                    priority=priority,
-                    story_point=story_point,
+                    priority=story_data.get("priority"),
+                    story_point=story_data.get("story_point"),
                     rank=current_rank,
-                    dependencies=[],  # Will be updated in second pass
+                    dependencies=[],
                 )
+                story_objects.append((story, story_string_id, original_dependencies))
                 session.add(story)
-                session.flush()
-                
-                # Map string ID to actual UUID
-                story_id_map[story_string_id] = str(story.id)
-                
-                # Track stories with dependencies for second pass
-                if original_dependencies:
-                    stories_with_deps.append({
-                        "story": story,
-                        "original_deps": original_dependencies
-                    })
-                
+            
+            # Single flush for all stories
+            session.flush()
+            
+            # Build story ID map and created_stories list after flush
+            for story, string_id, _ in story_objects:
+                story_id_map[string_id] = str(story.id)
                 created_stories.append({
                     "id": str(story.id),
-                    "string_id": story_string_id,
+                    "string_id": string_id,
                     "title": story.title,
-                    "epic_id": str(epic_uuid) if epic_uuid else None
+                    "epic_id": str(story.epic_id) if story.epic_id else None
                 })
-                logger.info(f"[BA] Created Story: {story.title} (id={story.id}, string_id={story_string_id})")
             
-            # 3. Second pass: Resolve dependencies to actual UUIDs
-            logger.info(f"[BA] Resolving dependencies for {len(stories_with_deps)} stories...")
-            for item in stories_with_deps:
-                story = item["story"]
-                original_deps = item["original_deps"]
-                
-                # Resolve string IDs to actual UUIDs
-                resolved_deps = []
-                for dep_string_id in original_deps:
-                    if dep_string_id in story_id_map:
-                        resolved_deps.append(story_id_map[dep_string_id])
-                        logger.info(f"[BA] Resolved dependency: {dep_string_id} -> {story_id_map[dep_string_id]}")
-                    else:
-                        logger.warning(f"[BA] Could not resolve dependency: {dep_string_id}")
-                
-                # Update story with resolved dependencies
-                if resolved_deps:
-                    story.dependencies = resolved_deps
-                    session.add(story)
+            logger.info(f"[BA] Created {len(created_stories)} stories in batch")
             
+            # 3. Resolve dependencies (no additional flush needed, just update objects)
+            deps_resolved = 0
+            for story, _, original_deps in story_objects:
+                if original_deps:
+                    resolved_deps = [
+                        story_id_map[dep_id] 
+                        for dep_id in original_deps 
+                        if dep_id in story_id_map
+                    ]
+                    if resolved_deps:
+                        story.dependencies = resolved_deps
+                        deps_resolved += 1
+            
+            if deps_resolved:
+                logger.info(f"[BA] Resolved dependencies for {deps_resolved} stories")
+            
+            # Single commit for everything
             session.commit()
         
         logger.info(f"[BA] Saved {len(created_epics)} epics and {len(created_stories)} stories to database")
@@ -1179,15 +1160,25 @@ QUAN TRỌNG:
 - KHÔNG hỏi lại những gì user đã trả lời
 - Nếu tất cả categories đã có thông tin, trả về questions: []
 
+**VALID QUESTION TYPES (CHỈ DÙNG 3 LOẠI NÀY):**
+- "open" - Câu hỏi mở, user tự nhập text (KHÔNG có options)
+- "multichoice" - Câu hỏi chọn từ danh sách (PHẢI có options)
+- "approval" - Câu hỏi xác nhận Có/Không
+
 Return JSON format:
 ```json
 {{
   "questions": [
     {{
-      "text": "Câu hỏi cụ thể khác với những gì đã hỏi?",
+      "text": "Câu hỏi chọn từ danh sách?",
       "type": "multichoice",
       "options": ["Option 1", "Option 2", "Khác"],
       "allow_multiple": true,
+      "category": "category_name"
+    }},
+    {{
+      "text": "Câu hỏi mở user tự nhập?",
+      "type": "open",
       "category": "category_name"
     }}
   ]
