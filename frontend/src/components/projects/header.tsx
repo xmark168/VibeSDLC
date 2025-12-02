@@ -1,6 +1,8 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useLocation, useNavigate } from "@tanstack/react-router"
 import { ChevronDown, LogOut, CreditCard, User, Sun, Moon, Monitor } from "lucide-react"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import toast from "react-hot-toast"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -17,6 +19,9 @@ import { useAppStore } from "@/stores/auth-store"
 import useAuth from "@/hooks/useAuth"
 import { useTheme } from "@/components/provider/theme-provider"
 import { SettingsDialog } from "@/components/settings"
+import { useProfile } from "@/queries/profile"
+
+const DEFAULT_AVATAR = "https://github.com/shadcn.png"
 
 interface HeaderProps {
   userName?: string
@@ -30,7 +35,37 @@ export const HeaderProject = ({
   const { logout } = useAuth()
   const user = useAppStore((state) => state.user)
   const { theme, setTheme } = useTheme()
+  const { data: profile } = useProfile()
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [defaultTab, setDefaultTab] = useState<string | undefined>(undefined)
+  const location = useLocation()
+  const navigate = useNavigate()
+
+  // Get avatar URL with fallback
+  const avatarUrl = import.meta.env.VITE_API_URL + profile?.avatar_url || DEFAULT_AVATAR
+  const displayName = profile?.full_name || user?.full_name || ""
+  console.log('Profile data:', profile)
+  // Handle URL params for opening settings (e.g., after OAuth link callback)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const success = params.get("success")
+    const error = params.get("error")
+    const provider = params.get("provider")
+    const tab = params.get("tab")
+
+    if (success === "account_linked" && provider) {
+      // toast.success(`${provider.charAt(0).toUpperCase() + provider.slice(1)} account linked successfully!`)
+      setDefaultTab(tab || "security")
+      setSettingsOpen(true)
+      // Clear URL params
+      navigate({ to: location.pathname, replace: true })
+    } else if (error) {
+      toast.error(error.replace(/_/g, " "))
+      setDefaultTab(tab || "security")
+      setSettingsOpen(true)
+      navigate({ to: location.pathname, replace: true })
+    }
+  }, [location.search, navigate, location.pathname])
 
   const handleLogout = () => {
     logout.mutate()
@@ -61,11 +96,11 @@ export const HeaderProject = ({
       }}
       className="sticky top-0 z-50 w-full flex items-center border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
     >
-      <div className="container flex h-16 items-center justify-between px-4">
+      <div className="container flex h-16 items-center justify-between px-6">
         {/* Left side - Logo/Brand */}
-        <div className="flex items-center gap-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--gradient-primary)]">
-            <span className="text-lg font-bold text-white">VibeSDLC</span>
+        <div className="flex items-center gap-2 ml-2">
+          <div className="flex items-center justify-center rounded-lg px-3 py-2">
+            <span className="text-xl font-bold">VibeSDLC</span>
           </div>
         </div>
 
@@ -76,8 +111,12 @@ export const HeaderProject = ({
               variant="ghost"
               className="flex items-center gap-3 hover:bg-accent transition-colors"
             >
-              <Avatar className="h-8 w-8 ring-2 ring-primary/20">
-                <AvatarFallback className="bg-[var(--gradient-primary)] text-white text-sm font-semibold">
+              <Avatar
+                className="h-8 w-8 ring-2 ring-primary/20"
+
+              >
+                <AvatarImage src={avatarUrl} alt={displayName} />
+                <AvatarFallback className="bg-[var(--gradient-primary)] text-sm font-semibold">
                   {getInitials(user?.full_name || "")}
                 </AvatarFallback>
               </Avatar>
@@ -167,7 +206,11 @@ export const HeaderProject = ({
         </DropdownMenu>
       </div>
 
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        defaultTab={defaultTab as "profile" | "security" | "billing" | "theme" | undefined}
+      />
     </header>
   )
 }

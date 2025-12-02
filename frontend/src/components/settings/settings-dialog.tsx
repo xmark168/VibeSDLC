@@ -1,5 +1,5 @@
-import { useState } from "react"
-import { User, CreditCard, LogOut, Pencil, Info, Sun, Moon, Monitor, AlertTriangle, RefreshCw } from "lucide-react"
+import { useState, useEffect } from "react"
+import { User, CreditCard, LogOut, Pencil, Info, Sun, Moon, Monitor, AlertTriangle, RefreshCw, ShieldCheck, Camera, Check, X, Loader2 } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -7,7 +7,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { useAppStore } from "@/stores/auth-store"
 import useAuth from "@/hooks/useAuth"
@@ -15,31 +16,78 @@ import { useTheme } from "@/components/provider/theme-provider"
 import { cn } from "@/lib/utils"
 import { useCurrentSubscription } from "@/queries/subscription"
 import { subscriptionApi } from "@/apis/subscription"
+import { TwoFactorSettings } from "./two-factor-settings"
+import { LinkedAccountsSettings } from "./linked-accounts-settings"
+import { AvatarUploadDialog } from "./avatar-upload-dialog"
+import { PasswordSettings } from "./password-settings"
+import { useProfile, useUpdateProfile } from "@/queries/profile"
 import { format } from "date-fns"
 import { useQueryClient } from "@tanstack/react-query"
 import toast from "react-hot-toast"
 
+const DEFAULT_AVATAR = "https://github.com/shadcn.png"
+
 interface SettingsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  defaultTab?: SettingsTab
 }
 
-type SettingsTab = "profile" | "billing" | "theme"
+type SettingsTab = "profile" | "security" | "billing" | "theme"
 
-export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const [activeTab, setActiveTab] = useState<SettingsTab>("profile")
+export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialogProps) {
+  const [activeTab, setActiveTab] = useState<SettingsTab>(defaultTab || "profile")
+
+  // Update active tab when defaultTab changes
+  useEffect(() => {
+    if (defaultTab && open) {
+      setActiveTab(defaultTab)
+    }
+  }, [defaultTab, open])
   const [isCanceling, setIsCanceling] = useState(false)
   const [isTogglingAutoRenew, setIsTogglingAutoRenew] = useState(false)
   const [showCancelDialog, setShowCancelDialog] = useState(false)
+  const [avatarDialogOpen, setAvatarDialogOpen] = useState(false)
+  const [isEditingName, setIsEditingName] = useState(false)
+  const [editName, setEditName] = useState("")
   const user = useAppStore((state) => state.user)
   const { logout } = useAuth()
   const { theme, setTheme } = useTheme()
   const { data: subscriptionData, isLoading: subscriptionLoading } = useCurrentSubscription()
+  const { data: profile, isLoading: profileLoading } = useProfile()
+  const updateProfileMutation = useUpdateProfile()
   const queryClient = useQueryClient()
+
+  // Get avatar URL with fallback
+  const avatarUrl = import.meta.env.VITE_API_URL + profile?.avatar_url || DEFAULT_AVATAR
 
   const handleLogout = () => {
     logout.mutate()
     onOpenChange(false)
+  }
+
+  const handleStartEditName = () => {
+    setEditName(profile?.full_name || "")
+    setIsEditingName(true)
+  }
+
+  const handleCancelEditName = () => {
+    setIsEditingName(false)
+    setEditName("")
+  }
+
+  const handleSaveName = async () => {
+    if (!editName.trim()) {
+      toast.error("Name cannot be empty")
+      return
+    }
+    try {
+      await updateProfileMutation.mutateAsync({ full_name: editName.trim() })
+      toast.success("Name updated successfully")
+      setIsEditingName(false)
+    } catch (error: any) {
+      toast.error(error.message || "Failed to update name")
+    }
   }
 
   const handleCancelSubscription = async () => {
@@ -151,6 +199,19 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               </button>
 
               <button
+                onClick={() => setActiveTab("security")}
+                className={cn(
+                  "w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                  activeTab === "security"
+                    ? "bg-secondary text-foreground"
+                    : "text-muted-foreground hover:bg-secondary/50"
+                )}
+              >
+                <ShieldCheck className="h-4 w-4" />
+                Security
+              </button>
+
+              <button
                 onClick={() => setActiveTab("billing")}
                 className={cn(
                   "w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors",
@@ -189,22 +250,69 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 {/* Avatar Section */}
                 <div className="flex items-center justify-between px-8 py-6 border-t">
                   <h3 className="text-base font-normal">Avatar</h3>
-                  <Avatar className="h-20 w-20 ring-2 ring-primary/20">
-                    <AvatarFallback className="bg-[var(--gradient-primary)] text-white text-2xl font-semibold">
-                      {getInitials(user?.full_name || "")}
-                    </AvatarFallback>
-                  </Avatar>
+                  <div className="relative group">
+                    <Avatar className="h-20 w-20 ring-2 ring-primary/20">
+                      <AvatarImage src={avatarUrl} alt={profile?.full_name || "User"} />
+                      <AvatarFallback className="bg-[var(--gradient-primary)] text-white text-2xl font-semibold">
+                        {getInitials(profile?.full_name || user?.full_name || "")}
+                      </AvatarFallback>
+                    </Avatar>
+                    <button
+                      onClick={() => setAvatarDialogOpen(true)}
+                      className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <Camera className="h-6 w-6 text-white" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Username Section */}
                 <div className="flex items-center justify-between px-8 py-6 border-t">
                   <h3 className="text-base font-normal">Username</h3>
-                  <div className="flex items-center gap-3">
-                    <span className="text-base">{user?.full_name || ""}</span>
-                    <Button variant="ghost" size="icon" className="h-8 w-8">
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  {isEditingName ? (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        className="w-48 h-9"
+                        placeholder="Enter your name"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleSaveName()
+                          if (e.key === "Escape") handleCancelEditName()
+                        }}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={handleSaveName}
+                        disabled={updateProfileMutation.isPending}
+                      >
+                        {updateProfileMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Check className="h-4 w-4 text-green-500" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={handleCancelEditName}
+                        disabled={updateProfileMutation.isPending}
+                      >
+                        <X className="h-4 w-4 text-red-500" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <span className="text-base">{profile?.full_name || user?.full_name || ""}</span>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleStartEditName}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Email Section */}
@@ -223,6 +331,19 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     <LogOut className="h-4 w-4" />
                     Sign out
                   </Button>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "security" && (
+              <div className="flex-1 flex flex-col overflow-y-auto min-h-0">
+                <div className="p-8 pb-6">
+                  <h2 className="text-2xl font-semibold">Security</h2>
+                </div>
+                <div className="px-8 pb-8 space-y-6">
+                  <PasswordSettings />
+                  <TwoFactorSettings />
+                  <LinkedAccountsSettings />
                 </div>
               </div>
             )}
@@ -453,6 +574,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Avatar Upload Dialog */}
+      <AvatarUploadDialog
+        open={avatarDialogOpen}
+        onOpenChange={setAvatarDialogOpen}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ["profile"] })
+        }}
+      />
     </Dialog>
   )
 }

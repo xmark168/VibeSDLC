@@ -7,7 +7,6 @@ NEW ARCHITECTURE:
 - Manages project workspaces automatically
 """
 
-import asyncio
 import logging
 
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
@@ -49,7 +48,9 @@ class Developer(BaseAgent):
             root_dir=str(self.main_workspace),
         )
 
-        logger.info(f"Developer initialized: {self.name} (workspace: {self.main_workspace.name})")
+        logger.info(
+            f"Developer initialized: {self.name} (workspace: {self.main_workspace.name})"
+        )
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
         """Handle task assigned by Router based on task type.
@@ -66,7 +67,7 @@ class Developer(BaseAgent):
             project_dir = str(self.main_workspace)
 
             # Override if task has specific project_dir (for compatibility)
-            if hasattr(task, 'project_dir') and task.project_dir:
+            if hasattr(task, "project_dir") and task.project_dir:
                 project_dir = task.project_dir
 
             logger.info(
@@ -83,7 +84,9 @@ class Developer(BaseAgent):
                 return await self._handle_task_started(task, project_id, project_dir)
             elif task_type in ["implement_story", "write_code", "create_feature"]:
                 # Handle development implementation requests
-                return await self._handle_development_request(task, project_id, project_dir)
+                return await self._handle_development_request(
+                    task, project_id, project_dir
+                )
             elif task_type == "progress_query":
                 # Handle progress/status queries
                 return await self._handle_status_query(task, project_id)
@@ -102,21 +105,30 @@ class Developer(BaseAgent):
                 error_message=str(e),
             )
 
-    async def _handle_task_started(self, task: TaskContext, project_id: str, project_dir: str) -> TaskResult:
+    async def _handle_task_started(
+        self, task: TaskContext, project_id: str, project_dir: str
+    ) -> TaskResult:
         """Handle when a task is moved to In Progress status."""
-        await self.message_user("thinking", "Task moved to In Progress, preparing development environment...")
+        await self.message_user(
+            "thinking",
+            "Task moved to In Progress, preparing development environment...",
+        )
 
         # Initialize a new crew instance with project-specific context
         project_crew = DeveloperCrew(project_id=project_id, root_dir=project_dir)
 
         # For task status change, we might want to prepare the development environment
         # This could involve creating a branch, setting up worktree, etc.
-        response = await project_crew.implement_task(user_story=task.content, task_id=str(task.task_id))
+        response = await project_crew.implement_task(
+            user_story=task.content, task_id=str(task.task_id)
+        )
 
         await self.message_user("thinking", "Development environment prepared")
 
         await self.message_user(
-            "progress", "Task started successfully", {"milestone": "development_started"}
+            "progress",
+            "Task started successfully",
+            {"milestone": "development_started"},
         )
 
         logger.info(
@@ -135,14 +147,18 @@ class Developer(BaseAgent):
             requires_approval=False,
         )
 
-    async def _handle_development_request(self, task: TaskContext, project_id: str, project_dir: str) -> TaskResult:
+    async def _handle_development_request(
+        self, task: TaskContext, project_id: str, project_dir: str
+    ) -> TaskResult:
         """Handle regular development requests."""
         await self.message_user("thinking", "Analyzing development requirements")
 
         # Initialize a new crew instance with project-specific context
         project_crew = DeveloperCrew(project_id=project_id, root_dir=project_dir)
 
-        response = await project_crew.implement_task(user_story=task.content, task_id=str(task.task_id))
+        response = await project_crew.implement_task(
+            user_story=task.content, task_id=str(task.task_id)
+        )
 
         await self.message_user("thinking", "Reviewing implementation")
 
@@ -182,9 +198,13 @@ class Developer(BaseAgent):
             "- Khi bạn kéo một task sang In Progress, tôi sẽ tự động bắt đầu phát triển"
         )
 
-        await self.message_user("response", help_message, {
-            "message_type": "text",
-        })
+        await self.message_user(
+            "response",
+            help_message,
+            {
+                "message_type": "text",
+            },
+        )
 
         return TaskResult(
             success=True,
@@ -197,19 +217,23 @@ class Developer(BaseAgent):
             requires_approval=False,
         )
 
-    async def _handle_status_query(self, task: TaskContext, project_id: str) -> TaskResult:
+    async def _handle_status_query(
+        self, task: TaskContext, project_id: str
+    ) -> TaskResult:
         """Handle status query from user."""
         # Use the DeveloperCrew to provide a meaningful progress report
-        project_crew = DeveloperCrew(project_id=project_id, root_dir=f'../{project_id}')
+        project_crew = DeveloperCrew(project_id=project_id, root_dir=f"../{project_id}")
 
         try:
             response = await project_crew.report_progress(
                 query=task.content,
                 project_id=project_id,
-                task_id=getattr(task, 'task_id', None)
+                task_id=getattr(task, "task_id", None),
             )
         except Exception as e:
-            logger.warning(f"Failed to report progress via crew: {e}, falling back to generic response")
+            logger.warning(
+                f"Failed to report progress via crew: {e}, falling back to generic response"
+            )
             response = (
                 f"Hiện tại tôi không có thông tin cụ thể về trạng thái phát triển trong project {project_id}.\n"
                 "Tuy nhiên, tôi có thể:\n"
@@ -219,9 +243,13 @@ class Developer(BaseAgent):
                 "Vui lòng mô tả rõ hơn task bạn muốn hỏi để tôi hỗ trợ tốt hơn."
             )
 
-        await self.message_user("response", response, {
-            "message_type": "text",
-        })
+        await self.message_user(
+            "response",
+            response,
+            {
+                "message_type": "text",
+            },
+        )
 
         return TaskResult(
             success=True,
@@ -235,7 +263,9 @@ class Developer(BaseAgent):
             requires_approval=False,
         )
 
-    async def _handle_general_request(self, task: TaskContext, project_id: str, project_dir: str) -> TaskResult:
+    async def _handle_general_request(
+        self, task: TaskContext, project_id: str, project_dir: str
+    ) -> TaskResult:
         """Handle general request from user - analyze and decide on appropriate action."""
         content = task.content
 
@@ -246,9 +276,13 @@ class Developer(BaseAgent):
         project_crew = DeveloperCrew(project_id=project_id, root_dir=project_dir)
 
         try:
-            response = await project_crew.implement_task(user_story=content, task_id=str(task.task_id))
+            response = await project_crew.implement_task(
+                user_story=content, task_id=str(task.task_id)
+            )
         except Exception as e:
-            logger.warning(f"Failed to process with crew: {e}, falling back to general response")
+            logger.warning(
+                f"Failed to process with crew: {e}, falling back to general response"
+            )
             response = (
                 f"Tôi đã nhận được yêu cầu của bạn: '{content}'\n\n"
                 "Là Developer agent, tôi chuyên xử lý các công việc liên quan đến phát triển code.\n"
@@ -256,9 +290,13 @@ class Developer(BaseAgent):
                 "Bạn có thể hỏi tôi làm gì bằng '@Developer help' hoặc "
                 "tag tôi vào task khi cần triển khai code."
             )
-            await self.message_user("response", response, {
-                "message_type": "text",
-            })
+            await self.message_user(
+                "response",
+                response,
+                {
+                    "message_type": "text",
+                },
+            )
 
         return TaskResult(
             success=True,
