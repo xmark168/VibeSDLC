@@ -33,6 +33,7 @@ export type KanbanCardData = {
   assignee_id?: string
   reviewer_id?: string
   epic_id?: string
+  epic_title?: string
   acceptance_criteria?: string[]
   requirements?: string[]
   dependencies?: string[]  // List of story IDs that must be completed before this story

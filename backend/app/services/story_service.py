@@ -681,7 +681,8 @@ class StoryService:
             Story.project_id == project_id
         ).options(
             selectinload(Story.parent),
-            selectinload(Story.children)
+            selectinload(Story.children),
+            selectinload(Story.epic)
         ).order_by(Story.status, Story.rank)
 
         stories = self.session.exec(statement).all()
@@ -698,7 +699,11 @@ class StoryService:
         for story in stories:
             column = story.status.value
             if column in board:
-                board[column].append(StoryPublic.model_validate(story))
+                story_data = StoryPublic.model_validate(story)
+                # Add epic title if epic exists
+                if story.epic:
+                    story_data.epic_title = story.epic.title
+                board[column].append(story_data)
 
         # Get WIP limits
         wip_limits = {}
