@@ -4,6 +4,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import StoryAnalysis
+from app.agents.developer_v2.src.utils.json_utils import extract_json_universal
 from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, list_directory_safe, search_files
 from app.agents.developer_v2.src.tools.shell_tools import semantic_code_search
 from app.agents.developer_v2.src.utils.llm_utils import (
@@ -58,9 +59,15 @@ async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
             max_iterations=2
         )
         
-        messages.append(HumanMessage(content=f"Context:\n{exploration[:4000]}\n\nProvide analysis."))
-        structured_llm = code_llm.with_structured_output(StoryAnalysis)
-        analysis = await structured_llm.ainvoke(messages, config=_cfg(state, "analyze"))
+        json_schema = '''Respond with JSON wrapped in result tags:
+<result>
+{"task_type": "feature|bugfix|refactor|enhancement|documentation", "complexity": "low|medium|high", "estimated_hours": <number>, "summary": "<string>", "affected_files": ["<path>"], "dependencies": ["<string>"], "risks": ["<string>"], "suggested_approach": "<string>"}
+</result>'''
+        
+        messages.append(HumanMessage(content=f"Context:\n{exploration[:4000]}\n\n{json_schema}"))
+        response = await code_llm.ainvoke(messages, config=_cfg(state, "analyze"))
+        data = extract_json_universal(response.content, "analyze_node")
+        analysis = StoryAnalysis(**data)
         
         logger.info(f"[analyze] Done: {analysis.task_type}, {analysis.complexity}")
         

@@ -4,6 +4,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import ImplementationPlan
+from app.agents.developer_v2.src.utils.json_utils import extract_json_universal
 from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, list_directory_safe, search_files
 from app.agents.developer_v2.src.tools.shell_tools import semantic_code_search
 from app.agents.developer_v2.src.utils.llm_utils import (
@@ -66,6 +67,22 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
             system_prompt += f"\n\n<skill>\n{skill_content}\n</skill>"
             logger.info("[plan] Loaded feature-plan skill")
         
+        # CRITICAL: Add JSON requirement to system prompt (not as HumanMessage)
+        json_requirement = """
+
+CRITICAL OUTPUT REQUIREMENT:
+You MUST respond with ONLY JSON wrapped in result tags. No natural language explanation before or after.
+Use this EXACT format:
+
+<result>
+{"story_summary": "<brief feature summary>", "steps": [{"order": 1, "description": "<what to do>", "file_path": "<exact file path>", "action": "create|modify|delete|test|config"}]}
+</result>
+
+Each step MUST have: order (number), description (what, not how), file_path (exact path), action (one of the 5 types).
+Follow the skill guidance but output ONLY JSON format."""
+        
+        system_prompt += json_requirement
+        
         messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(content=input_text)
@@ -81,9 +98,11 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
             max_iterations=1
         )
         
-        messages.append(HumanMessage(content=f"Context:\n{exploration[:2000]}\n\nCreate plan."))
-        structured_llm = code_llm.with_structured_output(ImplementationPlan)
-        plan_result = await structured_llm.ainvoke(messages, config=_cfg(state, "plan"))
+        # Add exploration context only (JSON requirement already in system prompt)
+        messages.append(HumanMessage(content=f"Context from exploration:\n{exploration[:2000]}\n\nNow create the implementation plan following the system instructions."))
+        response = await code_llm.ainvoke(messages, config=_cfg(state, "plan"))
+        data = extract_json_universal(response.content, "plan_node")
+        plan_result = ImplementationPlan(**data)
         
         logger.info(f"[plan] {len(plan_result.steps)} steps")
         

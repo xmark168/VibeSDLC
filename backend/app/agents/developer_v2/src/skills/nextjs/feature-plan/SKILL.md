@@ -49,3 +49,49 @@ description: Create implementation plans for Next.js features. Use when breaking
 - Input validation (client + server)
 - Connecting to existing pages/layouts
 - Unit tests (Jest only, no e2e)
+
+## Available Libraries
+
+| Purpose | Library | Usage |
+|---------|---------|-------|
+| Animations | `framer-motion` | Page transitions, hover effects, list animations |
+| Forms | `react-hook-form` + `zod` | Form validation and state |
+| State | `zustand` | Global state management |
+| UI | `shadcn/ui` | Component library |
+| Icons | `lucide-react` | Icon set |
+| Charts | `recharts` | Data visualization |
+| Toast | `sonner` | Notifications |
+
+## Output Format
+
+**CRITICAL**: Always respond with JSON wrapped in result tags:
+
+```
+<result>
+{
+  "story_summary": "Brief feature summary (1 sentence)",
+  "steps": [
+    {
+      "order": 1,
+      "description": "What to do (not how)",
+      "file_path": "exact/file/path.tsx",
+      "action": "create|modify|delete|test|config"
+    }
+  ]
+}
+</result>
+```
+
+### Action Types
+- **create**: New files (components, pages, APIs)
+- **modify**: Update existing files (schema, pages)
+- **delete**: Remove files (rare)
+- **test**: Test files (Jest unit tests)
+- **config**: Configuration files
+
+### Path Guidelines
+- Use exact paths from project_structure
+- Components: `src/components/[Feature]/ComponentName.tsx`
+- Pages: `src/app/[route]/page.tsx`
+- APIs: `src/app/api/[resource]/route.ts`
+- Actions: `src/app/actions/[domain].ts`

@@ -31,3 +31,12 @@ description: Execute shell commands in Next.js project with Bun. Use when runnin
 | Push schema | `bunx prisma db push` |
 | Migrate | `bunx prisma migrate dev` |
 | Studio | `bunx prisma studio` |
+
+## Format & Lint Commands
+
+| Task | Command |
+|------|---------|
+| Format all | `bun run format` |
+| Check format | `bun run format:check` |
+| Lint fix | `bun run lint:fix` |
+| Type check | `bun run typecheck` |

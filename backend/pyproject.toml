@@ -48,6 +48,7 @@ dependencies = [
     "langchain-tavily>=0.2.13",
     "testcontainers[postgres]>=4.8.0",
     "docker>=7.0.0",
+    "langchain-litellm>=0.3.2",
 ]
 
 
