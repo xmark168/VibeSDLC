@@ -93,7 +93,7 @@ def search_codebase(project_id: str, query: str, top_k: int = 5, task_id: str = 
             results = project_manager.search(project_id, query, top_k=top_k)
         
         if not results:
-            return "No relevant code found."
+            return "No relevant code found. This is expected for new features - proceed with implementation using activated skills. Do NOT retry search."
         
         # Format results as markdown
         formatted = []

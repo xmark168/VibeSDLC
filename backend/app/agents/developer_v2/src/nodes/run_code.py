@@ -74,6 +74,41 @@ async def _run_code_multi_service(state: DeveloperState, workspace_path: str, se
                 except Exception as e:
                     logger.warning(f"[run_code] Install error for {svc_name}: {e}")
             
+            # Build step (catches compile errors before tests)
+            build_cmd = svc_config.get("build_cmd")
+            if build_cmd:
+                logger.info(f"[run_code] Building {svc_name}: {build_cmd}")
+                try:
+                    build_result = execute_shell.invoke({
+                        "command": build_cmd,
+                        "working_directory": workspace_path,
+                        "timeout": 180
+                    })
+                    if isinstance(build_result, str):
+                        build_result = json.loads(build_result)
+                    all_stdout += f"\n$ {build_cmd}\n{build_result.get('stdout', '')}"
+                    if build_result.get("exit_code", 0) != 0:
+                        build_error = build_result.get("stderr", "") or build_result.get("stdout", "")
+                        all_stderr += f"\n[BUILD FAILED]\n{build_error}"
+                        all_passed = False
+                        svc_passed = False
+                        summaries.append(f"{svc_name}: BUILD_FAIL")
+                        logger.error(f"[run_code] BUILD FAILED for {svc_name}:\n{build_error[:2000]}")
+                        task_id = state.get("task_id") or state.get("story_id", "unknown")
+                        write_test_log(task_id, f"BUILD ERROR:\n{build_error}", "FAIL")
+                        if svc_span:
+                            svc_span.end(output={"status": "BUILD_FAIL"})
+                        continue  # Skip tests for this service
+                    else:
+                        logger.info(f"[run_code] Build completed for {svc_name}")
+                except Exception as e:
+                    logger.warning(f"[run_code] Build error for {svc_name}: {e}")
+                    all_stderr += f"\n[BUILD ERROR] {e}"
+                    all_passed = False
+                    svc_passed = False
+                    summaries.append(f"{svc_name}: BUILD_ERROR")
+                    continue
+            
             commands.append(test_cmd)
             
             svc_passed = True

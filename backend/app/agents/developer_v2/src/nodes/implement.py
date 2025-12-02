@@ -5,7 +5,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, write_file_safe, edit_file, list_directory_safe, search_files
 from app.agents.developer_v2.src.tools.shell_tools import execute_shell, semantic_code_search
-from app.agents.developer_v2.src.tools.skill_tools import activate_skill, read_skill_file, list_skill_files, set_skill_context, reset_skill_cache
+from app.agents.developer_v2.src.tools.skill_tools import activate_skills, read_skill_file, list_skill_files, set_skill_context, reset_skill_cache
 from app.agents.developer_v2.src.tools.cocoindex_tools import search_codebase_tool
 from app.agents.developer_v2.src.utils.llm_utils import (
     get_langfuse_config as _cfg,
@@ -83,7 +83,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             read_file_safe, write_file_safe, edit_file, list_directory_safe,
             semantic_code_search, execute_shell, search_files,
             search_codebase_tool,
-            activate_skill, read_skill_file, list_skill_files,
+            activate_skills, read_skill_file, list_skill_files,
         ]
         
         # Build prompt with file path and action context

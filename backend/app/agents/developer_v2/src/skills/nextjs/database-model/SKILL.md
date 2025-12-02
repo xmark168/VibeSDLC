@@ -1,6 +1,6 @@
 ---
 name: database-model
-description: Create Prisma schema models with relations, indexes, and type safety. Use when designing database schemas, creating migrations, or working with Prisma ORM.
+description: Create Prisma schema models with relations and indexes. Use when designing database schemas, adding models, creating migrations, or defining entity relationships.
 ---
 
 # Database Model (Prisma)

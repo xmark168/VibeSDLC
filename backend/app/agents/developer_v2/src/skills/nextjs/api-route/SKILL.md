@@ -1,6 +1,6 @@
 ---
 name: api-route
-description: Create Next.js 16 API Route Handlers. Use when building REST endpoints with GET, POST, PUT, DELETE methods, Zod validation, and proper error handling.
+description: Create Next.js 16 API Route Handlers. Use when building REST endpoints (GET, POST, PUT, DELETE), implementing CRUD operations, or creating authenticated APIs with Zod validation.
 ---
 
 # API Route Handler (Next.js 16)

@@ -179,7 +179,7 @@ def semantic_code_search(query: str, top_k: int = 5) -> str:
             context = f"project '{project_id}'"
         
         if not results:
-            return f"No results found in {context} for query: '{query}'"
+            return f"No results found for '{query}'. This is OK - proceed with implementation using activated skills and project conventions. Do NOT retry search."
         
         formatted_output = [f"Code search results for '{query}' in {context}:\n"]
         for i, result in enumerate(results, 1):

@@ -1,6 +1,6 @@
 ---
 name: server-action
-description: Create Next.js 16 Server Actions. Use when building form handlers with useActionState, mutations with Zod validation, and revalidatePath.
+description: Create Next.js 16 Server Actions. Use when building form handlers, mutations with Zod validation, or data operations that need useActionState and revalidatePath.
 ---
 
 # Server Action (Next.js 16 + React 19)

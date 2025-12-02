@@ -96,7 +96,13 @@ jest.mock('next/server', () => {
       nextUrl: URL;
       constructor(input: RequestInfo | URL, init?: RequestInit) {
         super(input, init);
-        this.nextUrl = new URL(typeof input === 'string' ? input : input.url);
+        this.nextUrl = new URL(
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url
+        );
       }
     },
   };
