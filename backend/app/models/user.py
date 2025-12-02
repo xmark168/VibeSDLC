@@ -50,10 +50,6 @@ class User(BaseModel, table=True):
     owned_projects: list["Project"] = Relationship(
         back_populates="owner", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
-    comments: list["Comment"] = Relationship(
-        back_populates="commenter",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
-    )
     user_subscriptions: list["Subscription"] = Relationship(
         back_populates="user",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},

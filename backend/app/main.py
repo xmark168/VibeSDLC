@@ -108,7 +108,7 @@ async def lifespan(app: FastAPI):
             _manager_registry.clear()
         except (Exception, asyncio.CancelledError) as e:
             logger.error(f"Error shutting down agent pools: {e}")
-
+        
         try:
             await shutdown_all_consumers()
         except (Exception, asyncio.CancelledError) as e:
