@@ -94,4 +94,6 @@ export interface StoryFormData {
   story_point?: number
   priority?: "High" | "Medium" | "Low"
   acceptance_criteria: string[]
+  requirements: string[]
+  dependencies: string[]
 }

@@ -32,6 +32,7 @@ export const storiesApi = {
     priority?: number
     acceptance_criteria?: string[]
     requirements?: string[]
+    dependencies?: string[]
     tags?: string[]
     labels?: string[]
   }): Promise<Story> => {
@@ -47,6 +48,7 @@ export const storiesApi = {
         priority: data.priority || 3, // Default to medium priority (3)
         acceptance_criteria: data.acceptance_criteria || [],
         requirements: data.requirements || [],
+        dependencies: data.dependencies || [],
         tags: data.tags || [],
         labels: data.labels || [],
       },

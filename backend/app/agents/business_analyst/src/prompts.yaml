@@ -38,27 +38,32 @@ shared_context:
 
   # PRD structure template
   prd_structure: |
-    **PRD Structure:**
+    **PRD JSON Structure (keep it simple):**
     ```json
     {{
-      "project_name": "...",
+      "project_name": "Tên dự án",
       "version": "1.0",
-      "overview": "Brief overview of the project",
-      "objectives": ["Objective 1", "Objective 2"],
-      "target_users": ["User persona 1", "User persona 2"],
+      "overview": "Mô tả ngắn gọn 1-2 câu",
+      "objectives": ["Mục tiêu 1", "Mục tiêu 2"],
+      "target_users": ["Người dùng 1", "Người dùng 2"],
       "features": [
         {{
-          "name": "Feature name",
-          "description": "Detailed description",
-          "priority": "high|medium|low",
-          "requirements": ["Req 1", "Req 2"]
+          "name": "Tên tính năng",
+          "description": "Mô tả ngắn",
+          "priority": "high",
+          "requirements": ["Yêu cầu 1", "Yêu cầu 2"]
         }}
       ],
-      "constraints": ["Technical constraint 1", "Business constraint 2"],
-      "success_metrics": ["Metric 1", "Metric 2"],
-      "risks": ["Risk 1", "Risk 2"]
+      "constraints": ["Ràng buộc 1"],
+      "success_metrics": ["Metric 1"],
+      "risks": ["Rủi ro 1"]
     }}
     ```
+    
+    **NOTES:**
+    - Keep each array to 2-5 items max
+    - Each description should be 1-2 sentences
+    - priority: only "high", "medium", or "low"
 
   # Epic and User Story format following INVEST criteria
   story_format: |
@@ -104,6 +109,7 @@ shared_context:
       - Error handling (system errors, network issues)
     - priority: Priority level (1=High, 2=Medium, 3=Low)
     - story_point: Estimated effort (1, 2, 3, 5, 8, 13 - Fibonacci scale)
+    - dependencies: List of story IDs that must be completed first (e.g., ["US-001", "US-002"])
 
 # ============================================================================
 # TASKS - Specific prompts for each LLM call type
@@ -249,6 +255,11 @@ tasks:
       - DON'T repeat what user already said
       - Use SIMPLE Vietnamese
       
+      **VALID QUESTION TYPES (CHỈ DÙNG 3 LOẠI NÀY):**
+      - `"open"` - Câu hỏi mở, user tự nhập text (KHÔNG có options)
+      - `"multichoice"` - Câu hỏi chọn từ danh sách (PHẢI có options)
+      - `"approval"` - Câu hỏi xác nhận Có/Không
+      
       **FORMAT (QUAN TRỌNG: mỗi câu hỏi PHẢI có field "category"):**
       ```json
       {{
@@ -268,10 +279,8 @@ tasks:
             "category": "main_features"
           }},
           {{
-            "text": "Câu hỏi về rủi ro/lo ngại?",
-            "type": "multichoice",
-            "options": ["Risk 1", "Risk 2"],
-            "allow_multiple": true,
+            "text": "Câu hỏi mở không có options?",
+            "type": "open",
             "category": "risks"
           }}
         ]
@@ -355,14 +364,22 @@ tasks:
       Collected information: {collected_info}
       
       # YOUR TASK
-      Generate a comprehensive PRD in JSON format.
+      Generate a PRD in JSON format.
       
-      Return ONLY valid JSON following the PRD structure.
+      **JSON RULES (CRITICAL):**
+      - Return ONLY valid JSON, no markdown, no explanation
+      - Use double quotes " for all strings (not single quotes)
+      - NO trailing commas before ] or }}
+      - Escape special characters in strings: use \" for quotes, \\n for newlines
+      - Keep descriptions SHORT (1-2 sentences each)
+      - Maximum 5-7 features for MVP
       
-      **IMPORTANT:**
-      - Use Vietnamese for descriptions when appropriate
-      - Be comprehensive but concise
-      - Focus on MVP features for phase 1
+      **CONTENT RULES:**
+      - Use Vietnamese for descriptions
+      - Be concise, avoid long paragraphs
+      - Focus on MVP features only
+      
+      Return valid JSON:
 
   # ---------------------------------------------------------------------------
   # UPDATE PRD - Modify existing PRD
@@ -414,7 +431,7 @@ tasks:
       ```
 
   # ---------------------------------------------------------------------------
-  # EXTRACT STORIES - Create Epics and User Stories from PRD
+  # EXTRACT STORIES - Create Epics and User Stories from PRD (OPTIMIZED)
   # ---------------------------------------------------------------------------
   extract_stories:
     system_prompt: |
@@ -426,47 +443,7 @@ tasks:
       
       {shared_context.ba_principles}
       
-      Extract Epics and user stories from the PRD.
-      
-      **Epic Structure:**
-      - id: Unique identifier (e.g., EPIC-001)
-      - title: Short title describing the feature
-      - description: Overview of the epic and its business value
-      - domain: Feature category (Authentication, Product, Cart, Payment, Admin, Notification, etc.)
-      
-      **Story Structure (Senior BA Quality):**
-      - id: Unique identifier (e.g., US-001)
-      - epic_id: Reference to parent epic
-      - title: "As a [specific user type], I want [business goal] so that [business benefit]"
-        - Focus on WHAT user needs, NOT how (solution details go in requirements)
-        - Be specific: "new customer" not just "user"
-      - description: Business-focused explanation (NOT technical implementation)
-      - requirements: Comprehensive list (5-8 items) covering:
-        - Core functionality
-        - UX flow and messages
-        - Validation rules
-        - Security considerations
-        - Edge cases
-      - acceptance_criteria: MUST have 4-6 scenarios covering:
-        - Happy path (successful flow)
-        - Validation errors (invalid email, weak password, etc.)
-        - Business rule violations (duplicate account, etc.)
-        - Edge cases and error handling
-      - priority: Priority level (1=High, 2=Medium, 3=Low)
-      - story_point: Estimated effort in story points (1, 2, 3, 5, 8, 13 - Fibonacci)
-      
-      **Guidelines (follow INVEST principles):**
-      - **I**ndependent: Each story can be developed separately
-      - **N**egotiable: Details can be discussed, not fixed contracts
-      - **V**aluable: Each story delivers clear user/business value
-      - **E**stimable: Story is clear enough to estimate effort
-      - **S**mall: Completable within 1 sprint, focused scope
-      - **T**estable: Has comprehensive acceptance criteria
-      
-      **Additional Rules:**
-      - Group related features into Epics by domain
-      - Each Epic should have 2-5 user stories
-      - Acceptance criteria MUST cover happy path + at least 3 error/edge cases
+      {shared_context.story_format}
 
     user_prompt: |
       PRD:
@@ -474,17 +451,20 @@ tasks:
       {prd}
       ```
       
-      # YOUR TASK
-      Extract Epics and user stories from this PRD.
+      Extract Epics and INVEST-compliant user stories. ALL content in ENGLISH.
       
-      **RULES (Senior BA Quality):**
-      1. Group features into logical Epics by domain
-      2. Each Epic should have 2-5 user stories
-      3. Story title: Focus on BUSINESS NEED, not technical solution
-      4. Description: Explain WHAT and WHY, not HOW (implementation)
-      5. Requirements: 5-8 items covering functionality, UX, validation, security, edge cases
-      6. Acceptance Criteria: 4-6 scenarios (happy path + validation + errors + edge cases)
-      7. **IMPORTANT: ALL content MUST be in ENGLISH**
+      **RULES:**
+      - Group by domain (Authentication, Product, Cart, Payment, etc.)
+      - 2-5 stories per Epic
+      - Title: "As a [user], I want [goal] so that [benefit]"
+      - Requirements: 5-8 items (functionality, UX, validation, security)
+      - Acceptance Criteria: 4-6 scenarios (happy path + errors + edge cases)
+      
+      **DEPENDENCIES (IMPORTANT):**
+      - Add dependencies for stories that REQUIRE another story first
+      - Common patterns: Login→Register, Checkout→Cart, Payment→Checkout
+      - Use story IDs: ["US-001", "US-002"]
+      - First story usually has NO dependencies: []
       
       Return ONLY valid JSON:
       ```json
@@ -493,93 +473,136 @@ tasks:
           {{
             "id": "EPIC-001",
             "title": "Epic Title",
-            "description": "Business value overview",
-            "domain": "Authentication|Product|Cart|Payment|Admin|Notification",
+            "description": "Business value",
+            "domain": "Authentication|Product|Cart|Payment|Admin",
             "stories": [
               {{
                 "id": "US-001",
                 "epic_id": "EPIC-001",
-                "title": "As a [specific user], I want [business goal] so that [business benefit]",
-                "description": "Business-focused description (not technical)",
-                "requirements": ["5-8 comprehensive requirements"],
-                "acceptance_criteria": ["4-6 scenarios covering happy path + errors"],
-                "priority": 2,
-                "story_point": 3
+                "title": "As a [user], I want [goal] so that [benefit]",
+                "description": "Business description",
+                "requirements": ["req1", "req2", "..."],
+                "acceptance_criteria": ["Given X When Y Then Z", "..."],
+                "priority": 1,
+                "story_point": 5,
+                "dependencies": []
               }}
             ]
           }}
         ]
       }}
       ```
+
+  # ---------------------------------------------------------------------------
+  # EXTRACT EPICS ONLY - First phase of batch processing
+  # ---------------------------------------------------------------------------
+  extract_epics_only:
+    system_prompt: |
+      {shared_context.agent_identity}
       
-      **EXAMPLE (Senior BA Quality):**
+      ---
+      
+      # EPIC EXTRACTION (Phase 1 of 2)
+      
+      Extract ONLY Epic structure from PRD. Stories will be generated separately.
+      
+      **Epic Structure:**
+      - id: EPIC-001, EPIC-002, etc.
+      - title: Short descriptive title
+      - description: Business value (1-2 sentences)
+      - domain: Authentication, Product, Cart, Payment, Admin, Notification
+      - feature_refs: List of feature names from PRD that belong to this epic
+
+    user_prompt: |
+      PRD:
+      ```json
+      {prd}
+      ```
+      
+      Extract Epics ONLY (no stories yet). Group PRD features into logical Epics.
+      
+      Return ONLY valid JSON:
       ```json
       {{
         "epics": [
           {{
             "id": "EPIC-001",
-            "title": "User Account Management",
-            "description": "Enable customers to create and manage their accounts for personalized shopping experience",
-            "domain": "Authentication",
-            "stories": [
-              {{
-                "id": "US-001",
-                "epic_id": "EPIC-001",
-                "title": "As a new customer, I want to create an account so that I can view and manage my orders and personal information",
-                "description": "Allow first-time customers to create an account to access personalized services including order history, saved addresses, and preferences. New customer means a person who does not have an existing account in the system.",
-                "requirements": [
-                  "Provide registration form with email (mandatory) and password (mandatory) fields",
-                  "Validate email format using standard email regex pattern",
-                  "Enforce password policy: minimum 8 characters, at least 1 uppercase, 1 lowercase, 1 number",
-                  "Display real-time validation feedback as user types",
-                  "Prevent duplicate registration with error message and link to login/forgot password",
-                  "Store credentials securely using industry-standard hashing",
-                  "Send verification email after successful registration",
-                  "Show clear success message with next steps after registration"
-                ],
-                "acceptance_criteria": [
-                  "Given I am on registration page and enter valid email and password meeting policy when I submit then account is created and I see success message with verification email sent",
-                  "Given I enter an email that is already registered when I submit then I see error message with options to login or recover password",
-                  "Given I enter invalid email format when I type then I see inline validation error about email format",
-                  "Given I enter password not meeting policy when I type then I see inline feedback showing missing requirements",
-                  "Given the system encounters an internal error when creating account then I see a friendly error message and no partial account is created"
-                ],
-                "priority": 1,
-                "story_point": 5
-              }}
-            ]
+            "title": "Epic Title",
+            "description": "Business value",
+            "domain": "Authentication|Product|Cart|Payment|Admin",
+            "feature_refs": ["Feature 1 from PRD", "Feature 2"]
+          }}
+        ]
+      }}
+      ```
+
+  # ---------------------------------------------------------------------------
+  # GENERATE STORIES FOR EPIC - Second phase of batch processing
+  # ---------------------------------------------------------------------------
+  generate_stories_for_epic:
+    system_prompt: |
+      {shared_context.agent_identity}
+      
+      ---
+      
+      # USER STORY GENERATION (Phase 2 of 2)
+      
+      Generate INVEST-compliant user stories for a SINGLE Epic.
+      
+      {shared_context.story_format}
+
+    user_prompt: |
+      Epic: {epic_title} (ID: {epic_id}, Domain: {epic_domain})
+      Epic Description: {epic_description}
+      
+      Related PRD Features:
+      {prd_features}
+      
+      All Epic IDs in project (for dependencies): {all_epic_ids}
+      
+      Generate 2-5 user stories for this Epic. ALL content in ENGLISH.
+      
+      **RULES:**
+      - Title: "As a [user], I want [goal] so that [benefit]"
+      - Requirements: 5-8 items (functionality, UX, validation, security)
+      - Acceptance Criteria: 4-6 scenarios (happy path + errors)
+      - Story IDs must be unique: {epic_id}-US-001, {epic_id}-US-002, etc.
+      
+      **DEPENDENCIES (IMPORTANT):**
+      - Add dependencies for stories that REQUIRE another story to be completed first
+      - Common dependency patterns:
+        - Login depends on Registration
+        - Checkout depends on Add to Cart
+        - Payment depends on Checkout
+        - Profile Edit depends on Registration
+      - Use story IDs within THIS epic: ["{epic_id}-US-001", "{epic_id}-US-002"]
+      - First story of each epic usually has NO dependencies: []
+      
+      Return ONLY valid JSON:
+      ```json
+      {{
+        "stories": [
+          {{
+            "id": "{epic_id}-US-001",
+            "epic_id": "{epic_id}",
+            "title": "As a [user], I want [goal] so that [benefit]",
+            "description": "Business description",
+            "requirements": ["req1", "req2", "..."],
+            "acceptance_criteria": ["Given X When Y Then Z", "..."],
+            "priority": 1,
+            "story_point": 5,
+            "dependencies": []
           }},
           {{
-            "id": "EPIC-002",
-            "title": "Shopping Cart Management",
-            "description": "Allow customers to manage products in their shopping cart before checkout",
-            "domain": "Cart",
-            "stories": [
-              {{
-                "id": "US-002",
-                "epic_id": "EPIC-002",
-                "title": "As a customer, I want to add products to my cart so that I can purchase multiple items in one transaction",
-                "description": "Enable customers to collect products they wish to purchase before proceeding to checkout. Cart persists across sessions for logged-in users, guest users have session-based cart.",
-                "requirements": [
-                  "Display prominent Add to Cart button on product detail page",
-                  "Update cart icon badge with total item count immediately after adding",
-                  "Show success toast notification confirming product was added",
-                  "Disable Add to Cart button for out-of-stock products with clear messaging",
-                  "Allow adding same product multiple times (increment quantity)",
-                  "Persist cart data for logged-in users across devices",
-                  "Handle concurrent cart updates gracefully"
-                ],
-                "acceptance_criteria": [
-                  "Given I am on product page with available stock when I click Add to Cart then product is added and cart badge updates immediately",
-                  "Given product is out of stock when I view page then Add to Cart button is disabled with Out of Stock label",
-                  "Given I add same product twice when I check cart then quantity is incremented not duplicated",
-                  "Given I am logged in and add items on mobile when I view cart on desktop then same items appear",
-                  "Given network error occurs when adding to cart then I see retry option and cart state is preserved"
-                ],
-                "priority": 1,
-                "story_point": 5
-              }}
-            ]
+            "id": "{epic_id}-US-002",
+            "epic_id": "{epic_id}",
+            "title": "As a [user], I want [second goal]...",
+            "description": "...",
+            "requirements": ["..."],
+            "acceptance_criteria": ["..."],
+            "priority": 1,
+            "story_point": 3,
+            "dependencies": ["{epic_id}-US-001"]
           }}
         ]
       }}
@@ -674,6 +697,7 @@ tasks:
       - acceptance_criteria: List of Given/When/Then criteria for QA testing
       - priority: Priority level (1=High, 2=Medium, 3=Low)
       - story_point: Estimated effort in story points (1, 2, 3, 5, 8, 13 - Fibonacci)
+      - dependencies: List of story IDs that must be completed before this story (e.g., ["US-001", "US-002"])
       
       **Update Guidelines:**
       - Preserve existing story IDs when possible
@@ -681,6 +705,7 @@ tasks:
       - Keep stories INVEST-compliant
       - Maintain epic/story relationships
       - Each story MUST have 3-6 specific requirements
+      - Update dependencies when story order/relationships change
       - **IMPORTANT: ALL content MUST be in ENGLISH**
 
     user_prompt: |
@@ -722,7 +747,8 @@ tasks:
                 "requirements": ["Requirement 1", "Requirement 2", "Requirement 3"],
                 "acceptance_criteria": ["Given X when Y then Z"],
                 "priority": 2,
-                "story_point": 3
+                "story_point": 3,
+                "dependencies": []
               }}
             ]
           }}

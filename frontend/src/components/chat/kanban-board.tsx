@@ -210,6 +210,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         epic_id: item.epic_id,
         acceptance_criteria: item.acceptance_criteria,
         requirements: item.requirements,
+        dependencies: item.dependencies,
         created_at: item.created_at,
         updated_at: item.updated_at,
         parent: item.parent ? {
@@ -234,6 +235,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
           assignee_id: child.assignee_id,
           reviewer_id: child.reviewer_id,
           requirements: child.requirements,
+          dependencies: child.dependencies,
           title: child.title,
         })) : [],
       })
@@ -321,6 +323,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         epic_id: item.epic_id,
         acceptance_criteria: item.acceptance_criteria,
         requirements: item.requirements,
+        dependencies: item.dependencies,
         created_at: item.created_at,
         updated_at: item.updated_at,
         parent: item.parent ? {
@@ -345,6 +348,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
           assignee_id: child.assignee_id,
           reviewer_id: child.reviewer_id,
           requirements: child.requirements,
+          dependencies: child.dependencies,
           title: child.title,
         })) : [],
       })
@@ -435,6 +439,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         priority: storyData.priority === "High" ? 1 : storyData.priority === "Medium" ? 2 : 3,
         acceptance_criteria: storyData.acceptance_criteria,
         requirements: storyData.requirements,
+        dependencies: storyData.dependencies,
         tags: [],
         labels: [],
       })
@@ -460,6 +465,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
                   epic_id: createdStory.epic_id ?? undefined,
                   acceptance_criteria: createdStory.acceptance_criteria ?? undefined,
                   requirements: createdStory.requirements ?? undefined,
+                  dependencies: createdStory.dependencies ?? undefined,
                   created_at: createdStory.created_at ?? new Date().toISOString(),
                   taskId: `STORY-${createdStory.id.substring(0, 4).toUpperCase()}`,
                 },
@@ -1012,6 +1018,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         open={!!selectedCard}
         onOpenChange={() => setSelectedCard(null)}
         onDownloadResult={handleDownloadResult}
+        allStories={columns.flatMap(col => col.cards)}
       />
 
       <FlowMetricsDashboard
@@ -1043,6 +1050,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         open={showCreateStoryDialog}
         onOpenChange={setShowCreateStoryDialog}
         onCreateStory={handleCreateStory}
+        projectId={projectId}
       />
     </>
   )

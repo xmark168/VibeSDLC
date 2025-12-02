@@ -34,9 +34,9 @@ logger = logging.getLogger(__name__)
 
 # LLM instances (shared, like Team Leader)
 # Using same model naming as team_leader (claude-haiku/sonnet without prefix)
-_fast_llm = ChatOpenAI(model="gpt-4.1", temperature=0.1, timeout=30)
-_default_llm = ChatOpenAI(model="gpt-4.1", temperature=0.7, timeout=90)
-_story_llm = ChatOpenAI(model="gpt-4.1", temperature=0.7, timeout=180)
+_fast_llm = ChatOpenAI(model="claude-sonnet-4-5-20250929", temperature=0.1, timeout=30)
+_default_llm = ChatOpenAI(model="claude-sonnet-4-5-20250929", temperature=0.3, timeout=90)
+_story_llm = ChatOpenAI(model="claude-sonnet-4-5-20250929", temperature=0.3, timeout=180)
 
 
 def _cfg(state: dict, name: str) -> dict:
@@ -589,9 +589,96 @@ async def update_prd(state: BAState, agent=None) -> dict:
         }
 
 
+async def _generate_stories_for_epic(
+    epic: dict, 
+    prd: dict, 
+    all_epic_ids: list, 
+    state: BAState, 
+    agent=None
+) -> dict:
+    """Generate stories for a single Epic (used in parallel batch processing)."""
+    epic_id = epic.get("id", "EPIC-???")
+    epic_title = epic.get("title", "Unknown")
+    
+    logger.info(f"[BA] Generating stories for Epic: {epic_title}")
+    
+    # Find related features from PRD
+    feature_refs = epic.get("feature_refs", [])
+    prd_features = []
+    for feature in prd.get("features", []):
+        if feature.get("name") in feature_refs:
+            prd_features.append(feature)
+    
+    # If no feature_refs matched, include all features for this epic
+    if not prd_features:
+        prd_features = prd.get("features", [])
+    
+    system_prompt = _sys_prompt(agent, "generate_stories_for_epic")
+    user_prompt = _user_prompt(
+        "generate_stories_for_epic",
+        epic_id=epic_id,
+        epic_title=epic_title,
+        epic_domain=epic.get("domain", "General"),
+        epic_description=epic.get("description", ""),
+        prd_features=json.dumps(prd_features, ensure_ascii=False, indent=2),
+        all_epic_ids=", ".join(all_epic_ids)
+    )
+    
+    try:
+        logger.info(f"[BA] Calling LLM for Epic '{epic_title}' with {len(prd_features)} features")
+        
+        response = await _story_llm.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ],
+            config=_cfg(state, f"generate_stories_{epic_id}")
+        )
+        
+        logger.info(f"[BA] LLM response for Epic '{epic_title}': {len(response.content)} chars")
+        logger.debug(f"[BA] Response preview: {response.content[:500]}...")
+        
+        result = parse_stories_response(response.content)
+        logger.info(f"[BA] Parsed result keys for Epic '{epic_title}': {list(result.keys())}")
+        
+        # parse_stories_response returns {"epics": [...]} format
+        # For single epic generation, stories are inside the first epic
+        stories = []
+        if "epics" in result and result["epics"]:
+            # Get stories from the first (and only) epic in the response
+            first_epic = result["epics"][0]
+            stories = first_epic.get("stories", [])
+            logger.info(f"[BA] Found {len(stories)} stories in epics[0] for Epic '{epic_title}'")
+        elif "stories" in result:
+            # Direct stories format (fallback)
+            stories = result.get("stories", [])
+            logger.info(f"[BA] Found {len(stories)} stories directly for Epic '{epic_title}'")
+        else:
+            logger.warning(f"[BA] No stories found in result for Epic '{epic_title}': {result}")
+        
+        # Add epic info to each story
+        for story in stories:
+            story["epic_id"] = epic_id
+            story["epic_title"] = epic_title
+        
+        logger.info(f"[BA] Generated {len(stories)} stories for Epic '{epic_title}'")
+        return {"epic_id": epic_id, "stories": stories}
+        
+    except Exception as e:
+        logger.error(f"[BA] Failed to generate stories for Epic '{epic_title}': {e}")
+        return {"epic_id": epic_id, "stories": [], "error": str(e)}
+
+
 async def extract_stories(state: BAState, agent=None) -> dict:
-    """Node: Extract epics with INVEST-compliant user stories from PRD."""
-    logger.info(f"[BA] Extracting epics and user stories...")
+    """Node: Extract epics with INVEST-compliant user stories from PRD.
+    
+    Uses BATCH PROCESSING for better performance:
+    - Phase 1: Extract Epics only (fast, ~5s)
+    - Phase 2: Generate stories for each Epic in PARALLEL (~15s total instead of ~60s)
+    """
+    import asyncio
+    
+    logger.info(f"[BA] Extracting epics and user stories (batch mode)...")
     
     prd = state.get("prd_draft") or state.get("existing_prd", {})
     
@@ -603,6 +690,102 @@ async def extract_stories(state: BAState, agent=None) -> dict:
             "error": "No PRD available. Please create a PRD first."
         }
     
+    # Check if PRD is simple (few features) - use single call instead of batch
+    features_count = len(prd.get("features", []))
+    use_batch = features_count >= 3  # Use batch for 3+ features
+    
+    if not use_batch:
+        # Simple PRD - use single call (original method)
+        logger.info(f"[BA] Using single-call mode for simple PRD ({features_count} features)")
+        return await _extract_stories_single_call(state, agent, prd)
+    
+    logger.info(f"[BA] Using batch mode for complex PRD ({features_count} features)")
+    
+    try:
+        # =============================================
+        # PHASE 1: Extract Epics only (fast call ~5s)
+        # =============================================
+        logger.info("[BA] Phase 1: Extracting Epics structure...")
+        
+        system_prompt = _sys_prompt(agent, "extract_epics_only")
+        user_prompt = _user_prompt(
+            "extract_epics_only",
+            prd=json.dumps(prd, ensure_ascii=False, indent=2)
+        )
+        
+        response = await _fast_llm.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ],
+            config=_cfg(state, "extract_epics_only")
+        )
+        
+        epics_result = parse_stories_response(response.content)
+        epics = epics_result.get("epics", [])
+        
+        if not epics:
+            logger.warning("[BA] No epics extracted, falling back to single call")
+            return await _extract_stories_single_call(state, agent, prd)
+        
+        logger.info(f"[BA] Phase 1 complete: {len(epics)} Epics extracted")
+        
+        # =============================================
+        # PHASE 2: Generate stories for each Epic IN PARALLEL
+        # =============================================
+        logger.info(f"[BA] Phase 2: Generating stories for {len(epics)} Epics in parallel...")
+        
+        all_epic_ids = [epic.get("id", "") for epic in epics]
+        
+        # Create tasks for parallel execution
+        tasks = [
+            _generate_stories_for_epic(epic, prd, all_epic_ids, state, agent)
+            for epic in epics
+        ]
+        
+        # Run all tasks in parallel
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Collect all stories and update epics
+        all_stories = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"[BA] Error generating stories for Epic {i}: {result}")
+                continue
+            
+            epic_id = result.get("epic_id")
+            stories = result.get("stories", [])
+            
+            # Find and update the epic with its stories
+            for epic in epics:
+                if epic.get("id") == epic_id:
+                    epic["stories"] = stories
+                    break
+            
+            # Add to flat list
+            all_stories.extend(stories)
+        
+        total_epics = len(epics)
+        total_stories = len(all_stories)
+        logger.info(f"[BA] Batch extraction complete: {total_epics} epics with {total_stories} stories")
+        
+        # If batch mode generated no stories, fall back to single call
+        if total_stories == 0 and total_epics > 0:
+            logger.warning(f"[BA] Batch mode generated 0 stories for {total_epics} epics, falling back to single call")
+            return await _extract_stories_single_call(state, agent, prd)
+        
+        return {
+            "epics": epics,
+            "stories": all_stories
+        }
+        
+    except Exception as e:
+        logger.error(f"[BA] Batch extraction failed: {e}, falling back to single call")
+        return await _extract_stories_single_call(state, agent, prd)
+
+
+async def _extract_stories_single_call(state: BAState, agent, prd: dict) -> dict:
+    """Original single-call story extraction (fallback for simple PRDs)."""
     system_prompt = _sys_prompt(agent, "extract_stories")
     user_prompt = _user_prompt(
         "extract_stories",
@@ -610,7 +793,6 @@ async def extract_stories(state: BAState, agent=None) -> dict:
     )
     
     try:
-        # Use _story_llm with longer timeout for complex story extraction
         response = await _story_llm.ainvoke(
             [
                 SystemMessage(content=system_prompt),
@@ -619,35 +801,20 @@ async def extract_stories(state: BAState, agent=None) -> dict:
             config=_cfg(state, "extract_stories")
         )
         
-        # Debug: log raw response length
-        logger.info(f"[BA] LLM response length: {len(response.content)} chars")
-        logger.debug(f"[BA] LLM response preview: {response.content[:500]}...")
-        
         result = parse_stories_response(response.content)
         epics = result.get("epics", [])
-        
-        # Debug: log parsed result
-        logger.info(f"[BA] Parsed epics count: {len(epics)}")
-        if not epics:
-            logger.warning(f"[BA] No epics parsed! Response preview: {response.content[:1000]}")
         
         # Flatten stories for backward compatibility
         all_stories = []
         for epic in epics:
             stories_in_epic = epic.get("stories", [])
             epic_title = epic.get("title", epic.get("name", "Unknown"))
-            logger.info(f"[BA] Epic '{epic_title}' has {len(stories_in_epic)} stories")
             for story in stories_in_epic:
                 story["epic_id"] = epic.get("id")
                 story["epic_title"] = epic_title
-                # Log story details including priority and story_point
-                logger.info(f"[BA] Extracted story: '{story.get('title', '')[:50]}' - priority={story.get('priority')}, story_point={story.get('story_point')}")
-                logger.info(f"[BA] Story keys from LLM: {list(story.keys())}")
                 all_stories.append(story)
         
-        total_epics = len(epics)
-        total_stories = len(all_stories)
-        logger.info(f"[BA] Extracted {total_epics} epics with {total_stories} user stories")
+        logger.info(f"[BA] Single-call extraction: {len(epics)} epics, {len(all_stories)} stories")
         
         return {
             "epics": epics,
@@ -721,7 +888,7 @@ async def update_stories(state: BAState, agent=None) -> dict:
 
 
 async def approve_stories(state: BAState, agent=None) -> dict:
-    """Node: Approve stories and save them to database."""
+    """Node: Approve stories and save them to database (batch operation)."""
     logger.info(f"[BA] Approving stories and saving to database...")
     
     epics_data = state.get("epics", [])
@@ -737,9 +904,11 @@ async def approve_stories(state: BAState, agent=None) -> dict:
         created_epics = []
         created_stories = []
         epic_id_map = {}  # Map string ID (EPIC-001) to UUID
+        story_id_map = {}  # Map string ID (EPIC-001-US-001) to actual UUID
         
         with Session(engine) as session:
-            # 1. Create Epics first
+            # 1. Create all Epics at once
+            epic_objects = []
             for epic_data in epics_data:
                 epic = Epic(
                     title=epic_data.get("title", epic_data.get("name", "Unknown Epic")),
@@ -748,21 +917,24 @@ async def approve_stories(state: BAState, agent=None) -> dict:
                     project_id=agent.project_id,
                     epic_status=EpicStatus.PLANNED
                 )
+                epic_objects.append((epic, epic_data.get("id", "")))
                 session.add(epic)
-                session.flush()  # Get the UUID
-                
-                # Map string ID to UUID
-                string_id = epic_data.get("id", "")
+            
+            # Single flush for all epics
+            session.flush()
+            
+            # Build epic ID map after flush
+            for epic, string_id in epic_objects:
                 epic_id_map[string_id] = epic.id
                 created_epics.append({
                     "id": str(epic.id),
                     "title": epic.title,
                     "domain": epic.domain
                 })
-                logger.info(f"[BA] Created Epic: {epic.title} (id={epic.id})")
             
-            # 2. Create Stories linked to their Epics
-            # Get current max rank for TODO stories
+            logger.info(f"[BA] Created {len(created_epics)} epics in batch")
+            
+            # 2. Create all Stories at once
             max_rank_result = session.exec(
                 select(func.max(Story.rank)).where(
                     Story.project_id == agent.project_id,
@@ -771,49 +943,63 @@ async def approve_stories(state: BAState, agent=None) -> dict:
             ).one()
             current_rank = (max_rank_result or 0)
             
+            story_objects = []  # (story, string_id, original_deps)
             for story_data in stories_data:
-                # Get the epic UUID from the string ID
                 epic_string_id = story_data.get("epic_id", "")
                 epic_uuid = epic_id_map.get(epic_string_id)
-                
-                # Get acceptance criteria list (keep as list for JSON storage)
-                acceptance_criteria = story_data.get("acceptance_criteria", [])
-                
-                # Get requirements list (keep as list for JSON storage)
-                requirements = story_data.get("requirements", [])
-                
-                # Auto-increment rank for ordering
                 current_rank += 1
-                
-                # Get priority and story_point from LLM
-                priority = story_data.get("priority")
-                story_point = story_data.get("story_point")
-                logger.info(f"[BA] Creating story: '{story_data.get('title', '')[:50]}' - priority={priority}, story_point={story_point}, epic_id={epic_string_id}")
-                logger.info(f"[BA] Story data keys: {list(story_data.keys())}")
+                story_string_id = story_data.get("id", "")
+                original_dependencies = story_data.get("dependencies", [])
                 
                 story = Story(
                     title=story_data.get("title", "Unknown Story"),
                     description=story_data.get("description"),
-                    acceptance_criteria=acceptance_criteria,
-                    requirements=requirements,
+                    acceptance_criteria=story_data.get("acceptance_criteria", []),
+                    requirements=story_data.get("requirements", []),
                     project_id=agent.project_id,
                     epic_id=epic_uuid,
                     status=StoryStatus.TODO,
                     type=StoryType.USER_STORY,
-                    priority=priority,
-                    story_point=story_point,
+                    priority=story_data.get("priority"),
+                    story_point=story_data.get("story_point"),
                     rank=current_rank,
+                    dependencies=[],
                 )
+                story_objects.append((story, story_string_id, original_dependencies))
                 session.add(story)
-                session.flush()
-                
+            
+            # Single flush for all stories
+            session.flush()
+            
+            # Build story ID map and created_stories list after flush
+            for story, string_id, _ in story_objects:
+                story_id_map[string_id] = str(story.id)
                 created_stories.append({
                     "id": str(story.id),
+                    "string_id": string_id,
                     "title": story.title,
-                    "epic_id": str(epic_uuid) if epic_uuid else None
+                    "epic_id": str(story.epic_id) if story.epic_id else None
                 })
-                logger.info(f"[BA] Created Story: {story.title} (id={story.id})")
             
+            logger.info(f"[BA] Created {len(created_stories)} stories in batch")
+            
+            # 3. Resolve dependencies (no additional flush needed, just update objects)
+            deps_resolved = 0
+            for story, _, original_deps in story_objects:
+                if original_deps:
+                    resolved_deps = [
+                        story_id_map[dep_id] 
+                        for dep_id in original_deps 
+                        if dep_id in story_id_map
+                    ]
+                    if resolved_deps:
+                        story.dependencies = resolved_deps
+                        deps_resolved += 1
+            
+            if deps_resolved:
+                logger.info(f"[BA] Resolved dependencies for {deps_resolved} stories")
+            
+            # Single commit for everything
             session.commit()
         
         logger.info(f"[BA] Saved {len(created_epics)} epics and {len(created_stories)} stories to database")
@@ -974,15 +1160,25 @@ QUAN TRỌNG:
 - KHÔNG hỏi lại những gì user đã trả lời
 - Nếu tất cả categories đã có thông tin, trả về questions: []
 
+**VALID QUESTION TYPES (CHỈ DÙNG 3 LOẠI NÀY):**
+- "open" - Câu hỏi mở, user tự nhập text (KHÔNG có options)
+- "multichoice" - Câu hỏi chọn từ danh sách (PHẢI có options)
+- "approval" - Câu hỏi xác nhận Có/Không
+
 Return JSON format:
 ```json
 {{
   "questions": [
     {{
-      "text": "Câu hỏi cụ thể khác với những gì đã hỏi?",
+      "text": "Câu hỏi chọn từ danh sách?",
       "type": "multichoice",
       "options": ["Option 1", "Option 2", "Khác"],
       "allow_multiple": true,
+      "category": "category_name"
+    }},
+    {{
+      "text": "Câu hỏi mở user tự nhập?",
+      "type": "open",
       "category": "category_name"
     }}
   ]

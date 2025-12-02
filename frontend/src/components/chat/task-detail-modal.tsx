@@ -1,5 +1,5 @@
 
-import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile } from "lucide-react"
+import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile, Link2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -16,6 +16,7 @@ interface TaskDetailModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onDownloadResult: (card: KanbanCardData) => void
+  allStories?: KanbanCardData[]  // For resolving dependency titles
 }
 
 // Mock chat messages type
@@ -28,8 +29,20 @@ interface ChatMessage {
   avatar?: string
 }
 
-export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: TaskDetailModalProps) {
+export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, allStories = [] }: TaskDetailModalProps) {
   const [selectedChild, setSelectedChild] = useState<KanbanCardData | null>(null)
+  
+  // Helper to get story title from dependency ID (UUID)
+  const getDependencyTitle = (depId: string): string => {
+    const story = allStories.find(s => s.id === depId)
+    if (story) {
+      // Truncate long titles
+      const title = story.content || 'Untitled'
+      return title.length > 50 ? title.substring(0, 50) + '...' : title
+    }
+    // Fallback: show shortened UUID
+    return depId.substring(0, 8) + '...'
+  }
   const [activeTab, setActiveTab] = useState<string>("detail")
   const [chatMessage, setChatMessage] = useState("")
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
@@ -347,6 +360,28 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
             )}
           </div>
 
+          {/* Dependencies */}
+          {card.dependencies && card.dependencies.length > 0 && (
+            <div>
+              <h4 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+                <Link2 className="w-4 h-4 text-orange-500" />
+                Dependencies
+              </h4>
+              <div className="flex flex-wrap gap-2">
+                {card.dependencies.map((depId: string, idx: number) => (
+                  <Badge 
+                    key={idx} 
+                    variant="outline" 
+                    className="bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-300 border-orange-200/50 dark:border-orange-800/50 text-xs max-w-full"
+                    title={depId}  // Show full ID on hover
+                  >
+                    {getDependencyTitle(depId)}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+
           <Separator />
 
           {/* TraDS ============= Kanban Hierarchy: Parent Epic Display */}
@@ -357,7 +392,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
                 <Badge variant="outline" className={getTypeBadgeColor(card.parent.type)}>
                   {formatTypeName(card.parent.type)}
                 </Badge>
-                <span className="text-sm flex-1">{card.parent.content || card.parent.title}</span>
+                <span className="text-sm flex-1">{card.parent.content}</span>
               </div>
             </div>
           )}
@@ -378,7 +413,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult }: 
                     <Badge variant="outline" className={getTypeBadgeColor(child.type)}>
                       {formatTypeName(child.type)}
                     </Badge>
-                    <span className="text-sm flex-1">{child.content || child.title}</span>
+                    <span className="text-sm flex-1">{child.content}</span>
                     {child.status && (
                       <Badge variant="outline" className={getStatusBadgeColor(child.status)}>
                         {child.status}

@@ -27,9 +27,9 @@ class StoryBase(SQLModel):
     business_value: Optional[int] = Field(None, ge=1, le=100)
     risk_level: Optional[Literal["low", "medium", "high", "critical"]] = None
     target_release: Optional[str] = None
-    dependencies: Optional[list[UUID]] = Field(default_factory=list)
+    dependencies: Optional[list[str]] = Field(default_factory=list)  # Story IDs (strings like 'US-001')
     blocked_by: Optional[UUID] = None
-    blocking: Optional[list[UUID]] = Field(default_factory=list)
+    blocking: Optional[list[str]] = Field(default_factory=list)  # Story IDs
     attachments: Optional[list[str]] = Field(default_factory=list)
     labels: Optional[list[str]] = Field(default_factory=list)
 
@@ -73,9 +73,9 @@ class StoryUpdate(SQLModel):
     business_value: Optional[int] = Field(None, ge=1, le=100)
     risk_level: Optional[Literal["low", "medium", "high", "critical"]] = None
     target_release: Optional[str] = None
-    dependencies: Optional[list[UUID]] = None
+    dependencies: Optional[list[str]] = None  # Story IDs (strings)
     blocked_by: Optional[UUID] = None
-    blocking: Optional[list[UUID]] = None
+    blocking: Optional[list[str]] = None  # Story IDs
     attachments: Optional[list[str]] = None
     labels: Optional[list[str]] = None
     # Agent tracking
