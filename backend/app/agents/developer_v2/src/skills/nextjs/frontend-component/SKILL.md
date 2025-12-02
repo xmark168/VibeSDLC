@@ -1,6 +1,6 @@
 ---
 name: frontend-component
-description: Create React/Next.js 16 components. Use when building pages, client components, forms with useActionState, or UI components using shadcn/ui.
+description: Create React/Next.js 16 components. Use when building pages, client/server components, forms with useActionState, or UI with shadcn/ui. Handles 'use client' directive decisions.
 ---
 
 # Frontend Component (Next.js 16 + React 19)

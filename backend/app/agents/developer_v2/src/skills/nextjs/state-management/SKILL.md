@@ -1,6 +1,6 @@
 ---
 name: state-management
-description: Manage client-side state with Zustand. Use when building shopping cart, user preferences, UI state, or cross-component shared state.
+description: Manage client-side state with Zustand. Use when building shopping cart, user preferences, theme toggle, UI state, or any cross-component shared state with localStorage persist.
 ---
 
 # State Management (Zustand 5)

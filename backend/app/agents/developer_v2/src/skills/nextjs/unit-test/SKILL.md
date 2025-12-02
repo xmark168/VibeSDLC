@@ -1,6 +1,6 @@
 ---
 name: unit-test
-description: Write unit tests with Jest and React Testing Library. Use when creating tests for components, utilities, or server actions.
+description: Write unit tests with Jest and React Testing Library. Use when testing components, utilities, server actions, or API routes. CRITICAL - Uses Jest (NOT Vitest).
 ---
 
 # Unit Test (Jest + Testing Library)

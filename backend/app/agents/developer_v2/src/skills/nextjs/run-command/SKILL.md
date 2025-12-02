@@ -1,52 +1,33 @@
 ---
 name: run-command
-description: Execute shell commands in Next.js project. Use when running any CLI command like install, build, test, lint, prisma, or any package execution.
+description: Execute shell commands in Next.js project with Bun. Use when running install, build, test, lint, prisma commands, or adding dependencies.
 ---
 
-# Run Commands (Next.js + Bun)
+# Run Commands (Bun)
 
-## Package Manager: BUN
+## Critical Rules
 
-**CRITICAL**: Use `bun` and `bunx`, NEVER npm/npx/yarn/pnpm.
+1. **Package manager**: Use `bun` and `bunx` ONLY
+2. **NEVER use**: npm, npx, yarn, pnpm
 
-## Common Commands
+## Quick Reference
 
 | Task | Command |
 |------|---------|
-| Install deps | `bun install` |
-| Dev server | `bun run dev` |
+| Install | `bun install` |
+| Dev | `bun run dev` |
 | Build | `bun run build` |
 | Test | `bun run test` |
 | Lint | `bun run lint` |
 | Lint fix | `bunx eslint --fix .` |
-| Format | `bunx prettier --write .` |
+| Add dep | `bun add <package>` |
+| Add dev dep | `bun add -d <package>` |
 
 ## Prisma Commands
 
-```bash
-bunx prisma generate      # Generate client
-bunx prisma db push       # Push schema (dev)
-bunx prisma migrate dev   # Create migration
-bunx prisma studio        # View database
-```
-
-## Package Execution
-
-```bash
-# CORRECT (bunx)
-bunx prisma generate
-bunx eslint --fix .
-bunx tsc --noEmit
-
-# WRONG (npx) - NEVER USE
-npx prisma generate  ❌
-npx eslint --fix .   ❌
-```
-
-## Add Dependencies
-
-```bash
-bun add <package>           # Production dep
-bun add -d <package>        # Dev dep
-bun add @types/<package>    # Type definitions
-```
+| Task | Command |
+|------|---------|
+| Generate | `bunx prisma generate` |
+| Push schema | `bunx prisma db push` |
+| Migrate | `bunx prisma migrate dev` |
+| Studio | `bunx prisma studio` |
