@@ -1,5 +1,5 @@
 
-import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile, Link2 } from "lucide-react"
+import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile, Link2, ExternalLink } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -31,6 +31,7 @@ interface ChatMessage {
 
 export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, allStories = [] }: TaskDetailModalProps) {
   const [selectedChild, setSelectedChild] = useState<KanbanCardData | null>(null)
+  const [selectedDependency, setSelectedDependency] = useState<KanbanCardData | null>(null)
   
   // Helper to get story title from dependency ID (UUID)
   const getDependencyTitle = (depId: string): string => {
@@ -335,16 +336,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
               </div>
             )}
 
-            {/* Epic ID */}
-            {card.epic_id && (
-              <div className="flex items-center gap-2">
-                <FileText className="w-4 h-4 text-muted-foreground" />
-                <div>
-                  <div className="text-xs text-muted-foreground">Epic ID</div>
-                  <div className="text-sm font-medium font-mono">{card.epic_id.slice(0, 8)}</div>
-                </div>
-              </div>
-            )}
+
 
             {/* Created at */}
             {card.created_at && (
@@ -360,42 +352,48 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
             )}
           </div>
 
+          {/* Epic */}
+          {(card.epic_id || card.epic_title) && (
+            <div>
+              <h4 className="text-sm font-semibold text-foreground mb-2">Epic</h4>
+              <span className="text-sm text-muted-foreground">
+                {card.epic_title || 'Untitled Epic'}
+              </span>
+            </div>
+          )}
+
           {/* Dependencies */}
           {card.dependencies && card.dependencies.length > 0 && (
             <div>
               <h4 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
-                <Link2 className="w-4 h-4 text-orange-500" />
                 Dependencies
               </h4>
-              <div className="flex flex-wrap gap-2">
-                {card.dependencies.map((depId: string, idx: number) => (
-                  <Badge 
-                    key={idx} 
-                    variant="outline" 
-                    className="bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-300 border-orange-200/50 dark:border-orange-800/50 text-xs max-w-full"
-                    title={depId}  // Show full ID on hover
-                  >
-                    {getDependencyTitle(depId)}
-                  </Badge>
-                ))}
+              <div className="space-y-2">
+                {card.dependencies.map((depId: string, idx: number) => {
+                  const depStory = allStories.find(s => s.id === depId)
+                  const depTitle = depStory?.content || depId.substring(0, 8) + '...'
+                  return (
+                    <div key={idx} className="gap-2">
+                      <span className="text-sm text-muted-foreground flex-1">{depTitle}</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="ml-2 text-xs"
+                        onClick={() => depStory && setSelectedDependency(depStory)}
+                        disabled={!depStory}
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}
 
           <Separator />
 
-          {/* TraDS ============= Kanban Hierarchy: Parent Epic Display */}
-          {card.parent && card.parent.type === "Epic" && (
-            <div>
-              <h4 className="text-sm font-semibold text-foreground mb-2">Epic</h4>
-              <div className="flex items-center gap-2 p-2 rounded border border-border bg-muted/50">
-                <Badge variant="outline" className={getTypeBadgeColor(card.parent.type)}>
-                  {formatTypeName(card.parent.type)}
-                </Badge>
-                <span className="text-sm flex-1">{card.parent.content}</span>
-              </div>
-            </div>
-          )}
+
 
           {/* TraDS ============= Kanban Hierarchy: Children Display */}
           {card.children && card.children.length > 0 && (
@@ -633,6 +631,18 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
           open={!!selectedChild}
           onOpenChange={() => setSelectedChild(null)}
           onDownloadResult={onDownloadResult}
+          allStories={allStories}
+        />
+      )}
+
+      {/* Nested dialog for viewing dependency items */}
+      {selectedDependency && (
+        <TaskDetailModal
+          card={selectedDependency}
+          open={!!selectedDependency}
+          onOpenChange={() => setSelectedDependency(null)}
+          onDownloadResult={onDownloadResult}
+          allStories={allStories}
         />
       )}
     </Dialog>

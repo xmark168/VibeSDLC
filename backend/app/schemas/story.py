@@ -52,6 +52,8 @@ class StoryPublic(StoryBase):
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime] = None
+    # Epic title for display
+    epic_title: Optional[str] = None
 
 
 class StoryUpdate(SQLModel):
