@@ -1,4 +1,4 @@
-"""Plan node - Create implementation plan."""
+"""Plan node - Break story into abstract tasks."""
 import logging
 from langchain_core.messages import SystemMessage, HumanMessage
 
@@ -15,93 +15,89 @@ from app.agents.developer_v2.src.utils.prompt_utils import (
     build_system_prompt as _build_system_prompt,
 )
 from app.agents.developer_v2.src.nodes._llm import code_llm
-from app.agents.developer_v2.src.nodes._helpers import setup_tool_context, build_static_context
-from app.agents.developer_v2.src.skills import SkillRegistry
+from app.agents.developer_v2.src.nodes._helpers import setup_tool_context
+from app.agents.developer_v2.src.skills.registry import SkillRegistry
+from app.agents.developer_v2.src.skills import get_project_structure
 
 logger = logging.getLogger(__name__)
 
 
 async def plan(state: DeveloperState, agent=None) -> DeveloperState:
-    """Create implementation plan based on analysis."""
+    """Break story into abstract tasks (WHAT, not HOW)."""
     print("[NODE] plan")
     try:
         analysis = state.get("analysis_result") or {}
-        complexity = state.get("complexity", "medium")
         workspace_path = state.get("workspace_path", "")
         project_id = state.get("project_id", "default")
         task_id = state.get("task_id") or state.get("story_id", "")
         
         setup_tool_context(workspace_path, project_id, task_id)
         
-        # Load skill registry
-        tech_stack = state.get("tech_stack", "nextjs")
-        skill_registry = state.get("skill_registry")
-        if not skill_registry:
-            skill_registry = SkillRegistry.load(tech_stack)
-            logger.info(f"[plan] Loaded SkillRegistry: {len(skill_registry.skills)} skills")
-        
-        available_skills = skill_registry.get_skill_list() if skill_registry else ""
-        
-        # Get directory structure
-        static_context = build_static_context(state)
-        dir_structure = static_context or ""
-        
+        # Get directory structure (minimal context)
+        dir_structure = ""
         if workspace_path:
             try:
-                result = list_directory_safe.invoke({"path": "src", "depth": 3})
+                result = list_directory_safe.invoke({"path": "src", "depth": 2})
                 if result and not result.startswith("Error:"):
-                    dir_structure += f"\n```\n{result[:2000]}\n```"
+                    dir_structure = result[:1500]
             except Exception:
                 pass
+        
+        # Get project structure for path guidance
+        tech_stack = state.get("tech_stack", "nextjs")
+        project_structure = get_project_structure(tech_stack)
         
         input_text = _format_input_template(
             "create_plan",
             story_title=state.get("story_title", "Untitled"),
             analysis_summary=analysis.get("summary", ""),
-            task_type=state.get("task_type", "feature"),
-            complexity=complexity,
-            directory_structure=dir_structure,
+            project_structure=project_structure,
             acceptance_criteria=chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", [])),
-            available_skills=available_skills,
         )
 
-        tools = [read_file_safe, list_directory_safe, semantic_code_search, search_files]
+        tools = [list_directory_safe, search_files]
+        
+        # Load feature-plan skill for completeness guidance
+        system_prompt = _build_system_prompt("create_plan")
+        skill_registry = SkillRegistry.load(tech_stack)
+        plan_skill = skill_registry.get_skill("feature-plan")
+        if plan_skill:
+            skill_content = plan_skill.load_content()
+            system_prompt += f"\n\n<skill>\n{skill_content}\n</skill>"
+            logger.info("[plan] Loaded feature-plan skill")
         
         messages = [
-            SystemMessage(content=_build_system_prompt("create_plan")),
+            SystemMessage(content=system_prompt),
             HumanMessage(content=input_text)
         ]
         
+        # Quick exploration (1 iteration max)
         exploration = await _llm_with_tools(
             llm=code_llm,
             tools=tools,
             messages=messages,
             state=state,
             name="plan_explore",
-            max_iterations=2
+            max_iterations=1
         )
         
-        messages.append(HumanMessage(content=f"Context:\n{exploration[:3000]}\n\nCreate plan."))
+        messages.append(HumanMessage(content=f"Context:\n{exploration[:2000]}\n\nCreate plan."))
         structured_llm = code_llm.with_structured_output(ImplementationPlan)
         plan_result = await structured_llm.ainvoke(messages, config=_cfg(state, "plan"))
         
-        if not plan_result.steps:
-            logger.warning(f"[plan] No steps!")
-        else:
-            logger.info(f"[plan] {len(plan_result.steps)} steps, {plan_result.total_estimated_hours}h")
+        logger.info(f"[plan] {len(plan_result.steps)} steps")
         
-        steps_text = "\n".join(
-            f"  {s.order}. [{s.action}] {s.description}"
-            for s in plan_result.steps
-        )
+        def format_step(s):
+            # Show [action] file_path if available
+            if s.file_path and s.action:
+                text = f"  {s.order}. [{s.action}] {s.file_path}"
+                text += f"\n      {s.description}"
+            else:
+                text = f"  {s.order}. {s.description}"
+            return text
         
-        msg = f"""📋 **Plan**
-
-**Story:** {plan_result.story_summary}
-**Steps:** {len(plan_result.steps)}
-
-{steps_text}
-"""
+        steps_text = "\n".join(format_step(s) for s in plan_result.steps)
+        msg = f"📋 **Plan** ({len(plan_result.steps)} steps)\n{steps_text}"
         
         return {
             **state,
@@ -110,9 +106,6 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
             "current_step": 0,
             "message": msg,
             "action": "IMPLEMENT",
-            "skill_registry": skill_registry,
-            "available_skills": skill_registry.get_skill_ids() if skill_registry else [],
-            "tech_stack": tech_stack,
         }
         
     except Exception as e:

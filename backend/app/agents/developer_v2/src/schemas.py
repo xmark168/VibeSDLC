@@ -21,16 +21,10 @@ class PlanStep(BaseModel):
     order: int = Field(ge=1)
     description: str
     file_path: Optional[str] = None
-    action: Literal["create", "modify", "delete", "test", "config"] = Field(default="modify")
-    estimated_minutes: int = Field(default=30, ge=5, le=480)
-    dependencies: List[int] = Field(default_factory=list)
-    required_skill: Optional[str] = None
+    action: Literal["create", "modify", "delete", "test", "config"] = "modify"
 
 
 class ImplementationPlan(BaseModel):
     """Implementation plan for a story."""
     story_summary: str
     steps: List[PlanStep]
-    total_estimated_hours: float
-    critical_path: List[int] = Field(default_factory=list)
-    rollback_plan: Optional[str] = None

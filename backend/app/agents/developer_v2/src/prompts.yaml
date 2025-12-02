@@ -41,50 +41,56 @@ tasks:
       </project>
 
   # ---------------------------------------------------------------------------
-  # PLAN - Create implementation plan
+  # PLAN - Break story into tasks (abstract, no implementation details)
   # ---------------------------------------------------------------------------
   create_plan:
     system_prompt: |
-      Tech Lead creating implementation plans.
+      Tech Lead breaking stories into tasks.
       
       Rules:
       1. ONE STEP = ONE FILE (file_path required)
-      2. Use paths from directory structure only
-      3. Assign skill IDs to steps when applicable
-      
-      Wrong: {{"file_path": null}} or {{"file_path": "a.tsx, b.tsx"}}
-      Right: {{"file_path": "src/components/X.tsx", "action": "create", "required_skill": "nextjs.frontend-component"}}
+      2. Short descriptions (WHAT, not HOW)
+      3. Use paths from project_structure
 
     input_template: |
       <story>
       {story_title}: {analysis_summary}
-      Type: {task_type} | Complexity: {complexity}
       </story>
       
-      <directory_structure>
-      {directory_structure}
-      </directory_structure>
-      
-      <skills>
-      {available_skills}
-      </skills>
+      <project_structure>
+      {project_structure}
+      </project_structure>
       
       <acceptance_criteria>
       {acceptance_criteria}
       </acceptance_criteria>
 
   # ---------------------------------------------------------------------------
-  # IMPLEMENT - Execute code changes using tools
+  # IMPLEMENT - Execute code changes using tools (Agentic Skills)
   # ---------------------------------------------------------------------------
   implement_step:
     system_prompt: |
       Engineer implementing code with tools.
       
-      Rules:
-      1. For MODIFY: use edit_file (old_str must be EXACT match)
-      2. For CREATE: use write_file_safe with complete content
-      3. Search → Read → Modify (never skip)
-      4. Minimal changes, focused on task
+      ## Rules by Action
+      - **create**: DON'T search target file. Search RELATED files for context (imports, types)
+      - **modify**: Search target → Read → edit_file
+      - **test**: Search files being tested (from <modified_files>) → activate "unit-test" skill → write tests
+      
+      ## Workflow
+      1. activate_skill(skill_id) FIRST - REQUIRED before any code
+         ⚠️ test task: MUST activate "unit-test" skill
+         ⚠️ API task: activate "api-route" skill
+         ⚠️ component task: activate "frontend-component" skill
+      2. Search RELATED files for context (PARALLEL):
+         - test: read files from <modified_files> to understand what to test
+         - create: search similar patterns, imports
+         - modify: search target file
+      3. Read → Understand → Implement
+      4. MODIFY: edit_file (old_str must be EXACT)
+      5. CREATE: write_file_safe with complete content
+      
+      {skill_catalog}
 
     input_template: |
       <task step="{step_number}/{total_steps}">
@@ -92,6 +98,10 @@ tasks:
       Action: {action}
       Task: {step_description}
       </task>
+      
+      <modified_files>
+      {modified_files}
+      </modified_files>
       
       <context>
       {related_context}

@@ -32,7 +32,6 @@ from .git_tools import (
 from .shell_tools import (
     set_shell_context,
     execute_shell,
-    web_search_ddg,
     semantic_code_search,
 )
 
@@ -71,6 +70,15 @@ from .workspace_tools import (
     commit_workspace_changes,
 )
 
+# Skill tools (Claude-driven activation)
+from .skill_tools import (
+    set_skill_context,
+    reset_skill_cache,
+    activate_skill,
+    read_skill_file,
+    list_skill_files,
+)
+
 __all__ = [
     # Context setters
     "set_fs_context",
@@ -100,7 +108,6 @@ __all__ = [
     "git_list_worktrees",
     # Shell & Search
     "execute_shell",
-    "web_search_ddg",
     "semantic_code_search",
     # CocoIndex & Project Context
     "search_codebase",
@@ -127,4 +134,10 @@ __all__ = [
     # Workspace
     "setup_git_worktree",
     "commit_workspace_changes",
+    # Skill tools
+    "set_skill_context",
+    "reset_skill_cache",
+    "activate_skill",
+    "read_skill_file",
+    "list_skill_files",
 ]
