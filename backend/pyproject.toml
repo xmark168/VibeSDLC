@@ -52,6 +52,7 @@ dependencies = [
     "pyotp>=2.9.0",
     "qrcode[pil]>=7.4.0",
     "Pillow>=10.0.0",
+    "langchain-anthropic>=1.2.0",
 ]
 
 

@@ -30,9 +30,11 @@ def get_llm(step: str) -> BaseChatModel:
     
     model = config["model"]
     
-    # Use OPENAI_API_BASE and OPENAI_API_KEY for all models (proxy)
-    base_url = os.getenv("OPENAI_API_BASE")
-    api_key = os.getenv("OPENAI_API_KEY")
+    # API keys and base URLs
+    openai_base_url = os.getenv("OPENAI_API_BASE")
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    anthropic_base_url = os.getenv("ANTHROPIC_API_BASE", "https://ai.megallm.io")
+    anthropic_api_key = os.getenv("ANTHROPIC_API_KEY") or openai_api_key
     
     # Use ChatAnthropic for Claude models
     if "claude" in model.lower():
@@ -41,18 +43,18 @@ def get_llm(step: str) -> BaseChatModel:
             "temperature": config.get("temperature", 0.2),
             "max_tokens": 8192,
         }
-        if base_url:
-            kwargs["base_url"] = base_url
-        if api_key:
-            kwargs["api_key"] = api_key
+        if anthropic_base_url:
+            kwargs["base_url"] = anthropic_base_url
+        if anthropic_api_key:
+            kwargs["api_key"] = anthropic_api_key
         return ChatAnthropic(**kwargs)
     
     # Use ChatOpenAI for GPT models
     kwargs = {**config}
-    if base_url:
-        kwargs["base_url"] = base_url
-    if api_key:
-        kwargs["api_key"] = api_key
+    if openai_base_url:
+        kwargs["base_url"] = openai_base_url
+    if openai_api_key:
+        kwargs["api_key"] = openai_api_key
     return ChatOpenAI(**kwargs)
 
 

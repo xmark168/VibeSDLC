@@ -28,6 +28,25 @@ description: Write unit tests with Jest and React Testing Library. Use when test
 5. **Async**: Always `await` userEvent and async ops
 6. **Setup**: `jest.setup.ts` pre-mocks next/navigation, next/server
 
+## ⚠️ Keep Tests Simple (KISS)
+
+### What TO Test (Priority):
+1. **Utilities** - Pure functions (formatDate, cn, validators)
+2. **Components** - Render, click handlers, props
+3. **Server Actions** - With mocked prisma (simple cases)
+
+### What NOT to Test (SKIP):
+- ❌ Complex API routes with multiple DB calls
+- ❌ Full form submission flows
+- ❌ Authentication flows
+- ❌ File uploads
+- ❌ Tests needing > 3 mocks
+
+### Rule: If Hard to Test, Skip It
+- Mock setup > 10 lines → **skip**
+- Test needs real database → **skip**
+- Test has > 3 async operations → **skip**
+
 ## Quick Reference
 
 ### Component Test

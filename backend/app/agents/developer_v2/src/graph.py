@@ -1,11 +1,11 @@
 """
 Developer V2 LangGraph - Story Implementation Flow.
 
-Story flow: setup → analyze → plan → implement ⟷ run_code → END
-                                       ↑              ↓
-Bug fix flow:                 analyze_error ──────────┘
-                                    ↓
-                                implement → run_code
+Story flow: setup → analyze_and_plan → implement ⟷ run_code → END
+                                         ↑              ↓
+Bug fix flow:                   analyze_error ──────────┘
+                                      ↓
+                                  implement → run_code
 """
 
 from functools import partial
@@ -15,7 +15,7 @@ from langgraph.graph import StateGraph, END
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.nodes import (
-    setup_workspace, analyze, plan, implement,
+    setup_workspace, analyze_and_plan, implement,
     run_code, analyze_error,
 )
 
@@ -35,13 +35,13 @@ def route_after_test(state: DeveloperState) -> Literal["analyze_error", "__end__
     run_result = state.get("run_result", {})
     status = run_result.get("status", "PASS")
     debug_count = state.get("debug_count", 0)
-    max_debug = state.get("max_debug", 5)
+    max_debug = 5  # Hard limit: max 5 debug attempts
     
     if status == "PASS":
         return "__end__"
-    if status == "RETRY" or debug_count < max_debug:
+    if debug_count < max_debug:
         return "analyze_error"
-    return "__end__"
+    return "__end__"  # Stop after 5 debug attempts
 
 
 def route_after_analyze_error(state: DeveloperState) -> Literal["implement", "__end__"]:
@@ -53,17 +53,16 @@ def route_after_analyze_error(state: DeveloperState) -> Literal["implement", "__
 
 
 class DeveloperGraph:
-    """Story implementation workflow (6 nodes).
+    """Story implementation workflow (5 nodes).
     
     Nodes:
     1. setup_workspace - Git + CocoIndex
-    2. analyze - Story analysis
-    3. plan - Implementation plan
-    4. implement - Code generation
-    5. run_code - Lint + tests
-    6. analyze_error - Error analysis + fix planning
+    2. analyze_and_plan - Combined analysis + planning (single LLM call)
+    3. implement - Code generation
+    4. run_code - Lint + tests
+    5. analyze_error - Error analysis + fix planning
     
-    Story flow: setup -> analyze -> plan -> implement -> run_code -> END
+    Story flow: setup -> analyze_and_plan -> implement -> run_code -> END
     Bug fix flow: run_code FAIL -> analyze_error -> implement -> run_code
     """
     
@@ -71,10 +70,9 @@ class DeveloperGraph:
         self.agent = agent
         g = StateGraph(DeveloperState)
         
-        # 6 nodes
+        # 5 nodes (merged analyze + plan)
         g.add_node("setup_workspace", partial(setup_workspace, agent=agent))
-        g.add_node("analyze", partial(analyze, agent=agent))
-        g.add_node("plan", partial(plan, agent=agent))
+        g.add_node("analyze_and_plan", partial(analyze_and_plan, agent=agent))
         g.add_node("implement", partial(implement, agent=agent))
         g.add_node("run_code", partial(run_code, agent=agent))
         g.add_node("analyze_error", partial(analyze_error, agent=agent))
@@ -82,10 +80,9 @@ class DeveloperGraph:
         # Entry point
         g.set_entry_point("setup_workspace")
         
-        # Linear flow: setup -> analyze -> plan -> implement
-        g.add_edge("setup_workspace", "analyze")
-        g.add_edge("analyze", "plan")
-        g.add_edge("plan", "implement")
+        # Linear flow: setup -> analyze_and_plan -> implement
+        g.add_edge("setup_workspace", "analyze_and_plan")
+        g.add_edge("analyze_and_plan", "implement")
         
         # Implement loop
         g.add_conditional_edges("implement", route_after_implement)

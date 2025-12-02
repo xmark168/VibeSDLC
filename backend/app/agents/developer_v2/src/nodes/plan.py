@@ -3,7 +3,7 @@ import logging
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.schemas import ImplementationPlan
+from app.agents.developer_v2.src.schemas import ImplementationPlan, PlanTask
 from app.agents.developer_v2.src.utils.json_utils import extract_json_universal
 from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, list_directory_safe, search_files
 from app.agents.developer_v2.src.tools.shell_tools import semantic_code_search
@@ -71,15 +71,19 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
         json_requirement = """
 
 CRITICAL OUTPUT REQUIREMENT:
-You MUST respond with ONLY JSON wrapped in result tags. No natural language explanation before or after.
-Use this EXACT format:
+Respond with ONLY JSON in result tags. No explanations.
 
 <result>
-{"story_summary": "<brief feature summary>", "steps": [{"order": 1, "description": "<what to do>", "file_path": "<exact file path>", "action": "create|modify|delete|test|config"}]}
+{
+  "story_summary": "<brief summary>",
+  "tasks": [
+    {"order": 1, "task": "<abstract task description>"},
+    {"order": 2, "task": "<abstract task description>"}
+  ]
+}
 </result>
 
-Each step MUST have: order (number), description (what, not how), file_path (exact path), action (one of the 5 types).
-Follow the skill guidance but output ONLY JSON format."""
+Tasks describe WHAT to achieve, NOT file operations. Agent will decide files."""
         
         system_prompt += json_requirement
         
@@ -104,24 +108,18 @@ Follow the skill guidance but output ONLY JSON format."""
         data = extract_json_universal(response.content, "plan_node")
         plan_result = ImplementationPlan(**data)
         
-        logger.info(f"[plan] {len(plan_result.steps)} steps")
+        logger.info(f"[plan] {len(plan_result.tasks)} tasks")
         
-        def format_step(s):
-            # Show [action] file_path if available
-            if s.file_path and s.action:
-                text = f"  {s.order}. [{s.action}] {s.file_path}"
-                text += f"\n      {s.description}"
-            else:
-                text = f"  {s.order}. {s.description}"
-            return text
+        def format_task(t):
+            return f"  {t.order}. {t.task}"
         
-        steps_text = "\n".join(format_step(s) for s in plan_result.steps)
-        msg = f"📋 **Plan** ({len(plan_result.steps)} steps)\n{steps_text}"
+        tasks_text = "\n".join(format_task(t) for t in plan_result.tasks)
+        msg = f"📋 **Plan** ({len(plan_result.tasks)} tasks)\n{tasks_text}"
         
         return {
             **state,
-            "implementation_plan": [s.model_dump() for s in plan_result.steps],
-            "total_steps": len(plan_result.steps),
+            "implementation_plan": [t.model_dump() for t in plan_result.tasks],
+            "total_steps": len(plan_result.tasks),
             "current_step": 0,
             "message": msg,
             "action": "IMPLEMENT",
