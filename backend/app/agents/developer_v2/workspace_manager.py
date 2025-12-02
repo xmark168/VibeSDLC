@@ -61,8 +61,7 @@ class ProjectWorkspaceManager:
             for file in files:
                 if file in ignore_dirs:
                     ignore.add(file)
-                elif file.startswith('.env'):
-                    ignore.add(file)
+                # Note: .env is NOT ignored - workspace needs env vars for build/test
                 elif file in {'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'bun.lockb'}:
                     ignore.add(file)
             return ignore
