@@ -1,28 +1,123 @@
-import AIChat from "./ai-chat"
-import { BGPattern } from "./bg-parten"
-import { Header } from "./header"
+"use client";
 
-export function HeroSection() {
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { ArrowRightIcon } from "lucide-react";
+
+import { Glow } from "@/components/ui/glow";
+import { useTheme } from "next-themes";
+import { cn } from "@/lib/utils";
+import { Mockup, MockupFrame } from "../ui/mock-up";
+import BlurText from "../BlurText";
+
+interface HeroAction {
+  text: string;
+  href: string;
+  icon?: React.ReactNode;
+  variant?: "default" | "glow";
+}
+
+interface HeroProps {
+  badge?: {
+    text: string;
+    action: {
+      text: string;
+      href: string;
+    };
+  };
+  title: string;
+  description: string;
+  actions: HeroAction[];
+  image: {
+    light: string;
+    dark: string;
+    alt: string;
+  };
+}
+
+export function HeroSection({
+  badge,
+  title,
+  description,
+  actions,
+  image,
+}: HeroProps) {
+  const { resolvedTheme } = useTheme();
+  const imageSrc = resolvedTheme === "light" ? image.light : image.dark;
+
   return (
     <section
-      className="flex flex-col items-center text-center relative mx-auto rounded-2xl overflow-hidden my-6 py-0 px-4
-         w-full h-[450px] md:w-[1220px] md:h-[600px] lg:h-[810px] md:px-0"
+      className={cn(
+        "bg-background text-foreground",
+        "py-10 sm:py-24 md:py-7 px-4",
+        "fade-bottom overflow-hidden pb-0"
+      )}
     >
-      {/* SVG Background */}
-      <div className="absolute inset-0 z-0">
-        <div className="relative flex aspect-video flex-col items-center justify-center rounded-2xl ">
-          <BGPattern variant="grid" mask="fade-edges" />
+      <div className="mx-auto flex max-w-container flex-col gap-12 pt-8 sm:gap-24">
+        <div className="flex flex-col items-center gap-6 text-center sm:gap-12">
+          {/* Badge */}
+          {badge && (
+            <Badge variant="outline" className="animate-appear gap-2">
+              <span className="text-muted-foreground">{badge.text}</span>
+              <a href={badge.action.href} className="flex items-center gap-1">
+                {badge.action.text}
+                <ArrowRightIcon className="h-3 w-3" />
+              </a>
+            </Badge>
+          )}
+
+          {/* Title */}
+          <BlurText
+            text={title}
+            delay={150}
+            animateBy="words"
+            direction="top"
+            as="h1"
+            className="relative z-10 text-4xl font-semibold leading-tight drop-shadow-2xl sm:text-6xl sm:leading-tight md:text-8xl md:leading-tight justify-center"
+            spanClassName="bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-transparent"
+          />
+
+          {/* Description */}
+          <p className="text-md relative z-10 max-w-[550px] animate-appear font-medium text-muted-foreground delay-100 sm:text-xl">
+            {description}
+          </p>
+
+          {/* Actions */}
+          <div className="relative z-10 flex animate-appear justify-center gap-4 delay-300">
+            <div className="relative z-10 flex animate-appear justify-center gap-4  delay-300">
+              {actions.map((action, index) => (
+                <Button key={index} variant={action.variant} size="lg" asChild>
+                  <a href={action.href} className="flex items-center gap-2">
+                    {action.icon}
+                    {action.text}
+                  </a>
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          {/* Image with Glow */}
+          <div className="relative pt-12">
+            <MockupFrame
+              className="animate-appear delay-700"
+              size="small"
+            >
+              <Mockup type="responsive">
+                <img
+                  src={imageSrc}
+                  alt={image.alt}
+                  width={1248}
+                  height={765}
+                />
+              </Mockup>
+            </MockupFrame>
+            <Glow
+              variant="top"
+              className="animate-appear-zoom delay-1000"
+            />
+          </div>
         </div>
       </div>
-
-      {/* Header positioned at top of hero container */}
-      <div className="absolute top-0 left-0 right-0 z-20">
-        <Header />
-      </div>
-
-      <div className="relative space-y-4 md:space-y-5 lg:space-y-6 mb-6 md:mb-7 lg:mb-9 mt-16 md:mt-[120px] lg:mt-[160px] px-4 w-full max-w-4xl mx-auto">
-        <AIChat />
-      </div>
     </section>
-  )
+  );
 }

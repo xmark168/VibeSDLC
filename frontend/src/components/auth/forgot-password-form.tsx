@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { handleError } from "@/utils"
+import { handleError, withToast } from "@/utils"
 
 export function ForgotPasswordForm() {
   const [email, setEmail] = useState("")
@@ -33,18 +33,26 @@ export function ForgotPasswordForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
-
-    try {
-      forgotPasswordMutation.mutateAsync({
-        requestBody: {
-          email,
-        },
-      })
-    } catch (error) {
-      console.error("Forgot password error:", error)
-    } finally {
-      setIsLoading(false)
-    }
+    await withToast(
+      new Promise((resolve, reject) => {
+        forgotPasswordMutation.mutate(
+          {
+            requestBody: {
+              email,
+            },
+          },
+          {
+            onSuccess: resolve,
+            onError: reject,
+          },
+        )
+      }),
+      {
+        loading: "Đang gửi mã xác nhận...",
+        success: <b>Gửi mã xác nhận thành công!</b>,
+        error: <b>Gửi mã thất bại. Vui lòng thử lại.</b>,
+      },
+    )
   }
 
   if (isSubmitted) {
@@ -66,10 +74,10 @@ export function ForgotPasswordForm() {
 
         <div className="space-y-2">
           <h2 className="text-3xl font-bold text-foreground">
-            Check Your Email
+            Kiểm tra Email của bạn
           </h2>
           <p className="text-muted-foreground">
-            {"We've sent a verification code to"}
+            {"Chúng tôi đã gửi mã xác nhận đến"}
             <br />
             <span className="font-semibold text-foreground">{email}</span>
           </p>
@@ -82,14 +90,14 @@ export function ForgotPasswordForm() {
           className="space-y-4"
         >
           <p className="text-sm text-muted-foreground">
-            {"Didn't receive the code? Check your spam folder or"}
+            {"Chưa nhận được mã? Kiểm tra thư mục spam hoặc"}
           </p>
           <Button
             variant="outline"
             onClick={() => setIsSubmitted(false)}
             className="w-full h-12"
           >
-            Try Another Email
+            Thử email khác
           </Button>
         </motion.div>
       </motion.div>
@@ -127,7 +135,7 @@ export function ForgotPasswordForm() {
           transition={{ delay: 0.4 }}
           className="text-3xl font-bold text-foreground"
         >
-          Forgot Password?
+          Quên mật khẩu?
         </motion.h2>
         <motion.p
           initial={{ opacity: 0 }}
@@ -135,7 +143,7 @@ export function ForgotPasswordForm() {
           transition={{ delay: 0.5 }}
           className="text-muted-foreground"
         >
-          {"No worries, we'll send you reset instructions"}
+          {"Đừng lo, chúng tôi sẽ gửi hướng dẫn đặt lại mật khẩu"}
         </motion.p>
       </div>
 
@@ -153,14 +161,14 @@ export function ForgotPasswordForm() {
             className="space-y-2"
           >
             <Label htmlFor="email" className="text-sm font-medium">
-              Email Address
+              Địa chỉ Email
             </Label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
               <Input
                 id="email"
                 type="email"
-                placeholder="Enter your email"
+                placeholder="Nhập email của bạn"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="h-12 bg-secondary/50 border-border text-base pl-10"
@@ -168,7 +176,7 @@ export function ForgotPasswordForm() {
               />
             </div>
             <p className="text-xs text-muted-foreground">
-              {"We'll send a verification code to this email"}
+              {"Chúng tôi sẽ gửi mã xác nhận đến email này"}
             </p>
           </motion.div>
 
@@ -194,13 +202,10 @@ export function ForgotPasswordForm() {
                   className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
                 />
               ) : (
-                "Send Reset Code"
+                "Gửi mã xác nhận"
               )}
             </Button>
 
-            <div className="text-center text-sm text-muted-foreground">
-              Remember your password?{" "}
-            </div>
           </motion.div>
         </form>
       </motion.div>

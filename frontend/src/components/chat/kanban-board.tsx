@@ -832,14 +832,15 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
                   <Activity className="w-4 h-4" />
                   <span className="font-medium">Metrics</span>
                 </Button>
+
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setShowPolicySettings(true)}
+                  onClick={() => setShowWIPSettings(true)}
                   className="gap-2 h-9 px-3.5 rounded-lg hover:bg-muted/80 transition-colors"
                 >
-                  <Shield className="w-4 h-4" />
-                  <span className="font-medium">Policies</span>
+                  <Settings className="w-4 h-4" />
+                  <span className="font-medium">WIP Limits</span>
                 </Button>
               </div>
             )}
