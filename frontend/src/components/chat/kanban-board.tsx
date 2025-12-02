@@ -1,7 +1,13 @@
 import type React from "react"
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react"
-import { Settings, Activity, Shield, TrendingUp, Search, Filter, X, Plus } from "lucide-react"
+import { Settings, Activity, Shield, TrendingUp, Search, Filter, X, Plus, BarChart3 } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { KanbanColumn, type KanbanColumnData } from "./kanban-column"
@@ -452,6 +458,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         acceptance_criteria: storyData.acceptance_criteria,
         requirements: storyData.requirements,
         dependencies: storyData.dependencies,
+        epic_id: storyData.epic_id,
         tags: [],
         labels: [],
       })
@@ -826,34 +833,32 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
                   <Plus className="w-4 h-4" />
                   <span className="font-medium">Create Story</span>
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowCFD(true)}
-                  className="gap-2 h-9 px-3.5 rounded-lg hover:bg-muted/80 transition-colors"
-                >
-                  <TrendingUp className="w-4 h-4" />
-                  <span className="font-medium">CFD</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowFlowMetrics(true)}
-                  className="gap-2 h-9 px-3.5 rounded-lg hover:bg-muted/80 transition-colors"
-                >
-                  <Activity className="w-4 h-4" />
-                  <span className="font-medium">Metrics</span>
-                </Button>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowWIPSettings(true)}
-                  className="gap-2 h-9 px-3.5 rounded-lg hover:bg-muted/80 transition-colors"
-                >
-                  <Settings className="w-4 h-4" />
-                  <span className="font-medium">WIP Limits</span>
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-2 h-9 px-3.5 rounded-lg hover:bg-muted/80 transition-colors"
+                    >
+                      <BarChart3 className="w-4 h-4" />
+                      <span className="font-medium">Analytics</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => setShowCFD(true)}>
+                      <TrendingUp className="w-4 h-4 mr-2" />
+                      CFD
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setShowFlowMetrics(true)}>
+                      <Activity className="w-4 h-4 mr-2" />
+                      Metrics
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setShowPolicySettings(true)}>
+                      <Settings className="w-4 h-4 mr-2" />
+                      WIP Limits
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             )}
           </div>

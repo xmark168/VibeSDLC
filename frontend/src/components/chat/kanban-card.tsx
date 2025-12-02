@@ -281,10 +281,10 @@ function KanbanCardComponent({
         {/* Footer: Task ID, Priority, Assignee - Better separation */}
         <div className="flex items-center justify-between gap-2 pt-0.5 border-t border-border/30">
           <div className="flex items-center gap-2 pt-2">
-            {card.taskId && (
-              <span className="text-xs text-muted-foreground font-mono">
-                #{card.taskId.slice(0, 8)}
-              </span>
+            {(card.story_code || card.taskId) && (
+              <Badge variant="outline" className="text-xs">
+                {card.story_code || `#${card.taskId?.slice(0, 8)}`}
+              </Badge>
             )}
             {card.rank !== undefined && card.rank !== null && (
               <Badge
