@@ -255,12 +255,12 @@ tasks:
       - DON'T repeat what user already said
       - Use SIMPLE Vietnamese
       
-      **VALID QUESTION TYPES (CHỈ DÙNG 3 LOẠI NÀY):**
-      - `"open"` - Câu hỏi mở, user tự nhập text (KHÔNG có options)
-      - `"multichoice"` - Câu hỏi chọn từ danh sách (PHẢI có options)
-      - `"approval"` - Câu hỏi xác nhận Có/Không
+      **LUÔN DÙNG MULTICHOICE (để user dễ trả lời nhanh):**
+      - Tất cả câu hỏi PHẢI là `"type": "multichoice"` với options
+      - Luôn thêm option cuối: "Khác (vui lòng mô tả)" để user có thể nhập thêm
+      - `allow_multiple: true` cho câu hỏi chọn nhiều đáp án
       
-      **FORMAT (QUAN TRỌNG: mỗi câu hỏi PHẢI có field "category"):**
+      **FORMAT (mỗi câu hỏi PHẢI có options và category):**
       ```json
       {{
         "questions": [
@@ -268,19 +268,21 @@ tasks:
             "text": "Câu hỏi về đối tượng người dùng?",
             "type": "multichoice",
             "options": ["Option 1", "Option 2", "Khác (vui lòng mô tả)"],
-            "allow_multiple": true,
+            "allow_multiple": false,
             "category": "target_users"
           }},
           {{
             "text": "Câu hỏi về tính năng?",
             "type": "multichoice",
-            "options": ["Feature 1", "Feature 2"],
+            "options": ["Feature 1", "Feature 2", "Khác (vui lòng mô tả)"],
             "allow_multiple": true,
             "category": "main_features"
           }},
           {{
-            "text": "Câu hỏi mở không có options?",
-            "type": "open",
+            "text": "Bạn lo ngại điều gì nhất?",
+            "type": "multichoice",
+            "options": ["Lo ngại 1", "Lo ngại 2", "Khác (vui lòng mô tả)"],
+            "allow_multiple": true,
             "category": "risks"
           }}
         ]
@@ -292,47 +294,9 @@ tasks:
       - "main_features": câu hỏi về tính năng, chức năng website cần có
       - "risks": câu hỏi về lo ngại, thách thức, rủi ro
       
-      # EXAMPLES BY PROJECT TYPE:
-      
-      ## Website bán sách:
-      User nói: "Tôi muốn làm website bán sách"
-      → Đã biết: bán sách, kiếm tiền bằng bán hàng
-      → Cần hỏi:
-      - "Khách hàng của bạn là ai?" → ["Học sinh/Sinh viên", "Người đi làm", "Phụ huynh mua cho con", "Tất cả mọi người", "Khác (vui lòng mô tả)"]
-      - "Bạn bán loại sách nào?" → ["Sách giáo khoa", "Truyện/Tiểu thuyết", "Sách kỹ năng/Self-help", "Sách thiếu nhi", "Tất cả các loại trên", "Khác (vui lòng mô tả)"]
-      - "Website cần có những tính năng gì?" → ["Đăng nhập/Đăng ký", "Trang chủ giới thiệu", "Tìm kiếm sách", "Giỏ hàng & thanh toán", "Đánh giá/bình luận sách", "Gợi ý sách theo sở thích", "Theo dõi đơn hàng", "Quản lý tài khoản cá nhân", "Khác (vui lòng mô tả)"]
-      - "Khách thanh toán thế nào?" → ["Chuyển khoản ngân hàng", "Ví điện tử (Momo, ZaloPay...)", "Tiền mặt khi nhận hàng", "Thẻ tín dụng/ghi nợ", "Khác (vui lòng mô tả)"]
-      - "Bạn có hỗ trợ giao hàng không?" → ["Giao toàn quốc", "Chỉ giao nội thành", "Khách tự đến lấy tại cửa hàng", "Khác (vui lòng mô tả)"]
-      - "Bạn lo ngại điều gì nhất khi xây dựng website?" → ["Bảo mật thanh toán", "Quản lý tồn kho", "Thu hút khách hàng", "Chi phí vận hành", "Khác (vui lòng mô tả)"]
-      → SKIP: "Kiếm tiền thế nào?" (đã rõ là bán sách)
-      
-      ## Website tin tức:
-      User nói: "Làm trang tin tức online"
-      → Cần hỏi:
-      - "Tin tức về chủ đề gì?" → ["Thời sự", "Giải trí", "Thể thao", "Công nghệ", "Kinh doanh", "Tổng hợp", "Khác (vui lòng mô tả)"]
-      - "Website cần có những tính năng gì?" → ["Tìm kiếm bài viết", "Phân loại theo chuyên mục", "Bình luận bài viết", "Chia sẻ lên mạng xã hội", "Đăng ký nhận tin", "Lưu bài viết yêu thích", "Khác (vui lòng mô tả)"]
-      - "Kiếm tiền thế nào?" → ["Quảng cáo", "Bài viết trả phí", "Tài trợ", "Miễn phí hoàn toàn", "Khác (vui lòng mô tả)"]
-      - "Ai viết bài?" → ["Phóng viên của bạn", "Cộng tác viên bên ngoài", "Độc giả đóng góp", "Khác (vui lòng mô tả)"]
-      - "Độc giả có thể bình luận không?" → ["Có, tự do bình luận", "Có, cần đăng nhập", "Không cho bình luận", "Khác (vui lòng mô tả)"]
-      
-      ## Website đặt lịch:
-      User nói: "Website đặt lịch khám bệnh"
-      → Đã biết: booking, lĩnh vực y tế
-      → Cần hỏi:
-      - "Bệnh nhân đặt lịch ở đâu?" → ["Phòng khám của bạn", "Nhiều phòng khám", "Bệnh viện", "Khác (vui lòng mô tả)"]
-      - "Website cần có những tính năng gì?" → ["Đặt lịch hẹn", "Xem thông tin bác sĩ", "Lịch sử khám bệnh", "Nhắc lịch hẹn", "Đánh giá bác sĩ", "Tư vấn online", "Khác (vui lòng mô tả)"]
-      - "Cần nhắc lịch không?" → ["Có, qua email", "Có, qua SMS", "Có, cả hai", "Không cần", "Khác (vui lòng mô tả)"]
-      - "Bệnh nhân có thể hủy lịch không?" → ["Được hủy miễn phí", "Hủy trước 24h", "Không được hủy", "Khác (vui lòng mô tả)"]
-      - "Có thanh toán online không?" → ["Có, bắt buộc", "Có, tùy chọn", "Không, trả tại phòng khám", "Khác (vui lòng mô tả)"]
-      
-      ## Website portfolio/giới thiệu:
-      User nói: "Làm website giới thiệu công ty"
-      → Cần hỏi:
-      - "Công ty bạn làm gì?" → (open question)
-      - "Website cần có những tính năng gì?" → ["Giới thiệu công ty", "Danh sách sản phẩm/dịch vụ", "Form liên hệ", "Tin tức/Blog", "Tuyển dụng", "Đối tác/Khách hàng", "Khác (vui lòng mô tả)"]
-      - "Khách hàng có thể liên hệ thế nào?" → ["Form liên hệ", "Chat trực tiếp", "Gọi điện", "Tất cả", "Khác (vui lòng mô tả)"]
-      - "Có cần hiển thị sản phẩm/dịch vụ không?" → ["Có, danh sách đơn giản", "Có, chi tiết từng sản phẩm", "Không cần", "Khác (vui lòng mô tả)"]
-      - "Có cần phần tuyển dụng không?" → ["Có", "Không", "Có thể thêm sau", "Khác (vui lòng mô tả)"]
+      # EXAMPLE (ngắn gọn):
+      User: "Website bán sách" → Hỏi về: khách hàng, loại sách, tính năng, thanh toán, lo ngại
+      User: "Website quản lý" → Hỏi về: ai dùng (cá nhân/team), tính năng cần có, cách tổ chức, lo ngại
 
   # ---------------------------------------------------------------------------
   # GENERATE PRD - Create Product Requirements Document

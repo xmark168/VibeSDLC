@@ -1160,26 +1160,20 @@ QUAN TRỌNG:
 - KHÔNG hỏi lại những gì user đã trả lời
 - Nếu tất cả categories đã có thông tin, trả về questions: []
 
-**VALID QUESTION TYPES (CHỈ DÙNG 3 LOẠI NÀY):**
-- "open" - Câu hỏi mở, user tự nhập text (KHÔNG có options)
-- "multichoice" - Câu hỏi chọn từ danh sách (PHẢI có options)
-- "approval" - Câu hỏi xác nhận Có/Không
+**LUÔN DÙNG MULTICHOICE** để user dễ trả lời nhanh:
+- Tất cả câu hỏi PHẢI là "type": "multichoice" với options
+- Luôn thêm option cuối: "Khác (vui lòng mô tả)"
 
 Return JSON format:
 ```json
 {{
   "questions": [
     {{
-      "text": "Câu hỏi chọn từ danh sách?",
+      "text": "Câu hỏi về rủi ro/lo ngại?",
       "type": "multichoice",
-      "options": ["Option 1", "Option 2", "Khác"],
+      "options": ["Lo ngại 1", "Lo ngại 2", "Khác (vui lòng mô tả)"],
       "allow_multiple": true,
-      "category": "category_name"
-    }},
-    {{
-      "text": "Câu hỏi mở user tự nhập?",
-      "type": "open",
-      "category": "category_name"
+      "category": "risks"
     }}
   ]
 }}
