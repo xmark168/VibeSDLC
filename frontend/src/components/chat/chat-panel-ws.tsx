@@ -113,7 +113,12 @@ export function ChatPanelWS({
   };
 
   // Transform database agents to dropdown format
-  const AGENTS = (projectAgents?.data || []).map((agent) => {
+  // Handle both { data: [...] } and direct array response
+  const agentsList = Array.isArray(projectAgents) 
+    ? projectAgents 
+    : (projectAgents?.data || []);
+  
+  const AGENTS = agentsList.map((agent) => {
     const roleInfo = getRoleInfo(agent.role_type);
     return {
       id: agent.id,
@@ -316,43 +321,78 @@ export function ChatPanelWS({
     }
   }, [uniqueMessages, projectId, queryClient])
 
-  // Initial scroll to bottom on mount
+  // Track if user manually scrolled up
+  const userScrolledUpRef = useRef(false)
+  // Force scroll to bottom (bypasses userScrolledUp check)
+  const forceScrollRef = useRef(false)
+  
+  // Detect manual scroll
   useEffect(() => {
     const container = messagesContainerRef.current
     if (!container) return
 
-    // Scroll to bottom immediately on first load (no animation)
-    if (prevMessagesLengthRef.current === 0 && uniqueMessages.length > 0) {
-      setTimeout(() => {
-        container.scrollTop = container.scrollHeight
-      }, 100)
+    const handleScroll = () => {
+      // Don't update userScrolledUp if we're force scrolling
+      if (forceScrollRef.current) return
+      const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150
+      userScrolledUpRef.current = !isNearBottom
     }
-  }, [uniqueMessages.length])
 
-  // Auto-scroll to bottom on new messages (smooth)
+    container.addEventListener('scroll', handleScroll)
+    return () => container.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  // Helper to scroll to bottom
+  const scrollToBottom = (behavior: 'auto' | 'smooth' = 'smooth') => {
+    const container = messagesContainerRef.current
+    if (!container) return
+    
+    requestAnimationFrame(() => {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior
+      })
+      // Reset force scroll after scrolling
+      setTimeout(() => {
+        forceScrollRef.current = false
+        userScrolledUpRef.current = false
+      }, 100)
+    })
+  }
+
+  // Auto-scroll to bottom on new messages
   useEffect(() => {
     const container = messagesContainerRef.current
     if (!container) return
 
-    // Check if user is near bottom (within 100px)
-    const isNearBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight < 200
+    const isFirstLoad = prevMessagesLengthRef.current === 0 && uniqueMessages.length > 0
+    const hasNewMessages = uniqueMessages.length > prevMessagesLengthRef.current
+    const shouldScroll = forceScrollRef.current || !userScrolledUpRef.current
 
-    // Auto-scroll only if:
-    // 1. New message arrived (length changed)
-    // 2. User is near bottom (not actively scrolling up to read old messages)
-    if (uniqueMessages.length > prevMessagesLengthRef.current && isNearBottom) {
-      setTimeout(() => {
-        container.scrollTo({
-          top: container.scrollHeight,
-          behavior: 'smooth'
-        })
-      }, 100)
+    if (isFirstLoad || (hasNewMessages && shouldScroll)) {
+      scrollToBottom(isFirstLoad ? 'auto' : 'smooth')
     }
 
-    // Update previous length
     prevMessagesLengthRef.current = uniqueMessages.length
   }, [uniqueMessages])
+
+  // Auto-scroll when typing indicator appears
+  const typingAgentsCount = typingAgents.size
+  const prevTypingCountRef = useRef(0)
+  
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    // Only scroll when typing starts (count goes from 0 to >0), not on every update
+    const typingJustStarted = prevTypingCountRef.current === 0 && typingAgentsCount > 0
+    prevTypingCountRef.current = typingAgentsCount
+    const shouldScroll = forceScrollRef.current || !userScrolledUpRef.current
+
+    if (typingJustStarted && shouldScroll) {
+      scrollToBottom()
+    }
+  }, [typingAgentsCount])
 
   // Determine if chat should be blocked
   const isMultichoiceQuestion = pendingQuestion?.structured_data?.question_type === 'multichoice'
@@ -427,15 +467,8 @@ export function ChatPanelWS({
         undefined
       )
       setMessage("");
-      // Scroll to bottom after answering
-      setTimeout(() => {
-        if (messagesContainerRef.current) {
-          messagesContainerRef.current.scrollTo({
-            top: messagesContainerRef.current.scrollHeight,
-            behavior: 'smooth'
-          });
-        }
-      }, 100);
+      // Force scroll to bottom after sending
+      forceScrollRef.current = true;
       return;
     }
 
@@ -445,15 +478,12 @@ export function ChatPanelWS({
     setMessage("");
     setMentionedAgent(null);  // Clear mentioned agent after sending
     
-    // Always scroll to bottom when user sends a message
+    // Force scroll to bottom after sending
+    forceScrollRef.current = true;
+    
+    // Focus textarea
     setTimeout(() => {
       textareaRef.current?.focus();
-      if (messagesContainerRef.current) {
-        messagesContainerRef.current.scrollTo({
-          top: messagesContainerRef.current.scrollHeight,
-          behavior: 'smooth'
-        });
-      }
     }, 100);
   };
 
@@ -560,17 +590,6 @@ export function ChatPanelWS({
   }, [isConnected, onConnectionChange]);
 
 
-
-  useEffect(() => {
-    if (
-      messagesContainerRef.current &&
-      uniqueMessages.length > prevMessagesLengthRef.current
-    ) {
-      messagesContainerRef.current.scrollTop =
-        messagesContainerRef.current.scrollHeight;
-    }
-    prevMessagesLengthRef.current = uniqueMessages.length;
-  }, [uniqueMessages.length]);
 
   return (
     <div className="flex flex-col h-full bg-background">
