@@ -158,3 +158,4 @@ bun test path/to/file # Run specific file
 ## References
 
 - `testing-patterns.md` - API routes, server actions, advanced mocks
+- `common-issues.md` - Common errors and solutions

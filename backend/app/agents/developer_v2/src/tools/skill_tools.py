@@ -35,49 +35,71 @@ def reset_skill_cache():
 
 
 @tool
-def activate_skill(skill_id: str) -> str:
-    """Activate a skill to get specialized coding instructions and patterns.
-    
-    Call this BEFORE writing code when you need domain-specific guidance.
-    Skills provide conventions, best practices, and examples.
-    
-    Args:
-        skill_id: Skill ID from the catalog (e.g., "frontend-component", "api-route")
-    
-    Returns:
-        Full skill instructions with patterns and examples
+def activate_skills(skill_ids: list[str]) -> str:
+    """Activate multiple skills to get specialized coding instructions.
     """
-    # Check cache first (prevents duplicate activations in same step)
-    if skill_id in _activated_skills_cache:
-        logger.info(f"[skill_tools] Skill '{skill_id}' already activated (cached)")
-        return _activated_skills_cache[skill_id]
+    if not skill_ids:
+        return "Error: No skill IDs provided. Pass a list like [\"api-route\"]"
     
     if not _skill_registry:
         return "Error: Skill registry not initialized"
     
-    skill = _skill_registry.get_skill(skill_id)
-    if not skill:
-        available = ", ".join(_skill_registry.get_skill_ids())
-        return f"Error: Skill '{skill_id}' not found. Available: {available}"
+    results = []
+    activated_count = 0
     
-    content = skill.load_content()
-    if not content:
-        return f"Error: Skill '{skill_id}' has no content"
-    
-    logger.info(f"[skill_tools] Activated skill: {skill_id} ({len(content)} chars)")
-    
-    # Build result
-    result = f"""[SKILL ACTIVATED: {skill_id}]
+    for skill_id in skill_ids:
+        # Check cache first (prevents duplicate activations in same step)
+        if skill_id in _activated_skills_cache:
+            logger.info(f"[skill_tools] Skill '{skill_id}' already activated (cached)")
+            results.append(_activated_skills_cache[skill_id])
+            continue
+        
+        skill = _skill_registry.get_skill(skill_id)
+        if not skill:
+            available = ", ".join(_skill_registry.get_skill_ids())
+            results.append(f"[SKIP] Skill '{skill_id}' not found. Available: {available}")
+            continue
+        
+        content = skill.load_content()
+        if not content:
+            results.append(f"[SKIP] Skill '{skill_id}' has no content")
+            continue
+        
+        logger.info(f"[skill_tools] Activated skill: {skill_id} ({len(content)} chars)")
+        
+        # Build result for this skill
+        bundled_files = skill.list_bundled_files()
+        result = f"""[SKILL: {skill_id}]
 
 {content}
 
----
-Bundled files available: {', '.join(skill.list_bundled_files()) or 'None'}
-Use read_skill_file("{skill_id}", "filename") to read additional files."""
+Bundled files: {', '.join(bundled_files) or 'None'}"""
+        
+        # Cache for this step
+        _activated_skills_cache[skill_id] = result
+        results.append(result)
+        activated_count += 1
     
-    # Cache for this step
-    _activated_skills_cache[skill_id] = result
-    return result
+    # Combine all results
+    header = f"[ACTIVATED {activated_count}/{len(skill_ids)} SKILLS]"
+    footer = "\n\nUse read_skill_file(skill_id, filename) to read bundled reference files."
+    
+    return header + "\n\n" + "\n\n---\n\n".join(results) + footer
+
+
+@tool
+def activate_skill(skill_id: str) -> str:
+    """[DEPRECATED] Use activate_skills([...]) for multi-skill support.
+    
+    Wrapper for backward compatibility - activates a single skill.
+    
+    Args:
+        skill_id: Skill ID (e.g., "frontend-component")
+    
+    Returns:
+        Skill instructions
+    """
+    return activate_skills([skill_id])
 
 
 @tool

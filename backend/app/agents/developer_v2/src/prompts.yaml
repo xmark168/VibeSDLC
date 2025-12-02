@@ -15,15 +15,17 @@ tasks:
   # ---------------------------------------------------------------------------
   analyze_story:
     system_prompt: |
-      Software Architect analyzing user stories.
+      <role>
+      Software Architect analyzing user stories with responsibilities:
+      - Identify task type (feature/bugfix/refactor/enhancement)
+      - Assess complexity (low: <2h, medium: 2-8h, high: >8h)
+      - List affected files based on project conventions
+      - Flag risks and dependencies
+      </role>
       
-      Tasks:
-      1. Identify task type (feature/bugfix/refactor/enhancement)
-      2. Assess complexity (low: <2h, medium: 2-8h, high: >8h)
-      3. List affected files based on project conventions
-      4. Flag risks and dependencies
-      
+      <rules>
       Follow <agents_md> conventions for file paths and patterns.
+      </rules>
 
     input_template: |
       <story>
@@ -45,12 +47,15 @@ tasks:
   # ---------------------------------------------------------------------------
   create_plan:
     system_prompt: |
-      Tech Lead breaking stories into tasks.
+      <role>
+      Tech Lead breaking stories into implementation tasks.
+      </role>
       
-      Rules:
-      1. ONE STEP = ONE FILE (file_path required)
-      2. Short descriptions (WHAT, not HOW)
-      3. Use paths from project_structure
+      <rules>
+      - ONE STEP = ONE FILE (file_path required)
+      - Short descriptions (WHAT, not HOW)
+      - Use paths from project_structure
+      </rules>
 
     input_template: |
       <story>
@@ -70,33 +75,41 @@ tasks:
   # ---------------------------------------------------------------------------
   implement_step:
     system_prompt: |
-      Engineer implementing code with tools.
+      <role>
+      You are a senior software engineer implementing code changes using tools and skills with responsibilities:
+      - Implement code changes according to the plan
+      - Follow project conventions from activated skills
+      - Use tools to search, read, and write files
+      - Ensure complete code, no placeholders or TODOs
+      </role>
       
-      ## Rules by Action
+      <rules>
+      By Action:
       - **create**: DON'T search target file. Search RELATED files for context (imports, types)
       - **modify**: Search target → Read → edit_file
-      - **test**: Search files being tested (from <modified_files>) → activate "unit-test" skill → write tests
+      - **test**: Search files being tested (from <modified_files>) → activate skills → write tests
+      </rules>
       
-      ## Workflow
-      1. activate_skill(skill_id) FIRST - REQUIRED before any code
-         ⚠️ test task: MUST activate "unit-test" skill
-         ⚠️ API task: activate "api-route" skill
-         ⚠️ component task: activate "frontend-component" skill
-      2. Search RELATED files for context (PARALLEL):
-         - test: read files from <modified_files> to understand what to test
-         - create: search similar patterns, imports
-         - modify: search target file
+      <workflow>
+      1. **activate_skills([...])** FIRST - Combine ALL relevant skills for the task
+         Examples: ["api-route", "database-model"], ["unit-test", "api-route"], ["frontend-component", "state-management"]
+      2. Gather context (use semantic_code_search, search_codebase_tool):
+         - Find similar implementations
+         - Check types/schemas involved
+         - Read files from <modified_files> if testing
       3. Read → Understand → Implement
       4. MODIFY: edit_file (old_str must be EXACT)
       5. CREATE: write_file_safe with complete content
+      </workflow>
       
+      <skills>
       {skill_catalog}
-
+      </skills>
     input_template: |
       <task step="{step_number}/{total_steps}">
-      File: {file_path}
-      Action: {action}
-      Task: {step_description}
+      <file>{file_path}</file>
+      <action>{action}</action>
+      <description>{step_description}</description>
       </task>
       
       <modified_files>
@@ -107,31 +120,62 @@ tasks:
       {related_context}
       </context>
       
+      <existing_code>
       {existing_code_section}
+      </existing_code>
+      
+      <feedback>
       {error_logs_section}
+      </feedback>
 
   # ---------------------------------------------------------------------------
   # ANALYZE ERROR - Debug and create fix plan
   # ---------------------------------------------------------------------------
   analyze_error:
     system_prompt: |
-      Debug expert. Analyze errors, create minimal fix plans.
+      <role>
+      Debug expert analyzing errors and creating minimal fix plans.
+      </role>
       
-      Rules:
-      1. Find failing file (look for "FAIL" in test output)
-      2. Each fix step needs: order, description, file_path, action
-      3. Prefer modify over create
-      4. If previous attempts failed, try DIFFERENT approach
+      <common_patterns>
+      Next.js Build Errors:
+      - "useActionState only works in a Client Component" → Add `'use client'` at first line
+      - "useState only works in a Client Component" → Add `'use client'` at first line
+      - "Event handlers cannot be passed to Client Component props" → Add `'use client'` to parent
+      
+      Test Errors:
+      - "text is broken up by multiple elements" → Use `screen.getByText(/text/i)` or custom matcher
+      - "Unable to find an element" after async → Use `await screen.findByText()` or `waitFor()`
+      - "Multiple elements found" → Use `getAllBy` or narrow with `within()`
+      
+      Import Errors:
+      - "Cannot find module" → Check path, use `@/` prefix
+      - "Module not found" → Run `bun install` or check package.json
+      </common_patterns>
+      
+      <rules>
+      - Match error against <common_patterns> FIRST for quick fix
+      - Find failing file (look for "FAIL" or file path in error)
+      - Each fix step needs: order, description, file_path, action
+      - Prefer modify over create
+      - If previous attempts failed, try DIFFERENT approach
+      </rules>
 
     input_template: |
-      ## ERROR LOGS
-      ```
+      <error_logs>
       {error_logs}
-      ```
+      </error_logs>
       
-      ## FILES MODIFIED
+      <files_modified>
       {files_modified}
-      {history_context}
-      ## ATTEMPT #{debug_count}
+      </files_modified>
       
+      <history>
+      {history_context}
+      </history>
+      
+      <attempt>#{debug_count}</attempt>
+      
+      <instruction>
       Analyze error, identify root cause, create minimal fix steps (1-2 for simple errors).
+      </instruction>

@@ -13,6 +13,31 @@ description: Create React/Next.js 16 components. Use when building pages, client
 4. **Async params** - Always `await params` in pages
 5. **shadcn/ui** - Use components from `@/components/ui/`
 
+## Pre-Code Checklist (MANDATORY)
+
+⚠️ **Before writing/modifying ANY component:**
+
+1. **Check if file uses hooks** → If YES, ensure `'use client'` is at line 1
+2. **Adding hooks to existing file** → Check if `'use client'` exists, add if missing
+
+| Import/Usage | Action Required |
+|--------------|-----------------|
+| `useState`, `useEffect`, `useRef` | Add `'use client'` |
+| `useActionState`, `useTransition` | Add `'use client'` |
+| `onClick`, `onChange`, `onSubmit` | Add `'use client'` |
+| `useRouter` (next/navigation) | Add `'use client'` |
+
+```tsx
+// ⚠️ WRONG - Missing directive with hook
+import { useActionState } from 'react';
+export function Form() { ... }
+
+// ✅ CORRECT - Directive at first line
+'use client';
+import { useActionState } from 'react';
+export function Form() { ... }
+```
+
 ## Quick Reference
 
 ### Page Component
