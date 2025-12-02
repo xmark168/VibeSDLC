@@ -157,7 +157,9 @@ def list_stories(
     count = session.exec(count_statement).one()
     stories = session.exec(statement.offset(skip).limit(limit)).all()
 
-    return StoriesPublic(data=stories, count=count)
+    # Convert Story objects to dicts for StoriesPublic
+    stories_data = [story.model_dump() if hasattr(story, 'model_dump') else dict(story) for story in stories]
+    return StoriesPublic(data=stories_data, count=count)
 
 
 # ===== Get by Project =====
@@ -188,7 +190,9 @@ def get_stories_by_project(
     total = len(stories)
     stories = stories[skip:skip + limit]
     
-    return StoriesPublic(data=stories, count=total)
+    # Convert Story objects to dicts for StoriesPublic
+    stories_data = [story.model_dump() if hasattr(story, 'model_dump') else dict(story) for story in stories]
+    return StoriesPublic(data=stories_data, count=total)
 
 
 # ===== Get Single Story =====

@@ -303,6 +303,14 @@ class ProjectFiles:
                 else:
                     md += "_No acceptance criteria defined._\n"
                 
+                # Format dependencies
+                deps = story.get('dependencies', [])
+                if isinstance(deps, list) and deps:
+                    md += "\n### Dependencies\n"
+                    md += "Stories that must be completed first:\n"
+                    for dep in deps:
+                        md += f"- `{dep}`\n"
+                
                 md += "\n---\n\n"
 
         return md

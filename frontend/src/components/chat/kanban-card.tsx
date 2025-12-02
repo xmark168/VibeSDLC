@@ -1,4 +1,4 @@
-import { X, Eye, Zap, User, MoreVertical, Copy, Edit, Trash2, MoveRight } from "lucide-react"
+import { X, Eye, Zap, User, MoreVertical, Copy, Edit, Trash2, MoveRight, Link2 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -35,6 +35,7 @@ export type KanbanCardData = {
   epic_id?: string
   acceptance_criteria?: string[]
   requirements?: string[]
+  dependencies?: string[]  // List of story IDs that must be completed before this story
   // Flow metrics
   created_at?: string
   updated_at?: string
@@ -238,12 +239,20 @@ function KanbanCardComponent({
               </Badge>
             )}
           </div>
-          {card.story_point !== undefined && card.story_point !== null && (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
-              <Zap className="w-3.5 h-3.5" />
-              <span>{card.story_point}</span>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {card.dependencies && card.dependencies.length > 0 && (
+              <div className="flex items-center gap-1 text-xs text-orange-600 dark:text-orange-400 font-medium" title={`Depends on: ${card.dependencies.join(', ')}`}>
+                <Link2 className="w-3.5 h-3.5" />
+                <span>{card.dependencies.length}</span>
+              </div>
+            )}
+            {card.story_point !== undefined && card.story_point !== null && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
+                <Zap className="w-3.5 h-3.5" />
+                <span>{card.story_point}</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Task Title - Better typography */}
@@ -308,6 +317,8 @@ export const KanbanCard = memo(KanbanCardComponent, (prevProps, nextProps) => {
   if (prevProps.card.story_point !== nextProps.card.story_point) return false
   if (prevProps.card.assignee_id !== nextProps.card.assignee_id) return false
   if (prevProps.card.age_hours !== nextProps.card.age_hours) return false
+  // Check dependencies array
+  if (JSON.stringify(prevProps.card.dependencies) !== JSON.stringify(nextProps.card.dependencies)) return false
 
   // Re-render if dragging state changed
   if (prevProps.isDragging !== nextProps.isDragging) return false

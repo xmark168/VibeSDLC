@@ -73,4 +73,5 @@ export interface StoryFormData {
   priority?: "High" | "Medium" | "Low";
   acceptance_criteria: string[];
   requirements: string[];
+  dependencies: string[];  // List of story IDs that must be completed first
 }
