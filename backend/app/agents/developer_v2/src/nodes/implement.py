@@ -125,7 +125,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             messages=messages,
             state=state,
             name="implement_code",
-            max_iterations=10
+            max_iterations=15
         )
         
         # Track modified files
