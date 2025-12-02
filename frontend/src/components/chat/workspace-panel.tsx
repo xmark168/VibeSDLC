@@ -58,7 +58,7 @@ const getRoleDesignation = (roleType: string): string => {
   return roleMap[roleType] || roleType
 }
 
-export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projectId, activeTab: wsActiveTab, agentStatuses, selectedArtifactId }: WorkspacePanelProps) {
+export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projectId, activeTab: wsActiveTab, agentStatuses, selectedArtifactId, onResize, initialSelectedFile }: WorkspacePanelProps) {
   const queryClient = useQueryClient()
 
   // Resize handle state - use refs to avoid re-renders during drag
