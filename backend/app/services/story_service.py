@@ -705,6 +705,8 @@ class StoryService:
                 if story.epic:
                     story_data.epic_code = story.epic.epic_code
                     story_data.epic_title = story.epic.title
+                    story_data.epic_description = story.epic.description
+                    story_data.epic_domain = story.epic.domain
                 board[column].append(story_data)
 
         # Get WIP limits

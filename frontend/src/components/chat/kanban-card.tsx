@@ -36,6 +36,8 @@ export type KanbanCardData = {
   epic_id?: string
   epic_code?: string
   epic_title?: string
+  epic_description?: string
+  epic_domain?: string
   acceptance_criteria?: string[]
   requirements?: string[]
   dependencies?: string[]  // List of story IDs that must be completed before this story

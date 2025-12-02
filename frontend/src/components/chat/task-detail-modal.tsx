@@ -29,9 +29,19 @@ interface ChatMessage {
   avatar?: string
 }
 
+// Epic info for popup
+interface EpicInfo {
+  epic_code?: string
+  epic_title?: string
+  epic_id?: string
+  description?: string
+  domain?: string
+}
+
 export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, allStories = [] }: TaskDetailModalProps) {
   const [selectedChild, setSelectedChild] = useState<KanbanCardData | null>(null)
   const [selectedDependency, setSelectedDependency] = useState<KanbanCardData | null>(null)
+  const [selectedEpic, setSelectedEpic] = useState<EpicInfo | null>(null)
   
   // Helper to get story title from dependency ID (UUID)
   const getDependencyTitle = (depId: string): string => {
@@ -369,7 +379,17 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
               <h4 className="text-sm font-semibold text-foreground mb-2">Epic</h4>
               <div className="text-sm text-muted-foreground">
                 {card.epic_code && (
-                  <Badge variant="outline" className="mr-2">
+                  <Badge 
+                    variant="outline" 
+                    className="mr-2 cursor-pointer hover:bg-purple-100 dark:hover:bg-purple-900/30"
+                    onClick={() => setSelectedEpic({
+                      epic_code: card.epic_code,
+                      epic_title: card.epic_title,
+                      epic_id: card.epic_id,
+                      description: card.epic_description,
+                      domain: card.epic_domain,
+                    })}
+                  >
                     {card.epic_code}
                   </Badge>
                 )}
@@ -663,6 +683,55 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
           onDownloadResult={onDownloadResult}
           allStories={allStories}
         />
+      )}
+
+      {/* Epic detail dialog */}
+      {selectedEpic && (
+        <Dialog open={!!selectedEpic} onOpenChange={() => setSelectedEpic(null)}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                {selectedEpic.epic_code && (
+                  <Badge variant="outline" className="">
+                    {selectedEpic.epic_code}
+                  </Badge>
+                )}
+                <Badge variant="outline" className="bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20">
+                  Epic
+                </Badge>
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 mt-4">
+              {/* Title */}
+              <div>
+                <h4 className="text-sm font-semibold text-foreground mb-1">Title</h4>
+                <p className="text-sm text-muted-foreground">
+                  {selectedEpic.epic_title || 'Untitled Epic'}
+                </p>
+              </div>
+
+              {/* Domain */}
+              {selectedEpic.domain && (
+                <div>
+                  <h4 className="text-sm font-semibold text-foreground mb-1">Domain</h4>
+                  <Badge variant="outline" className="bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20">
+                    {selectedEpic.domain}
+                  </Badge>
+                </div>
+              )}
+
+              {/* Description */}
+              {selectedEpic.description && (
+                <div>
+                  <h4 className="text-sm font-semibold text-foreground mb-1">Mô tả</h4>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                    {selectedEpic.description}
+                  </p>
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </Dialog>
   )

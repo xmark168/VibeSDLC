@@ -60,6 +60,8 @@ class StoryPublic(StoryBase):
     # Epic info for display
     epic_code: Optional[str] = None
     epic_title: Optional[str] = None
+    epic_description: Optional[str] = None
+    epic_domain: Optional[str] = None
 
 
 class StoryUpdate(SQLModel):
