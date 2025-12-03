@@ -3,7 +3,10 @@ import logging
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, write_file_safe, edit_file, list_directory_safe, search_files
+from app.agents.developer_v2.src.tools.filesystem_tools import (
+    read_file_safe, write_file_safe, edit_file, list_directory_safe, search_files,
+    get_modified_files, reset_modified_files,
+)
 from app.agents.developer_v2.src.tools.shell_tools import execute_shell, semantic_code_search
 from app.agents.developer_v2.src.tools.skill_tools import activate_skills, read_skill_file, list_skill_files, set_skill_context, reset_skill_cache
 from app.agents.developer_v2.src.utils.llm_utils import (
@@ -24,6 +27,7 @@ logger = logging.getLogger(__name__)
 async def implement(state: DeveloperState, agent=None) -> DeveloperState:
     """Execute implementation step (Claude decides what/where to implement)."""
     reset_skill_cache()
+    reset_modified_files()  # Reset file tracking for this step
     
     current_step = state.get("current_step", 0)
     total_steps = state.get("total_steps", 0)
@@ -42,8 +46,9 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         if state.get("react_mode") and state.get("run_status") == "FAIL":
             current_step = 0
             react_loop_count += 1
-            debug_count = 0
-            logger.info(f"[implement] React loop {react_loop_count}")
+            # NOTE: Do NOT reset debug_count here - it's tracked by analyze_error
+            # and checked by route_after_test for max_debug limit
+            logger.info(f"[implement] React loop {react_loop_count}, debug_count={debug_count}")
         
         if not plan_steps:
             return {**state, "error": "No implementation plan", "action": "RESPOND"}
@@ -75,6 +80,17 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         # Load skill registry
         skill_registry = state.get("skill_registry") or SkillRegistry.load(tech_stack)
         set_skill_context(skill_registry)
+        
+        # Auto-load debugging skill in debug mode
+        task_type = state.get("task_type", "")
+        is_debug_mode = task_type == "bug_fix" or debug_count > 0
+        
+        if is_debug_mode:
+            debug_skill = skill_registry.get_skill("debugging")
+            if debug_skill:
+                debug_content = debug_skill.load_content()
+                context_parts.append(f"<debugging_skill>\n{debug_content}\n</debugging_skill>")
+                logger.info("[implement] Auto-loaded debugging skill for bug fix")
         
         # Tools (Claude searches, reads, and writes as needed)
         tools = [
@@ -117,6 +133,10 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             max_iterations=15
         )
         
+        # Get files modified in this step and merge with previous
+        new_modified = get_modified_files()
+        all_modified = list(set(files_modified + new_modified))
+        
         return {
             **state,
             "current_step": current_step + 1,
@@ -124,7 +144,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             "debug_count": debug_count,
             "run_status": None,
             "skill_registry": skill_registry,
-            "files_modified": files_modified,
+            "files_modified": all_modified,
             "message": f"✅ Task {current_step + 1}: {task_description}",
             "action": "IMPLEMENT" if current_step + 1 < len(plan_steps) else "VALIDATE",
         }

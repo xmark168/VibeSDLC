@@ -6,6 +6,10 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.utils.json_utils import extract_json_universal
 from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg
+from app.agents.developer_v2.src.utils.prompt_utils import (
+    build_system_prompt as _build_system_prompt,
+    format_input_template as _format_input_template,
+)
 from app.agents.developer_v2.src.nodes._llm import code_llm
 from app.agents.developer_v2.src.nodes._helpers import setup_tool_context
 from app.agents.developer_v2.src.skills.registry import SkillRegistry
@@ -72,51 +76,24 @@ async def analyze_and_plan(state: DeveloperState, agent=None) -> DeveloperState:
         plan_skill = skill_registry.get_skill("feature-plan")
         skill_content = plan_skill.load_content() if plan_skill else ""
         
-        # Build prompt
-        system_prompt = f"""You are a Senior Tech Lead. Analyze the story and create implementation plan.
-
-<project_structure>
-{project_structure}
-</project_structure>
-
-<skill>
-{skill_content}
-</skill>
-
-Create a detailed implementation plan. Respond with JSON in <result> tags:
-<result>
-{{
-  "story_summary": "Brief summary of the feature",
-  "steps": [
-    {{"order": 1, "description": "Create Textbook database model with fields for name, author, code"}},
-    {{"order": 2, "description": "Create search API endpoint to query textbooks"}},
-    {{"order": 3, "description": "Build SearchBar component with input and results"}}
-  ]
-}}
-</result>
-
-For each step:
-- order: step number
-- description: what to do (abstract task, agent will decide files)"""
+        # Build prompt from prompts.yaml
+        system_prompt = _build_system_prompt(
+            "analyze_and_plan",
+            project_structure=project_structure,
+            skill_content=skill_content,
+        )
         
         # Format input
         acceptance_criteria = state.get("acceptance_criteria", [])
         ac_text = chr(10).join(f"- {ac}" for ac in acceptance_criteria)
         
-        input_text = f"""<story>
-{state.get("story_title", "Untitled")}
-
-{state.get("story_content", "")}
-</story>
-
-<acceptance_criteria>
-{ac_text}
-</acceptance_criteria>
-
-<project_context>
-{project_context}
-</project_context>
-"""
+        input_text = _format_input_template(
+            "analyze_and_plan",
+            story_title=state.get("story_title", "Untitled"),
+            story_content=state.get("story_content", ""),
+            acceptance_criteria=ac_text,
+            project_context=project_context,
+        )
         
         # Single LLM call
         messages = [

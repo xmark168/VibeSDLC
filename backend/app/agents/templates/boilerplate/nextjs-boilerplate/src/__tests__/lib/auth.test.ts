@@ -147,6 +147,92 @@ describe('Auth - Credentials Provider', () => {
 
       expect(result).not.toHaveProperty('password');
     });
+
+    // Edge cases
+    it('should return null for empty string username', async () => {
+      const result = await authorizeCredentials({
+        username: '',
+        password: 'somepassword',
+      });
+
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      expect(result).toBeNull();
+    });
+
+    it('should return null for empty string password', async () => {
+      const result = await authorizeCredentials({
+        username: 'testuser',
+        password: '',
+      });
+
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      expect(result).toBeNull();
+    });
+
+    it('should return null for whitespace-only credentials', async () => {
+      const result = await authorizeCredentials({
+        username: '   ',
+        password: '   ',
+      });
+
+      // Whitespace is truthy, so it will try to find user
+      expect(prisma.user.findUnique).toHaveBeenCalled();
+    });
+
+    // Error handling
+    it('should propagate database errors', async () => {
+      (prisma.user.findUnique as jest.Mock).mockRejectedValue(new Error('Database connection failed'));
+
+      await expect(
+        authorizeCredentials({
+          username: 'testuser',
+          password: 'password',
+        })
+      ).rejects.toThrow('Database connection failed');
+    });
+
+    // Security edge cases
+    it('should handle special characters in username', async () => {
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+
+      const result = await authorizeCredentials({
+        username: "user'; DROP TABLE users; --",
+        password: 'password',
+      });
+
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { username: "user'; DROP TABLE users; --" },
+      });
+      expect(result).toBeNull();
+    });
+
+    it('should handle unicode characters in credentials', async () => {
+      const unicodeUser = { ...mockUser, username: '用户名' };
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(unicodeUser);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      const result = await authorizeCredentials({
+        username: '用户名',
+        password: 'пароль123',
+      });
+
+      expect(result).not.toBeNull();
+      expect(result?.username).toBe('用户名');
+    });
+
+    it('should handle very long password', async () => {
+      const longPassword = 'a'.repeat(1000);
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      const result = await authorizeCredentials({
+        username: 'testuser',
+        password: longPassword,
+      });
+
+      expect(bcrypt.compare).toHaveBeenCalledWith(longPassword, 'hashed-password');
+      expect(result).not.toBeNull();
+    });
   });
 });
 

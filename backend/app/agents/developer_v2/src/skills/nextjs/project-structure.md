@@ -1,33 +1,38 @@
 # Next.js 16 Project Structure
 
+## Directory Structure
+
 ```
-prisma/schema.prisma       # Database models
+prisma/
+  schema.prisma          # Database models (NO url in datasource)
+  prisma.config.ts       # Database URL config (Prisma 6.x+)
 
 src/
   app/
-    api/[resource]/route.ts    # API handlers
+    api/[resource]/route.ts    # REST API handlers
     actions/[domain].ts        # Server Actions
-    [route]/page.tsx           # Pages
+    [route]/page.tsx           # Pages (async supported)
     layout.tsx                 # Root layout
   components/
-    ui/                        # shadcn/ui (DO NOT MODIFY)
-    [feature]/                 # Feature components
+    ui/                        # shadcn/ui - DO NOT MODIFY
+    [Feature]/                 # Feature components (PascalCase)
   lib/
-    prisma.ts                  # Prisma client
+    prisma.ts                  # Prisma client (with datasourceUrl)
     utils.ts                   # cn() utility
-    api-response.ts            # API helpers
+  auth.ts                      # NextAuth v5 config
+  middleware.ts                # Route protection
   types/                       # TypeScript types
-  __tests__/                   # Tests
+  __tests__/                   # Jest tests
 ```
 
-## File Naming
+## File Patterns
 
-| Type | Pattern |
-|------|---------|
-| Page | `app/[route]/page.tsx` |
-| API | `app/api/[resource]/route.ts` |
-| Action | `app/actions/[domain].ts` |
-| Component | `components/[Feature]/Name.tsx` |
+| Type | Path | Export |
+|------|------|--------|
+| Page | `app/[route]/page.tsx` | `export default` |
+| API | `app/api/[resource]/route.ts` | `export async function GET/POST` |
+| Action | `app/actions/[domain].ts` | Named exports |
+| Component | `components/[Feature]/Name.tsx` | `export function Name` |
 
 ## Imports
 
@@ -35,4 +40,15 @@ src/
 import { Button } from '@/components/ui/button';
 import { prisma } from '@/lib/prisma';
 import { cn } from '@/lib/utils';
+import { auth } from '@/auth';
 ```
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `auth.ts` | NextAuth v5 config |
+| `middleware.ts` | Protect routes |
+| `lib/prisma.ts` | Database client |
+| `prisma/schema.prisma` | Database models |
+| `prisma/prisma.config.ts` | Database URL |

@@ -133,7 +133,23 @@ async def _run_service_tests(
                     svc_span.end(output={"status": "INSTALL_FAIL"})
                 return {"status": "FAIL", "stdout": all_stdout, "stderr": all_stderr}
         
-        # Step 2: Database setup (if needed)
+        # Step 2: Typecheck (catch type errors early)
+        typecheck_cmd = svc_config.get("typecheck_cmd", "bun run typecheck")
+        if typecheck_cmd:
+            success, stdout, stderr = _run_step(
+                "Typecheck", typecheck_cmd, workspace_path, svc_name,
+                timeout=120, allow_fail=False
+            )
+            all_stdout += f"\n$ {typecheck_cmd}\n{stdout}"
+            if not success:
+                all_stderr += f"\n[TYPECHECK FAILED]\n{stderr or stdout}"
+                task_id = svc_config.get("task_id", "unknown")
+                write_test_log(task_id, f"TYPECHECK ERROR:\n{stderr or stdout}", "FAIL")
+                if svc_span:
+                    svc_span.end(output={"status": "TYPECHECK_FAIL"})
+                return {"status": "FAIL", "stdout": all_stdout, "stderr": all_stderr}
+        
+        # Step 3: Database setup (if needed)
         if needs_db:
             try:
                 set_container_context(branch_name=branch_name, workspace_path=workspace_path)
@@ -154,7 +170,7 @@ async def _run_service_tests(
                 )
                 all_stdout += f"\n$ {db_cmd}\n{stdout}"
         
-        # Step 3: Build
+        # Step 4: Build
         if build_cmd:
             success, stdout, stderr = _run_step(
                 "Build", build_cmd, workspace_path, svc_name,
@@ -169,7 +185,7 @@ async def _run_service_tests(
                     svc_span.end(output={"status": "BUILD_FAIL"})
                 return {"status": "FAIL", "stdout": all_stdout, "stderr": all_stderr}
         
-        # Step 4: Run tests
+        # Step 5: Run tests
         success, stdout, stderr = _run_step(
             "Test", test_cmd, workspace_path, svc_name,
             timeout=300, allow_fail=False

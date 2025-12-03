@@ -133,5 +133,154 @@ describe('auth-helpers', () => {
 
       expect(result).toBe(false);
     });
+
+    it('should handle bcrypt compare error', async () => {
+      (bcrypt.compare as jest.Mock).mockRejectedValue(new Error('Bcrypt error'));
+
+      await expect(verifyPassword('password', 'hash')).rejects.toThrow('Bcrypt error');
+    });
+
+    it('should handle unicode password', async () => {
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      const result = await verifyPassword('密码123пароль', 'hashed-password');
+
+      expect(bcrypt.compare).toHaveBeenCalledWith('密码123пароль', 'hashed-password');
+      expect(result).toBe(true);
+    });
+
+    it('should handle very long password (1000 chars)', async () => {
+      const longPassword = 'x'.repeat(1000);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      const result = await verifyPassword(longPassword, 'hashed-password');
+
+      expect(bcrypt.compare).toHaveBeenCalledWith(longPassword, 'hashed-password');
+      expect(result).toBe(true);
+    });
+  });
+
+  describe('createUser - Error handling', () => {
+    it('should throw on duplicate username (Prisma P2002)', async () => {
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-password');
+      const prismaError = new Error('Unique constraint failed');
+      (prismaError as any).code = 'P2002';
+      (prisma.user.create as jest.Mock).mockRejectedValue(prismaError);
+
+      await expect(
+        createUser({
+          username: 'existinguser',
+          password: 'password',
+          email: 'test@example.com',
+        })
+      ).rejects.toThrow('Unique constraint failed');
+    });
+
+    it('should throw on bcrypt hash failure', async () => {
+      (bcrypt.hash as jest.Mock).mockRejectedValue(new Error('Hash computation failed'));
+
+      await expect(
+        createUser({
+          username: 'testuser',
+          password: 'password',
+        })
+      ).rejects.toThrow('Hash computation failed');
+    });
+
+    it('should throw on database connection error', async () => {
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-password');
+      (prisma.user.create as jest.Mock).mockRejectedValue(new Error('Connection refused'));
+
+      await expect(
+        createUser({
+          username: 'testuser',
+          password: 'password',
+        })
+      ).rejects.toThrow('Connection refused');
+    });
+  });
+
+  describe('createUser - Edge cases', () => {
+    it('should handle special characters in username', async () => {
+      const mockUser = {
+        id: 'user-special',
+        username: 'user@domain.com',
+        email: null,
+        password: 'hashed-password',
+        createdAt: new Date(),
+      };
+
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-password');
+      (prisma.user.create as jest.Mock).mockResolvedValue(mockUser);
+
+      const result = await createUser({
+        username: 'user@domain.com',
+        password: 'password',
+      });
+
+      expect(result.username).toBe('user@domain.com');
+    });
+
+    it('should handle unicode username', async () => {
+      const mockUser = {
+        id: 'user-unicode',
+        username: '用户名',
+        email: null,
+        password: 'hashed-password',
+        createdAt: new Date(),
+      };
+
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-password');
+      (prisma.user.create as jest.Mock).mockResolvedValue(mockUser);
+
+      const result = await createUser({
+        username: '用户名',
+        password: 'password',
+      });
+
+      expect(result.username).toBe('用户名');
+    });
+
+    it('should handle minimum length password', async () => {
+      const mockUser = {
+        id: 'user-minpass',
+        username: 'minpass',
+        email: null,
+        password: 'hashed-password',
+        createdAt: new Date(),
+      };
+
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-password');
+      (prisma.user.create as jest.Mock).mockResolvedValue(mockUser);
+
+      const result = await createUser({
+        username: 'minpass',
+        password: 'a',
+      });
+
+      expect(bcrypt.hash).toHaveBeenCalledWith('a', 10);
+      expect(result).toBeDefined();
+    });
+
+    it('should handle email with subdomain', async () => {
+      const mockUser = {
+        id: 'user-subdomain',
+        username: 'testuser',
+        email: 'user@mail.example.co.uk',
+        password: 'hashed-password',
+        createdAt: new Date(),
+      };
+
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-password');
+      (prisma.user.create as jest.Mock).mockResolvedValue(mockUser);
+
+      const result = await createUser({
+        username: 'testuser',
+        password: 'password',
+        email: 'user@mail.example.co.uk',
+      });
+
+      expect(result.email).toBe('user@mail.example.co.uk');
+    });
   });
 });

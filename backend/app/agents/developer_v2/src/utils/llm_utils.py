@@ -128,8 +128,15 @@ async def execute_llm_with_tools(
                     else:
                         result = tool(**tool_args)
                     
+                    # Smart truncate - skills need full content
+                    result_str = str(result)
+                    if "[SKILL:" in result_str or "[ACTIVATED" in result_str:
+                        content = result_str  # Full skill content
+                    else:
+                        content = result_str[:4000]  # Other tools can truncate
+                    
                     conversation.append(ToolMessage(
-                        content=str(result)[:2000],
+                        content=content,
                         tool_call_id=tool_call["id"]
                     ))
                 except Exception as e:
