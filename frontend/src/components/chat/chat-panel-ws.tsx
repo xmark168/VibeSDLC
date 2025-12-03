@@ -396,7 +396,8 @@ export function ChatPanelWS({
 
   // Determine if chat should be blocked
   const isMultichoiceQuestion = pendingQuestion?.structured_data?.question_type === 'multichoice'
-  const shouldBlockChat = pendingQuestion && isMultichoiceQuestion
+  const isAgentTyping = typingAgents.size > 0
+  const shouldBlockChat = (pendingQuestion && isMultichoiceQuestion) || isAgentTyping
 
   // Note: Kanban, activeTab, and agentStatuses features removed for simplicity
 
@@ -509,8 +510,10 @@ export function ChatPanelWS({
     // MentionDropdown handles its own keyboard navigation (Arrow, Tab, Enter, Escape)
     // Only handle Enter to send when dropdown is NOT shown
     if (!showMentions && e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
+      e.preventDefault(); // Always prevent default (new line)
+      if (!shouldBlockChat) {
+        handleSend(); // Only send if chat is not blocked
+      }
     }
   };
 
