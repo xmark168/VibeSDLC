@@ -5,6 +5,15 @@ description: Create React/Next.js 16 components. Use when building pages, client
 
 # Frontend Component (Next.js 16 + React 19)
 
+## ⚠️ ALWAYS Activate Design Skill
+
+**Before creating any UI component, MUST also activate:**
+```
+activate_skills(["frontend-component", "frontend-design"])
+```
+
+This ensures components follow design best practices and avoid generic AI aesthetics.
+
 ## Critical Rules
 
 1. **Named exports ONLY** - NO default exports (except pages/layouts)
@@ -12,6 +21,38 @@ description: Create React/Next.js 16 components. Use when building pages, client
 3. **Server Components** - Default, no directive needed
 4. **Async params** - Always `await params` in pages
 5. **shadcn/ui** - Use components from `@/components/ui/`
+6. **Read before import** - MUST read custom component files before using
+
+## ⚠️ CRITICAL: Before Importing Components
+
+**MUST read file before importing custom components:**
+
+| Importing From | Action |
+|----------------|--------|
+| `@/components/*` | READ the file first to check Props |
+| `@/components/ui/*` | OK - shadcn props are standard |
+
+### Example Flow
+
+```
+Task: "Create page with SearchResults"
+
+WRONG ❌
+→ write_file("page.tsx") with <SearchResults searchQuery={...} />
+→ Type error! searchQuery doesn't exist
+
+CORRECT ✅
+→ read_file("src/components/Search/SearchResults.tsx")
+→ See: interface Props { results: Item[]; onSelect: (id: string) => void }
+→ write_file("page.tsx") with <SearchResults results={data} onSelect={handleSelect} />
+```
+
+### Quick Check
+
+Before writing `<ComponentName prop={value} />`:
+1. Is it from `@/components/` (not ui)? → READ IT FIRST
+2. Check the `interface Props` or function params
+3. Use EXACT prop names from the interface
 
 ## Pre-Code Checklist (MANDATORY)
 

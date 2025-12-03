@@ -24,6 +24,66 @@ from app.agents.developer_v2.src.skills import SkillRegistry
 logger = logging.getLogger(__name__)
 
 
+def _clean_error_logs(logs: str, max_lines: int = 50) -> str:
+    """Clean error logs by removing noise and keeping relevant lines."""
+    if not logs:
+        return ""
+    
+    # Noise patterns to filter out
+    noise_patterns = [
+        "baseline-browser-mapping",
+        "npm WARN",
+        "bun install",
+        "modules old",
+        "update:",
+        "Compiling",
+        "Compiled",
+        "webpack",
+        "Module not found",  # Keep only if it's the actual error
+    ]
+    
+    # Important patterns to keep
+    important_patterns = [
+        "Error:",
+        "error:",
+        "FAIL",
+        "fail",
+        "TypeError",
+        "ReferenceError",
+        "SyntaxError",
+        "Cannot",
+        "cannot",
+        "Expected",
+        "expected",
+        "Received",
+        "received",
+        "at Object",
+        "at Module",
+        ".test.ts",
+        ".test.tsx",
+        "✕",
+        "●",
+    ]
+    
+    lines = logs.split('\n')
+    filtered = []
+    
+    for line in lines:
+        # Skip noise
+        if any(noise in line for noise in noise_patterns):
+            continue
+        # Keep important lines
+        if any(important in line for important in important_patterns):
+            filtered.append(line)
+        # Keep lines with file paths
+        elif '.ts' in line or '.tsx' in line or '.js' in line:
+            filtered.append(line)
+    
+    # Limit lines
+    result = '\n'.join(filtered[:max_lines])
+    return result if result else logs[:2000]  # Fallback to truncated original
+
+
 class ErrorAnalysisAndPlan(BaseModel):
     """Combined error analysis and fix plan."""
     error_type: Literal["TEST_ERROR", "SOURCE_ERROR", "IMPORT_ERROR", "CONFIG_ERROR", "UNFIXABLE"] = Field(
@@ -70,10 +130,13 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
             for h in debug_history[-3:]:
                 history_context += f"- #{h.get('iteration')}: {h.get('fix_description', '')[:80]} -> FAILED\n"
         
+        # Clean error logs to remove noise
+        cleaned_logs = _clean_error_logs(error_logs)
+        
         # Use prompts from yaml
         input_text = _format_input_template(
             "analyze_error",
-            error_logs=error_logs[:4000],
+            error_logs=cleaned_logs,
             files_modified=', '.join(files_modified) if files_modified else 'None',
             history_context=history_context,
             debug_count=debug_count + 1,

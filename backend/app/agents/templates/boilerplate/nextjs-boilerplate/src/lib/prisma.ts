@@ -10,6 +10,7 @@ let prismaInstance: PrismaClient | null = null;
 export const prisma = globalForPrisma.prisma ?? (() => {
   if (!prismaInstance) {
     prismaInstance = new PrismaClient({
+      datasourceUrl: process.env.DATABASE_URL,
       log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
     });
   }

@@ -72,6 +72,32 @@ global.ResizeObserver = class ResizeObserver {
 
 // Mock next/server for API route testing
 jest.mock('next/server', () => {
+  // Mock cookies implementation
+  class MockRequestCookies {
+    private cookies: Map<string, string> = new Map();
+    
+    get(name: string) {
+      const value = this.cookies.get(name);
+      return value ? { name, value } : undefined;
+    }
+    
+    getAll() {
+      return Array.from(this.cookies.entries()).map(([name, value]) => ({ name, value }));
+    }
+    
+    has(name: string) {
+      return this.cookies.has(name);
+    }
+    
+    set(name: string, value: string) {
+      this.cookies.set(name, value);
+    }
+    
+    delete(name: string) {
+      this.cookies.delete(name);
+    }
+  }
+
   return {
     NextResponse: {
       json: (data: any, init?: ResponseInit) => {
@@ -94,6 +120,8 @@ jest.mock('next/server', () => {
     },
     NextRequest: class NextRequest extends Request {
       nextUrl: URL;
+      cookies: MockRequestCookies;
+      
       constructor(input: RequestInfo | URL, init?: RequestInit) {
         super(input, init);
         this.nextUrl = new URL(
@@ -103,6 +131,15 @@ jest.mock('next/server', () => {
               ? input.href
               : input.url
         );
+        this.cookies = new MockRequestCookies();
+      }
+      
+      get geo() {
+        return { city: undefined, country: undefined, region: undefined };
+      }
+      
+      get ip() {
+        return '127.0.0.1';
       }
     },
   };

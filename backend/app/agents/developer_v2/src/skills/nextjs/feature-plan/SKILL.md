@@ -41,6 +41,33 @@ description: Create implementation plans for Next.js features. Use when breaking
 6. Tests
 ```
 
+## Vertical Slice Example
+
+**Feature:** "Add to Cart"
+
+### ❌ Bad (Horizontal Slicing)
+1. Create all database models
+2. Create all API routes  
+3. Create all components
+4. Connect everything
+
+### ✅ Good (Vertical Slicing)
+1. **Task 1:** Add single item to cart
+   - Schema: Cart, CartItem models
+   - API: POST /api/cart/items
+   - UI: "Add to Cart" button on product
+   - Test: Button click adds item
+
+2. **Task 2:** View cart contents
+   - API: GET /api/cart
+   - UI: CartPage with items list
+   - Test: Cart displays items
+
+3. **Task 3:** Update item quantity
+   - API: PUT /api/cart/items/[id]
+   - UI: Quantity +/- buttons
+   - Test: Quantity updates
+
 ## Common Gaps
 
 - Error handling and user feedback

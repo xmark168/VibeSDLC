@@ -42,8 +42,9 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         if state.get("react_mode") and state.get("run_status") == "FAIL":
             current_step = 0
             react_loop_count += 1
-            debug_count = 0
-            logger.info(f"[implement] React loop {react_loop_count}")
+            # NOTE: Do NOT reset debug_count here - it's tracked by analyze_error
+            # and checked by route_after_test for max_debug limit
+            logger.info(f"[implement] React loop {react_loop_count}, debug_count={debug_count}")
         
         if not plan_steps:
             return {**state, "error": "No implementation plan", "action": "RESPOND"}
@@ -75,6 +76,17 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         # Load skill registry
         skill_registry = state.get("skill_registry") or SkillRegistry.load(tech_stack)
         set_skill_context(skill_registry)
+        
+        # Auto-load debugging skill in debug mode
+        task_type = state.get("task_type", "")
+        is_debug_mode = task_type == "bug_fix" or debug_count > 0
+        
+        if is_debug_mode:
+            debug_skill = skill_registry.get_skill("debugging")
+            if debug_skill:
+                debug_content = debug_skill.load_content()
+                context_parts.append(f"<debugging_skill>\n{debug_content[:2000]}\n</debugging_skill>")
+                logger.info("[implement] Auto-loaded debugging skill for bug fix")
         
         # Tools (Claude searches, reads, and writes as needed)
         tools = [
@@ -114,7 +126,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             messages=messages,
             state=state,
             name="implement_code",
-            max_iterations=15
+            max_iterations=8
         )
         
         return {

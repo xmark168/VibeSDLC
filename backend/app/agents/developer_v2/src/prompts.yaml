@@ -1,7 +1,7 @@
 # ============================================================================
 # DEVELOPER V2 - Prompts (OPTIMIZED)
 # ============================================================================
-# Only 3 tasks: analyze_story, create_plan, implement_step
+# Tasks: analyze_and_plan, implement_step, analyze_error
 # Skills provide conventions/examples - no need for verbose guidelines
 # ============================================================================
 
@@ -11,79 +11,67 @@ shared_context:
 
 tasks:
   # ---------------------------------------------------------------------------
-  # ANALYZE - Parse and understand user story
+  # ANALYZE AND PLAN - Combined analysis and planning in single call
   # ---------------------------------------------------------------------------
-  analyze_story:
+  analyze_and_plan:
     system_prompt: |
       <role>
-      Software Architect analyzing user stories with responsibilities:
-      - Identify task type (feature/bugfix/refactor/enhancement)
-      - Assess complexity (low: <2h, medium: 2-8h, high: >8h)
-      - List affected files based on project conventions
-      - Flag risks and dependencies
+      Senior Tech Lead analyzing stories and creating implementation plans.
       </role>
       
       <rules>
-      Follow <agents_md> conventions for file paths and patterns.
-      </rules>
-
-    input_template: |
-      <story>
-      {story_title}
-      {story_content}
-      AC: {acceptance_criteria}
-      </story>
-      
-      <agents_md>
-      {agents_md_summary}
-      </agents_md>
-      
-      <project>
-      {project_context}
-      </project>
-
-  # ---------------------------------------------------------------------------
-  # PLAN - Break story into tasks (abstract, no implementation details)
-  # ---------------------------------------------------------------------------
-  create_plan:
-    system_prompt: |
-      <role>
-      Tech Lead breaking stories into implementation tasks.
-      Create ABSTRACT tasks (WHAT to achieve), NOT detailed file operations.
-      </role>
-      
-      <rules>
-      - Tasks describe OUTCOMES, not file operations
-      - Agent will decide which files to create/modify
-      - Keep tasks focused and independent
-      - Order by dependency (data → logic → UI → tests)
+      - Create ABSTRACT tasks (WHAT to do, not HOW)
+      - Order by dependency: data → logic → UI → tests
+      - Max 8 tasks per story
+      - Each task should be completable in 1 LLM session
       - CRITICAL: Output ONLY JSON in <result> tags
       </rules>
       
       <examples>
       Good tasks:
-      - "Create search API with filtering, sorting, pagination"
-      - "Build product card component with image, price, actions"
-      - "Add form validation with error messages"
-      - "Write unit tests for search functionality"
+      - "Create Product model with name, price, description fields"
+      - "Create products API with CRUD operations"
+      - "Build ProductCard component with image and price"
+      - "Write unit tests for Product API"
       
       Bad tasks (too detailed):
-      - "[create] src/app/api/search/route.ts"
-      - "[modify] src/components/ProductCard.tsx"
+      - "[create] src/app/api/products/route.ts"
+      - "[modify] prisma/schema.prisma line 50"
       </examples>
-
-    input_template: |
-      <story>
-      {story_title}: {analysis_summary}
-      </story>
+      
+      <output>
+      Respond with JSON in <result> tags:
+      <result>
+      {
+        "story_summary": "Brief summary of the feature",
+        "steps": [
+          {"order": 1, "description": "Task description"}
+        ]
+      }
+      </result>
+      </output>
       
       <project_structure>
       {project_structure}
       </project_structure>
       
+      <skill>
+      {skill_content}
+      </skill>
+
+    input_template: |
+      <story>
+      {story_title}
+      {story_content}
+      </story>
+      
       <acceptance_criteria>
       {acceptance_criteria}
       </acceptance_criteria>
+      
+      <project_context>
+      {project_context}
+      </project_context>
 
   # ---------------------------------------------------------------------------
   # IMPLEMENT - Execute code changes using tools (Agentic Skills)
@@ -96,36 +84,95 @@ tasks:
       </role>
       
       <critical>
-      ## YOU MUST WRITE CODE
+      ## MANDATORY SEQUENCE (NO EXCEPTIONS)
+      1. FIRST: `activate_skills([...])` - Always start here
+      2. THEN: Read 1-2 files for context (MAX 2 reads/searches)
+      3. FINALLY: `write_file_safe` or `edit_file` - REQUIRED!
+      
+      ## HARD RULES
       - Task is NOT complete until you call `write_file_safe` or `edit_file`
+      - If you searched 2 times → STOP searching and WRITE CODE NOW
       - Search is for context only, NOT the goal
-      - If search returns nothing, use skill patterns and WRITE the code
+      - If search returns nothing → Use skill patterns and WRITE anyway
       </critical>
       
+      <task_examples>
+      ## API Route Task
+      Task: "Create users API with CRUD"
+      → activate_skills(["api-route", "database-model"])
+      → read_file_safe("prisma/schema.prisma")  
+      → write_file_safe("src/app/api/users/route.ts", "...full code...")
+      DONE ✓
+      
+      ## Component Task
+      Task: "Build ProductCard component"
+      → activate_skills(["frontend-component"])
+      → read_file_safe("src/components/ui/card.tsx")
+      → write_file_safe("src/components/Product/ProductCard.tsx", "...full code...")
+      DONE ✓
+      
+      ## Schema Task
+      Task: "Add Product model to database"
+      → activate_skills(["database-model"])
+      → read_file_safe("prisma/schema.prisma")
+      → edit_file("prisma/schema.prisma", old_str, new_str)
+      → execute_shell("bunx prisma generate")
+      DONE ✓
+      
+      ## WRONG Pattern (too much searching):
+      Call 1: search_files("*.ts")
+      Call 2: read_file_safe("file1.ts")
+      Call 3: read_file_safe("file2.ts")
+      Call 4: search_files("*.tsx")
+      ... (keeps searching without writing) ❌
+      </task_examples>
+      
+      <skip_writing>
+      Some tasks don't need file changes - use execute_shell only:
+      - "Run tests" → execute_shell("bun run test")
+      - "Generate prisma client" → execute_shell("bunx prisma generate")
+      - "Install package" → execute_shell("bun add package-name")
+      - "Run build" → execute_shell("bun run build")
+      
+      For these, call the command and report result. No write_file needed.
+      </skip_writing>
+      
       <tool_guide>
-      ## TOOL ORDER (Follow strictly)
+      ## TOOL SELECTION
+      | Situation | Tool |
+      |-----------|------|
+      | New file | `write_file_safe` - FULL content required |
+      | Modify existing | `edit_file` - Read file FIRST |
+      | Run command | `execute_shell` - bun/prisma/test |
+      | Find code | `semantic_code_search` - 1-2 calls MAX |
       
-      1. `activate_skills([...])` → FIRST, select from <skills> catalog
-      2. `read_file_safe` / `search_files` → Get context (MAX 2 searches)
-      3. `write_file_safe` or `edit_file` → WRITE THE CODE (REQUIRED!)
+      ## write_file_safe
+      - Creates NEW file with FULL content
+      - NO placeholders like `// ... rest of code`
+      - Include ALL imports, ALL functions
       
-      ## WRITING RULES
-      - `write_file_safe`: Create NEW file with FULL content (no placeholders)
-      - `edit_file`: Read file FIRST, old_str must be EXACT match
+      ## edit_file
+      - MUST read file first to get exact content
+      - old_str must be EXACT (including whitespace)
+      - Copy old_str directly from read_file output
+      - For large changes, prefer write_file_safe
+      
+      ## execute_shell
+      - Use for: bun install, bun test, prisma generate
+      - Check exit_code in result
+      - If fails, read error and fix
       
       ## COMMON FAILURES
-      ❌ Only searching without writing → Task incomplete
+      ❌ Searching 3+ times → STOP and WRITE NOW
       ❌ Partial file content → Broken code
-      ❌ Wrong old_str in edit_file → Edit fails
-      ❌ Skipping activate_skills → Missing conventions
+      ❌ Guessing old_str → Edit fails (read first!)
+      ❌ Skip activate_skills → Missing conventions
       </tool_guide>
       
-      <workflow>
-      1. `activate_skills` with relevant skills from catalog
-      2. Read related files for patterns (1-2 files max)
-      3. WRITE the code using `write_file_safe` or `edit_file`
-      4. Verify code follows skill Critical Rules
-      </workflow>
+      <completion>
+      Task is COMPLETE when you have called write_file_safe or edit_file.
+      After writing code → STOP. Do not search again. Do not verify.
+      </completion>
       
       <skills>
       {skill_catalog}
@@ -177,6 +224,21 @@ tasks:
       Import Errors:
       - "Cannot find module" → Check path, use `@/` prefix
       - "Module not found" → Run `bun install` or check package.json
+      
+      Zod Validation Errors:
+      - "Expected string, received undefined" → Field missing in form/request body
+      - "Invalid enum value" → Check enum definition matches usage
+      - "Required" → Field is missing, add to form or set default
+      
+      Prisma Query Errors:
+      - "Argument is missing" → Required field not provided in create/update
+      - "Unknown arg" → Field doesn't exist in model, check schema
+      - "Record to update not found" → ID doesn't exist, check before update
+      
+      Build Warnings (CAN IGNORE):
+      - "baseline-browser-mapping" → Harmless dev dependency warning
+      - "ExperimentalWarning" → Node.js experimental feature, harmless
+      - "Deprecated" in node_modules → Third-party issue, ignore
       </common_patterns>
       
       <rules>
