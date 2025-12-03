@@ -84,12 +84,7 @@ function KanbanColumnComponent({
                 : column.cards.length
             }
           </span>
-          {/* Dynamic WIP indicator for InProgress/Review (auto-managed by agent count) */}
-          {(column.id === "inprogress" || column.id === "review") && (
-            <span className="text-xs text-muted-foreground" title="Auto-managed by agent count">
-              🤖
-            </span>
-          )}
+
           {/* Done has fixed WIP (default 20) - no indicator needed */}
         </div>
         {column.wipLimit && column.cards.length >= column.wipLimit && column.id !== "todo" && (

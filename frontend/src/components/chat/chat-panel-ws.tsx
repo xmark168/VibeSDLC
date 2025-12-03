@@ -449,7 +449,8 @@ export function ChatPanelWS({
     }
   };
 
-  const handleSend = () => {
+  const handleSend = (e?: React.FormEvent) => {
+    e?.preventDefault(); // Prevent form submission from navigating
     if (!message.trim()) return;
     if (!isConnected) {
       console.error("WebSocket not connected");

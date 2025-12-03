@@ -174,6 +174,27 @@ export function ClientComponent() {
 // Fix: Move to Client Component or extract interactive parts
 ```
 
+### Next.js Build Errors
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `'use client' must be first` | Directive not at line 1 | Move to very first line |
+| `Module not found: @/...` | Path alias issue | Check tsconfig paths |
+| `Hydration mismatch` | Server/client HTML differs | Ensure same data |
+| `await params` | Dynamic route in Next.js 16 | Add `await context.params` |
+| `Text content mismatch` | Date/random on server | Use `suppressHydrationWarning` or move to client |
+
+### Prisma Errors
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `P1001: Can't reach database` | DB not running | Start postgres container |
+| `P2002: Unique constraint` | Duplicate entry | Check unique fields |
+| `P2025: Record not found` | Delete/update missing | Check ID exists first |
+| `PrismaClient not generated` | Missing generate | Run `bunx prisma generate` |
+| `P2003: Foreign key constraint` | Referenced record missing | Create parent first |
+| `Invalid prisma client` | Schema changed | Run `bunx prisma generate` |
+
 ## Debugging Tools
 
 ### Console Methods

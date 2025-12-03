@@ -18,11 +18,30 @@ _fs_context = {
     "root_dir": None,
 }
 
+# Global tracking for modified files
+_modified_files: set = set()
+
 
 def set_fs_context(root_dir: str = None):
     """Set global context for filesystem tools."""
     if root_dir:
         _fs_context["root_dir"] = root_dir
+
+
+def get_modified_files() -> list:
+    """Get list of files modified in this session."""
+    return list(_modified_files)
+
+
+def reset_modified_files():
+    """Reset tracking. Call at start of each implement step."""
+    global _modified_files
+    _modified_files = set()
+
+
+def _track_modified(file_path: str):
+    """Track a modified file."""
+    _modified_files.add(file_path)
 
 
 def _get_root_dir() -> str:
@@ -96,6 +115,8 @@ def write_file_safe(file_path: str, content: str, mode: str = "w") -> str:
             f.write(content)
         # Invalidate cache after write (OPTIMIZATION)
         file_cache.invalidate(full_path)
+        # Track modified file
+        _track_modified(file_path)
         action = "Appended to" if mode == "a" else "Written to"
         return f"{action} file: {file_path} ({len(content)} characters)"
     except Exception as e:
@@ -284,6 +305,8 @@ def edit_file(file_path: str, old_str: str, new_str: str, replace_all: bool = Fa
         
         # Invalidate cache after edit (OPTIMIZATION)
         file_cache.invalidate(full_path)
+        # Track modified file
+        _track_modified(file_path)
         
         return result_msg
     except PermissionError:

@@ -11,6 +11,29 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# Shared bun cache directory
+_bun_cache_dir = None
+
+
+def _get_shared_bun_cache() -> str:
+    """Get shared bun cache directory path."""
+    global _bun_cache_dir
+    if _bun_cache_dir is None:
+        # backend/projects/.bun-cache
+        current_file = Path(__file__).resolve()
+        backend_root = current_file.parent.parent.parent.parent.parent
+        cache_dir = backend_root / "projects" / ".bun-cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        _bun_cache_dir = str(cache_dir)
+    return _bun_cache_dir
+
+
+def _get_bun_env() -> dict:
+    """Get environment with shared bun cache."""
+    env = os.environ.copy()
+    env["BUN_INSTALL_CACHE_DIR"] = _get_shared_bun_cache()
+    return env
+
 
 class CommandResult:
     """Result of executing a command."""
@@ -70,7 +93,7 @@ async def install_dependencies(workspace_path: str) -> bool:
             use_shell = sys.platform == 'win32'
             
             if (workspace / "bun.lock").exists() or (workspace / "bun.lockb").exists():
-                subprocess.run("bun install", cwd=workspace_path, check=False, timeout=180, shell=use_shell)
+                subprocess.run("bun install", cwd=workspace_path, check=False, timeout=180, shell=use_shell, env=_get_bun_env())
             elif (workspace / "pnpm-lock.yaml").exists():
                 subprocess.run("pnpm install", cwd=workspace_path, check=False, timeout=180, shell=use_shell)
             else:

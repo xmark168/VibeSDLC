@@ -1,10 +1,13 @@
 """LLM execution utilities for Developer V2."""
 
+import logging
 import re
 import time
 from typing import Dict, Tuple, Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import ToolMessage
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -93,7 +96,9 @@ async def execute_llm_with_tools(
     tool_map = {tool.name: tool for tool in tools}
     conversation = list(messages)
     
-    for _ in range(max_iterations):
+    for i in range(max_iterations):
+        logger.info(f"[{name}] Iteration {i+1}/{max_iterations}")
+        
         response = await llm_with_tools.ainvoke(
             conversation, 
             config=get_langfuse_config(state, name)
@@ -101,7 +106,12 @@ async def execute_llm_with_tools(
         conversation.append(response)
         
         if not response.tool_calls:
+            logger.info(f"[{name}] Completed at iteration {i+1}")
             return response.content or ""
+        
+        # Log tool calls
+        tool_names = [tc["name"] for tc in response.tool_calls]
+        logger.info(f"[{name}] Tools called: {tool_names}")
         
         # Execute tool calls
         for tool_call in response.tool_calls:
@@ -118,8 +128,15 @@ async def execute_llm_with_tools(
                     else:
                         result = tool(**tool_args)
                     
+                    # Smart truncate - skills need full content
+                    result_str = str(result)
+                    if "[SKILL:" in result_str or "[ACTIVATED" in result_str:
+                        content = result_str  # Full skill content
+                    else:
+                        content = result_str[:4000]  # Other tools can truncate
+                    
                     conversation.append(ToolMessage(
-                        content=str(result)[:2000],
+                        content=content,
                         tool_call_id=tool_call["id"]
                     ))
                 except Exception as e:
@@ -133,6 +150,7 @@ async def execute_llm_with_tools(
                     tool_call_id=tool_call["id"]
                 ))
     
+    logger.warning(f"[{name}] Max iterations ({max_iterations}) reached without completion")
     return conversation[-1].content if hasattr(conversation[-1], 'content') else ""
 
 

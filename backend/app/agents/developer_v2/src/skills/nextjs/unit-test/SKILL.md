@@ -28,6 +28,125 @@ description: Write unit tests with Jest and React Testing Library. Use when test
 5. **Async**: Always `await` userEvent and async ops
 6. **Setup**: `jest.setup.ts` pre-mocks next/navigation, next/server
 
+## ⚠️ Keep Tests Simple (KISS)
+
+### What TO Test (Priority):
+1. **Utilities** - Pure functions (formatDate, cn, validators)
+2. **Components** - Render, click handlers, props
+3. **Server Actions** - With mocked prisma (simple cases)
+
+### What NOT to Test (SKIP):
+- ❌ Complex API routes with multiple DB calls
+- ❌ Full form submission flows
+- ❌ Authentication flows
+- ❌ File uploads
+- ❌ Tests needing > 3 mocks
+
+### Rule: If Hard to Test, Skip It
+- Mock setup > 10 lines → **skip**
+- Test needs real database → **skip**
+- Test has > 3 async operations → **skip**
+
+## Test Suite Structure (IMPORTANT)
+
+### Organize by Feature, then Scenario
+
+```typescript
+describe('FeatureName', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  const mockData = { id: '1', name: 'Test' };
+
+  describe('happy path', () => {
+    it('should do X when Y', async () => {...});
+    it('should return Z for valid input', async () => {...});
+  });
+
+  describe('edge cases', () => {
+    it('should handle empty string', async () => {...});
+    it('should handle whitespace-only input', async () => {...});
+    it('should handle unicode characters', async () => {...});
+    it('should handle very long input (1000 chars)', async () => {...});
+    it('should handle special characters', async () => {...});
+  });
+
+  describe('error handling', () => {
+    it('should throw on database error', async () => {...});
+    it('should return null for invalid input', async () => {...});
+    it('should handle network timeout', async () => {...});
+  });
+});
+```
+
+### Test Case Categories
+
+| Category | Examples | Priority |
+|----------|----------|----------|
+| **Happy path** | Valid input → expected output | HIGH |
+| **Edge cases** | Empty, null, whitespace, unicode, long strings | MEDIUM |
+| **Error handling** | DB errors, validation fails, network errors | MEDIUM |
+| **Security** | SQL injection attempts, XSS | LOW |
+
+### Example: Auth Function Test Suite
+
+```typescript
+describe('authorize', () => {
+  const mockUser = { id: '1', username: 'test', password: 'hashed' };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('happy path', () => {
+    it('should return user for valid credentials', async () => {
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      const result = await authorize({ username: 'test', password: 'pass' });
+      expect(result).toEqual({ id: '1', username: 'test' });
+    });
+  });
+
+  describe('edge cases', () => {
+    it('should return null for empty username', async () => {
+      const result = await authorize({ username: '', password: 'pass' });
+      expect(result).toBeNull();
+    });
+
+    it('should handle unicode credentials', async () => {
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({ ...mockUser, username: '用户' });
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      const result = await authorize({ username: '用户', password: 'пароль' });
+      expect(result).not.toBeNull();
+    });
+
+    it('should handle very long password', async () => {
+      const longPass = 'a'.repeat(1000);
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      const result = await authorize({ username: 'test', password: longPass });
+      expect(bcrypt.compare).toHaveBeenCalledWith(longPass, 'hashed');
+    });
+  });
+
+  describe('error handling', () => {
+    it('should propagate database errors', async () => {
+      (prisma.user.findUnique as jest.Mock).mockRejectedValue(new Error('DB Error'));
+      await expect(authorize({ username: 'test', password: 'pass' })).rejects.toThrow('DB Error');
+    });
+
+    it('should return null for non-existent user', async () => {
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+      const result = await authorize({ username: 'nouser', password: 'pass' });
+      expect(result).toBeNull();
+    });
+  });
+});
+```
+
+---
+
 ## Quick Reference
 
 ### Component Test

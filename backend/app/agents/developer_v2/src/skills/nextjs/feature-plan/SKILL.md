@@ -41,6 +41,33 @@ description: Create implementation plans for Next.js features. Use when breaking
 6. Tests
 ```
 
+## Vertical Slice Example
+
+**Feature:** "Add to Cart"
+
+### ❌ Bad (Horizontal Slicing)
+1. Create all database models
+2. Create all API routes  
+3. Create all components
+4. Connect everything
+
+### ✅ Good (Vertical Slicing)
+1. **Task 1:** Add single item to cart
+   - Schema: Cart, CartItem models
+   - API: POST /api/cart/items
+   - UI: "Add to Cart" button on product
+   - Test: Button click adds item
+
+2. **Task 2:** View cart contents
+   - API: GET /api/cart
+   - UI: CartPage with items list
+   - Test: Cart displays items
+
+3. **Task 3:** Update item quantity
+   - API: PUT /api/cart/items/[id]
+   - UI: Quantity +/- buttons
+   - Test: Quantity updates
+
 ## Common Gaps
 
 - Error handling and user feedback
@@ -49,3 +76,71 @@ description: Create implementation plans for Next.js features. Use when breaking
 - Input validation (client + server)
 - Connecting to existing pages/layouts
 - Unit tests (Jest only, no e2e)
+
+## ⚠️ CRITICAL: Test Guidelines
+
+### ONLY Unit Tests (Jest)
+- ✅ Test individual functions in isolation
+- ✅ Mock ALL external dependencies (prisma, fetch)
+- ✅ Simple assertions, no complex setup
+- ✅ Max 2-3 test tasks per feature
+
+### NEVER Write:
+- ❌ Integration tests (multiple components together)
+- ❌ E2E tests (Playwright, Cypress)
+- ❌ Tests requiring real database connection
+- ❌ Tests with complex async flows (> 3 awaits)
+
+### Good Test Tasks:
+- "Create unit tests for formatCurrency utility"
+- "Create unit tests for Button component"
+
+### Bad Test Tasks (SKIP):
+- "Create integration tests for checkout flow"
+- "Create tests for API with real database"
+
+## Available Libraries
+
+| Purpose | Library | Usage |
+|---------|---------|-------|
+| Animations | `framer-motion` | Page transitions, hover effects, list animations |
+| Forms | `react-hook-form` + `zod` | Form validation and state |
+| State | `zustand` | Global state management |
+| UI | `shadcn/ui` | Component library |
+| Icons | `lucide-react` | Icon set |
+| Charts | `recharts` | Data visualization |
+| Toast | `sonner` | Notifications |
+
+## Output Format
+
+**CRITICAL**: Always respond with JSON wrapped in result tags:
+
+```
+<result>
+{
+  "story_summary": "Brief feature summary (1 sentence)",
+  "steps": [
+    {
+      "order": 1,
+      "description": "What to do (not how)",
+      "file_path": "exact/file/path.tsx",
+      "action": "create|modify|delete|test|config"
+    }
+  ]
+}
+</result>
+```
+
+### Action Types
+- **create**: New files (components, pages, APIs)
+- **modify**: Update existing files (schema, pages)
+- **delete**: Remove files (rare)
+- **test**: Test files (Jest unit tests)
+- **config**: Configuration files
+
+### Path Guidelines
+- Use exact paths from project_structure
+- Components: `src/components/[Feature]/ComponentName.tsx`
+- Pages: `src/app/[route]/page.tsx`
+- APIs: `src/app/api/[resource]/route.ts`
+- Actions: `src/app/actions/[domain].ts`
