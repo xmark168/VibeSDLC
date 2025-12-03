@@ -36,6 +36,12 @@ from app.agents.tester.src.tools.tester_tools import (
     TESTER_EXECUTION_TOOLS,
 )
 
+from app.agents.tester.src.tools.workspace_tools import (
+    commit_workspace_changes,
+    cleanup_worktree,
+    merge_to_main,
+)
+
 __all__ = [
     # Skill tools
     "activate_skill",
@@ -67,4 +73,8 @@ __all__ = [
     "get_execution_tools",
     "TESTER_TOOLS",
     "TESTER_EXECUTION_TOOLS",
+    # Workspace tools
+    "commit_workspace_changes",
+    "cleanup_worktree",
+    "merge_to_main",
 ]

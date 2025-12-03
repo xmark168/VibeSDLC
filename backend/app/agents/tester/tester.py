@@ -1,12 +1,30 @@
 """Tester Agent - LangGraph Implementation."""
 
 import logging
+from pathlib import Path
+from uuid import UUID
+
+from sqlmodel import Session
+
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
-from app.models import Agent as AgentModel
+from app.models import Agent as AgentModel, Project
 from app.agents.tester.src import TesterGraph
 from app.core.langfuse_client import flush_langfuse
+from app.core.db import engine
 
 logger = logging.getLogger(__name__)
+
+
+def _get_project_workspace(project_id) -> str:
+    """Get project workspace path from database."""
+    try:
+        with Session(engine) as session:
+            project = session.get(Project, UUID(str(project_id)))
+            if project and project.project_path:
+                return str(project.project_path)
+    except Exception as e:
+        logger.warning(f"[_get_project_workspace] Error: {e}")
+    return ""
 
 
 class Tester(BaseAgent):
@@ -15,7 +33,11 @@ class Tester(BaseAgent):
     def __init__(self, agent_model: AgentModel, **kwargs):
         super().__init__(agent_model, **kwargs)
         self.graph_engine = TesterGraph(agent=self)
-        logger.info(f"[{self.name}] Tester initialized")
+        
+        # Workspace management (aligned with Developer V2)
+        self.main_workspace = _get_project_workspace(self.project_id)
+        
+        logger.info(f"[{self.name}] Tester initialized, workspace: {self.main_workspace}")
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
         """Handle task using LangGraph."""
@@ -64,6 +86,13 @@ class Tester(BaseAgent):
                 "user_message": task.content or "",
                 "is_auto": is_auto,
                 "langfuse_handler": langfuse_handler,
+                # Workspace context (will be populated by setup_workspace node)
+                "main_workspace": self.main_workspace,
+                "workspace_path": "",
+                "branch_name": "",
+                "workspace_ready": False,
+                "index_ready": False,
+                "merged": False,
             }
             
             # Invoke graph
@@ -86,7 +115,15 @@ class Tester(BaseAgent):
             return TaskResult(
                 success=True,
                 output=final_state.get("message", ""),
-                structured_data=final_state.get("result", {})
+                structured_data={
+                    "action": final_state.get("action"),
+                    "run_status": final_state.get("run_status"),
+                    "files_created": final_state.get("files_created", []),
+                    "files_modified": final_state.get("files_modified", []),
+                    "branch_name": final_state.get("branch_name"),
+                    "workspace_path": final_state.get("workspace_path"),
+                    "merged": final_state.get("merged", False),
+                }
             )
             
         except Exception as e:

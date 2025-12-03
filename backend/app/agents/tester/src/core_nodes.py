@@ -423,6 +423,28 @@ async def send_response(state: TesterState, agent=None) -> dict:
     run_status = state.get("run_status", "")
     run_result = state.get("run_result", {})
     files_created = state.get("files_created", [])
+    workspace_path = state.get("workspace_path", "")
+    branch_name = state.get("branch_name", "")
+    workspace_ready = state.get("workspace_ready", False)
+
+    # Commit changes if workspace is ready and tests passed
+    commit_msg = ""
+    if workspace_ready and workspace_path and files_created:
+        try:
+            from app.agents.tester.src.tools.workspace_tools import commit_workspace_changes
+            
+            story_titles = ", ".join(s.get("title", "")[:30] for s in stories[:2]) if stories else "tests"
+            commit_result = commit_workspace_changes(
+                workspace_path=workspace_path,
+                title=story_titles,
+                branch_name=branch_name or "test",
+                agent_name="tester",
+            )
+            if commit_result.get("success"):
+                commit_msg = f"\n\n📝 {commit_result.get('message', 'Changes committed')}"
+                logger.info(f"[send_response] Committed changes: {commit_result}")
+        except Exception as e:
+            logger.warning(f"[send_response] Failed to commit: {e}")
 
     # Build message
     if error:
@@ -432,6 +454,7 @@ async def send_response(state: TesterState, agent=None) -> dict:
         msg = f"✅ Tests passed! ({passed} tests passed)"
         if files_created:
             msg += f"\n\nFiles created:\n" + "\n".join(f"  - {f}" for f in files_created)
+        msg += commit_msg
     elif run_status == "FAIL":
         passed = run_result.get("passed", 0)
         failed = run_result.get("failed", 0)
@@ -444,6 +467,7 @@ async def send_response(state: TesterState, agent=None) -> dict:
         msg = f"✅ Đã tạo test plan với {len(test_plan)} steps."
         if files_created:
             msg += f"\n\nFiles created:\n" + "\n".join(f"  - {f}" for f in files_created)
+        msg += commit_msg
 
     # Update story states
     if agent and stories:
@@ -462,4 +486,4 @@ async def send_response(state: TesterState, agent=None) -> dict:
     if agent and _should_message_user(state):
         await agent.message_user("response", msg)
 
-    return {"message": msg}
+    return {"message": msg, "merged": bool(commit_msg)}
