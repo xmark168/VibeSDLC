@@ -469,6 +469,7 @@ export function ChatPanelWS({
         undefined
       )
       setMessage("");
+      setPendingQuestion(null); // Hide notification immediately
       // Force scroll to bottom after sending
       forceScrollRef.current = true;
       return;
@@ -791,6 +792,7 @@ export function ChatPanelWS({
                         answer,
                         selectedOptions
                       )
+                      setPendingQuestion(null) // Hide notification immediately
                     }}
                   />
                 </div>
@@ -1025,33 +1027,17 @@ export function ChatPanelWS({
                   {pendingQuestion.content}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    const element = document.getElementById(`question-${pendingQuestion.id}`)
-                    element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                  }}
-                  className="text-xs text-blue-600 border-blue-300 hover:bg-blue-100 h-7 px-3"
-                >
-                  View Question
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    sendQuestionAnswer(
-                      pendingQuestion.structured_data!.question_id!,
-                      "[SKIPPED]",
-                      []
-                    )
-                  }}
-                  className="text-xs text-gray-600 bg-gray-200 hover:bg-gray-300 border border-gray-300 h-7 px-3"
-                >
-                  Skip
-                </Button>
-              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const element = document.getElementById(`question-${pendingQuestion.id}`)
+                  element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                }}
+                className="text-xs text-blue-600 border-blue-300 hover:bg-blue-100 h-7 px-3"
+              >
+                View Question
+              </Button>
             </div>
           </div>
         )}
