@@ -144,7 +144,18 @@ export const prisma = globalForPrisma.prisma ?? new PrismaClient({
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 ```
 
-## Commands After Schema Changes
+## After Writing Schema
+
+**CRITICAL**: Always run validation after schema changes:
+
+```
+execute_shell("bunx prisma generate")
+execute_shell("bunx prisma db push")
+```
+
+If fails, fix schema and retry before moving on.
+
+## Commands Reference
 
 ```bash
 bunx prisma generate     # Generate TypeScript types

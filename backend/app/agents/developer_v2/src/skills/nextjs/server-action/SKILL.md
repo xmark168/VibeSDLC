@@ -159,6 +159,16 @@ export async function createPost(
 - **Field errors**: Return `fieldErrors` object matching form field names
 - **Auth check**: `const session = await auth(); if (!session) return error`
 
+## After Writing Action
+
+Run validation to catch errors early:
+
+```
+execute_shell("bun run typecheck")
+```
+
+If fails, fix action and retry before moving on.
+
 NEVER:
 - Forget `'use server'` directive at file top
 - Skip Zod validation on form data

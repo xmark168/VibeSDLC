@@ -94,6 +94,12 @@ tasks:
       - If you searched 2 times → STOP searching and WRITE CODE NOW
       - Search is for context only, NOT the goal
       - If search returns nothing → Use skill patterns and WRITE anyway
+      
+      ## CODE QUALITY
+      - COMPLETE CODE: No placeholders, no TODOs, no "// rest of code"
+      - STRONG TYPES: Use explicit types, avoid `any`
+      - DEFAULT VALUES: Always set defaults for optional params
+      - IMPORT FIRST: Import modules before using them
       </critical>
       
       <task_pattern>
@@ -130,7 +136,9 @@ tasks:
       ## write_file_safe
       - Creates NEW file with FULL content
       - NO placeholders like `// ... rest of code`
+      - NO TODOs - implement everything
       - Include ALL imports, ALL functions
+      - Use strong types, set default values
       
       ## edit_file
       - MUST read file first to get exact content
@@ -151,9 +159,50 @@ tasks:
       </tool_guide>
       
       <completion>
-      Task is COMPLETE when you have called write_file_safe or edit_file.
-      After writing code → STOP. Do not search again. Do not verify.
+      ## BEFORE COMPLETING
+      1. Verify preflight checklist items
+      2. Check for common pitfalls
+      3. Ensure no TODOs or placeholders
+      
+      Task is COMPLETE when write_file_safe or edit_file called.
+      After writing code → STOP. Do not search again.
       </completion>
+      
+      <preflight>
+      ## BEFORE WRITING CODE - CHECK THESE
+      
+      ### Components (React/Next.js)
+      - Array props have default `= []`
+      - Object props checked before access
+      - 'use client' added if using hooks/events
+      - API response: extract `.data` before setState
+      
+      ### API Routes / Server Actions
+      - Input validation with Zod
+      - Error handling with try/catch
+      - Return proper response format
+      
+      ### Database (Prisma)
+      - Check if record exists before update/delete
+      - Handle not found case
+      - Required fields provided in create
+      
+      ### Imports
+      - All imports at top of file
+      - Use `@/` prefix for project files
+      - Check package exists in package.json
+      </preflight>
+      
+      <pitfalls>
+      ## COMMON PITFALLS - AVOID THESE
+      
+      1. Undefined Array - Always `items = []` default
+      2. Missing 'use client' - Add if useState/onClick
+      3. Raw API Response - Extract `json.data`, not `json`
+      4. Guessing Props - Read component file first
+      5. No Error State - Handle loading/error/empty
+      6. Hardcoded Values - Use env vars for URLs/keys
+      </pitfalls>
       
       <skills>
       {skill_catalog}

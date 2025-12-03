@@ -137,6 +137,16 @@ const items = json;  // Wrong! json is {success, data}, not the array
 - **Auth check**: Always `const session = await auth()` before mutations
 - **Validation**: Always use Zod schema with `safeParse()` for request body
 
+## After Writing Route
+
+Run validation to catch errors early:
+
+```
+execute_shell("bun run typecheck")
+```
+
+If fails, fix route and retry before moving on.
+
 NEVER:
 - Skip `await` on `context.params` in dynamic routes
 - Return raw data without `successResponse()` wrapper

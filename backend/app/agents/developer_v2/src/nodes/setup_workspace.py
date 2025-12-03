@@ -3,7 +3,13 @@ import hashlib
 import logging
 import os
 import subprocess
+import sys
 from pathlib import Path
+
+
+def _use_shell() -> bool:
+    """Use shell=True on Windows to find commands in PATH."""
+    return sys.platform == 'win32'
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.tools import (
@@ -188,11 +194,12 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                 cache_dir = _get_shared_bun_cache()
                 logger.info(f"[setup_workspace] Running bun install (cache: {cache_dir})...")
                 result = subprocess.run(
-                    ["bun", "install", "--frozen-lockfile"],
+                    "bun install --frozen-lockfile",
                     cwd=workspace_path,
                     capture_output=True,
                     text=True,
                     timeout=120,
+                    shell=_use_shell(),
                     env=_get_bun_env()
                 )
                 if result.returncode == 0:
@@ -213,11 +220,12 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             try:
                 logger.info("[setup_workspace] Running prisma generate...")
                 result = subprocess.run(
-                    ["bunx", "prisma", "generate"],
+                    "bunx prisma generate",
                     cwd=workspace_path,
                     capture_output=True,
                     text=True,
-                    timeout=60
+                    timeout=60,
+                    shell=_use_shell()
                 )
                 if result.returncode == 0:
                     _save_schema_hash(workspace_path)

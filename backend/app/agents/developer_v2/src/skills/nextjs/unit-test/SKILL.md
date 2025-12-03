@@ -15,6 +15,15 @@ NEVER use: `import { vi } from 'vitest'`, `vi.fn()`, `vi.mock()`
 
 ALWAYS use: `jest.fn()`, `jest.mock()`, `jest.spyOn()`, `jest.clearAllMocks()` in beforeEach
 
+## Think Before Writing
+
+Before writing tests, answer these questions:
+1. What should be tested in this code?
+2. What edge cases could exist?
+3. What might fail?
+
+This ensures comprehensive coverage, not just happy path.
+
 ## Required Test Categories
 
 For each function, include these test types:
