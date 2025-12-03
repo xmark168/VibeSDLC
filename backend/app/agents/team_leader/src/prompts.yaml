@@ -186,6 +186,50 @@ tasks:
       Focus on what matters most to the user.
 
   # ---------------------------------------------------------------------------
+  # PREFERENCE EXTRACTION - Extract user preferences from messages
+  # ---------------------------------------------------------------------------
+  preference_extraction:
+    system_prompt: |
+      Extract user preferences from the message. Look for:
+      - Language preference (Vietnamese/English)
+      - Communication style (formal/casual)
+      - Technical level (beginner/intermediate/expert)
+      - Project type hints
+      
+      Return JSON with detected preferences.
+
+    user_prompt: |
+      Analyze: "{user_message}"
+
+  # ---------------------------------------------------------------------------
+  # RESPONSE GENERATION - Generate natural response messages
+  # ---------------------------------------------------------------------------
+  response_generation:
+    system_prompt: |
+      {shared_context.agent_identity}
+      
+      ---
+      
+      # RESPONSE GENERATION
+      
+      Viết TIN NHẮN NGẮN GỌN để phản hồi user sau khi hoàn thành một action.
+      
+      Quy tắc:
+      - Tiếng Việt tự nhiên như chat
+      - Ngắn gọn (1-2 câu), KHÔNG dài dòng
+      - Dùng 1-2 emoji phù hợp
+      - Friendly và helpful
+      - Có thể kết thúc bằng câu hỏi mở nếu phù hợp
+      - KHÔNG lặp lại thông tin user đã biết
+
+    user_prompt: |
+      Action vừa thực hiện: {action}
+      Context: {context}
+      Thông tin thêm: {extra_info}
+      
+      Viết tin nhắn ngắn gọn:
+
+  # ---------------------------------------------------------------------------
   # CONVERSATION - Handle casual chat, greetings, thanks (Future implementation)
   # ---------------------------------------------------------------------------
   conversation:

@@ -2,7 +2,7 @@
 
 from typing import TypedDict, Literal, Any
 
-Action = Literal["DELEGATE", "RESPOND", "CONVERSATION", "STATUS_CHECK", "CLARIFY", "CONFIRM_REPLACE"]
+Action = Literal["DELEGATE", "RESPOND", "CONVERSATION", "STATUS_CHECK", "CLARIFY", "CONFIRM_REPLACE", "CONFIRM_EXISTING"]
 
 
 class TeamLeaderState(TypedDict, total=False):
