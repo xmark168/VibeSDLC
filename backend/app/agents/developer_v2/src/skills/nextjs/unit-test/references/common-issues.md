@@ -14,23 +14,23 @@
 **Solutions:**
 
 ```typescript
-// ❌ Will fail if text is split
+// Will fail if text is split
 screen.getByText('James Stewart');
 
-// ✅ Solution 1: Custom function matcher (recommended)
+// Solution 1: Custom function matcher (recommended)
 screen.getByText((content, element) => {
   return element?.textContent === 'James Stewart';
 });
 
-// ✅ Solution 2: Regex (case-insensitive, partial match)
+// Solution 2: Regex (case-insensitive, partial match)
 screen.getByText(/james stewart/i);
 
-// ✅ Solution 3: Use within() to narrow scope
+// Solution 3: Use within() to narrow scope
 import { within } from '@testing-library/react';
 const card = screen.getByRole('article'); // or getByTestId
 within(card).getByText(/james/i);
 
-// ✅ Solution 4: Query by test id (last resort)
+// Solution 4: Query by test id (last resort)
 screen.getByTestId('author-name');
 ```
 
@@ -43,14 +43,14 @@ screen.getByTestId('author-name');
 **Solutions:**
 
 ```typescript
-// ❌ Immediate query fails
+// Immediate query fails
 render(<Component />);
 expect(screen.getByText('Loaded')).toBeInTheDocument();
 
-// ✅ Use findBy (auto-waits)
+// Use findBy (auto-waits)
 const element = await screen.findByText('Loaded');
 
-// ✅ Or wrap in waitFor
+// Or wrap in waitFor
 await waitFor(() => {
   expect(screen.getByText('Loaded')).toBeInTheDocument();
 });
@@ -65,17 +65,17 @@ await waitFor(() => {
 **Solutions:**
 
 ```typescript
-// ❌ Multiple matches
+// Multiple matches
 screen.getByText('Submit');
 
-// ✅ Use getAllBy and index
+// Use getAllBy and index
 const buttons = screen.getAllByText('Submit');
 expect(buttons[0]).toBeInTheDocument();
 
-// ✅ Use more specific query
+// Use more specific query
 screen.getByRole('button', { name: /submit form/i });
 
-// ✅ Use within() to scope
+// Use within() to scope
 const form = screen.getByRole('form');
 within(form).getByText('Submit');
 ```
@@ -89,18 +89,18 @@ within(form).getByText('Submit');
 **Solutions:**
 
 ```typescript
-// ✅ Wrap state updates
+// Wrap state updates
 import { act } from '@testing-library/react';
 
 await act(async () => {
   fireEvent.click(button);
 });
 
-// ✅ Or use userEvent (auto-wraps in act)
+// Or use userEvent (auto-wraps in act)
 const user = userEvent.setup();
 await user.click(button);
 
-// ✅ Use waitFor for async updates
+// Use waitFor for async updates
 await waitFor(() => {
   expect(screen.getByText('Updated')).toBeInTheDocument();
 });

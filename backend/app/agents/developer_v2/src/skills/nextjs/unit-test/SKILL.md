@@ -5,17 +5,17 @@ description: Write unit tests with Jest and React Testing Library. Use when test
 
 # Unit Test (Jest + Testing Library)
 
-⚠️ **CRITICAL: This project uses JEST, NOT Vitest!**
+**CRITICAL: This project uses JEST, NOT Vitest!**
 
 ## NEVER USE (Will Cause Import Error):
-- ❌ `import { vi } from 'vitest'`
-- ❌ `vi.fn()`, `vi.mock()`, `vi.spyOn()`
-- ❌ `import { describe, it, expect } from 'vitest'`
+- `import { vi } from 'vitest'`
+- `vi.fn()`, `vi.mock()`, `vi.spyOn()`
+- `import { describe, it, expect } from 'vitest'`
 
 ## ALWAYS USE:
-- ✅ `jest.fn()`, `jest.mock()`, `jest.spyOn()`
-- ✅ `jest.clearAllMocks()`
-- ✅ No import for describe/it/expect (Jest globals)
+- `jest.fn()`, `jest.mock()`, `jest.spyOn()`
+- `jest.clearAllMocks()`
+- No import for describe/it/expect (Jest globals)
 
 ---
 
@@ -28,7 +28,7 @@ description: Write unit tests with Jest and React Testing Library. Use when test
 5. **Async**: Always `await` userEvent and async ops
 6. **Setup**: `jest.setup.ts` pre-mocks next/navigation, next/server
 
-## ⚠️ Keep Tests Simple (KISS)
+## Keep Tests Simple (KISS)
 
 ### What TO Test (Priority):
 1. **Utilities** - Pure functions (formatDate, cn, validators)
@@ -36,16 +36,16 @@ description: Write unit tests with Jest and React Testing Library. Use when test
 3. **Server Actions** - With mocked prisma (simple cases)
 
 ### What NOT to Test (SKIP):
-- ❌ Complex API routes with multiple DB calls
-- ❌ Full form submission flows
-- ❌ Authentication flows
-- ❌ File uploads
-- ❌ Tests needing > 3 mocks
+- Complex API routes with multiple DB calls
+- Full form submission flows
+- Authentication flows
+- File uploads
+- Tests needing > 3 mocks
 
 ### Rule: If Hard to Test, Skip It
-- Mock setup > 10 lines → **skip**
-- Test needs real database → **skip**
-- Test has > 3 async operations → **skip**
+- Mock setup > 10 lines - **skip**
+- Test needs real database - **skip**
+- Test has > 3 async operations - **skip**
 
 ## Test Suite Structure (IMPORTANT)
 
@@ -84,7 +84,7 @@ describe('FeatureName', () => {
 
 | Category | Examples | Priority |
 |----------|----------|----------|
-| **Happy path** | Valid input → expected output | HIGH |
+| **Happy path** | Valid input - expected output | HIGH |
 | **Edge cases** | Empty, null, whitespace, unicode, long strings | MEDIUM |
 | **Error handling** | DB errors, validation fails, network errors | MEDIUM |
 | **Security** | SQL injection attempts, XSS | LOW |

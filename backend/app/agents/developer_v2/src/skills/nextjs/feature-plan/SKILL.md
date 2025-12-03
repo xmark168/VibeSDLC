@@ -9,7 +9,7 @@ description: Create implementation plans for Next.js features. Use when breaking
 
 1. **Vertical slicing** - Each task delivers complete functionality across layers
 2. **INVEST** - Independent, Negotiable, Valuable, Estimable, Small, Testable
-3. **Order**: Data → Logic → UI → Tests
+3. **Order**: Data - Logic - UI - Tests
 
 ## Quick Reference
 
@@ -17,7 +17,7 @@ description: Create implementation plans for Next.js features. Use when breaking
 
 | Pattern | Example |
 |---------|---------|
-| Workflow | Login → Dashboard → Search → Details |
+| Workflow | Login - Dashboard - Search - Details |
 | CRUD | Create, Read, Update, Delete |
 | Scenarios | Happy path, Edge cases, Errors |
 
@@ -45,13 +45,13 @@ description: Create implementation plans for Next.js features. Use when breaking
 
 **Feature:** "Add to Cart"
 
-### ❌ Bad (Horizontal Slicing)
+### Bad (Horizontal Slicing)
 1. Create all database models
 2. Create all API routes  
 3. Create all components
 4. Connect everything
 
-### ✅ Good (Vertical Slicing)
+### Good (Vertical Slicing)
 1. **Task 1:** Add single item to cart
    - Schema: Cart, CartItem models
    - API: POST /api/cart/items
@@ -77,19 +77,19 @@ description: Create implementation plans for Next.js features. Use when breaking
 - Connecting to existing pages/layouts
 - Unit tests (Jest only, no e2e)
 
-## ⚠️ CRITICAL: Test Guidelines
+## CRITICAL: Test Guidelines
 
 ### ONLY Unit Tests (Jest)
-- ✅ Test individual functions in isolation
-- ✅ Mock ALL external dependencies (prisma, fetch)
-- ✅ Simple assertions, no complex setup
-- ✅ Max 2-3 test tasks per feature
+- Test individual functions in isolation
+- Mock ALL external dependencies (prisma, fetch)
+- Simple assertions, no complex setup
+- Max 2-3 test tasks per feature
 
 ### NEVER Write:
-- ❌ Integration tests (multiple components together)
-- ❌ E2E tests (Playwright, Cypress)
-- ❌ Tests requiring real database connection
-- ❌ Tests with complex async flows (> 3 awaits)
+- Integration tests (multiple components together)
+- E2E tests (Playwright, Cypress)
+- Tests requiring real database connection
+- Tests with complex async flows (> 3 awaits)
 
 ### Good Test Tasks:
 - "Create unit tests for formatCurrency utility"

@@ -112,6 +112,15 @@ export function DeleteButton({ id }: { id: string }) {
 }
 ```
 
+## Common Patterns
+
+| Pattern | Code |
+|---------|------|
+| With auth | `const session = await auth(); if (!session) return { success: false, error: 'Unauthorized' };` |
+| Revalidate | `revalidatePath('/path')` after mutation |
+| Redirect | `redirect('/path')` after success |
+| Field errors | `return { success: false, fieldErrors: validated.error.flatten().fieldErrors }` |
+
 ## References
 
-- `action-patterns.md` - Advanced patterns, redirect, inline actions
+- `references/action-patterns.md` - Advanced patterns, redirect, optimistic updates, inline actions

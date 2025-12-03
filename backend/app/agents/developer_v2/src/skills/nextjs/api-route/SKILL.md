@@ -94,9 +94,9 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
 ```typescript
 // handleError() catches all:
-// - ZodError → 422 with formatted field errors
-// - ApiException → Custom status with error code
-// - Generic Error → 500 with message
+// - ZodError - 422 with formatted field errors
+// - ApiException - Custom status with error code
+// - Generic Error - 500 with message
 
 // Predefined errors:
 throw ApiErrors.unauthorized();      // 401
@@ -114,6 +114,23 @@ throw ApiErrors.validation('msg');   // 422
 | Pagination | `skip: (page-1)*limit, take: limit` |
 | Search | `where: { field: { contains: q, mode: 'insensitive' } }` |
 | Auth check | `const session = await auth()` |
+
+## Response Format (Important for Consumers)
+
+`successResponse` wraps data in object:
+
+```typescript
+// API returns:
+{ success: true, data: T, message?: string }
+
+// Consumer must extract data:
+const res = await fetch('/api/items');
+const json = await res.json();
+const items = json.data;  // Extract from wrapper!
+
+// WRONG
+const items = json;  // items is {success, data}, not array!
+```
 
 ## References
 

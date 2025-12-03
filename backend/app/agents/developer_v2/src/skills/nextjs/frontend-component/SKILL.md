@@ -5,7 +5,7 @@ description: Create React/Next.js 16 components. Use when building pages, client
 
 # Frontend Component (Next.js 16 + React 19)
 
-## ⚠️ ALWAYS Activate Design Skill
+## IMPORTANT: Always Activate Design Skill
 
 **Before creating any UI component, MUST also activate:**
 ```
@@ -23,7 +23,7 @@ This ensures components follow design best practices and avoid generic AI aesthe
 5. **shadcn/ui** - Use components from `@/components/ui/`
 6. **Read before import** - MUST read custom component files before using
 
-## ⚠️ CRITICAL: Before Importing Components
+## CRITICAL: Before Importing Components
 
 **MUST read file before importing custom components:**
 
@@ -37,20 +37,20 @@ This ensures components follow design best practices and avoid generic AI aesthe
 ```
 Task: "Create page with SearchResults"
 
-WRONG ❌
-→ write_file("page.tsx") with <SearchResults searchQuery={...} />
-→ Type error! searchQuery doesn't exist
+WRONG:
+-> write_file("page.tsx") with <SearchResults searchQuery={...} />
+-> Type error! searchQuery doesn't exist
 
-CORRECT ✅
-→ read_file("src/components/Search/SearchResults.tsx")
-→ See: interface Props { results: Item[]; onSelect: (id: string) => void }
-→ write_file("page.tsx") with <SearchResults results={data} onSelect={handleSelect} />
+CORRECT:
+-> read_file("src/components/Search/SearchResults.tsx")
+-> See: interface Props { results: Item[]; onSelect: (id: string) => void }
+-> write_file("page.tsx") with <SearchResults results={data} onSelect={handleSelect} />
 ```
 
 ### Quick Check
 
 Before writing `<ComponentName prop={value} />`:
-1. Is it from `@/components/` (not ui)? → READ IT FIRST
+1. Is it from `@/components/` (not ui)? -> READ IT FIRST
 2. Check the `interface Props` or function params
 3. Use EXACT prop names from the interface
 
@@ -59,20 +59,20 @@ Before writing `<ComponentName prop={value} />`:
 After reading component, check interface format:
 
 ```typescript
-// Interface với INDIVIDUAL props
+// Interface with INDIVIDUAL props
 interface Props {
   id: string;
   name: string;
   price: number;
 }
-// → Pass: <Card id={item.id} name={item.name} price={item.price} />
-// → Or spread: <Card {...item} />
+// Pass: <Card id={item.id} name={item.name} price={item.price} />
+// Or spread: <Card {...item} />
 
-// Interface với OBJECT prop
+// Interface with OBJECT prop
 interface Props {
   textbook: Textbook;
 }
-// → Pass: <Card textbook={item} />
+// Pass: <Card textbook={item} />
 ```
 
 ### Common Mistake
@@ -81,20 +81,20 @@ interface Props {
 // Component expects individual props
 interface CardProps { id: string; name: string; }
 
-// ❌ WRONG - passing object
+// WRONG - passing object
 <Card textbook={item} />
 
-// ✅ CORRECT - spread or individual
+// CORRECT - spread or individual
 <Card {...item} />
 <Card id={item.id} name={item.name} />
 ```
 
 ## Pre-Code Checklist (MANDATORY)
 
-⚠️ **Before writing/modifying ANY component:**
+**Before writing/modifying ANY component:**
 
-1. **Check if file uses hooks** → If YES, ensure `'use client'` is at line 1
-2. **Adding hooks to existing file** → Check if `'use client'` exists, add if missing
+1. **Check if file uses hooks** - If YES, ensure `'use client'` is at line 1
+2. **Adding hooks to existing file** - Check if `'use client'` exists, add if missing
 
 | Import/Usage | Action Required |
 |--------------|-----------------|
@@ -104,11 +104,11 @@ interface CardProps { id: string; name: string; }
 | `useRouter` (next/navigation) | Add `'use client'` |
 
 ```tsx
-// ⚠️ WRONG - Missing directive with hook
+// WRONG - Missing directive with hook
 import { useActionState } from 'react';
 export function Form() { ... }
 
-// ✅ CORRECT - Directive at first line
+// CORRECT - Directive at first line
 'use client';
 import { useActionState } from 'react';
 export function Form() { ... }
@@ -175,81 +175,41 @@ export function CreateForm() {
 | Fetch from DB | Server (no directive) |
 | Access env secrets | Server (no directive) |
 
-## Animations with Framer Motion
+## API Response Handling (IMPORTANT)
 
-### Basic Animation
-```tsx
-'use client';
-import { motion } from 'framer-motion';
+### Standard Response Format
 
-export function AnimatedCard({ children }: { children: React.ReactNode }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
-    >
-      {children}
-    </motion.div>
-  );
-}
+API routes in this project use `successResponse()` which **always wraps data**:
+
+```typescript
+// API ALWAYS returns this format:
+{ success: true, data: T }
+
+// NOT raw array like:
+[item1, item2, ...]
 ```
 
-### Hover/Tap Effects
-```tsx
-<motion.button
-  whileHover={{ scale: 1.05 }}
-  whileTap={{ scale: 0.95 }}
-  className="px-4 py-2 bg-primary text-primary-foreground rounded"
->
-  Click me
-</motion.button>
+### Fetching Pattern
+
+```typescript
+// CORRECT - extract .data
+const res = await fetch('/api/textbooks');
+const json = await res.json();
+setTextbooks(json.data ?? []);
+
+// WRONG - passing raw response
+const json = await res.json();
+setTextbooks(json);  // json is {success, data}, not array!
 ```
 
-### List Animation
-```tsx
-'use client';
-import { motion } from 'framer-motion';
+### useState Default
 
-export function AnimatedList({ items }: { items: { id: string; name: string }[] }) {
-  return (
-    <motion.ul className="space-y-2">
-      {items.map((item, i) => (
-        <motion.li
-          key={item.id}
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: i * 0.1 }}
-          className="p-2 bg-muted rounded"
-        >
-          {item.name}
-        </motion.li>
-      ))}
-    </motion.ul>
-  );
-}
-```
-
-### Page Transition
-```tsx
-'use client';
-import { motion } from 'framer-motion';
-
-export function PageWrapper({ children }: { children: React.ReactNode }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
-    >
-      {children}
-    </motion.div>
-  );
-}
+```typescript
+const [items, setItems] = useState<Item[]>([]);  // empty array default
 ```
 
 ## References
 
-- `forms.md` - Detailed form patterns with validation
-- `shadcn-patterns.md` - shadcn/ui component examples
+- `references/forms.md` - Form patterns with validation
+- `references/shadcn-patterns.md` - shadcn/ui component examples
+- `references/animations.md` - Framer Motion animation patterns
