@@ -1,4 +1,4 @@
-"""Tester LangGraph with Plan → Implement → Run flow (Simplified)."""
+"""Tester LangGraph with Setup → Plan → Implement → Run flow."""
 
 import logging
 from functools import partial
@@ -16,6 +16,7 @@ from app.agents.tester.src.nodes.analyze_errors import analyze_errors
 from app.agents.tester.src.nodes.implement_tests import implement_tests
 from app.agents.tester.src.nodes.plan_tests import plan_tests
 from app.agents.tester.src.nodes.run_tests import run_tests
+from app.agents.tester.src.nodes.setup_workspace import setup_workspace
 from app.agents.tester.src.state import TesterState
 
 logger = logging.getLogger(__name__)
@@ -28,12 +29,12 @@ logger = logging.getLogger(__name__)
 
 def route_after_router(
     state: TesterState,
-) -> Literal["plan_tests", "test_status", "conversation"]:
+) -> Literal["setup_workspace", "test_status", "conversation"]:
     """Route based on action from router node."""
     action = state.get("action", "CONVERSATION")
 
     if action == "PLAN_TESTS":
-        return "plan_tests"
+        return "setup_workspace"  # Go through setup first
     elif action == "TEST_STATUS":
         return "test_status"
     return "conversation"
@@ -84,12 +85,12 @@ def route_after_analyze(
 
 
 class TesterGraph:
-    """LangGraph-based Tester with simplified Plan → Implement → Run flow.
+    """LangGraph-based Tester with Setup → Plan → Implement → Run flow.
 
      Flow:
-     router → plan_tests → implement_tests ⟷ run_tests → END
-         ↓          ↑              ↓
-    test_status  analyze_errors ←─┘
+     router → setup_workspace → plan_tests → implement_tests ⟷ run_tests → END
+         ↓                            ↑              ↓
+    test_status                  analyze_errors ←───┘
     conversation
          ↓
         END
@@ -103,6 +104,9 @@ class TesterGraph:
         # ===== NODES =====
         # Router (entry point - also queries stories and gets tech_stack)
         graph.add_node("router", partial(router, agent=agent))
+        
+        # Setup workspace (git worktree, CocoIndex, project context)
+        graph.add_node("setup_workspace", partial(setup_workspace, agent=agent))
 
         # Main flow: Plan → Implement → Run
         graph.add_node("plan_tests", partial(plan_tests, agent=agent))
@@ -124,11 +128,14 @@ class TesterGraph:
             "router",
             route_after_router,
             {
-                "plan_tests": "plan_tests",
+                "setup_workspace": "setup_workspace",
                 "test_status": "test_status",
                 "conversation": "conversation",
             },
         )
+        
+        # Setup → Plan
+        graph.add_edge("setup_workspace", "plan_tests")
 
         # Test generation flow: plan → implement
         graph.add_edge("plan_tests", "implement_tests")
@@ -169,4 +176,4 @@ class TesterGraph:
         graph.add_edge("conversation", END)
 
         self.graph = graph.compile()
-        logger.info("[TesterGraph] Compiled with Plan → Implement → Run flow")
+        logger.info("[TesterGraph] Compiled with Setup → Plan → Implement → Run flow")

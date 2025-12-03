@@ -21,17 +21,37 @@ class TesterState(TypedDict, total=False):
     # Router output
     action: Action
     
+    # ==========================================================================
+    # Workspace context (aligned with Developer V2)
+    # ==========================================================================
+    workspace_path: str          # Path to git worktree for this task
+    branch_name: str             # Git branch name (e.g., "test_abc123")
+    main_workspace: str          # Path to main git repository
+    workspace_ready: bool        # Whether workspace is set up
+    merged: bool                 # Whether changes have been merged
+    
     # Context (from setup)
     project_path: str
     tech_stack: str
     timestamp: str
     
+    # ==========================================================================
+    # Project context (aligned with Developer V2)
+    # ==========================================================================
+    project_context: str         # Project structure, config info
+    agents_md: str               # AGENTS.md content (coding guidelines)
+    
     # CocoIndex context
-    related_code: dict  # {story_id: "related code markdown"}
-    project_context: str  # Project structure, AGENTS.md, etc.
-    test_examples: str  # Existing test examples from project
-    testing_context: dict  # Auth library, ORM, existing mocks, ESM warnings
-    index_ready: bool  # Whether CocoIndex is available
+    related_code: dict           # {story_id: "related code markdown"}
+    test_examples: str           # Existing test examples from project
+    testing_context: dict        # Auth library, ORM, existing mocks, ESM warnings
+    index_ready: bool            # Whether CocoIndex is available
+    
+    # ==========================================================================
+    # Skills system (aligned with Developer V2)
+    # ==========================================================================
+    skill_registry: Any          # SkillRegistry instance
+    available_skills: list[str]  # List of available skill IDs
     
     # Processing
     stories: list[dict]
