@@ -3,7 +3,8 @@ import logging
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.schemas import ImplementationPlan
+from app.agents.developer_v2.src.schemas import ImplementationPlan, PlanTask
+from app.agents.developer_v2.src.utils.json_utils import extract_json_universal
 from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, list_directory_safe, search_files
 from app.agents.developer_v2.src.tools.shell_tools import semantic_code_search
 from app.agents.developer_v2.src.utils.llm_utils import (
@@ -66,6 +67,26 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
             system_prompt += f"\n\n<skill>\n{skill_content}\n</skill>"
             logger.info("[plan] Loaded feature-plan skill")
         
+        # CRITICAL: Add JSON requirement to system prompt (not as HumanMessage)
+        json_requirement = """
+
+CRITICAL OUTPUT REQUIREMENT:
+Respond with ONLY JSON in result tags. No explanations.
+
+<result>
+{
+  "story_summary": "<brief summary>",
+  "tasks": [
+    {"order": 1, "task": "<abstract task description>"},
+    {"order": 2, "task": "<abstract task description>"}
+  ]
+}
+</result>
+
+Tasks describe WHAT to achieve, NOT file operations. Agent will decide files."""
+        
+        system_prompt += json_requirement
+        
         messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(content=input_text)
@@ -81,28 +102,24 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
             max_iterations=1
         )
         
-        messages.append(HumanMessage(content=f"Context:\n{exploration[:2000]}\n\nCreate plan."))
-        structured_llm = code_llm.with_structured_output(ImplementationPlan)
-        plan_result = await structured_llm.ainvoke(messages, config=_cfg(state, "plan"))
+        # Add exploration context only (JSON requirement already in system prompt)
+        messages.append(HumanMessage(content=f"Context from exploration:\n{exploration[:2000]}\n\nNow create the implementation plan following the system instructions."))
+        response = await code_llm.ainvoke(messages, config=_cfg(state, "plan"))
+        data = extract_json_universal(response.content, "plan_node")
+        plan_result = ImplementationPlan(**data)
         
-        logger.info(f"[plan] {len(plan_result.steps)} steps")
+        logger.info(f"[plan] {len(plan_result.tasks)} tasks")
         
-        def format_step(s):
-            # Show [action] file_path if available
-            if s.file_path and s.action:
-                text = f"  {s.order}. [{s.action}] {s.file_path}"
-                text += f"\n      {s.description}"
-            else:
-                text = f"  {s.order}. {s.description}"
-            return text
+        def format_task(t):
+            return f"  {t.order}. {t.task}"
         
-        steps_text = "\n".join(format_step(s) for s in plan_result.steps)
-        msg = f"📋 **Plan** ({len(plan_result.steps)} steps)\n{steps_text}"
+        tasks_text = "\n".join(format_task(t) for t in plan_result.tasks)
+        msg = f"📋 **Plan** ({len(plan_result.tasks)} tasks)\n{tasks_text}"
         
         return {
             **state,
-            "implementation_plan": [s.model_dump() for s in plan_result.steps],
-            "total_steps": len(plan_result.steps),
+            "implementation_plan": [t.model_dump() for t in plan_result.tasks],
+            "total_steps": len(plan_result.tasks),
             "current_step": 0,
             "message": msg,
             "action": "IMPLEMENT",

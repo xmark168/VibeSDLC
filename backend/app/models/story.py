@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 class Epic(BaseModel, table=True):
     __tablename__ = "epics"
 
+    epic_code: str | None = Field(default=None)  # e.g., "EPIC-001"
     title: str
     description: str | None = Field(default=None, sa_column=Column(Text))
     project_id: UUID = Field(
@@ -48,6 +49,7 @@ class Story(BaseModel, table=True):
         default=None, foreign_key="stories.id", ondelete="SET NULL"
     )
 
+    story_code: str | None = Field(default=None)  # e.g., "EPIC-001-US-001"
     type: StoryType = Field(default=StoryType.USER_STORY)
     title: str
     description: str | None = Field(default=None, sa_column=Column(Text))

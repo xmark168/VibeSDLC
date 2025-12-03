@@ -3,16 +3,31 @@ name: database-model
 description: Create Prisma schema models with relations and indexes. Use when designing database schemas, adding models, creating migrations, or defining entity relationships.
 ---
 
-# Database Model (Prisma)
+# Database Model (Prisma 6.x+)
 
 ## Critical Rules
 
-1. **File**: `prisma/schema.prisma`
-2. **Naming**: PascalCase models, camelCase fields
-3. **ID**: Use `@id @default(uuid())`
-4. **Timestamps**: Always add `createdAt`, `updatedAt`
-5. **Indexes**: Add `@@index` for query fields
-6. **After changes**: `bunx prisma generate && bunx prisma db push`
+1. **Schema**: `prisma/schema.prisma` - NO `url` in datasource
+2. **Config**: `prisma/prisma.config.ts` - Database URL config
+3. **Naming**: PascalCase models, camelCase fields
+4. **ID**: Use `@id @default(uuid())`
+5. **Timestamps**: Always add `createdAt`, `updatedAt`
+6. **Indexes**: Add `@@index` for query fields
+7. **After changes**: `bunx prisma generate && bunx prisma db push`
+
+## Prisma 6.x Schema
+
+```prisma
+// prisma/schema.prisma - NO url in datasource
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // url moved to prisma.config.ts
+}
+```
 
 ## Quick Reference
 
@@ -123,13 +138,18 @@ model Session {
 }
 ```
 
-## Prisma Client
+## Prisma Client (Prisma 6.x+)
 ```typescript
-// lib/prisma.ts (already in boilerplate)
+// lib/prisma.ts - requires datasourceUrl
 import { PrismaClient } from '@prisma/client';
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
-export const prisma = globalForPrisma.prisma ?? new PrismaClient();
+
+export const prisma = globalForPrisma.prisma ?? new PrismaClient({
+  datasourceUrl: process.env.DATABASE_URL,  // Required in Prisma 6.x+
+  log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+});
+
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 ```
 

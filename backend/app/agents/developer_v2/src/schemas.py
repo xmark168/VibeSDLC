@@ -17,14 +17,20 @@ class StoryAnalysis(BaseModel):
 
 
 class PlanStep(BaseModel):
-    """Single step in implementation plan."""
+    """Single step in implementation plan (legacy, for backwards compatibility)."""
     order: int = Field(ge=1)
     description: str
     file_path: Optional[str] = None
     action: Literal["create", "modify", "delete", "test", "config"] = "modify"
 
 
+class PlanTask(BaseModel):
+    """Single task in implementation plan (abstract)."""
+    order: int = Field(ge=1)
+    task: str  # Abstract description of WHAT to do
+
+
 class ImplementationPlan(BaseModel):
     """Implementation plan for a story."""
     story_summary: str
-    steps: List[PlanStep]
+    tasks: List[PlanTask]

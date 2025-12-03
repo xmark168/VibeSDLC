@@ -16,11 +16,72 @@ from app.agents.developer_v2.src.utils.prompt_utils import (
     format_input_template as _format_input_template,
     build_system_prompt as _build_system_prompt,
 )
+from app.agents.developer_v2.src.utils.json_utils import extract_json_universal
 from app.agents.developer_v2.src.nodes._llm import code_llm
 from app.agents.developer_v2.src.nodes._helpers import setup_tool_context
 from app.agents.developer_v2.src.skills import SkillRegistry
 
 logger = logging.getLogger(__name__)
+
+
+def _clean_error_logs(logs: str, max_lines: int = 50) -> str:
+    """Clean error logs by removing noise and keeping relevant lines."""
+    if not logs:
+        return ""
+    
+    # Noise patterns to filter out
+    noise_patterns = [
+        "baseline-browser-mapping",
+        "npm WARN",
+        "bun install",
+        "modules old",
+        "update:",
+        "Compiling",
+        "Compiled",
+        "webpack",
+        "Module not found",  # Keep only if it's the actual error
+    ]
+    
+    # Important patterns to keep
+    important_patterns = [
+        "Error:",
+        "error:",
+        "FAIL",
+        "fail",
+        "TypeError",
+        "ReferenceError",
+        "SyntaxError",
+        "Cannot",
+        "cannot",
+        "Expected",
+        "expected",
+        "Received",
+        "received",
+        "at Object",
+        "at Module",
+        ".test.ts",
+        ".test.tsx",
+        "✕",
+        "●",
+    ]
+    
+    lines = logs.split('\n')
+    filtered = []
+    
+    for line in lines:
+        # Skip noise
+        if any(noise in line for noise in noise_patterns):
+            continue
+        # Keep important lines
+        if any(important in line for important in important_patterns):
+            filtered.append(line)
+        # Keep lines with file paths
+        elif '.ts' in line or '.tsx' in line or '.js' in line:
+            filtered.append(line)
+    
+    # Limit lines
+    result = '\n'.join(filtered[:max_lines])
+    return result if result else logs[:2000]  # Fallback to truncated original
 
 
 class ErrorAnalysisAndPlan(BaseModel):
@@ -69,10 +130,13 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
             for h in debug_history[-3:]:
                 history_context += f"- #{h.get('iteration')}: {h.get('fix_description', '')[:80]} -> FAILED\n"
         
+        # Clean error logs to remove noise
+        cleaned_logs = _clean_error_logs(error_logs)
+        
         # Use prompts from yaml
         input_text = _format_input_template(
             "analyze_error",
-            error_logs=error_logs[:4000],
+            error_logs=cleaned_logs,
             files_modified=', '.join(files_modified) if files_modified else 'None',
             history_context=history_context,
             debug_count=debug_count + 1,
@@ -94,10 +158,41 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
             max_iterations=2
         )
         
-        # Single structured output
-        messages.append(HumanMessage(content=f"Context:\n{exploration[:3000]}\n\nProvide analysis and fix plan."))
-        structured_llm = code_llm.with_structured_output(ErrorAnalysisAndPlan)
-        result = await structured_llm.ainvoke(messages, config=_cfg(state, "analyze_error"))
+        # Request JSON response with result tags
+        json_instruction = """
+Based on your analysis, respond ONLY with JSON wrapped in <result> tags:
+
+<result>
+{
+  "error_type": "TEST_ERROR|SOURCE_ERROR|IMPORT_ERROR|CONFIG_ERROR|UNFIXABLE",
+  "file_to_fix": "path/to/file.ts",
+  "root_cause": "Brief explanation of root cause",
+  "should_continue": true,
+  "fix_steps": [
+    {"order": 1, "description": "Fix description", "file_path": "path/to/file.ts", "action": "modify"}
+  ]
+}
+</result>
+
+CRITICAL: Respond ONLY with the JSON in <result> tags. No other text.
+"""
+        messages.append(HumanMessage(content=f"Context:\n{exploration[:3000]}\n\n{json_instruction}"))
+        
+        # Invoke LLM and extract JSON
+        response = await code_llm.ainvoke(messages, config=_cfg(state, "analyze_error"))
+        response_text = response.content if hasattr(response, 'content') else str(response)
+        
+        # Parse JSON from response
+        parsed = extract_json_universal(response_text, "analyze_error")
+        
+        # Convert to ErrorAnalysisAndPlan
+        result = ErrorAnalysisAndPlan(
+            error_type=parsed.get("error_type", "UNFIXABLE"),
+            file_to_fix=parsed.get("file_to_fix", ""),
+            root_cause=parsed.get("root_cause", "Unknown error"),
+            should_continue=parsed.get("should_continue", False),
+            fix_steps=[PlanStep(**step) for step in parsed.get("fix_steps", [])]
+        )
         
         logger.info(f"[analyze_error] {result.error_type}: {result.root_cause}")
         
@@ -137,6 +232,7 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
             "action": "IMPLEMENT",
             "skill_registry": skill_registry,
             "tech_stack": tech_stack,
+            "debug_count": debug_count + 1,
         }
         
     except Exception as e:

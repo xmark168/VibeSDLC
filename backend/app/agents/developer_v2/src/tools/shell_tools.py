@@ -5,13 +5,17 @@ import os
 import re
 import subprocess
 import time
-from typing import  List
+from pathlib import Path
+from typing import List
 from langchain_core.tools import tool
 
 # Global context
 _shell_context = {
     "root_dir": None,
 }
+
+# Shared bun cache directory
+_bun_cache_dir = None
 
 
 def set_shell_context(root_dir: str = None):
@@ -23,6 +27,26 @@ def set_shell_context(root_dir: str = None):
 def _get_root_dir() -> str:
     """Get root directory from context or use cwd."""
     return _shell_context.get("root_dir") or os.getcwd()
+
+
+def _get_shared_bun_cache() -> str:
+    """Get shared bun cache directory path."""
+    global _bun_cache_dir
+    if _bun_cache_dir is None:
+        # backend/projects/.bun-cache
+        current_file = Path(__file__).resolve()
+        backend_root = current_file.parent.parent.parent.parent.parent
+        cache_dir = backend_root / "projects" / ".bun-cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        _bun_cache_dir = str(cache_dir)
+    return _bun_cache_dir
+
+
+def _get_shell_env() -> dict:
+    """Get environment with shared bun cache."""
+    env = os.environ.copy()
+    env["BUN_INSTALL_CACHE_DIR"] = _get_shared_bun_cache()
+    return env
 
 
 # Dangerous command patterns to block
@@ -106,7 +130,7 @@ def execute_shell(command: str, working_directory: str = ".", timeout: int = 60)
             capture_output=True,
             text=True,
             timeout=timeout,
-            env=os.environ.copy(),
+            env=_get_shell_env(),  # Use shared bun cache
             encoding='utf-8',
             errors='replace',
         )

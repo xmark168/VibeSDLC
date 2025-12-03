@@ -10,7 +10,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -61,3 +60,14 @@ model VerificationToken {
 
   @@unique([identifier, token])
 }
+
+// Add your domain models below this line
+// Example:
+// model Product {
+//   id          String   @id @default(uuid())
+//   name        String
+//   description String?
+//   price       Float
+//   createdAt   DateTime @default(now())
+//   updatedAt   DateTime @updatedAt
+// }
