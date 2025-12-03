@@ -9,9 +9,12 @@ export interface Story {
   parent_id?: string | null;
   type: StoryType;
   title: string;
+  story_code?: string;
   description?: string;
   status: StoryStatus;
   epic_id?: string | null;
+  epic_code?: string;
+  epic_title?: string;
   assignee_id?: string | null;
   reviewer_id?: string | null;
   acceptance_criteria?: string[];
@@ -74,4 +77,5 @@ export interface StoryFormData {
   acceptance_criteria: string[];
   requirements: string[];
   dependencies: string[];  // List of story IDs that must be completed first
+  epic_id?: string;  // Optional epic to assign story to
 }

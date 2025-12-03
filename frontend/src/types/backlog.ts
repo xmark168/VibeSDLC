@@ -96,4 +96,5 @@ export interface StoryFormData {
   acceptance_criteria: string[]
   requirements: string[]
   dependencies: string[]
+  epic_id?: string
 }

@@ -29,9 +29,19 @@ interface ChatMessage {
   avatar?: string
 }
 
+// Epic info for popup
+interface EpicInfo {
+  epic_code?: string
+  epic_title?: string
+  epic_id?: string
+  description?: string
+  domain?: string
+}
+
 export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, allStories = [] }: TaskDetailModalProps) {
   const [selectedChild, setSelectedChild] = useState<KanbanCardData | null>(null)
   const [selectedDependency, setSelectedDependency] = useState<KanbanCardData | null>(null)
+  const [selectedEpic, setSelectedEpic] = useState<EpicInfo | null>(null)
   
   // Helper to get story title from dependency ID (UUID)
   const getDependencyTitle = (depId: string): string => {
@@ -126,27 +136,33 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
 
   // Get type badge color - Lean Kanban: UserStory, EnablerStory on board; Epic as parent
   const getTypeBadgeColor = (type?: string) => {
-    switch (type) {
-      case "Epic":
+    const normalizedType = type?.toUpperCase()
+    switch (normalizedType) {
+      case "EPIC":
         return "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20"
-      case "UserStory":
+      case "USERSTORY":
+      case "USER_STORY":
         return "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
-      case "EnablerStory":
+      case "ENABLERSTORY":
+      case "ENABLER_STORY":
         return "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20"
       default:
         return "bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-500/20"
     }
   }
 
-  // Format type name for display (UserStory -> User Story)
+  // Format type name for display (UserStory/USER_STORY -> User Story)
   const formatTypeName = (type?: string) => {
     if (!type) return ""
-    switch (type) {
-      case "UserStory":
+    const normalizedType = type.toUpperCase()
+    switch (normalizedType) {
+      case "USERSTORY":
+      case "USER_STORY":
         return "User Story"
-      case "EnablerStory":
+      case "ENABLERSTORY":
+      case "ENABLER_STORY":
         return "Enabler Story"
-      case "Epic":
+      case "EPIC":
         return "Epic"
       default:
         return type
@@ -176,6 +192,14 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
           <DialogTitle className="flex items-start justify-between gap-3">
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-2">
+                {card.story_code && (
+                  <Badge
+                    variant="outline"
+                    className=""
+                  >
+                    {card.story_code}
+                  </Badge>
+                )}
                 {card.type && (
                   <Badge variant="outline" className={getTypeBadgeColor(card.type)}>
                     {formatTypeName(card.type)}
@@ -202,9 +226,6 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                 )}
               </div>
               <div className="text-base font-semibold text-foreground">{card.content}</div>
-              <div className="text-xs text-muted-foreground font-normal mt-1">
-                ID: {card.taskId?.slice(0, 8) || 'N/A'}
-              </div>
             </div>
           </DialogTitle>
         </DialogHeader>
@@ -356,9 +377,24 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
           {(card.epic_id || card.epic_title) && (
             <div>
               <h4 className="text-sm font-semibold text-foreground mb-2">Epic</h4>
-              <span className="text-sm text-muted-foreground">
-                {card.epic_title || 'Untitled Epic'}
-              </span>
+              <div className="text-sm text-muted-foreground">
+                {card.epic_code && (
+                  <Badge 
+                    variant="outline" 
+                    className="mr-2 cursor-pointer hover:bg-purple-100 dark:hover:bg-purple-900/30"
+                    onClick={() => setSelectedEpic({
+                      epic_code: card.epic_code,
+                      epic_title: card.epic_title,
+                      epic_id: card.epic_id,
+                      description: card.epic_description,
+                      domain: card.epic_domain,
+                    })}
+                  >
+                    {card.epic_code}
+                  </Badge>
+                )}
+                <span>{card.epic_title || 'None'}</span>
+              </div>
             </div>
           )}
 
@@ -371,19 +407,22 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
               <div className="space-y-2">
                 {card.dependencies.map((depId: string, idx: number) => {
                   const depStory = allStories.find(s => s.id === depId)
-                  const depTitle = depStory?.content || depId.substring(0, 8) + '...'
+                  const depTitle = depStory?.content || 'Unknown Story'
+                  const depCode = depStory?.story_code || depId.slice(0, 8)
                   return (
-                    <div key={idx} className="gap-2">
-                      <span className="text-sm text-muted-foreground flex-1">{depTitle}</span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="ml-2 text-xs"
-                        onClick={() => depStory && setSelectedDependency(depStory)}
-                        disabled={!depStory}
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </Button>
+                    <div key={idx} className="text-sm text-muted-foreground">
+                      {depStory ? (
+                        <Badge
+                          variant="outline"
+                          className="cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/30 mr-2"
+                          onClick={() => setSelectedDependency(depStory)}
+                        >
+                          {depCode}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="font-mono">{depCode}</Badge>
+                      )}
+                      <span>{depTitle}</span>
                     </div>
                   )
                 })}
@@ -644,6 +683,55 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
           onDownloadResult={onDownloadResult}
           allStories={allStories}
         />
+      )}
+
+      {/* Epic detail dialog */}
+      {selectedEpic && (
+        <Dialog open={!!selectedEpic} onOpenChange={() => setSelectedEpic(null)}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                {selectedEpic.epic_code && (
+                  <Badge variant="outline" className="">
+                    {selectedEpic.epic_code}
+                  </Badge>
+                )}
+                <Badge variant="outline" className="bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20">
+                  Epic
+                </Badge>
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 mt-4">
+              {/* Title */}
+              <div>
+                <h4 className="text-sm font-semibold text-foreground mb-1">Title</h4>
+                <p className="text-sm text-muted-foreground">
+                  {selectedEpic.epic_title || 'Untitled Epic'}
+                </p>
+              </div>
+
+              {/* Domain */}
+              {selectedEpic.domain && (
+                <div>
+                  <h4 className="text-sm font-semibold text-foreground mb-1">Domain</h4>
+                  <Badge variant="outline" className="bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20">
+                    {selectedEpic.domain}
+                  </Badge>
+                </div>
+              )}
+
+              {/* Description */}
+              {selectedEpic.description && (
+                <div>
+                  <h4 className="text-sm font-semibold text-foreground mb-1">Mô tả</h4>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                    {selectedEpic.description}
+                  </p>
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </Dialog>
   )

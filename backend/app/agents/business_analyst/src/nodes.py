@@ -910,14 +910,16 @@ async def approve_stories(state: BAState, agent=None) -> dict:
             # 1. Create all Epics at once
             epic_objects = []
             for epic_data in epics_data:
+                epic_string_id = epic_data.get("id", "")  # e.g., "EPIC-001"
                 epic = Epic(
+                    epic_code=epic_string_id if epic_string_id else None,  # Save epic code
                     title=epic_data.get("title", epic_data.get("name", "Unknown Epic")),
                     description=epic_data.get("description"),
                     domain=epic_data.get("domain"),
                     project_id=agent.project_id,
                     epic_status=EpicStatus.PLANNED
                 )
-                epic_objects.append((epic, epic_data.get("id", "")))
+                epic_objects.append((epic, epic_string_id))
                 session.add(epic)
             
             # Single flush for all epics
@@ -948,10 +950,11 @@ async def approve_stories(state: BAState, agent=None) -> dict:
                 epic_string_id = story_data.get("epic_id", "")
                 epic_uuid = epic_id_map.get(epic_string_id)
                 current_rank += 1
-                story_string_id = story_data.get("id", "")
+                story_string_id = story_data.get("id", "")  # e.g., "EPIC-001-US-001"
                 original_dependencies = story_data.get("dependencies", [])
                 
                 story = Story(
+                    story_code=story_string_id if story_string_id else None,  # Save story code
                     title=story_data.get("title", "Unknown Story"),
                     description=story_data.get("description"),
                     acceptance_criteria=story_data.get("acceptance_criteria", []),

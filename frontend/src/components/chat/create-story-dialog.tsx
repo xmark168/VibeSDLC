@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
-import { Zap, Flag, X, Link2, ChevronsUpDown, Check } from "lucide-react"
+import { Zap, Flag, X, Link2, ChevronsUpDown, Check, Layers } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { storiesApi } from "@/apis/stories"
 import type { StoryFormData, Story } from "@/types"
@@ -32,14 +32,28 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, projectId
     priority: "Medium",
     acceptance_criteria: [],
     requirements: [],
-    dependencies: []
+    dependencies: [],
+    epic_id: undefined
   })
 
   const [currentCriteria, setCurrentCriteria] = useState("")
   const [currentRequirement, setCurrentRequirement] = useState("")
   const [dependencyPopoverOpen, setDependencyPopoverOpen] = useState(false)
+  const [epicPopoverOpen, setEpicPopoverOpen] = useState(false)
   const [existingStories, setExistingStories] = useState<Story[]>([])
   const [loadingStories, setLoadingStories] = useState(false)
+
+  // Extract unique epics from stories
+  const availableEpics = existingStories.reduce((acc, story) => {
+    if (story.epic_id && story.epic_title && !acc.find(e => e.id === story.epic_id)) {
+      acc.push({
+        id: story.epic_id,
+        code: story.epic_code,
+        title: story.epic_title
+      })
+    }
+    return acc
+  }, [] as { id: string; code?: string; title: string }[])
 
   // Fetch existing stories when dialog opens
   useEffect(() => {
@@ -77,11 +91,13 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, projectId
       priority: "Medium",
       acceptance_criteria: [],
       requirements: [],
-      dependencies: []
+      dependencies: [],
+      epic_id: undefined
     })
     setCurrentCriteria("")
     setCurrentRequirement("")
     setDependencyPopoverOpen(false)
+    setEpicPopoverOpen(false)
   }
 
   const handleAddCriteria = () => {
@@ -216,6 +232,98 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, projectId
               onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
               className="min-h-[100px] resize-none"
             />
+          </div>
+
+          {/* Epic */}
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5" />
+              Epic
+            </Label>
+            <Popover open={epicPopoverOpen} onOpenChange={setEpicPopoverOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={epicPopoverOpen}
+                  className="w-full justify-between h-10 text-sm font-normal"
+                  disabled={loadingStories || availableEpics.length === 0}
+                >
+                  {loadingStories ? (
+                    "Loading epics..."
+                  ) : formData.epic_id ? (
+                    <span className="flex items-center gap-2">
+                      {availableEpics.find(e => e.id === formData.epic_id)?.code && (
+                        <Badge variant="outline" className="font-mono text-xs">
+                          {availableEpics.find(e => e.id === formData.epic_id)?.code}
+                        </Badge>
+                      )}
+                      <span className="truncate">
+                        {availableEpics.find(e => e.id === formData.epic_id)?.title || "Select epic..."}
+                      </span>
+                    </span>
+                  ) : availableEpics.length === 0 ? (
+                    "No epics available"
+                  ) : (
+                    "Select epic (optional)..."
+                  )}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[400px] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Search epics..." />
+                  <CommandList>
+                    <CommandEmpty>No epic found.</CommandEmpty>
+                    <CommandGroup className="max-h-[200px] overflow-y-auto">
+                      {/* None option */}
+                      <CommandItem
+                        value="none"
+                        onSelect={() => {
+                          setFormData(prev => ({ ...prev, epic_id: undefined }))
+                          setEpicPopoverOpen(false)
+                        }}
+                        className="cursor-pointer"
+                      >
+                        <Check
+                          className={cn(
+                            "mr-2 h-4 w-4 flex-shrink-0",
+                            !formData.epic_id ? "opacity-100" : "opacity-0"
+                          )}
+                        />
+                        <span className="text-muted-foreground">No Epic</span>
+                      </CommandItem>
+                      {availableEpics.map((epic) => (
+                        <CommandItem
+                          key={epic.id}
+                          value={epic.title}
+                          onSelect={() => {
+                            setFormData(prev => ({ ...prev, epic_id: epic.id }))
+                            setEpicPopoverOpen(false)
+                          }}
+                          className="cursor-pointer"
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4 flex-shrink-0",
+                              formData.epic_id === epic.id ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          <div className="flex items-center gap-2">
+                            {epic.code && (
+                              <Badge variant="outline" className="font-mono text-xs">
+                                {epic.code}
+                              </Badge>
+                            )}
+                            <span className="truncate">{epic.title}</span>
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
 
           {/* Story Points and Priority */}
@@ -382,7 +490,6 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, projectId
           {/* Dependencies */}
           <div className="space-y-2">
             <Label className="text-sm font-semibold flex items-center gap-1.5">
-              <Link2 className="w-3.5 h-3.5 text-orange-500" />
               Dependencies
             </Label>
             <p className="text-xs text-muted-foreground">
@@ -453,7 +560,7 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, projectId
                           <div className="flex-1 min-w-0">
                             <p className="text-sm truncate">{story.title}</p>
                             <p className="text-xs text-muted-foreground">
-                              {story.type} • {story.status}
+                              {story.story_code && `${story.story_code} • `}{story.type} • {story.status}
                             </p>
                           </div>
                         </CommandItem>
