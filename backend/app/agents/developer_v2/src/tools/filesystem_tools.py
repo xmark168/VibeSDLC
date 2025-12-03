@@ -238,7 +238,7 @@ def move_file_safe(source_path: str, destination_path: str) -> str:
 
 
 @tool
-def search_files(pattern: str, path: str = ".") -> str:
+def glob(pattern: str, path: str = ".") -> str:
     """Search for files matching a glob pattern.
 
     Args:
@@ -260,6 +260,42 @@ def search_files(pattern: str, path: str = ".") -> str:
         return f"No files found matching pattern: {pattern}"
     except Exception as e:
         return f"Error searching files: {str(e)}"
+
+
+@tool
+def grep_files(pattern: str, path: str = ".", file_pattern: str = "*") -> str:
+    """Search for text pattern inside files.
+
+    Args:
+        pattern: Text or regex to search for
+        path: Directory to search in relative to project root
+        file_pattern: File glob filter (e.g., '*.tsx', '*.py')
+    
+    Returns:
+        Matching lines with file:line format
+    """
+    import re
+    root_dir = _get_root_dir()
+    search_path = Path(os.path.join(root_dir, path))
+    results = []
+    
+    try:
+        for file_path in search_path.rglob(file_pattern):
+            if file_path.is_file() and _is_safe_path(str(file_path), root_dir):
+                try:
+                    content = file_path.read_text(encoding='utf-8', errors='ignore')
+                    for i, line in enumerate(content.splitlines(), 1):
+                        if re.search(pattern, line):
+                            rel_path = file_path.relative_to(root_dir)
+                            results.append(f"{rel_path}:{i}: {line.strip()}")
+                except:
+                    pass
+        
+        if not results:
+            return f"No matches for '{pattern}'"
+        return "\n".join(results[:50])  # Limit to 50 results
+    except Exception as e:
+        return f"Error searching: {str(e)}"
 
 
 @tool

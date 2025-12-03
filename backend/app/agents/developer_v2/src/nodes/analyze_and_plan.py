@@ -1,19 +1,22 @@
-"""Analyze and Plan node - Combined analysis and planning in single LLM call."""
+"""Analyze and Plan node - Combined analysis and planning with tool exploration."""
 import os
 import logging
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.utils.json_utils import extract_json_universal
-from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg
-from app.agents.developer_v2.src.utils.prompt_utils import (
-    build_system_prompt as _build_system_prompt,
-    format_input_template as _format_input_template,
+from app.agents.developer_v2.src.utils.llm_utils import (
+    get_langfuse_config as _cfg,
+    execute_llm_with_tools as _llm_with_tools,
 )
 from app.agents.developer_v2.src.nodes._llm import code_llm
 from app.agents.developer_v2.src.nodes._helpers import setup_tool_context
 from app.agents.developer_v2.src.skills.registry import SkillRegistry
-from app.agents.developer_v2.src.skills import get_project_structure
+from app.agents.developer_v2.src.skills import get_project_structure, get_plan_prompts
+from app.agents.developer_v2.src.tools.filesystem_tools import (
+    read_file_safe, list_directory_safe, glob, grep_files
+)
+from app.agents.developer_v2.src.tools.cocoindex_tools import search_codebase_tool
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +59,7 @@ def _prefetch_context(workspace_path: str) -> str:
 
 
 async def analyze_and_plan(state: DeveloperState, agent=None) -> DeveloperState:
-    """Combined analyze + plan in single LLM call."""
+    """Combined analyze + plan with tool exploration phase."""
     print("[NODE] analyze_and_plan")
     
     try:
@@ -67,41 +70,65 @@ async def analyze_and_plan(state: DeveloperState, agent=None) -> DeveloperState:
         
         setup_tool_context(workspace_path, project_id, task_id)
         
-        # Pre-fetch context (NO LLM calls)
+        # Pre-fetch context (quick, no LLM)
         project_context = _prefetch_context(workspace_path)
         project_structure = get_project_structure(tech_stack)
         
-        # Load skill
+        # Load skill registry (for later use in implement)
         skill_registry = SkillRegistry.load(tech_stack)
-        plan_skill = skill_registry.get_skill("feature-plan")
-        skill_content = plan_skill.load_content() if plan_skill else ""
         
-        # Build prompt from prompts.yaml
-        system_prompt = _build_system_prompt(
-            "analyze_and_plan",
-            project_structure=project_structure,
-            skill_content=skill_content,
-        )
+        # Load prompts from plan_prompts.yaml
+        plan_prompts = get_plan_prompts(tech_stack)
+        system_prompt = f"{plan_prompts['system_prompt']}\n\n<project_structure>\n{project_structure}\n</project_structure>"
         
-        # Format input
+        # Format input from template
+        requirements = state.get("story_requirements", [])
+        req_text = chr(10).join(f"- {r}" for r in requirements)
+        
         acceptance_criteria = state.get("acceptance_criteria", [])
         ac_text = chr(10).join(f"- {ac}" for ac in acceptance_criteria)
         
-        input_text = _format_input_template(
-            "analyze_and_plan",
+        input_text = plan_prompts["input_template"].format(
+            story_id=state.get("story_id", ""),
+            epic=state.get("epic", ""),
             story_title=state.get("story_title", "Untitled"),
-            story_content=state.get("story_content", ""),
+            story_description=state.get("story_description", ""),
+            story_requirements=req_text,
             acceptance_criteria=ac_text,
             project_context=project_context,
         )
         
-        # Single LLM call
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=input_text)
+        # Tools for exploration
+        tools = [
+            read_file_safe,
+            list_directory_safe,
+            glob,                # glob pattern search
+            grep_files,          # text search in files
+            search_codebase_tool,  # semantic search
         ]
         
-        response = await code_llm.ainvoke(messages, config=_cfg(state, "analyze_and_plan"))
+        # Phase 1: Tool exploration
+        explore_messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=input_text + "\n\nExplore the codebase to understand existing structure before planning.")
+        ]
+        
+        exploration = await _llm_with_tools(
+            llm=code_llm,
+            tools=tools,
+            messages=explore_messages,
+            state=state,
+            name="analyze_explore",
+            max_iterations=12
+        )
+        
+        # Phase 2: Generate plan with exploration context
+        plan_messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=f"{input_text}\n\n<exploration_context>\n{exploration[:6000]}\n</exploration_context>\n\nNow create the implementation plan based on your exploration.")
+        ]
+        
+        response = await code_llm.ainvoke(plan_messages, config=_cfg(state, "analyze_and_plan"))
         data = extract_json_universal(response.content, "analyze_and_plan")
         
         # Parse results - use LLM's native format (steps)

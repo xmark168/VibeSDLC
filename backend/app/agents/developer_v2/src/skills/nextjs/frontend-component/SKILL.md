@@ -130,6 +130,59 @@ Always initialize useState with proper defaults:
 - Objects: `useState<Item | null>(null)`
 - Strings: `useState('')`
 
+## Error Handling for Users
+
+**CRITICAL**: Never silently fail. Always show user-facing error messages.
+
+```tsx
+'use client';
+import { useState } from 'react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+
+export function DataList() {
+  const [items, setItems] = useState<Item[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchData = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const res = await fetch('/api/items');
+      if (!res.ok) throw new Error('Failed to fetch items');
+      
+      const json = await res.json();
+      setItems(json.data ?? []);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'An error occurred';
+      setError(message);
+      // Optional: toast for non-blocking errors
+      // toast.error(message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      {/* rest of component */}
+    </div>
+  );
+}
+```
+
+**Rules:**
+- Add `error` state alongside data state
+- Show Alert/Banner for blocking errors
+- Use toast (sonner) for non-blocking errors
+- Clear error before new request: `setError(null)`
+
 ## Component Export Rules
 
 - **Pages/Layouts**: `export default`

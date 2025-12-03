@@ -16,6 +16,32 @@ Use vertical slicing to deliver complete functionality in each task:
 
 **CRITICAL**: Avoid horizontal slicing (all models, then all APIs, then all UI). Instead, implement one complete feature at a time.
 
+## Pre-Implementation Checks
+
+Before creating plan, verify:
+1. **Prisma schema** - Required models exist? Need migration?
+2. **Existing helpers** - Check `@/lib/` for api-response, auth-helpers
+3. **UI components** - shadcn components installed? Check `components.json`
+
+If missing, add setup task FIRST in plan.
+
+## Acceptance Criteria Mapping
+
+**CRITICAL**: Map each AC item to explicit task.
+
+Example AC:
+> "Given no books match my search, when I submit then I see a message indicating no results found"
+
+Map to tasks:
+1. Create `EmptyState` component with "no results" message
+2. Add conditional render in results component
+3. Test: verify message appears when results empty
+
+**Rules:**
+- Parse AC for exact expected behaviors
+- Each AC item = at least 1 task
+- Include exact text/messages from AC in implementation
+
 ## Vertical Slice Example
 
 **Feature**: Add to Cart
@@ -89,11 +115,34 @@ Features often miss:
 Use these pre-installed libraries:
 - **framer-motion**: Page transitions, hover effects, list animations
 - **react-hook-form + zod**: Form validation and state
-- **zustand**: Global state management
+- **zustand**: Global state management (see when to use below)
 - **shadcn/ui**: Component library
 - **lucide-react**: Icon set
 - **recharts**: Data visualization
 - **sonner**: Toast notifications
+
+## State Management - Choose Wisely
+
+**PREFER SIMPLICITY** - Don't over-engineer!
+
+| Situation | Solution |
+|-----------|----------|
+| Local component state | `useState` - simplest option |
+| Form state | `react-hook-form` - already handles it |
+| Search/filter on single page | `useState` in page component |
+| Data shared across 2+ unrelated pages | `zustand` store |
+| Server data with caching | API route + `useState` |
+
+**Use zustand ONLY when:**
+- State needed in 3+ unrelated components
+- State persists across page navigation
+- Complex state with multiple actions
+
+**DON'T use zustand for:**
+- Simple search/filter (use useState)
+- Form data (use react-hook-form)
+- Data from single API call (use useState)
+- State used in one page only
 
 ## Output Format
 

@@ -177,44 +177,4 @@ def execute_shell(command: str, working_directory: str = ".", timeout: int = 60)
         }, indent=2)
 
 
-@tool
-def semantic_code_search(query: str, top_k: int = 5) -> str:
-    """Search codebase using semantic search via CocoIndex.
 
-    Args:
-        query: Natural language query (e.g., 'authentication logic', 'React components')
-        top_k: Number of results to return
-    """
-    try:
-        from app.agents.developer_v2.project_manager import project_manager
-        from app.agents.developer_v2.src.tools.cocoindex_tools import _tool_context
-        
-        project_id = _tool_context.get("project_id")
-        task_id = _tool_context.get("task_id")
-        
-        if not project_id:
-            return "Error: project_id not set in tool context"
-        
-        if task_id:
-            results = project_manager.search_task(project_id, task_id, query, top_k=top_k)
-            context = f"task '{task_id}' in project '{project_id}'"
-        else:
-            results = project_manager.search(project_id, query, top_k=top_k)
-            context = f"project '{project_id}'"
-        
-        if not results:
-            return f"No results found for '{query}'. This is OK - proceed with implementation using activated skills and project conventions. Do NOT retry search."
-        
-        formatted_output = [f"Code search results for '{query}' in {context}:\n"]
-        for i, result in enumerate(results, 1):
-            score_pct = int(result.get("score", 0) * 100)
-            formatted_output.append(
-                f"{i}. {result['filename']} (Relevance: {score_pct}%)\n"
-                f"---\n{result['code']}\n---"
-            )
-        return "\n".join(formatted_output)
-    
-    except ImportError as e:
-        return f"Error: Required module not available: {str(e)}"
-    except Exception as e:
-        return f"Error performing semantic search: {str(e)}"

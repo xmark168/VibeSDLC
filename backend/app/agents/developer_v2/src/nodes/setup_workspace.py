@@ -14,7 +14,6 @@ def _use_shell() -> bool:
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.tools import (
     setup_git_worktree,
-    index_workspace,
     get_agents_md,
     get_project_context,
 )
@@ -143,19 +142,8 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             agent_name=agent.name
         )
         
-        index_ready = False
+        index_ready = False  # No longer using CocoIndex
         workspace_path = workspace_info.get("workspace_path", "")
-        project_id = state.get("project_id", "default")
-        task_id = state.get("task_id") or story_id
-        
-        if workspace_path:
-            index_ready = index_workspace(project_id, workspace_path, task_id)
-            if not index_ready:
-                # Soft fail - continue without semantic search instead of crashing
-                logger.warning(f"[setup_workspace] CocoIndex indexing failed, continuing without semantic search")
-                index_ready = False
-            else:
-                logger.info(f"[setup_workspace] Indexed workspace with CocoIndex")
         
         project_context = ""
         agents_md = ""
@@ -253,9 +241,6 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             "tech_stack": tech_stack,
             "skill_registry": skill_registry,
             "available_skills": skill_registry.get_skill_ids(),
-            # Database
-            "database_ready": database_ready,
-            "database_url": database_url,
         }
         
     except Exception as e:

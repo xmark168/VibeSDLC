@@ -132,10 +132,51 @@ const items = json;  // Wrong! json is {success, data}, not the array
 
 ## Common Patterns
 
-- **Pagination**: Use `skip: (page-1)*limit, take: limit` in Prisma query
 - **Search**: Use `where: { field: { contains: query, mode: 'insensitive' } }`
 - **Auth check**: Always `const session = await auth()` before mutations
 - **Validation**: Always use Zod schema with `safeParse()` for request body
+
+## Pagination Pattern
+
+For list endpoints, always support pagination:
+
+```typescript
+// app/api/items/route.ts
+export async function GET(request: NextRequest) {
+  try {
+    const searchParams = request.nextUrl.searchParams;
+    const page = parseInt(searchParams.get('page') ?? '1');
+    const limit = parseInt(searchParams.get('limit') ?? '20');
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      prisma.item.findMany({
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.item.count(),
+    ]);
+
+    return successResponse({
+      items,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    return handleError(error);
+  }
+}
+```
+
+**Rules:**
+- Default limit: 20 items
+- Always return `total` count for frontend pagination UI
+- Use `Promise.all` for parallel queries
 
 ## After Writing Route
 

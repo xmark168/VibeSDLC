@@ -13,8 +13,10 @@ class DeveloperState(TypedDict, total=False):
     # Input (from story event)
     # ==========================================================================
     story_id: str
-    story_content: str
+    epic: str
     story_title: str
+    story_description: str
+    story_requirements: List[str]
     acceptance_criteria: List[str]
     project_id: str
     task_id: str

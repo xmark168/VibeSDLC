@@ -162,6 +162,61 @@ jest.mock('@/lib/prisma', () => ({
 (prisma.user.findUnique as jest.Mock).mockRejectedValue(new Error('DB error'));
 ```
 
+## Testing Expected Errors
+
+When testing error scenarios that use `console.error` (e.g., error boundaries, failed API calls), mock it to:
+1. Prevent noisy test output
+2. Verify error was logged correctly
+
+```typescript
+describe('error handling', () => {
+  let consoleSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    // Suppress expected console.error output
+    consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleSpy.mockRestore();
+  });
+
+  it('handles API error gracefully', async () => {
+    (fetchData as jest.Mock).mockRejectedValue(new Error('Network error'));
+    
+    render(<Component />);
+    
+    await waitFor(() => {
+      expect(screen.getByText(/error occurred/i)).toBeInTheDocument();
+    });
+    
+    // Optionally verify error was logged
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Network error')
+    );
+  });
+});
+```
+
+**When to mock console.error:**
+- Testing error boundaries
+- Testing failed API/fetch calls
+- Testing invalid prop handling
+- Any test expecting `console.error` output
+
+**Pattern variations:**
+```typescript
+// Mock only for specific test
+it('handles error', () => {
+  const spy = jest.spyOn(console, 'error').mockImplementation();
+  // test code
+  spy.mockRestore();
+});
+
+// Mock console.warn similarly
+jest.spyOn(console, 'warn').mockImplementation(() => {});
+```
+
 ## Pre-configured Mocks
 
 Already in `jest.setup.ts`:

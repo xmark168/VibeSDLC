@@ -1,13 +1,16 @@
 """Implement node - Execute tasks using tools (Agentic Skills)."""
 import logging
+import os
+import platform
+from datetime import date
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.tools.filesystem_tools import (
-    read_file_safe, write_file_safe, edit_file, list_directory_safe, search_files,
+    read_file_safe, write_file_safe, edit_file, list_directory_safe, glob, grep_files,
     get_modified_files, reset_modified_files,
 )
-from app.agents.developer_v2.src.tools.shell_tools import execute_shell, semantic_code_search
+from app.agents.developer_v2.src.tools.shell_tools import execute_shell
 from app.agents.developer_v2.src.tools.skill_tools import activate_skills, read_skill_file, list_skill_files, set_skill_context, reset_skill_cache
 from app.agents.developer_v2.src.utils.llm_utils import (
     get_langfuse_config as _cfg,
@@ -22,6 +25,22 @@ from app.agents.developer_v2.src.nodes._helpers import setup_tool_context
 from app.agents.developer_v2.src.skills import SkillRegistry, get_project_structure
 
 logger = logging.getLogger(__name__)
+
+
+def _build_modified_files_context(files_modified: list) -> str:
+    """List files modified in previous steps."""
+    if not files_modified:
+        return "None"
+    return "\n".join(f"- {f}" for f in files_modified)
+
+
+def _build_env_info(workspace_path: str) -> str:
+    """Build environment info string."""
+    is_git = os.path.exists(os.path.join(workspace_path, ".git")) if workspace_path else False
+    return f"""OS: {platform.system()} {platform.release()}
+Working directory: {workspace_path or '.'}
+Git repo: {"Yes" if is_git else "No"}
+Date: {date.today().isoformat()}"""
 
 
 async def implement(state: DeveloperState, agent=None) -> DeveloperState:
@@ -95,20 +114,20 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         # Tools (Claude searches, reads, and writes as needed)
         tools = [
             read_file_safe, write_file_safe, edit_file, list_directory_safe,
-            semantic_code_search, execute_shell, search_files,
+            execute_shell, glob, grep_files,
             activate_skills, read_skill_file, list_skill_files,
         ]
         
         # Get modified files from previous steps
         files_modified = state.get("files_modified", [])
-        modified_files_text = "\n".join(f"- {f}" for f in files_modified) if files_modified else "None yet"
+        modified_files_content = _build_modified_files_context(files_modified)
         
         input_text = _format_input_template(
             "implement_step",
             step_number=current_step + 1,
             total_steps=len(plan_steps),
             task_description=task_description,
-            modified_files=modified_files_text,
+            modified_files=modified_files_content,
             related_context="\n\n".join(context_parts)[:4000],
             feedback_section=feedback_section,
         )
