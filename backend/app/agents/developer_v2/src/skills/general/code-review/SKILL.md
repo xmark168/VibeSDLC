@@ -1,18 +1,6 @@
 ---
 name: code-review
-description: Review code for quality, security, performance, and best practices
-triggers:
-  - review
-  - check
-  - audit
-  - quality
-  - security
-  - performance
-  - best practice
-  - improve
-  - refactor
-version: "1.0"
-author: VibeSDLC
+description: Review code for quality, security, performance, and best practices. Use when reviewing changes before commit, auditing code for issues, or suggesting improvements.
 ---
 
 # Code Review Skill

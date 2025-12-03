@@ -12,6 +12,24 @@ description: Execute shell commands in Next.js project with Bun. Use when runnin
 3. **Check success**: Verify exit code before continuing
 4. **Order matters**: install → generate → build → test
 
+## ⚠️ Before Installing Packages
+
+**DON'T install packages that are already in boilerplate:**
+
+Already installed (DON'T `bun add` again):
+- `prisma`, `@prisma/client` - Database
+- `next-auth`, `@auth/prisma-adapter` - Auth
+- `zod`, `react-hook-form`, `@hookform/resolvers` - Forms
+- `lucide-react` - Icons
+- `sonner` - Toast notifications
+- `framer-motion` - Animations
+- All `@radix-ui/*` - shadcn/ui dependencies
+- `tailwind-merge`, `clsx`, `class-variance-authority` - Styling
+
+**Only `bun add` when:**
+- Package is NOT in `package.json`
+- Story explicitly requires new package
+
 ## Command Reference
 
 ### Package Management

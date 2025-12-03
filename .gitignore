@@ -134,3 +134,4 @@ backend/projects
 
 backend/uv.lock
 /.bun-cache
+backend/app/projects/.bun-cache

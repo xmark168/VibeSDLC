@@ -96,36 +96,17 @@ tasks:
       - If search returns nothing → Use skill patterns and WRITE anyway
       </critical>
       
-      <task_examples>
-      ## API Route Task
-      Task: "Create users API with CRUD"
-      → activate_skills(["api-route", "database-model"])
-      → read_file_safe("prisma/schema.prisma")  
-      → write_file_safe("src/app/api/users/route.ts", "...full code...")
-      DONE ✓
-      
-      ## Component Task
-      Task: "Build ProductCard component"
-      → activate_skills(["frontend-component"])
-      → read_file_safe("src/components/ui/card.tsx")
-      → write_file_safe("src/components/Product/ProductCard.tsx", "...full code...")
-      DONE ✓
-      
-      ## Schema Task
-      Task: "Add Product model to database"
-      → activate_skills(["database-model"])
-      → read_file_safe("prisma/schema.prisma")
-      → edit_file("prisma/schema.prisma", old_str, new_str)
-      → execute_shell("bunx prisma generate")
-      DONE ✓
+      <task_pattern>
+      ## CORRECT Pattern:
+      1. activate_skills([...])  → Get coding conventions
+      2. read_file_safe(...)     → 1-2 files for context (optional)
+      3. write_file_safe/edit_file → REQUIRED - complete the task!
       
       ## WRONG Pattern (too much searching):
-      Call 1: search_files("*.ts")
-      Call 2: read_file_safe("file1.ts")
-      Call 3: read_file_safe("file2.ts")
-      Call 4: search_files("*.tsx")
-      ... (keeps searching without writing) ❌
-      </task_examples>
+      search → read → read → search → read... (never writes) ❌
+      
+      Skills will guide you on WHAT files to read/write.
+      </task_pattern>
       
       <skip_writing>
       Some tasks don't need file changes - use execute_shell only:
