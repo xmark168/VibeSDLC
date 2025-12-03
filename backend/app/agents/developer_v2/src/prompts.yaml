@@ -193,6 +193,12 @@ tasks:
       - NEVER add unrelated properties (url, nextUrl) to browser API mocks (IntersectionObserver, ResizeObserver)
       - CRITICAL: If jest.setup.ts error persists after 2 attempts, STOP and report "SETUP_FILE_CORRUPTED"
       
+      React Runtime Errors:
+      - "Cannot read properties of undefined (reading 'length')" → Array prop is undefined, add default `= []`
+      - "Cannot read properties of undefined (reading 'map')" → Array prop is undefined, add default `= []`
+      - "Cannot read properties of undefined" → Add null check or default value for prop
+      - "Cannot read properties of null" → Add null check before accessing
+      
       Test Errors:
       - "text is broken up by multiple elements" → Use `screen.getByText(/text/i)` or custom matcher
       - "Unable to find an element" after async → Use `await screen.findByText()` or `waitFor()`

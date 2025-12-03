@@ -3,64 +3,109 @@ name: unit-test
 description: Write unit tests with Jest and React Testing Library. Use when testing components, utilities, server actions, or API routes. CRITICAL - Uses Jest (NOT Vitest).
 ---
 
-This skill guides creation of unit tests using Jest and React Testing Library.
+This skill guides creation of comprehensive unit tests that cover all important scenarios.
 
-The user needs to test components, utility functions, or server-side logic with proper mocking and assertions.
+The user needs to test components, utility functions, or server-side logic.
 
 ## Before You Start
 
-**CRITICAL**: This project uses Jest, NOT Vitest. Using Vitest imports will cause errors.
+**CRITICAL**: This project uses Jest, NOT Vitest.
 
-NEVER use:
-- `import { vi } from 'vitest'`
-- `vi.fn()`, `vi.mock()`, `vi.spyOn()`
+NEVER use: `import { vi } from 'vitest'`, `vi.fn()`, `vi.mock()`
 
-ALWAYS use:
-- `jest.fn()`, `jest.mock()`, `jest.spyOn()`
-- `jest.clearAllMocks()` in `beforeEach`
-- No imports for `describe`/`it`/`expect` (Jest globals)
+ALWAYS use: `jest.fn()`, `jest.mock()`, `jest.spyOn()`, `jest.clearAllMocks()` in beforeEach
 
-## Keep Tests Simple
+## Required Test Categories
 
-Focus on testing what matters. Skip complex tests that are hard to maintain.
+For each function, include these test types:
 
-**What TO Test:**
-- **Utilities**: Pure functions like formatDate, validators, helpers
-- **Components**: Rendering, click handlers, prop changes
-- **Server Actions**: With mocked Prisma (simple cases only)
+**1. Happy Path** - Core logic with valid input
+- Normal, expected input
+- Correct result per business requirements
 
-**What NOT to Test (skip these):**
-- Complex API routes with multiple database calls
-- Full form submission flows
-- Authentication flows
-- Tests needing more than 3 mocks
+**2. Edge Cases** - Boundary and extreme values
+- Empty input ([], "", null, undefined)
+- Single item vs many items
+- Very small / very large values
 
-**Rule of Thumb**: If mock setup exceeds 10 lines, skip the test.
+**3. Invalid Input** - Error handling
+- Wrong type, null, undefined
+- Invalid format, non-existent data
+- Must throw correct error or return error state
+
+**4. Business Rules** - Domain logic branches
+- Each if/else condition
+- VIP vs regular, thresholds, discounts
+
+**5. Boundary Testing** - Values at threshold
+- If condition `>= N`: test N-1, N, N+1
+- Catches off-by-one bugs
+
+**6. Side Effects** - Dependencies (DB, API)
+- Mock returns success -> verify behavior
+- Mock returns error -> verify error handling
+
+## Heuristics for Test Generation
+
+**For each public function:**
+- Min 1 happy path test
+- Min 1 test per important if/else branch
+- Min 1 test for empty/null input
+
+**Code pattern rules:**
+- `if x > N` -> test x = N-1, N, N+1
+- Loop on list -> test [], [1], [many items]
+- Try/catch -> test exception path
+
+**Dependency calls:**
+- Test success response
+- Test error response
+
+## Priority Functions
+
+Focus testing on:
+- **Hot paths**: Frequently called functions
+- **Money/stats**: Calculations, points, balances
+- **Security**: Auth, permissions, validation
+
+## Test Count Guideline
+
+- Simple utility: 3-5 tests
+- Function with conditions: 6-8 tests
+- Complex business logic: 8-12 tests
 
 ## Test File Structure
 
 ```typescript
-// __tests__/feature.test.ts
 describe('FeatureName', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  const mockData = { id: '1', name: 'Test' };
-
   describe('happy path', () => {
-    it('should do X when Y', async () => {
-      // Arrange, Act, Assert
-    });
+    it('returns correct result with valid input', () => { });
   });
 
   describe('edge cases', () => {
-    it('should handle empty input', async () => { });
-    it('should handle unicode characters', async () => { });
+    it('handles empty array', () => { });
+    it('handles null input', () => { });
+    it('handles single item', () => { });
+  });
+
+  describe('boundary values', () => {
+    it('handles value at threshold', () => { });
+    it('handles value below threshold', () => { });
+    it('handles value above threshold', () => { });
+  });
+
+  describe('business rules', () => {
+    it('applies VIP discount', () => { });
+    it('applies regular pricing', () => { });
   });
 
   describe('error handling', () => {
-    it('should throw on database error', async () => { });
+    it('throws on invalid input', () => { });
+    it('handles API error', () => { });
   });
 });
 ```
@@ -70,30 +115,28 @@ describe('FeatureName', () => {
 ```typescript
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { Button } from '@/components/ui/button';
 
-describe('Button', () => {
-  it('renders correctly', () => {
-    render(<Button>Click me</Button>);
-    expect(screen.getByRole('button', { name: /click me/i })).toBeInTheDocument();
+describe('Component', () => {
+  it('renders with valid props', () => {
+    render(<Component items={[item1, item2]} />);
+    expect(screen.getByText(/item1/i)).toBeInTheDocument();
   });
 
-  it('handles click', async () => {
-    const user = userEvent.setup();
-    const onClick = jest.fn();
+  it('handles empty props', () => {
+    render(<Component items={[]} />);
+    expect(screen.getByText(/no items/i)).toBeInTheDocument();
+  });
 
-    render(<Button onClick={onClick}>Click</Button>);
-    await user.click(screen.getByRole('button'));
-
-    expect(onClick).toHaveBeenCalledTimes(1);
+  it('handles undefined props', () => {
+    render(<Component items={undefined as any} />);
+    // Should not crash
   });
 });
 ```
 
-## Mocking Modules
+## Mocking
 
 ```typescript
-// At top of file, outside describe
 jest.mock('@/lib/prisma', () => ({
   prisma: {
     user: {
@@ -103,46 +146,32 @@ jest.mock('@/lib/prisma', () => ({
   },
 }));
 
-// In test
-import { prisma } from '@/lib/prisma';
+// Success case
+(prisma.user.findUnique as jest.Mock).mockResolvedValue({ id: '1' });
 
-it('should find user', async () => {
-  (prisma.user.findUnique as jest.Mock).mockResolvedValue({ id: '1', name: 'Test' });
-  
-  const result = await findUser('1');
-  
-  expect(result).toEqual({ id: '1', name: 'Test' });
-});
+// Error case
+(prisma.user.findUnique as jest.Mock).mockRejectedValue(new Error('DB error'));
 ```
-
-## Query Priority
-
-Use the most accessible query:
-- **getByRole**: Buttons, links, form elements
-- **getByLabelText**: Form inputs with labels
-- **getByText**: Static text content
-- **getByTestId**: Last resort only
 
 ## Pre-configured Mocks
 
-These are already mocked in `jest.setup.ts`:
-- `next/navigation` (useRouter, usePathname, useSearchParams)
+Already in `jest.setup.ts`:
+- `next/navigation` (useRouter, usePathname)
 - `next/server` (NextResponse, NextRequest)
-- `window.matchMedia`, `IntersectionObserver`, `ResizeObserver`
+- Browser APIs (matchMedia, IntersectionObserver)
 
 ## Commands
 
 ```bash
-bun test              # Run all tests
+bun test              # Run all
 bun test --watch      # Watch mode
-bun test --coverage   # With coverage report
-bun test path/to/file # Run specific file
+bun test --coverage   # Coverage report
 ```
 
 NEVER:
-- Import from vitest (causes immediate error)
-- Skip `beforeEach` with `jest.clearAllMocks()`
-- Use `getByTestId` as first choice
-- Write tests requiring real database
+- Import from vitest
+- Skip beforeEach with jest.clearAllMocks()
+- Write only happy path tests
+- Ignore boundary conditions
 
-**IMPORTANT**: Always `await` userEvent actions and use `waitFor` for async state updates.
+**IMPORTANT**: Every function with conditions needs boundary tests. If there's a threshold, test N-1, N, N+1.
