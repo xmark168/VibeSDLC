@@ -76,7 +76,7 @@ export const env = envSchema.parse({
 | Development | localhost:5432 | `dev-secret-key` |
 | Production | Cloud DB URL | `openssl rand -base64 32` |
 
-## ⚠️ Security Rules
+## Security Rules
 
 1. **NEVER** commit real secrets to git
 2. **NEVER** prefix secrets with `NEXT_PUBLIC_`

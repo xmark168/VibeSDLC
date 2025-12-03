@@ -9,7 +9,7 @@ toast.success('User created successfully');
 toast.error('Failed to create user');
 toast.error('Operation failed', { description: 'Please try again' });
 
-// Promise (loading → success/error)
+// Promise (loading - success/error)
 toast.promise(createUser(data), {
   loading: 'Creating user...',
   success: 'User created!',

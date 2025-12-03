@@ -5,14 +5,14 @@ description: Execute shell commands in Next.js project with Bun. Use when runnin
 
 # Run Commands (Bun)
 
-## ⚠️ Critical Rules
+## Critical Rules
 
 1. **ONLY use**: `bun` and `bunx`
 2. **NEVER use**: npm, npx, yarn, pnpm
 3. **Check success**: Verify exit code before continuing
-4. **Order matters**: install → generate → build → test
+4. **Order matters**: install - generate - build - test
 
-## ⚠️ Before Installing Packages
+## Before Installing Packages
 
 **DON'T install packages that are already in boilerplate:**
 
