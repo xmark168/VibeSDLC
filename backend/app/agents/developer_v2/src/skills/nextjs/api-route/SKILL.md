@@ -3,19 +3,23 @@ name: api-route
 description: Create Next.js 16 API Route Handlers. Use when building REST endpoints (GET, POST, PUT, DELETE), implementing CRUD operations, or creating authenticated APIs with Zod validation.
 ---
 
-# API Route Handler (Next.js 16)
+This skill guides creation of API Route Handlers in Next.js 16 App Router.
 
-## Critical Rules
+The user needs to build REST endpoints for data operations, typically CRUD functionality with authentication and validation.
 
-1. **File**: `route.ts` in `app/api/` directory
-2. **Exports**: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`
-3. **Async params**: MUST `await params` in dynamic routes
-4. **Zod validation**: Always validate request body
-5. **Error handling**: Use `handleError()` - catches Zod, ApiException, and generic errors
+## Before You Start
 
-## Quick Reference
+API routes live in the `app/api/` directory:
+- **Collection routes**: `app/api/users/route.ts` - handles GET (list) and POST (create)
+- **Resource routes**: `app/api/users/[id]/route.ts` - handles GET (one), PUT, DELETE
+- **Export functions**: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`
 
-### Collection Route
+**CRITICAL**: In Next.js 16, dynamic route params are async. You MUST `await params` before using them.
+
+## Route Structure
+
+### Collection Route (List + Create)
+
 ```typescript
 // app/api/users/route.ts
 import { NextRequest } from 'next/server';
@@ -55,7 +59,8 @@ export async function POST(request: NextRequest) {
 }
 ```
 
-### Dynamic Route (MUST await params)
+### Dynamic Route (Single Resource)
+
 ```typescript
 // app/api/users/[id]/route.ts
 import { NextRequest } from 'next/server';
@@ -68,7 +73,7 @@ interface RouteContext {
 
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
-    const { id } = await context.params;  // MUST await
+    const { id } = await context.params;  // MUST await in Next.js 16
     
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) throw ApiErrors.notFound('User');
@@ -92,46 +97,50 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
 ## Error Handling
 
-```typescript
-// handleError() catches all:
-// - ZodError - 422 with formatted field errors
-// - ApiException - Custom status with error code
-// - Generic Error - 500 with message
+The `handleError()` function catches all error types automatically:
+- **ZodError**: Returns 422 with formatted field errors
+- **ApiException**: Returns custom status with error code
+- **Generic Error**: Returns 500 with message
 
-// Predefined errors:
-throw ApiErrors.unauthorized();      // 401
-throw ApiErrors.forbidden();         // 403
-throw ApiErrors.notFound('User');    // 404
-throw ApiErrors.badRequest('msg');   // 400
-throw ApiErrors.conflict('msg');     // 409
-throw ApiErrors.validation('msg');   // 422
+Use predefined errors for common cases:
+
+```typescript
+throw ApiErrors.unauthorized();      // 401 - Not logged in
+throw ApiErrors.forbidden();         // 403 - No permission
+throw ApiErrors.notFound('User');    // 404 - Resource not found
+throw ApiErrors.badRequest('msg');   // 400 - Invalid request
+throw ApiErrors.conflict('msg');     // 409 - Already exists
+throw ApiErrors.validation('msg');   // 422 - Validation failed
 ```
 
-## Common Patterns
+## Response Format
 
-| Pattern | Code |
-|---------|------|
-| Pagination | `skip: (page-1)*limit, take: limit` |
-| Search | `where: { field: { contains: q, mode: 'insensitive' } }` |
-| Auth check | `const session = await auth()` |
-
-## Response Format (Important for Consumers)
-
-`successResponse` wraps data in object:
+**IMPORTANT**: `successResponse()` always wraps data in an object. Consumers must extract `.data`:
 
 ```typescript
-// API returns:
+// API returns this format:
 { success: true, data: T, message?: string }
 
-// Consumer must extract data:
+// Consumer code:
 const res = await fetch('/api/items');
 const json = await res.json();
 const items = json.data;  // Extract from wrapper!
 
-// WRONG
-const items = json;  // items is {success, data}, not array!
+// NOT this (common mistake):
+const items = json;  // Wrong! json is {success, data}, not the array
 ```
 
-## References
+## Common Patterns
 
-- `route-patterns.md` - Types, pagination, advanced patterns
+- **Pagination**: Use `skip: (page-1)*limit, take: limit` in Prisma query
+- **Search**: Use `where: { field: { contains: query, mode: 'insensitive' } }`
+- **Auth check**: Always `const session = await auth()` before mutations
+- **Validation**: Always use Zod schema with `safeParse()` for request body
+
+NEVER:
+- Skip `await` on `context.params` in dynamic routes
+- Return raw data without `successResponse()` wrapper
+- Skip validation on POST/PUT request bodies
+- Forget auth checks on mutation endpoints
+
+**IMPORTANT**: Always wrap route logic in try-catch and use `handleError()` for consistent error responses.

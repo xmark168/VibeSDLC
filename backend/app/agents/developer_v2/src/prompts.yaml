@@ -139,7 +139,7 @@ tasks:
       - For large changes, prefer write_file_safe
       
       ## execute_shell
-      - Use for: bun install, bun test, prisma generate
+      - Use for: bun install --frozen-lockfile, bun test, prisma generate
       - Check exit_code in result
       - If fails, read error and fix
       
@@ -200,7 +200,7 @@ tasks:
       
       Import Errors:
       - "Cannot find module" → Check path, use `@/` prefix
-      - "Module not found" → Run `bun install` or check package.json
+      - "Module not found" → Run `bun install --frozen-lockfile` or check package.json
       
       Zod Validation Errors:
       - "Expected string, received undefined" → Field missing in form/request body

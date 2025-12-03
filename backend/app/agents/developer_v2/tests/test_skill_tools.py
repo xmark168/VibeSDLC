@@ -57,17 +57,30 @@ def test_debugging_has_references():
     print(f"   error-handling-patterns.md has {len(content)} chars")
 
 
-def test_skill_md_mentions_references():
-    """SKILL.md should mention its reference files."""
+def test_skill_follows_format():
+    """SKILL.md should follow the standard format with opening prose."""
     skill_md = SKILLS_DIR / "nextjs" / "frontend-component" / "SKILL.md"
     
     content = skill_md.read_text(encoding='utf-8')
     
-    assert "references/" in content.lower(), "SKILL.md should mention references"
-    assert "forms.md" in content, "SKILL.md should mention forms.md"
+    # Check for opening prose paragraph (not jumping straight to ## headers)
+    lines = content.split('\n')
+    found_prose = False
+    for line in lines:
+        if line.startswith('---'):
+            continue
+        if line.startswith('#') and not line.startswith('##'):
+            continue
+        if line.strip() and not line.startswith('##') and not line.startswith('name:') and not line.startswith('description:'):
+            found_prose = True
+            break
     
-    print("[PASS] test_skill_md_mentions_references")
-    print("   SKILL.md correctly references bundled files")
+    assert found_prose, "SKILL.md should have opening prose paragraph"
+    assert "CRITICAL" in content or "IMPORTANT" in content, "SKILL.md should have CRITICAL/IMPORTANT callout"
+    assert "NEVER" in content, "SKILL.md should have NEVER section"
+    
+    print("[PASS] test_skill_follows_format")
+    print("   SKILL.md follows standard format with prose and callouts")
 
 
 if __name__ == "__main__":
@@ -77,7 +90,7 @@ if __name__ == "__main__":
         test_skill_has_references,
         test_reference_content_readable,
         test_debugging_has_references,
-        test_skill_md_mentions_references,
+        test_skill_follows_format,
     ]
     
     passed = 0

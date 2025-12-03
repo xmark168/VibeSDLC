@@ -3,118 +3,98 @@ name: run-command
 description: Execute shell commands in Next.js project with Bun. Use when running install, build, test, lint, prisma commands, or adding dependencies.
 ---
 
-# Run Commands (Bun)
+This skill guides execution of shell commands in the Next.js project environment.
 
-## Critical Rules
+The user needs to run development commands, install packages, execute tests, or manage the database.
 
-1. **ONLY use**: `bun` and `bunx`
-2. **NEVER use**: npm, npx, yarn, pnpm
-3. **Check success**: Verify exit code before continuing
-4. **Order matters**: install - generate - build - test
+## Before You Start
 
-## Before Installing Packages
+**CRITICAL**: This project uses Bun exclusively. Never use npm, npx, yarn, or pnpm.
 
-**DON'T install packages that are already in boilerplate:**
+- **Package manager**: `bun` and `bunx` only
+- **Command order**: install - generate - build - test
+- **Verify success**: Always check exit code before proceeding
 
-Already installed (DON'T `bun add` again):
-- `prisma`, `@prisma/client` - Database
-- `next-auth`, `@auth/prisma-adapter` - Auth
-- `zod`, `react-hook-form`, `@hookform/resolvers` - Forms
-- `lucide-react` - Icons
-- `sonner` - Toast notifications
-- `framer-motion` - Animations
-- All `@radix-ui/*` - shadcn/ui dependencies
-- `tailwind-merge`, `clsx`, `class-variance-authority` - Styling
+## Pre-installed Packages
 
-**Only `bun add` when:**
+Do NOT install packages already in the boilerplate:
+- **Database**: `prisma`, `@prisma/client`
+- **Auth**: `next-auth`, `@auth/prisma-adapter`
+- **Forms**: `zod`, `react-hook-form`, `@hookform/resolvers`
+- **UI**: All `@radix-ui/*`, `lucide-react`, `sonner`
+- **Styling**: `tailwind-merge`, `clsx`, `class-variance-authority`
+- **Animation**: `framer-motion`
+
+Only add packages when:
 - Package is NOT in `package.json`
-- Story explicitly requires new package
+- Story explicitly requires a new package
 
-## Command Reference
+## Package Commands
 
-### Package Management
+```bash
+bun install --frozen-lockfile  # Install dependencies (use lockfile)
+bun add <package>              # Add production dependency
+bun add -d <package>           # Add dev dependency
+bun remove <package>           # Remove package
+```
 
-| Task | Command |
-|------|---------|
-| Install all | `bun install` |
-| Add dependency | `bun add <package>` |
-| Add dev dep | `bun add -d <package>` |
-| Remove | `bun remove <package>` |
+## Development Commands
 
-### Development
+```bash
+bun run dev              # Start development server
+bun run build            # Build for production
+bun run start            # Start production server
+```
 
-| Task | Command |
-|------|---------|
-| Dev server | `bun run dev` |
-| Build | `bun run build` |
-| Start prod | `bun run start` |
+## Quality Commands
 
-### Testing & Quality
+```bash
+bun run test             # Run all tests
+bun run test --watch     # Watch mode
+bun run test <path>      # Run specific test file
+bun run lint             # Check for lint errors
+bun run lint:fix         # Fix lint errors
+bun run format           # Format code
+bun run typecheck        # Check TypeScript types
+```
 
-| Task | Command |
-|------|---------|
-| Test all | `bun run test` |
-| Test watch | `bun run test --watch` |
-| Test file | `bun run test <path>` |
-| Lint | `bun run lint` |
-| Lint fix | `bun run lint:fix` |
-| Format | `bun run format` |
-| Type check | `bun run typecheck` |
+## Prisma Commands
 
-### Prisma Commands
+```bash
+bunx prisma generate     # Generate TypeScript client (after schema changes)
+bunx prisma db push      # Push schema to database (development)
+bunx prisma migrate dev  # Create migration with history
+bunx prisma migrate deploy  # Apply migrations (production)
+bunx prisma studio       # Open visual database browser
+```
 
-| Task | Command | When to Use |
-|------|---------|-------------|
-| Generate | `bunx prisma generate` | After schema.prisma changes |
-| Push | `bunx prisma db push` | Quick prototyping (no migration) |
-| Migrate | `bunx prisma migrate dev` | Create migration with history |
-| Deploy | `bunx prisma migrate deploy` | Production deployment |
+## Command Order
+
+Always follow this sequence:
+
+```
+1. bun install --frozen-lockfile
+2. bunx prisma generate (if schema exists)
+3. bun run build
+4. bun run test
+```
 
 ## Error Handling
 
-### Skip These Errors (Don't Retry)
+**Skip these errors (don't retry):**
+- `connection refused` / `ECONNREFUSED` - Database not running
+- `P1001: Can't reach database` - No database connection
+- `ENOENT: no such file` - File doesn't exist
 
-| Error Pattern | Meaning | Action |
-|---------------|---------|--------|
-| `connection refused` | Database not running | Skip command |
-| `ECONNREFUSED` | Service unavailable | Skip command |
-| `P1001: Can't reach database` | No database | Skip command |
-| `ENOENT: no such file` | File missing | Skip command |
+**Retry after fix:**
+- `Module not found` - Run `bun install --frozen-lockfile`
+- `Cannot find module` - Run `bun install --frozen-lockfile`
+- `command not found: prisma` - Run `bun install --frozen-lockfile`
 
-### Retry After Fix
+NEVER:
+- Use npm, npx, yarn, or pnpm
+- Install packages already in boilerplate
+- Skip `prisma generate` after schema changes
+- Retry database commands when database is not running
 
-| Error Pattern | Meaning | Fix |
-|---------------|---------|-----|
-| `Module not found` | Missing deps | Run `bun install` |
-| `Cannot find module` | Missing deps | Run `bun install` |
-| `command not found: prisma` | Missing deps | Run `bun install` |
-
-## Command Dependencies
-
-```
-bun install
-    ↓
-bunx prisma generate (if schema exists)
-    ↓
-bun run build
-    ↓
-bun run test
-```
-
-## Examples
-
-```bash
-# Install and build
-bun install
-bun run build
-
-# After schema change
-bunx prisma generate
-bunx prisma db push
-
-# Run specific test
-bun run test src/__tests__/api/users.test.ts
-
-# Fix lint issues
-bun run lint:fix
-```
+**IMPORTANT**: After any Prisma schema change, always run both `bunx prisma generate` and `bunx prisma db push`.

@@ -3,35 +3,42 @@ name: database-model
 description: Create Prisma schema models with relations and indexes. Use when designing database schemas, adding models, creating migrations, or defining entity relationships.
 ---
 
-# Database Model (Prisma 6.x+)
+This skill guides creation of Prisma database models for Next.js applications.
 
-## Critical Rules
+The user needs to design database schemas, add new models, define relationships, or modify existing tables.
 
-1. **Schema**: `prisma/schema.prisma` - NO `url` in datasource
-2. **Config**: `prisma/prisma.config.ts` - Database URL config
-3. **Naming**: PascalCase models, camelCase fields
-4. **ID**: Use `@id @default(uuid())`
-5. **Timestamps**: Always add `createdAt`, `updatedAt`
-6. **Indexes**: Add `@@index` for query fields
-7. **After changes**: `bunx prisma generate && bunx prisma db push`
+## Before You Start
 
-## Prisma 6.x Schema
+Prisma 6.x has a different configuration than earlier versions:
+- **Schema file**: `prisma/schema.prisma` - NO `url` in datasource block
+- **Config file**: `prisma/prisma.config.ts` - Contains database URL
+- **Client file**: `lib/prisma.ts` - Uses `datasourceUrl` option
+
+**CRITICAL**: After any schema changes, always run `bunx prisma generate && bunx prisma db push`.
+
+## Schema Structure (Prisma 6.x)
 
 ```prisma
-// prisma/schema.prisma - NO url in datasource
+// prisma/schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-  // url moved to prisma.config.ts
+  // NO url here in Prisma 6.x - it's in prisma.config.ts
 }
 ```
 
-## Quick Reference
+## Model Conventions
 
-### Basic Model
+Follow these conventions for all models:
+- **Model names**: PascalCase (User, Product, OrderItem)
+- **Field names**: camelCase (firstName, createdAt)
+- **IDs**: Always use `@id @default(uuid())`
+- **Timestamps**: Always include `createdAt` and `updatedAt`
+- **Indexes**: Add `@@index` for frequently queried fields
+
 ```prisma
 model Product {
   id        String   @id @default(uuid())
@@ -55,40 +62,48 @@ enum Status {
 }
 ```
 
+## Relationships
+
 ### One-to-Many
+
 ```prisma
 model Category {
   id       String    @id @default(uuid())
   name     String    @unique
-  products Product[]
+  products Product[]  // One category has many products
 }
 
 model Product {
   id         String   @id @default(uuid())
-  
   category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   categoryId String
-
+  
   @@index([categoryId])
 }
 ```
 
 ### One-to-One
+
 ```prisma
+model User {
+  id      String   @id @default(uuid())
+  profile Profile?  // Optional one-to-one
+}
+
 model Profile {
-  id     String  @id @default(uuid())
+  id     String @id @default(uuid())
   bio    String?
-  
-  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId String  @unique  // Unique for one-to-one
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @unique  // @unique makes it one-to-one
 }
 ```
 
 ### Many-to-Many
+
 ```prisma
 model Post {
   id   String @id @default(uuid())
-  tags Tag[]
+  tags Tag[]   // Prisma handles junction table automatically
 }
 
 model Tag {
@@ -98,69 +113,51 @@ model Tag {
 }
 ```
 
-## NextAuth Models (Required)
+## NextAuth Models
+
+The boilerplate includes required NextAuth models. Do NOT recreate these:
 
 ```prisma
-// These models are required for NextAuth v5
-// Already in boilerplate - DO NOT recreate
-
+// Already in boilerplate - User, Account, Session models
+// Just add your relations to User if needed:
 model User {
-  id            String    @id @default(uuid())
-  username      String    @unique
-  email         String?   @unique
-  emailVerified DateTime?
-  password      String
-  image         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  accounts Account[]
-  sessions Session[]
-}
-
-model Account {
-  id                String  @id @default(uuid())
-  userId            String
-  type              String
-  provider          String
-  providerAccountId String
-  // ... more fields
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  @@unique([provider, providerAccountId])
-}
-
-model Session {
-  id           String   @id @default(uuid())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id       String    @id @default(uuid())
+  // ... existing fields
+  posts    Post[]    // Add your relations here
+  comments Comment[]
 }
 ```
 
-## Prisma Client (Prisma 6.x+)
+## Prisma Client Setup
+
 ```typescript
-// lib/prisma.ts - requires datasourceUrl
+// lib/prisma.ts - Prisma 6.x requires datasourceUrl
 import { PrismaClient } from '@prisma/client';
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 
 export const prisma = globalForPrisma.prisma ?? new PrismaClient({
-  datasourceUrl: process.env.DATABASE_URL,  // Required in Prisma 6.x+
+  datasourceUrl: process.env.DATABASE_URL,  // Required in Prisma 6.x
   log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
 });
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 ```
 
-## Commands
+## Commands After Schema Changes
+
 ```bash
-bunx prisma generate     # Generate client
-bunx prisma db push      # Push to DB (dev)
-bunx prisma migrate dev  # Create migration
-bunx prisma studio       # View database
+bunx prisma generate     # Generate TypeScript types
+bunx prisma db push      # Push schema to database (dev)
+bunx prisma migrate dev  # Create migration file (when ready)
+bunx prisma studio       # Visual database browser
 ```
 
-## References
+NEVER:
+- Add `url` to datasource block in Prisma 6.x
+- Forget `@@index` on foreign key fields
+- Skip `onDelete: Cascade` on child relations
+- Recreate User/Account/Session models (already in boilerplate)
+- Forget to run `prisma generate` after schema changes
 
-- `prisma-patterns.md` - Relations, queries, advanced patterns
+**IMPORTANT**: Always add indexes on fields used in WHERE clauses or JOINs to improve query performance.

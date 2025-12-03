@@ -58,6 +58,39 @@ def _save_package_hash(workspace_path: str):
             f.write(current_hash)
 
 
+def _get_schema_hash(workspace_path: str) -> str:
+    """Get hash of prisma schema content."""
+    schema_path = os.path.join(workspace_path, "prisma", "schema.prisma")
+    if not os.path.exists(schema_path):
+        return ""
+    with open(schema_path, 'rb') as f:
+        return hashlib.md5(f.read()).hexdigest()
+
+
+def _should_run_prisma_generate(workspace_path: str) -> bool:
+    """Check if prisma generate should run based on schema hash."""
+    hash_file = os.path.join(workspace_path, ".prisma-schema-hash")
+    current_hash = _get_schema_hash(workspace_path)
+    
+    if not current_hash:
+        return False  # No schema
+    
+    if os.path.exists(hash_file):
+        with open(hash_file, 'r') as f:
+            if f.read().strip() == current_hash:
+                return False  # Same hash, skip
+    return True
+
+
+def _save_schema_hash(workspace_path: str):
+    """Save current schema hash."""
+    hash_file = os.path.join(workspace_path, ".prisma-schema-hash")
+    current_hash = _get_schema_hash(workspace_path)
+    if current_hash:
+        with open(hash_file, 'w') as f:
+            f.write(current_hash)
+
+
 def _get_shared_bun_cache() -> str:
     """Get shared bun cache directory path."""
     # backend/projects/.bun-cache
@@ -155,7 +188,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                 cache_dir = _get_shared_bun_cache()
                 logger.info(f"[setup_workspace] Running bun install (cache: {cache_dir})...")
                 result = subprocess.run(
-                    ["bun", "install"],
+                    ["bun", "install", "--frozen-lockfile"],
                     cwd=workspace_path,
                     capture_output=True,
                     text=True,
@@ -174,6 +207,30 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         else:
             if workspace_path:
                 logger.info("[setup_workspace] Skipping bun install (package.json unchanged)")
+        
+        # Smart prisma generate - only if schema changed
+        if workspace_path and _should_run_prisma_generate(workspace_path):
+            try:
+                logger.info("[setup_workspace] Running prisma generate...")
+                result = subprocess.run(
+                    ["bunx", "prisma", "generate"],
+                    cwd=workspace_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=60
+                )
+                if result.returncode == 0:
+                    _save_schema_hash(workspace_path)
+                    logger.info("[setup_workspace] prisma generate successful")
+                else:
+                    logger.warning(f"[setup_workspace] prisma generate failed: {result.stderr[:200]}")
+            except subprocess.TimeoutExpired:
+                logger.warning("[setup_workspace] prisma generate timed out")
+            except Exception as e:
+                logger.warning(f"[setup_workspace] prisma generate error: {e}")
+        else:
+            if workspace_path and _get_schema_hash(workspace_path):
+                logger.info("[setup_workspace] Skipping prisma generate (schema unchanged)")
         
         return {
             **state,
