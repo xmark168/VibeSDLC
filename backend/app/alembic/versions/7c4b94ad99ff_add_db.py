@@ -1,8 +1,8 @@
-"""initial_schema
+"""add db
 
-Revision ID: ca171d6b07a4
+Revision ID: 7c4b94ad99ff
 Revises: 
-Create Date: 2025-12-02 21:17:48.002002
+Create Date: 2025-12-03 13:55:26.737273
 
 """
 from alembic import op
@@ -11,7 +11,7 @@ import sqlmodel
 
 
 # revision identifiers, used by Alembic.
-revision = 'ca171d6b07a4'
+revision = '7c4b94ad99ff'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -64,6 +64,7 @@ def upgrade():
     sa.Column('id', sa.Uuid(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
+    sa.Column('epic_code', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('title', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('description', sa.Text(), nullable=True),
     sa.Column('project_id', sa.UUID(), nullable=False),
@@ -458,6 +459,7 @@ def upgrade():
     sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.Column('project_id', sa.Uuid(), nullable=False),
     sa.Column('parent_id', sa.Uuid(), nullable=True),
+    sa.Column('story_code', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('type', sa.Enum('USER_STORY', 'ENABLER_STORY', name='storytype'), nullable=False),
     sa.Column('title', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('description', sa.Text(), nullable=True),
