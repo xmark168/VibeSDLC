@@ -108,6 +108,8 @@ jest.mock('next/server', () => {
             ...init?.headers,
           },
         });
+        // Ensure json() method exists for jest environment
+        (response as any).json = async () => data;
         return response;
       },
       redirect: (url: string | URL) => {

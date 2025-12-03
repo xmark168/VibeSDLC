@@ -54,6 +54,41 @@ Before writing `<ComponentName prop={value} />`:
 2. Check the `interface Props` or function params
 3. Use EXACT prop names from the interface
 
+### Props Passing Patterns
+
+After reading component, check interface format:
+
+```typescript
+// Interface với INDIVIDUAL props
+interface Props {
+  id: string;
+  name: string;
+  price: number;
+}
+// → Pass: <Card id={item.id} name={item.name} price={item.price} />
+// → Or spread: <Card {...item} />
+
+// Interface với OBJECT prop
+interface Props {
+  textbook: Textbook;
+}
+// → Pass: <Card textbook={item} />
+```
+
+### Common Mistake
+
+```tsx
+// Component expects individual props
+interface CardProps { id: string; name: string; }
+
+// ❌ WRONG - passing object
+<Card textbook={item} />
+
+// ✅ CORRECT - spread or individual
+<Card {...item} />
+<Card id={item.id} name={item.name} />
+```
+
 ## Pre-Code Checklist (MANDATORY)
 
 ⚠️ **Before writing/modifying ANY component:**

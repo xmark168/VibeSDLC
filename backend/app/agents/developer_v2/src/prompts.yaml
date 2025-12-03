@@ -186,13 +186,9 @@ tasks:
       {modified_files}
       </modified_files>
       
-      <context>
       {related_context}
-      </context>
       
-      <feedback>
       {feedback_section}
-      </feedback>
 
   # ---------------------------------------------------------------------------
   # ANALYZE ERROR - Debug and create fix plan
@@ -229,6 +225,12 @@ tasks:
       - "Expected string, received undefined" → Field missing in form/request body
       - "Invalid enum value" → Check enum definition matches usage
       - "Required" → Field is missing, add to form or set default
+      
+      Prisma 6.x Config (IMPORTANT):
+      - "url argument is required" or "DATABASE_URL missing" → DO NOT add url to schema.prisma! Prisma 6.x uses datasourceUrl in lib/prisma.ts
+      - "@auth/core/adapters type mismatch" → Downgrade @auth/prisma-adapter to ^1.0.0
+      - Schema should have: datasource db { provider = "postgresql" } with NO url field
+      - PrismaClient must use: new PrismaClient({ datasourceUrl: process.env.DATABASE_URL })
       
       Prisma Query Errors:
       - "Argument is missing" → Required field not provided in create/update
