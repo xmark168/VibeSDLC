@@ -12,6 +12,7 @@ from .filesystem_tools import (
     glob,
     grep_files,
     edit_file,
+    multi_edit_file,
 )
 
 # Git tools
@@ -95,6 +96,7 @@ __all__ = [
     "glob",
     "grep_files",
     "edit_file",
+    "multi_edit_file",
     # Git
     "git_status",
     "git_commit",

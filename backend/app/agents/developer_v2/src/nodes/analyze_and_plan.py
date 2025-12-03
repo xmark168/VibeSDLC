@@ -1,6 +1,8 @@
 """Analyze and Plan node - Combined analysis and planning with tool exploration."""
 import os
+import re
 import logging
+import glob as glob_module
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
@@ -21,18 +23,38 @@ from app.agents.developer_v2.src.tools.cocoindex_tools import search_codebase_to
 logger = logging.getLogger(__name__)
 
 
-def _prefetch_context(workspace_path: str) -> str:
-    """Pre-fetch project context without LLM calls."""
+def _extract_keywords(text: str) -> list:
+    """Extract meaningful keywords from story text."""
+    stopwords = {'the', 'a', 'an', 'is', 'are', 'can', 'will', 'should', 'must',
+                 'user', 'users', 'when', 'then', 'given', 'and', 'or', 'to', 'from',
+                 'with', 'for', 'on', 'in', 'at', 'by', 'of', 'that', 'this', 'be',
+                 'want', 'see', 'click', 'display', 'show', 'create', 'update', 'delete'}
+    
+    words = re.findall(r'[a-z]+', text.lower())
+    
+    keywords = []
+    seen = set()
+    for word in words:
+        if len(word) > 3 and word not in stopwords and word not in seen:
+            keywords.append(word)
+            seen.add(word)
+    
+    return keywords[:10]
+
+
+def _smart_prefetch(workspace_path: str, story_title: str, requirements: list) -> str:
+    """Prefetch relevant files based on story content."""
     if not workspace_path or not os.path.exists(workspace_path):
         return ""
     
     context_parts = []
     
-    # Core files to always read
+    # Always read core files
     core_files = [
         ("package.json", 500),
-        ("prisma/schema.prisma", 1000),
-        ("src/app/layout.tsx", 300),
+        ("prisma/schema.prisma", 2000),
+        ("src/app/layout.tsx", 500),
+        ("tsconfig.json", 300),
     ]
     
     for file_path, max_len in core_files:
@@ -41,21 +63,67 @@ def _prefetch_context(workspace_path: str) -> str:
             try:
                 with open(full_path, 'r', encoding='utf-8') as f:
                     content = f.read()[:max_len]
-                context_parts.append(f"# {file_path}\n{content}")
+                context_parts.append(f"### {file_path}\n```\n{content}\n```")
             except Exception:
                 pass
     
+    # Extract keywords from story
+    req_text = ' '.join(requirements) if requirements else ''
+    text = f"{story_title} {req_text}".lower()
+    keywords = _extract_keywords(text)
+    
+    # Find related files based on keywords
+    for keyword in keywords[:5]:
+        pattern = os.path.join(workspace_path, "src", "**", f"*{keyword}*")
+        try:
+            matches = glob_module.glob(pattern, recursive=True)
+            for match in matches[:2]:
+                if os.path.isfile(match):
+                    rel_path = os.path.relpath(match, workspace_path)
+                    with open(match, 'r', encoding='utf-8') as f:
+                        content = f.read()[:1000]
+                    context_parts.append(f"### {rel_path}\n```\n{content}\n```")
+        except Exception:
+            pass
+    
     # List key directories
-    for dir_name in ["src/app/api", "src/components", "src/lib"]:
+    for dir_name in ["src/app/api", "src/components", "src/lib", "src/app"]:
         dir_path = os.path.join(workspace_path, dir_name)
         if os.path.exists(dir_path):
             try:
-                files = os.listdir(dir_path)[:10]
-                context_parts.append(f"# {dir_name}/\n{', '.join(files)}")
+                items = os.listdir(dir_path)[:15]
+                context_parts.append(f"### {dir_name}/\n{', '.join(items)}")
             except Exception:
                 pass
     
     return "\n\n".join(context_parts)
+
+
+async def _summarize_if_needed(exploration: str, state: dict) -> str:
+    """Summarize exploration if too long, otherwise return as-is."""
+    MAX_CHARS = 8000
+    
+    if len(exploration) <= MAX_CHARS:
+        return exploration
+    
+    logger.info(f"[analyze_and_plan] Summarizing exploration ({len(exploration)} chars)")
+    
+    summary_prompt = f"""Summarize this codebase exploration concisely:
+
+{exploration[:15000]}
+
+Output a bullet-point summary focusing on:
+- Existing database models
+- Relevant components/files found  
+- Patterns to follow
+- Key insights for implementation"""
+
+    response = await code_llm.ainvoke([
+        SystemMessage(content="You are a technical summarizer. Be concise."),
+        HumanMessage(content=summary_prompt)
+    ], config=_cfg(state, "summarize_exploration"))
+    
+    return f"## Exploration Summary\n{response.content}"
 
 
 async def analyze_and_plan(state: DeveloperState, agent=None) -> DeveloperState:
@@ -70,8 +138,12 @@ async def analyze_and_plan(state: DeveloperState, agent=None) -> DeveloperState:
         
         setup_tool_context(workspace_path, project_id, task_id)
         
-        # Pre-fetch context (quick, no LLM)
-        project_context = _prefetch_context(workspace_path)
+        # Smart prefetch based on story content
+        project_context = _smart_prefetch(
+            workspace_path,
+            state.get("story_title", ""),
+            state.get("story_requirements", [])
+        )
         project_structure = get_project_structure(tech_stack)
         
         # Load skill registry (for later use in implement)
@@ -79,7 +151,21 @@ async def analyze_and_plan(state: DeveloperState, agent=None) -> DeveloperState:
         
         # Load prompts from plan_prompts.yaml
         plan_prompts = get_plan_prompts(tech_stack)
-        system_prompt = f"{plan_prompts['system_prompt']}\n\n<project_structure>\n{project_structure}\n</project_structure>"
+        
+        # Single-phase system prompt with clear workflow
+        system_prompt = f"""{plan_prompts['system_prompt']}
+
+<workflow>
+1. EXPLORE: Use tools to understand codebase (3-5 tool calls max)
+2. ANALYZE: Summarize what you found
+3. OUTPUT: JSON in <result> tags
+
+CRITICAL: After exploration, you MUST output <result> JSON. Do not stop at exploration.
+</workflow>
+
+<project_structure>
+{project_structure}
+</project_structure>"""
         
         # Format input from template
         requirements = state.get("story_requirements", [])
@@ -107,29 +193,44 @@ async def analyze_and_plan(state: DeveloperState, agent=None) -> DeveloperState:
             search_codebase_tool,  # semantic search
         ]
         
-        # Phase 1: Tool exploration
-        explore_messages = [
+        # Single-phase: explore + analyze + plan in one call
+        messages = [
             SystemMessage(content=system_prompt),
-            HumanMessage(content=input_text + "\n\nExplore the codebase to understand existing structure before planning.")
+            HumanMessage(content=input_text)
         ]
         
-        exploration = await _llm_with_tools(
+        response = await _llm_with_tools(
             llm=code_llm,
             tools=tools,
-            messages=explore_messages,
+            messages=messages,
             state=state,
-            name="analyze_explore",
-            max_iterations=12
+            name="analyze_and_plan",
+            max_iterations=8  # Enough for explore + output
         )
         
-        # Phase 2: Generate plan with exploration context
-        plan_messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=f"{input_text}\n\n<exploration_context>\n{exploration[:6000]}\n</exploration_context>\n\nNow create the implementation plan based on your exploration.")
-        ]
+        # Summarize if response is too long
+        response = await _summarize_if_needed(response, state)
         
-        response = await code_llm.ainvoke(plan_messages, config=_cfg(state, "analyze_and_plan"))
-        data = extract_json_universal(response.content, "analyze_and_plan")
+        # Extract JSON from response
+        try:
+            data = extract_json_universal(response, "analyze_and_plan")
+        except ValueError as e:
+            # Retry with explicit JSON request
+            logger.warning(f"[analyze_and_plan] JSON extraction failed, retrying: {e}")
+            
+            retry_messages = [
+                SystemMessage(content="Output ONLY a JSON implementation plan in <result> tags. No explanations."),
+                HumanMessage(content=f"""Convert this exploration into a JSON plan:
+
+{response[:4000]}
+
+<result>
+{{"story_summary": "...", "steps": [{{"order": 1, "description": "..."}}]}}
+</result>""")
+            ]
+            
+            retry_response = await code_llm.ainvoke(retry_messages, config=_cfg(state, "analyze_and_plan_retry"))
+            data = extract_json_universal(retry_response.content, "analyze_and_plan")
         
         # Parse results - use LLM's native format (steps)
         story_summary = data.get("story_summary", "")

@@ -79,14 +79,22 @@ def _is_safe_command(command: str) -> tuple:
 
 
 @tool
-def execute_shell(command: str, working_directory: str = ".", timeout: int = 60) -> str:
+def execute_shell(command: str, working_directory: str = ".", timeout: int = 120, description: str = "") -> str:
     """Execute a shell command safely within project root.
 
     Args:
-        command: Shell command to execute (e.g., 'npm install', 'python script.py')
+        command: Shell command to execute (e.g., 'bun install', 'bun test')
         working_directory: Directory to run command in, relative to project root
-        timeout: Maximum execution time in seconds
+        timeout: Maximum execution time in seconds (default 120, max 600)
+        description: What this command does in 5-10 words (e.g., "Run unit tests")
+    
+    IMPORTANT:
+    - NEVER use grep, find, cat → use glob, grep_files, read_file_safe instead
+    - Prefer absolute paths over cd
+    - For long builds, set timeout up to 600
     """
+    # Cap timeout at 600 seconds (10 minutes)
+    timeout = min(timeout, 600)
     root_dir = _get_root_dir()
     start_time = time.time()
     
