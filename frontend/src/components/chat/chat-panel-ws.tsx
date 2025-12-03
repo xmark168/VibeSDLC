@@ -1008,41 +1008,32 @@ export function ChatPanelWS({
         ))}
       </div>
 
-      {/* Sticky Question Bar */}
-      {pendingQuestion && (
-        <div className="mx-4 mb-2 sticky bottom-20 z-10">
-          <div className="p-4 rounded-lg bg-blue-600 text-white shadow-lg border border-blue-700">
-            <div className="flex items-start justify-between gap-3">
+      {/* Chat Input Area - wrapped with question notification when pending */}
+      <div className={`mx-4 mb-4 rounded-2xl relative ${pendingQuestion ? 'border border-blue-200 bg-blue-50/50 dark:bg-blue-950/20 dark:border-blue-800' : ''}`}>
+        {/* Question Notification Banner */}
+        {pendingQuestion && (
+          <div className="px-4 py-3 bg-blue-50 dark:bg-blue-950/30 rounded-t-2xl border-b border-blue-100 dark:border-blue-800">
+            <div className="flex items-center justify-between gap-3">
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-lg">❓</span>
-                  <p className="text-sm font-semibold">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">❓</span>
+                  <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
                     {pendingQuestion.agent_name || 'Agent'} is waiting for your answer
                   </p>
                 </div>
-                <p className="text-xs opacity-90 line-clamp-2">
+                <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-1">
                   {pendingQuestion.content}
                 </p>
-                {isMultichoiceQuestion && (
-                  <p className="text-xs opacity-75 mt-1">
-                    📍 Please select options in the question card above
-                  </p>
-                )}
-                {!isMultichoiceQuestion && (
-                  <p className="text-xs opacity-75 mt-1">
-                    💬 Type your answer in the chat below
-                  </p>
-                )}
               </div>
-              <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
                 <Button
                   size="sm"
-                  variant="secondary"
+                  variant="outline"
                   onClick={() => {
                     const element = document.getElementById(`question-${pendingQuestion.id}`)
                     element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
                   }}
-                  className="text-xs whitespace-nowrap"
+                  className="text-xs text-blue-600 border-blue-300 hover:bg-blue-100 h-7 px-3"
                 >
                   View Question
                 </Button>
@@ -1050,24 +1041,22 @@ export function ChatPanelWS({
                   size="sm"
                   variant="ghost"
                   onClick={() => {
-                    // Skip question by marking it as answered
                     sendQuestionAnswer(
                       pendingQuestion.structured_data!.question_id!,
                       "[SKIPPED]",
                       []
                     )
                   }}
-                  className="text-xs text-white hover:bg-blue-700 hover:text-white whitespace-nowrap"
+                  className="text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 h-7 px-3"
                 >
                   Skip
                 </Button>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <div className="p-2 m-4 rounded-4xl relative ">
+        <div className={`p-2 ${pendingQuestion ? 'pt-3' : ''}`}>
         {showMentions && (
           <MentionDropdown
             agents={filteredAgents}
@@ -1139,6 +1128,7 @@ export function ChatPanelWS({
           </Button>
         </div> */}
 
+        </div>
       </div>
 
     </div>
