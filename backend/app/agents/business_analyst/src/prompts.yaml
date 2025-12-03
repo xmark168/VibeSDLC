@@ -83,7 +83,7 @@ shared_context:
     - id: Unique identifier (EPIC-001, EPIC-002, ...)
     - title: Short title describing the feature
     - description: Overview of the epic
-    - domain: Feature category (Authentication, Product, Cart, Payment, Admin, Notification)
+    - domain: Feature category inferred from PRD (e.g., Homepage, Authentication, Product, Cart, Payment, Admin, Dashboard, etc.)
     
     **Story Structure (Senior BA Quality):**
     - id: Unique identifier (US-001, US-002, ...)
@@ -420,8 +420,10 @@ tasks:
       Extract Epics and INVEST-compliant user stories. ALL content in ENGLISH.
       
       **RULES:**
-      - Group by domain (Authentication, Product, Cart, Payment, etc.)
-      - 2-5 stories per Epic
+      - Analyze PRD and INFER logical Epics based on features and user journey
+      - For public-facing websites (e-commerce, blog, portfolio): Consider Homepage/Landing page as entry point
+      - For admin/dashboard/internal tools: Consider Dashboard as main interface
+      - Group related features into coherent Epics (2-5 stories per Epic)
       - Title: "As a [user], I want [goal] so that [benefit]"
       - Requirements: 5-8 items (functionality, UX, validation, security)
       - Acceptance Criteria: 4-6 scenarios (happy path + errors + edge cases)
@@ -465,7 +467,7 @@ tasks:
             "id": "EPIC-001",
             "title": "Epic Title",
             "description": "Business value",
-            "domain": "Authentication|Product|Cart|Payment|Admin",
+            "domain": "Inferred from PRD features",
             "stories": [
               {{
                 "id": "US-001",
@@ -501,7 +503,7 @@ tasks:
       - id: EPIC-001, EPIC-002, etc.
       - title: Short descriptive title
       - description: Business value (1-2 sentences)
-      - domain: Authentication, Product, Cart, Payment, Admin, Notification
+      - domain: Inferred from PRD (e.g., Homepage, Dashboard, Authentication, Product, Cart, etc.)
       - feature_refs: List of feature names from PRD that belong to this epic
 
     user_prompt: |
@@ -510,7 +512,13 @@ tasks:
       {prd}
       ```
       
-      Extract Epics ONLY (no stories yet). Group PRD features into logical Epics.
+      Extract Epics ONLY (no stories yet). 
+      
+      **INFER Epics from PRD context:**
+      - Analyze project type and user journey
+      - Public-facing site (e-commerce, blog) → Consider Homepage as entry point
+      - Admin/Dashboard app → Consider Dashboard as main interface
+      - Group related PRD features into logical Epics
       
       Return ONLY valid JSON:
       ```json
@@ -520,7 +528,7 @@ tasks:
             "id": "EPIC-001",
             "title": "Epic Title",
             "description": "Business value",
-            "domain": "Authentication|Product|Cart|Payment|Admin",
+            "domain": "Inferred from PRD",
             "feature_refs": ["Feature 1 from PRD", "Feature 2"]
           }}
         ]
@@ -685,7 +693,7 @@ tasks:
       - id: Unique identifier (e.g., EPIC-001)
       - title: Short title describing the feature
       - description: Overview of the epic
-      - domain: Feature category
+      - domain: Inferred from context (Homepage, Dashboard, Authentication, Product, etc.)
       
       **Story Structure:**
       - id: Unique identifier (e.g., US-001)
@@ -736,7 +744,7 @@ tasks:
             "id": "EPIC-001",
             "title": "Epic Title in English",
             "description": "Description in English",
-            "domain": "Cart|Product|...",
+            "domain": "Inferred domain",
             "stories": [
               {{
                 "id": "US-001",
