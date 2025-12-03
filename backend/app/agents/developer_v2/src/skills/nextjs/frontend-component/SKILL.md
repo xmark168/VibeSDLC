@@ -175,81 +175,41 @@ export function CreateForm() {
 | Fetch from DB | Server (no directive) |
 | Access env secrets | Server (no directive) |
 
-## Animations with Framer Motion
+## API Response Handling (IMPORTANT)
 
-### Basic Animation
-```tsx
-'use client';
-import { motion } from 'framer-motion';
+### Standard Response Format
 
-export function AnimatedCard({ children }: { children: React.ReactNode }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
-    >
-      {children}
-    </motion.div>
-  );
-}
+API routes in this project use `successResponse()` which **always wraps data**:
+
+```typescript
+// API ALWAYS returns this format:
+{ success: true, data: T }
+
+// NOT raw array like:
+[item1, item2, ...]
 ```
 
-### Hover/Tap Effects
-```tsx
-<motion.button
-  whileHover={{ scale: 1.05 }}
-  whileTap={{ scale: 0.95 }}
-  className="px-4 py-2 bg-primary text-primary-foreground rounded"
->
-  Click me
-</motion.button>
+### Fetching Pattern
+
+```typescript
+// ✅ CORRECT - extract .data
+const res = await fetch('/api/textbooks');
+const json = await res.json();
+setTextbooks(json.data ?? []);
+
+// ❌ WRONG - passing raw response
+const json = await res.json();
+setTextbooks(json);  // json is {success, data}, not array!
 ```
 
-### List Animation
-```tsx
-'use client';
-import { motion } from 'framer-motion';
+### useState Default
 
-export function AnimatedList({ items }: { items: { id: string; name: string }[] }) {
-  return (
-    <motion.ul className="space-y-2">
-      {items.map((item, i) => (
-        <motion.li
-          key={item.id}
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: i * 0.1 }}
-          className="p-2 bg-muted rounded"
-        >
-          {item.name}
-        </motion.li>
-      ))}
-    </motion.ul>
-  );
-}
-```
-
-### Page Transition
-```tsx
-'use client';
-import { motion } from 'framer-motion';
-
-export function PageWrapper({ children }: { children: React.ReactNode }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
-    >
-      {children}
-    </motion.div>
-  );
-}
+```typescript
+const [items, setItems] = useState<Item[]>([]);  // ✅ empty array default
 ```
 
 ## References
 
-- `forms.md` - Detailed form patterns with validation
-- `shadcn-patterns.md` - shadcn/ui component examples
+- `references/forms.md` - Form patterns with validation
+- `references/shadcn-patterns.md` - shadcn/ui component examples
+- `references/animations.md` - Framer Motion animation patterns

@@ -115,6 +115,23 @@ throw ApiErrors.validation('msg');   // 422
 | Search | `where: { field: { contains: q, mode: 'insensitive' } }` |
 | Auth check | `const session = await auth()` |
 
+## Response Format (Important for Consumers)
+
+`successResponse` wraps data in object:
+
+```typescript
+// API returns:
+{ success: true, data: T, message?: string }
+
+// Consumer must extract data:
+const res = await fetch('/api/items');
+const json = await res.json();
+const items = json.data;  // ✅ Extract from wrapper!
+
+// ❌ WRONG
+const items = json;  // items is {success, data}, not array!
+```
+
 ## References
 
 - `route-patterns.md` - Types, pagination, advanced patterns

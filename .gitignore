@@ -133,3 +133,4 @@ backend/app/agents/developer/projects_workspace
 backend/projects
 
 backend/uv.lock
+/.bun-cache
