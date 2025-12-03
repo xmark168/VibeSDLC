@@ -1009,10 +1009,10 @@ export function ChatPanelWS({
       </div>
 
       {/* Chat Input Area - wrapped with question notification when pending */}
-      <div className={`mx-4 mb-4 rounded-2xl relative ${pendingQuestion ? 'border border-blue-200 bg-blue-50/50 dark:bg-blue-950/20 dark:border-blue-800' : ''}`}>
+      <div className={`mx-4 mb-4 rounded-2xl relative ${pendingQuestion ? 'border border-blue-200 bg-blue-100 dark:bg-blue-900/50 dark:border-blue-800' : ''}`}>
         {/* Question Notification Banner */}
         {pendingQuestion && (
-          <div className="px-4 py-3 bg-blue-50 dark:bg-blue-950/30 rounded-t-2xl border-b border-blue-100 dark:border-blue-800">
+          <div className="px-4 py-3 bg-blue-100 dark:bg-blue-900/50 rounded-t-2xl">
             <div className="flex items-center justify-between gap-3">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
@@ -1047,7 +1047,7 @@ export function ChatPanelWS({
                       []
                     )
                   }}
-                  className="text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 h-7 px-3"
+                  className="text-xs text-gray-600 bg-gray-200 hover:bg-gray-300 border border-gray-300 h-7 px-3"
                 >
                   Skip
                 </Button>
