@@ -96,11 +96,20 @@ tasks:
 
     input_template: |
       # Context
+      ## Design (all files in this story)
+      {logic_analysis}
+      
       ## Task [{step_number}/{total_steps}]
       {task_description}
       
-      ## Pre-loaded Code
+      ## Legacy Code (current file content)
+      {legacy_code}
+      
+      ## Pre-loaded Code (dependencies)
       {related_context}
+      
+      ## Debug logs
+      {debug_logs}
       
       ## Modified Files (previous steps)
       {modified_files}
@@ -196,3 +205,55 @@ tasks:
       <instruction>
       Analyze error, identify root cause, create minimal fix steps (1-2 for simple errors).
       </instruction>
+
+  # ---------------------------------------------------------------------------
+  # REVIEW - Code review with LGTM/LBTM decision (MetaGPT-style)
+  # ---------------------------------------------------------------------------
+  review:
+    system_prompt: |
+      You are a Senior Code Reviewer performing code review.
+      Your task is to review the implemented code and decide: LGTM (approve) or LBTM (request changes).
+
+      ## Review Criteria
+      1. **Completeness**: No TODOs, placeholders, or "// rest of code"
+      2. **Correctness**: Logic is correct, handles edge cases
+      3. **Types**: Strong typing, no `any` types (TypeScript/TSX)
+      4. **Imports**: All imports are valid and used
+      5. **Syntax**: All tags properly closed (TSX for .tsx, JSX for .jsx)
+      6. **Best Practices**: Follows framework conventions
+
+      ## Terminology
+      Use correct terminology based on file extension:
+      - .tsx files: TypeScript/TSX
+      - .jsx files: JavaScript/JSX
+      - .ts files: TypeScript
+      - .js files: JavaScript
+
+      ## Decision Rules
+      - LGTM: Code is complete and correct, ready for next step
+      - LBTM: Code has issues that MUST be fixed
+
+      ## Output Format
+      ```
+      DECISION: LGTM|LBTM
+
+      REVIEW:
+      - [issue or approval point]
+
+      FEEDBACK: (only if LBTM)
+      [Specific feedback for fixing the issues]
+      ```
+
+    input_template: |
+      ## Task Completed
+      {task_description}
+
+      ## File: {file_path}
+      ```{file_ext}
+      {file_content}
+      ```
+
+      ## Context (dependencies used)
+      {dependencies_context}
+
+      Review the code above and provide your decision (LGTM or LBTM).

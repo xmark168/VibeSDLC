@@ -7,49 +7,12 @@ from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.nodes._llm import code_llm
 from app.agents.developer_v2.src.tools.filesystem_tools import get_modified_files
 from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg
+from app.agents.developer_v2.src.utils.prompt_utils import (
+    format_input_template as _format_input_template,
+    build_system_prompt as _build_system_prompt,
+)
 
 logger = logging.getLogger(__name__)
-
-REVIEW_SYSTEM_PROMPT = """You are a Senior Code Reviewer performing code review.
-Your task is to review the implemented code and decide: LGTM (approve) or LBTM (request changes).
-
-## Review Criteria
-1. **Completeness**: No TODOs, placeholders, or "// rest of code"
-2. **Correctness**: Logic is correct, handles edge cases
-3. **Types**: Strong typing, no `any` types
-4. **Imports**: All imports are valid and used
-5. **Best Practices**: Follows framework conventions
-
-## Decision Rules
-- LGTM: Code is complete and correct, ready for next step
-- LBTM: Code has issues that MUST be fixed
-
-## Output Format
-```
-DECISION: LGTM|LBTM
-
-REVIEW:
-- [issue or approval point]
-- [issue or approval point]
-
-FEEDBACK: (only if LBTM)
-[Specific feedback for fixing the issues]
-```
-"""
-
-REVIEW_INPUT_TEMPLATE = """## Task Completed
-{task_description}
-
-## File: {file_path}
-```{file_ext}
-{file_content}
-```
-
-## Context (dependencies used)
-{dependencies_context}
-
-Review the code above and provide your decision (LGTM or LBTM).
-"""
 
 
 def _get_file_extension(file_path: str) -> str:
@@ -107,13 +70,13 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
         workspace_path = state.get("workspace_path", "")
         dependencies_content = state.get("dependencies_content", {})
         
-        if not plan_steps or current_step < 1:
+        if not plan_steps or current_step >= len(plan_steps):
             return {**state, "review_result": "LGTM", "review_feedback": ""}
         
-        # Get the step that was just implemented (current_step - 1 because we increment after implement)
-        step_index = current_step - 1
-        if step_index >= len(plan_steps):
-            step_index = len(plan_steps) - 1
+        # Get the step that was just implemented (current_step is NOT incremented by implement)
+        step_index = current_step
+        if step_index < 0:
+            step_index = 0
             
         step = plan_steps[step_index]
         file_path = step.get("file_path", "")
@@ -144,8 +107,10 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
         if not deps_context:
             deps_context = "No dependencies"
         
-        # Build review prompt
-        input_text = REVIEW_INPUT_TEMPLATE.format(
+        # Build review prompt using prompts.yaml
+        system_prompt = _build_system_prompt("review")
+        input_text = _format_input_template(
+            "review",
             task_description=task_description,
             file_path=file_path,
             file_ext=_get_file_extension(file_path),
@@ -154,7 +119,7 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
         )
         
         messages = [
-            SystemMessage(content=REVIEW_SYSTEM_PROMPT),
+            SystemMessage(content=system_prompt),
             HumanMessage(content=input_text)
         ]
         

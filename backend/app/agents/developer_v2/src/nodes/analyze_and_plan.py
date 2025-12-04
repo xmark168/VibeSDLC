@@ -228,27 +228,17 @@ async def _extract_json_with_retry(
     story_description: str,
     max_retries: int = 2
 ) -> dict:
-    """Extract JSON from response with robust retry mechanism.
+    """Extract JSON with structured output as PRIMARY method.
     
     Strategy:
-    1. Try direct extraction from response (fast)
-    2. If fails, use structured output with Pydantic (reliable)
-    3. If still fails, generate minimal fallback plan (never fails)
+    1. Try structured output with Pydantic (PRIMARY - 99% reliable)
+    2. If fails, try direct extraction (backup - for cached responses)
+    3. If still fails, fallback plan (never fails)
     """
-    # Attempt 1: Direct extraction (fastest)
+    # PRIMARY: Structured output with Pydantic (most reliable)
     try:
-        data = extract_json_universal(response, "analyze_and_plan")
-        if data and data.get("steps"):
-            logger.info("[analyze_and_plan] JSON extracted on first attempt")
-            return data
-    except ValueError as e:
-        logger.warning(f"[analyze_and_plan] Direct extraction failed: {e}")
-    
-    # Attempt 2: Use structured output with Pydantic schema (most reliable)
-    try:
-        logger.info("[analyze_and_plan] Using structured output with Pydantic schema")
+        logger.info("[analyze_and_plan] Using structured output (primary)")
         
-        # Create LLM with structured output
         structured_llm = code_llm.with_structured_output(AnalyzePlanOutput)
         
         structured_prompt = f"""Convert this exploration into an implementation plan.
@@ -273,44 +263,27 @@ Create an implementation plan with:
             HumanMessage(content=structured_prompt)
         ], config=_cfg(state, "analyze_and_plan_structured"))
         
-        # Pydantic model → dict
         data = result.model_dump()
         if data and data.get("steps"):
-            logger.info(f"[analyze_and_plan] Structured output success: {len(data['steps'])} steps")
+            logger.info(f"[analyze_and_plan] Structured output: {len(data['steps'])} steps")
             return data
             
     except Exception as e:
         logger.warning(f"[analyze_and_plan] Structured output failed: {e}")
     
-    # Attempt 3: Legacy retry with JSON prompt (backup)
-    for attempt in range(max_retries):
-        try:
-            logger.info(f"[analyze_and_plan] JSON retry attempt {attempt + 1}/{max_retries}")
-            
-            retry_prompt = JSON_GENERATION_PROMPT.format(
-                exploration=response[:6000],
-                story_title=story_title,
-                story_description=story_description[:500] if story_description else "No description"
-            )
-            
-            retry_response = await code_llm.ainvoke([
-                SystemMessage(content="You are a JSON generator. Output ONLY valid JSON in <result> tags."),
-                HumanMessage(content=retry_prompt)
-            ], config=_cfg(state, f"analyze_and_plan_retry_{attempt + 1}"))
-            
-            data = extract_json_universal(retry_response.content, f"analyze_and_plan_retry_{attempt + 1}")
-            if data and data.get("steps"):
-                logger.info(f"[analyze_and_plan] JSON extracted on retry {attempt + 1}")
-                return data
-                
-        except ValueError as e:
-            logger.warning(f"[analyze_and_plan] Retry {attempt + 1} failed: {e}")
-            continue
+    # BACKUP: Direct extraction (for edge cases or cached responses)
+    try:
+        data = extract_json_universal(response, "analyze_and_plan")
+        if data and data.get("steps"):
+            logger.info("[analyze_and_plan] Direct extraction backup success")
+            return data
+    except ValueError:
+        pass
     
-    # Fallback: Generate minimal plan from story title (never fails)
-    logger.error("[analyze_and_plan] All extraction attempts failed, using fallback")
+    # FALLBACK: Minimal plan (never fails)
+    logger.error("[analyze_and_plan] All methods failed, using fallback plan")
     
-    fallback_data = {
+    return {
         "story_summary": story_title or "Implementation task",
         "logic_analysis": [],
         "steps": [
@@ -323,8 +296,6 @@ Create an implementation plan with:
             }
         ]
     }
-    
-    return fallback_data
 
 
 async def analyze_and_plan(state: DeveloperState, agent=None) -> DeveloperState:
