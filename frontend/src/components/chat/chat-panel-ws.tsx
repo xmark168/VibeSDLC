@@ -309,13 +309,19 @@ export function ChatPanelWS({
   // Detect stories_approved message and refresh Kanban board
   const lastApprovedMsgIdRef = useRef<string | null>(null)
   useEffect(() => {
-    const latestApproved = uniqueMessages.find(
+    // Find the MOST RECENT stories_approved message (not the first one)
+    const approvedMessages = uniqueMessages.filter(
       msg => msg.structured_data?.message_type === 'stories_approved'
     )
+    const latestApproved = approvedMessages.length > 0
+      ? approvedMessages.sort((a, b) => 
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )[0]
+      : null
     
     // Only refresh if it's a NEW approval message we haven't processed yet
     if (latestApproved && latestApproved.id !== lastApprovedMsgIdRef.current && projectId) {
-      console.log('[ChatPanel] Stories approved, refreshing Kanban board...')
+      console.log('[ChatPanel] Stories approved, refreshing Kanban board...', latestApproved.id)
       lastApprovedMsgIdRef.current = latestApproved.id
       // Use refetchQueries for immediate refetch instead of invalidateQueries
       queryClient.refetchQueries({ queryKey: ['kanban-board', projectId], type: 'active' })
