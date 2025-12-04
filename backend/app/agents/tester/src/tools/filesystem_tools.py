@@ -10,8 +10,36 @@ from langchain_core.tools import tool
 
 logger = logging.getLogger(__name__)
 
+# Tool context - set before invoking tools
+_tool_context = {
+    "project_id": None,
+    "workspace_path": None,
+}
 
-def _get_project_path(project_id: str) -> Path | None:
+
+def set_tool_context(project_id: str = None, workspace_path: str = None):
+    """Set global context for tools. Called by nodes before agent invocation."""
+    if project_id:
+        _tool_context["project_id"] = project_id
+    if workspace_path:
+        _tool_context["workspace_path"] = workspace_path
+
+
+def _get_workspace_path() -> Path | None:
+    """Get workspace path from context (preferred) or fallback to database."""
+    # Prefer workspace_path from context (worktree)
+    if _tool_context.get("workspace_path"):
+        return Path(_tool_context["workspace_path"])
+    
+    # Fallback: query from database
+    project_id = _tool_context.get("project_id")
+    if project_id:
+        return _get_project_path_from_db(project_id)
+    
+    return None
+
+
+def _get_project_path_from_db(project_id: str) -> Path | None:
     """Get project path from database."""
     from sqlmodel import Session
 
@@ -45,7 +73,7 @@ def glob_files(
         List of matching file paths
     """
     try:
-        project_path = _get_project_path(project_id)
+        project_path = _get_workspace_path()
         if not project_path:
             return "Project path not configured."
 
@@ -114,7 +142,7 @@ def grep_files(
         Matching lines with file paths and line numbers
     """
     try:
-        project_path = _get_project_path(project_id)
+        project_path = _get_workspace_path()
         if not project_path:
             return "Project path not configured."
 
@@ -200,7 +228,7 @@ def read_file(
         File content with line numbers
     """
     try:
-        project_path = _get_project_path(project_id)
+        project_path = _get_workspace_path()
         if not project_path:
             return "Project path not configured."
 
@@ -256,7 +284,7 @@ def write_file(project_id: str, file_path: str, content: str) -> str:
         Confirmation message
     """
     try:
-        project_path = _get_project_path(project_id)
+        project_path = _get_workspace_path()
         if not project_path:
             return "Project path not configured."
 
@@ -268,6 +296,7 @@ def write_file(project_id: str, file_path: str, content: str) -> str:
         # Write file
         full_path.write_text(content, encoding="utf-8")
 
+        logger.info(f"[write_file] Wrote {len(content)} chars to {full_path}")
         return f"Successfully wrote {len(content)} chars to {file_path}"
 
     except Exception as e:
@@ -294,7 +323,7 @@ def edit_file(project_id: str, file_path: str, old_str: str, new_str: str) -> st
         Confirmation message
     """
     try:
-        project_path = _get_project_path(project_id)
+        project_path = _get_workspace_path()
         if not project_path:
             return "Project path not configured."
 
@@ -343,7 +372,7 @@ def list_directory(
         List of files and directories
     """
     try:
-        project_path = _get_project_path(project_id)
+        project_path = _get_workspace_path()
         if not project_path:
             return "Project path not configured."
 
@@ -406,7 +435,7 @@ def get_project_structure(project_id: str, max_depth: int = 3) -> str:
         Tree-like structure of the project with key files highlighted
     """
     try:
-        project_path = _get_project_path(project_id)
+        project_path = _get_workspace_path()
         if not project_path:
             return "Project path not configured."
         

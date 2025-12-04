@@ -66,6 +66,65 @@ def _slugify(text: str) -> str:
     return text[:50] if text else "unnamed"
 
 
+def _preload_test_dependencies(workspace_path: str, test_plan: list) -> dict:
+    """Pre-load source files that tests will need as context (MetaGPT-style).
+    
+    Returns:
+        Dict mapping file_path -> content
+    """
+    from pathlib import Path
+    
+    dependencies_content = {}
+    
+    if not workspace_path or not Path(workspace_path).exists():
+        return dependencies_content
+    
+    # Collect source files mentioned in test plan
+    source_files = set()
+    for step in test_plan:
+        # Get dependencies from step
+        deps = step.get("dependencies", [])
+        if isinstance(deps, list):
+            for dep in deps:
+                if isinstance(dep, str) and dep:
+                    source_files.add(dep)
+        
+        # Also extract from description (look for file paths)
+        description = step.get("description", "")
+        import re
+        file_patterns = re.findall(r'src/[^\s,\)]+\.(ts|tsx|js|jsx)', description)
+        for match in file_patterns:
+            if isinstance(match, tuple):
+                continue
+            source_files.add(match)
+    
+    # Always include common test setup files
+    common_files = [
+        "jest.config.js",
+        "jest.config.ts",
+        "jest.setup.ts",
+        "jest.setup.js",
+        "src/lib/prisma.ts",
+        "prisma/schema.prisma",
+    ]
+    source_files.update(common_files)
+    
+    # Pre-load each file
+    for file_path in source_files:
+        full_path = Path(workspace_path) / file_path
+        if full_path.exists() and full_path.is_file():
+            try:
+                content = full_path.read_text(encoding="utf-8")
+                if len(content) > 3000:
+                    content = content[:3000] + "\n... (truncated)"
+                dependencies_content[file_path] = content
+                logger.info(f"[plan_tests] Pre-loaded: {file_path}")
+            except Exception as e:
+                logger.warning(f"[plan_tests] Failed to pre-load {file_path}: {e}")
+    
+    return dependencies_content
+
+
 def _detect_test_structure(project_path: str) -> dict:
     """Detect existing test folder structure in the project.
     
@@ -94,8 +153,10 @@ def _detect_test_structure(project_path: str) -> dict:
         return structure
     
     # 1. First try: Find from existing test FILES
+    # Exclude node_modules, .worktrees, and boilerplate folders
+    exclude_patterns = ["node_modules", ".worktrees", "boilerplate", "templates"]
     test_files = list(path.glob("**/*.test.ts")) + list(path.glob("**/*.test.js"))
-    test_files = [f for f in test_files if "node_modules" not in str(f)]
+    test_files = [f for f in test_files if not any(p in str(f) for p in exclude_patterns)]
     
     if test_files:
         # Sort by path depth (prefer shallower paths)
@@ -122,9 +183,9 @@ def _detect_test_structure(project_path: str) -> dict:
                 logger.info(f"[_detect_test_structure] Found integration folder from dir: {folder}")
                 break
     
-    # E2E detection - similar logic
+    # E2E detection - similar logic (reuse exclude_patterns)
     spec_files = list(path.glob("**/*.spec.ts")) + list(path.glob("**/*.spec.js"))
-    spec_files = [f for f in spec_files if "node_modules" not in str(f)]
+    spec_files = [f for f in spec_files if not any(p in str(f) for p in exclude_patterns)]
     
     if spec_files:
         spec_files.sort(key=lambda f: len(f.parts))
@@ -248,6 +309,11 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
         
         total_steps = len(test_plan)
         
+        # Pre-load dependencies (MetaGPT-style - reduces tool calls in implement)
+        workspace_path = state.get("workspace_path", "") or project_path
+        dependencies_content = _preload_test_dependencies(workspace_path, test_plan)
+        logger.info(f"[plan_tests] Pre-loaded {len(dependencies_content)} dependency files")
+        
         # Build message
         msg = f"📋 **Test Plan** ({total_steps} bước)\n"
         for step in test_plan:
@@ -264,8 +330,12 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
         return {
             "test_plan": test_plan,
             "testing_context": testing_context,
+            "dependencies_content": dependencies_content,
             "total_steps": total_steps,
             "current_step": 0,
+            "review_count": 0,
+            "summarize_count": 0,
+            "total_lbtm_count": 0,
             "message": msg,
             "action": "IMPLEMENT" if total_steps > 0 else "RESPOND",
         }

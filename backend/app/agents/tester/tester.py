@@ -95,8 +95,12 @@ class Tester(BaseAgent):
                 "merged": False,
             }
             
-            # Invoke graph
-            final_state = await self.graph_engine.graph.ainvoke(initial_state)
+            # Invoke graph with increased recursion limit
+            recursion_limit = getattr(self.graph_engine, "recursion_limit", 50)
+            final_state = await self.graph_engine.graph.ainvoke(
+                initial_state,
+                config={"recursion_limit": recursion_limit}
+            )
             
             # Update trace output and close span
             if langfuse_span and langfuse_ctx:
