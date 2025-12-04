@@ -9,7 +9,7 @@ from sqlmodel import Session
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
 from app.agents.core.project_context import ProjectContext
 from app.models import Agent as AgentModel, ArtifactType, Epic, Story, Project
-from app.agents.team_leader.src import TeamLeaderGraph
+from app.agents.team_leader.src import TeamLeaderGraph, generate_response_message
 from app.kafka.event_schemas import AgentTaskType
 from app.core.db import engine
 from app.services.artifact_service import ArtifactService
@@ -208,9 +208,9 @@ class TeamLeader(BaseAgent):
             )
     
     async def _handle_resume_task(self, task: TaskContext, answer: str) -> TaskResult:
-        """Handle resume task - user answered question for project replacement confirmation."""
+        """Handle resume task - user answered question for project confirmation."""
         try:
-            # Check if this is a project replace confirmation
+            # Check if this is a project confirmation
             routing_reason = task.routing_reason or ""
             
             if "question_answer" not in routing_reason:
@@ -219,28 +219,50 @@ class TeamLeader(BaseAgent):
             
             # Parse user's choice
             answer_lower = answer.lower().strip()
+            
+            # Check for CONFIRM_EXISTING options (same domain)
+            is_view = "xem" in answer_lower and ("prd" in answer_lower or "stories" in answer_lower or "hiện tại" in answer_lower)
+            is_update = "cập nhật" in answer_lower or "thêm feature" in answer_lower or "thêm" in answer_lower
+            is_recreate = "tạo lại" in answer_lower or "từ đầu" in answer_lower
+            
+            # Check for CONFIRM_REPLACE options (different domain)
             is_replace = "thay thế" in answer_lower or "project mới" in answer_lower
             
-            logger.info(f"[{self.name}] User chose: {'REPLACE' if is_replace else 'KEEP'} (answer: {answer})")
+            logger.info(f"[{self.name}] User chose: view={is_view}, update={is_update}, recreate={is_recreate}, replace={is_replace} (answer: {answer})")
             
-            if is_replace:
+            # Handle VIEW existing
+            if is_view:
+                return await self._handle_view_existing(task)
+            
+            # Handle UPDATE/ADD features
+            if is_update:
+                return await self._handle_update_existing(task)
+            
+            # Handle RECREATE or REPLACE (delete and create new)
+            if is_recreate or is_replace:
                 # Delete existing PRD, Epics, Stories
                 await self._delete_existing_project_data()
                 
-                # Respond and delegate to BA
-                msg = "OK! Mình sẽ xóa project cũ và bắt đầu làm project mới cho bạn nhé! 🚀"
-                await self.message_user("response", msg)
-                
-                # Delegate to BA for new project
-                # Get original user message from question context (saved when confirm_replace was called)
+                # Get original user message for context
                 original_context = task.context.get("original_context", {})
                 question_context = original_context.get("question_context", {})
                 original_message = (
-                    question_context.get("original_user_message") or  # From confirm_replace question
-                    original_context.get("original_message") or  # From task context
+                    question_context.get("original_user_message") or
+                    original_context.get("original_message") or
                     task.content or
-                    "Tạo project mới"  # Fallback
+                    "Tạo project mới"
                 )
+                
+                # Generate and send response - mention BA delegation
+                msg = await generate_response_message(
+                    action="replace",
+                    context="User chọn thay thế project cũ. Đã xóa dữ liệu cũ và đang chuyển cho Business Analyst để phân tích yêu cầu mới",
+                    extra_info=f"Yêu cầu của user: {original_message}",
+                    agent=self
+                )
+                await self.message_user("response", msg)
+                
+                # Delegate to BA for new project (original_message already extracted above)
                 logger.info(f"[{self.name}] Delegating to BA with message: {original_message[:50] if original_message else 'empty'}...")
                 
                 new_task = TaskContext(
@@ -263,16 +285,20 @@ class TeamLeader(BaseAgent):
                     output=msg,
                     structured_data={"action": "DELEGATE", "target_role": "business_analyst", "replaced": True}
                 )
-            else:
-                # Keep existing project
-                msg = "OK, giữ nguyên project cũ nhé! Bạn cần mình hỗ trợ gì khác không? 😊"
-                await self.message_user("response", msg)
-                
-                return TaskResult(
-                    success=True,
-                    output=msg,
-                    structured_data={"action": "RESPOND", "replaced": False}
-                )
+            
+            # Default: Keep existing project (for CONFIRM_REPLACE - "Giữ nguyên project cũ")
+            msg = await generate_response_message(
+                action="keep",
+                context="User chọn giữ nguyên project cũ, không thay đổi gì",
+                agent=self
+            )
+            await self.message_user("response", msg)
+            
+            return TaskResult(
+                success=True,
+                output=msg,
+                structured_data={"action": "RESPOND", "replaced": False}
+            )
                 
         except Exception as e:
             logger.error(f"[{self.name}] Error handling resume task: {e}", exc_info=True)
@@ -325,4 +351,100 @@ class TeamLeader(BaseAgent):
         except Exception as e:
             logger.error(f"[{self.name}] Error deleting project data: {e}", exc_info=True)
             raise
+
+    async def _handle_view_existing(self, task: TaskContext) -> TaskResult:
+        """Handle user request to view existing PRD and Stories."""
+        try:
+            from sqlmodel import select
+            
+            with Session(engine) as session:
+                # Get PRD
+                artifact_service = ArtifactService(session)
+                prd = artifact_service.get_latest_version(
+                    project_id=self.project_id,
+                    artifact_type=ArtifactType.PRD
+                )
+                
+                # Get Stories count
+                stories = session.exec(
+                    select(Story).where(Story.project_id == self.project_id)
+                ).all()
+                
+                if prd:
+                    msg = await generate_response_message(
+                        action="view",
+                        context="User muốn xem thông tin project hiện tại",
+                        extra_info=f"PRD: {prd.title}, Stories: {len(stories)}. Có thể xem chi tiết trong tab Documents",
+                        agent=self
+                    )
+                else:
+                    msg = await generate_response_message(
+                        action="view",
+                        context="Không tìm thấy PRD nào trong project",
+                        extra_info="Hỏi user có muốn tạo mới không",
+                        agent=self
+                    )
+                
+                await self.message_user("response", msg)
+                
+                return TaskResult(
+                    success=True,
+                    output=msg,
+                    structured_data={"action": "RESPOND", "viewed": True}
+                )
+                
+        except Exception as e:
+            logger.error(f"[{self.name}] Error viewing existing: {e}", exc_info=True)
+            msg = "Có lỗi khi tải thông tin project. Vui lòng thử lại! 😅"
+            await self.message_user("response", msg)
+            return TaskResult(success=False, output=msg, error_message=str(e))
+
+    async def _handle_update_existing(self, task: TaskContext) -> TaskResult:
+        """Handle user request to update/add features to existing project."""
+        try:
+            # Get original context
+            original_context = task.context.get("original_context", {})
+            question_context = original_context.get("question_context", {})
+            original_message = (
+                question_context.get("original_user_message") or
+                original_context.get("original_message") or
+                task.content or
+                "Cập nhật project"
+            )
+            
+            msg = await generate_response_message(
+                action="update",
+                context="User muốn cập nhật/thêm features vào project hiện tại",
+                extra_info=f"Sẽ chuyển cho BA xử lý. Request: {original_message[:50]}...",
+                agent=self
+            )
+            await self.message_user("response", msg)
+            
+            # Delegate to BA with update mode
+            new_task = TaskContext(
+                task_id=task.task_id,
+                task_type=AgentTaskType.MESSAGE,
+                priority="high",
+                routing_reason="update_existing_project",
+                user_id=task.user_id,
+                project_id=self.project_id,
+                content=f"[UPDATE MODE] {original_message}",
+            )
+            await self.delegate_to_role(
+                task=new_task,
+                target_role="business_analyst",
+                delegation_message=msg
+            )
+            
+            return TaskResult(
+                success=True,
+                output=msg,
+                structured_data={"action": "DELEGATE", "target_role": "business_analyst", "update_mode": True}
+            )
+            
+        except Exception as e:
+            logger.error(f"[{self.name}] Error handling update: {e}", exc_info=True)
+            msg = "Có lỗi xảy ra. Vui lòng thử lại! 😅"
+            await self.message_user("response", msg)
+            return TaskResult(success=False, output=msg, error_message=str(e))
 

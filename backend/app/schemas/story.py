@@ -37,6 +37,10 @@ class StoryBase(SQLModel):
 class StoryCreate(StoryBase):
     project_id: UUID
     story_code: Optional[str] = Field(None, max_length=50)  # e.g., "EPIC-001-US-001"
+    # New epic fields (when creating new epic)
+    new_epic_title: Optional[str] = Field(None, max_length=255)
+    new_epic_domain: Optional[str] = Field(None, max_length=100)
+    new_epic_description: Optional[str] = Field(None)
 
 
 class StoryPublic(StoryBase):

@@ -19,8 +19,8 @@ logger = logging.getLogger(__name__)
 
 _PROMPTS = load_prompts_yaml(Path(__file__).parent / "prompts.yaml")
 _DEFAULTS = {"name": "Team Leader", "role": "Team Leader & Project Coordinator", "personality": "Professional and helpful"}
-_fast_llm = ChatOpenAI(model="claude-haiku-4-5-20251001", temperature=0.1, timeout=15)
-_chat_llm = ChatOpenAI(model="claude-haiku-4-5-20251001", temperature=0.7, timeout=30)
+_fast_llm = ChatOpenAI(model="gpt-5", temperature=0.1, timeout=60)
+_chat_llm = ChatOpenAI(model="gpt-5", temperature=0.3, timeout=90)
     
 ROLE_WIP_MAP = {"developer": "InProgress", "tester": "Review", "business_analyst": None}
 
@@ -110,6 +110,47 @@ def _sys_prompt(agent, task: str = "routing_decision") -> str:
 
 def _user_prompt(msg: str, task: str = "routing_decision", **kw) -> str:
     return _build_user_prompt(_PROMPTS, task, msg, **kw)
+
+
+# Fallback messages when LLM fails
+_FALLBACK_MESSAGES = {
+    "replace": "OK! Mình sẽ tạo project mới cho bạn nhé! 🚀",
+    "keep": "OK, giữ nguyên project cũ nhé! 😊",
+    "view": "Đây là thông tin project của bạn! 📄",
+    "update": "Mình sẽ chuyển cho BA xử lý nhé! 📝",
+    "default": "Đã nhận yêu cầu của bạn! 👍",
+}
+
+
+async def generate_response_message(action: str, context: str, extra_info: str = "", agent=None) -> str:
+    """Generate natural response message using LLM.
+    
+    Args:
+        action: The action that was performed (replace, keep, view, update)
+        context: Description of the situation
+        extra_info: Additional context info
+        agent: Agent instance for prompt building
+        
+    Returns:
+        Generated message string
+    """
+    try:
+        sys_prompt = _sys_prompt(agent, "response_generation")
+        user_prompt = _user_prompt(
+            "",  # Not used for this task
+            task="response_generation",
+            action=action,
+            context=context,
+            extra_info=extra_info or "N/A"
+        )
+        
+        response = await _chat_llm.ainvoke(
+            [SystemMessage(content=sys_prompt), HumanMessage(content=user_prompt)]
+        )
+        return response.content.strip()
+    except Exception as e:
+        logger.warning(f"[generate_response_message] LLM failed: {e}, using fallback")
+        return _FALLBACK_MESSAGES.get(action, _FALLBACK_MESSAGES["default"])
 
 
 async def extract_preferences(state: TeamLeaderState, agent=None) -> dict:
@@ -264,12 +305,13 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                                     state
                                 )
                                 
+                                # Count existing stories
+                                stories_count = session.exec(
+                                    select(Story).where(Story.project_id == project_id)
+                                ).all()
+                                
                                 if is_different:
-                                    # Count existing stories
-                                    stories_count = session.exec(
-                                        select(Story).where(Story.project_id == project_id)
-                                    ).all()
-                                    
+                                    # Different domain → ask to replace
                                     logger.info(
                                         f"[router] Domain change detected: '{existing_prd.title}' → new request. "
                                         f"Asking for confirmation."
@@ -281,6 +323,20 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                                         "existing_prd_title": existing_prd.title,
                                         "existing_stories_count": len(stories_count),
                                         "needs_replace_confirm": True,
+                                        "wip_blocked": False
+                                    }
+                                else:
+                                    # Same domain → PRD already exists, ask what to do
+                                    logger.info(
+                                        f"[router] Same domain detected: '{existing_prd.title}'. "
+                                        f"Asking user what to do with existing project."
+                                    )
+                                    
+                                    return {
+                                        **state,
+                                        "action": "CONFIRM_EXISTING",
+                                        "existing_prd_title": existing_prd.title,
+                                        "existing_stories_count": len(stories_count),
                                         "wip_blocked": False
                                     }
                 except Exception as e:
@@ -459,6 +515,52 @@ async def confirm_replace(state: TeamLeaderState, agent=None) -> TeamLeaderState
         }
     except Exception as e:
         logger.error(f"[confirm_replace] Error: {e}", exc_info=True)
+        if agent:
+            await agent.message_user("response", "Có lỗi xảy ra, vui lòng thử lại.")
+        return {**state, "action": "RESPOND"}
+
+
+async def confirm_existing(state: TeamLeaderState, agent=None) -> TeamLeaderState:
+    """Ask user what to do when project with same domain already exists."""
+    try:
+        existing_title = state.get("existing_prd_title", "project hiện tại")
+        stories_count = state.get("existing_stories_count", 0)
+        
+        stories_info = f" với {stories_count} user stories" if stories_count > 0 else ""
+        question = (
+            f"Bạn đã có project '{existing_title}'{stories_info}. "
+            f"Bạn muốn làm gì?"
+        )
+        
+        if agent:
+            await agent.message_user(
+                "question",
+                question,
+                question_config={
+                    "question_type": "multichoice",
+                    "options": [
+                        "Xem PRD và Stories hiện tại",
+                        "Cập nhật/Thêm feature mới",
+                        "Tạo lại từ đầu"
+                    ],
+                    "allow_multiple": False,
+                    "context": {
+                        "original_user_message": state.get("user_message", ""),
+                        "existing_prd_title": existing_title,
+                        "existing_stories_count": stories_count
+                    }
+                }
+            )
+        
+        logger.info(f"[confirm_existing] Asked user what to do with existing project '{existing_title}'")
+        
+        return {
+            **state,
+            "action": "CONFIRM_EXISTING",
+            "waiting_for_answer": True
+        }
+    except Exception as e:
+        logger.error(f"[confirm_existing] Error: {e}", exc_info=True)
         if agent:
             await agent.message_user("response", "Có lỗi xảy ra, vui lòng thử lại.")
         return {**state, "action": "RESPOND"}

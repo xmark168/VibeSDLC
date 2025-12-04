@@ -23,6 +23,42 @@ class StoryService:
     def __init__(self, session: Session):
         self.session = session
 
+    def _generate_story_code(self, project_id: UUID, epic_id: Optional[UUID] = None) -> str:
+        """Generate story code in format EPIC-XXX-US-YYY or US-YYY.
+        
+        Args:
+            project_id: Project UUID
+            epic_id: Optional Epic UUID
+            
+        Returns:
+            Generated story code string
+        """
+        from app.models import Epic
+        
+        if epic_id:
+            # Get epic code
+            epic = self.session.get(Epic, epic_id)
+            epic_code = epic.epic_code if epic and epic.epic_code else f"EPIC-{str(epic_id)[:3].upper()}"
+            
+            # Count existing stories in this epic
+            story_count = self.session.exec(
+                select(func.count()).select_from(Story).where(
+                    Story.epic_id == epic_id
+                )
+            ).one()
+            
+            return f"{epic_code}-US-{story_count + 1:03d}"
+        else:
+            # No epic - generate US-XXX based on project story count
+            story_count = self.session.exec(
+                select(func.count()).select_from(Story).where(
+                    Story.project_id == project_id,
+                    Story.epic_id == None
+                )
+            ).one()
+            
+            return f"US-{story_count + 1:03d}"
+
     # ===== Story Creation =====
 
     def create(self, story_in: StoryCreate) -> Story:
@@ -611,7 +647,8 @@ class StoryService:
         self,
         story_in: StoryCreate,
         user_id: UUID,
-        user_name: str
+        user_name: str,
+        override_epic_id: Optional[UUID] = None
     ) -> Story:
         """Create story with activity logging and Kafka event.
 
@@ -619,6 +656,7 @@ class StoryService:
             story_in: Story creation schema
             user_id: ID of user creating the story
             user_name: Name of user for activity log
+            override_epic_id: Optional epic ID to override (used when creating new epic)
 
         Returns:
             Story: Created story instance
@@ -630,6 +668,11 @@ class StoryService:
 
         # Auto-assign rank
         story_data = story_in.model_dump()
+        
+        # Apply override_epic_id if provided (from newly created epic)
+        if override_epic_id:
+            story_data["epic_id"] = override_epic_id
+        
         if story_data.get("rank") is None:
             max_rank = self.session.exec(
                 select(func.max(Story.rank)).where(
@@ -638,6 +681,26 @@ class StoryService:
                 )
             ).one()
             story_data["rank"] = (max_rank or 0) + 1
+        
+        # Auto-generate story_code if not provided
+        if not story_data.get("story_code"):
+            story_data["story_code"] = self._generate_story_code(
+                project_id=story_in.project_id,
+                epic_id=story_data.get("epic_id")
+            )
+        
+        # Map schema fields to model fields
+        if "story_type" in story_data:
+            story_data["type"] = story_data.pop("story_type")
+        if "assigned_to" in story_data:
+            story_data["assignee_id"] = story_data.pop("assigned_to")
+        if "parent_story_id" in story_data:
+            story_data["parent_id"] = story_data.pop("parent_story_id")
+        
+        # Remove new_epic fields (not part of Story model)
+        story_data.pop("new_epic_title", None)
+        story_data.pop("new_epic_domain", None)
+        story_data.pop("new_epic_description", None)
 
         story = Story(**story_data)
         self.session.add(story)

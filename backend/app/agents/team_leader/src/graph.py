@@ -6,10 +6,10 @@ from typing import Literal
 from langgraph.graph import StateGraph, END
 
 from app.agents.team_leader.src.state import TeamLeaderState
-from app.agents.team_leader.src.nodes import router, delegate, respond, clarify, conversational, status_check, extract_preferences, confirm_replace
+from app.agents.team_leader.src.nodes import router, delegate, respond, clarify, conversational, status_check, extract_preferences, confirm_replace, confirm_existing
 
 
-def route(state: TeamLeaderState) -> Literal["delegate", "extract_preferences", "conversational", "status_check", "clarify", "confirm_replace"]:
+def route(state: TeamLeaderState) -> Literal["delegate", "extract_preferences", "conversational", "status_check", "clarify", "confirm_replace", "confirm_existing"]:
     """Route to action node. RESPOND goes through extract_preferences first."""
     action = state.get("action")
     if action == "DELEGATE":
@@ -22,6 +22,8 @@ def route(state: TeamLeaderState) -> Literal["delegate", "extract_preferences", 
         return "clarify"
     if action == "CONFIRM_REPLACE":
         return "confirm_replace"
+    if action == "CONFIRM_EXISTING":
+        return "confirm_existing"
     return "extract_preferences"
 
 
@@ -40,12 +42,13 @@ class TeamLeaderGraph:
         g.add_node("conversational", partial(conversational, agent=agent))
         g.add_node("status_check", partial(status_check, agent=agent))
         g.add_node("confirm_replace", partial(confirm_replace, agent=agent))
+        g.add_node("confirm_existing", partial(confirm_existing, agent=agent))
         
         g.set_entry_point("router")
         g.add_conditional_edges("router", route)
         g.add_edge("extract_preferences", "respond")
         
-        for node in ["delegate", "respond", "clarify", "conversational", "status_check", "confirm_replace"]:
+        for node in ["delegate", "respond", "clarify", "conversational", "status_check", "confirm_replace", "confirm_existing"]:
             g.add_edge(node, END)
         
         self.graph = g.compile()

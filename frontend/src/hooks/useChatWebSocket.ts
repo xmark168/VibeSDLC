@@ -313,6 +313,13 @@ export function useChatWebSocket(
       
       setTypingAgents(prev => {
         const updated = new Map(prev)
+        // Clear existing typing indicators for this agent first (prevent duplicates)
+        // for (const [id, state] of prev) {
+        //   if (state.agent_name === msg.agent_name) {
+        //     updated.delete(id)
+        //   }
+        // }
+        // Add new typing indicator
         updated.set(msg.id, typingState)
         return updated
       })
@@ -623,12 +630,12 @@ export function useChatWebSocket(
     }))
     
     // Show agent thinking indicator
-    setTypingAgents(prev => new Map(prev).set(msg.agent_id, {
-      id: msg.agent_id,
-      agent_name: msg.agent_name,
-      started_at: new Date().toISOString(),
-      message: 'Processing your answer...'
-    }))
+    // setTypingAgents(prev => new Map(prev).set(msg.agent_id, {
+    //   id: msg.agent_id,
+    //   agent_name: msg.agent_name,
+    //   started_at: new Date().toISOString(),
+    //   message: 'Processing your answer...'
+    // }))
   }
   
   // ========================================================================

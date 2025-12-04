@@ -97,4 +97,8 @@ export interface StoryFormData {
   requirements: string[]
   dependencies: string[]
   epic_id?: string
+  // New epic fields (when creating new epic)
+  new_epic_title?: string
+  new_epic_domain?: string
+  new_epic_description?: string
 }
