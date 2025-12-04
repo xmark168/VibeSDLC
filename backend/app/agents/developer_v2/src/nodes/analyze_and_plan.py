@@ -13,6 +13,7 @@ from app.agents.developer_v2.src.utils.llm_utils import (
 )
 from app.agents.developer_v2.src.nodes._llm import code_llm
 from app.agents.developer_v2.src.nodes._helpers import setup_tool_context
+from app.agents.developer_v2.src.nodes.schemas import AnalyzePlanOutput
 from app.agents.developer_v2.src.skills.registry import SkillRegistry
 from app.agents.developer_v2.src.skills import get_project_structure, get_plan_prompts
 from app.agents.developer_v2.src.tools.filesystem_tools import (
@@ -99,6 +100,58 @@ def _smart_prefetch(workspace_path: str, story_title: str, requirements: list) -
     return "\n\n".join(context_parts)
 
 
+def _preload_dependencies(workspace_path: str, steps: list) -> dict:
+    """Pre-load dependency file contents (MetaGPT-style)."""
+    dependencies_content = {}
+    
+    if not workspace_path or not os.path.exists(workspace_path):
+        return dependencies_content
+    
+    # Collect all unique dependencies from steps
+    all_deps = set()
+    for step in steps:
+        deps = step.get("dependencies", [])
+        if isinstance(deps, list):
+            for dep in deps:
+                # Only add string paths, skip integers (step numbers)
+                if isinstance(dep, str) and dep:
+                    all_deps.add(dep)
+                elif isinstance(dep, int):
+                    # LLM sometimes outputs step numbers instead of file paths
+                    # Try to resolve: find file_path from step with that order
+                    for s in steps:
+                        if s.get("order") == dep and s.get("file_path"):
+                            all_deps.add(s["file_path"])
+                            break
+    
+    # Also add common files that are often needed
+    common_files = [
+        "prisma/schema.prisma",
+        "src/lib/prisma.ts",
+        "src/types/index.ts",
+    ]
+    all_deps.update(common_files)
+    
+    # Pre-load each dependency
+    for dep_path in all_deps:
+        if not isinstance(dep_path, str):
+            continue
+        full_path = os.path.join(workspace_path, dep_path)
+        if os.path.exists(full_path) and os.path.isfile(full_path):
+            try:
+                with open(full_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                # Limit content size to avoid token overflow
+                if len(content) > 3000:
+                    content = content[:3000] + "\n... (truncated)"
+                dependencies_content[dep_path] = content
+                logger.info(f"[analyze_and_plan] Pre-loaded: {dep_path}")
+            except Exception as e:
+                logger.warning(f"[analyze_and_plan] Failed to pre-load {dep_path}: {e}")
+    
+    return dependencies_content
+
+
 async def _summarize_if_needed(exploration: str, state: dict) -> str:
     """Summarize exploration if too long, otherwise return as-is."""
     MAX_CHARS = 8000
@@ -124,6 +177,154 @@ Output a bullet-point summary focusing on:
     ], config=_cfg(state, "summarize_exploration"))
     
     return f"## Exploration Summary\n{response.content}"
+
+
+# JSON generation prompt for retry mechanism
+JSON_GENERATION_PROMPT = """You are a technical planner. Convert the exploration summary into a JSON implementation plan.
+
+## Exploration Summary
+{exploration}
+
+## Story
+Title: {story_title}
+Description: {story_description}
+
+## Required Output Format
+Output ONLY valid JSON in <result> tags. No explanations before or after.
+
+<result>
+{{
+  "story_summary": "Brief 1-sentence summary of what to implement",
+  "logic_analysis": [
+    ["file_path.ts", "'use client' if needed, component/function names, key logic"],
+    ["another_file.ts", "description of what this file does"]
+  ],
+  "steps": [
+    {{
+      "order": 1,
+      "description": "What to implement in this file",
+      "file_path": "src/path/to/file.ts",
+      "action": "create",
+      "dependencies": ["path/to/dependency.ts"]
+    }}
+  ]
+}}
+</result>
+
+RULES:
+- Order: database (prisma) → API routes → components → pages
+- Each step = 1 file with exact path
+- action: "create" for new files, "modify" for existing
+- dependencies: files that must be read as context
+- For React components with hooks/events: include "'use client'" in logic_analysis
+
+OUTPUT ONLY THE JSON. NO OTHER TEXT."""
+
+
+async def _extract_json_with_retry(
+    response: str,
+    state: dict,
+    story_title: str,
+    story_description: str,
+    max_retries: int = 2
+) -> dict:
+    """Extract JSON from response with robust retry mechanism.
+    
+    Strategy:
+    1. Try direct extraction from response (fast)
+    2. If fails, use structured output with Pydantic (reliable)
+    3. If still fails, generate minimal fallback plan (never fails)
+    """
+    # Attempt 1: Direct extraction (fastest)
+    try:
+        data = extract_json_universal(response, "analyze_and_plan")
+        if data and data.get("steps"):
+            logger.info("[analyze_and_plan] JSON extracted on first attempt")
+            return data
+    except ValueError as e:
+        logger.warning(f"[analyze_and_plan] Direct extraction failed: {e}")
+    
+    # Attempt 2: Use structured output with Pydantic schema (most reliable)
+    try:
+        logger.info("[analyze_and_plan] Using structured output with Pydantic schema")
+        
+        # Create LLM with structured output
+        structured_llm = code_llm.with_structured_output(AnalyzePlanOutput)
+        
+        structured_prompt = f"""Convert this exploration into an implementation plan.
+
+## Story
+Title: {story_title}
+Description: {story_description[:500] if story_description else "No description"}
+
+## Exploration Summary
+{response[:6000]}
+
+## Instructions
+Create an implementation plan with:
+1. story_summary: Brief 1-sentence summary
+2. logic_analysis: [[file_path, description], ...] - include 'use client' for React components with hooks
+3. steps: Ordered list (database → API → components → pages)
+   - Each step: order, description, file_path, action (create/modify), dependencies
+"""
+        
+        result = await structured_llm.ainvoke([
+            SystemMessage(content="You are a technical planner. Create structured implementation plans."),
+            HumanMessage(content=structured_prompt)
+        ], config=_cfg(state, "analyze_and_plan_structured"))
+        
+        # Pydantic model → dict
+        data = result.model_dump()
+        if data and data.get("steps"):
+            logger.info(f"[analyze_and_plan] Structured output success: {len(data['steps'])} steps")
+            return data
+            
+    except Exception as e:
+        logger.warning(f"[analyze_and_plan] Structured output failed: {e}")
+    
+    # Attempt 3: Legacy retry with JSON prompt (backup)
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"[analyze_and_plan] JSON retry attempt {attempt + 1}/{max_retries}")
+            
+            retry_prompt = JSON_GENERATION_PROMPT.format(
+                exploration=response[:6000],
+                story_title=story_title,
+                story_description=story_description[:500] if story_description else "No description"
+            )
+            
+            retry_response = await code_llm.ainvoke([
+                SystemMessage(content="You are a JSON generator. Output ONLY valid JSON in <result> tags."),
+                HumanMessage(content=retry_prompt)
+            ], config=_cfg(state, f"analyze_and_plan_retry_{attempt + 1}"))
+            
+            data = extract_json_universal(retry_response.content, f"analyze_and_plan_retry_{attempt + 1}")
+            if data and data.get("steps"):
+                logger.info(f"[analyze_and_plan] JSON extracted on retry {attempt + 1}")
+                return data
+                
+        except ValueError as e:
+            logger.warning(f"[analyze_and_plan] Retry {attempt + 1} failed: {e}")
+            continue
+    
+    # Fallback: Generate minimal plan from story title (never fails)
+    logger.error("[analyze_and_plan] All extraction attempts failed, using fallback")
+    
+    fallback_data = {
+        "story_summary": story_title or "Implementation task",
+        "logic_analysis": [],
+        "steps": [
+            {
+                "order": 1,
+                "description": f"Implement: {story_title}",
+                "file_path": "src/app/page.tsx",
+                "action": "modify",
+                "dependencies": []
+            }
+        ]
+    }
+    
+    return fallback_data
 
 
 async def analyze_and_plan(state: DeveloperState, agent=None) -> DeveloperState:
@@ -211,30 +412,18 @@ CRITICAL: After exploration, you MUST output <result> JSON. Do not stop at explo
         # Summarize if response is too long
         response = await _summarize_if_needed(response, state)
         
-        # Extract JSON from response
-        try:
-            data = extract_json_universal(response, "analyze_and_plan")
-        except ValueError as e:
-            # Retry with explicit JSON request
-            logger.warning(f"[analyze_and_plan] JSON extraction failed, retrying: {e}")
-            
-            retry_messages = [
-                SystemMessage(content="Output ONLY a JSON implementation plan in <result> tags. No explanations."),
-                HumanMessage(content=f"""Convert this exploration into a JSON plan:
-
-{response[:4000]}
-
-<result>
-{{"story_summary": "...", "steps": [{{"order": 1, "description": "..."}}]}}
-</result>""")
-            ]
-            
-            retry_response = await code_llm.ainvoke(retry_messages, config=_cfg(state, "analyze_and_plan_retry"))
-            data = extract_json_universal(retry_response.content, "analyze_and_plan")
+        # Extract JSON from response with robust retry mechanism
+        data = await _extract_json_with_retry(
+            response=response,
+            state=state,
+            story_title=state.get("story_title", ""),
+            story_description=state.get("story_description", ""),
+        )
         
-        # Parse results - use LLM's native format (steps)
+        # Parse results - MetaGPT style with logic_analysis
         story_summary = data.get("story_summary", "")
         steps = data.get("steps", [])
+        logic_analysis = data.get("logic_analysis", [])
         
         # Build analysis from summary
         analysis = {
@@ -243,11 +432,23 @@ CRITICAL: After exploration, you MUST output <result> JSON. Do not stop at explo
             "summary": story_summary,
         }
         
-        logger.info(f"[analyze_and_plan] {len(steps)} steps")
+        logger.info(f"[analyze_and_plan] {len(steps)} steps, {len(logic_analysis)} logic entries")
         
-        # Format message
-        steps_text = "\n".join(f"  {s.get('order', i+1)}. {s.get('description', '')}" for i, s in enumerate(steps))
-        msg = f"📋 **{story_summary}**\n\n{steps_text}"
+        # Pre-load dependency files (MetaGPT-style - reduces tool calls in implement)
+        dependencies_content = _preload_dependencies(workspace_path, steps)
+        logger.info(f"[analyze_and_plan] Pre-loaded {len(dependencies_content)} dependency files")
+        
+        # Format message with file paths
+        steps_text = []
+        for i, s in enumerate(steps):
+            desc = s.get('description', '')
+            file_path = s.get('file_path', '')
+            action = s.get('action', '')
+            if file_path:
+                steps_text.append(f"  {s.get('order', i+1)}. [{action}] {file_path}: {desc}")
+            else:
+                steps_text.append(f"  {s.get('order', i+1)}. {desc}")
+        msg = f"📋 **{story_summary}**\n\n" + "\n".join(steps_text)
         
         return {
             **state,
@@ -256,8 +457,10 @@ CRITICAL: After exploration, you MUST output <result> JSON. Do not stop at explo
             "task_type": "feature",
             "complexity": analysis["complexity"],
             "affected_files": [s.get("file_path") for s in steps if s.get("file_path")],
-            # Plan results - use steps directly
+            # Plan results - MetaGPT style
             "implementation_plan": steps,
+            "logic_analysis": logic_analysis,
+            "dependencies_content": dependencies_content,  # Pre-loaded!
             "total_steps": len(steps),
             "current_step": 0,
             "message": msg,

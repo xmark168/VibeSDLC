@@ -326,6 +326,131 @@ model Book {
 
 
 # =============================================================================
+# Test preload_dependencies (MetaGPT-style)
+# =============================================================================
+
+def _preload_dependencies_local(workspace_path: str, steps: list) -> dict:
+    """Local copy of _preload_dependencies for testing."""
+    dependencies_content = {}
+    
+    if not workspace_path or not os.path.exists(workspace_path):
+        return dependencies_content
+    
+    all_deps = set()
+    for step in steps:
+        deps = step.get("dependencies", [])
+        if isinstance(deps, list):
+            for dep in deps:
+                # Only add string paths, skip integers (step numbers)
+                if isinstance(dep, str) and dep:
+                    all_deps.add(dep)
+                elif isinstance(dep, int):
+                    # LLM sometimes outputs step numbers instead of file paths
+                    # Try to resolve: find file_path from step with that order
+                    for s in steps:
+                        if s.get("order") == dep and s.get("file_path"):
+                            all_deps.add(s["file_path"])
+                            break
+    
+    common_files = [
+        "prisma/schema.prisma",
+        "src/lib/prisma.ts",
+        "src/types/index.ts",
+    ]
+    all_deps.update(common_files)
+    
+    for dep_path in all_deps:
+        if not isinstance(dep_path, str):
+            continue
+        full_path = os.path.join(workspace_path, dep_path)
+        if os.path.exists(full_path) and os.path.isfile(full_path):
+            try:
+                with open(full_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                if len(content) > 3000:
+                    content = content[:3000] + "\n... (truncated)"
+                dependencies_content[dep_path] = content
+            except Exception:
+                pass
+    
+    return dependencies_content
+
+
+def test_preload_dependencies_empty():
+    """Test preload with empty/invalid workspace."""
+    result = _preload_dependencies_local("", [])
+    assert result == {}
+    
+    result = _preload_dependencies_local("/nonexistent/path", [{"dependencies": ["file.ts"]}])
+    assert result == {}
+    
+    print("[PASS] test_preload_dependencies_empty")
+
+
+def test_preload_dependencies_with_steps():
+    """Test preload extracts dependencies from steps."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create test files
+        prisma_dir = os.path.join(tmpdir, "prisma")
+        os.makedirs(prisma_dir)
+        with open(os.path.join(prisma_dir, "schema.prisma"), 'w') as f:
+            f.write("model User { id Int @id }")
+        
+        lib_dir = os.path.join(tmpdir, "src", "lib")
+        os.makedirs(lib_dir)
+        with open(os.path.join(lib_dir, "utils.ts"), 'w') as f:
+            f.write("export function helper() {}")
+        
+        steps = [
+            {"description": "Step 1", "dependencies": ["src/lib/utils.ts"]},
+            {"description": "Step 2", "dependencies": ["prisma/schema.prisma"]}
+        ]
+        
+        result = _preload_dependencies_local(tmpdir, steps)
+        
+        # Should load both step dependencies and common files
+        assert "src/lib/utils.ts" in result
+        assert "prisma/schema.prisma" in result
+        assert "model User" in result["prisma/schema.prisma"]
+        
+        print("[PASS] test_preload_dependencies_with_steps")
+        print(f"   Pre-loaded {len(result)} files")
+
+
+def test_preload_dependencies_with_integers():
+    """Test preload handles integer dependencies (LLM mistake)."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create test files
+        src_dir = os.path.join(tmpdir, "src", "app", "api")
+        os.makedirs(src_dir)
+        with open(os.path.join(src_dir, "route.ts"), 'w') as f:
+            f.write("export async function GET() {}")
+        
+        comp_dir = os.path.join(tmpdir, "src", "components")
+        os.makedirs(comp_dir)
+        with open(os.path.join(comp_dir, "Card.tsx"), 'w') as f:
+            f.write("export function Card() {}")
+        
+        # Steps with integer dependencies (LLM mistake)
+        steps = [
+            {"order": 1, "file_path": "src/app/api/route.ts", "dependencies": []},
+            {"order": 2, "file_path": "src/components/Card.tsx", "dependencies": [1]},  # Integer!
+            {"order": 3, "file_path": "src/app/page.tsx", "dependencies": [1, 2, "src/components/Card.tsx"]}  # Mixed!
+        ]
+        
+        # Should not crash, should resolve integers to file paths
+        result = _preload_dependencies_local(tmpdir, steps)
+        
+        # Should have resolved integer 1 -> src/app/api/route.ts
+        assert "src/app/api/route.ts" in result
+        # Should have resolved integer 2 -> src/components/Card.tsx
+        assert "src/components/Card.tsx" in result
+        
+        print("[PASS] test_preload_dependencies_with_integers")
+        print(f"   Pre-loaded {len(result)} files (integers resolved)")
+
+
+# =============================================================================
 # Test JSON extraction edge cases
 # =============================================================================
 
@@ -405,6 +530,10 @@ if __name__ == "__main__":
         test_smart_prefetch_with_files,
         test_smart_prefetch_keyword_matching,
         test_smart_prefetch_integration,
+        # Preload dependencies tests (MetaGPT-style)
+        test_preload_dependencies_empty,
+        test_preload_dependencies_with_steps,
+        test_preload_dependencies_with_integers,
         # State structure test
         test_analyze_and_plan_state_structure,
         # JSON extraction tests

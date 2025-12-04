@@ -159,15 +159,41 @@ export async function createPost(
 - **Field errors**: Return `fieldErrors` object matching form field names
 - **Auth check**: `const session = await auth(); if (!session) return error`
 
+## Redirect After Success
+
+For actions that create/update and should navigate to a new page:
+
+```typescript
+'use server';
+
+import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
+
+export async function createItem(
+  prevState: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  // ... validation and creation logic
+  
+  const item = await prisma.item.create({ data: validated.data });
+  
+  // Revalidate list page
+  revalidatePath('/items');
+  
+  // Redirect to the created item (throws, so must be last)
+  redirect(`/items/${item.id}`);
+}
+```
+
+**IMPORTANT**: `redirect()` throws an error internally to trigger navigation, so:
+- Call it AFTER all database operations complete
+- Don't wrap it in try-catch (it will be caught as an error)
+- It must be the last statement in the success path
+
 ## After Writing Action
 
-Run validation to catch errors early:
-
-```
-execute_shell("bun run typecheck")
-```
-
-If fails, fix action and retry before moving on.
+Validation (typecheck, lint, tests) runs automatically at the end of implementation.
+No need to run manually - proceed to next file.
 
 NEVER:
 - Forget `'use server'` directive at file top

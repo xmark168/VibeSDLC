@@ -14,7 +14,7 @@ Prisma 6.x has a different configuration than earlier versions:
 - **Config file**: `prisma/prisma.config.ts` - Contains database URL
 - **Client file**: `lib/prisma.ts` - Uses `datasourceUrl` option
 
-**CRITICAL**: After any schema changes, always run `bunx prisma generate && bunx prisma db push`.
+**CRITICAL**: After any schema changes, run `bunx prisma db push` (generate runs automatically).
 
 ## Schema Structure (Prisma 6.x)
 
@@ -146,14 +146,13 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
 ## After Writing Schema
 
-**CRITICAL**: Always run validation after schema changes:
+Run db push to apply schema changes:
 
 ```
-execute_shell("bunx prisma generate")
 execute_shell("bunx prisma db push")
 ```
 
-If fails, fix schema and retry before moving on.
+Note: `prisma generate` runs automatically with db push. If fails, fix schema and retry.
 
 ## Commands Reference
 
@@ -169,6 +168,6 @@ NEVER:
 - Forget `@@index` on foreign key fields
 - Skip `onDelete: Cascade` on child relations
 - Recreate User/Account/Session models (already in boilerplate)
-- Forget to run `prisma generate` after schema changes
+- Forget to run `prisma db push` after schema changes
 
 **IMPORTANT**: Always add indexes on fields used in WHERE clauses or JOINs to improve query performance.

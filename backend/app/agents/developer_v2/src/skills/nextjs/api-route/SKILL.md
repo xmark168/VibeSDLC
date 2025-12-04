@@ -180,13 +180,8 @@ export async function GET(request: NextRequest) {
 
 ## After Writing Route
 
-Run validation to catch errors early:
-
-```
-execute_shell("bun run typecheck")
-```
-
-If fails, fix route and retry before moving on.
+Validation (typecheck, lint, tests) runs automatically at the end of implementation.
+No need to run manually - proceed to next file.
 
 NEVER:
 - Skip `await` on `context.params` in dynamic routes

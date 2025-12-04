@@ -1,26 +1,41 @@
-"""LLM instances for Developer V2 nodes."""
+"""LLM instances for Developer V2 nodes with timeout and retry support."""
 import os
+import logging
+from functools import wraps
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
+logger = logging.getLogger(__name__)
+
+# Retry configuration
+MAX_RETRIES = 3
+RETRY_WAIT_MIN = 1  # seconds
+RETRY_WAIT_MAX = 10  # seconds
 
 # Default model configs per step
 LLM_CONFIG = {
     # Fast tasks (simple routing/response)
-    "router": {"model": "gpt-4o-mini", "temperature": 0.1, "timeout": 20},
-    "clarify": {"model": "gpt-4o-mini", "temperature": 0.1, "timeout": 20},
-    "respond": {"model": "gpt-4o-mini", "temperature": 0.1, "timeout": 20},
+    "router": {"model": "gpt-4.1", "temperature": 0.1, "timeout": 30},
+    "clarify": {"model": "gpt-4.1", "temperature": 0.1, "timeout": 30},
+    "respond": {"model": "gpt-4.1", "temperature": 0.1, "timeout": 30},
     
-    # Complex tasks (code generation)
-    "analyze": {"model": "gpt-4.1", "temperature": 0.2, "timeout": 120},
-    "plan": {"model": "gpt-4.1", "temperature": 0.2, "timeout": 120},
-    "implement": {"model": "claude-sonnet-4-5-20250929", "temperature": 0.2, "timeout": 120},
-    "debug": {"model": "gpt-4.1", "temperature": 0.2, "timeout": 120},
+    # Complex tasks (code generation) - 40s timeout
+    "analyze": {"model": "gpt-4.1", "temperature": 0.2, "timeout": 40},
+    "plan": {"model": "gpt-4.1", "temperature": 0.2, "timeout": 40},
+    "implement": {"model": "gpt-4.1", "temperature": 0.2, "timeout": 40},
+    "debug": {"model": "gpt-4.1", "temperature": 0.2, "timeout": 40},
+    
+    # Structured output tasks
+    "structured": {"model": "gpt-4.1", "temperature": 0.1, "timeout": 35},
+    "review": {"model": "gpt-4.1", "temperature": 0.1, "timeout": 30},
+    "summarize": {"model": "gpt-4.1", "temperature": 0.1, "timeout": 30},
 }
 
 
 def get_llm(step: str) -> BaseChatModel:
-    """Get LLM for a specific step. Uses ChatAnthropic for Claude, ChatOpenAI for GPT."""
+    """Get LLM for a specific step with timeout. Uses ChatAnthropic for Claude, ChatOpenAI for GPT."""
     config = LLM_CONFIG.get(step, LLM_CONFIG["implement"])
     
     # Allow env override: DEVV2_MODEL_PLAN=gpt-4o
@@ -29,6 +44,7 @@ def get_llm(step: str) -> BaseChatModel:
         config = {**config, "model": env_model}
     
     model = config["model"]
+    timeout = config.get("timeout", 40)
     
     # API keys and base URLs
     openai_base_url = os.getenv("OPENAI_API_BASE")
@@ -42,6 +58,8 @@ def get_llm(step: str) -> BaseChatModel:
             "model": model,
             "temperature": config.get("temperature", 0.2),
             "max_tokens": 8192,
+            "timeout": timeout,
+            "max_retries": MAX_RETRIES,
         }
         if anthropic_base_url:
             kwargs["base_url"] = anthropic_base_url
@@ -50,12 +68,70 @@ def get_llm(step: str) -> BaseChatModel:
         return ChatAnthropic(**kwargs)
     
     # Use ChatOpenAI for GPT models
-    kwargs = {**config}
+    kwargs = {
+        "model": model,
+        "temperature": config.get("temperature", 0.2),
+        "timeout": timeout,
+        "max_retries": MAX_RETRIES,
+    }
     if openai_base_url:
         kwargs["base_url"] = openai_base_url
     if openai_api_key:
         kwargs["api_key"] = openai_api_key
     return ChatOpenAI(**kwargs)
+
+
+# Retry decorator for LLM calls
+def with_retry(max_attempts: int = MAX_RETRIES):
+    """Decorator to add retry logic to async LLM calls."""
+    def decorator(func):
+        @wraps(func)
+        @retry(
+            stop=stop_after_attempt(max_attempts),
+            wait=wait_exponential(multiplier=1, min=RETRY_WAIT_MIN, max=RETRY_WAIT_MAX),
+            retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)),
+            before_sleep=lambda retry_state: logger.warning(
+                f"[LLM] Retry {retry_state.attempt_number}/{max_attempts} after error: {retry_state.outcome.exception()}"
+            ),
+        )
+        async def wrapper(*args, **kwargs):
+            return await func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+async def invoke_with_retry(llm: BaseChatModel, messages: list, config: dict = None, max_retries: int = MAX_RETRIES):
+    """Invoke LLM with retry mechanism.
+    
+    Args:
+        llm: The LLM instance to use
+        messages: List of messages to send
+        config: Optional config dict (e.g., for langfuse)
+        max_retries: Number of retry attempts (default: 3)
+    
+    Returns:
+        LLM response
+    """
+    last_error = None
+    
+    for attempt in range(1, max_retries + 1):
+        try:
+            if config:
+                response = await llm.ainvoke(messages, config=config)
+            else:
+                response = await llm.ainvoke(messages)
+            return response
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries:
+                wait_time = min(RETRY_WAIT_MAX, RETRY_WAIT_MIN * (2 ** (attempt - 1)))
+                logger.warning(f"[LLM] Attempt {attempt}/{max_retries} failed: {e}. Retrying in {wait_time}s...")
+                import asyncio
+                await asyncio.sleep(wait_time)
+            else:
+                logger.error(f"[LLM] All {max_retries} attempts failed. Last error: {e}")
+    
+    raise last_error
 
 
 # Pre-instantiated for backward compatibility
