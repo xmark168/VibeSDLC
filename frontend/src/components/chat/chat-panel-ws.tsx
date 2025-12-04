@@ -975,9 +975,31 @@ export function ChatPanelWS({
                       suggestedRequirements={msg.structured_data.suggested_requirements}
                       hasSuggestions={msg.structured_data.has_suggestions}
                       initialActionTaken={msg.structured_data.action_taken}
-                      onApplied={() => {
+                      onApplied={async (updatedStory) => {
                         if (projectId) {
-                          queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+                          console.log('[ChatPanel] onApplied called with updated story:', updatedStory)
+                          // Update cache directly with new story data for immediate UI update
+                          if (updatedStory) {
+                            queryClient.setQueryData(['kanban-board', projectId], (oldData: any) => {
+                              if (!oldData?.board) return oldData
+                              // Update story in the appropriate column
+                              const newBoard = { ...oldData.board }
+                              for (const column of Object.keys(newBoard)) {
+                                newBoard[column] = newBoard[column].map((story: any) => 
+                                  story.id === updatedStory.id 
+                                    ? { ...story, title: updatedStory.title, acceptance_criteria: updatedStory.acceptance_criteria, requirements: updatedStory.requirements }
+                                    : story
+                                )
+                              }
+                              console.log('[ChatPanel] Updated kanban cache with new story data')
+                              return { ...oldData, board: newBoard }
+                            })
+                          }
+                          // Also refetch to ensure consistency
+                          await queryClient.refetchQueries({ 
+                            queryKey: ['kanban-board', projectId],
+                            type: 'all'
+                          })
                           queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
                         }
                       }}
@@ -986,9 +1008,26 @@ export function ChatPanelWS({
                           queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
                         }
                       }}
-                      onRemove={() => {
+                      onRemove={async (removedStoryId) => {
                         if (projectId) {
-                          queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+                          console.log('[ChatPanel] onRemove called for story:', removedStoryId)
+                          // Remove story from cache directly for immediate UI update
+                          if (removedStoryId) {
+                            queryClient.setQueryData(['kanban-board', projectId], (oldData: any) => {
+                              if (!oldData?.board) return oldData
+                              const newBoard = { ...oldData.board }
+                              for (const column of Object.keys(newBoard)) {
+                                newBoard[column] = newBoard[column].filter((story: any) => story.id !== removedStoryId)
+                              }
+                              console.log('[ChatPanel] Removed story from kanban cache')
+                              return { ...oldData, board: newBoard }
+                            })
+                          }
+                          // Also refetch to ensure consistency
+                          await queryClient.refetchQueries({ 
+                            queryKey: ['kanban-board', projectId],
+                            type: 'all'
+                          })
                           queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
                         }
                       }}

@@ -162,8 +162,28 @@ export const storiesApi = {
       suggested_acceptance_criteria?: string[]
       suggested_requirements?: string[]
     }
-  ): Promise<{ message: string; story_id: string }> => {
-    return __request<{ message: string; story_id: string }>(OpenAPI, {
+  ): Promise<{ 
+    message: string
+    story_id: string
+    story?: {
+      id: string
+      title: string
+      description?: string
+      acceptance_criteria?: string[]
+      requirements?: string[]
+    }
+  }> => {
+    return __request<{ 
+      message: string
+      story_id: string
+      story?: {
+        id: string
+        title: string
+        description?: string
+        acceptance_criteria?: string[]
+        requirements?: string[]
+      }
+    }>(OpenAPI, {
       method: 'POST',
       url: `/api/v1/stories/${storyId}/review-action`,
       body: {
