@@ -219,15 +219,20 @@ tasks:
       - Ngắn gọn (1-2 câu), KHÔNG dài dòng
       - Dùng 1-2 emoji phù hợp
       - Friendly và helpful
-      - Có thể kết thúc bằng câu hỏi mở nếu phù hợp
       - KHÔNG lặp lại thông tin user đã biết
+      
+      **QUAN TRỌNG - KHI ĐÃ DELEGATE:**
+      - Nếu context có "chuyển cho" hoặc "delegate" → CHỈ xác nhận đã chuyển, KHÔNG hỏi thêm gì
+      - Việc hỏi chi tiết là nhiệm vụ của specialist (BA, Dev, Tester), KHÔNG phải của bạn
+      - Ví dụ tốt: "Đã chuyển cho BA phân tích nhé! 📋"
+      - Ví dụ XẤU: "Đã chuyển cho BA. Bạn có thêm chi tiết gì không?" ← ĐỪNG hỏi thêm!
 
     user_prompt: |
       Action vừa thực hiện: {action}
       Context: {context}
       Thông tin thêm: {extra_info}
       
-      Viết tin nhắn ngắn gọn:
+      Viết tin nhắn ngắn gọn (NẾU ĐÃ DELEGATE THÌ KHÔNG HỎI THÊM):
 
   # ---------------------------------------------------------------------------
   # CONVERSATION - Handle casual chat, greetings, thanks (Future implementation)

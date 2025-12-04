@@ -19,8 +19,8 @@ logger = logging.getLogger(__name__)
 
 _PROMPTS = load_prompts_yaml(Path(__file__).parent / "prompts.yaml")
 _DEFAULTS = {"name": "Team Leader", "role": "Team Leader & Project Coordinator", "personality": "Professional and helpful"}
-_fast_llm = ChatOpenAI(model="claude-sonnet-4-5-20250929", temperature=0.1, timeout=60)
-_chat_llm = ChatOpenAI(model="claude-sonnet-4-5-20250929", temperature=0.3, timeout=90)
+_fast_llm = ChatOpenAI(model="gpt-5", temperature=0.1, timeout=60)
+_chat_llm = ChatOpenAI(model="gpt-5", temperature=0.3, timeout=90)
     
 ROLE_WIP_MAP = {"developer": "InProgress", "tester": "Review", "business_analyst": None}
 

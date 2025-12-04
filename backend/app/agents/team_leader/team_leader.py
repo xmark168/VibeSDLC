@@ -243,25 +243,26 @@ class TeamLeader(BaseAgent):
                 # Delete existing PRD, Epics, Stories
                 await self._delete_existing_project_data()
                 
-                # Generate and send response
+                # Get original user message for context
+                original_context = task.context.get("original_context", {})
+                question_context = original_context.get("question_context", {})
+                original_message = (
+                    question_context.get("original_user_message") or
+                    original_context.get("original_message") or
+                    task.content or
+                    "Tạo project mới"
+                )
+                
+                # Generate and send response - mention BA delegation
                 msg = await generate_response_message(
                     action="replace",
-                    context="User chọn tạo lại project từ đầu, đã xóa dữ liệu cũ",
-                    extra_info=f"User request: {task.content}",
+                    context="User chọn thay thế project cũ. Đã xóa dữ liệu cũ và đang chuyển cho Business Analyst để phân tích yêu cầu mới",
+                    extra_info=f"Yêu cầu của user: {original_message}",
                     agent=self
                 )
                 await self.message_user("response", msg)
                 
-                # Delegate to BA for new project
-                # Get original user message from question context (saved when confirm_replace was called)
-                original_context = task.context.get("original_context", {})
-                question_context = original_context.get("question_context", {})
-                original_message = (
-                    question_context.get("original_user_message") or  # From confirm_replace question
-                    original_context.get("original_message") or  # From task context
-                    task.content or
-                    "Tạo project mới"  # Fallback
-                )
+                # Delegate to BA for new project (original_message already extracted above)
                 logger.info(f"[{self.name}] Delegating to BA with message: {original_message[:50] if original_message else 'empty'}...")
                 
                 new_task = TaskContext(
