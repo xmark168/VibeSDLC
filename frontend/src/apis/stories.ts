@@ -163,5 +163,17 @@ export const storiesApi = {
         ...suggestions
       },
     })
+  },
+
+  /**
+   * List all epics for a project
+   */
+  listEpics: async (
+    projectId: string
+  ): Promise<{ data: { id: string; epic_code?: string; title: string; description?: string; domain?: string; status?: string }[]; count: number }> => {
+    return __request<{ data: { id: string; epic_code?: string; title: string; description?: string; domain?: string; status?: string }[]; count: number }>(OpenAPI, {
+      method: 'GET',
+      url: `/api/v1/stories/epics/${projectId}`,
+    })
   }
 }

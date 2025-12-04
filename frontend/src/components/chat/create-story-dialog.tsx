@@ -41,23 +41,14 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, projectId
   const [dependencyPopoverOpen, setDependencyPopoverOpen] = useState(false)
   const [epicPopoverOpen, setEpicPopoverOpen] = useState(false)
   const [existingStories, setExistingStories] = useState<Story[]>([])
+  const [availableEpics, setAvailableEpics] = useState<{ id: string; code?: string; title: string }[]>([])
   const [loadingStories, setLoadingStories] = useState(false)
+  const [loadingEpics, setLoadingEpics] = useState(false)
 
-  // Extract unique epics from stories
-  const availableEpics = existingStories.reduce((acc, story) => {
-    if (story.epic_id && story.epic_title && !acc.find(e => e.id === story.epic_id)) {
-      acc.push({
-        id: story.epic_id,
-        code: story.epic_code,
-        title: story.epic_title
-      })
-    }
-    return acc
-  }, [] as { id: string; code?: string; title: string }[])
-
-  // Fetch existing stories when dialog opens
+  // Fetch existing stories and epics when dialog opens
   useEffect(() => {
     if (open && projectId) {
+      // Load stories for dependencies
       setLoadingStories(true)
       storiesApi.list(projectId, { limit: 100 })
         .then(result => {
@@ -68,6 +59,22 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, projectId
           setExistingStories([])
         })
         .finally(() => setLoadingStories(false))
+      
+      // Load epics directly from API
+      setLoadingEpics(true)
+      storiesApi.listEpics(projectId)
+        .then(result => {
+          setAvailableEpics((result.data || []).map(epic => ({
+            id: epic.id,
+            code: epic.epic_code,
+            title: epic.title
+          })))
+        })
+        .catch(err => {
+          console.error("Failed to load epics:", err)
+          setAvailableEpics([])
+        })
+        .finally(() => setLoadingEpics(false))
     }
   }, [open, projectId])
 
@@ -247,9 +254,9 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, projectId
                   role="combobox"
                   aria-expanded={epicPopoverOpen}
                   className="w-full justify-between h-10 text-sm font-normal"
-                  disabled={loadingStories || availableEpics.length === 0}
+                  disabled={loadingEpics}
                 >
-                  {loadingStories ? (
+                  {loadingEpics ? (
                     "Loading epics..."
                   ) : formData.epic_id ? (
                     <span className="flex items-center gap-2">

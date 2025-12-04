@@ -137,7 +137,10 @@ def list_stories(
     limit: int = 100
 ) -> Any:
     """List stories with filters."""
-    statement = select(Story)
+    from sqlalchemy.orm import selectinload
+    from app.models import Epic
+    
+    statement = select(Story).options(selectinload(Story.epic))
 
     if project_id:
         statement = statement.where(Story.project_id == project_id)
@@ -157,8 +160,18 @@ def list_stories(
     count = session.exec(count_statement).one()
     stories = session.exec(statement.offset(skip).limit(limit)).all()
 
-    # Convert Story objects to dicts for StoriesPublic
-    stories_data = [story.model_dump() if hasattr(story, 'model_dump') else dict(story) for story in stories]
+    # Convert Story objects to dicts with epic info
+    stories_data = []
+    for story in stories:
+        story_dict = story.model_dump() if hasattr(story, 'model_dump') else dict(story)
+        # Add epic info if epic exists
+        if story.epic:
+            story_dict["epic_code"] = story.epic.epic_code
+            story_dict["epic_title"] = story.epic.title
+            story_dict["epic_description"] = story.epic.description
+            story_dict["epic_domain"] = story.epic.domain
+        stories_data.append(story_dict)
+    
     return StoriesPublic(data=stories_data, count=count)
 
 
@@ -274,3 +287,32 @@ async def handle_review_action(
         raise HTTPException(status_code=404, detail=str(e))
     
     return {"message": f"Action '{action_request.action.value}' completed", "story_id": str(story_id)}
+
+
+# ===== List Epics =====
+@router.get("/epics/{project_id}")
+def list_epics(
+    session: SessionDep,
+    current_user: CurrentUser,
+    project_id: uuid.UUID
+) -> Any:
+    """List all epics for a project."""
+    from app.models import Epic
+    
+    statement = select(Epic).where(Epic.project_id == project_id).order_by(Epic.created_at)
+    epics = session.exec(statement).all()
+    
+    return {
+        "data": [
+            {
+                "id": str(epic.id),
+                "epic_code": epic.epic_code,
+                "title": epic.title,
+                "description": epic.description,
+                "domain": epic.domain,
+                "status": epic.epic_status.value if epic.epic_status else None
+            }
+            for epic in epics
+        ],
+        "count": len(epics)
+    }
