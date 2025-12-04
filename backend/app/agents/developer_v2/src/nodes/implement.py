@@ -82,9 +82,12 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
     total_steps = state.get("total_steps", 0)
     print(f"[NODE] implement {current_step + 1}/{total_steps}")
     
-    # Reset review_count for new step (prevents carry-over from previous step)
-    # This ensures each step gets fresh review attempts
-    review_count = 0
+    # Only reset review_count when step changes (not on LBTM re-implement)
+    previous_step = state.get("_last_implement_step", -1)
+    if current_step != previous_step:
+        review_count = 0  # New step → reset counter
+    else:
+        review_count = state.get("review_count", 0)  # Same step (LBTM) → keep count
     
     try:
         plan_steps = state.get("implementation_plan", [])
@@ -183,6 +186,34 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         files_modified = state.get("files_modified", [])
         modified_files_content = _build_modified_files_context(files_modified)
         
+        # Build logic_analysis context (design overview of all files)
+        logic_analysis = state.get("logic_analysis", [])
+        logic_analysis_str = "\n".join(
+            f"- {item[0]}: {item[1]}" 
+            for item in logic_analysis 
+            if isinstance(item, list) and len(item) >= 2
+        ) or "None"
+        
+        # Build legacy_code: Load target file for modify action (MetaGPT-style)
+        legacy_code = "None (new file)"
+        if action == "modify" and file_path:
+            full_path = os.path.join(workspace_path, file_path)
+            if os.path.exists(full_path):
+                try:
+                    with open(full_path, 'r', encoding='utf-8') as f:
+                        legacy_code = f.read()[:4000]  # Limit size
+                except Exception:
+                    legacy_code = "Error reading file"
+        
+        # Build debug_logs: Get error from previous run (MetaGPT-style)
+        debug_logs = "None"
+        error = state.get("error") or ""
+        error_analysis = state.get("error_analysis") or {}
+        if error_analysis.get("error_message"):
+            debug_logs = error_analysis["error_message"][:2000]
+        elif error:
+            debug_logs = error[:2000]
+        
         # Build enhanced task description with file_path and action
         enhanced_task = task_description
         if file_path:
@@ -196,6 +227,9 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             modified_files=modified_files_content,
             related_context="\n\n".join(context_parts)[:6000],  # Increased for pre-loaded context
             feedback_section=feedback_section,
+            logic_analysis=logic_analysis_str,
+            legacy_code=legacy_code,
+            debug_logs=debug_logs,
         )
         
         skill_catalog = skill_registry.get_skill_catalog_for_prompt()
@@ -228,9 +262,10 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         return {
             **state,
             "current_step": current_step,  # Keep same step until review LGTM
+            "_last_implement_step": current_step,  # Track for review_count reset logic
             "react_loop_count": react_loop_count,
             "debug_count": debug_count,
-            "review_count": review_count,  # Reset for this step
+            "review_count": review_count,  # Only reset when step changes
             "run_status": None,
             "skill_registry": skill_registry,
             "files_modified": all_modified,

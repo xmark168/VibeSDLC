@@ -23,8 +23,8 @@ LLM_CONFIG = {
     
     # Complex tasks (code generation) - 40s timeout
     "analyze": {"model": "gpt-4.1", "temperature": 0.2, "timeout": 40},
-    "plan": {"model": "gpt-4.1", "temperature": 0.2, "timeout": 40},
-    "implement": {"model": "gpt-4.1", "temperature": 0.2, "timeout": 40},
+    "plan": {"model": "claude-opus-4-5-20251101", "temperature": 0.2, "timeout": 60},
+    "implement": {"model": "claude-opus-4-5-20251101", "temperature": 0, "timeout": 60},
     "debug": {"model": "gpt-4.1", "temperature": 0.2, "timeout": 40},
     
     # Structured output tasks
@@ -73,6 +73,7 @@ def get_llm(step: str) -> BaseChatModel:
         "temperature": config.get("temperature", 0.2),
         "timeout": timeout,
         "max_retries": MAX_RETRIES,
+        "max_tokens": 16384,  # Prevent output truncation for complex components
     }
     if openai_base_url:
         kwargs["base_url"] = openai_base_url
