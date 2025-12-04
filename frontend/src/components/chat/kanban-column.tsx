@@ -134,10 +134,26 @@ export const KanbanColumn = memo(KanbanColumnComponent, (prevProps, nextProps) =
   // Re-render if cards array changed (length or content)
   if (prevProps.column.cards.length !== nextProps.column.cards.length) return false
 
-  // Re-render if any card data changed (check IDs as quick proxy)
-  const prevCardIds = prevProps.column.cards.map(c => c.id).join(',')
-  const nextCardIds = nextProps.column.cards.map(c => c.id).join(',')
-  if (prevCardIds !== nextCardIds) return false
+  // Re-render if any card data changed - check content, not just IDs
+  for (let i = 0; i < prevProps.column.cards.length; i++) {
+    const prevCard = prevProps.column.cards[i]
+    const nextCard = nextProps.column.cards[i]
+    if (!nextCard || prevCard.id !== nextCard.id) return false
+    if (prevCard.content !== nextCard.content) return false
+    if (prevCard.description !== nextCard.description) return false
+    if (prevCard.type !== nextCard.type) return false
+    if (prevCard.rank !== nextCard.rank) return false
+    if (prevCard.story_point !== nextCard.story_point) return false
+    if (prevCard.priority !== nextCard.priority) return false
+    if (prevCard.epic_id !== nextCard.epic_id) return false
+    if (prevCard.epic_code !== nextCard.epic_code) return false
+    if (prevCard.epic_title !== nextCard.epic_title) return false
+    if (prevCard.updated_at !== nextCard.updated_at) return false
+    // Check arrays
+    if (JSON.stringify(prevCard.acceptance_criteria) !== JSON.stringify(nextCard.acceptance_criteria)) return false
+    if (JSON.stringify(prevCard.requirements) !== JSON.stringify(nextCard.requirements)) return false
+    if (JSON.stringify(prevCard.dependencies) !== JSON.stringify(nextCard.dependencies)) return false
+  }
 
   // Re-render if drag state changed
   if (prevProps.isDraggedOver !== nextProps.isDraggedOver) return false

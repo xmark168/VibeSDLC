@@ -326,10 +326,15 @@ export const KanbanCard = memo(KanbanCardComponent, (prevProps, nextProps) => {
   if (prevProps.card.type !== nextProps.card.type) return false
   if (prevProps.card.rank !== nextProps.card.rank) return false
   if (prevProps.card.story_point !== nextProps.card.story_point) return false
+  if (prevProps.card.priority !== nextProps.card.priority) return false
   if (prevProps.card.assignee_id !== nextProps.card.assignee_id) return false
   if (prevProps.card.age_hours !== nextProps.card.age_hours) return false
-  // Check dependencies array
+  if (prevProps.card.epic_id !== nextProps.card.epic_id) return false
+  if (prevProps.card.updated_at !== nextProps.card.updated_at) return false
+  // Check arrays - important for edit form data sync
   if (JSON.stringify(prevProps.card.dependencies) !== JSON.stringify(nextProps.card.dependencies)) return false
+  if (JSON.stringify(prevProps.card.acceptance_criteria) !== JSON.stringify(nextProps.card.acceptance_criteria)) return false
+  if (JSON.stringify(prevProps.card.requirements) !== JSON.stringify(nextProps.card.requirements)) return false
 
   // Re-render if dragging state changed
   if (prevProps.isDragging !== nextProps.isDragging) return false

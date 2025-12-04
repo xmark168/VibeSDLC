@@ -109,6 +109,33 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     }
   }, [columns, selectedCard])
 
+  // Sync editingStory with updated data from columns
+  useEffect(() => {
+    if (editingStory && showCreateStoryDialog) {
+      const allCards = columns.flatMap(col => col.cards)
+      const updatedCard = allCards.find(c => c.id === editingStory.id)
+      if (updatedCard) {
+        const storyType = updatedCard.type?.toLowerCase() === "enablerstory" ? "EnablerStory" : "UserStory"
+        const newEditingStory: StoryEditData = {
+          id: updatedCard.id,
+          title: updatedCard.content,
+          description: updatedCard.description,
+          type: storyType,
+          story_point: updatedCard.story_point,
+          priority: updatedCard.priority,
+          rank: updatedCard.rank,
+          acceptance_criteria: updatedCard.acceptance_criteria,
+          requirements: updatedCard.requirements,
+          dependencies: updatedCard.dependencies,
+          epic_id: updatedCard.epic_id
+        }
+        if (JSON.stringify(newEditingStory) !== JSON.stringify(editingStory)) {
+          setEditingStory(newEditingStory)
+        }
+      }
+    }
+  }, [columns, editingStory, showCreateStoryDialog])
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -519,6 +546,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         title: storyData.title,
         description: storyData.description,
         story_type: storyData.type,
+        story_point: storyData.story_point,
         priority: storyData.priority === "High" ? 1 : storyData.priority === "Medium" ? 2 : 3,
         acceptance_criteria: storyData.acceptance_criteria,
         requirements: storyData.requirements,
@@ -526,7 +554,8 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         epic_id: storyData.epic_id,
       })
 
-      // Update the story in UI
+      // Update the story in UI with fresh data and new updated_at
+      const now = new Date().toISOString()
       setColumns((prev) =>
         prev.map((col) => ({
           ...col,
@@ -537,12 +566,18 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
                   content: updatedStory.title,
                   description: updatedStory.description || "",
                   type: updatedStory.type,
-                  story_point: updatedStory.story_point ?? card.story_point,
-                  priority: updatedStory.priority ?? card.priority,
-                  epic_id: updatedStory.epic_id ?? undefined,
-                  acceptance_criteria: updatedStory.acceptance_criteria ?? card.acceptance_criteria,
-                  requirements: updatedStory.requirements ?? card.requirements,
-                  dependencies: updatedStory.dependencies ?? card.dependencies,
+                  story_point: updatedStory.story_point ?? storyData.story_point,
+                  priority: updatedStory.priority ?? (storyData.priority === "High" ? 1 : storyData.priority === "Medium" ? 2 : 3),
+                  // Update epic fields - convert null to undefined for type compatibility
+                  epic_id: updatedStory.epic_id === null ? undefined : (updatedStory.epic_id ?? storyData.epic_id),
+                  epic_code: updatedStory.epic_id ? (updatedStory.epic_code ?? card.epic_code) : undefined,
+                  epic_title: updatedStory.epic_id ? (updatedStory.epic_title ?? card.epic_title) : undefined,
+                  epic_description: updatedStory.epic_id ? (updatedStory.epic_description ?? card.epic_description) : undefined,
+                  epic_domain: updatedStory.epic_id ? (updatedStory.epic_domain ?? card.epic_domain) : undefined,
+                  acceptance_criteria: updatedStory.acceptance_criteria ?? storyData.acceptance_criteria,
+                  requirements: updatedStory.requirements ?? storyData.requirements,
+                  dependencies: updatedStory.dependencies ?? storyData.dependencies,
+                  updated_at: updatedStory.updated_at ?? now,
                 }
               : card
           ),
@@ -551,13 +586,18 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
 
       setEditingStory(null)
       toast.success("Story updated successfully!")
+      
+      // Refetch kanban data to get fresh epic info from backend
+      if (projectId) {
+        queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+      }
     } catch (error) {
       console.error("Error updating story:", error)
       toast.error("Failed to update story. Please try again.")
     } finally {
       toast.dismiss(toastId)
     }
-  }, [])
+  }, [projectId, queryClient])
 
   const handleDeleteCard = useCallback(async (columnId: string, cardId: string) => {
     // Optimistic update - remove from UI immediately

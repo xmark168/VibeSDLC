@@ -982,8 +982,10 @@ class StoryService:
             user_name: Name for activity log
 
         Returns:
-            Story: Updated story
+            Story: Updated story with epic info loaded
         """
+        from sqlalchemy.orm import selectinload
+        
         story = self.session.get(Story, story_id)
         if not story:
             raise ValueError("Story not found")
@@ -992,7 +994,12 @@ class StoryService:
         story.sqlmodel_update(update_data)
         self.session.add(story)
         self.session.commit()
-        self.session.refresh(story)
+        
+        # Reload story with epic relationship to include epic info in response
+        statement = select(Story).where(Story.id == story_id).options(
+            selectinload(Story.epic)
+        )
+        story = self.session.exec(statement).first()
 
         # Log activity
         activity = IssueActivity(
