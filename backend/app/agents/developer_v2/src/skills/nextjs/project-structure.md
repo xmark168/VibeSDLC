@@ -1,11 +1,17 @@
 # Next.js 16 Project Structure
 
+## Runtime
+
+**CRITICAL**: This project uses Bun exclusively.
+- Package manager: `bun install`
+- Run scripts: `bun run <script>` or `bunx <command>`
+- NEVER use npm, npx, yarn, or pnpm
+
 ## Directory Structure
 
 ```
 prisma/
-  schema.prisma          # Database models (NO url in datasource)
-  prisma.config.ts       # Database URL config (Prisma 6.x+)
+  schema.prisma          # Database models (has url = env("DATABASE_URL"))
 
 src/
   app/
@@ -17,7 +23,7 @@ src/
     ui/                        # shadcn/ui - DO NOT MODIFY
     [Feature]/                 # Feature components (PascalCase)
   lib/
-    prisma.ts                  # Prisma client (with datasourceUrl)
+    prisma.ts                  # Prisma client singleton
     utils.ts                   # cn() utility
   auth.ts                      # NextAuth v5 config
   middleware.ts                # Route protection
@@ -51,4 +57,3 @@ import { auth } from '@/auth';
 | `middleware.ts` | Protect routes |
 | `lib/prisma.ts` | Database client |
 | `prisma/schema.prisma` | Database models |
-| `prisma/prisma.config.ts` | Database URL |

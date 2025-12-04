@@ -47,11 +47,11 @@ def setup_workspace_from_boilerplate(temp_dir: str) -> str:
     if not BOILERPLATE_PATH.exists():
         raise FileNotFoundError(f"Boilerplate not found at {BOILERPLATE_PATH}")
     
-    # Copy boilerplate (exclude .git, node_modules, .next)
+    # Copy boilerplate (exclude build artifacts and heavy dirs)
     def ignore_patterns(directory, files):
         ignored = []
         for f in files:
-            if f in ['.git', 'node_modules', '.next', '__pycache__', '.turbo']:
+            if f in ['node_modules', '.next', '.swc', '__pycache__', '.turbo', 'tsconfig.tsbuildinfo']:
                 ignored.append(f)
         return ignored
     
@@ -128,11 +128,11 @@ def setup_workspace_with_worktree(workspace_name: str = "ws_str2") -> tuple[str,
         
         print(f"[setup] Removed existing workspace '{workspace_name}'")
     
-    # Copy boilerplate (exclude heavy dirs)
+    # Copy boilerplate (exclude build artifacts and heavy dirs)
     def ignore_patterns(directory, files):
         ignored = []
         for f in files:
-            if f in ['.git', 'node_modules', '.next', '__pycache__', '.turbo', 'bun.lock']:
+            if f in ['.git', 'node_modules', '.next', '.swc', '__pycache__', '.turbo', 'bun.lock', 'tsconfig.tsbuildinfo']:
                 ignored.append(f)
         return ignored
     

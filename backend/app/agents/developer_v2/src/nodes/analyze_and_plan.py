@@ -256,6 +256,12 @@ Create an implementation plan with:
 2. logic_analysis: [[file_path, description], ...] - include 'use client' for React components with hooks
 3. steps: Ordered list (database → API → components → pages)
    - Each step: order, description, file_path, action (create/modify), dependencies
+   - description MUST include: key functions, props interface, state hooks, imports
+
+## Quality Requirements
+- Each step description must be detailed enough to implement WITHOUT additional context
+- Generated code must be COMPLETE (all imports, all closing braces/tags)
+- NO truncated implementations
 """
         
         result = await structured_llm.ainvoke([
