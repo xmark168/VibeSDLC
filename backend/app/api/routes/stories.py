@@ -263,12 +263,22 @@ async def update_story(
     story_service = StoryService(session)
     
     try:
-        return await story_service.update_with_events(
+        story = await story_service.update_with_events(
             story_id=story_id,
             story_in=story_in,
             user_id=current_user.id,
             user_name=current_user.full_name or current_user.email
         )
+        
+        # Convert to StoryPublic and add epic info
+        story_data = StoryPublic.model_validate(story)
+        if story.epic:
+            story_data.epic_code = story.epic.epic_code
+            story_data.epic_title = story.epic.title
+            story_data.epic_description = story.epic.description
+            story_data.epic_domain = story.epic.domain
+        
+        return story_data
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
