@@ -83,7 +83,7 @@ shared_context:
     - id: Unique identifier (EPIC-001, EPIC-002, ...)
     - title: Short title describing the feature
     - description: Overview of the epic
-    - domain: Feature category (Authentication, Product, Cart, Payment, Admin, Notification)
+    - domain: Feature category inferred from PRD (e.g., Homepage, Authentication, Product, Cart, Payment, Admin, Dashboard, etc.)
     
     **Story Structure (Senior BA Quality):**
     - id: Unique identifier (US-001, US-002, ...)
@@ -109,7 +109,9 @@ shared_context:
       - Error handling (system errors, network issues)
     - priority: Priority level (1=High, 2=Medium, 3=Low)
     - story_point: Estimated effort (1, 2, 3, 5, 8, 13 - Fibonacci scale)
-    - dependencies: List of story IDs that must be completed first (e.g., ["US-001", "US-002"])
+    - dependencies: List of story IDs that must be completed BEFORE this story
+      - Ask: "Can this story be built independently, or does it need another story first?"
+      - If it uses/requires/enhances another story → Add that story as dependency
 
 # ============================================================================
 # TASKS - Specific prompts for each LLM call type
@@ -418,17 +420,44 @@ tasks:
       Extract Epics and INVEST-compliant user stories. ALL content in ENGLISH.
       
       **RULES:**
-      - Group by domain (Authentication, Product, Cart, Payment, etc.)
-      - 2-5 stories per Epic
+      - Analyze PRD and INFER logical Epics based on features and user journey
+      - For public-facing websites (e-commerce, blog, portfolio): Consider Homepage/Landing page as entry point
+      - For admin/dashboard/internal tools: Consider Dashboard as main interface
+      - Group related features into coherent Epics (2-5 stories per Epic)
       - Title: "As a [user], I want [goal] so that [benefit]"
       - Requirements: 5-8 items (functionality, UX, validation, security)
       - Acceptance Criteria: 4-6 scenarios (happy path + errors + edge cases)
       
-      **DEPENDENCIES (IMPORTANT):**
-      - Add dependencies for stories that REQUIRE another story first
-      - Common patterns: Login→Register, Checkout→Cart, Payment→Checkout
-      - Use story IDs: ["US-001", "US-002"]
-      - First story usually has NO dependencies: []
+      **STORY ORDERING - Universal Principles:**
+      Think about the USER'S JOURNEY in THIS specific application:
+      
+      1. **What is the user's PRIMARY GOAL?** (varies by app type)
+         - E-commerce: Find and buy products
+         - SaaS tool: Complete a task/workflow
+         - Dashboard: Monitor and manage data
+         - Admin panel: Configure and control system
+      
+      2. **What must EXIST for users to achieve that goal?**
+         - Start with the FIRST thing users need to interact with
+         - This foundational story has NO dependencies: []
+      
+      3. **What builds ON TOP of that foundation?**
+         - Features that require the foundation to exist
+         - These stories depend on the foundational ones
+      
+      **DEPENDENCIES - Ask these questions:**
+      - "Can a developer build Story B without Story A existing?" 
+      - "Does Story B USE or ENHANCE something from Story A?"
+      - If YES to either → B depends on A
+      - If Story B works completely independently → No dependency
+      
+      **General Patterns (adapt to your project):**
+      - Core workflow before enhancements
+      - Data input/creation before data viewing/editing
+      - Main interface before additional features
+      - Authentication before authenticated actions (if applicable)
+      
+      - Use story IDs: ["EPIC-001-US-001", "EPIC-001-US-002"]
       
       Return ONLY valid JSON:
       ```json
@@ -438,7 +467,7 @@ tasks:
             "id": "EPIC-001",
             "title": "Epic Title",
             "description": "Business value",
-            "domain": "Authentication|Product|Cart|Payment|Admin",
+            "domain": "Inferred from PRD features",
             "stories": [
               {{
                 "id": "US-001",
@@ -474,7 +503,7 @@ tasks:
       - id: EPIC-001, EPIC-002, etc.
       - title: Short descriptive title
       - description: Business value (1-2 sentences)
-      - domain: Authentication, Product, Cart, Payment, Admin, Notification
+      - domain: Inferred from PRD (e.g., Homepage, Dashboard, Authentication, Product, Cart, etc.)
       - feature_refs: List of feature names from PRD that belong to this epic
 
     user_prompt: |
@@ -483,7 +512,13 @@ tasks:
       {prd}
       ```
       
-      Extract Epics ONLY (no stories yet). Group PRD features into logical Epics.
+      Extract Epics ONLY (no stories yet). 
+      
+      **INFER Epics from PRD context:**
+      - Analyze project type and user journey
+      - Public-facing site (e-commerce, blog) → Consider Homepage as entry point
+      - Admin/Dashboard app → Consider Dashboard as main interface
+      - Group related PRD features into logical Epics
       
       Return ONLY valid JSON:
       ```json
@@ -493,7 +528,7 @@ tasks:
             "id": "EPIC-001",
             "title": "Epic Title",
             "description": "Business value",
-            "domain": "Authentication|Product|Cart|Payment|Admin",
+            "domain": "Inferred from PRD",
             "feature_refs": ["Feature 1 from PRD", "Feature 2"]
           }}
         ]
@@ -532,15 +567,23 @@ tasks:
       - Acceptance Criteria: 4-6 scenarios (happy path + errors)
       - Story IDs must be unique: {epic_id}-US-001, {epic_id}-US-002, etc.
       
-      **DEPENDENCIES (IMPORTANT):**
-      - Add dependencies for stories that REQUIRE another story to be completed first
-      - Common dependency patterns:
-        - Login depends on Registration
-        - Checkout depends on Add to Cart
-        - Payment depends on Checkout
-        - Profile Edit depends on Registration
-      - Use story IDs within THIS epic: ["{epic_id}-US-001", "{epic_id}-US-002"]
-      - First story of each epic usually has NO dependencies: []
+      **STORY ORDERING - Think about USER'S JOURNEY:**
+      1. What is the user's PRIMARY GOAL in this epic?
+      2. What must EXIST first for users to achieve that goal? → This has NO dependencies
+      3. What builds on top of that? → These depend on foundational stories
+      
+      **DEPENDENCIES - Ask:**
+      - "Can Story B be built without Story A existing?"
+      - "Does Story B use/enhance something from Story A?"
+      - If YES → B depends on A
+      - If independent → No dependency
+      
+      **Patterns (adapt to your project):**
+      - Core workflow before enhancements
+      - Input/creation before viewing/editing
+      - Main interface before additional features
+      
+      - Use story IDs: ["{epic_id}-US-001", "{epic_id}-US-002"]
       
       Return ONLY valid JSON:
       ```json
@@ -650,7 +693,7 @@ tasks:
       - id: Unique identifier (e.g., EPIC-001)
       - title: Short title describing the feature
       - description: Overview of the epic
-      - domain: Feature category
+      - domain: Inferred from context (Homepage, Dashboard, Authentication, Product, etc.)
       
       **Story Structure:**
       - id: Unique identifier (e.g., US-001)
@@ -701,7 +744,7 @@ tasks:
             "id": "EPIC-001",
             "title": "Epic Title in English",
             "description": "Description in English",
-            "domain": "Cart|Product|...",
+            "domain": "Inferred domain",
             "stories": [
               {{
                 "id": "US-001",

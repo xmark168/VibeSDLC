@@ -41,13 +41,39 @@ async def create_story(
     story_in: StoryCreate
 ) -> Any:
     """Create new story (BA role)."""
+    from app.models import Epic, EpicStatus
+    
     story_service = StoryService(session)
     
     try:
+        # If new_epic_title provided, create new epic first
+        new_epic_id = None
+        if story_in.new_epic_title and story_in.new_epic_title.strip():
+            # Generate epic code
+            existing_epics_count = session.exec(
+                select(func.count()).select_from(Epic).where(Epic.project_id == story_in.project_id)
+            ).one()
+            epic_code = f"EPIC-{existing_epics_count + 1:03d}"
+            
+            # Create new epic with all provided fields
+            new_epic = Epic(
+                epic_code=epic_code,
+                title=story_in.new_epic_title.strip(),
+                description=story_in.new_epic_description.strip() if story_in.new_epic_description else None,
+                domain=story_in.new_epic_domain or "General",
+                project_id=story_in.project_id,
+                epic_status=EpicStatus.PLANNED
+            )
+            session.add(new_epic)
+            session.commit()
+            session.refresh(new_epic)
+            new_epic_id = new_epic.id
+        
         story = await story_service.create_with_events(
             story_in=story_in,
             user_id=current_user.id,
-            user_name=current_user.full_name or current_user.email
+            user_name=current_user.full_name or current_user.email,
+            override_epic_id=new_epic_id  # Pass new epic ID explicitly
         )
         return story
     except ValueError as e:
@@ -137,7 +163,10 @@ def list_stories(
     limit: int = 100
 ) -> Any:
     """List stories with filters."""
-    statement = select(Story)
+    from sqlalchemy.orm import selectinload
+    from app.models import Epic
+    
+    statement = select(Story).options(selectinload(Story.epic))
 
     if project_id:
         statement = statement.where(Story.project_id == project_id)
@@ -157,8 +186,18 @@ def list_stories(
     count = session.exec(count_statement).one()
     stories = session.exec(statement.offset(skip).limit(limit)).all()
 
-    # Convert Story objects to dicts for StoriesPublic
-    stories_data = [story.model_dump() if hasattr(story, 'model_dump') else dict(story) for story in stories]
+    # Convert Story objects to dicts with epic info
+    stories_data = []
+    for story in stories:
+        story_dict = story.model_dump() if hasattr(story, 'model_dump') else dict(story)
+        # Add epic info if epic exists
+        if story.epic:
+            story_dict["epic_code"] = story.epic.epic_code
+            story_dict["epic_title"] = story.epic.title
+            story_dict["epic_description"] = story.epic.description
+            story_dict["epic_domain"] = story.epic.domain
+        stories_data.append(story_dict)
+    
     return StoriesPublic(data=stories_data, count=count)
 
 
@@ -274,3 +313,32 @@ async def handle_review_action(
         raise HTTPException(status_code=404, detail=str(e))
     
     return {"message": f"Action '{action_request.action.value}' completed", "story_id": str(story_id)}
+
+
+# ===== List Epics =====
+@router.get("/epics/{project_id}")
+def list_epics(
+    session: SessionDep,
+    current_user: CurrentUser,
+    project_id: uuid.UUID
+) -> Any:
+    """List all epics for a project."""
+    from app.models import Epic
+    
+    statement = select(Epic).where(Epic.project_id == project_id).order_by(Epic.created_at)
+    epics = session.exec(statement).all()
+    
+    return {
+        "data": [
+            {
+                "id": str(epic.id),
+                "epic_code": epic.epic_code,
+                "title": epic.title,
+                "description": epic.description,
+                "domain": epic.domain,
+                "status": epic.epic_status.value if epic.epic_status else None
+            }
+            for epic in epics
+        ],
+        "count": len(epics)
+    }

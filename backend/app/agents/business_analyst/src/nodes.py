@@ -737,13 +737,18 @@ async def extract_stories(state: BAState, agent=None) -> dict:
         
         all_epic_ids = [epic.get("id", "") for epic in epics]
         
-        # Create tasks for parallel execution
-        tasks = [
-            _generate_stories_for_epic(epic, prd, all_epic_ids, state, agent)
-            for epic in epics
-        ]
+        # Use semaphore to limit concurrent LLM calls (avoid rate limiting)
+        MAX_CONCURRENT_LLM_CALLS = 2
+        semaphore = asyncio.Semaphore(MAX_CONCURRENT_LLM_CALLS)
         
-        # Run all tasks in parallel
+        async def _generate_with_semaphore(epic):
+            async with semaphore:
+                return await _generate_stories_for_epic(epic, prd, all_epic_ids, state, agent)
+        
+        # Create tasks with rate limiting
+        tasks = [_generate_with_semaphore(epic) for epic in epics]
+        
+        # Run tasks (max 2 concurrent at a time)
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
         # Collect all stories and update epics
