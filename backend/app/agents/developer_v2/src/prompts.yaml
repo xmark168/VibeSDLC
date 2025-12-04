@@ -74,7 +74,7 @@ tasks:
       | File Type | Skill to Activate |
       |-----------|-------------------|
       | API route (src/app/api/**/route.ts) | `api-route` |
-      | React component (*.tsx) | `frontend-component` |
+      | React component (*.tsx) | `frontend-component`, `frontend-design` |
       | Database/Prisma schema | `database-model` |
       | Server Actions (app/actions/*.ts) | `server-action` |
       | Authentication | `authentication` |
@@ -82,7 +82,6 @@ tasks:
       | Unit tests (*.test.ts) | `unit-test` |
       | Shell commands | `run-command` |
       | Debugging errors | `debugging` |
-      | UI design/styling | `frontend-design` |
       
       ## Available Skills
       {skill_catalog}
@@ -222,6 +221,25 @@ tasks:
       5. **Syntax**: All tags properly closed (TSX for .tsx, JSX for .jsx)
       6. **Best Practices**: Follows framework conventions
 
+      ## Review Scope (CRITICAL!)
+      You are reviewing ONE FILE from ONE STEP of a multi-step implementation plan.
+      
+      ONLY check (this file):
+      - Code syntax and completeness
+      - TypeScript/TSX types correctness
+      - Logic correctness within THIS file
+      - Proper import statements (syntax only)
+      
+      DO NOT check (other steps):
+      - Missing database models → different step will create them
+      - Missing API routes → different step will create them
+      - Missing components → different step will create them
+      - Integration errors → run_code phase will catch those
+      - Prisma schema issues → database-model step handles this
+      
+      If code is SYNTACTICALLY correct but depends on files from other steps:
+      → LGTM (run_code will validate integration later)
+
       ## Terminology
       Use correct terminology based on file extension:
       - .tsx files: TypeScript/TSX
@@ -230,8 +248,22 @@ tasks:
       - .js files: JavaScript
 
       ## Decision Rules
-      - LGTM: Code is complete and correct, ready for next step
-      - LBTM: Code has issues that MUST be fixed
+      - LGTM: Code in THIS FILE is syntactically correct and complete
+      - LBTM: Code has syntax errors, TODOs, or incomplete implementations
+      
+      Examples:
+      - API route uses `prisma.book` but Book model not in schema → LGTM (schema is different step)
+      - Component imports from `@/components/Card` not created yet → LGTM (different step)
+      - Function has `// TODO: implement` → LBTM (incomplete code)
+      - TSX missing closing tag → LBTM (syntax error)
+
+      ## Truncated Files
+      If file path shows "(truncated - showing head + tail)":
+      - File is too large, showing beginning (70%) + end (30%)
+      - Focus on visible code: imports at top, exports at bottom
+      - Check if structure looks complete (proper closing tags/brackets)
+      - If can't determine completeness from visible parts, default to LGTM
+      - NEVER LBTM just because middle section is hidden
 
       ## Output Format
       ```

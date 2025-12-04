@@ -57,7 +57,7 @@ def get_llm(step: str) -> BaseChatModel:
         kwargs = {
             "model": model,
             "temperature": config.get("temperature", 0.2),
-            "max_tokens": 8192,
+            "max_tokens": 16384,  # Claude requires max_tokens, set high
             "timeout": timeout,
             "max_retries": MAX_RETRIES,
         }
@@ -67,13 +67,13 @@ def get_llm(step: str) -> BaseChatModel:
             kwargs["api_key"] = anthropic_api_key
         return ChatAnthropic(**kwargs)
     
-    # Use ChatOpenAI for GPT models
+    # Use ChatOpenAI for GPT models - no max_tokens limit
     kwargs = {
         "model": model,
         "temperature": config.get("temperature", 0.2),
         "timeout": timeout,
         "max_retries": MAX_RETRIES,
-        "max_tokens": 16384,  # Prevent output truncation for complex components
+        # No max_tokens - let model use its full capacity
     }
     if openai_base_url:
         kwargs["base_url"] = openai_base_url

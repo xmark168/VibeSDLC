@@ -20,6 +20,7 @@ from app.agents.developer_v2.src.utils.prompt_utils import (
     format_input_template as _format_input_template,
     build_system_prompt as _build_system_prompt,
 )
+from app.agents.developer_v2.src.utils.token_utils import truncate_to_tokens
 from app.agents.developer_v2.src.nodes._llm import code_llm
 from app.agents.developer_v2.src.nodes._helpers import setup_tool_context
 from app.agents.developer_v2.src.skills import SkillRegistry, get_project_structure
@@ -201,7 +202,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             if os.path.exists(full_path):
                 try:
                     with open(full_path, 'r', encoding='utf-8') as f:
-                        legacy_code = f.read()[:4000]  # Limit size
+                        legacy_code = f.read()  # Full content for accurate modify
                 except Exception:
                     legacy_code = "Error reading file"
         
@@ -225,7 +226,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             total_steps=len(plan_steps),
             task_description=enhanced_task,
             modified_files=modified_files_content,
-            related_context="\n\n".join(context_parts)[:6000],  # Increased for pre-loaded context
+            related_context=truncate_to_tokens("\n\n".join(context_parts), 4000),  # Token-based limit
             feedback_section=feedback_section,
             logic_analysis=logic_analysis_str,
             legacy_code=legacy_code,

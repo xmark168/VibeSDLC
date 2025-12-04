@@ -142,8 +142,8 @@ def _preload_dependencies(workspace_path: str, steps: list) -> dict:
                 with open(full_path, 'r', encoding='utf-8') as f:
                     content = f.read()
                 # Limit content size to avoid token overflow
-                if len(content) > 3000:
-                    content = content[:3000] + "\n... (truncated)"
+                if len(content) > 8000:
+                    content = content[:8000] + "\n... (truncated)"
                 dependencies_content[dep_path] = content
                 logger.info(f"[analyze_and_plan] Pre-loaded: {dep_path}")
             except Exception as e:

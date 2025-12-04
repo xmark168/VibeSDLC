@@ -11,8 +11,15 @@ from app.agents.developer_v2.src.utils.prompt_utils import (
     format_input_template as _format_input_template,
     build_system_prompt as _build_system_prompt,
 )
+from app.agents.developer_v2.src.utils.token_utils import (
+    count_tokens,
+    smart_truncate_tokens,
+)
 
 logger = logging.getLogger(__name__)
+
+
+MAX_REVIEW_TOKENS = 10000  # Token-based limit for review
 
 
 def _get_file_extension(file_path: str) -> str:
@@ -26,6 +33,15 @@ def _get_file_extension(file_path: str) -> str:
     elif file_path.endswith('.prisma'):
         return 'prisma'
     return ''
+
+
+def _smart_truncate(content: str, max_tokens: int = MAX_REVIEW_TOKENS) -> tuple[str, bool]:
+    """Truncate large files using token-based smart truncation.
+    
+    Returns:
+        tuple: (truncated_content, is_truncated)
+    """
+    return smart_truncate_tokens(content, max_tokens, head_ratio=0.7)
 
 
 def _parse_review_response(response: str) -> dict:
@@ -96,12 +112,16 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
         with open(full_path, 'r', encoding='utf-8') as f:
             file_content = f.read()
         
+        # Smart truncate large files (show head + tail)
+        file_content_review, is_truncated = _smart_truncate(file_content)
+        truncation_note = " (truncated - showing head + tail)" if is_truncated else ""
+        
         # Build dependencies context
         deps_context = ""
         step_deps = step.get("dependencies", [])
-        for dep in step_deps[:3]:  # Limit to 3 deps
+        for dep in step_deps[:5]:  # Limit to 5 deps
             if dep in dependencies_content:
-                content = dependencies_content[dep][:500]
+                content = dependencies_content[dep][:3000]  # Increased from 500
                 deps_context += f"### {dep}\n```\n{content}\n```\n\n"
         
         if not deps_context:
@@ -112,9 +132,9 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
         input_text = _format_input_template(
             "review",
             task_description=task_description,
-            file_path=file_path,
+            file_path=file_path + truncation_note,
             file_ext=_get_file_extension(file_path),
-            file_content=file_content[:4000],  # Limit content size
+            file_content=file_content_review,
             dependencies_context=deps_context
         )
         
@@ -133,7 +153,7 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
         logger.info(f"[review] {file_path}: {review_result['decision']}")
         
         if review_result["decision"] == "LBTM":
-            logger.info(f"[review] Feedback: {review_result['feedback'][:100]}...")
+            logger.info(f"[review] Feedback: {review_result['feedback']}...")
         
         # Increment review_count if LBTM (for retry limit tracking)
         current_count = state.get("review_count", 0)
