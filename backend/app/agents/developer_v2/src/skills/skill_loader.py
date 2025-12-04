@@ -242,3 +242,27 @@ def get_project_structure(tech_stack: str = "nextjs") -> str:
     except Exception as e:
         logger.error(f"[SkillLoader] Failed to load project structure: {e}")
         return ""
+
+
+def get_plan_prompts(tech_stack: str = "nextjs") -> dict:
+    """Load plan_prompts.yaml for a tech stack.
+    
+    Returns:
+        dict with 'system_prompt' and 'input_template' keys
+    """
+    prompts_file = SKILLS_DIR / tech_stack / "plan_prompts.yaml"
+    
+    if not prompts_file.exists():
+        return {"system_prompt": "", "input_template": ""}
+    
+    try:
+        import yaml
+        content = prompts_file.read_text(encoding='utf-8')
+        data = yaml.safe_load(content)
+        return {
+            "system_prompt": data.get("system_prompt", ""),
+            "input_template": data.get("input_template", ""),
+        }
+    except Exception as e:
+        logger.error(f"[SkillLoader] Failed to load plan prompts: {e}")
+        return {"system_prompt": "", "input_template": ""}

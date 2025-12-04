@@ -13,8 +13,10 @@ class DeveloperState(TypedDict, total=False):
     # Input (from story event)
     # ==========================================================================
     story_id: str
-    story_content: str
+    epic: str
     story_title: str
+    story_description: str
+    story_requirements: List[str]
     acceptance_criteria: List[str]
     project_id: str
     task_id: str
@@ -27,6 +29,7 @@ class DeveloperState(TypedDict, total=False):
     action: Action
     task_type: TaskType
     complexity: Complexity
+    use_code_review: bool  # MetaGPT-style: Enable/disable code review step (default True)
     
     # ==========================================================================
     # Analysis results
@@ -38,11 +41,18 @@ class DeveloperState(TypedDict, total=False):
     estimated_hours: float
     
     # ==========================================================================
-    # Planning
+    # Planning (MetaGPT-style detailed planning)
     # ==========================================================================
     implementation_plan: List[dict]
     current_step: int
     total_steps: int
+    
+    # Logic analysis - MetaGPT style: [["file.ts", "Component X, function Y"]]
+    logic_analysis: List[List[str]]
+    
+    # Pre-loaded dependency contents (reduce tool calls during implement)
+    # Format: {"path/to/file.ts": "file content..."}
+    dependencies_content: Dict[str, str]
     
     # ==========================================================================
     # Implementation results
@@ -104,4 +114,23 @@ class DeveloperState(TypedDict, total=False):
     agents_md: Optional[str]
     project_config: Optional[Dict[str, Any]]
     related_code_context: Optional[str]
-    summarize_feedback: Optional[str]
+    
+    # ==========================================================================
+    # Review (MetaGPT-style LGTM/LBTM)
+    # ==========================================================================
+    review_result: Optional[str]  # "LGTM" or "LBTM"
+    review_feedback: Optional[str]  # Feedback if LBTM
+    review_details: Optional[str]  # Full review details
+    review_count: int  # Count of reviews for current step
+    total_lbtm_count: int  # Track total LBTM across all steps (for skip summarize optimization)
+    
+    # ==========================================================================
+    # Summarize (MetaGPT-style IS_PASS gate)
+    # ==========================================================================
+    summary: Optional[str]  # Summary of implementation
+    todos: Optional[Dict[str, str]]  # {file: issue} if any
+    is_pass: Optional[str]  # "YES" or "NO"
+    summarize_feedback: Optional[str]  # Feedback if NO
+    summarize_count: int  # Count of summarize retries
+    files_reviewed: Optional[str]  # List of files reviewed
+    story_summary: Optional[str]  # Summary of the story for context

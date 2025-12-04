@@ -1,12 +1,16 @@
 import os
+import logging
 
 import cocoindex
 from cocoindex import FlowBuilder
 from cocoindex.functions import DetectProgrammingLanguage, SplitRecursively
 from pgvector.psycopg import register_vector
+from sentence_transformers import CrossEncoder
 
 from pathlib import Path
-from app.agents.developer_v2.flows import code_to_embedding, connection_pool
+from app.agents.developer_v2.flows import code_to_embedding, connection_pool, embed_query_fast
+
+logger = logging.getLogger(__name__)
 
 
 def create_structure_document(project_root):
@@ -91,9 +95,9 @@ def create_project_flow(project_id: str, project_path: str):
             file["chunks"] = file["content"].transform(
                 SplitRecursively(),
                 language=file["language"],
-                chunk_size=1500,
-                min_chunk_size=500,
-                chunk_overlap=400,
+                chunk_size=800,       # Smaller chunks for better precision
+                min_chunk_size=200,   # Allow smaller function chunks
+                chunk_overlap=150,    # Less overlap
             )
             with file["chunks"].row() as chunk:
                 chunk["embedding"] = chunk["text"].call(code_to_embedding)
@@ -125,6 +129,28 @@ class AdvancedProjectManager:
     def __init__(self):
         self.flows = {}  # For project-level indexing
         self.task_flows = {}  # For task-level indexing
+        self._reranker = None  # Lazy load reranker
+    
+    @property
+    def reranker(self):
+        """Lazy load reranker to avoid slow startup."""
+        if self._reranker is None:
+            logger.info("[CocoIndex] Loading reranker model...")
+            try:
+                import torch
+                self._reranker = CrossEncoder(
+                    'cross-encoder/ms-marco-MiniLM-L-6-v2',
+                    device='cuda',
+                    max_length=512  # Limit input length for speed
+                )
+                # Enable FP16 for faster inference on GPU
+                if torch.cuda.is_available():
+                    self._reranker.model.half()
+                logger.info("[CocoIndex] Reranker loaded on GPU with FP16")
+            except Exception as e:
+                logger.warning(f"[CocoIndex] GPU not available, using CPU: {e}")
+                self._reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2', max_length=512)
+        return self._reranker
 
     def register_project(self, project_id: str, project_path: str):
         """Register and index a new project."""
@@ -185,69 +211,98 @@ class AdvancedProjectManager:
                 raise e
 
     def search(self, project_id: str, query: str, top_k: int = 5, search_type: str = "project"):
-        """Search in a specific project or task using the correct table name."""
+        """Search in a specific project using two-stage retrieval (vector + rerank)."""
         if search_type == "task":
-            # For task search, we need both project_id and task_id in the identifier
-            # This method will be called differently for tasks
             raise ValueError("Use search_task for task-specific searches")
-        else:
-            # Sanitize the project_id to match the stored flow name
-            sanitized_project_id = "".join(c if c.isalnum() else "_" for c in project_id)
+        
+        # Stage 1: Vector search - get candidates for reranking (20 is optimal for speed/quality)
+        candidates = self._vector_search_project(project_id, query, top_k=20)
+        
+        if not candidates:
+            return []
+        
+        # Stage 2: Rerank with cross-encoder if we have more than top_k results
+        if len(candidates) > top_k:
+            candidates = self._rerank_results(query, candidates, top_k)
+        
+        return candidates[:top_k]
+    
+    def _vector_search_project(self, project_id: str, query: str, top_k: int = 30):
+        """Stage 1: Fast vector similarity search."""
+        sanitized_project_id = "".join(c if c.isalnum() else "_" for c in project_id)
 
-            if sanitized_project_id not in self.flows:
-                project_path = (
-                    f"services/ai-agent-service/app/agents/dev/workspaces/{project_id}"
-                )
-                if os.path.exists(project_path):
-                    self.register_project(project_id, project_path)
-                else:
-                    raise ValueError(
-                        f"Project {project_id} not registered and path not found."
-                    )
+        if sanitized_project_id not in self.flows:
+            project_path = f"services/ai-agent-service/app/agents/dev/workspaces/{project_id}"
+            if os.path.exists(project_path):
+                self.register_project(project_id, project_path)
+            else:
+                raise ValueError(f"Project {project_id} not registered and path not found.")
 
-            flow = self.flows[sanitized_project_id]
-            # Use the official utility to get the correct, mangled table name
-            table_name = cocoindex.utils.get_target_default_name(flow, "code_embedding")
-
-            query_vector = code_to_embedding.eval(query)
-
-            with connection_pool().connection() as conn:
-                register_vector(conn)
-                with conn.cursor() as cur:
-                    # Use quotes around the table name to handle special characters
-                    sql_query = f'SELECT filename, code, embedding <=> %s AS distance, start, "end" FROM "{table_name}" ORDER BY distance LIMIT %s'
-                    cur.execute(sql_query, (query_vector, top_k))
-                    return [
-                        {
-                            "filename": row[0],
-                            "code": row[1],
-                            "score": 1.0 - row[2],
-                            "start": row[3],
-                            "end": row[4],
-                        }
-                        for row in cur.fetchall()
-                    ]
-
-    def search_task(self, project_id: str, task_id: str, query: str, top_k: int = 5):
-        """Search in a specific task workspace using the correct table name."""
-        task_identifier = task_id
-        sanitized_task_id = "".join(c if c.isalnum() else "_" for c in task_identifier)
-
-        if sanitized_task_id not in self.task_flows:
-            raise ValueError(
-                f"Task {task_identifier} not registered. Call register_task first."
-            )
-
-        flow = self.task_flows[sanitized_task_id]
-        # Use the official utility to get the correct, mangled table name
+        flow = self.flows[sanitized_project_id]
         table_name = cocoindex.utils.get_target_default_name(flow, "code_embedding")
-
-        query_vector = code_to_embedding.eval(query)
+        query_vector = embed_query_fast(query)  # ONNX-optimized
 
         with connection_pool().connection() as conn:
             register_vector(conn)
             with conn.cursor() as cur:
-                # Use quotes around the table name to handle special characters
+                sql_query = f'SELECT filename, code, embedding <=> %s AS distance, start, "end" FROM "{table_name}" ORDER BY distance LIMIT %s'
+                cur.execute(sql_query, (query_vector, top_k))
+                return [
+                    {
+                        "filename": row[0],
+                        "code": row[1],
+                        "score": 1.0 - row[2],
+                        "start": row[3],
+                        "end": row[4],
+                    }
+                    for row in cur.fetchall()
+                ]
+    
+    def _rerank_results(self, query: str, candidates: list, top_k: int = 5):
+        """Stage 2: Rerank candidates with cross-encoder for better precision."""
+        try:
+            pairs = [(query, c['code']) for c in candidates]
+            scores = self.reranker.predict(pairs)
+            
+            for i, c in enumerate(candidates):
+                c['rerank_score'] = float(scores[i])
+            
+            candidates.sort(key=lambda x: x['rerank_score'], reverse=True)
+            logger.debug(f"[CocoIndex] Reranked {len(candidates)} candidates")
+            return candidates
+        except Exception as e:
+            logger.warning(f"[CocoIndex] Reranking failed, using vector scores: {e}")
+            return candidates
+
+    def search_task(self, project_id: str, task_id: str, query: str, top_k: int = 5):
+        """Search in a specific task workspace using two-stage retrieval."""
+        # Stage 1: Vector search
+        candidates = self._vector_search_task(task_id, query, top_k=20)
+        
+        if not candidates:
+            return []
+        
+        # Stage 2: Rerank
+        if len(candidates) > top_k:
+            candidates = self._rerank_results(query, candidates, top_k)
+        
+        return candidates[:top_k]
+    
+    def _vector_search_task(self, task_id: str, query: str, top_k: int = 30):
+        """Stage 1: Fast vector similarity search for task."""
+        task_identifier = task_id
+        sanitized_task_id = "".join(c if c.isalnum() else "_" for c in task_identifier)
+
+        if sanitized_task_id not in self.task_flows:
+            raise ValueError(f"Task {task_identifier} not registered. Call register_task first.")
+
+        flow = self.task_flows[sanitized_task_id]
+        table_name = cocoindex.utils.get_target_default_name(flow, "code_embedding")
+        query_vector = embed_query_fast(query)  # ONNX-optimized
+
+        with connection_pool().connection() as conn:
+            register_vector(conn)
+            with conn.cursor() as cur:
                 sql_query = f'SELECT filename, code, embedding <=> %s AS distance, start, "end" FROM "{table_name}" ORDER BY distance LIMIT %s'
                 cur.execute(sql_query, (query_vector, top_k))
                 return [

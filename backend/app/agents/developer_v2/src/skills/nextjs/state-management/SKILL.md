@@ -3,20 +3,21 @@ name: state-management
 description: Manage client-side state with Zustand. Use when building shopping cart, user preferences, theme toggle, UI state, or any cross-component shared state with localStorage persist.
 ---
 
-# State Management (Zustand 5)
+This skill guides implementation of client-side state management using Zustand.
 
-## Critical Rules
+The user needs to share state between components, persist data to localStorage, or manage complex UI state like shopping carts or theme preferences.
 
-1. **File location**: `lib/stores/<name>-store.ts`
-2. **Use `create`** - NOT createStore
-3. **Persist** với localStorage khi cần
-4. **Keep stores small** - 1 store per domain
-5. **Use selectors** - Tránh re-render không cần thiết
-6. **'use client'** - Required in components using store
+## Before You Start
 
-## Quick Reference
+Zustand is the preferred state management library:
+- **File location**: `lib/stores/<name>-store.ts`
+- **Function**: Use `create` from zustand (NOT createStore)
+- **Components**: Must have `'use client'` to use stores
 
-### Basic Store
+**CRITICAL**: Keep stores small and focused. Create one store per domain (cart, theme, user preferences) rather than one large store.
+
+## Basic Store
+
 ```typescript
 // lib/stores/cart-store.ts
 import { create } from 'zustand';
@@ -39,6 +40,7 @@ interface CartStore {
 
 export const useCartStore = create<CartStore>((set, get) => ({
   items: [],
+  
   addItem: (item) =>
     set((state) => {
       const existing = state.items.find((i) => i.id === item.id);
@@ -51,20 +53,27 @@ export const useCartStore = create<CartStore>((set, get) => ({
       }
       return { items: [...state.items, item] };
     }),
+    
   removeItem: (id) =>
     set((state) => ({
       items: state.items.filter((i) => i.id !== id),
     })),
+    
   updateQuantity: (id, quantity) =>
     set((state) => ({
       items: state.items.map((i) => (i.id === id ? { ...i, quantity } : i)),
     })),
+    
   clearCart: () => set({ items: [] }),
+  
   total: () => get().items.reduce((sum, i) => sum + i.price * i.quantity, 0),
 }));
 ```
 
-### With Persist (localStorage)
+## Store with localStorage Persistence
+
+Use the `persist` middleware for data that should survive page refresh:
+
 ```typescript
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -83,18 +92,21 @@ export const useThemeStore = create<ThemeStore>()(
       toggleTheme: () =>
         set((state) => ({ theme: state.theme === 'light' ? 'dark' : 'light' })),
     }),
-    { name: 'theme-storage' }
+    { name: 'theme-storage' }  // localStorage key
   )
 );
 ```
 
-### Using in Component
+## Using Stores in Components
+
+Always use selectors to prevent unnecessary re-renders:
+
 ```tsx
 'use client';
 import { useCartStore } from '@/lib/stores/cart-store';
 
 export function CartButton() {
-  // Selector - chỉ re-render khi items.length thay đổi
+  // Selector - only re-renders when items.length changes
   const count = useCartStore((state) => state.items.length);
   return <button>Cart ({count})</button>;
 }
@@ -105,14 +117,16 @@ export function CartTotal() {
 }
 ```
 
-### Multiple Selectors
+## Multiple Selectors with useShallow
+
+When selecting multiple values, use `useShallow` to prevent re-renders if values haven't changed:
+
 ```tsx
 'use client';
 import { useShallow } from 'zustand/react/shallow';
 import { useCartStore } from '@/lib/stores/cart-store';
 
 export function CartSummary() {
-  // useShallow prevents re-render if object values unchanged
   const { items, total } = useCartStore(
     useShallow((state) => ({
       items: state.items,
@@ -129,6 +143,30 @@ export function CartSummary() {
 }
 ```
 
-## References
+## Accessing Actions
 
-- `zustand-patterns.md` - Advanced patterns, devtools, testing
+Actions don't cause re-renders, so you can select them directly:
+
+```tsx
+'use client';
+import { useCartStore } from '@/lib/stores/cart-store';
+
+export function AddToCartButton({ product }) {
+  const addItem = useCartStore((state) => state.addItem);
+  
+  return (
+    <button onClick={() => addItem({ ...product, quantity: 1 })}>
+      Add to Cart
+    </button>
+  );
+}
+```
+
+NEVER:
+- Use `createStore` (use `create` instead)
+- Select the entire store without selectors (causes unnecessary re-renders)
+- Forget `'use client'` in components using stores
+- Create one giant store (split by domain)
+- Access stores in Server Components
+
+**IMPORTANT**: Zustand stores are client-side only. For server-side state, use Server Components with direct database queries.

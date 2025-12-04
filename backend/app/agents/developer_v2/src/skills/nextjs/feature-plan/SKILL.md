@@ -3,117 +3,150 @@ name: feature-plan
 description: Create implementation plans for Next.js features. Use when breaking down user stories into tasks, planning feature implementation, or decomposing complex requirements.
 ---
 
-# Feature Plan
+This skill guides creation of implementation plans that break features into actionable tasks.
 
-## Critical Rules
+The user provides a feature request or user story that needs to be decomposed into concrete implementation steps.
 
-1. **Vertical slicing** - Each task delivers complete functionality across layers
-2. **INVEST** - Independent, Negotiable, Valuable, Estimable, Small, Testable
-3. **Order**: Data - Logic - UI - Tests
+## Planning Approach
 
-## Quick Reference
+Use vertical slicing to deliver complete functionality in each task:
+- **Vertical slice**: Each task includes data, logic, and UI for one user-visible capability
+- **INVEST criteria**: Independent, Negotiable, Valuable, Estimable, Small, Testable
+- **Order**: Data - Logic - UI - Tests
 
-### Task Decomposition Patterns
+**CRITICAL**: Avoid horizontal slicing (all models, then all APIs, then all UI). Instead, implement one complete feature at a time.
 
-| Pattern | Example |
-|---------|---------|
-| Workflow | Login - Dashboard - Search - Details |
-| CRUD | Create, Read, Update, Delete |
-| Scenarios | Happy path, Edge cases, Errors |
+## Pre-Implementation Checks
 
-### Completeness Checklist
+Before creating plan, verify:
+1. **Prisma schema** - Required models exist? Need migration?
+2. **Existing helpers** - Check `@/lib/` for api-response, auth-helpers
+3. **UI components** - shadcn components installed? Check `components.json`
 
-| Layer | Questions |
-|-------|-----------|
-| Data | Schema changes? Migration? |
-| Logic | API route or Server Action? Validation? |
-| UI | New components? Where displayed? |
-| States | Loading? Error? Empty? |
-| Tests | Unit tests (Jest)? |
+If missing, add setup task FIRST in plan.
 
-### Task Order
-```
-1. Data/Schema
-2. Core logic (API/Action)
-3. UI components
-4. Wire to pages
-5. Error handling
-6. Tests
-```
+## Acceptance Criteria Mapping
+
+**CRITICAL**: Map each AC item to explicit task.
+
+Example AC:
+> "Given no books match my search, when I submit then I see a message indicating no results found"
+
+Map to tasks:
+1. Create `EmptyState` component with "no results" message
+2. Add conditional render in results component
+3. Test: verify message appears when results empty
+
+**Rules:**
+- Parse AC for exact expected behaviors
+- Each AC item = at least 1 task
+- Include exact text/messages from AC in implementation
 
 ## Vertical Slice Example
 
-**Feature:** "Add to Cart"
+**Feature**: Add to Cart
 
-### Bad (Horizontal Slicing)
+Bad approach (horizontal slicing):
 1. Create all database models
-2. Create all API routes  
+2. Create all API routes
 3. Create all components
 4. Connect everything
 
-### Good (Vertical Slicing)
-1. **Task 1:** Add single item to cart
+Good approach (vertical slicing):
+1. **Add single item to cart**
    - Schema: Cart, CartItem models
    - API: POST /api/cart/items
-   - UI: "Add to Cart" button on product
-   - Test: Button click adds item
+   - UI: "Add to Cart" button
+   - Test: Button adds item
 
-2. **Task 2:** View cart contents
+2. **View cart contents**
    - API: GET /api/cart
-   - UI: CartPage with items list
+   - UI: Cart page with items list
    - Test: Cart displays items
 
-3. **Task 3:** Update item quantity
+3. **Update item quantity**
    - API: PUT /api/cart/items/[id]
    - UI: Quantity +/- buttons
    - Test: Quantity updates
 
+## Task Structure
+
+For each task, specify:
+- **order**: Sequence number
+- **description**: What to accomplish (not how)
+- **file_path**: Exact file to create or modify
+- **action**: create, modify, delete, test, or config
+
+## Completeness Checklist
+
+Ensure each feature covers:
+- **Data layer**: Schema changes, migrations
+- **Logic layer**: API route or Server Action with validation
+- **UI layer**: Components, pages, where they're displayed
+- **States**: Loading, error, empty states
+- **Tests**: Unit tests (Jest only)
+
+## Test Guidelines
+
+**CRITICAL**: Only write unit tests. Never write integration or E2E tests.
+
+Write tests for:
+- Utility functions (formatDate, validators)
+- Simple component rendering
+- Server Actions with mocked Prisma
+
+Skip tests for:
+- Complex API routes
+- Full form flows
+- Authentication flows
+- Anything needing more than 3 mocks
+
 ## Common Gaps
 
+Features often miss:
 - Error handling and user feedback
-- Loading states
-- Empty states
+- Loading states during async operations
+- Empty states when no data
 - Input validation (client + server)
-- Connecting to existing pages/layouts
-- Unit tests (Jest only, no e2e)
-
-## CRITICAL: Test Guidelines
-
-### ONLY Unit Tests (Jest)
-- Test individual functions in isolation
-- Mock ALL external dependencies (prisma, fetch)
-- Simple assertions, no complex setup
-- Max 2-3 test tasks per feature
-
-### NEVER Write:
-- Integration tests (multiple components together)
-- E2E tests (Playwright, Cypress)
-- Tests requiring real database connection
-- Tests with complex async flows (> 3 awaits)
-
-### Good Test Tasks:
-- "Create unit tests for formatCurrency utility"
-- "Create unit tests for Button component"
-
-### Bad Test Tasks (SKIP):
-- "Create integration tests for checkout flow"
-- "Create tests for API with real database"
+- Connecting new UI to existing pages/layouts
 
 ## Available Libraries
 
-| Purpose | Library | Usage |
-|---------|---------|-------|
-| Animations | `framer-motion` | Page transitions, hover effects, list animations |
-| Forms | `react-hook-form` + `zod` | Form validation and state |
-| State | `zustand` | Global state management |
-| UI | `shadcn/ui` | Component library |
-| Icons | `lucide-react` | Icon set |
-| Charts | `recharts` | Data visualization |
-| Toast | `sonner` | Notifications |
+Use these pre-installed libraries:
+- **framer-motion**: Page transitions, hover effects, list animations
+- **react-hook-form + zod**: Form validation and state
+- **zustand**: Global state management (see when to use below)
+- **shadcn/ui**: Component library
+- **lucide-react**: Icon set
+- **recharts**: Data visualization
+- **sonner**: Toast notifications
+
+## State Management - Choose Wisely
+
+**PREFER SIMPLICITY** - Don't over-engineer!
+
+| Situation | Solution |
+|-----------|----------|
+| Local component state | `useState` - simplest option |
+| Form state | `react-hook-form` - already handles it |
+| Search/filter on single page | `useState` in page component |
+| Data shared across 2+ unrelated pages | `zustand` store |
+| Server data with caching | API route + `useState` |
+
+**Use zustand ONLY when:**
+- State needed in 3+ unrelated components
+- State persists across page navigation
+- Complex state with multiple actions
+
+**DON'T use zustand for:**
+- Simple search/filter (use useState)
+- Form data (use react-hook-form)
+- Data from single API call (use useState)
+- State used in one page only
 
 ## Output Format
 
-**CRITICAL**: Always respond with JSON wrapped in result tags:
+Always respond with JSON wrapped in result tags:
 
 ```
 <result>
@@ -131,16 +164,10 @@ description: Create implementation plans for Next.js features. Use when breaking
 </result>
 ```
 
-### Action Types
-- **create**: New files (components, pages, APIs)
-- **modify**: Update existing files (schema, pages)
-- **delete**: Remove files (rare)
-- **test**: Test files (Jest unit tests)
-- **config**: Configuration files
+NEVER:
+- Use horizontal slicing (all of one layer before the next)
+- Create more than 2-3 test tasks per feature
+- Write integration or E2E tests
+- Forget loading/error/empty states
 
-### Path Guidelines
-- Use exact paths from project_structure
-- Components: `src/components/[Feature]/ComponentName.tsx`
-- Pages: `src/app/[route]/page.tsx`
-- APIs: `src/app/api/[resource]/route.ts`
-- Actions: `src/app/actions/[domain].ts`
+**IMPORTANT**: Each task should result in visible, testable progress. A user should be able to see something working after each task.

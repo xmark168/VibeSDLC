@@ -3,213 +3,197 @@ name: frontend-component
 description: Create React/Next.js 16 components. Use when building pages, client/server components, forms with useActionState, or UI with shadcn/ui. Handles 'use client' directive decisions.
 ---
 
-# Frontend Component (Next.js 16 + React 19)
+This skill guides creation of React components in Next.js 16 with React 19. Components follow the App Router architecture with Server Components as default and Client Components for interactivity.
 
-## IMPORTANT: Always Activate Design Skill
+The user needs to build pages, UI components, forms, or interactive elements.
 
-**Before creating any UI component, MUST also activate:**
+## Before You Start
+
+Always activate the design skill alongside this one for UI work:
+
 ```
 activate_skills(["frontend-component", "frontend-design"])
 ```
 
-This ensures components follow design best practices and avoid generic AI aesthetics.
+**CRITICAL**: Before importing any custom component from `@/components/*`, you MUST read that file first to check its Props interface. Never guess prop names.
 
-## Critical Rules
+## Server vs Client Components
 
-1. **Named exports ONLY** - NO default exports (except pages/layouts)
-2. **'use client'** - Required ONLY for hooks, events, browser APIs
-3. **Server Components** - Default, no directive needed
-4. **Async params** - Always `await params` in pages
-5. **shadcn/ui** - Use components from `@/components/ui/`
-6. **Read before import** - MUST read custom component files before using
+- **Server Components** (default): Fetch data, access database, async/await
+- **Client Components** (`'use client'`): Hooks, events, browser APIs
 
-## CRITICAL: Before Importing Components
+Add `'use client'` when using:
+- `useState`, `useEffect`, `useRef`, `useContext`
+- `useActionState`, `useTransition`
+- `onClick`, `onChange`, `onSubmit` handlers
+- `useRouter`, `usePathname` from next/navigation
 
-**MUST read file before importing custom components:**
+## Defensive Prop Handling
 
-| Importing From | Action |
-|----------------|--------|
-| `@/components/*` | READ the file first to check Props |
-| `@/components/ui/*` | OK - shadcn props are standard |
+**CRITICAL**: Always handle undefined/null props to prevent runtime crashes.
 
-### Example Flow
+- **Array props**: Always use default `= []`
+- **Object props**: Check before accessing properties
+- **Nested access**: Use optional chaining `?.`
+- **Early return**: Handle loading/empty states first
 
-```
-Task: "Create page with SearchResults"
-
-WRONG:
--> write_file("page.tsx") with <SearchResults searchQuery={...} />
--> Type error! searchQuery doesn't exist
-
-CORRECT:
--> read_file("src/components/Search/SearchResults.tsx")
--> See: interface Props { results: Item[]; onSelect: (id: string) => void }
--> write_file("page.tsx") with <SearchResults results={data} onSelect={handleSelect} />
-```
-
-### Quick Check
-
-Before writing `<ComponentName prop={value} />`:
-1. Is it from `@/components/` (not ui)? -> READ IT FIRST
-2. Check the `interface Props` or function params
-3. Use EXACT prop names from the interface
-
-### Props Passing Patterns
-
-After reading component, check interface format:
-
-```typescript
-// Interface with INDIVIDUAL props
-interface Props {
-  id: string;
-  name: string;
-  price: number;
+```tsx
+// Array props - always default to empty array
+function List({ items = [] }: Props) {
+  if (!items.length) return <EmptyState />;
+  return items.map(item => <Item key={item.id} {...item} />);
 }
-// Pass: <Card id={item.id} name={item.name} price={item.price} />
-// Or spread: <Card {...item} />
 
-// Interface with OBJECT prop
-interface Props {
-  textbook: Textbook;
+// Object props - check before render
+function Detail({ data }: Props) {
+  if (!data) return null;
+  return <div>{data.name}</div>;
 }
-// Pass: <Card textbook={item} />
+
+// Nested access - use optional chaining
+function Info({ user }: Props) {
+  return <span>{user?.profile?.avatar ?? '/default.png'}</span>;
+}
 ```
 
-### Common Mistake
+## Reading Components Before Import
 
-```tsx
-// Component expects individual props
-interface CardProps { id: string; name: string; }
+When importing from `@/components/*`, always read the file first:
 
-// WRONG - passing object
-<Card textbook={item} />
-
-// CORRECT - spread or individual
-<Card {...item} />
-<Card id={item.id} name={item.name} />
+```
+WRONG: write_file with <Card searchQuery={...} /> (guessing props)
+CORRECT: read_file first, see Props interface, then write_file
 ```
 
-## Pre-Code Checklist (MANDATORY)
+Check interface format for prop passing:
+- Individual props: `{ id, name }` -> pass each or spread
+- Object prop: `{ item: Item }` -> pass whole object
 
-**Before writing/modifying ANY component:**
+## Page Components
 
-1. **Check if file uses hooks** - If YES, ensure `'use client'` is at line 1
-2. **Adding hooks to existing file** - Check if `'use client'` exists, add if missing
-
-| Import/Usage | Action Required |
-|--------------|-----------------|
-| `useState`, `useEffect`, `useRef` | Add `'use client'` |
-| `useActionState`, `useTransition` | Add `'use client'` |
-| `onClick`, `onChange`, `onSubmit` | Add `'use client'` |
-| `useRouter` (next/navigation) | Add `'use client'` |
+Pages use `export default` and can be async:
 
 ```tsx
-// WRONG - Missing directive with hook
-import { useActionState } from 'react';
-export function Form() { ... }
-
-// CORRECT - Directive at first line
-'use client';
-import { useActionState } from 'react';
-export function Form() { ... }
-```
-
-## Quick Reference
-
-### Page Component
-```tsx
+// app/users/[id]/page.tsx
 interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-export default async function Page({ params }: PageProps) {
-  const { id } = await params;  // MUST await
-  const data = await prisma.item.findUnique({ where: { id } });
-  return <div>{data.name}</div>;
+export default async function UserPage({ params }: PageProps) {
+  const { id } = await params;  // MUST await in Next.js 16
+  const user = await prisma.user.findUnique({ where: { id } });
+  
+  if (!user) notFound();
+  return <UserProfile user={user} />;
 }
 ```
 
-### Server Component (default)
-```tsx
-export async function UserList({ limit = 10 }) {
-  const users = await prisma.user.findMany({ take: limit });
-  return <div>{users.map(u => <UserCard key={u.id} user={u} />)}</div>;
-}
-```
+## Forms with useActionState
 
-### Client Component
-```tsx
-'use client';
-import { useState } from 'react';
+Connect forms to Server Actions:
 
-export function Counter() {
-  const [count, setCount] = useState(0);
-  return <button onClick={() => setCount(c => c + 1)}>{count}</button>;
-}
-```
-
-### Form with useActionState
 ```tsx
 'use client';
 import { useActionState } from 'react';
+import { createItem } from '@/app/actions/item';
 
 export function CreateForm() {
-  const [state, action, pending] = useActionState(createAction, null);
+  const [state, action, pending] = useActionState(createItem, null);
+  
   return (
     <form action={action}>
-      <input name="title" disabled={pending} />
-      <button disabled={pending}>{pending ? 'Saving...' : 'Save'}</button>
+      <input name="name" disabled={pending} />
+      {state?.fieldErrors?.name && (
+        <p className="text-destructive">{state.fieldErrors.name[0]}</p>
+      )}
+      <button disabled={pending}>
+        {pending ? 'Saving...' : 'Save'}
+      </button>
       {state?.error && <p className="text-destructive">{state.error}</p>}
     </form>
   );
 }
 ```
 
-## When to Use 'use client'
+## API Response Handling
 
-| Need | Directive |
-|------|-----------|
-| useState, useEffect | 'use client' |
-| onClick, onChange | 'use client' |
-| useActionState | 'use client' |
-| Fetch from DB | Server (no directive) |
-| Access env secrets | Server (no directive) |
-
-## API Response Handling (IMPORTANT)
-
-### Standard Response Format
-
-API routes in this project use `successResponse()` which **always wraps data**:
+API routes wrap data with `successResponse()`. Always extract `.data`:
 
 ```typescript
-// API ALWAYS returns this format:
-{ success: true, data: T }
-
-// NOT raw array like:
-[item1, item2, ...]
-```
-
-### Fetching Pattern
-
-```typescript
-// CORRECT - extract .data
-const res = await fetch('/api/textbooks');
+const res = await fetch('/api/items');
 const json = await res.json();
-setTextbooks(json.data ?? []);
-
-// WRONG - passing raw response
-const json = await res.json();
-setTextbooks(json);  // json is {success, data}, not array!
+setItems(json.data ?? []);  // Extract .data, default to []
 ```
 
-### useState Default
+Always initialize useState with proper defaults:
+- Arrays: `useState<Item[]>([])`
+- Objects: `useState<Item | null>(null)`
+- Strings: `useState('')`
 
-```typescript
-const [items, setItems] = useState<Item[]>([]);  // empty array default
+## Error Handling for Users
+
+**CRITICAL**: Never silently fail. Always show user-facing error messages.
+
+```tsx
+'use client';
+import { useState } from 'react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+
+export function DataList() {
+  const [items, setItems] = useState<Item[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchData = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const res = await fetch('/api/items');
+      if (!res.ok) throw new Error('Failed to fetch items');
+      
+      const json = await res.json();
+      setItems(json.data ?? []);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'An error occurred';
+      setError(message);
+      // Optional: toast for non-blocking errors
+      // toast.error(message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      {/* rest of component */}
+    </div>
+  );
+}
 ```
 
-## References
+**Rules:**
+- Add `error` state alongside data state
+- Show Alert/Banner for blocking errors
+- Use toast (sonner) for non-blocking errors
+- Clear error before new request: `setError(null)`
 
-- `references/forms.md` - Form patterns with validation
-- `references/shadcn-patterns.md` - shadcn/ui component examples
-- `references/animations.md` - Framer Motion animation patterns
+## Component Export Rules
+
+- **Pages/Layouts**: `export default`
+- **All other components**: Named exports only
+
+NEVER:
+- Use `'use client'` when not needed
+- Guess prop names without reading component file
+- Forget to `await params` in dynamic routes
+- Access array/object props without defensive checks
+- Pass raw API response to useState (extract .data first)
+- Use default exports for non-page components
+
+**IMPORTANT**: The directive `'use client'` must be the very first line, before any imports.

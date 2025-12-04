@@ -21,6 +21,9 @@ _fs_context = {
 # Global tracking for modified files
 _modified_files: set = set()
 
+# Track files that have been read this session (for edit enforcement)
+_files_read_session: set = set()
+
 
 def set_fs_context(root_dir: str = None):
     """Set global context for filesystem tools."""
@@ -35,13 +38,19 @@ def get_modified_files() -> list:
 
 def reset_modified_files():
     """Reset tracking. Call at start of each implement step."""
-    global _modified_files
+    global _modified_files, _files_read_session
     _modified_files = set()
+    _files_read_session = set()
 
 
 def _track_modified(file_path: str):
     """Track a modified file."""
     _modified_files.add(file_path)
+
+
+def _track_read(file_path: str):
+    """Track a file that has been read (for edit enforcement)."""
+    _files_read_session.add(file_path)
 
 
 def _get_root_dir() -> str:
@@ -75,6 +84,7 @@ def read_file_safe(file_path: str) -> str:
     # Check cache first (OPTIMIZATION)
     cached = file_cache.get(full_path)
     if cached is not None:
+        _track_read(file_path)  # Track for edit enforcement
         return f"Content of {file_path}:\n\n{cached}"
     
     try:
@@ -82,6 +92,7 @@ def read_file_safe(file_path: str) -> str:
             content = f.read()
         # Cache the content
         file_cache.set(full_path, content)
+        _track_read(file_path)  # Track for edit enforcement
         return f"Content of {file_path}:\n\n{content}"
     except FileNotFoundError:
         return f"Error: File not found: {file_path}"
@@ -238,7 +249,7 @@ def move_file_safe(source_path: str, destination_path: str) -> str:
 
 
 @tool
-def search_files(pattern: str, path: str = ".") -> str:
+def glob(pattern: str, path: str = ".") -> str:
     """Search for files matching a glob pattern.
 
     Args:
@@ -263,9 +274,47 @@ def search_files(pattern: str, path: str = ".") -> str:
 
 
 @tool
+def grep_files(pattern: str, path: str = ".", file_pattern: str = "*") -> str:
+    """Search for text pattern inside files.
+
+    Args:
+        pattern: Text or regex to search for
+        path: Directory to search in relative to project root
+        file_pattern: File glob filter (e.g., '*.tsx', '*.py')
+    
+    Returns:
+        Matching lines with file:line format
+    """
+    import re
+    root_dir = _get_root_dir()
+    search_path = Path(os.path.join(root_dir, path))
+    results = []
+    
+    try:
+        for file_path in search_path.rglob(file_pattern):
+            if file_path.is_file() and _is_safe_path(str(file_path), root_dir):
+                try:
+                    content = file_path.read_text(encoding='utf-8', errors='ignore')
+                    for i, line in enumerate(content.splitlines(), 1):
+                        if re.search(pattern, line):
+                            rel_path = file_path.relative_to(root_dir)
+                            results.append(f"{rel_path}:{i}: {line.strip()}")
+                except:
+                    pass
+        
+        if not results:
+            return f"No matches for '{pattern}'"
+        return "\n".join(results[:50])  # Limit to 50 results
+    except Exception as e:
+        return f"Error searching: {str(e)}"
+
+
+@tool
 def edit_file(file_path: str, old_str: str, new_str: str, replace_all: bool = False) -> str:
     """Edit file by replacing old_str with new_str. Useful for incremental code changes.
 
+    IMPORTANT: You MUST read the file with read_file_safe BEFORE editing!
+    
     Args:
         file_path: Path to file relative to project root
         old_str: Exact string to find and replace
@@ -277,6 +326,11 @@ def edit_file(file_path: str, old_str: str, new_str: str, replace_all: bool = Fa
     
     if not _is_safe_path(full_path, root_dir):
         return f"Error: Access denied. Path outside root directory: {file_path}"
+    
+    # Enforce read-before-edit
+    if file_path not in _files_read_session:
+        return (f"Error: You must read '{file_path}' with read_file_safe before editing. "
+                f"This ensures you have the correct content for old_str matching.")
     
     try:
         if not os.path.exists(full_path):
@@ -309,6 +363,90 @@ def edit_file(file_path: str, old_str: str, new_str: str, replace_all: bool = Fa
         _track_modified(file_path)
         
         return result_msg
+    except PermissionError:
+        return f"Error: Permission denied editing '{file_path}'"
+    except Exception as e:
+        return f"Error editing file: {str(e)}"
+
+
+@tool
+def multi_edit_file(file_path: str, edits: list) -> str:
+    """Multiple edits in one atomic operation. All edits succeed or none applied.
+
+    IMPORTANT: You MUST read the file with read_file_safe BEFORE editing!
+    
+    Args:
+        file_path: Path to file relative to project root
+        edits: List of edit operations, each with:
+            - old_str: Exact string to find
+            - new_str: String to replace with
+            - replace_all: (optional) Replace all occurrences, default False
+    
+    Example:
+        multi_edit_file("src/app.tsx", [
+            {"old_str": "const foo", "new_str": "const bar"},
+            {"old_str": "import X", "new_str": "import Y"}
+        ])
+    """
+    root_dir = _get_root_dir()
+    full_path = os.path.join(root_dir, file_path)
+    
+    if not _is_safe_path(full_path, root_dir):
+        return f"Error: Access denied. Path outside root directory: {file_path}"
+    
+    # Enforce read-before-edit
+    if file_path not in _files_read_session:
+        return (f"Error: You must read '{file_path}' with read_file_safe before editing. "
+                f"This ensures you have the correct content for old_str matching.")
+    
+    if not edits or not isinstance(edits, list):
+        return "Error: edits must be a non-empty list"
+    
+    try:
+        if not os.path.exists(full_path):
+            return f"Error: File not found: {file_path}"
+        
+        with open(full_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Validate all edits first (atomic - check before applying)
+        for i, edit in enumerate(edits):
+            if not isinstance(edit, dict):
+                return f"Error: Edit #{i+1} must be a dict with old_str and new_str"
+            if 'old_str' not in edit or 'new_str' not in edit:
+                return f"Error: Edit #{i+1} missing old_str or new_str"
+            if edit['old_str'] not in content:
+                return f"Error: Edit #{i+1} - string not found: '{edit['old_str'][:50]}...'"
+        
+        # Apply all edits in sequence
+        new_content = content
+        results = []
+        for i, edit in enumerate(edits):
+            old_str = edit['old_str']
+            new_str = edit['new_str']
+            replace_all = edit.get('replace_all', False)
+            
+            occurrences = new_content.count(old_str)
+            if replace_all:
+                new_content = new_content.replace(old_str, new_str)
+                results.append(f"#{i+1}: Replaced {occurrences} occurrence(s)")
+            else:
+                if occurrences > 1:
+                    return (f"Error: Edit #{i+1} - string appears {occurrences} times. "
+                           f"Use replace_all or provide more specific string.")
+                new_content = new_content.replace(old_str, new_str, 1)
+                results.append(f"#{i+1}: Replaced 1 occurrence")
+        
+        # Write the result
+        with open(full_path, 'w', encoding='utf-8') as f:
+            f.write(new_content)
+        
+        # Invalidate cache and track modified
+        file_cache.invalidate(full_path)
+        _track_modified(file_path)
+        
+        return f"Successfully applied {len(edits)} edits to '{file_path}':\n" + "\n".join(results)
+    
     except PermissionError:
         return f"Error: Permission denied editing '{file_path}'"
     except Exception as e:

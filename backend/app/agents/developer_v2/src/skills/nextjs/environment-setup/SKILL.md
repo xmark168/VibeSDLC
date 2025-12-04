@@ -3,40 +3,48 @@ name: environment-setup
 description: Setup environment variables for Next.js projects. Use when creating .env files, configuring database connection, or setting up NextAuth secrets.
 ---
 
-# Environment Setup (Next.js)
+This skill guides configuration of environment variables for Next.js applications.
 
-## Critical Rules
+The user needs to set up database connections, authentication secrets, or other environment-specific configuration.
 
-1. **File**: `.env` at project root (already in boilerplate)
-2. **Never commit secrets** - Use placeholder values for dev
-3. **NEXT_PUBLIC_** prefix for client-side vars
-4. **Prisma requires** DATABASE_URL
+## Before You Start
 
-## Quick Reference
+Environment variables are configured in the `.env` file at project root (already created in boilerplate).
 
-### .env Template (Development)
+**CRITICAL**: Never commit real secrets to git. Use placeholder values for development and set real values in production environment.
+
+## Environment File Template
+
 ```env
-# Database
+# Database (required for Prisma)
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/app
 
-# NextAuth
+# NextAuth (required for authentication)
 AUTH_SECRET=dev-secret-key-for-testing-only
 AUTH_URL=http://localhost:3000
 
-# Public (accessible in browser)
+# Public variables (accessible in browser - use NEXT_PUBLIC_ prefix)
 NEXT_PUBLIC_BASE_URL=http://localhost:3000
 ```
 
-### Usage
-```typescript
-// Server-side only (API routes, server actions, server components)
-const dbUrl = process.env.DATABASE_URL;
+## Variable Access
 
-// Client-side (NEXT_PUBLIC_ prefix required)
+Server-side variables (API routes, Server Actions, Server Components):
+
+```typescript
+const dbUrl = process.env.DATABASE_URL;
+const authSecret = process.env.AUTH_SECRET;
+```
+
+Client-side variables (must have `NEXT_PUBLIC_` prefix):
+
+```typescript
 const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
 ```
 
-## Type-Safe Env Validation (Recommended)
+## Type-Safe Validation
+
+For production apps, validate environment variables at startup:
 
 ```typescript
 // lib/env.ts
@@ -57,31 +65,36 @@ export const env = envSchema.parse({
 });
 
 // Usage: import { env } from '@/lib/env';
-// env.DATABASE_URL - fully typed!
+// env.DATABASE_URL - fully typed and validated!
 ```
 
-## Common Variables
+## Required Variables
 
-| Variable | Required By | Example |
-|----------|-------------|---------|
-| DATABASE_URL | Prisma | `postgresql://user:pass@host:port/db` |
-| AUTH_SECRET | NextAuth | Random 32+ char string |
-| AUTH_URL | NextAuth | `http://localhost:3000` |
-| NEXT_PUBLIC_* | Client | Any public config |
+- **DATABASE_URL**: PostgreSQL connection string for Prisma
+- **AUTH_SECRET**: Random string (32+ chars) for NextAuth session encryption
+- **AUTH_URL**: Base URL for authentication callbacks
 
-## Production vs Development
+## Production Setup
 
-| Environment | DATABASE_URL | AUTH_SECRET |
-|-------------|--------------|-------------|
-| Development | localhost:5432 | `dev-secret-key` |
-| Production | Cloud DB URL | `openssl rand -base64 32` |
+Generate a secure AUTH_SECRET:
+
+```bash
+openssl rand -base64 32
+```
+
+Use environment variables from your hosting provider (Vercel, Railway, etc.) rather than `.env` files in production.
 
 ## Security Rules
 
-1. **NEVER** commit real secrets to git
-2. **NEVER** prefix secrets with `NEXT_PUBLIC_`
-3. **ALWAYS** use environment variables for:
-   - Database credentials
-   - API keys (Stripe, AWS, etc.)
-   - Auth secrets
-4. **Use .env.example** for documenting required vars (without values)
+NEVER:
+- Commit real secrets to git
+- Prefix secrets with `NEXT_PUBLIC_` (exposes to browser)
+- Hardcode secrets in source code
+- Log environment variables
+
+ALWAYS:
+- Use `.env.example` to document required variables (without values)
+- Set real secrets in production environment only
+- Use `NEXT_PUBLIC_` prefix only for truly public configuration
+
+**IMPORTANT**: The `.env` file is included in `.gitignore` by default. Create `.env.example` with placeholder values for documentation.

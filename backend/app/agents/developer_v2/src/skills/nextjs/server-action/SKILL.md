@@ -3,26 +3,31 @@ name: server-action
 description: Create Next.js 16 Server Actions. Use when building form handlers, mutations with Zod validation, or data operations that need useActionState and revalidatePath.
 ---
 
-# Server Action (Next.js 16 + React 19)
+This skill guides creation of Server Actions in Next.js 16 with React 19.
 
-## Critical Rules
+The user needs to handle form submissions, create mutations, or perform server-side operations triggered from client components.
 
-1. **'use server'** - Required at top of file
-2. **File location** - Put in `app/actions/` directory
-3. **Zod validation** - Always validate FormData
-4. **Return ActionResult** - Consistent return type
-5. **revalidatePath** - Call after mutations
+## Before You Start
 
-## Quick Reference
+Server Actions are the preferred way to handle mutations in Next.js:
+- **File location**: `app/actions/[domain].ts` (e.g., `app/actions/user.ts`)
+- **Directive**: Must have `'use server'` at top of file
+- **Return type**: Always return `ActionResult` for consistent handling
 
-### ActionResult Type
+**CRITICAL**: Server Actions run on the server. They can access the database directly but must validate all input.
+
+## ActionResult Type
+
+Always use this consistent return type:
+
 ```typescript
 type ActionResult<T = void> = 
   | { success: true; data?: T }
   | { success: false; error: string; fieldErrors?: Record<string, string[]> };
 ```
 
-### Basic Action
+## Basic Server Action
+
 ```typescript
 // app/actions/user.ts
 'use server';
@@ -73,7 +78,10 @@ export async function deleteUser(id: string): Promise<ActionResult> {
 }
 ```
 
-### Form with useActionState
+## Using with useActionState
+
+The `useActionState` hook connects forms to Server Actions with automatic pending state:
+
 ```tsx
 'use client';
 import { useActionState } from 'react';
@@ -86,13 +94,24 @@ export function CreateForm() {
     <form action={action}>
       <input name="name" disabled={pending} />
       {state?.fieldErrors?.name && <p>{state.fieldErrors.name[0]}</p>}
+      
+      <input name="email" disabled={pending} />
+      {state?.fieldErrors?.email && <p>{state.fieldErrors.email[0]}</p>}
+      
       <button disabled={pending}>{pending ? 'Saving...' : 'Save'}</button>
+      
+      {state?.error && !state.fieldErrors && (
+        <p className="text-destructive">{state.error}</p>
+      )}
     </form>
   );
 }
 ```
 
-### Delete with useTransition
+## Using with useTransition
+
+For non-form actions (like delete buttons), use `useTransition`:
+
 ```tsx
 'use client';
 import { useTransition } from 'react';
@@ -112,15 +131,74 @@ export function DeleteButton({ id }: { id: string }) {
 }
 ```
 
+## Adding Authentication
+
+Check session in actions that require authentication:
+
+```typescript
+'use server';
+import { auth } from '@/auth';
+
+export async function createPost(
+  prevState: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const session = await auth();
+  if (!session) {
+    return { success: false, error: 'Unauthorized' };
+  }
+
+  // ... rest of action using session.user.id
+}
+```
+
 ## Common Patterns
 
-| Pattern | Code |
-|---------|------|
-| With auth | `const session = await auth(); if (!session) return { success: false, error: 'Unauthorized' };` |
-| Revalidate | `revalidatePath('/path')` after mutation |
-| Redirect | `redirect('/path')` after success |
-| Field errors | `return { success: false, fieldErrors: validated.error.flatten().fieldErrors }` |
+- **Revalidate after mutation**: Always call `revalidatePath('/path')` after changing data
+- **Redirect after success**: Use `redirect('/path')` from `next/navigation`
+- **Field errors**: Return `fieldErrors` object matching form field names
+- **Auth check**: `const session = await auth(); if (!session) return error`
 
-## References
+## Redirect After Success
 
-- `references/action-patterns.md` - Advanced patterns, redirect, optimistic updates, inline actions
+For actions that create/update and should navigate to a new page:
+
+```typescript
+'use server';
+
+import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
+
+export async function createItem(
+  prevState: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  // ... validation and creation logic
+  
+  const item = await prisma.item.create({ data: validated.data });
+  
+  // Revalidate list page
+  revalidatePath('/items');
+  
+  // Redirect to the created item (throws, so must be last)
+  redirect(`/items/${item.id}`);
+}
+```
+
+**IMPORTANT**: `redirect()` throws an error internally to trigger navigation, so:
+- Call it AFTER all database operations complete
+- Don't wrap it in try-catch (it will be caught as an error)
+- It must be the last statement in the success path
+
+## After Writing Action
+
+Validation (typecheck, lint, tests) runs automatically at the end of implementation.
+No need to run manually - proceed to next file.
+
+NEVER:
+- Forget `'use server'` directive at file top
+- Skip Zod validation on form data
+- Return raw errors to client (security risk)
+- Forget `revalidatePath` after mutations
+
+**IMPORTANT**: Server Actions are type-safe end-to-end. The client receives the exact ActionResult type you define.
