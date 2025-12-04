@@ -84,11 +84,28 @@ function CommandList({
   className,
   ...props
 }: React.ComponentProps<typeof CommandPrimitive.List>) {
+  const listRef = React.useRef<HTMLDivElement>(null)
+  
+  React.useEffect(() => {
+    const el = listRef.current
+    if (!el) return
+    
+    const handleWheel = (e: WheelEvent) => {
+      // Enable native scroll with mouse wheel
+      e.stopPropagation()
+      el.scrollTop += e.deltaY
+    }
+    
+    el.addEventListener('wheel', handleWheel, { passive: false })
+    return () => el.removeEventListener('wheel', handleWheel)
+  }, [])
+  
   return (
     <CommandPrimitive.List
+      ref={listRef}
       data-slot="command-list"
       className={cn(
-        "max-h-[300px] scroll-py-1 overflow-x-hidden overflow-y-auto",
+        "max-h-[300px] scroll-py-1 overflow-x-hidden overflow-y-auto overscroll-contain",
         className
       )}
       {...props}

@@ -36,6 +36,10 @@ export const storiesApi = {
     epic_id?: string
     tags?: string[]
     labels?: string[]
+    // New epic fields
+    new_epic_title?: string
+    new_epic_domain?: string
+    new_epic_description?: string
   }): Promise<Story> => {
     return __request<Story>(OpenAPI, {
       method: 'POST',
@@ -53,6 +57,10 @@ export const storiesApi = {
         epic_id: data.epic_id,
         tags: data.tags || [],
         labels: data.labels || [],
+        // New epic fields
+        new_epic_title: data.new_epic_title,
+        new_epic_domain: data.new_epic_domain,
+        new_epic_description: data.new_epic_description,
       },
     })
   },

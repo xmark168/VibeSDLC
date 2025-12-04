@@ -41,9 +41,35 @@ async def create_story(
     story_in: StoryCreate
 ) -> Any:
     """Create new story (BA role)."""
+    from app.models import Epic, EpicStatus
+    
     story_service = StoryService(session)
     
     try:
+        # If new_epic_title provided, create new epic first
+        if story_in.new_epic_title and story_in.new_epic_title.strip():
+            # Generate epic code
+            existing_epics_count = session.exec(
+                select(func.count()).select_from(Epic).where(Epic.project_id == story_in.project_id)
+            ).one()
+            epic_code = f"EPIC-{existing_epics_count + 1:03d}"
+            
+            # Create new epic with all provided fields
+            new_epic = Epic(
+                epic_code=epic_code,
+                title=story_in.new_epic_title.strip(),
+                description=story_in.new_epic_description.strip() if story_in.new_epic_description else None,
+                domain=story_in.new_epic_domain or "General",
+                project_id=story_in.project_id,
+                epic_status=EpicStatus.PLANNED
+            )
+            session.add(new_epic)
+            session.commit()
+            session.refresh(new_epic)
+            
+            # Assign the new epic to the story
+            story_in.epic_id = new_epic.id
+        
         story = await story_service.create_with_events(
             story_in=story_in,
             user_id=current_user.id,

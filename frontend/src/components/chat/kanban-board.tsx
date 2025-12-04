@@ -461,6 +461,10 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         epic_id: storyData.epic_id,
         tags: [],
         labels: [],
+        // New epic fields (if creating new epic)
+        new_epic_title: storyData.new_epic_title,
+        new_epic_domain: storyData.new_epic_domain,
+        new_epic_description: storyData.new_epic_description,
       })
       console.log("Story created successfully:", createdStory)
 

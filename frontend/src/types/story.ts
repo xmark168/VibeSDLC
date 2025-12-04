@@ -78,4 +78,8 @@ export interface StoryFormData {
   requirements: string[];
   dependencies: string[];  // List of story IDs that must be completed first
   epic_id?: string;  // Optional epic to assign story to
+  // New epic fields (when creating new epic)
+  new_epic_title?: string;
+  new_epic_domain?: string;
+  new_epic_description?: string;
 }
