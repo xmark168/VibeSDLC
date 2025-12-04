@@ -7,8 +7,8 @@ export type KanbanColumnData = {
   title: string
   color: string
   cards: KanbanCardData[]
-  wipLimit?: number  // WIP limit for this column
-  limitType?: 'hard' | 'soft'  // Hard or soft limit
+  wipLimit?: number
+  limitType?: 'hard' | 'soft'
 }
 
 interface KanbanColumnProps {
@@ -45,7 +45,6 @@ function KanbanColumnComponent({
   onCardEdit,
 }: KanbanColumnProps) {
 
-  // Calculate WIP utilization for styling - Modern & Minimal: Softer colors
   const getWIPBadgeStyle = () => {
     if (!column.wipLimit) return "bg-slate-100 dark:bg-slate-900/50 text-slate-700 dark:text-slate-300 font-medium"
 
@@ -69,14 +68,12 @@ function KanbanColumnComponent({
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      {/* Column Header - Modern & Minimal */}
       <div className="flex items-center justify-between mb-4 pb-3 border-b border-border/40">
         <div className="flex items-center gap-2.5">
           <h3 className="text-sm font-semibold text-foreground tracking-tight">
             {column.title}
           </h3>
           <span className={`text-xs px-2.5 py-1 rounded-lg ${getWIPBadgeStyle()}`}>
-            {/* Todo/Archived: Show only count, no WIP limit */}
             {column.id === "todo" || column.id === "archived"
               ? column.cards.length
               : column.wipLimit
@@ -84,8 +81,6 @@ function KanbanColumnComponent({
                 : column.cards.length
             }
           </span>
-
-          {/* Done has fixed WIP (default 20) - no indicator needed */}
         </div>
         {column.wipLimit && column.cards.length >= column.wipLimit && column.id !== "todo" && (
           <span className="text-sm" title="WIP limit reached">
@@ -101,7 +96,6 @@ function KanbanColumnComponent({
           ${isDraggedOver ? "bg-muted/30 border-2 border-dashed border-border" : "border-2 border-transparent"}
         `}
       >
-        {/* Cards */}
         {column.cards.map((card) => (
           <KanbanCard
             key={card.id}
@@ -118,23 +112,14 @@ function KanbanColumnComponent({
           />
         ))}
       </div>
-
-      {/* Remove dialog from column - it's now at board level */}
     </div>
   )
 }
 
-// Memoized export for performance optimization
-// Only re-render when column data or state changes
 export const KanbanColumn = memo(KanbanColumnComponent, (prevProps, nextProps) => {
-  // Custom comparison function
-  // Re-render if column ID changed (shouldn't happen but safety check)
   if (prevProps.column.id !== nextProps.column.id) return false
-
-  // Re-render if cards array changed (length or content)
   if (prevProps.column.cards.length !== nextProps.column.cards.length) return false
 
-  // Re-render if any card data changed - check content, not just IDs
   for (let i = 0; i < prevProps.column.cards.length; i++) {
     const prevCard = prevProps.column.cards[i]
     const nextCard = nextProps.column.cards[i]
@@ -149,21 +134,16 @@ export const KanbanColumn = memo(KanbanColumnComponent, (prevProps, nextProps) =
     if (prevCard.epic_code !== nextCard.epic_code) return false
     if (prevCard.epic_title !== nextCard.epic_title) return false
     if (prevCard.updated_at !== nextCard.updated_at) return false
-    // Check arrays
     if (JSON.stringify(prevCard.acceptance_criteria) !== JSON.stringify(nextCard.acceptance_criteria)) return false
     if (JSON.stringify(prevCard.requirements) !== JSON.stringify(nextCard.requirements)) return false
     if (JSON.stringify(prevCard.dependencies) !== JSON.stringify(nextCard.dependencies)) return false
   }
 
-  // Re-render if drag state changed
   if (prevProps.isDraggedOver !== nextProps.isDraggedOver) return false
   if (prevProps.draggedCardId !== nextProps.draggedCardId) return false
-
-  // Re-render if WIP limits changed
   if (prevProps.column.wipLimit !== nextProps.column.wipLimit) return false
   if (prevProps.column.limitType !== nextProps.column.limitType) return false
 
-  // Don't re-render if only callbacks changed (they're memoized)
   return true
 })
 

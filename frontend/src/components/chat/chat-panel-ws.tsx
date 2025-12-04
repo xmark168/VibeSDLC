@@ -317,7 +317,8 @@ export function ChatPanelWS({
     if (latestApproved && latestApproved.id !== lastApprovedMsgIdRef.current && projectId) {
       console.log('[ChatPanel] Stories approved, refreshing Kanban board...')
       lastApprovedMsgIdRef.current = latestApproved.id
-      queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+      // Use refetchQueries for immediate refetch instead of invalidateQueries
+      queryClient.refetchQueries({ queryKey: ['kanban-board', projectId], type: 'active' })
     }
   }, [uniqueMessages, projectId, queryClient])
 
