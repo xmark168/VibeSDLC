@@ -482,6 +482,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
                   description: createdStory.description || "",
                   columnId: "todo",
                   type: createdStory.type,
+                  story_code: createdStory.story_code ?? undefined,
                   story_point: createdStory.story_point ?? undefined,
                   priority: createdStory.priority ?? undefined,
                   rank: createdStory.rank ?? undefined,
@@ -490,7 +491,6 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
                   requirements: createdStory.requirements ?? undefined,
                   dependencies: createdStory.dependencies ?? undefined,
                   created_at: createdStory.created_at ?? new Date().toISOString(),
-                  taskId: `STORY-${createdStory.id.substring(0, 4).toUpperCase()}`,
                 },
               ],
             }

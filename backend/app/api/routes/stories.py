@@ -47,6 +47,7 @@ async def create_story(
     
     try:
         # If new_epic_title provided, create new epic first
+        new_epic_id = None
         if story_in.new_epic_title and story_in.new_epic_title.strip():
             # Generate epic code
             existing_epics_count = session.exec(
@@ -66,14 +67,13 @@ async def create_story(
             session.add(new_epic)
             session.commit()
             session.refresh(new_epic)
-            
-            # Assign the new epic to the story
-            story_in.epic_id = new_epic.id
+            new_epic_id = new_epic.id
         
         story = await story_service.create_with_events(
             story_in=story_in,
             user_id=current_user.id,
-            user_name=current_user.full_name or current_user.email
+            user_name=current_user.full_name or current_user.email,
+            override_epic_id=new_epic_id  # Pass new epic ID explicitly
         )
         return story
     except ValueError as e:
