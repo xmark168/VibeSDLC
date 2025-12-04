@@ -422,18 +422,30 @@ async def run_story(graph, story: dict, workspace_path: str, story_num: int) -> 
         
         # Project config for run_code
         "project_config": {
-            "tech_stack": {
-                "service": [
-                    {
-                        "name": "nextjs",
-                        "path": ".",
-                        "install_cmd": "npm install",
-                        "build_cmd": "npm run build",
-                        "test_cmd": "npm run lint",
-                        "db_setup_cmd": "npx prisma generate",
-                    }
-                ]
-            }
+               "tech_stack": {
+                    "name": "nextjs-app",
+                    "service": [
+                        {
+                            "name": "app",
+                            "path": ".",
+                            "runtime": "bun",
+                            "framework": "nextjs",
+                            "orm": "prisma",
+                            "db_type": "postgresql",
+                            "validation": "zod",
+                            "auth": "next-auth",
+                            "install_cmd": "bun install",
+                            "test_cmd": "bun run test",
+                            "run_cmd": "bun dev",
+                            "build_cmd": "bun run build",
+                            "lint_cmd": "bun run lint",
+                            "lint_fix_cmd": "bunx eslint --fix . --ext .ts,.tsx,.js,.jsx",
+                            "format_cmd": "bunx prettier --write .",
+                            "needs_db": True,
+                            "db_cmds": ["bunx prisma generate", "bunx prisma db push --accept-data-loss"],
+                        }
+                    ]
+                }
         },
     }
     
