@@ -21,7 +21,7 @@ class PlanStep(BaseModel):
     order: int = Field(ge=1)
     description: str
     file_path: Optional[str] = None
-    action: Literal["create", "modify", "delete", "test", "config"] = "modify"
+    action: Literal["create", "modify", "delete", "test", "config", "review"] = "modify"
 
 
 class PlanTask(BaseModel):

@@ -9,8 +9,10 @@ from .filesystem_tools import (
     delete_file_safe,
     copy_file_safe,
     move_file_safe,
-    search_files,
+    glob,
+    grep_files,
     edit_file,
+    multi_edit_file,
 )
 
 # Git tools
@@ -32,7 +34,6 @@ from .git_tools import (
 from .shell_tools import (
     set_shell_context,
     execute_shell,
-    semantic_code_search,
 )
 
 # CocoIndex and project context tools
@@ -92,10 +93,11 @@ __all__ = [
     "delete_file_safe",
     "copy_file_safe",
     "move_file_safe",
-    "search_files",
+    "glob",
+    "grep_files",
     "edit_file",
+    "multi_edit_file",
     # Git
-    "git_init",
     "git_status",
     "git_commit",
     "git_create_branch",
@@ -106,9 +108,8 @@ __all__ = [
     "git_create_worktree",
     "git_remove_worktree",
     "git_list_worktrees",
-    # Shell & Search
+    # Shell
     "execute_shell",
-    "semantic_code_search",
     # CocoIndex & Project Context
     "search_codebase",
     "index_workspace",

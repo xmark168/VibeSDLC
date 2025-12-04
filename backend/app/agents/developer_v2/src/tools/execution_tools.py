@@ -93,7 +93,7 @@ async def install_dependencies(workspace_path: str) -> bool:
             use_shell = sys.platform == 'win32'
             
             if (workspace / "bun.lock").exists() or (workspace / "bun.lockb").exists():
-                subprocess.run("bun install", cwd=workspace_path, check=False, timeout=180, shell=use_shell, env=_get_bun_env())
+                subprocess.run("bun install --frozen-lockfile", cwd=workspace_path, check=False, timeout=180, shell=use_shell, env=_get_bun_env())
             elif (workspace / "pnpm-lock.yaml").exists():
                 subprocess.run("pnpm install", cwd=workspace_path, check=False, timeout=180, shell=use_shell)
             else:

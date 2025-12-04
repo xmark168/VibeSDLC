@@ -24,8 +24,8 @@ class ProjectWorkspaceManager:
         # This project's directory
         self.project_dir = self.workspace_root / f"project_{project_id}"
 
-        # Template directory
-        self.template_dir = self.workspace_root / "project_template" / "workspace_main"
+        # Template directory - use actual nextjs boilerplate
+        self.template_dir = self.backend_root / "app" / "agents" / "templates" / "boilerplate" / "nextjs-boilerplate"
 
     def get_main_workspace(self) -> Path:
         """Get or create the main workspace (ws_main) for the project."""

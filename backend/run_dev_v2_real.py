@@ -354,8 +354,9 @@ class SimpleDeveloperRunner:
                     session_id=str(self.project_id),
                     input={
                         "story_id": story.get("story_id", "unknown"),
+                        "epic": story.get("epic", ""),
                         "title": story.get("title", "Untitled"),
-                        "content": story.get("content", "")[:200]
+                        "description": story.get("description", "")[:200]
                     },
                     tags=["developer_v2", "story_execution", self.template or "no_template"],
                     metadata={"agent": self.name, "template": self.template}
@@ -370,8 +371,10 @@ class SimpleDeveloperRunner:
         
         initial_state = {
             "story_id": story.get("story_id", str(uuid4())),
+            "epic": story.get("epic", ""),
             "story_title": story.get("title", "Untitled"),
-            "story_content": story.get("content", ""),
+            "story_description": story.get("description", ""),
+            "story_requirements": story.get("requirements", []),
             "acceptance_criteria": story.get("acceptance_criteria", []),
             "project_id": self.project_id,
             "task_id": str(uuid4()),
@@ -466,146 +469,102 @@ class SimpleDeveloperRunner:
 
 
 # =============================================================================
-# STORY DEFINITIONS
+# STORY DEFINITIONS (Standard Format)
 # =============================================================================
 
-LEARNING_WEBSITE_STORY = {
-    "story_id": "learning-001",
-    "title": "Create Learning Website ",
-    "content": """
-## User Story
-As a student, I want a beautiful learning website so that I can browse online courses.
+HOMEPAGE_STORY = {
+    "story_id": "EPIC-001-US-001",
+    "epic": "EPIC-001",
+    "title": "Homepage with Featured Books",
+    "description": """As a first-time visitor, I want to see a clear homepage layout with featured books so that I can quickly understand what the bookstore offers and start browsing.
 
-## Requirements
-Create a learning website with these components:
-
-1. **Navbar.tsx** - Navigation bar with:
-   - Logo (LearnHub)
-   - Nav links: Home, Courses, About
-   - Login/Register buttons
-   - Dark mode toggle
-
-2. **HeroSection.tsx** - Hero section with:
-   - Gradient background (blue to purple)
-   - Headline: "Learn Programming Online"
-   - Subtext: "Join 10,000+ students"
-   - CTA button: "Browse Courses"
-   - Stats: 500+ courses, 50+ instructors
-
-3. **CourseCard.tsx** - Course card with:
-   - Thumbnail image placeholder
-   - Course title
-   - Instructor name
-   - Rating (stars)
-   - Price
-   - "Enroll" button
-
-4. **HomePage.tsx** - Main page combining:
-   - Navbar
-   - HeroSection
-   - Grid of 3 CourseCards
-   - Simple footer
-
-## Tech Stack
-- React + TypeScript
-- TailwindCSS
-- Lucide React icons
-
-## Design
-- Primary: #3B82F6 (blue)
-- Dark mode support
-- Responsive
-""",
+Create the foundational homepage that serves as the entry point for all customers. This page must establish trust, showcase the bookstore's offerings, and provide clear navigation paths. The homepage should highlight popular textbooks, display trust indicators (return policy, genuine books guarantee), and make the search functionality immediately accessible. This is the first impression that determines whether visitors will continue shopping or leave.""",
+    "requirements": [
+        "Display hero section with main value proposition and call-to-action button",
+        "Show featured/bestselling textbooks section with book covers, titles, prices, and stock status",
+        "Include prominent search bar at the top of the page with placeholder text guiding users",
+        "Display trust indicators: return policy (7-14 days), genuine books guarantee, contact information (phone, store address)",
+        "Show category navigation menu organized by grade levels (6-12, university) and subjects",
+        "Include footer with quick links to policies, about us, and contact information",
+        "Ensure responsive design that works on mobile, tablet, and desktop devices",
+        "Display loading states for dynamic content and handle empty states gracefully"
+    ],
     "acceptance_criteria": [
-        "Navbar with logo and navigation",
-        "Hero section with gradient and CTA",
-        "Course cards with title, price, rating",
-        "Responsive layout",
-        "Dark mode toggle works"
-    ]
-}
-
-
-SIMPLE_CALCULATOR_STORY = {
-    "story_id": "calc-001",
-    "title": "Create Simple Calculator",
-    "content": """
-## User Story
-As a user, I want a simple calculator
-so that I can perform basic math operations.
-
-## Requirements
-Create a Python calculator module with:
-1. add(a, b) - Addition
-2. subtract(a, b) - Subtraction
-3. multiply(a, b) - Multiplication
-4. divide(a, b) - Division with zero check
-
-## Acceptance Criteria
-- All functions work correctly
-- Division by zero returns error message
-- Include unit tests
-""",
-    "acceptance_criteria": [
-        "add(2, 3) returns 5",
-        "subtract(5, 3) returns 2",
-        "multiply(4, 5) returns 20",
-        "divide(10, 2) returns 5",
-        "divide(10, 0) returns error"
-    ]
-}
-
-
-LOGIN_FORM_STORY = {
-    "story_id": "login-001",
-    "title": "Create Login Form Component",
-    "content": """
-## User Story
-As a user, I want a login form
-so that I can authenticate to the application.
-
-## Requirements
-Create a React login form with:
-1. Email input with validation
-2. Password input with show/hide toggle
-3. Remember me checkbox
-4. Submit button
-5. "Forgot password" link
-
-## Tech Stack
-- React + TypeScript
-- TailwindCSS
-- React Hook Form for validation
-
-## Validation Rules
-- Email: Required, valid email format
-- Password: Required, min 8 characters
-""",
-    "acceptance_criteria": [
-        "Email field validates format",
-        "Password field has show/hide toggle",
-        "Form shows validation errors",
-        "Submit button disabled when invalid",
-        "Loading state on submit"
+        "Given a user visits the homepage, When the page loads, Then they see the hero section, featured books (at least 8 items), search bar, and trust indicators within 3 seconds",
+        "Given a user views featured books, When they hover over a book, Then they see a visual indication (shadow/border) and can click to view details",
+        "Given a user is on mobile device, When they access the homepage, Then all elements are properly sized and the layout adapts to screen width without horizontal scrolling",
+        "Given the featured books section is empty, When the page loads, Then display a friendly message 'New books coming soon! Check back later' instead of blank space",
+        "Given a user clicks on a category in navigation menu, When the page loads, Then they are directed to the filtered book listing page for that category",
+        "Given a user clicks on trust indicators (return policy, guarantee), When clicked, Then they are directed to detailed policy pages with full information"
     ]
 }
 
 
 TEXTBOOK_SEARCH_STORY = {
-    "story_id": "US-001",
+    "story_id": "EPIC-001-US-002",
+    "epic": "EPIC-001",
     "title": "Search Textbooks by Name, Author or Code",
-    "content": """
-## As a customer, I want to search for textbooks by name, author or code so that I can quickly find the book I need
+    "description": """As a customer, I want to search for textbooks by name, author or code so that I can quickly find the book I need.
 
-*ID:* US-001  
-*Epic:* EPIC-001
-
-### Description
-Người dùng có thể sử dụng thanh tìm kiếm để nhập tên sách, tác giả hoặc mã sách và nhận được kết quả phù hợp.
-""",
+Người dùng có thể sử dụng thanh tìm kiếm để nhập tên sách, tác giả hoặc mã sách và nhận được kết quả phù hợp.""",
+    "requirements": [
+        "Implement search bar component with debounce (300ms)",
+        "Search across textbook name, author, and code fields",
+        "Display search results with book cover, title, author, price",
+        "Show loading state while searching",
+        "Handle empty results with friendly message"
+    ],
     "acceptance_criteria": [
-        "Given I am on the homepage when I enter a book name, author or code in the search bar then I see a list of matching books with basic information",
-        "Given no books match my search when I submit the search then I see a message indicating no results found"
+        "Given I am on the homepage, When I enter a book name, author or code in the search bar, Then I see a list of matching books with basic information",
+        "Given no books match my search, When I submit the search, Then I see a message indicating no results found"
+    ]
+}
+
+
+LOGIN_FORM_STORY = {
+    "story_id": "EPIC-002-US-001",
+    "epic": "EPIC-002",
+    "title": "User Login Form",
+    "description": """As a user, I want a login form so that I can authenticate to the application.
+
+The login form should provide a secure and user-friendly way for customers to access their accounts.""",
+    "requirements": [
+        "Email input with validation (required, valid email format)",
+        "Password input with show/hide toggle",
+        "Remember me checkbox",
+        "Submit button with loading state",
+        "Forgot password link",
+        "Form validation with error messages"
+    ],
+    "acceptance_criteria": [
+        "Given I am on the login page, When I enter invalid email format, Then I see a validation error message",
+        "Given I am on the login page, When I click the eye icon on password field, Then the password visibility toggles",
+        "Given I have filled valid credentials, When I click submit, Then I see a loading state and the form submits",
+        "Given I enter invalid credentials, When the form submits, Then I see an error message"
+    ]
+}
+
+
+SIMPLE_CALCULATOR_STORY = {
+    "story_id": "EPIC-003-US-001",
+    "epic": "EPIC-003",
+    "title": "Simple Calculator Module",
+    "description": """As a user, I want a simple calculator so that I can perform basic math operations.
+
+Create a Python calculator module with basic arithmetic operations and proper error handling.""",
+    "requirements": [
+        "Implement add(a, b) function for addition",
+        "Implement subtract(a, b) function for subtraction",
+        "Implement multiply(a, b) function for multiplication",
+        "Implement divide(a, b) function with zero division check",
+        "Include comprehensive unit tests"
+    ],
+    "acceptance_criteria": [
+        "Given two numbers, When I call add(2, 3), Then it returns 5",
+        "Given two numbers, When I call subtract(5, 3), Then it returns 2",
+        "Given two numbers, When I call multiply(4, 5), Then it returns 20",
+        "Given two numbers, When I call divide(10, 2), Then it returns 5",
+        "Given division by zero, When I call divide(10, 0), Then it returns an error message"
     ]
 }
 
@@ -801,10 +760,10 @@ def print_result(result: dict, workspace_path: Path):
 def select_story() -> dict:
     """Interactive story selection."""
     print("\nSelect a story to run:")
-    print("1. Textbook Search (React) [DEFAULT]")
-    print("2. Simple Calculator (Python)")
+    print("1. Homepage with Featured Books (React) [DEFAULT]")
+    print("2. Textbook Search (React)")
     print("3. Login Form (React)")
-    print("4. Learning Website (React)")
+    print("4. Simple Calculator (Python)")
     print("5. Custom story (enter your own)")
     print()
     
@@ -814,26 +773,30 @@ def select_story() -> dict:
         choice = "1"
     
     if choice == "1":
-        return TEXTBOOK_SEARCH_STORY
+        return HOMEPAGE_STORY
     elif choice == "2":
-        return SIMPLE_CALCULATOR_STORY
+        return TEXTBOOK_SEARCH_STORY
     elif choice == "3":
         return LOGIN_FORM_STORY
     elif choice == "4":
-        return LEARNING_WEBSITE_STORY
+        return SIMPLE_CALCULATOR_STORY
     elif choice == "5":
-        print("\nEnter your story:")
+        print("\nEnter your story (standard format):")
         title = input("Title: ").strip()
-        content = input("Description: ").strip()
+        description = input("Description: ").strip()
+        requirements_input = input("Requirements (comma-separated): ").strip()
+        requirements = [r.strip() for r in requirements_input.split(",") if r.strip()]
         return {
-            "story_id": str(uuid4())[:8],
+            "story_id": f"CUSTOM-{str(uuid4())[:8]}",
+            "epic": "CUSTOM",
             "title": title,
-            "content": content,
+            "description": description,
+            "requirements": requirements,
             "acceptance_criteria": []
         }
     else:
-        print("Invalid choice, using Textbook Search")
-        return TEXTBOOK_SEARCH_STORY
+        print("Invalid choice, using Homepage story")
+        return HOMEPAGE_STORY
 
 
 # =============================================================================

@@ -1,20 +1,6 @@
 ---
 name: debugging
-description: Debug code errors systematically using root cause analysis, error patterns, and fix strategies
-triggers:
-  - error
-  - bug
-  - fix
-  - debug
-  - failed
-  - exception
-  - TypeError
-  - undefined
-  - null
-  - crash
-  - broken
-version: "1.0"
-author: VibeSDLC
+description: Debug code errors systematically. Use when analyzing error messages, fixing bugs, resolving build/lint errors, or troubleshooting runtime issues.
 ---
 
 # Debugging Skill
@@ -239,3 +225,7 @@ git log --oneline -10
 - [ ] No new TypeScript errors
 - [ ] Tests pass (if any)
 - [ ] Edge cases handled
+
+## References
+
+- `references/error-handling-patterns.md` - Toast notifications, form errors, error boundaries
