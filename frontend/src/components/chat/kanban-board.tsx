@@ -19,7 +19,7 @@ import { AgingItemsAlert } from "./aging-items-alert"
 import { BottleneckAlert } from "./bottleneck-alert"
 import { CumulativeFlowDiagram } from "./cumulative-flow-diagram"
 import type { KanbanCardData } from "./kanban-card"
-import { CreateStoryDialog, type StoryFormData } from "./create-story-dialog"
+import { CreateStoryDialog, type StoryFormData, type StoryEditData } from "./create-story-dialog"
 import { useKanbanBoard } from "@/queries/backlog-items"
 import { backlogItemsApi } from "@/apis/backlog-items"
 import { storiesApi } from "@/apis/stories"
@@ -48,6 +48,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
   const [showPolicySettings, setShowPolicySettings] = useState(false)
   const [showCFD, setShowCFD] = useState(false)
   const [showCreateStoryDialog, setShowCreateStoryDialog] = useState(false)
+  const [editingStory, setEditingStory] = useState<StoryEditData | null>(null)
   const [policyViolation, setPolicyViolation] = useState<PolicyViolation | null>(null)
   const [flowMetrics, setFlowMetrics] = useState<any>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -67,7 +68,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
   const [focusedCardId, setFocusedCardId] = useState<string | null>(null)
 
   // Load initial data from database
-  const { data: dbKanbanData, isLoading } = useKanbanBoard(projectId)
+  const { data: dbKanbanData, isLoading, dataUpdatedAt } = useKanbanBoard(projectId)
   const queryClient = useQueryClient()
 
   // Load flow metrics for alerts
@@ -172,6 +173,8 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         Done: dbKanbanData.board.Done?.length || 0,
         Archived: dbKanbanData.board.Archived?.length || 0,
       })
+      // Debug: Log story titles to verify data updates
+      console.log('[KanbanBoard] Todo stories:', dbKanbanData.board.Todo?.map((s: any) => ({ id: s.id, title: s.title, story_code: s.story_code })))
 
       // Debug: Log all story types to identify filtering issues
       const allItems = [
@@ -295,9 +298,10 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         },
       ]
 
+      console.log('[KanbanBoard] Setting new columns, Todo cards:', newColumns.find(c => c.id === 'todo')?.cards.map(c => ({ id: c.id, content: c.content })))
       setColumns(newColumns)
     }
-  }, [dbKanbanData])
+  }, [dbKanbanData, dataUpdatedAt])  // Include dataUpdatedAt to force re-run on refetch
 
   // Update columns when WebSocket kanbanData changes (real-time updates)
   useEffect(() => {
@@ -504,9 +508,56 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
       console.error("Error creating story:", error)
       toast.error("Failed to create story. Please try again.")
     } finally {
-      toast.dismiss(toastId) // Dismiss the specific loading toast
+      toast.dismiss(toastId)
     }
   }, [projectId])
+
+  const handleUpdateStory = useCallback(async (storyId: string, storyData: StoryFormData) => {
+    const toastId = toast.loading("Updating story...")
+    try {
+      const updatedStory = await storiesApi.update(storyId, {
+        title: storyData.title,
+        description: storyData.description,
+        story_type: storyData.type,
+        priority: storyData.priority === "High" ? 1 : storyData.priority === "Medium" ? 2 : 3,
+        acceptance_criteria: storyData.acceptance_criteria,
+        requirements: storyData.requirements,
+        dependencies: storyData.dependencies,
+        epic_id: storyData.epic_id,
+      })
+
+      // Update the story in UI
+      setColumns((prev) =>
+        prev.map((col) => ({
+          ...col,
+          cards: col.cards.map((card) =>
+            card.id === storyId
+              ? {
+                  ...card,
+                  content: updatedStory.title,
+                  description: updatedStory.description || "",
+                  type: updatedStory.type,
+                  story_point: updatedStory.story_point ?? card.story_point,
+                  priority: updatedStory.priority ?? card.priority,
+                  epic_id: updatedStory.epic_id ?? undefined,
+                  acceptance_criteria: updatedStory.acceptance_criteria ?? card.acceptance_criteria,
+                  requirements: updatedStory.requirements ?? card.requirements,
+                  dependencies: updatedStory.dependencies ?? card.dependencies,
+                }
+              : card
+          ),
+        }))
+      )
+
+      setEditingStory(null)
+      toast.success("Story updated successfully!")
+    } catch (error) {
+      console.error("Error updating story:", error)
+      toast.error("Failed to update story. Please try again.")
+    } finally {
+      toast.dismiss(toastId)
+    }
+  }, [])
 
   const handleDeleteCard = useCallback(async (columnId: string, cardId: string) => {
     // Optimistic update - remove from UI immediately
@@ -596,8 +647,22 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
   }, [])
 
   const handleEditCard = useCallback((card: KanbanCardData) => {
-    // Open the card detail modal for editing
-    setSelectedCard(card)
+    // Open the create/edit dialog with existing story data
+    const storyType = card.type?.toLowerCase() === "enablerstory" ? "EnablerStory" : "UserStory"
+    setEditingStory({
+      id: card.id,
+      title: card.content,
+      description: card.description,
+      type: storyType,
+      story_point: card.story_point,
+      priority: card.priority,
+      rank: card.rank,
+      acceptance_criteria: card.acceptance_criteria,
+      requirements: card.requirements,
+      dependencies: card.dependencies,
+      epic_id: card.epic_id
+    })
+    setShowCreateStoryDialog(true)
   }, [])
 
   const handleDragStart = useCallback((card: KanbanCardData) => {
@@ -831,7 +896,10 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
                 <Button
                   variant="default"
                   size="sm"
-                  onClick={() => setShowCreateStoryDialog(true)}
+                  onClick={() => {
+                    setEditingStory(null)
+                    setShowCreateStoryDialog(true)
+                  }}
                   className="gap-2 h-9 px-3.5 rounded-lg"
                 >
                   <Plus className="w-4 h-4" />
@@ -1070,9 +1138,14 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
 
       <CreateStoryDialog
         open={showCreateStoryDialog}
-        onOpenChange={setShowCreateStoryDialog}
+        onOpenChange={(open) => {
+          setShowCreateStoryDialog(open)
+          if (!open) setEditingStory(null)
+        }}
         onCreateStory={handleCreateStory}
+        onUpdateStory={handleUpdateStory}
         projectId={projectId}
+        editingStory={editingStory}
       />
     </>
   )

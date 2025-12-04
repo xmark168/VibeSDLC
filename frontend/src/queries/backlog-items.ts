@@ -14,6 +14,7 @@ export function useKanbanBoard(projectId: string | undefined) {
     refetchOnWindowFocus: true,
     refetchOnMount: true, // Always refetch when component mounts
     staleTime: 0, // Consider data stale immediately to ensure fresh data
+    structuralSharing: false, // Disable structural sharing to always get new reference on refetch
   })
 }
 

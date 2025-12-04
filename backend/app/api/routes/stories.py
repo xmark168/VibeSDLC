@@ -301,7 +301,7 @@ async def handle_review_action(
     story_service = StoryService(session)
     
     try:
-        await story_service.handle_review_action(
+        updated_story = await story_service.handle_review_action(
             story_id=story_id,
             action=action_request.action.value,
             user_id=current_user.id,
@@ -312,7 +312,22 @@ async def handle_review_action(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     
-    return {"message": f"Action '{action_request.action.value}' completed", "story_id": str(story_id)}
+    # Return updated story data for apply action
+    story_data = None
+    if updated_story and action_request.action.value != 'remove':
+        story_data = {
+            "id": str(updated_story.id),
+            "title": updated_story.title,
+            "description": updated_story.description,
+            "acceptance_criteria": updated_story.acceptance_criteria,
+            "requirements": updated_story.requirements,
+        }
+    
+    return {
+        "message": f"Action '{action_request.action.value}' completed", 
+        "story_id": str(story_id),
+        "story": story_data
+    }
 
 
 # ===== List Epics =====
