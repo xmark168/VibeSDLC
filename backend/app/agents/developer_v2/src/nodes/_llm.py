@@ -17,20 +17,20 @@ RETRY_WAIT_MAX = 10  # seconds
 # Default model configs per step
 LLM_CONFIG = {
     # Fast tasks (simple routing/response)
-    "router": {"model": "gpt-4.1", "temperature": 0.1, "timeout": 30},
-    "clarify": {"model": "gpt-4.1", "temperature": 0.1, "timeout": 30},
-    "respond": {"model": "gpt-4.1", "temperature": 0.1, "timeout": 30},
+    "router": {"model": "claude-opus-4-5-20251101", "temperature": 0.1, "timeout": 30},
+    "clarify": {"model": "claude-opus-4-5-20251101", "temperature": 0.1, "timeout": 30},
+    "respond": {"model": "claude-opus-4-5-20251101", "temperature": 0.1, "timeout": 30},
     
     # Complex tasks (code generation) - 40s timeout
-    "analyze": {"model": "gpt-4.1", "temperature": 0.2, "timeout": 40},
+    "analyze": {"model": "claude-opus-4-5-20251101", "temperature": 0.2, "timeout": 40},
     "plan": {"model": "claude-opus-4-5-20251101", "temperature": 0.2, "timeout": 60},
     "implement": {"model": "claude-opus-4-5-20251101", "temperature": 0, "timeout": 60},
-    "debug": {"model": "gpt-4.1", "temperature": 0.2, "timeout": 40},
+    "debug": {"model": "claude-opus-4-5-20251101", "temperature": 0.2, "timeout": 40},
     
     # Structured output tasks
-    "structured": {"model": "gpt-4.1", "temperature": 0.1, "timeout": 35},
-    "review": {"model": "gpt-4.1", "temperature": 0.1, "timeout": 30},
-    "summarize": {"model": "gpt-4.1", "temperature": 0.1, "timeout": 30},
+    "structured": {"model": "claude-opus-4-5-20251101", "temperature": 0.1, "timeout": 35},
+    "review": {"model": "claude-opus-4-5-20251101", "temperature": 0.1, "timeout": 30},
+    "summarize": {"model": "claude-opus-4-5-20251101", "temperature": 0.1, "timeout": 30},
 }
 
 

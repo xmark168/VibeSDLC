@@ -60,6 +60,8 @@ def _run_step(
                 return True, stdout, stderr
             else:
                 logger.error(f"[run_code] [{svc_name}] {step_name} FAILED (exit={exit_code})")
+                logger.error(f"[run_code] stdout: {stdout[:500] if stdout else '(empty)'}")
+                logger.error(f"[run_code] stderr: {stderr[:500] if stderr else '(empty)'}")
                 return False, stdout, stderr
         
         logger.info(f"[run_code] [{svc_name}] {step_name} completed")
@@ -142,9 +144,10 @@ async def _run_service_tests(
             )
             all_stdout += f"\n$ {typecheck_cmd}\n{stdout}"
             if not success:
-                all_stderr += f"\n[TYPECHECK FAILED]\n{stderr or stdout}"
+                error_output = stderr or stdout or "(no output captured)"
+                all_stderr += f"\n[TYPECHECK FAILED]\n$ {typecheck_cmd}\n{error_output}"
                 task_id = svc_config.get("task_id", "unknown")
-                write_test_log(task_id, f"TYPECHECK ERROR:\n{stderr or stdout}", "FAIL")
+                write_test_log(task_id, f"TYPECHECK ERROR:\n$ {typecheck_cmd}\n{error_output}", "FAIL")
                 if svc_span:
                     svc_span.end(output={"status": "TYPECHECK_FAIL"})
                 return {"status": "FAIL", "stdout": all_stdout, "stderr": all_stderr}

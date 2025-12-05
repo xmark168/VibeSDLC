@@ -145,6 +145,7 @@ tasks:
       - "Cannot read properties of undefined (reading 'map')" → Array prop is undefined, add default `= []`
       - "Cannot read properties of undefined" → Add null check or default value for prop
       - "Cannot read properties of null" → Add null check before accessing
+      - "Element type is invalid: got undefined" → Wrong import/export. Pages use `export default` (import X from), Components use named export (import { X } from)
       
       Test Errors:
       - "text is broken up by multiple elements" → Use `screen.getByText(/text/i)` or custom matcher
@@ -161,11 +162,10 @@ tasks:
       - "Invalid enum value" → Check enum definition matches usage
       - "Required" → Field is missing, add to form or set default
       
-      Prisma 6.x Config (IMPORTANT):
-      - "url argument is required" or "DATABASE_URL missing" → DO NOT add url to schema.prisma! Prisma 6.x uses datasourceUrl in lib/prisma.ts
-      - "@auth/core/adapters type mismatch" → Downgrade @auth/prisma-adapter to ^1.0.0
-      - Schema should have: datasource db { provider = "postgresql" } with NO url field
-      - PrismaClient must use: new PrismaClient({ datasourceUrl: process.env.DATABASE_URL })
+      Prisma Config (IMPORTANT):
+      - "DATABASE_URL missing" → Check .env has DATABASE_URL=postgresql://...
+      - NEVER modify datasource block - url = env("DATABASE_URL") is REQUIRED
+      - lib/prisma.ts already correct - do NOT recreate or modify
       
       Prisma Query Errors:
       - "Argument is missing" → Required field not provided in create/update

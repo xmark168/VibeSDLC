@@ -126,21 +126,32 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         short_id = story_id.split('-')[-1][:8] if '-' in story_id else story_id[:8]
         branch_name = f"story_{short_id}"
         
-        logger.info(f"[setup_workspace] Setting up workspace for branch '{branch_name}'")
-        
-        if hasattr(agent, 'main_workspace'):
-            main_workspace = agent.main_workspace
-        elif hasattr(agent, 'workspace_path'):
-            main_workspace = agent.workspace_path
+        # Check if workspace_path already exists and is valid (reuse mode)
+        existing_workspace = state.get("workspace_path", "")
+        if existing_workspace and Path(existing_workspace).exists():
+            logger.info(f"[setup_workspace] Reusing existing workspace: {existing_workspace}")
+            workspace_info = {
+                "workspace_path": existing_workspace,
+                "branch_name": branch_name,
+                "main_workspace": state.get("main_workspace", existing_workspace),
+                "workspace_ready": True,
+            }
         else:
-            logger.warning("[setup_workspace] Agent has no workspace path attribute")
-            return {**state, "workspace_ready": False, "index_ready": False}
-        
-        workspace_info = setup_git_worktree(
-            story_id=story_id,
-            main_workspace=main_workspace,
-            agent_name=agent.name
-        )
+            logger.info(f"[setup_workspace] Setting up workspace for branch '{branch_name}'")
+            
+            if hasattr(agent, 'main_workspace'):
+                main_workspace = agent.main_workspace
+            elif hasattr(agent, 'workspace_path'):
+                main_workspace = agent.workspace_path
+            else:
+                logger.warning("[setup_workspace] Agent has no workspace path attribute")
+                return {**state, "workspace_ready": False, "index_ready": False}
+            
+            workspace_info = setup_git_worktree(
+                story_id=story_id,
+                main_workspace=main_workspace,
+                agent_name=agent.name
+            )
         
         index_ready = False  # No longer using CocoIndex
         workspace_path = workspace_info.get("workspace_path", "")
@@ -186,6 +197,8 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                     cwd=workspace_path,
                     capture_output=True,
                     text=True,
+                    encoding='utf-8',
+                    errors='replace',
                     timeout=120,
                     shell=_use_shell(),
                     env=_get_bun_env()
@@ -212,6 +225,8 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                     cwd=workspace_path,
                     capture_output=True,
                     text=True,
+                    encoding='utf-8',
+                    errors='replace',
                     timeout=60,
                     shell=_use_shell()
                 )

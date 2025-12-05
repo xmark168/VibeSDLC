@@ -253,15 +253,19 @@ Description: {story_description[:500] if story_description else "No description"
 ## Instructions
 Create an implementation plan with:
 1. story_summary: Brief 1-sentence summary
-2. logic_analysis: [[file_path, description], ...] - include 'use client' for React components with hooks
+2. logic_analysis: [[file_path, description], ...] - HIGH-LEVEL descriptions only
 3. steps: Ordered list (database → API → components → pages)
    - Each step: order, description, file_path, action (create/modify), dependencies
-   - description MUST include: key functions, props interface, state hooks, imports
+   - description should include:
+     - WHAT: Purpose, user-facing behavior, inputs/outputs
+     - DESIGN INTENT: Visual style, feel, memorable aspects (for UI components)
+   - DO NOT include: specific imports, interface definitions, implementation patterns
+   - Let skills handle HOW to implement
 
 ## Quality Requirements
-- Each step description must be detailed enough to implement WITHOUT additional context
-- Generated code must be COMPLETE (all imports, all closing braces/tags)
-- NO truncated implementations
+- Focus on INTENT, not implementation details
+- Describe desired user experience and visual design
+- Leave technical decisions (imports, patterns, hooks) to implementation phase + skills
 """
         
         result = await structured_llm.ainvoke([
@@ -401,6 +405,14 @@ CRITICAL: After exploration, you MUST output <result> JSON. Do not stop at explo
         story_summary = data.get("story_summary", "")
         steps = data.get("steps", [])
         logic_analysis = data.get("logic_analysis", [])
+        
+        # Filter out migration steps (use db push instead)
+        steps = [s for s in steps if "migration" not in s.get("description", "").lower() 
+                 and "migration" not in s.get("file_path", "").lower()]
+        
+        # Re-number steps after filtering
+        for i, s in enumerate(steps):
+            s["order"] = i + 1
         
         # Build analysis from summary
         analysis = {

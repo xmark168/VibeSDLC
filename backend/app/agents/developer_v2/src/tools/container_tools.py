@@ -474,7 +474,6 @@ def container_exec(command: str) -> str:
     Use this to run commands like:
     - bun install, bun test, bun run build
     - bunx prisma generate, bunx prisma db push
-    - npm install, npm test
     - python -m pytest, pip install
     
     DATABASE_URL is automatically set to connect to the PostgreSQL container.

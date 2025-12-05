@@ -45,21 +45,22 @@ system_prompt: |
   - NEVER split: model + migration, component + its styles
   - ALWAYS split: API + UI, different features
   - Max 2 test tasks (API tests + UI tests)
+  - NEVER create migration files - use `bunx prisma db push` instead
   - CRITICAL: Output ONLY JSON in <result> tags
   </rules>
   
   <logic_analysis_guide>
-  ## MetaGPT-Style Logic Analysis
+  ## High-Level Logic Analysis
   For each file to create/modify, specify:
   - **file_path**: Exact path (e.g., "src/app/api/products/route.ts")
   - **action**: "create" | "modify" | "delete"
-  - **logic_analysis**: What to implement in this file
-    - functions/methods with signatures
-    - components/hooks
-    - imports needed
+  - **logic_analysis**: HIGH-LEVEL description only
+    - PURPOSE: What this file does for the user
+    - INPUTS/OUTPUTS: What data it receives and produces
+    - DESIGN INTENT: Visual style, interactions, memorable aspects (for UI)
   - **dependencies**: Files to read as context
   
-  This detailed planning reduces tool calls during implementation!
+  DO NOT specify: imports, interfaces, implementation patterns - skills will decide!
   </logic_analysis_guide>
   
   <anti_patterns>
@@ -68,6 +69,7 @@ system_prompt: |
   - "Install dependencies" (use existing packages)
   - "Create types file" (inline types in components)
   - "Add error handling" (include in main task)
+  - "Create migration" (use `bunx prisma db push` instead)
   - "Add loading states" (include in UI task)
   </anti_patterns>
   
@@ -79,16 +81,16 @@ system_prompt: |
   {
     "story_summary": "Product listing with API and UI",
     "logic_analysis": [
-      ["prisma/schema.prisma", "Add Product model: id, name, price, imageUrl, stock"],
-      ["src/app/api/products/route.ts", "GET handler: prisma.product.findMany(), return NextResponse.json()"],
-      ["src/components/ProductCard.tsx", "ProductCard({id, name, price, imageUrl, stock}): Link card with Image, hover effect"],
-      ["src/app/products/page.tsx", "async ProductsPage(): fetch /api/products, map to ProductCard grid"]
+      ["prisma/schema.prisma", "Add Product model with essential fields for display"],
+      ["src/app/api/products/route.ts", "API endpoint returning product list"],
+      ["src/components/ProductCard.tsx", "Product card showing key info. Design: modern, visually appealing with elegant hover"],
+      ["src/app/products/page.tsx", "Products page displaying grid of product cards"]
     ],
     "steps": [
-      {"order": 1, "file_path": "prisma/schema.prisma", "action": "modify", "description": "Add Product model: id, name, price, imageUrl, stock", "dependencies": []},
-      {"order": 2, "file_path": "src/app/api/products/route.ts", "action": "create", "description": "GET /api/products: findMany with pagination", "dependencies": ["prisma/schema.prisma", "src/lib/prisma.ts"]},
-      {"order": 3, "file_path": "src/components/ProductCard.tsx", "action": "create", "description": "ProductCard component with hover effect", "dependencies": []},
-      {"order": 4, "file_path": "src/app/products/page.tsx", "action": "create", "description": "Products page with grid layout", "dependencies": ["src/components/ProductCard.tsx"]}
+      {"order": 1, "file_path": "prisma/schema.prisma", "action": "modify", "description": "Add Product model with fields for listing display", "dependencies": []},
+      {"order": 2, "file_path": "src/app/api/products/route.ts", "action": "create", "description": "API returning products with pagination support", "dependencies": ["prisma/schema.prisma", "src/lib/prisma.ts"]},
+      {"order": 3, "file_path": "src/components/ProductCard.tsx", "action": "create", "description": "Reusable product card. Design: striking visuals, memorable hover effect, elegant typography", "dependencies": []},
+      {"order": 4, "file_path": "src/app/products/page.tsx", "action": "create", "description": "Products listing page. Design: clean grid layout, good spacing, responsive", "dependencies": ["src/components/ProductCard.tsx"]}
     ]
   }
   ```
@@ -100,22 +102,22 @@ system_prompt: |
   {
     "story_summary": "Homepage layout with hero section, featured books grid, and trust indicators",
     "logic_analysis": [
-      ["prisma/schema.prisma", "Add Book model: id, title, author, price, coverImage, stock, isFeatured. Add Category model: id, name, slug"],
-      ["src/app/api/books/featured/route.ts", "GET handler: prisma.book.findMany({where: {isFeatured: true}, take: 8})"],
-      ["src/components/ui/BookCard.tsx", "'use client', BookCard({id, title, author, price, coverImage, stock}): Link, Image, hover:shadow-lg"],
-      ["src/components/home/HeroSection.tsx", "HeroSection(): gradient bg, h1 value prop, CTA button"],
-      ["src/components/home/FeaturedBooks.tsx", "'use client', FeaturedBooks(): useState, useEffect, fetch /api/books/featured, map BookCard, loading skeleton"],
-      ["src/components/home/TrustIndicators.tsx", "TrustIndicators(): 3 badges - return policy, genuine guarantee, contact"],
-      ["src/app/page.tsx", "HomePage(): compose HeroSection, FeaturedBooks, TrustIndicators"]
+      ["prisma/schema.prisma", "Add Book and Category models for bookstore"],
+      ["src/app/api/books/featured/route.ts", "API returning featured books"],
+      ["src/components/ui/BookCard.tsx", "Book card component. Design: elegant, eye-catching with smooth hover transitions"],
+      ["src/components/home/HeroSection.tsx", "Hero section. Design: bold, memorable, strong value proposition with compelling CTA"],
+      ["src/components/home/FeaturedBooks.tsx", "Featured books grid with loading states. Design: engaging layout"],
+      ["src/components/home/TrustIndicators.tsx", "Trust badges section. Design: professional, builds confidence"],
+      ["src/app/page.tsx", "Homepage composing all sections. Design: cohesive flow, good rhythm between sections"]
     ],
     "steps": [
-      {"order": 1, "file_path": "prisma/schema.prisma", "action": "modify", "description": "Add Book, Category models with relations", "dependencies": []},
-      {"order": 2, "file_path": "src/app/api/books/featured/route.ts", "action": "create", "description": "Featured books API with limit param", "dependencies": ["prisma/schema.prisma", "src/lib/prisma.ts"]},
-      {"order": 3, "file_path": "src/components/ui/BookCard.tsx", "action": "create", "description": "Reusable book card with hover effect", "dependencies": []},
-      {"order": 4, "file_path": "src/components/home/HeroSection.tsx", "action": "create", "description": "Hero with value proposition and CTA", "dependencies": []},
-      {"order": 5, "file_path": "src/components/home/FeaturedBooks.tsx", "action": "create", "description": "Featured books grid with states", "dependencies": ["src/components/ui/BookCard.tsx"]},
-      {"order": 6, "file_path": "src/components/home/TrustIndicators.tsx", "action": "create", "description": "Trust badges section", "dependencies": []},
-      {"order": 7, "file_path": "src/app/page.tsx", "action": "modify", "description": "Compose homepage with all sections", "dependencies": ["src/components/home/HeroSection.tsx", "src/components/home/FeaturedBooks.tsx", "src/components/home/TrustIndicators.tsx"]}
+      {"order": 1, "file_path": "prisma/schema.prisma", "action": "modify", "description": "Add Book and Category models", "dependencies": []},
+      {"order": 2, "file_path": "src/app/api/books/featured/route.ts", "action": "create", "description": "API for featured books", "dependencies": ["prisma/schema.prisma", "src/lib/prisma.ts"]},
+      {"order": 3, "file_path": "src/components/ui/BookCard.tsx", "action": "create", "description": "Book card displaying cover, title, author, price. Design: visually striking, memorable hover", "dependencies": []},
+      {"order": 4, "file_path": "src/components/home/HeroSection.tsx", "action": "create", "description": "Hero with value proposition and CTA. Design: bold, impactful, draws attention", "dependencies": []},
+      {"order": 5, "file_path": "src/components/home/FeaturedBooks.tsx", "action": "create", "description": "Featured books grid with loading skeleton. Design: engaging, showcases books well", "dependencies": ["src/components/ui/BookCard.tsx"]},
+      {"order": 6, "file_path": "src/components/home/TrustIndicators.tsx", "action": "create", "description": "Trust badges for credibility. Design: clean, professional, trustworthy", "dependencies": []},
+      {"order": 7, "file_path": "src/app/page.tsx", "action": "modify", "description": "Compose homepage sections. Design: cohesive, good visual flow", "dependencies": ["src/components/home/HeroSection.tsx", "src/components/home/FeaturedBooks.tsx", "src/components/home/TrustIndicators.tsx"]}
     ]
   }
   ```
@@ -127,14 +129,14 @@ system_prompt: |
   {
     "story_summary": "Book search with API and search bar component",
     "logic_analysis": [
-      ["src/app/api/books/search/route.ts", "GET handler: query param 'q', prisma.book.findMany({where: {title: {contains: q, mode: 'insensitive'}}})"],
-      ["src/components/SearchBar.tsx", "'use client', SearchBar(): useState(query), useRouter, onChange handler, debounce 300ms"],
-      ["src/app/search/page.tsx", "SearchPage({searchParams}): fetch /api/books/search?q=, display results grid"]
+      ["src/app/api/books/search/route.ts", "Search API returning matching books"],
+      ["src/components/SearchBar.tsx", "Search input with instant feedback. Design: sleek, responsive, intuitive"],
+      ["src/app/search/page.tsx", "Search results page. Design: clear results display, helpful empty state"]
     ],
     "steps": [
-      {"order": 1, "file_path": "src/app/api/books/search/route.ts", "action": "create", "description": "Search API with query parameter", "dependencies": ["prisma/schema.prisma", "src/lib/prisma.ts"]},
-      {"order": 2, "file_path": "src/components/SearchBar.tsx", "action": "create", "description": "Search bar with debounce", "dependencies": []},
-      {"order": 3, "file_path": "src/app/search/page.tsx", "action": "create", "description": "Search results page", "dependencies": ["src/components/ui/BookCard.tsx", "src/components/SearchBar.tsx"]}
+      {"order": 1, "file_path": "src/app/api/books/search/route.ts", "action": "create", "description": "Search API with case-insensitive matching", "dependencies": ["prisma/schema.prisma", "src/lib/prisma.ts"]},
+      {"order": 2, "file_path": "src/components/SearchBar.tsx", "action": "create", "description": "Search bar with instant feedback. Design: modern, responsive, clear affordance", "dependencies": []},
+      {"order": 3, "file_path": "src/app/search/page.tsx", "action": "create", "description": "Search results page. Design: clear layout, good empty/loading states", "dependencies": ["src/components/ui/BookCard.tsx", "src/components/SearchBar.tsx"]}
     ]
   }
   ```

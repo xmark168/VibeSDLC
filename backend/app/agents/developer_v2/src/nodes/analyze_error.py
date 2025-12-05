@@ -184,13 +184,27 @@ CRITICAL: Respond ONLY with the JSON in <result> tags. No other text.
         # Parse JSON from response
         parsed = extract_json_universal(response_text, "analyze_error")
         
+        # Validate and filter fix_steps
+        valid_actions = {'create', 'modify', 'delete', 'test', 'config', 'review'}
+        valid_steps = []
+        for step in parsed.get("fix_steps", []):
+            action = step.get("action", "modify")
+            # Fix invalid action values
+            if action not in valid_actions:
+                action = "modify"  # Default to modify
+            step["action"] = action
+            try:
+                valid_steps.append(PlanStep(**step))
+            except Exception as e:
+                logger.warning(f"[analyze_error] Skipping invalid step: {e}")
+        
         # Convert to ErrorAnalysisAndPlan
         result = ErrorAnalysisAndPlan(
             error_type=parsed.get("error_type", "UNFIXABLE"),
             file_to_fix=parsed.get("file_to_fix", ""),
             root_cause=parsed.get("root_cause", "Unknown error"),
             should_continue=parsed.get("should_continue", False),
-            fix_steps=[PlanStep(**step) for step in parsed.get("fix_steps", [])]
+            fix_steps=valid_steps
         )
         
         logger.info(f"[analyze_error] {result.error_type}: {result.root_cause}")

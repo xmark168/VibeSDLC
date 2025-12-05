@@ -92,15 +92,11 @@ async def install_dependencies(workspace_path: str) -> bool:
             logger.info(f"Installing Node.js dependencies from {package_json}")
             use_shell = sys.platform == 'win32'
             
-            if (workspace / "bun.lock").exists() or (workspace / "bun.lockb").exists():
-                subprocess.run("bun install --frozen-lockfile", cwd=workspace_path, check=False, timeout=180, shell=use_shell, env=_get_bun_env())
-            elif (workspace / "pnpm-lock.yaml").exists():
-                subprocess.run("pnpm install", cwd=workspace_path, check=False, timeout=180, shell=use_shell)
-            else:
-                subprocess.run("npm install", cwd=workspace_path, check=False, timeout=180, shell=use_shell)
+            # Always use bun for Node.js projects
+            subprocess.run("bun install --frozen-lockfile", cwd=workspace_path, check=False, timeout=180, shell=use_shell, env=_get_bun_env())
             installed = True
         except Exception as e:
-            logger.warning(f"Failed to install npm dependencies: {e}")
+            logger.warning(f"Failed to install bun dependencies: {e}")
     
     return installed
 

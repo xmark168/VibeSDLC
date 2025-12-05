@@ -171,6 +171,7 @@ NEVER:
 - Recreate User/Account/Session models (already in boilerplate)
 - Forget `@@index` on foreign key fields
 - Skip `onDelete: Cascade` on child relations
+- Create migration files (use `bunx prisma db push` for dev instead)
 - Forget to run `prisma db push` after schema changes
 
 **IMPORTANT**: Always add indexes on fields used in WHERE clauses or JOINs to improve query performance.
