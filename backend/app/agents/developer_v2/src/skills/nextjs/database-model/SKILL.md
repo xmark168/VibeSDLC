@@ -9,25 +9,27 @@ The user needs to design database schemas, add new models, define relationships,
 
 ## Before You Start
 
-Prisma 6.x has a different configuration than earlier versions:
-- **Schema file**: `prisma/schema.prisma` - NO `url` in datasource block
-- **Config file**: `prisma/prisma.config.ts` - Contains database URL
-- **Client file**: `lib/prisma.ts` - Uses `datasourceUrl` option
+**CRITICAL**: The boilerplate already has correct Prisma setup. DO NOT modify the datasource block.
 
-**CRITICAL**: After any schema changes, run `bunx prisma db push` (generate runs automatically).
+- **Schema file**: `prisma/schema.prisma` - MUST have `url = env("DATABASE_URL")`
+- **Client file**: `lib/prisma.ts` - Already configured correctly
 
-## Schema Structure (Prisma 6.x)
+After any schema changes, run `bunx prisma db push` (generate runs automatically).
+
+## Schema Structure
 
 ```prisma
-// prisma/schema.prisma
+// prisma/schema.prisma - DO NOT MODIFY THIS BLOCK
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-  // NO url here in Prisma 6.x - it's in prisma.config.ts
+  url      = env("DATABASE_URL")  // REQUIRED - never remove this
 }
+
+// Add your models BELOW the datasource block
 ```
 
 ## Model Conventions
@@ -43,7 +45,7 @@ Follow these conventions for all models:
 model Product {
   id        String   @id @default(uuid())
   name      String
-  price     Decimal
+  price     Float    // Use Float for simpler type handling in UI
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -61,6 +63,20 @@ enum Status {
   ARCHIVED
 }
 ```
+
+## Type Choices for Numbers
+
+| Type | Prisma Returns | Use Case |
+|------|---------------|----------|
+| `Int` | `number` | Counts, IDs, whole numbers |
+| `Float` | `number` | Prices, measurements (recommended for UI) |
+| `Decimal` | `Prisma.Decimal` | Financial calculations needing exact precision |
+
+**Recommendation**: Use `Float` for prices in most apps. It returns `number` directly, no conversion needed.
+
+If using `Decimal` (for financial apps):
+- API must convert: `Number(item.price)` or `item.price.toNumber()`
+- TypeScript type: `Prisma.Decimal` not `number`
 
 ## Relationships
 
@@ -130,29 +146,24 @@ model User {
 
 ## Prisma Client Setup
 
+The boilerplate already has `lib/prisma.ts` configured. DO NOT recreate it.
+
 ```typescript
-// lib/prisma.ts - Prisma 6.x requires datasourceUrl
+// lib/prisma.ts - ALREADY EXISTS in boilerplate
 import { PrismaClient } from '@prisma/client';
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 
-export const prisma = globalForPrisma.prisma ?? new PrismaClient({
-  datasourceUrl: process.env.DATABASE_URL,  // Required in Prisma 6.x
-  log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
-});
+export const prisma = globalForPrisma.prisma ?? new PrismaClient();
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 ```
 
 ## After Writing Schema
 
-Run db push to apply schema changes:
-
-```
-execute_shell("bunx prisma db push")
-```
-
-Note: `prisma generate` runs automatically with db push. If fails, fix schema and retry.
+DO NOT run db push manually during implementation.
+Database operations (`prisma generate`, `prisma db push`) run automatically in validation phase.
+Just write the schema file and proceed to next task.
 
 ## Commands Reference
 
@@ -164,10 +175,13 @@ bunx prisma studio       # Visual database browser
 ```
 
 NEVER:
-- Add `url` to datasource block in Prisma 6.x
+- Modify or remove the `datasource db` block (url is REQUIRED)
+- Modify or remove the `generator client` block
+- Recreate `lib/prisma.ts` (already exists in boilerplate)
+- Recreate User/Account/Session models (already in boilerplate)
 - Forget `@@index` on foreign key fields
 - Skip `onDelete: Cascade` on child relations
-- Recreate User/Account/Session models (already in boilerplate)
-- Forget to run `prisma db push` after schema changes
+- Create migration files (use `bunx prisma db push` for dev instead)
+- Run `execute_shell` for db push/generate during implementation (runs automatically in validation)
 
 **IMPORTANT**: Always add indexes on fields used in WHERE clauses or JOINs to improve query performance.

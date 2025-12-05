@@ -329,11 +329,8 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
           <AppViewer />
         )
       case "kanban":
-        return (
-          <div className="flex-1 overflow-hidden">
-            <KanbanBoard kanbanData={kanbanData} projectId={projectId} />
-          </div>
-        )
+        // KanbanBoard is rendered separately to keep it always mounted
+        return null
       case "file":
         return (
           <div className="flex h-full">
@@ -440,7 +437,14 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
       </div>
       <div className="border border-3 mb-3 mr-3 shadow-2xs rounded-2xl flex-1 min-h-0 overflow-hidden">
         <div className="h-full w-full overflow-auto">
-          {renderView()}
+          {/* Keep KanbanBoard always mounted for real-time updates */}
+          <div className={activeView === "kanban" ? "h-full" : "hidden"}>
+            <div className="flex-1 overflow-hidden h-full">
+              <KanbanBoard kanbanData={kanbanData} projectId={projectId} />
+            </div>
+          </div>
+          {/* Other views render conditionally */}
+          {activeView !== "kanban" && renderView()}
         </div>
       </div>
 

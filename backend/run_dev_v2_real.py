@@ -579,34 +579,14 @@ _should_cleanup = False
 
 
 def cleanup_containers(remove: bool = False):
-    """Cleanup containers on exit."""
-    global _active_branch
-    
-    if not _active_branch:
-        return
-    
-    try:
-        from app.agents.developer_v2.src.tools.container_tools import dev_container_manager
-        
-        if remove:
-            print(f"\n[*] Removing containers for {_active_branch}...")
-            dev_container_manager.remove(_active_branch)
-            print("[*] Containers removed.")
-        else:
-            print(f"\n[*] Stopping containers for {_active_branch}...")
-            dev_container_manager.stop(_active_branch)
-            print("[*] Containers stopped (can resume later).")
-    except Exception as e:
-        logger.debug(f"Cleanup error: {e}")
+    """Disabled - keep containers alive for reuse."""
+    pass  # Do nothing - containers stay alive
 
 
 def signal_handler(signum, frame):
-    """Handle Ctrl+C gracefully."""
-    global _should_cleanup
-    
-    print("\n\n[!] Interrupted! Cleaning up...")
-    _should_cleanup = True
-    cleanup_containers(remove=True)
+    """Handle Ctrl+C gracefully - keep containers alive."""
+    print("\n\n[!] Interrupted!")
+    # Không cleanup, giữ container sống để reuse
     sys.exit(0)
 
 

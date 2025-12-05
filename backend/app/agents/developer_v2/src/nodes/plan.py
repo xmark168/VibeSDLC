@@ -5,7 +5,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import ImplementationPlan, PlanTask
 from app.agents.developer_v2.src.utils.json_utils import extract_json_universal
-from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, list_directory_safe, glob
+from app.agents.developer_v2.src.tools.filesystem_tools import list_directory_safe, glob
 from app.agents.developer_v2.src.utils.llm_utils import (
     get_langfuse_config as _cfg,
     execute_llm_with_tools as _llm_with_tools,
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 async def plan(state: DeveloperState, agent=None) -> DeveloperState:
     """Break story into abstract tasks (WHAT, not HOW)."""
-    print("[NODE] plan")
+    logger.info("[NODE] plan")
     try:
         analysis = state.get("analysis_result") or {}
         workspace_path = state.get("workspace_path", "")
@@ -32,16 +32,6 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
         task_id = state.get("task_id") or state.get("story_id", "")
         
         setup_tool_context(workspace_path, project_id, task_id)
-        
-        # Get directory structure (minimal context)
-        dir_structure = ""
-        if workspace_path:
-            try:
-                result = list_directory_safe.invoke({"path": "src", "depth": 2})
-                if result and not result.startswith("Error:"):
-                    dir_structure = result[:1500]
-            except Exception:
-                pass
         
         # Get project structure for path guidance
         tech_stack = state.get("tech_stack", "nextjs")

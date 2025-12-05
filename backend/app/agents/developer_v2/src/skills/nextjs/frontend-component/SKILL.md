@@ -1,6 +1,6 @@
 ---
 name: frontend-component
-description: Create React/Next.js 16 components. Use when building pages, client/server components, forms with useActionState, or UI with shadcn/ui. Handles 'use client' directive decisions.
+description: Create React/Next.js 16 components. Use when building pages, client/server components, forms with useActionState, or UI with shadcn/ui. Handles 'use client' directive decisions. ALWAYS activate with frontend-design together.
 ---
 
 This skill guides creation of React components in Next.js 16 with React 19. Components follow the App Router architecture with Server Components as default and Client Components for interactivity.

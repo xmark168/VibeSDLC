@@ -2,15 +2,21 @@
 
 import logging
 from pathlib import Path
+from typing import Any, Dict
 from uuid import UUID
 
-from sqlmodel import Session
+import yaml
+from crewai import Agent, Crew, Task
 
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
-from app.models import Agent as AgentModel, Project
-from app.agents.tester.src import TesterGraph
-from app.core.langfuse_client import flush_langfuse
-from app.core.db import engine
+from app.agents.tester.tasks import (
+    create_test_plan_task,
+    create_validate_requirements_task,
+    create_test_cases_task,
+)
+from app.agents.tester.tools import get_tester_tools
+from app.models import Agent as AgentModel
+
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +34,13 @@ def _get_project_workspace(project_id) -> str:
 
 
 class Tester(BaseAgent):
-    """Tester agent using LangGraph for test generation."""
+    """Tester agent - creates test plans and ensures software quality.
+
+    NEW ARCHITECTURE:
+    - No more separate Consumer/Role layers
+    - Handles tasks via handle_task() method
+    - Router sends tasks via @Tester mentions
+    """
 
     def __init__(self, agent_model: AgentModel, **kwargs):
         super().__init__(agent_model, **kwargs)

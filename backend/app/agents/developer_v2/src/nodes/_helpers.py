@@ -1,15 +1,11 @@
 """Shared helper functions for Developer V2 nodes."""
 import logging
-import os
 import re
-import subprocess
 from datetime import datetime
 from pathlib import Path
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.tools import set_tool_context
-from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context
-from app.agents.developer_v2.src.tools.shell_tools import set_shell_context
 
 logger = logging.getLogger(__name__)
 
@@ -165,11 +161,7 @@ def analyze_test_output(stdout: str, stderr: str, project_type: str = "") -> dic
 
 def setup_tool_context(workspace_path: str = None, project_id: str = None, task_id: str = None):
     """Set global context for all tools before agent invocation."""
-    if workspace_path:
-        set_fs_context(root_dir=workspace_path)
-        set_shell_context(root_dir=workspace_path)
-    if project_id:
-        set_tool_context(project_id=project_id, task_id=task_id, workspace_path=workspace_path)
+    set_tool_context(root_dir=workspace_path, project_id=project_id, task_id=task_id)
 
 
 def get_langfuse_span(state: DeveloperState, name: str, input_data: dict = None):

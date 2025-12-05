@@ -59,6 +59,15 @@ class BusinessAnalyst(BaseAgent):
         
         logger.info(f"[{self.name}] LangGraph initialized successfully")
     
+    def _build_base_state(self, task: TaskContext) -> dict:
+        """Build base state dict with common fields for all task types."""
+        return {
+            "project_id": str(self.project_id),
+            "task_id": str(task.task_id),
+            "user_id": str(task.user_id) if task.user_id else "",
+            "project_path": str(self.project_files.project_path) if self.project_files else "",
+        }
+
     def _load_existing_prd(self) -> dict | None:
         """Load existing PRD from Artifact table."""
         try:
@@ -177,18 +186,11 @@ class BusinessAnalyst(BaseAgent):
         existing_prd = self._load_existing_prd()
         
         # Build state with batch answers
-        # user_message is required for PRD generation - get from interview_state or use default
-        user_message = interview_state.get("user_message", "")
-        if not user_message:
-            # Fallback: extract from collected_info or use generic message
-            user_message = interview_state.get("original_request", "Tạo PRD dựa trên thông tin đã thu thập")
+        user_message = interview_state.get("user_message", "") or interview_state.get("original_request", "Tạo PRD dựa trên thông tin đã thu thập")
         
         state = {
-            "project_id": str(self.project_id),
-            "task_id": str(task.task_id),
-            "user_id": str(task.user_id) if task.user_id else "",
-            "project_path": str(self.project_files.project_path) if self.project_files else "",
-            "user_message": user_message,  # Required for generate_prd
+            **self._build_base_state(task),
+            "user_message": user_message,
             "collected_info": interview_state.get("collected_info", {}),
             "existing_prd": existing_prd,
             "intent": "interview",
@@ -196,7 +198,7 @@ class BusinessAnalyst(BaseAgent):
             "batch_answers": batch_answers,
             "waiting_for_answer": False,
             "all_questions_answered": False,
-            "research_loop_count": interview_state.get("research_loop_count", 0),  # Restore loop count
+            "research_loop_count": interview_state.get("research_loop_count", 0),
         }
         
         # Process all batch answers
@@ -279,11 +281,8 @@ class BusinessAnalyst(BaseAgent):
         
         # Build state from saved interview state + user answer
         state = {
+            **self._build_base_state(task),
             "user_message": answer,
-            "project_id": str(self.project_id),
-            "task_id": str(task.task_id),
-            "user_id": str(task.user_id) if task.user_id else "",
-            "project_path": str(self.project_files.project_path) if self.project_files else "",
             "collected_info": interview_state.get("collected_info", {}),
             "existing_prd": existing_prd,
             "intent": "interview",
@@ -392,14 +391,11 @@ class BusinessAnalyst(BaseAgent):
         
         # Prepare initial state
         initial_state = {
+            **self._build_base_state(task),
             "user_message": task.content,
-            "project_id": str(self.project_id),
-            "task_id": str(task.task_id),
-            "user_id": str(task.user_id) if task.user_id else "",
-            "project_path": str(self.project_files.project_path) if self.project_files else "",
             "collected_info": {},
             "existing_prd": existing_prd,
-            "conversation_context": self.context.format_memory(),  # Conversation history from ProjectContext
+            "conversation_context": self.context.format_memory(),
             "intent": "",
             "reasoning": "",
             "questions": [],
@@ -411,15 +407,15 @@ class BusinessAnalyst(BaseAgent):
             "prd_final": None,
             "prd_saved": False,
             "change_summary": "",
-            "epics": existing_epics,  # Load existing epics for approval flow
-            "stories": existing_stories,  # Load existing stories for approval flow
+            "epics": existing_epics,
+            "stories": existing_stories,
             "stories_saved": False,
             "analysis_text": "",
             "error": None,
             "retry_count": 0,
             "result": {},
             "is_complete": False,
-            "langfuse_handler": langfuse_handler,  # Pass to nodes for LLM tracing
+            "langfuse_handler": langfuse_handler,
         }
         
         logger.info(f"[{self.name}] Invoking LangGraph...")

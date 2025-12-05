@@ -309,15 +309,22 @@ export function ChatPanelWS({
   // Detect stories_approved message and refresh Kanban board
   const lastApprovedMsgIdRef = useRef<string | null>(null)
   useEffect(() => {
-    const latestApproved = uniqueMessages.find(
+    // Find the MOST RECENT stories_approved message (not the first one)
+    const approvedMessages = uniqueMessages.filter(
       msg => msg.structured_data?.message_type === 'stories_approved'
     )
+    const latestApproved = approvedMessages.length > 0
+      ? approvedMessages.sort((a, b) => 
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )[0]
+      : null
     
     // Only refresh if it's a NEW approval message we haven't processed yet
     if (latestApproved && latestApproved.id !== lastApprovedMsgIdRef.current && projectId) {
-      console.log('[ChatPanel] Stories approved, refreshing Kanban board...')
+      console.log('[ChatPanel] Stories approved, refreshing Kanban board...', latestApproved.id)
       lastApprovedMsgIdRef.current = latestApproved.id
-      queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+      // Use refetchQueries for immediate refetch instead of invalidateQueries
+      queryClient.refetchQueries({ queryKey: ['kanban-board', projectId], type: 'active' })
     }
   }, [uniqueMessages, projectId, queryClient])
 
@@ -975,9 +982,31 @@ export function ChatPanelWS({
                       suggestedRequirements={msg.structured_data.suggested_requirements}
                       hasSuggestions={msg.structured_data.has_suggestions}
                       initialActionTaken={msg.structured_data.action_taken}
-                      onApplied={() => {
+                      onApplied={async (updatedStory) => {
                         if (projectId) {
-                          queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+                          console.log('[ChatPanel] onApplied called with updated story:', updatedStory)
+                          // Update cache directly with new story data for immediate UI update
+                          if (updatedStory) {
+                            queryClient.setQueryData(['kanban-board', projectId], (oldData: any) => {
+                              if (!oldData?.board) return oldData
+                              // Update story in the appropriate column
+                              const newBoard = { ...oldData.board }
+                              for (const column of Object.keys(newBoard)) {
+                                newBoard[column] = newBoard[column].map((story: any) => 
+                                  story.id === updatedStory.id 
+                                    ? { ...story, title: updatedStory.title, acceptance_criteria: updatedStory.acceptance_criteria, requirements: updatedStory.requirements }
+                                    : story
+                                )
+                              }
+                              console.log('[ChatPanel] Updated kanban cache with new story data')
+                              return { ...oldData, board: newBoard }
+                            })
+                          }
+                          // Also refetch to ensure consistency
+                          await queryClient.refetchQueries({ 
+                            queryKey: ['kanban-board', projectId],
+                            type: 'all'
+                          })
                           queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
                         }
                       }}
@@ -986,9 +1015,26 @@ export function ChatPanelWS({
                           queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
                         }
                       }}
-                      onRemove={() => {
+                      onRemove={async (removedStoryId) => {
                         if (projectId) {
-                          queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+                          console.log('[ChatPanel] onRemove called for story:', removedStoryId)
+                          // Remove story from cache directly for immediate UI update
+                          if (removedStoryId) {
+                            queryClient.setQueryData(['kanban-board', projectId], (oldData: any) => {
+                              if (!oldData?.board) return oldData
+                              const newBoard = { ...oldData.board }
+                              for (const column of Object.keys(newBoard)) {
+                                newBoard[column] = newBoard[column].filter((story: any) => story.id !== removedStoryId)
+                              }
+                              console.log('[ChatPanel] Removed story from kanban cache')
+                              return { ...oldData, board: newBoard }
+                            })
+                          }
+                          // Also refetch to ensure consistency
+                          await queryClient.refetchQueries({ 
+                            queryKey: ['kanban-board', projectId],
+                            type: 'all'
+                          })
                           queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
                         }
                       }}

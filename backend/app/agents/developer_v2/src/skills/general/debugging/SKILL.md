@@ -170,6 +170,25 @@ export function ClientComponent() {
 | `await params` | Dynamic route in Next.js 16 | Add `await context.params` |
 | `Text content mismatch` | Date/random on server | Use `suppressHydrationWarning` or move to client |
 
+### React Runtime Errors
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `Element type is invalid: got undefined` | Wrong import/export | Check export type matches import |
+| `mixed up default and named imports` | Import mismatch | Pages: `import X from`, Components: `import { X } from` |
+
+**Import/Export Rules:**
+- **Pages (`app/**/page.tsx`)**: Use `export default` → Import with `import X from`
+- **Components (`components/*`)**: Use `export function X` → Import with `import { X } from`
+
+```typescript
+// WRONG - will cause "Element type is invalid"
+import HeroSection from '@/components/HeroSection';  // if HeroSection uses named export
+
+// CORRECT
+import { HeroSection } from '@/components/HeroSection';  // named export
+```
+
 ### Prisma Errors
 
 | Error | Cause | Fix |

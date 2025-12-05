@@ -15,19 +15,59 @@ The user needs to run development commands, install packages, execute tests, or 
 - **Command order**: install - generate - build - test
 - **Verify success**: Always check exit code before proceeding
 
+## When NOT to Use This Skill (During Implementation)
+
+During `implement` phase, do NOT run these commands - they run automatically in validation phase:
+
+- `bunx prisma db push` - runs automatically after all code is written
+- `bunx prisma generate` - runs automatically after all code is written
+- `bun run typecheck` - runs automatically in validation
+- `bun run lint` - runs automatically in validation
+- `bun run build` - runs automatically in validation
+
+Only use this skill during implementation for:
+- Installing NEW dependencies (`bun add <package>`)
+- Running specific unit tests for debugging
+- Checking package.json contents
+
 ## Pre-installed Packages
 
 Do NOT install packages already in the boilerplate:
 - **Database**: `prisma`, `@prisma/client`
 - **Auth**: `next-auth`, `@auth/prisma-adapter`
 - **Forms**: `zod`, `react-hook-form`, `@hookform/resolvers`
-- **UI**: All `@radix-ui/*`, `lucide-react`, `sonner`
+- **UI**: All `@radix-ui/*`, `lucide-react`, `sonner`, `cmdk`
 - **Styling**: `tailwind-merge`, `clsx`, `class-variance-authority`
 - **Animation**: `framer-motion`
+- **Carousel**: `embla-carousel-react` (for Carousel component)
+- **Date**: `react-day-picker` (for Calendar component)
+
+**All 53 shadcn/ui components are pre-installed** at `@/components/ui/*`:
+accordion, alert, alert-dialog, aspect-ratio, avatar, badge, breadcrumb, button, button-group, calendar, card, carousel, chart, checkbox, collapsible, command, context-menu, dialog, drawer, dropdown-menu, empty, field, form, hover-card, input, input-group, input-otp, item, kbd, label, menubar, navigation-menu, pagination, popover, progress, radio-group, resizable, scroll-area, select, separator, sheet, sidebar, skeleton, slider, sonner, spinner, switch, table, tabs, textarea, toggle, toggle-group, tooltip
 
 Only add packages when:
 - Package is NOT in `package.json`
 - Story explicitly requires a new package
+
+## When TO Install Packages
+
+MUST install with `bun add <package>` BEFORE writing code that imports it:
+
+- Importing a package not in pre-installed list above
+- Story requires specific library not in boilerplate
+
+**Example workflow:**
+```
+1. Check if package is in pre-installed list
+2. If NOT: execute_shell("bun add date-fns")
+3. THEN: Write file with the import
+```
+
+**Common packages that need installation:**
+- `date-fns` or `dayjs` - Date formatting/manipulation
+- `@tanstack/react-query` - Data fetching with caching
+- `axios` - HTTP client (if not using fetch)
+- `recharts` - Charts library (if not using chart component)
 
 ## Package Commands
 
@@ -94,7 +134,7 @@ Always follow this sequence:
 NEVER:
 - Use npm, npx, yarn, or pnpm
 - Install packages already in boilerplate
-- Skip `prisma generate` after schema changes
+- Run prisma db push/generate during implementation (handled by validation phase)
 - Retry database commands when database is not running
 
-**IMPORTANT**: After any Prisma schema change, always run both `bunx prisma generate` and `bunx prisma db push`.
+**IMPORTANT**: Prisma generate and db push run automatically in validation phase. Do NOT run them manually during implementation.

@@ -130,6 +130,30 @@ const items = json.data;  // Extract from wrapper!
 const items = json;  // Wrong! json is {success, data}, not the array
 ```
 
+## Handling Decimal Fields
+
+Prisma `Decimal` type doesn't serialize to JSON as number. Convert before response:
+
+```typescript
+// Single item
+const item = await prisma.item.findUnique({ where: { id } });
+return successResponse({
+  ...item,
+  price: Number(item.price),  // Convert Decimal to number
+});
+
+// List of items
+const items = await prisma.item.findMany();
+return successResponse(
+  items.map(item => ({
+    ...item,
+    price: Number(item.price),
+  }))
+);
+```
+
+**Tip**: Use `Float` instead of `Decimal` in schema to avoid this conversion entirely.
+
 ## Common Patterns
 
 - **Search**: Use `where: { field: { contains: query, mode: 'insensitive' } }`

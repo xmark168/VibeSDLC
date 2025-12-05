@@ -15,6 +15,8 @@ export interface Story {
   epic_id?: string | null;
   epic_code?: string;
   epic_title?: string;
+  epic_description?: string;
+  epic_domain?: string;
   assignee_id?: string | null;
   reviewer_id?: string | null;
   acceptance_criteria?: string[];
@@ -48,7 +50,9 @@ export interface UpdateStoryParams {
   description?: string;
   status?: StoryStatus;
   story_type?: StoryType;
+  story_point?: number;
   priority?: number;
+  rank?: number;
   estimated_hours?: number;
   actual_hours?: number;
   assigned_to?: string;

@@ -19,7 +19,6 @@ from app.agents.developer_v2.src.skills import get_project_structure, get_plan_p
 from app.agents.developer_v2.src.tools.filesystem_tools import (
     read_file_safe, list_directory_safe, glob, grep_files
 )
-from app.agents.developer_v2.src.tools.cocoindex_tools import search_codebase_tool
 
 logger = logging.getLogger(__name__)
 
@@ -142,8 +141,8 @@ def _preload_dependencies(workspace_path: str, steps: list) -> dict:
                 with open(full_path, 'r', encoding='utf-8') as f:
                     content = f.read()
                 # Limit content size to avoid token overflow
-                if len(content) > 3000:
-                    content = content[:3000] + "\n... (truncated)"
+                if len(content) > 8000:
+                    content = content[:8000] + "\n... (truncated)"
                 dependencies_content[dep_path] = content
                 logger.info(f"[analyze_and_plan] Pre-loaded: {dep_path}")
             except Exception as e:
@@ -228,27 +227,17 @@ async def _extract_json_with_retry(
     story_description: str,
     max_retries: int = 2
 ) -> dict:
-    """Extract JSON from response with robust retry mechanism.
+    """Extract JSON with structured output as PRIMARY method.
     
     Strategy:
-    1. Try direct extraction from response (fast)
-    2. If fails, use structured output with Pydantic (reliable)
-    3. If still fails, generate minimal fallback plan (never fails)
+    1. Try structured output with Pydantic (PRIMARY - 99% reliable)
+    2. If fails, try direct extraction (backup - for cached responses)
+    3. If still fails, fallback plan (never fails)
     """
-    # Attempt 1: Direct extraction (fastest)
+    # PRIMARY: Structured output with Pydantic (most reliable)
     try:
-        data = extract_json_universal(response, "analyze_and_plan")
-        if data and data.get("steps"):
-            logger.info("[analyze_and_plan] JSON extracted on first attempt")
-            return data
-    except ValueError as e:
-        logger.warning(f"[analyze_and_plan] Direct extraction failed: {e}")
-    
-    # Attempt 2: Use structured output with Pydantic schema (most reliable)
-    try:
-        logger.info("[analyze_and_plan] Using structured output with Pydantic schema")
+        logger.info("[analyze_and_plan] Using structured output (primary)")
         
-        # Create LLM with structured output
         structured_llm = code_llm.with_structured_output(AnalyzePlanOutput)
         
         structured_prompt = f"""Convert this exploration into an implementation plan.
@@ -263,9 +252,19 @@ Description: {story_description[:500] if story_description else "No description"
 ## Instructions
 Create an implementation plan with:
 1. story_summary: Brief 1-sentence summary
-2. logic_analysis: [[file_path, description], ...] - include 'use client' for React components with hooks
+2. logic_analysis: [[file_path, description], ...] - HIGH-LEVEL descriptions only
 3. steps: Ordered list (database → API → components → pages)
    - Each step: order, description, file_path, action (create/modify), dependencies
+   - description should include:
+     - WHAT: Purpose, user-facing behavior, inputs/outputs
+     - DESIGN INTENT: Visual style, feel, memorable aspects (for UI components)
+   - DO NOT include: specific imports, interface definitions, implementation patterns
+   - Let skills handle HOW to implement
+
+## Quality Requirements
+- Focus on INTENT, not implementation details
+- Describe desired user experience and visual design
+- Leave technical decisions (imports, patterns, hooks) to implementation phase + skills
 """
         
         result = await structured_llm.ainvoke([
@@ -273,44 +272,27 @@ Create an implementation plan with:
             HumanMessage(content=structured_prompt)
         ], config=_cfg(state, "analyze_and_plan_structured"))
         
-        # Pydantic model → dict
         data = result.model_dump()
         if data and data.get("steps"):
-            logger.info(f"[analyze_and_plan] Structured output success: {len(data['steps'])} steps")
+            logger.info(f"[analyze_and_plan] Structured output: {len(data['steps'])} steps")
             return data
             
     except Exception as e:
         logger.warning(f"[analyze_and_plan] Structured output failed: {e}")
     
-    # Attempt 3: Legacy retry with JSON prompt (backup)
-    for attempt in range(max_retries):
-        try:
-            logger.info(f"[analyze_and_plan] JSON retry attempt {attempt + 1}/{max_retries}")
-            
-            retry_prompt = JSON_GENERATION_PROMPT.format(
-                exploration=response[:6000],
-                story_title=story_title,
-                story_description=story_description[:500] if story_description else "No description"
-            )
-            
-            retry_response = await code_llm.ainvoke([
-                SystemMessage(content="You are a JSON generator. Output ONLY valid JSON in <result> tags."),
-                HumanMessage(content=retry_prompt)
-            ], config=_cfg(state, f"analyze_and_plan_retry_{attempt + 1}"))
-            
-            data = extract_json_universal(retry_response.content, f"analyze_and_plan_retry_{attempt + 1}")
-            if data and data.get("steps"):
-                logger.info(f"[analyze_and_plan] JSON extracted on retry {attempt + 1}")
-                return data
-                
-        except ValueError as e:
-            logger.warning(f"[analyze_and_plan] Retry {attempt + 1} failed: {e}")
-            continue
+    # BACKUP: Direct extraction (for edge cases or cached responses)
+    try:
+        data = extract_json_universal(response, "analyze_and_plan")
+        if data and data.get("steps"):
+            logger.info("[analyze_and_plan] Direct extraction backup success")
+            return data
+    except ValueError:
+        pass
     
-    # Fallback: Generate minimal plan from story title (never fails)
-    logger.error("[analyze_and_plan] All extraction attempts failed, using fallback")
+    # FALLBACK: Minimal plan (never fails)
+    logger.error("[analyze_and_plan] All methods failed, using fallback plan")
     
-    fallback_data = {
+    return {
         "story_summary": story_title or "Implementation task",
         "logic_analysis": [],
         "steps": [
@@ -323,13 +305,11 @@ Create an implementation plan with:
             }
         ]
     }
-    
-    return fallback_data
 
 
 async def analyze_and_plan(state: DeveloperState, agent=None) -> DeveloperState:
     """Combined analyze + plan with tool exploration phase."""
-    print("[NODE] analyze_and_plan")
+    logger.info("[NODE] analyze_and_plan")
     
     try:
         workspace_path = state.get("workspace_path", "")
@@ -389,9 +369,8 @@ CRITICAL: After exploration, you MUST output <result> JSON. Do not stop at explo
         tools = [
             read_file_safe,
             list_directory_safe,
-            glob,                # glob pattern search
-            grep_files,          # text search in files
-            search_codebase_tool,  # semantic search
+            glob,        # glob pattern search
+            grep_files,  # text search in files
         ]
         
         # Single-phase: explore + analyze + plan in one call
@@ -424,6 +403,14 @@ CRITICAL: After exploration, you MUST output <result> JSON. Do not stop at explo
         story_summary = data.get("story_summary", "")
         steps = data.get("steps", [])
         logic_analysis = data.get("logic_analysis", [])
+        
+        # Filter out migration steps (use db push instead)
+        steps = [s for s in steps if "migration" not in s.get("description", "").lower() 
+                 and "migration" not in s.get("file_path", "").lower()]
+        
+        # Re-number steps after filtering
+        for i, s in enumerate(steps):
+            s["order"] = i + 1
         
         # Build analysis from summary
         analysis = {

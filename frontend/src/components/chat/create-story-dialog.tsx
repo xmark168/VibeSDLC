@@ -17,25 +17,45 @@ import type { StoryFormData, Story } from "@/types"
 
 export type { StoryFormData }
 
+export interface StoryEditData {
+  id: string
+  title: string
+  description?: string
+  type: "UserStory" | "EnablerStory"
+  story_point?: number
+  priority?: number
+  rank?: number
+  acceptance_criteria?: string[]
+  requirements?: string[]
+  dependencies?: string[]
+  epic_id?: string
+}
+
 interface CreateStoryDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCreateStory: (story: StoryFormData) => void
+  onUpdateStory?: (storyId: string, story: StoryFormData) => void
   projectId?: string
+  editingStory?: StoryEditData | null
 }
 
-export function CreateStoryDialog({ open, onOpenChange, onCreateStory, projectId }: CreateStoryDialogProps) {
-  const [formData, setFormData] = useState<StoryFormData>({
-    title: "",
-    description: "",
-    type: "UserStory",
-    story_point: 1,
-    priority: "Medium",
-    acceptance_criteria: [],
-    requirements: [],
-    dependencies: [],
-    epic_id: undefined
-  })
+const getDefaultFormData = (): StoryFormData => ({
+  title: "",
+  description: "",
+  type: "UserStory",
+  story_point: 1,
+  priority: "Medium",
+  acceptance_criteria: [],
+  requirements: [],
+  dependencies: [],
+  epic_id: undefined
+})
+
+export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateStory, projectId, editingStory }: CreateStoryDialogProps) {
+  const isEditMode = !!editingStory
+
+  const [formData, setFormData] = useState<StoryFormData>(getDefaultFormData())
 
   const [currentCriteria, setCurrentCriteria] = useState("")
   const [currentRequirement, setCurrentRequirement] = useState("")
@@ -47,6 +67,30 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, projectId
   const [loadingEpics, setLoadingEpics] = useState(false)
   const [showCreateEpicDialog, setShowCreateEpicDialog] = useState(false)
   const [newEpicData, setNewEpicData] = useState<NewEpicData | null>(null)
+
+  // Populate form data when editing
+  useEffect(() => {
+    if (open && editingStory) {
+      const priorityMap: Record<number, "High" | "Medium" | "Low"> = {
+        1: "High",
+        2: "Medium",
+        3: "Low"
+      }
+      setFormData({
+        title: editingStory.title,
+        description: editingStory.description || "",
+        type: editingStory.type,
+        story_point: editingStory.story_point || 1,
+        priority: editingStory.priority ? priorityMap[editingStory.priority] || "Medium" : "Medium",
+        acceptance_criteria: editingStory.acceptance_criteria || [],
+        requirements: editingStory.requirements || [],
+        dependencies: editingStory.dependencies || [],
+        epic_id: editingStory.epic_id
+      })
+    } else if (open && !editingStory) {
+      setFormData(getDefaultFormData())
+    }
+  }, [open, editingStory])
 
   // Fetch existing stories and epics when dialog opens
   useEffect(() => {
@@ -98,7 +142,11 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, projectId
         }
       : formData
     
-    onCreateStory(submitData)
+    if (isEditMode && editingStory && onUpdateStory) {
+      onUpdateStory(editingStory.id, submitData)
+    } else {
+      onCreateStory(submitData)
+    }
     handleReset()
     onOpenChange(false)
   }
@@ -190,9 +238,14 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, projectId
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-xl font-bold">Create New Story</DialogTitle>
+          <DialogTitle className="text-xl font-bold">
+            {isEditMode ? "Edit Story" : "Create New Story"}
+          </DialogTitle>
           <DialogDescription>
-            Fill in the details below to create a new story on the Kanban board
+            {isEditMode 
+              ? "Update the story details below"
+              : "Fill in the details below to create a new story on the Kanban board"
+            }
           </DialogDescription>
         </DialogHeader>
 
@@ -662,7 +715,7 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, projectId
               disabled={!formData.title.trim()}
               className="h-9"
             >
-              Create Story
+              {isEditMode ? "Update Story" : "Create Story"}
             </Button>
           </div>
         </div>

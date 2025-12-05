@@ -1,8 +1,10 @@
 """Analyze error node - Error analysis + fix planning in ONE LLM call."""
 import logging
+import re
+from dataclasses import dataclass
 from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel, Field
-from typing import Literal, List
+from typing import Literal, List, Optional
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import PlanStep
@@ -83,23 +85,121 @@ def _clean_error_logs(logs: str, max_lines: int = 50) -> str:
     return result if result else logs[:2000]  # Fallback to truncated original
 
 
+# =============================================================================
+# STRUCTURED ERROR PARSING (MetaGPT-style)
+# =============================================================================
+
+@dataclass
+class ParsedError:
+    """Parsed error from build/test logs. Types: TypeScript, NextJS, Prisma, Jest, Import."""
+    file_path: str
+    line: Optional[int]
+    column: Optional[int]
+    error_code: Optional[str]
+    error_type: str
+    message: str
+    raw_line: str
+
+
+def _parse_error_structured(logs: str) -> List[ParsedError]:
+    """Parse error logs into structured format."""
+    errors = []
+    
+    # TypeScript error format: src/file.tsx(line,col): error TS2307: message
+    ts_pattern = r'([^\s(]+\.tsx?)\((\d+),(\d+)\):\s*error\s*(TS\d+):\s*(.+)'
+    for match in re.finditer(ts_pattern, logs):
+        errors.append(ParsedError(
+            file_path=match.group(1),
+            line=int(match.group(2)),
+            column=int(match.group(3)),
+            error_code=match.group(4),
+            error_type="TypeScript",
+            message=match.group(5).strip(),
+            raw_line=match.group(0)
+        ))
+    
+    # Next.js build error: ./src/file.tsx:line:col
+    nextjs_pattern = r'\./([^\s:]+\.tsx?):(\d+):(\d+)\s*\n?\s*(.+?)(?:\n|$)'
+    for match in re.finditer(nextjs_pattern, logs):
+        errors.append(ParsedError(
+            file_path=match.group(1),
+            line=int(match.group(2)),
+            column=int(match.group(3)),
+            error_code=None,
+            error_type="NextJS",
+            message=match.group(4).strip(),
+            raw_line=match.group(0)
+        ))
+    
+    # Prisma error: Error code: P1001
+    prisma_pattern = r'Error code:\s*(P\d+)[^\n]*\n?(.+?)(?:\n\n|$)'
+    for match in re.finditer(prisma_pattern, logs, re.DOTALL):
+        errors.append(ParsedError(
+            file_path="prisma/schema.prisma",
+            line=None,
+            column=None,
+            error_code=match.group(1),
+            error_type="Prisma",
+            message=match.group(2).strip()[:200],
+            raw_line=match.group(0)
+        ))
+    
+    # Jest test error: FAIL src/file.test.tsx
+    jest_pattern = r'FAIL\s+([^\s]+\.test\.tsx?)'
+    for match in re.finditer(jest_pattern, logs):
+        errors.append(ParsedError(
+            file_path=match.group(1),
+            line=None,
+            column=None,
+            error_code=None,
+            error_type="Jest",
+            message="Test failed",
+            raw_line=match.group(0)
+        ))
+    
+    # Module not found: Can't resolve 'package'
+    module_pattern = r"(?:Cannot find module|Module not found|Can't resolve)\s*['\"]([^'\"]+)['\"]"
+    for match in re.finditer(module_pattern, logs):
+        module_name = match.group(1)
+        errors.append(ParsedError(
+            file_path="unknown",
+            line=None,
+            column=None,
+            error_code="TS2307",
+            error_type="Import",
+            message=f"Cannot find module '{module_name}'",
+            raw_line=match.group(0)
+        ))
+    
+    return errors
+
+
+def _format_parsed_errors(errors: List[ParsedError]) -> str:
+    """Format parsed errors for LLM context."""
+    if not errors:
+        return ""
+    
+    lines = ["## PARSED ERRORS (fix these files!):\n"]
+    for i, err in enumerate(errors[:5], 1):
+        loc = f":{err.line}" if err.line else ""
+        code = f" [{err.error_code}]" if err.error_code else ""
+        lines.append(f"{i}. **{err.file_path}{loc}**{code}: {err.message}")
+    
+    return "\n".join(lines)
+
+
 class ErrorAnalysisAndPlan(BaseModel):
-    """Combined error analysis and fix plan."""
-    error_type: Literal["TEST_ERROR", "SOURCE_ERROR", "IMPORT_ERROR", "CONFIG_ERROR", "UNFIXABLE"] = Field(
-        description="Type of error"
-    )
-    file_to_fix: str = Field(description="Primary file that needs fixing")
+    """Error analysis and fix plan. Types: TEST_ERROR, SOURCE_ERROR, IMPORT_ERROR, CONFIG_ERROR, UNFIXABLE."""
+    error_type: Literal["TEST_ERROR", "SOURCE_ERROR", "IMPORT_ERROR", "CONFIG_ERROR", "UNFIXABLE"] = Field(description="Error type")
+    file_to_fix: str = Field(description="Primary file to fix")
     root_cause: str = Field(description="Root cause (1-2 sentences)")
     should_continue: bool = Field(description="True if fixable")
-    fix_steps: List[PlanStep] = Field(
-        default_factory=list,
-        description="Fix steps: order, description, file_path, action (create/modify)"
-    )
+    fix_steps: List[PlanStep] = Field(default_factory=list, description="Fix steps")
 
 
 async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
     """Analyze error and create fix plan in ONE LLM call."""
-    print("[NODE] analyze_error")
+    logger.info("[NODE] analyze_error")
     
     try:
         error_logs = state.get("run_stderr", "")
@@ -129,13 +229,27 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
             for h in debug_history[-3:]:
                 history_context += f"- #{h.get('iteration')}: {h.get('fix_description', '')[:80]} -> FAILED\n"
         
+        # ==============================================
+        # STRUCTURED ERROR PARSING (MetaGPT-style)
+        # ==============================================
+        parsed_errors = _parse_error_structured(error_logs)
+        parsed_context = _format_parsed_errors(parsed_errors)
+        
+        if parsed_errors:
+            logger.info(f"[analyze_error] Parsed {len(parsed_errors)} structured errors:")
+            for err in parsed_errors[:3]:
+                logger.info(f"[analyze_error]   - {err.file_path}: {err.error_code or err.error_type} - {err.message[:60]}")
+        
         # Clean error logs to remove noise
         cleaned_logs = _clean_error_logs(error_logs)
+        
+        # Inject parsed errors at the top of the prompt
+        error_context = parsed_context + "\n\n" if parsed_context else ""
         
         # Use prompts from yaml
         input_text = _format_input_template(
             "analyze_error",
-            error_logs=cleaned_logs,
+            error_logs=error_context + cleaned_logs,
             files_modified=', '.join(files_modified) if files_modified else 'None',
             history_context=history_context,
             debug_count=debug_count + 1,
@@ -154,7 +268,7 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
             messages=messages,
             state=state,
             name="analyze_error",
-            max_iterations=2
+            max_iterations=4  # Increased from 2 - need more iterations to understand errors
         )
         
         # Request JSON response with result tags
@@ -184,13 +298,27 @@ CRITICAL: Respond ONLY with the JSON in <result> tags. No other text.
         # Parse JSON from response
         parsed = extract_json_universal(response_text, "analyze_error")
         
+        # Validate and filter fix_steps
+        valid_actions = {'create', 'modify', 'delete', 'test', 'config', 'review'}
+        valid_steps = []
+        for step in parsed.get("fix_steps", []):
+            action = step.get("action", "modify")
+            # Fix invalid action values
+            if action not in valid_actions:
+                action = "modify"  # Default to modify
+            step["action"] = action
+            try:
+                valid_steps.append(PlanStep(**step))
+            except Exception as e:
+                logger.warning(f"[analyze_error] Skipping invalid step: {e}")
+        
         # Convert to ErrorAnalysisAndPlan
         result = ErrorAnalysisAndPlan(
             error_type=parsed.get("error_type", "UNFIXABLE"),
             file_to_fix=parsed.get("file_to_fix", ""),
             root_cause=parsed.get("root_cause", "Unknown error"),
             should_continue=parsed.get("should_continue", False),
-            fix_steps=[PlanStep(**step) for step in parsed.get("fix_steps", [])]
+            fix_steps=valid_steps
         )
         
         logger.info(f"[analyze_error] {result.error_type}: {result.root_cause}")
