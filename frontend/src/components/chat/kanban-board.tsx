@@ -208,6 +208,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
   const [cards, setCards] = useState<KanbanCardData[]>([])
   const [activeCard, setActiveCard] = useState<KanbanCardData | null>(null)
   const [originalColumnId, setOriginalColumnId] = useState<string | null>(null)
+  const isDraggingRef = useRef(false)
   const [selectedCard, setSelectedCard] = useState<KanbanCardData | null>(null)
   const [showFlowMetrics, setShowFlowMetrics] = useState(false)
   const [showPolicySettings, setShowPolicySettings] = useState(false)
@@ -303,41 +304,11 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     }
   }, [dbKanbanData, dataUpdatedAt])
 
-  // Sync selectedCard with updated data
-  useEffect(() => {
-    if (selectedCard) {
-      const updatedCard = cards.find(c => c.id === selectedCard.id)
-      if (updatedCard && JSON.stringify(updatedCard) !== JSON.stringify(selectedCard)) {
-        setSelectedCard(updatedCard)
-      }
-    }
-  }, [cards, selectedCard])
-
-  // Sync editingStory with updated data
-  useEffect(() => {
-    if (editingStory && showCreateStoryDialog) {
-      const updatedCard = cards.find(c => c.id === editingStory.id)
-      if (updatedCard) {
-        const storyType = updatedCard.type?.toLowerCase() === "enablerstory" ? "EnablerStory" : "UserStory"
-        const newEditingStory: StoryEditData = {
-          id: updatedCard.id,
-          title: updatedCard.content,
-          description: updatedCard.description,
-          type: storyType,
-          story_point: updatedCard.story_point,
-          priority: updatedCard.priority,
-          rank: updatedCard.rank,
-          acceptance_criteria: updatedCard.acceptance_criteria,
-          requirements: updatedCard.requirements,
-          dependencies: updatedCard.dependencies,
-          epic_id: updatedCard.epic_id,
-        }
-        if (JSON.stringify(newEditingStory) !== JSON.stringify(editingStory)) {
-          setEditingStory(newEditingStory)
-        }
-      }
-    }
-  }, [cards, editingStory, showCreateStoryDialog])
+  // Derive the current selected card data from cards (instead of syncing via useEffect)
+  const currentSelectedCard = useMemo(() => {
+    if (!selectedCard) return null
+    return cards.find(c => c.id === selectedCard.id) || selectedCard
+  }, [cards, selectedCard?.id])
 
   // Get cards by column
   const getCardsByColumn = useCallback((columnId: string) => {
@@ -372,6 +343,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
 
   // DnD Handlers
   const handleDragStart = (event: DragStartEvent) => {
+    isDraggingRef.current = true
     const card = cards.find(c => c.id === event.active.id)
     if (card) {
       setActiveCard(card)
@@ -379,52 +351,15 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     }
   }
 
-  const handleDragOver = (event: DragOverEvent) => {
-    const { active, over } = event
-    if (!over) return
-
-    const activeCard = cards.find(c => c.id === active.id)
-    if (!activeCard) return
-
-    const overId = over.id as string
-    const overCard = cards.find(c => c.id === overId)
-    const isOverColumn = COLUMNS.some(col => col.id === overId)
-    const overColumn = isOverColumn ? overId : overCard?.columnId
-
-    if (!overColumn) return
-
-    // Cross-column move: update columnId and reorder if hovering over a card
-    if (activeCard.columnId !== overColumn) {
-      setCards(prev => {
-        let newCards = prev.map(card =>
-          card.id === active.id ? { ...card, columnId: overColumn } : card
-        )
-        
-        // If hovering over a card (not empty column), also reorder
-        if (overCard) {
-          const activeIndex = newCards.findIndex(c => c.id === active.id)
-          const overIndex = newCards.findIndex(c => c.id === over.id)
-          if (activeIndex !== -1 && overIndex !== -1) {
-            newCards = arrayMove(newCards, activeIndex, overIndex)
-          }
-        }
-        
-        return newCards
-      })
-    } else if (overCard && active.id !== over.id) {
-      // Same column move: reorder cards to match visual position
-      setCards(prev => {
-        const activeIndex = prev.findIndex(c => c.id === active.id)
-        const overIndex = prev.findIndex(c => c.id === over.id)
-        if (activeIndex !== -1 && overIndex !== -1 && activeIndex !== overIndex) {
-          return arrayMove(prev, activeIndex, overIndex)
-        }
-        return prev
-      })
-    }
-  }
+  // NOTE: Don't update state in handleDragOver - it causes infinite loops
+  // dnd-kit handles visual reordering internally, we only commit changes in handleDragEnd
+  const handleDragOver = useCallback((event: DragOverEvent) => {
+    // Intentionally empty - visual feedback is handled by dnd-kit
+    // State updates happen only in handleDragEnd
+  }, [])
 
   const handleDragEnd = async (event: DragEndEvent) => {
+    isDraggingRef.current = false
     const savedOriginalColumnId = originalColumnId // Save before clearing
     setActiveCard(null)
     setOriginalColumnId(null)
@@ -893,6 +828,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}
+            onDragCancel={() => { isDraggingRef.current = false; setActiveCard(null); setOriginalColumnId(null) }}
           >
             <div className="flex gap-6 min-w-max px-8 py-6">
               {COLUMNS.map((column) => (
@@ -931,8 +867,8 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
       </div>
 
       <TaskDetailModal
-        card={selectedCard}
-        open={!!selectedCard}
+        card={currentSelectedCard}
+        open={!!currentSelectedCard}
         onOpenChange={() => setSelectedCard(null)}
         onDownloadResult={handleDownloadResult}
         allStories={cards}
