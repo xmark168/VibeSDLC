@@ -415,7 +415,15 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         .sort((a, b) => (a.rank || 999) - (b.rank || 999))
 
       let targetIndex = targetCards.length
-      if (!COLUMNS.some(col => col.id === overId)) {
+      const isColumnDrop = COLUMNS.some(col => col.id === overId)
+      
+      // Skip update if hovering over self (active card)
+      if (overId === active.id) {
+        // Keep current target, don't update
+        return
+      }
+      
+      if (!isColumnDrop) {
         const overIndex = targetCards.findIndex(c => c.id === overId)
         if (overIndex >= 0) {
           const isBelowOverItem = over && 
@@ -423,6 +431,10 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
             over.rect.top !== undefined &&
             active.rect.current.translated.top > over.rect.top + over.rect.height / 2
           targetIndex = isBelowOverItem ? overIndex + 1 : overIndex
+        }
+        // If overIndex not found and not hovering over self, keep current targetIndex from ref
+        else if (crossContainerTarget.current) {
+          targetIndex = crossContainerTarget.current.targetIndex
         }
       }
 
