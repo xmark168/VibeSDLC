@@ -5,7 +5,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import StoryAnalysis
 from app.agents.developer_v2.src.utils.json_utils import extract_json_universal
-from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, list_directory_safe, glob, grep_files
+from app.agents.developer_v2.src.tools.filesystem_tools import list_directory_safe, glob, grep_files
 from app.agents.developer_v2.src.utils.llm_utils import (
     get_langfuse_config as _cfg,
     execute_llm_with_tools as _llm_with_tools,

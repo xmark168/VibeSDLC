@@ -126,10 +126,19 @@ def create_project_flow(project_id: str, project_path: str):
 
 
 class AdvancedProjectManager:
+    """CocoIndex-based code search with two-stage retrieval (vector + rerank).
+
+    Manages vector embeddings for code search. Stage 1: pgvector similarity,
+    Stage 2: cross-encoder reranking (ms-marco-MiniLM-L-6-v2).
+
+    Attrs: flows (project-level), task_flows (per-story), reranker (lazy-loaded)
+    Config: chunk_size=800, overlap=150, embedding=jina-embeddings-v2-base-code
+    """
+
     def __init__(self):
-        self.flows = {}  # For project-level indexing
-        self.task_flows = {}  # For task-level indexing
-        self._reranker = None  # Lazy load reranker
+        self.flows = {}  # Project-level CocoIndex flows
+        self.task_flows = {}  # Task-level CocoIndex flows (per-story)
+        self._reranker = None  # Lazy-loaded cross-encoder for reranking
     
     @property
     def reranker(self):

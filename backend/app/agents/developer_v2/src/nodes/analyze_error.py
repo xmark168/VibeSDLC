@@ -91,7 +91,7 @@ def _clean_error_logs(logs: str, max_lines: int = 50) -> str:
 
 @dataclass
 class ParsedError:
-    """Structured error from logs."""
+    """Parsed error from build/test logs. Types: TypeScript, NextJS, Prisma, Jest, Import."""
     file_path: str
     line: Optional[int]
     column: Optional[int]
@@ -189,17 +189,12 @@ def _format_parsed_errors(errors: List[ParsedError]) -> str:
 
 
 class ErrorAnalysisAndPlan(BaseModel):
-    """Combined error analysis and fix plan."""
-    error_type: Literal["TEST_ERROR", "SOURCE_ERROR", "IMPORT_ERROR", "CONFIG_ERROR", "UNFIXABLE"] = Field(
-        description="Type of error"
-    )
-    file_to_fix: str = Field(description="Primary file that needs fixing")
+    """Error analysis and fix plan. Types: TEST_ERROR, SOURCE_ERROR, IMPORT_ERROR, CONFIG_ERROR, UNFIXABLE."""
+    error_type: Literal["TEST_ERROR", "SOURCE_ERROR", "IMPORT_ERROR", "CONFIG_ERROR", "UNFIXABLE"] = Field(description="Error type")
+    file_to_fix: str = Field(description="Primary file to fix")
     root_cause: str = Field(description="Root cause (1-2 sentences)")
     should_continue: bool = Field(description="True if fixable")
-    fix_steps: List[PlanStep] = Field(
-        default_factory=list,
-        description="Fix steps: order, description, file_path, action (create/modify)"
-    )
+    fix_steps: List[PlanStep] = Field(default_factory=list, description="Fix steps")
 
 
 async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:

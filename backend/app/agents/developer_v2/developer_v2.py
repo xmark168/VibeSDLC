@@ -1,7 +1,15 @@
-"""Developer V2 Agent - LangGraph-based Story Processor."""
+"""Developer V2 Agent - LangGraph-based Story Processor.
+
+This module contains the main DeveloperV2 agent class that processes
+user stories and generates production-ready code using a LangGraph
+state machine workflow.
+
+Typical usage:
+    agent = DeveloperV2(agent_model)
+    result = await agent.handle_task(task_context)
+"""
 
 import logging
-from pathlib import Path
 from typing import List, Optional
 
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
@@ -9,21 +17,20 @@ from app.agents.core.project_context import ProjectContext
 from app.models import Agent as AgentModel
 from app.agents.developer_v2.src import DeveloperGraph
 from app.agents.developer_v2.workspace_manager import ProjectWorkspaceManager
-from app.agents.developer_v2.src.tools import (
-    setup_git_worktree,
-    commit_workspace_changes,
-)
+from app.agents.developer_v2.src.tools import commit_workspace_changes
 from app.kafka.event_schemas import AgentTaskType
 
 logger = logging.getLogger(__name__)
 
 
 class DeveloperV2(BaseAgent):
-    """Developer V2 using LangGraph for intelligent story processing.
-    
-    Handles:
-    1. Story events (Todo -> InProgress) - Full LangGraph workflow
-    2. User messages (@Developer) - Direct response or dev request
+    """AI-powered developer agent using LangGraph for story-driven code generation.
+
+    Processes user stories through 7-node workflow: setup_workspace -> analyze_and_plan
+    -> implement -> review -> summarize -> run_code -> (analyze_error if FAIL).
+
+    Attrs: context, graph_engine, workspace_manager, main_workspace
+    Limits: max 5 debug iterations, max 2 LBTM/step, max 40 react loops
     """
 
     def __init__(self, agent_model: AgentModel, **kwargs):

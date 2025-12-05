@@ -36,7 +36,7 @@ def _get_bun_env() -> dict:
 
 
 class CommandResult:
-    """Result of executing a command."""
+    """Shell command execution result. success=True if returncode==0."""
     def __init__(self, stdout: str, stderr: str, returncode: int):
         self.stdout = stdout
         self.stderr = stderr
