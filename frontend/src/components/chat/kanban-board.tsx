@@ -386,8 +386,10 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
 
     const overId = over.id as string
     const overCard = cards.find(c => c.id === overId)
-    const overColumn = overCard?.columnId || COLUMNS.find(col => col.id === overId)?.id
+    const isOverColumn = COLUMNS.some(col => col.id === overId)
+    const overColumn = isOverColumn ? overId : overCard?.columnId
 
+    // Only update columnId for cross-column moves
     if (overColumn && activeCard.columnId !== overColumn) {
       setCards(prev => prev.map(card =>
         card.id === active.id ? { ...card, columnId: overColumn } : card
@@ -465,7 +467,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
       }
     }
 
-    // Update status if column changed (use saved originalColumnId)
+    // Update status AND rank if column changed (use saved originalColumnId)
     if (savedOriginalColumnId && savedOriginalColumnId !== targetColumnId) {
       try {
         const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done' | 'Archived'> = {
@@ -475,7 +477,63 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
           'done': 'Done',
           'archived': 'Archived',
         }
+
+        // Calculate new rank based on drop position
+        // Get cards in target column (excluding the dragged card), sorted by rank
+        const targetColumnCards = cards
+          .filter(c => c.columnId === targetColumnId && c.id !== active.id)
+          .sort((a, b) => (a.rank || 999) - (b.rank || 999))
+
+        let newRank = 1
+        if (!isColumnTarget && overCard && over.rect) {
+          // Dropping on a specific card - determine if above or below its center
+          const overCardIndex = targetColumnCards.findIndex(c => c.id === over.id)
+          if (overCardIndex !== -1) {
+            // Get the center Y of the over card
+            const overCardCenterY = over.rect.top + over.rect.height / 2
+            // Get the Y position of the drop (use active's current position)
+            const activeY = event.active.rect.current.translated?.top ?? 0
+            
+            if (activeY < overCardCenterY) {
+              // Dropping ABOVE the over card - take its position
+              newRank = overCardIndex + 1
+            } else {
+              // Dropping BELOW the over card - insert after it
+              newRank = overCardIndex + 2
+            }
+          }
+        } else if (isColumnTarget) {
+          // Dropping on empty column area - add to end
+          newRank = targetColumnCards.length + 1
+        }
+
+        // Update ranks for all cards in target column
+        const newRanks = new Map<string, number>()
+        newRanks.set(active.id as string, newRank)
+        targetColumnCards.forEach((card, index) => {
+          const cardPosition = index + 1
+          if (cardPosition >= newRank) {
+            newRanks.set(card.id, cardPosition + 1) // Shift down
+          } else {
+            newRanks.set(card.id, cardPosition) // Keep position
+          }
+        })
+
+        // Update state with new ranks
+        setCards(prev => prev.map(card => {
+          if (card.id === active.id) {
+            return { ...card, columnId: targetColumnId, rank: newRank }
+          }
+          const cardNewRank = newRanks.get(card.id)
+          if (cardNewRank !== undefined && card.columnId === targetColumnId) {
+            return { ...card, rank: cardNewRank }
+          }
+          return card
+        }))
+
+        // Update status and rank in backend
         await storiesApi.updateStatus(active.id as string, statusMap[targetColumnId] || 'Todo')
+        await storiesApi.update(active.id as string, { rank: newRank })
         toast.success("Đã cập nhật trạng thái story")
       } catch (error) {
         console.error("Failed to update status:", error)
