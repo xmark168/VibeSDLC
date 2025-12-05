@@ -4,6 +4,8 @@ import json
 import logging
 import os
 import re
+from dataclasses import dataclass
+from typing import List, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -11,8 +13,150 @@ from langchain_openai import ChatOpenAI
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.core_nodes import send_message
+from app.agents.tester.src.utils.token_utils import truncate_error_logs
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# STRUCTURED ERROR PARSING (MetaGPT-style)
+# =============================================================================
+
+@dataclass
+class ParsedTestError:
+    """Parsed error from test logs. Types: Jest, Playwright, TypeScript, Import."""
+    file_path: str
+    line: Optional[int]
+    column: Optional[int]
+    error_code: Optional[str]
+    error_type: str
+    message: str
+    raw_line: str
+
+
+def _parse_test_errors_structured(logs: str) -> List[ParsedTestError]:
+    """Parse test error logs into structured format."""
+    errors = []
+    
+    # 1. TypeScript error format: src/file.tsx(line,col): error TS2307: message
+    ts_pattern = r'([^\s(]+\.tsx?)\((\d+),(\d+)\):\s*error\s*(TS\d+):\s*(.+)'
+    for match in re.finditer(ts_pattern, logs):
+        errors.append(ParsedTestError(
+            file_path=match.group(1),
+            line=int(match.group(2)),
+            column=int(match.group(3)),
+            error_code=match.group(4),
+            error_type="TypeScript",
+            message=match.group(5).strip(),
+            raw_line=match.group(0)
+        ))
+    
+    # 2. Jest test error: FAIL src/file.test.ts + error message
+    jest_fail_pattern = r'FAIL\s+([^\s]+\.(?:test|spec)\.tsx?)'
+    for match in re.finditer(jest_fail_pattern, logs):
+        errors.append(ParsedTestError(
+            file_path=match.group(1),
+            line=None,
+            column=None,
+            error_code=None,
+            error_type="Jest",
+            message="Test failed",
+            raw_line=match.group(0)
+        ))
+    
+    # 3. Jest assertion error: expect(received).toEqual(expected)
+    jest_expect_pattern = r'expect\((.+?)\)\.(\w+)\((.+?)\)'
+    for match in re.finditer(jest_expect_pattern, logs):
+        errors.append(ParsedTestError(
+            file_path="unknown",
+            line=None,
+            column=None,
+            error_code=None,
+            error_type="Jest-Assertion",
+            message=f"expect({match.group(1)}).{match.group(2)}({match.group(3)}) failed",
+            raw_line=match.group(0)
+        ))
+    
+    # 4. Playwright error: Error: locator.click: ...
+    playwright_pattern = r'Error:\s*(locator\.\w+|page\.\w+|expect\(.*?\)\.to\w+).*?:\s*(.+?)(?:\n|$)'
+    for match in re.finditer(playwright_pattern, logs, re.DOTALL):
+        errors.append(ParsedTestError(
+            file_path="e2e/",
+            line=None,
+            column=None,
+            error_code=None,
+            error_type="Playwright",
+            message=f"{match.group(1)}: {match.group(2).strip()[:100]}",
+            raw_line=match.group(0)[:200]
+        ))
+    
+    # 5. Playwright timeout: Timeout 30000ms exceeded
+    timeout_pattern = r'Timeout\s+(\d+)ms\s+exceeded'
+    for match in re.finditer(timeout_pattern, logs):
+        errors.append(ParsedTestError(
+            file_path="e2e/",
+            line=None,
+            column=None,
+            error_code="TIMEOUT",
+            error_type="Playwright",
+            message=f"Timeout {match.group(1)}ms exceeded",
+            raw_line=match.group(0)
+        ))
+    
+    # 6. Module not found: Can't resolve 'package' or Cannot find module
+    module_pattern = r"(?:Cannot find module|Module not found|Can't resolve)\s*['\"]([^'\"]+)['\"]"
+    for match in re.finditer(module_pattern, logs):
+        module_name = match.group(1)
+        errors.append(ParsedTestError(
+            file_path="unknown",
+            line=None,
+            column=None,
+            error_code="MODULE_NOT_FOUND",
+            error_type="Import",
+            message=f"Cannot find module '{module_name}'",
+            raw_line=match.group(0)
+        ))
+    
+    # 7. Property does not exist: Property 'X' does not exist on type 'Y'
+    prop_pattern = r"Property\s+'(\w+)'\s+does not exist on type\s+'([^']+)'"
+    for match in re.finditer(prop_pattern, logs):
+        errors.append(ParsedTestError(
+            file_path="unknown",
+            line=None,
+            column=None,
+            error_code="TS2339",
+            error_type="TypeScript",
+            message=f"Property '{match.group(1)}' does not exist on type '{match.group(2)}'",
+            raw_line=match.group(0)
+        ))
+    
+    return errors
+
+
+def _format_parsed_errors(errors: List[ParsedTestError]) -> str:
+    """Format parsed errors for LLM context."""
+    if not errors:
+        return ""
+    
+    # Deduplicate by message
+    seen = set()
+    unique_errors = []
+    for err in errors:
+        key = (err.error_type, err.message[:50])
+        if key not in seen:
+            seen.add(key)
+            unique_errors.append(err)
+    
+    lines = ["## PARSED ERRORS (fix these!):\n"]
+    for i, err in enumerate(unique_errors[:8], 1):
+        loc = f":{err.line}" if err.line else ""
+        code = f" [{err.error_code}]" if err.error_code else ""
+        lines.append(f"{i}. **[{err.error_type}]** {err.file_path}{loc}{code}: {err.message}")
+    
+    if len(unique_errors) > 8:
+        lines.append(f"\n... and {len(unique_errors) - 8} more errors")
+    
+    return "\n".join(lines)
 
 # Use custom API endpoint if configured
 _api_key = os.getenv("TESTER_API_KEY") or os.getenv("OPENAI_API_KEY")
@@ -137,8 +281,25 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
     files_created = state.get("files_created", [])
     debug_history = state.get("debug_history", [])
     
-    # Combine error logs
-    error_logs = f"STDOUT:\n{run_stdout[-3000:]}\n\nSTDERR:\n{run_stderr[-2000:]}"
+    # Combine error logs and truncate intelligently
+    raw_logs = f"STDOUT:\n{run_stdout}\n\nSTDERR:\n{run_stderr}"
+    
+    # ==============================================
+    # STRUCTURED ERROR PARSING (MetaGPT-style)
+    # ==============================================
+    parsed_errors = _parse_test_errors_structured(raw_logs)
+    parsed_context = _format_parsed_errors(parsed_errors)
+    
+    if parsed_errors:
+        logger.info(f"[analyze_errors] Parsed {len(parsed_errors)} structured errors:")
+        for err in parsed_errors[:3]:
+            logger.info(f"[analyze_errors]   - [{err.error_type}] {err.file_path}: {err.message[:60]}")
+    
+    # Truncate logs intelligently (keep more from end where errors usually are)
+    truncated_logs = truncate_error_logs(raw_logs, max_tokens=3000)
+    
+    # Inject parsed errors at the top of the prompt for better LLM understanding
+    error_logs = parsed_context + "\n\n" + truncated_logs if parsed_context else truncated_logs
     
     # Format debug history
     history_str = ""

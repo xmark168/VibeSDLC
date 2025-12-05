@@ -7,8 +7,12 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from app.agents.tester.src.state import TesterState
+from app.agents.tester.src.utils.token_utils import smart_truncate_tokens
 
 logger = logging.getLogger(__name__)
+
+# Max tokens for review (leave room for LLM response)
+MAX_REVIEW_TOKENS = 8000
 
 # LLM setup
 _api_key = os.getenv("TESTER_API_KEY") or os.getenv("OPENAI_API_KEY")
@@ -98,10 +102,10 @@ def _parse_review_response(response: str) -> dict:
     """Parse review response to extract decision and feedback."""
     result = {"decision": "LGTM", "review": "", "feedback": ""}
 
-    # Extract decision
-    decision_match = re.search(r"DECISION:\s*(LGTM|LBTM)", response, re.IGNORECASE)
-    if decision_match:
-        result["decision"] = decision_match.group(1).upper()
+    # Find ALL decisions and take the LAST one (LLM sometimes reconsiders)
+    decisions = re.findall(r"DECISION:\s*(LGTM|LBTM)", response, re.IGNORECASE)
+    if decisions:
+        result["decision"] = decisions[-1].upper()
 
     # Extract review section
     review_match = re.search(
@@ -215,6 +219,10 @@ async def review(state: TesterState, agent=None) -> dict:
         with open(full_path, "r", encoding="utf-8") as f:
             file_content = f.read()
 
+        # Smart truncate file content to fit within token limits
+        file_content_review, was_truncated = smart_truncate_tokens(file_content, MAX_REVIEW_TOKENS)
+        truncation_note = " (truncated)" if was_truncated else ""
+
         # Format scenarios
         scenarios_str = "\n".join(f"- {s}" for s in scenarios) if scenarios else "N/A"
 
@@ -228,9 +236,9 @@ async def review(state: TesterState, agent=None) -> dict:
         input_text = REVIEW_INPUT_TEMPLATE.format(
             task_description=task_description,
             scenarios=scenarios_str,
-            file_path=file_path,
+            file_path=file_path + truncation_note,
             file_ext=_get_file_extension(file_path),
-            file_content=file_content,
+            file_content=file_content_review,
             testing_context=testing_context_str or "N/A",
         )
 
@@ -251,49 +259,42 @@ async def review(state: TesterState, agent=None) -> dict:
         if review_result["decision"] == "LBTM":
             logger.info(f"[review] Feedback: {review_result['feedback'][:100]}...")
 
-        # Increment review_count if LBTM, reset to 0 if LGTM (new step)
-        current_count = state.get("review_count", 0)
-        if review_result["decision"] == "LBTM":
-            new_count = current_count + 1
-        else:
-            new_count = 0  # Reset for next step on LGTM
-
-        # Track total LBTM count
-        total_lbtm = state.get("total_lbtm_count", 0)
-        if review_result["decision"] == "LBTM":
-            total_lbtm += 1
-
-        # Increment current_step on LGTM OR when max reviews reached (force advance)
-        max_reviews = 2
-        new_current_step = state.get("current_step", 0)
+        # ==============================================
+        # PER-STEP LBTM TRACKING (MetaGPT-style)
+        # ==============================================
+        step_lbtm_counts = state.get("step_lbtm_counts", {})
+        step_key = str(step_index)
         
-        # Reset review_count when advancing to next step
-        should_advance = False
-        if review_result["decision"] == "LGTM":
-            new_current_step += 1
-            should_advance = True
-            logger.info(f"[review] LGTM - advancing to step {new_current_step}")
-        elif new_count >= max_reviews:
-            # Force advance after max LBTM retries
-            new_current_step += 1
-            should_advance = True
-            logger.info(f"[review] Max reviews ({max_reviews}) reached - force advancing to step {new_current_step}")
-
-        # Keep review_count at max when force-advancing (LBTM), reset to 0 only for LGTM
-        if should_advance and review_result["decision"] == "LGTM":
-            final_review_count = 0  # Reset for next step
-        elif should_advance:
-            final_review_count = max_reviews  # Keep at max so routing knows we hit limit
+        total_lbtm = state.get("total_lbtm_count", 0)
+        new_current_step = state.get("current_step", 0)
+        max_per_step = 4  # Force advance after 4 LBTM per step
+        
+        if review_result["decision"] == "LBTM":
+            step_lbtm_counts[step_key] = step_lbtm_counts.get(step_key, 0) + 1
+            total_lbtm += 1
+            
+            # If this step has been LBTM'd too many times, force LGTM
+            if step_lbtm_counts[step_key] >= max_per_step:
+                logger.warning(f"[review] Step {step_index} has {step_lbtm_counts[step_key]} LBTM attempts, forcing LGTM")
+                review_result["decision"] = "LGTM"
+                review_result["feedback"] = f"(Force-approved after {step_lbtm_counts[step_key]} attempts)"
+                new_current_step += 1
         else:
-            final_review_count = new_count
-
+            # LGTM - advance to next step
+            new_current_step += 1
+            logger.info(f"[review] LGTM - advancing to step {new_current_step}")
+        
+        # Calculate review_count for routing compatibility
+        current_step_lbtm = step_lbtm_counts.get(step_key, 0)
+        
         return {
             "current_step": new_current_step,
             "review_result": review_result["decision"],
             "review_feedback": review_result["feedback"],
             "review_details": review_result["review"],
-            "review_count": final_review_count,
+            "review_count": current_step_lbtm,  # Per-step count for routing
             "total_lbtm_count": total_lbtm,
+            "step_lbtm_counts": step_lbtm_counts,  # Track all steps
         }
 
     except Exception as e:

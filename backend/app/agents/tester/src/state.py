@@ -84,6 +84,7 @@ class TesterState(TypedDict, total=False):
     review_details: Optional[str]     # Full review details
     review_count: int                 # Count of reviews for current step
     total_lbtm_count: int             # Track total LBTM across all steps
+    step_lbtm_counts: Dict[str, int]  # Per-step LBTM tracking {"0": 2, "1": 1}
     
     # ==========================================================================
     # Summarize (MetaGPT-style IS_PASS gate)

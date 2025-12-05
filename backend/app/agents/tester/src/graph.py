@@ -74,6 +74,9 @@ def route_after_review(
 ) -> Literal["implement_tests", "summarize", "run_tests"]:
     """Route based on review result (MetaGPT-style LGTM/LBTM).
     
+    Note: Per-step LBTM limit (max 4) is enforced in review node.
+    If step gets LBTM 4+ times, review node forces LGTM and increments current_step.
+    
     Returns:
         - "implement_tests": LBTM, need to re-implement
         - "implement_tests": LGTM but more steps remain
@@ -82,20 +85,15 @@ def route_after_review(
     """
     review_result = state.get("review_result", "LGTM")
     review_count = state.get("review_count", 0)
-    max_reviews = 2
     
-    logger.info(f"[route_after_review] review_result={review_result}, review_count={review_count}, max_reviews={max_reviews}")
+    logger.info(f"[route_after_review] review_result={review_result}, review_count={review_count}")
     
-    # LBTM: re-implement (with limit)
-    if review_result == "LBTM" and review_count < max_reviews:
-        logger.info(f"[route_after_review] LBTM -> re-implement (attempt {review_count + 1}/{max_reviews})")
+    # LBTM: re-implement (per-step limit enforced in review node)
+    if review_result == "LBTM":
+        logger.info(f"[route_after_review] LBTM -> re-implement (attempt {review_count + 1})")
         return "implement_tests"
     
-    # Max reviews reached or LGTM - advance step
-    if review_result == "LBTM" and review_count >= max_reviews:
-        logger.info(f"[route_after_review] Max reviews ({max_reviews}) reached, force advancing")
-    
-    # Check if more steps
+    # LGTM - check if more steps
     current = state.get("current_step", 0)
     total = state.get("total_steps", 0)
     

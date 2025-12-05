@@ -19,6 +19,7 @@ from app.agents.tester.src.tools.skill_tools import (
     reset_skill_cache,
     set_skill_context,
 )
+from app.agents.tester.src.utils.token_utils import truncate_to_tokens, count_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -304,11 +305,17 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
         project_id=project_id,
     )
     
-    # Append pre-loaded context and feedback
+    # Append pre-loaded context and feedback (with token limits)
     if deps_context:
-        user_prompt += f"\n\n## Pre-loaded Context\n{deps_context}"
+        # Limit deps_context to ~4000 tokens to leave room for LLM response
+        truncated_deps = truncate_to_tokens(deps_context, max_tokens=4000)
+        user_prompt += f"\n\n## Pre-loaded Context\n{truncated_deps}"
+        if count_tokens(deps_context) > 4000:
+            logger.info(f"[implement_tests] Truncated deps_context: {count_tokens(deps_context)} -> 4000 tokens")
     if feedback_section:
-        user_prompt += f"\n\n## Previous Review Feedback{feedback_section}"
+        # Limit feedback to ~1000 tokens
+        truncated_feedback = truncate_to_tokens(feedback_section, max_tokens=1000)
+        user_prompt += f"\n\n## Previous Review Feedback{truncated_feedback}"
 
     try:
         # Build messages
