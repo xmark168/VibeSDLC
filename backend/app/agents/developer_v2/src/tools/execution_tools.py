@@ -8,8 +8,6 @@ import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from ._base_context import get_shell_env
-
 logger = logging.getLogger(__name__)
 
 
@@ -69,7 +67,7 @@ async def install_dependencies(workspace_path: str) -> bool:
         try:
             logger.info(f"Installing Node.js dependencies from {package_json}")
             # Windows: use shell=True for bun command
-            subprocess.run("bun install --frozen-lockfile", cwd=workspace_path, check=False, timeout=180, shell=True, env=get_shell_env())
+            subprocess.run("bun install --frozen-lockfile", cwd=workspace_path, check=False, timeout=180, shell=True)
             installed = True
         except Exception as e:
             logger.warning(f"Failed to install bun dependencies: {e}")

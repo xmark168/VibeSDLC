@@ -8,7 +8,7 @@ import time
 from typing import List, Dict
 from langchain_core.tools import tool
 
-from ._base_context import get_root_dir, get_shell_env, set_tool_context
+from ._base_context import get_root_dir, set_tool_context
 
 
 # Backward compatibility alias
@@ -70,7 +70,7 @@ def run_shell(command: str, working_directory: str = ".", timeout: int = 120) ->
         result = subprocess.run(
             ["cmd", "/c", command], cwd=str(work_dir), shell=False,
             capture_output=True, text=True, timeout=timeout,
-            env=get_shell_env(), encoding='utf-8', errors='replace',
+            encoding='utf-8', errors='replace',
         )
         
         return {

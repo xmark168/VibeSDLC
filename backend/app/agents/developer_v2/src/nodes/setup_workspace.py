@@ -1,5 +1,4 @@
 """Setup workspace node - Setup git workspace/branch for code modification."""
-import hashlib
 import logging
 import os
 import subprocess
@@ -11,7 +10,6 @@ from app.agents.developer_v2.src.tools import (
     get_agents_md,
     get_project_context,
 )
-from app.agents.developer_v2.src.tools._base_context import get_shell_env, get_shared_bun_cache
 from app.agents.developer_v2.src.skills import SkillRegistry
 from app.agents.developer_v2.src.utils.db_container import (
     start_postgres_container,
@@ -20,39 +18,6 @@ from app.agents.developer_v2.src.utils.db_container import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _get_schema_hash(workspace_path: str) -> str:
-    """Get hash of prisma schema content."""
-    schema_path = os.path.join(workspace_path, "prisma", "schema.prisma")
-    if not os.path.exists(schema_path):
-        return ""
-    with open(schema_path, 'rb') as f:
-        return hashlib.md5(f.read()).hexdigest()
-
-
-def _should_run_prisma_generate(workspace_path: str) -> bool:
-    """Check if prisma generate should run based on schema hash."""
-    hash_file = os.path.join(workspace_path, ".prisma-schema-hash")
-    current_hash = _get_schema_hash(workspace_path)
-    
-    if not current_hash:
-        return False  # No schema
-    
-    if os.path.exists(hash_file):
-        with open(hash_file, 'r') as f:
-            if f.read().strip() == current_hash:
-                return False  # Same hash, skip
-    return True
-
-
-def _save_schema_hash(workspace_path: str):
-    """Save current schema hash."""
-    hash_file = os.path.join(workspace_path, ".prisma-schema-hash")
-    current_hash = _get_schema_hash(workspace_path)
-    if current_hash:
-        with open(hash_file, 'w') as f:
-            f.write(current_hash)
 
 
 
@@ -136,8 +101,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         pkg_json = os.path.join(workspace_path, "package.json") if workspace_path else ""
         if pkg_json and os.path.exists(pkg_json):
             try:
-                cache_dir = get_shared_bun_cache()
-                logger.info(f"[setup_workspace] Running bun install (cache: {cache_dir})...")
+                logger.info("[setup_workspace] Running bun install...")
                 result = subprocess.run(
                     "bun install --frozen-lockfile",
                     cwd=workspace_path,
@@ -147,7 +111,6 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                     errors='replace',
                     timeout=120,
                     shell=True,
-                    env=get_shell_env()
                 )
                 if result.returncode == 0:
                     logger.info("[setup_workspace] bun install successful")
@@ -158,8 +121,9 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             except Exception as e:
                 logger.warning(f"[setup_workspace] bun install error: {e}")
         
-        # Smart prisma generate - only if schema changed
-        if workspace_path and _should_run_prisma_generate(workspace_path):
+        # Run prisma generate if schema exists
+        schema_path = os.path.join(workspace_path, "prisma", "schema.prisma") if workspace_path else ""
+        if schema_path and os.path.exists(schema_path):
             try:
                 logger.info("[setup_workspace] Running prisma generate...")
                 result = subprocess.run(
@@ -170,10 +134,9 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                     encoding='utf-8',
                     errors='replace',
                     timeout=60,
-                    shell=_use_shell()
+                    shell=True,
                 )
                 if result.returncode == 0:
-                    _save_schema_hash(workspace_path)
                     logger.info("[setup_workspace] prisma generate successful")
                 else:
                     logger.warning(f"[setup_workspace] prisma generate failed: {result.stderr[:200]}")
@@ -181,9 +144,6 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                 logger.warning("[setup_workspace] prisma generate timed out")
             except Exception as e:
                 logger.warning(f"[setup_workspace] prisma generate error: {e}")
-        else:
-            if workspace_path and _get_schema_hash(workspace_path):
-                logger.info("[setup_workspace] Skipping prisma generate (schema unchanged)")
         
         return {
             **state,

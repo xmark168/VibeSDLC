@@ -7,8 +7,6 @@ from ._base_context import (
     get_project_id,
     get_task_id,
     is_safe_path,
-    get_shared_bun_cache,
-    get_shell_env,
     reset_context,
 )
 
@@ -74,11 +72,17 @@ from .skill_tools import (
 )
 
 __all__ = [
-    # Context setters
+    # Unified context
+    "set_tool_context",
+    "get_root_dir",
+    "get_project_id",
+    "get_task_id",
+    "is_safe_path",
+    "reset_context",
+    # Backward compat context setters
     "set_fs_context",
     "set_git_context",
     "set_shell_context",
-    "set_tool_context",
     # Filesystem
     "read_file_safe",
     "write_file_safe",
