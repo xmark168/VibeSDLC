@@ -208,8 +208,11 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
   const [cards, setCards] = useState<KanbanCardData[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [clonedCards, setClonedCards] = useState<KanbanCardData[] | null>(null)
+  const clonedCardsRef = useRef<KanbanCardData[] | null>(null) // Ref version for callbacks
   const recentlyMovedToNewContainer = useRef(false)
   const lastOverId = useRef<string | null>(null)
+  // Store target position for cross-container moves
+  const crossContainerTarget = useRef<{ targetColumn: string; targetIndex: number; overId: string } | null>(null)
   const [selectedCard, setSelectedCard] = useState<KanbanCardData | null>(null)
   const [showFlowMetrics, setShowFlowMetrics] = useState(false)
   const [showPolicySettings, setShowPolicySettings] = useState(false)
@@ -370,94 +373,157 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveId(event.active.id as string)
     setClonedCards(cards) // Save for cancel recovery
+    clonedCardsRef.current = cards // Also save to ref for callbacks
+    crossContainerTarget.current = null // Clear any stale target
   }, [cards])
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
     const { active, over } = event
     const overId = over?.id as string | undefined
 
+    console.log('[DragOver]', { activeId: active.id, overId })
+
     if (overId == null) return
 
     const overContainer = findContainer(overId)
-    const activeContainer = findContainer(active.id as string)
+    // Use clonedCardsRef to get ORIGINAL column (before any drag operations)
+    const originalColumn = clonedCardsRef.current?.find(c => c.id === active.id)?.columnId
+    const currentContainer = findContainer(active.id as string)
 
-    if (!overContainer || !activeContainer || activeContainer === overContainer) {
+    console.log('[DragOver] Containers', { originalColumn, currentContainer, overContainer })
+
+    if (!overContainer || !originalColumn) {
       return
     }
 
-    // Moving to different container
+    // Check if this is a cross-container move (comparing to ORIGINAL column)
+    const isCrossContainerMove = originalColumn !== overContainer
+
+    if (!isCrossContainerMove) {
+      // Moving back to original column or within original - not a cross-container move
+      crossContainerTarget.current = null
+      return
+    }
+
+    // Cross-container move (or moving within target container after cross-container)
     setCards(prevCards => {
-      const activeItems = prevCards.filter(c => c.columnId === activeContainer)
-      const overItems = prevCards.filter(c => c.columnId === overContainer)
-      
-      // Find indices
-      const activeIndex = activeItems.findIndex(c => c.id === active.id)
-      const overIndex = overItems.findIndex(c => c.id === overId)
+      const activeCard = prevCards.find(c => c.id === active.id)
+      if (!activeCard) return prevCards
 
-      let newIndex: number
+      // Get cards in target container (excluding the card being dragged)
+      const targetCards = prevCards
+        .filter(c => c.columnId === overContainer && c.id !== active.id)
+        .sort((a, b) => (a.rank || 999) - (b.rank || 999))
+
+      // Calculate target index
+      let targetIndex: number
       if (COLUMNS.some(col => col.id === overId)) {
-        // Dropping on container itself - add to end
-        newIndex = overItems.length
+        // Dropping on empty column
+        targetIndex = targetCards.length
       } else {
-        // Dropping on an item - calculate position
-        const isBelowOverItem = over && 
-          active.rect.current.translated &&
-          active.rect.current.translated.top > over.rect.top + over.rect.height
+        const overIndex = targetCards.findIndex(c => c.id === overId)
+        if (overIndex >= 0) {
+          // Check if above or below target card
+          const isBelowOverItem = over && 
+            active.rect.current.translated &&
+            over.rect.top !== undefined &&
+            active.rect.current.translated.top > over.rect.top + over.rect.height / 2
+          targetIndex = isBelowOverItem ? overIndex + 1 : overIndex
+        } else {
+          targetIndex = targetCards.length
+        }
+      }
 
-        const modifier = isBelowOverItem ? 1 : 0
-        newIndex = overIndex >= 0 ? overIndex + modifier : overItems.length
+      console.log('[DragOver] targetIndex calculated', { targetIndex, targetCardsCount: targetCards.length, overId })
+
+      // Save target position to ref for handleDragEnd
+      crossContainerTarget.current = {
+        targetColumn: overContainer,
+        targetIndex,
+        overId: overId
       }
 
       recentlyMovedToNewContainer.current = true
 
-      // Update cards: change columnId and recalculate ranks
-      const activeCard = prevCards.find(c => c.id === active.id)
-      if (!activeCard) return prevCards
-
-      // Remove from old container, add to new container at correct position
-      const newCards = prevCards.filter(c => c.id !== active.id)
+      // Update card's columnId and set temporary rank based on target position
+      const needsColumnUpdate = activeCard.columnId !== overContainer
+      const newRank = targetIndex + 1
       
-      // Get current items in target container and insert at newIndex
-      const targetItems = newCards
-        .filter(c => c.columnId === overContainer)
-        .sort((a, b) => (a.rank || 999) - (b.rank || 999))
-      
-      // Calculate new ranks for target container
-      const updatedCards = newCards.map(card => {
-        if (card.columnId === overContainer) {
-          const currentIndex = targetItems.findIndex(c => c.id === card.id)
-          const adjustedIndex = currentIndex >= newIndex ? currentIndex + 1 : currentIndex
-          return { ...card, rank: adjustedIndex + 1 }
-        }
-        return card
-      })
-
-      // Add the moved card with new columnId and rank
-      updatedCards.push({
-        ...activeCard,
-        columnId: overContainer,
-        rank: newIndex + 1
-      })
-
-      return updatedCards
+      if (needsColumnUpdate) {
+        return prevCards.map(card => 
+          card.id === active.id 
+            ? { ...card, columnId: overContainer, rank: newRank }
+            : card
+        )
+      } else {
+        // Already in target container, just update rank for visual feedback
+        return prevCards.map(card => 
+          card.id === active.id 
+            ? { ...card, rank: newRank }
+            : card
+        )
+      }
     })
   }, [findContainer])
 
   const handleDragEnd = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event
+    // IMPORTANT: Use clonedCards to get original column, not current cards state
     const originalColumnId = clonedCards?.find(c => c.id === active.id)?.columnId
+    // Save clonedCards for potential revert before resetting
+    const savedClonedCards = clonedCards
+
+    console.log('[DragEnd] START', {
+      activeId: active.id,
+      overId: over?.id,
+      originalColumnId,
+    })
 
     // Always reset active state
     setActiveId(null)
     setClonedCards(null)
+    clonedCardsRef.current = null
 
-    if (!over) return
+    if (!over) {
+      console.log('[DragEnd] No over target, returning')
+      return
+    }
 
     const overId = over.id as string
-    const activeContainer = findContainer(active.id as string)
-    const overContainer = findContainer(overId)
+    
+    // Use originalColumnId as activeContainer
+    const activeContainer = originalColumnId
+    
+    // For overContainer: prioritize crossContainerTarget if available (most accurate)
+    // Otherwise calculate from overId
+    let overContainer: string | undefined
+    if (crossContainerTarget.current) {
+      overContainer = crossContainerTarget.current.targetColumn
+    } else if (COLUMNS.some(col => col.id === overId)) {
+      overContainer = overId
+    } else {
+      // Find from clonedCards (original state) to avoid issues with handleDragOver updates
+      const clonedCardsSnapshot = clonedCardsRef.current as KanbanCardData[] | null
+      if (clonedCardsSnapshot) {
+        overContainer = clonedCardsSnapshot.find((c: KanbanCardData) => c.id === overId)?.columnId
+      }
+      if (!overContainer) {
+        overContainer = cards.find(c => c.id === overId)?.columnId
+      }
+    }
 
-    if (!activeContainer || !overContainer) return
+    console.log('[DragEnd] Containers', {
+      overId,
+      activeContainer,
+      overContainer,
+      crossContainerTarget: crossContainerTarget.current,
+      isColumnId: COLUMNS.some(col => col.id === overId),
+    })
+
+    if (!activeContainer || !overContainer) {
+      console.log('[DragEnd] Missing container, returning')
+      return
+    }
 
     const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done' | 'Archived'> = {
       'todo': 'Todo',
@@ -504,28 +570,79 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         }
       }
     } else {
-      // Cross-container move - handleDragOver already updated state
-      // Just need to save to backend
-      const currentCard = cards.find(c => c.id === active.id)
-      if (!currentCard || !originalColumnId) return
+      // Cross-container move
+      console.log('[DragEnd] CROSS-CONTAINER move', {
+        from: originalColumnId,
+        to: overContainer,
+        crossContainerTarget: crossContainerTarget.current,
+      })
 
-      // Get all cards in the new container for rank update
-      const containerCards = cards
-        .filter(c => c.columnId === overContainer)
+      if (!originalColumnId) {
+        console.log('[DragEnd] EARLY RETURN - missing originalColumnId')
+        return
+      }
+
+      // Get other cards in target container (excluding the moved card)
+      const otherCardsInTarget = cards
+        .filter(c => c.columnId === overContainer && c.id !== active.id)
         .sort((a, b) => (a.rank || 999) - (b.rank || 999))
 
+      // Use saved target index from handleDragOver
+      let newIndex: number
+      if (crossContainerTarget.current && crossContainerTarget.current.targetColumn === overContainer) {
+        newIndex = crossContainerTarget.current.targetIndex
+        console.log('[DragEnd] Using saved targetIndex from handleDragOver', newIndex)
+      } else {
+        // Fallback: calculate from overId
+        if (COLUMNS.some(col => col.id === overId)) {
+          newIndex = otherCardsInTarget.length
+        } else {
+          const overIndex = otherCardsInTarget.findIndex(c => c.id === overId)
+          newIndex = overIndex >= 0 ? overIndex : otherCardsInTarget.length
+        }
+        console.log('[DragEnd] Fallback newIndex calculation', newIndex)
+      }
+
+      // Clear the ref
+      crossContainerTarget.current = null
+
+      console.log('[DragEnd] newIndex', newIndex, 'otherCardsInTarget', otherCardsInTarget.length)
+
+      // Build final ordered list: insert active card at newIndex
+      const finalOrder = [...otherCardsInTarget]
+      const activeCard = cards.find(c => c.id === active.id)
+      if (activeCard) {
+        finalOrder.splice(newIndex, 0, activeCard)
+      }
+
+      // Calculate new ranks
       const newRanks = new Map<string, number>()
-      containerCards.forEach((card, index) => {
+      finalOrder.forEach((card, index) => {
         newRanks.set(card.id, index + 1)
       })
 
+      console.log('[DragEnd] finalOrder', finalOrder.map(c => c.id))
+      console.log('[DragEnd] newRanks', Array.from(newRanks.entries()))
+
+      // Update local state with correct ranks
+      setCards(prev => prev.map(card => {
+        const newRank = newRanks.get(card.id)
+        if (newRank !== undefined) {
+          return { ...card, rank: newRank }
+        }
+        return card
+      }))
+
       // Save to backend
       try {
+        console.log('[DragEnd] Calling updateStatus API', { storyId: active.id, status: statusMap[overContainer] })
         await storiesApi.updateStatus(active.id as string, statusMap[overContainer] || 'Todo')
         
         const rankUpdates: { story_id: string; rank: number }[] = []
         newRanks.forEach((rank, cardId) => rankUpdates.push({ story_id: cardId, rank }))
+        console.log('[DragEnd] rankUpdates', rankUpdates)
         if (rankUpdates.length > 0) {
+          console.log('[DragEnd] Calling bulkUpdateRanks API')
           await storiesApi.bulkUpdateRanks(rankUpdates)
         }
         toast.success("Đã cập nhật trạng thái story")
@@ -533,8 +650,8 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         console.error("Failed to update status:", error)
         toast.error("Không thể cập nhật trạng thái")
         // Revert to original state on error
-        if (clonedCards) {
-          setCards(clonedCards)
+        if (savedClonedCards) {
+          setCards(savedClonedCards)
         }
       }
     }
@@ -547,6 +664,8 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     }
     setActiveId(null)
     setClonedCards(null)
+    clonedCardsRef.current = null
+    crossContainerTarget.current = null
   }, [clonedCards])
 
   // Card handlers
