@@ -3,17 +3,27 @@
 import logging
 import re
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
 
-from app.agents.team_leader.src.state import TeamLeaderState
-from app.agents.team_leader.src.schemas import ExtractedPreferences, RoutingDecision
+from app.agents.core.llm_utils import extract_tokens_from_response
 from app.agents.core.prompt_utils import (
-    load_prompts_yaml, get_task_prompts as _get_task_prompts,
-    build_system_prompt as _build_system_prompt, build_user_prompt as _build_user_prompt,
+    build_system_prompt as _build_system_prompt,
 )
+from app.agents.core.prompt_utils import (
+    build_user_prompt as _build_user_prompt,
+)
+from app.agents.core.prompt_utils import (
+    get_task_prompts as _get_task_prompts,
+)
+from app.agents.core.prompt_utils import (
+    load_prompts_yaml,
+)
+from app.agents.team_leader.src.schemas import ExtractedPreferences, RoutingDecision
+from app.agents.team_leader.src.state import TeamLeaderState
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +31,15 @@ _PROMPTS = load_prompts_yaml(Path(__file__).parent / "prompts.yaml")
 _DEFAULTS = {"name": "Team Leader", "role": "Team Leader & Project Coordinator", "personality": "Professional and helpful"}
 _fast_llm = ChatOpenAI(model="claude-haiku-4-5-20251001", temperature=0.1, timeout=15)
 _chat_llm = ChatOpenAI(model="claude-haiku-4-5-20251001", temperature=0.7, timeout=30)
-    
+
+
+def _track_response(response: Any, agent: Any | None) -> None:
+    """Track token usage from LLM response on agent."""
+    if agent:
+        tokens = extract_tokens_from_response(response)
+        if tokens > 0:
+            agent.track_llm_usage(tokens, 1)
+
 ROLE_WIP_MAP = {"developer": "InProgress", "tester": "Review", "business_analyst": None}
 
 # Patterns to detect specialist task completion - must be specific completion messages
@@ -34,7 +52,7 @@ SPECIALIST_COMPLETION_PATTERNS = {
     ],
     "developer": [
         "implement xong",
-        "code xong", 
+        "code xong",
         "đã merge",
         "pull request đã được merge",
     ],
@@ -62,10 +80,10 @@ def _detect_specialist_completion(conversation_history: str) -> str | None:
     """
     if not conversation_history:
         return None
-    
+
     # Parse conversation to get LAST Assistant message only
     lines = conversation_history.strip().split('\n')
-    
+
     # Find last Assistant message (format: "Assistant: message")
     last_assistant_msg = None
     for line in reversed(lines):
@@ -74,18 +92,18 @@ def _detect_specialist_completion(conversation_history: str) -> str | None:
         if line_stripped.startswith('Assistant:'):
             last_assistant_msg = line_stripped[len('Assistant:'):].strip()
             break
-    
+
     if not last_assistant_msg:
         return None
-    
+
     last_msg_lower = last_assistant_msg.lower()
-    
+
     # Check each role's completion patterns
     for role, patterns in SPECIALIST_COMPLETION_PATTERNS.items():
         for pattern in patterns:
             if pattern.lower() in last_msg_lower:
                 return role
-    
+
     return None
 
 
@@ -123,6 +141,7 @@ async def extract_preferences(state: TeamLeaderState, agent=None) -> dict:
             [SystemMessage(content=prompts["system_prompt"]), HumanMessage(content=f'Analyze: "{msg}"')],
             config=_cfg(state, "extract_preferences")
         )
+        _track_response(response, agent)
         clean_json = _clean_json(response.content)
         result = ExtractedPreferences.model_validate_json(clean_json)
         detected = {k: v for k, v in result.model_dump().items() if v and k != "additional"}
@@ -174,7 +193,7 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                 board_state = f"WIP: InProgress={wip.get('InProgress', '?')}, Review={wip.get('Review', '?')}"
             except Exception:
                 pass
-        
+
         messages = [
             SystemMessage(content=_sys_prompt(agent)),
             HumanMessage(content=_user_prompt(
@@ -185,13 +204,14 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                 board_state=board_state,
             ))
         ]
-        
+
         response = await _fast_llm.ainvoke(messages, config=_cfg(state, "router"))
+        _track_response(response, agent)
         clean_json = _clean_json(response.content)
         decision = RoutingDecision.model_validate_json(clean_json)
         logger.info(f"[router] Decision: action={decision.action}, target={decision.target_role}")
         result = decision.model_dump()
-        
+
         if result["action"] == "DELEGATE":
             wip_col = ROLE_WIP_MAP.get(result.get("target_role"))
             if wip_col and agent and hasattr(agent, 'context'):
@@ -199,37 +219,39 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                 if wip_available.get(wip_col, 1) <= 0:
                     return {**state, "action": "RESPOND", "wip_blocked": True,
                             "message": f"Hiện tại {wip_col} đang full. Cần đợi stories hoàn thành.", "confidence": 0.95}
-            
+
             # Check for domain change when delegating to BA
             if result.get("target_role") == "business_analyst" and agent:
                 try:
                     from sqlmodel import Session
+
                     from app.core.db import engine
-                    from app.services.artifact_service import ArtifactService
                     from app.models import ArtifactType, Epic, Story
-                    
+                    from app.services.artifact_service import ArtifactService
+
                     project_id = UUID(state["project_id"])
-                    
+
                     with Session(engine) as session:
                         artifact_service = ArtifactService(session)
                         existing_prd = artifact_service.get_latest_version(
                             project_id=project_id,
                             artifact_type=ArtifactType.PRD
                         )
-                        
+
                         if existing_prd:
                             # Check if there are any previous user messages
                             # If no messages (project was reset), skip domain check and auto-replace
-                            from app.models import Message
                             from sqlmodel import select
-                            
+
+                            from app.models import Message
+
                             message_count = len(session.exec(
                                 select(Message).where(
                                     Message.project_id == project_id,
                                     Message.author_type == "user"
                                 )
                             ).all())
-                            
+
                             # If only 1 message (current one) or no messages, skip domain check
                             # This handles the case where user cleared messages via API
                             if message_count <= 1:
@@ -238,10 +260,12 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                                     f"Will auto-replace old PRD '{existing_prd.title}'"
                                 )
                                 # Auto-delete old data and proceed
-                                from app.services.artifact_service import ArtifactService
+                                from app.services.artifact_service import (
+                                    ArtifactService,
+                                )
                                 artifact_service.delete_by_type(project_id, ArtifactType.PRD)
                                 artifact_service.delete_by_type(project_id, ArtifactType.USER_STORIES)
-                                
+
                                 # Delete epics and stories
                                 epics = session.exec(select(Epic).where(Epic.project_id == project_id)).all()
                                 for epic in epics:
@@ -250,11 +274,11 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                                 for story in stories:
                                     session.delete(story)
                                 session.commit()
-                                
+
                                 # Archive docs if available
                                 if agent and hasattr(agent, 'project_files') and agent.project_files:
                                     await agent.project_files.archive_docs()
-                                
+
                                 # Continue with normal delegation (no confirmation needed)
                             else:
                                 # Check if domains are different
@@ -263,18 +287,18 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                                     existing_prd.title,
                                     state
                                 )
-                                
+
                                 if is_different:
                                     # Count existing stories
                                     stories_count = session.exec(
                                         select(Story).where(Story.project_id == project_id)
                                     ).all()
-                                    
+
                                     logger.info(
                                         f"[router] Domain change detected: '{existing_prd.title}' → new request. "
                                         f"Asking for confirmation."
                                     )
-                                    
+
                                     return {
                                         **state,
                                         "action": "CONFIRM_REPLACE",
@@ -285,7 +309,7 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                                     }
                 except Exception as e:
                     logger.error(f"[router] Error checking domain change: {e}", exc_info=True)
-        
+
         return {**state, **result, "wip_blocked": False}
     except Exception as e:
         logger.error(f"[router] {e}", exc_info=True)
@@ -297,10 +321,10 @@ async def delegate(state: TeamLeaderState, agent=None) -> TeamLeaderState:
     if agent:
         from app.agents.core.base_agent import TaskContext
         from app.kafka.event_schemas import AgentTaskType
-        
+
         msg = state.get("message") or f"Chuyển cho @{state['target_role']} nhé!"
         await agent.message_user("response", msg)
-        
+
         task = TaskContext(
             task_id=UUID(state["task_id"]), task_type=AgentTaskType.MESSAGE, priority="high",
             routing_reason=state.get("reason", "team_leader_routing"),
@@ -324,7 +348,7 @@ async def clarify(state: TeamLeaderState, agent=None) -> TeamLeaderState:
     try:
         reason = state.get("reason", "need more details")
         hint = state.get("clarification_question", "")
-        
+
         sys_prompt = _sys_prompt(agent, "conversational")
         user_prompt = f"""User vừa nói: "{state['user_message']}"
 
@@ -340,11 +364,12 @@ Hãy viết MỘT câu hỏi clarification thân thiện, tự nhiên để hi�
             [SystemMessage(content=sys_prompt), HumanMessage(content=user_prompt)],
             config=_cfg(state, "clarify")
         )
+        _track_response(response, agent)
         question = response.content
     except Exception as e:
         logger.error(f"[clarify] LLM error: {e}")
         question = state.get("message") or "Hmm, mình cần biết rõ hơn chút! 🤔 Bạn có thể mô tả chi tiết hơn không?"
-    
+
     if agent:
         await agent.message_user("response", question)
     return {**state, "message": question, "action": "CLARIFY"}
@@ -354,19 +379,19 @@ async def conversational(state: TeamLeaderState, agent=None) -> TeamLeaderState:
     """Generate conversational response."""
     try:
         conversation_history = state.get("conversation_history", "")
-        
+
         # Detect if specialist just completed a task
         specialist_role = _detect_specialist_completion(conversation_history)
-        
+
         # Build context for LLM
         sys_prompt = _sys_prompt(agent, "conversational")
-        
+
         # Add specialist completion context if detected
         specialist_context = ""
         if specialist_role:
             role_names = {
                 "business_analyst": "Business Analyst",
-                "developer": "Developer", 
+                "developer": "Developer",
                 "tester": "Tester"
             }
             role_display = role_names.get(specialist_role, specialist_role)
@@ -375,7 +400,7 @@ async def conversational(state: TeamLeaderState, agent=None) -> TeamLeaderState:
 - Hãy chào đón user trở lại một cách tự nhiên
 - Có thể hỏi user cần gì tiếp theo
 - Đừng lặp lại những gì {role_display} đã nói"""
-        
+
         if conversation_history:
             sys_prompt += f"""
 
@@ -386,11 +411,12 @@ async def conversational(state: TeamLeaderState, agent=None) -> TeamLeaderState:
 {specialist_context}
 
 **Lưu ý:** Dựa vào context trên để trả lời tự nhiên và liên quan. Đừng lặp lại những gì đã nói."""
-        
+
         response = await _chat_llm.ainvoke(
             [SystemMessage(content=sys_prompt), HumanMessage(content=state["user_message"])],
             config=_cfg(state, "conversational")
         )
+        _track_response(response, agent)
         if agent:
             await agent.message_user("response", response.content)
         return {**state, "message": response.content, "action": "CONVERSATION"}
@@ -406,8 +432,9 @@ async def status_check(state: TeamLeaderState, agent=None) -> TeamLeaderState:
     """Check board status using tool-calling agent."""
     try:
         from langchain.agents import create_agent
+
         from app.agents.team_leader.tools import get_team_leader_tools
-        
+
         status_agent = create_agent(model=_chat_llm, tools=get_team_leader_tools(), system_prompt=_sys_prompt(agent, "status_check"))
         result = await status_agent.ainvoke(
             {"messages": [{"role": "user", "content": f"{state.get('user_message', '')}\n\nproject_id: {state.get('project_id', '')}"}]},
@@ -427,12 +454,12 @@ async def confirm_replace(state: TeamLeaderState, agent=None) -> TeamLeaderState
     try:
         existing_title = state.get("existing_prd_title", "project hiện tại")
         stories_count = state.get("existing_stories_count", 0)
-        
+
         question = (
             f"Bạn đã có project '{existing_title}' và các tài liệu liên quan. "
             f"Bạn muốn:"
         )
-        
+
         if agent:
             await agent.message_user(
                 "question",
@@ -449,9 +476,9 @@ async def confirm_replace(state: TeamLeaderState, agent=None) -> TeamLeaderState
                     }
                 }
             )
-        
+
         logger.info(f"[confirm_replace] Asked user to confirm replacing '{existing_title}'")
-        
+
         return {
             **state,
             "action": "CONFIRM_REPLACE",

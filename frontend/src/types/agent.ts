@@ -102,7 +102,10 @@ export interface ExecutionFilters {
 }
 
 export interface SpawnAgentRequest {
-  pool_name: string
+  project_id: string
+  role_type: string
+  pool_name?: string
+  human_name?: string
   heartbeat_interval?: number
   max_idle_time?: number
 }
@@ -230,4 +233,135 @@ export interface PoolSuggestion {
   recommended_pool_name: string
   role_type: string | null
   estimated_agents: number
+}
+
+// ===== Emergency Controls Types =====
+
+export type SystemStatus = "running" | "paused" | "maintenance" | "stopped"
+
+export interface SystemStatusResponse {
+  status: SystemStatus
+  paused_at: string | null
+  maintenance_message: string | null
+  active_pools: number
+  total_agents: number
+  accepting_tasks: boolean
+}
+
+export interface EmergencyActionResponse {
+  message: string
+  status: SystemStatus
+  paused_at?: string
+  stopped_at?: string
+  started_at?: string
+  previous_status?: SystemStatus
+  maintenance_message?: string
+  agents_affected?: number
+  agents_stopped?: number
+  agents_failed?: number
+  force?: boolean
+}
+
+// ===== Bulk Operations Types =====
+
+export interface BulkOperationResponse {
+  success_count: number
+  failed_count: number
+  total_requested: number
+  results: Array<{
+    agent_id?: string
+    index?: number
+    status: string
+    error?: string
+    pool?: string
+    previous_state?: string
+    agent_name?: string
+  }>
+  message: string
+}
+
+// ===== Auto-scaling Types =====
+
+export type ScalingTriggerType = "schedule" | "load" | "queue_depth"
+export type ScalingAction = "scale_up" | "scale_down" | "set_count"
+
+export interface AutoScalingRule {
+  id?: string
+  name: string
+  pool_name: string
+  enabled: boolean
+  trigger_type: ScalingTriggerType
+  cron_expression?: string
+  timezone?: string
+  metric?: string
+  threshold_high?: number
+  threshold_low?: number
+  cooldown_seconds: number
+  action: ScalingAction
+  target_count?: number
+  scale_amount: number
+  min_agents: number
+  max_agents: number
+  role_type?: string
+  created_at?: string
+  last_triggered?: string
+}
+
+export interface AutoScalingRuleCreate {
+  name: string
+  pool_name: string
+  enabled?: boolean
+  trigger_type: ScalingTriggerType
+  cron_expression?: string
+  timezone?: string
+  metric?: string
+  threshold_high?: number
+  threshold_low?: number
+  cooldown_seconds?: number
+  action: ScalingAction
+  target_count?: number
+  scale_amount?: number
+  min_agents?: number
+  max_agents?: number
+  role_type?: string
+}
+
+// ===== Agent Template Types =====
+
+export interface AgentTemplate {
+  id?: string
+  name: string
+  description?: string
+  role_type: string
+  pool_name: string
+  llm_config: Record<string, unknown>
+  persona_name?: string
+  system_prompt_override?: string
+  max_idle_time: number
+  heartbeat_interval: number
+  tags: string[]
+  created_by?: string
+  created_at?: string
+  updated_at?: string
+  use_count: number
+}
+
+export interface AgentTemplateCreate {
+  name: string
+  description?: string
+  role_type: string
+  pool_name?: string
+  llm_config?: Record<string, unknown>
+  persona_name?: string
+  system_prompt_override?: string
+  max_idle_time?: number
+  heartbeat_interval?: number
+  tags?: string[]
+}
+
+export interface AgentTemplateFromAgent {
+  agent_id: string
+  template_name: string
+  description?: string
+  tags?: string[]
 }

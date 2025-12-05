@@ -1,2 +1,8 @@
 export { PersonasTab } from "./PersonasTab"
 export { PersonaDialog } from "./dialogs/PersonaDialog"
+export { ActivityTab } from "./ActivityTab"
+export { AgentConfigDialog } from "./AgentConfigDialog"
+export { BulkActionsToolbar } from "./BulkActionsToolbar"
+export { ScalingTab } from "./ScalingTab"
+export { TemplatesTab } from "./TemplatesTab"
+export { SpawnAgentDialog } from "./SpawnAgentDialog"
