@@ -210,8 +210,6 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
   const [clonedCards, setClonedCards] = useState<KanbanCardData[] | null>(null)
   const clonedCardsRef = useRef<KanbanCardData[] | null>(null) // Ref version for callbacks
   const cardsRef = useRef<KanbanCardData[]>(cards) // Current cards ref for callbacks
-  const recentlyMovedToNewContainer = useRef(false)
-  const lastOverId = useRef<string | null>(null)
   // Store target position for cross-container moves
   const crossContainerTarget = useRef<{ targetColumn: string; targetIndex: number; overId: string } | null>(null)
   const [selectedCard, setSelectedCard] = useState<KanbanCardData | null>(null)
@@ -326,12 +324,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     cardsRef.current = cards
   }, [cards])
 
-  // Reset recentlyMovedToNewContainer after layout settles (official dnd-kit pattern)
-  useEffect(() => {
-    requestAnimationFrame(() => {
-      recentlyMovedToNewContainer.current = false
-    })
-  }, [cards])
+
 
   // Get cards by column
   const getCardsByColumn = useCallback((columnId: string) => {
@@ -446,10 +439,8 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
       return
     }
 
-    // First time crossing to new container - update columnId
-    recentlyMovedToNewContainer.current = true
-    
-    // Calculate initial target index
+    // First time crossing to new container - calculate target index
+    // (actual columnId update happens in handleDragEnd)
     const targetCards = currentCards
       .filter(c => c.columnId === overContainer)
       .sort((a, b) => (a.rank || 999) - (b.rank || 999))
@@ -471,20 +462,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
       targetIndex,
       overId: overId
     }
-
-    // Update ONLY columnId (not rank) to move card to new container visually
-    setCards(prevCards => {
-      const card = prevCards.find(c => c.id === active.id)
-      if (!card || card.columnId === overContainer) return prevCards
-
-      const newCards = prevCards.map(c => 
-        c.id === active.id 
-          ? { ...c, columnId: overContainer }
-          : c
-      )
-      cardsRef.current = newCards
-      return newCards
-    })
+    // No state update here - only update in handleDragEnd to avoid jerk
   }, [findContainer])
 
   const handleDragEnd = useCallback(async (event: DragEndEvent) => {
@@ -609,8 +587,13 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         newRanks.set(card.id, index + 1)
       })
 
-      // Update local state with correct ranks
+      // Update local state with columnId and ranks
       setCards(prev => prev.map(card => {
+        if (card.id === active.id) {
+          // Move card to new column with new rank
+          const newRank = newRanks.get(card.id)
+          return { ...card, columnId: overContainer, rank: newRank ?? card.rank }
+        }
         const newRank = newRanks.get(card.id)
         if (newRank !== undefined) {
           return { ...card, rank: newRank }
