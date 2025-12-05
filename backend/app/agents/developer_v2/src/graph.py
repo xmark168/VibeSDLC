@@ -30,11 +30,15 @@ def route_after_implement(state: DeveloperState) -> Literal["review", "implement
 
 
 def route_review_result(state: DeveloperState) -> Literal["implement", "summarize", "run_code"]:
-    """Route based on review result (LGTM/LBTM)."""
-    review_result = state.get("review_result", "LGTM")
-    review_count = state.get("review_count", 0)
+    """Route based on review result (LGTM/LBTM).
     
-    if review_result == "LBTM" and review_count < 2:
+    Note: Per-step LBTM limit (max 2) is enforced in review node.
+    If step gets LBTM 2+ times, review node forces LGTM and increments current_step.
+    """
+    review_result = state.get("review_result", "LGTM")
+    
+    # Per-step limit enforced in review node (forces LGTM after 2 attempts)
+    if review_result == "LBTM":
         return "implement"
     
     current_step = state.get("current_step", 0)

@@ -117,15 +117,24 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
         
         logger.info(f"[review] {file_path}: {review_result['decision']}")
         
-        current_count = state.get("review_count", 0)
-        new_count = current_count + 1 if review_result["decision"] == "LBTM" else current_count
-        
-        total_lbtm = state.get("total_lbtm_count", 0)
-        if review_result["decision"] == "LBTM":
-            total_lbtm += 1
+        # Track LBTM count PER STEP (not global)
+        step_lbtm_counts = state.get("step_lbtm_counts", {})
+        step_key = str(step_index)
         
         current_step = state.get("current_step", 0)
-        if review_result["decision"] == "LGTM":
+        total_lbtm = state.get("total_lbtm_count", 0)
+        
+        if review_result["decision"] == "LBTM":
+            step_lbtm_counts[step_key] = step_lbtm_counts.get(step_key, 0) + 1
+            total_lbtm += 1
+            
+            # If this step has been LBTM'd 2+ times, force move to next step
+            if step_lbtm_counts[step_key] >= 2:
+                logger.warning(f"[review] Step {step_index} has {step_lbtm_counts[step_key]} LBTM attempts, forcing LGTM")
+                review_result["decision"] = "LGTM"
+                review_result["feedback"] = f"(Force-approved after {step_lbtm_counts[step_key]} attempts)"
+                current_step += 1
+        else:
             current_step += 1
         
         return {
@@ -134,8 +143,9 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
             "review_result": review_result["decision"],
             "review_feedback": review_result["feedback"],
             "review_details": review_result["review"],
-            "review_count": new_count,
+            "review_count": state.get("review_count", 0) + (1 if review_result["decision"] == "LBTM" else 0),
             "total_lbtm_count": total_lbtm,
+            "step_lbtm_counts": step_lbtm_counts,
         }
         
     except Exception as e:
@@ -146,14 +156,15 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
 def route_after_review(state: DeveloperState) -> str:
     """Route based on review result."""
     review_result = state.get("review_result", "LGTM")
-    review_count = state.get("review_count", 0)
     
-    if review_result == "LBTM" and review_count < 2:
+    # If LBTM, go back to implement (per-step limit enforced in review node)
+    if review_result == "LBTM":
         return "implement"
     
+    # LGTM - check if more steps
     current_step = state.get("current_step", 0)
     total_steps = state.get("total_steps", 0)
     
     if current_step >= total_steps:
         return "summarize"
-    return "next_step"
+    return "implement"  # Changed from "next_step" to "implement"

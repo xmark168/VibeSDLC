@@ -144,7 +144,10 @@ async def _run_service_tests(
             )
             all_stdout += f"\n$ {typecheck_cmd}\n{stdout}"
             if not success:
-                error_output = stderr or stdout or "(no output captured)"
+                # Better error capture - TypeScript errors often go to stdout
+                error_output = stderr.strip() or stdout.strip()
+                if not error_output:
+                    error_output = f"Exit code non-zero but no output captured. Run '{typecheck_cmd}' manually to see errors."
                 all_stderr += f"\n[TYPECHECK FAILED]\n$ {typecheck_cmd}\n{error_output}"
                 task_id = svc_config.get("task_id", "unknown")
                 write_test_log(task_id, f"TYPECHECK ERROR:\n$ {typecheck_cmd}\n{error_output}", "FAIL")

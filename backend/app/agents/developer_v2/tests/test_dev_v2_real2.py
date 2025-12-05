@@ -319,39 +319,49 @@ class SimpleDeveloperRunner:
 STORY_1 = {
     "story_id": "EPIC-001-US-001",
     "epic": "EPIC-001",
-    "story_title": "Homepage with featured books and categories",
+    "story_title": "As a first-time visitor, I want to see featured books and categories on the homepage so that I can quickly discover interesting books without searching",
     "story_description": """The homepage serves as the primary entry point for all visitors, showcasing the bookstore's offerings through curated collections and categories.""",
     "story_requirements": [
-        "Display hero section with featured books carousel",
-        "Show 'Bestsellers' section with top books",
-        "Display 'New Arrivals' section with latest books",
-        "Present main book categories with cover images",
-        "All book cards display: cover image, title, author, price",
-        "Implement lazy loading for images",
+        "Display hero section with 3-5 featured books rotating every 5 seconds",
+        "Show 'Bestsellers' section with top 10 books based on sales data",
+        "Display 'New Arrivals' section with latest 8 books added to catalog",
+        "Present main book categories (Fiction, Non-Fiction, Children, Academic, etc.) with representative cover images",
+        "Include promotional banner area for special offers or campaigns",
+        "Ensure all book cards display: cover image, title, author, price, and rating",
+        "Implement lazy loading for images to optimize page load time under 2 seconds"
     ],
     "acceptance_criteria": [
-        "Given I am on the homepage, When the page loads, Then I see hero section, bestsellers, new arrivals within 2 seconds",
-        "Given I see a book card, Then it displays cover image, title, author name, price",
-        "Given I click on a book card, Then I am navigated to that book's detail page",
+        "Given I am a visitor on the homepage, When the page loads, Then I see hero section with featured books, bestsellers section, new arrivals section, and category navigation within 2 seconds",
+        "Given I am viewing the homepage, When I see a book card, Then it displays cover image, title, author name, current price, and average rating (if available)",
+        "Given I am on the homepage, When I click on a book card, Then I am navigated to that book's detail page",
+        "Given I am on the homepage, When I click on a category tile, Then I am navigated to the category page showing all books in that category",
+        "Given the homepage has loaded, When I wait 5 seconds, Then the hero section automatically transitions to the next featured book",
+        "Given I am a non-logged user, When I view 'Recommended for You' section, Then I see 6 randomly selected popular books from various categories"
     ],
 }
 
 STORY_2 = {
     "story_id": "EPIC-001-US-002",
     "epic": "EPIC-001",
-    "story_title": "Search books by title, author, or keyword",
+    "story_title": "As a visitor, I want to search for books by title, author, or keyword so that I can quickly find specific books I'm interested in",
     "story_description": """The search functionality enables visitors to find books by title, author, or keyword with autocomplete suggestions.""",
     "story_requirements": [
-        "Display search bar prominently in the header",
-        "Implement autocomplete after 2+ characters",
-        "Search across book titles, author names, ISBN",
-        "Show up to 8 suggestions with thumbnail, title, author",
-        "Display 'No results found' message when appropriate",
+        "Display search bar prominently in the header, visible on all pages",
+        "Implement autocomplete that shows suggestions after user types 2+ characters",
+        "Search across book titles, author names, and ISBN numbers",
+        "Show up to 8 autocomplete suggestions with book cover thumbnail, title, and author",
+        "Display 'No results found' message when search yields no matches",
+        "Highlight matching text in autocomplete suggestions",
+        "Return search results within 1 second for optimal user experience",
+        "Preserve search query in the search bar after navigating to results page"
     ],
     "acceptance_criteria": [
-        "Given I type 2+ characters, Then I see up to 8 autocomplete suggestions within 1 second",
-        "Given I click on a suggestion, Then I navigate to that book's detail page",
-        "Given no matches, Then I see 'No results found' message",
+        "Given I am on any page, When I type 2 or more characters in the search bar, Then I see up to 8 autocomplete suggestions within 1 second",
+        "Given I see autocomplete suggestions, When I click on a suggestion, Then I am navigated to that book's detail page",
+        "Given I have typed a search query, When I press Enter or click the search button, Then I am navigated to the search results page showing all matching books",
+        "Given I search for a term with no matches, When the search completes, Then I see a 'No results found' message with suggestions to try different keywords",
+        "Given I am viewing autocomplete suggestions, When I use arrow keys to navigate suggestions, Then the selected suggestion is highlighted and I can press Enter to select it",
+        "Given I have performed a search, When I view the results page, Then my search query remains visible in the search bar for easy modification"
     ],
 }
 

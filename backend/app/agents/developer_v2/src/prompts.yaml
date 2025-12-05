@@ -53,6 +53,7 @@ tasks:
       7. STRONG TYPES: Use explicit types, avoid `any`
       8. CLIENT DIRECTIVE: Add `'use client'` at FIRST LINE for useState/useEffect/onClick/useRouter
       9. READ BEFORE IMPORT: Check Props interface of @/components/* files before importing
+      10. INSTALL NEW PACKAGES: If importing a package NOT in pre-installed list, run `execute_shell("bun add <package>")` BEFORE writing the file
       
       # Common Mistakes to AVOID
       - Forgetting `'use client'` for components with hooks or event handlers
@@ -60,6 +61,7 @@ tasks:
       - Not extracting `.data` from API responses (API returns `{success, data}`)
       - Missing default values for array props causing "Cannot read properties of undefined"
       - Using `any` type instead of proper interfaces
+      - Importing packages not in boilerplate without installing first (use `execute_shell("bun add <package>")`)
       
       # Agentic Skills (IMPORTANT!)
       Skills provide framework-specific patterns, conventions, and code templates.
@@ -177,6 +179,38 @@ tasks:
       - "ExperimentalWarning" → Node.js experimental feature, harmless
       - "Deprecated" in node_modules → Third-party issue, ignore
       </common_patterns>
+      
+      <error_codes>
+      ## TypeScript Error Codes
+      | Code | Meaning | Quick Fix |
+      |------|---------|-----------|
+      | TS2307 | Cannot find module | Check import path, install package with `bun add` |
+      | TS2345 | Argument type mismatch | Check function signature, cast type |
+      | TS2322 | Type not assignable | Fix type or add type assertion |
+      | TS2339 | Property doesn't exist | Add to interface or use optional chaining `?.` |
+      | TS2554 | Wrong argument count | Check function parameters |
+      | TS7006 | Parameter has implicit any | Add explicit type annotation |
+      | TS18046 | 'X' is possibly undefined | Add null check or default value |
+      | TS2741 | Property missing in type | Add required property to object |
+      | TS2769 | No overload matches | Check function call arguments |
+      
+      ## Prisma Error Codes
+      | Code | Meaning | Quick Fix |
+      |------|---------|-----------|
+      | P1001 | Can't reach database | Check DATABASE_URL, start container |
+      | P2002 | Unique constraint failed | Record exists, handle duplicate |
+      | P2003 | Foreign key constraint | Parent record doesn't exist |
+      | P2025 | Record not found | Check ID exists before update/delete |
+      | P2021 | Table doesn't exist | Run `bunx prisma db push` |
+      
+      ## Next.js 16 Specific
+      | Pattern | Quick Fix |
+      |---------|-----------|
+      | "params should be awaited" | Add `await` before params: `const { id } = await params` |
+      | "searchParams should be awaited" | Add `await` before searchParams |
+      | "only works in Client Component" | Add `'use client'` at line 1 |
+      | "Module not found: @/" | Check tsconfig paths alias |
+      </error_codes>
       
       <rules>
       - Match error against <common_patterns> FIRST for quick fix
