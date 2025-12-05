@@ -3,12 +3,14 @@
 import json
 import logging
 import os
+import re
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
+from app.agents.tester.src.core_nodes import send_message
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +52,52 @@ def _parse_json(content: str) -> dict:
         raise e
 
 
+def _sanitize_file_path(file_path: str, workspace_path: str = "") -> str:
+    """Sanitize file_path from LLM to be relative to workspace.
+    
+    Handles:
+    - Paths ending with '/' (directory)
+    - Paths containing 'backend/projects/{uuid}/' prefix
+    - Paths containing 'projects/{uuid}/' prefix
+    - Absolute paths
+    """
+    if not file_path:
+        return file_path
+    
+    # Remove trailing slash (directory indicator)
+    file_path = file_path.rstrip("/\\")
+    
+    # Remove common wrong prefixes from LLM
+    wrong_prefixes = [
+        "backend/projects/",
+        "projects/",
+        "backend\\projects\\",
+        "projects\\",
+    ]
+    
+    for prefix in wrong_prefixes:
+        if prefix in file_path:
+            # Find the UUID pattern and remove everything up to and including it
+            # Match UUID pattern like: 30bdd1ec-7720-45c7-82ed-a5842fc69bde
+            uuid_pattern = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+            match = re.search(f"{re.escape(prefix)}{uuid_pattern}[/\\\\]?", file_path, re.IGNORECASE)
+            if match:
+                # Remove the matched prefix
+                file_path = file_path[match.end():]
+                logger.info(f"[_sanitize_file_path] Removed wrong prefix, result: {file_path}")
+                break
+    
+    # Remove leading slashes
+    file_path = file_path.lstrip("/\\")
+    
+    # If path is empty after sanitization, return empty
+    if not file_path:
+        logger.warning("[_sanitize_file_path] Path became empty after sanitization")
+        return ""
+    
+    return file_path
+
+
 async def analyze_errors(state: TesterState, agent=None) -> dict:
     """Analyze test failures and create fix plan.
     
@@ -74,8 +122,7 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
     if debug_count >= max_debug:
         msg = f"⚠️ Đã thử sửa {max_debug} lần nhưng tests vẫn fail. Dừng debug loop."
         logger.warning(f"[analyze_errors] Max debug attempts ({max_debug}) reached")
-        if agent:
-            await agent.message_user("response", msg)
+        await send_message(state, agent, msg, "error")
         return {
             "error_analysis": "Max debug attempts reached",
             "message": msg,
@@ -119,13 +166,24 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
         root_cause = result.get("root_cause", "Unknown error")
         fix_steps = result.get("fix_steps", [])
         
-        # Build new test_plan from fix_steps
+        # Get workspace_path for sanitization
+        workspace_path = state.get("workspace_path", "") or state.get("project_path", "")
+        
+        # Build new test_plan from fix_steps with sanitized file paths
         new_test_plan = []
         for i, step in enumerate(fix_steps):
+            raw_file_path = step.get("file_path", "")
+            sanitized_path = _sanitize_file_path(raw_file_path, workspace_path)
+            
+            # Skip steps with empty or invalid paths
+            if not sanitized_path:
+                logger.warning(f"[analyze_errors] Skipping step with invalid path: {raw_file_path}")
+                continue
+                
             new_test_plan.append({
                 "order": i + 1,
                 "type": "fix",
-                "file_path": step.get("file_path", ""),
+                "file_path": sanitized_path,
                 "description": step.get("description", "Fix error"),
                 "action": step.get("action", "modify"),
                 "scenarios": [],
@@ -140,8 +198,7 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
         msg += f"Root cause: {root_cause}\n"
         msg += f"Fix plan: {len(fix_steps)} steps"
         
-        if agent:
-            await agent.message_user("response", msg)
+        await send_message(state, agent, msg, "progress")
         
         logger.info(f"[analyze_errors] Root cause: {root_cause}, Fix steps: {len(fix_steps)}")
         
@@ -160,8 +217,7 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
         else:
             # No fix possible
             msg = f"⚠️ Không thể xác định cách fix. Root cause: {root_cause}"
-            if agent:
-                await agent.message_user("response", msg)
+            await send_message(state, agent, msg, "error")
             return {
                 "error_analysis": root_cause,
                 "debug_count": debug_count + 1,
@@ -173,8 +229,7 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
     except Exception as e:
         logger.error(f"[analyze_errors] Error: {e}", exc_info=True)
         error_msg = f"Lỗi khi phân tích errors: {str(e)}"
-        if agent:
-            await agent.message_user("response", error_msg)
+        await send_message(state, agent, error_msg, "error")
         return {
             "error": str(e),
             "debug_count": debug_count + 1,

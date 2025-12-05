@@ -239,13 +239,44 @@ async def summarize(state: TesterState, agent=None) -> dict:
 
         # Create fix_steps when IS_PASS=NO
         fix_steps = []
+        seen_files = set()  # Avoid duplicates
         if result["is_pass"] == "NO" and result["todos"]:
             for file_path, issue in result["todos"].items():
+                # Normalize file path - remove escape sequences and use forward slashes
+                normalized_path = file_path.replace("\\\\", "/").replace("\\", "/")
+                
+                # Skip invalid paths (config files, non-test files)
+                if not normalized_path.endswith(('.test.ts', '.test.tsx', '.spec.ts', '.spec.tsx')):
+                    logger.warning(f"[summarize] Skipping non-test file: {normalized_path}")
+                    continue
+                
+                # Skip if already seen (handle duplicate paths with different formats)
+                base_name = os.path.basename(normalized_path)
+                if base_name in seen_files:
+                    continue
+                seen_files.add(base_name)
+                
+                # Check if file exists (try multiple paths)
+                actual_path = None
+                possible_paths = [
+                    normalized_path,
+                    os.path.join(workspace_path, normalized_path) if workspace_path else None,
+                ]
+                for p in possible_paths:
+                    if p and os.path.exists(p):
+                        actual_path = normalized_path
+                        break
+                
+                if not actual_path:
+                    # File doesn't exist - skip this fix step
+                    logger.warning(f"[summarize] File not found, skipping: {normalized_path}")
+                    continue
+                
                 fix_steps.append({
                     "order": len(fix_steps) + 1,
                     "type": "fix",
-                    "description": f"Fix issue in {file_path}: {issue}",
-                    "file_path": file_path,
+                    "description": f"Fix issue in {normalized_path}: {issue}",
+                    "file_path": normalized_path,
                     "action": "modify",
                     "scenarios": [],
                 })

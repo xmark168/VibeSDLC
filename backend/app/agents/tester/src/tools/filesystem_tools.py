@@ -10,6 +10,14 @@ from langchain_core.tools import tool
 
 logger = logging.getLogger(__name__)
 
+# Config files that should not be overwritten if they exist
+CONFIG_FILES = {
+    "jest.config.js", "jest.config.ts", "jest.config.mjs",
+    "playwright.config.ts", "playwright.config.js",
+    "vitest.config.ts", "vitest.config.js",
+    "tsconfig.json", "package.json",
+}
+
 # Tool context - set before invoking tools
 _tool_context = {
     "project_id": None,
@@ -290,6 +298,15 @@ def write_file(project_id: str, file_path: str, content: str) -> str:
 
         full_path = project_path / file_path
 
+        # Check if trying to overwrite protected config file
+        file_name = Path(file_path).name
+        if file_name in CONFIG_FILES and full_path.exists():
+            return (
+                f"⚠️ BLOCKED: {file_name} already exists in project. "
+                f"Do NOT create duplicate config files. "
+                f"Only create TEST files (.test.ts, .spec.ts)."
+            )
+
         # Create parent directories
         full_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -505,11 +522,19 @@ def get_project_structure(project_id: str, max_depth: int = 3) -> str:
         result.append(f"Integration tests (*.test.ts): {len(test_files)}")
         result.append(f"E2E tests (*.spec.ts): {len(spec_files)}")
         
-        # Check for test config
-        if (project_path / "jest.config.ts").exists() or (project_path / "jest.config.js").exists():
-            result.append("Jest: ✅ Configured")
+        # Check for test config with warnings
+        result.append("\n--- ⚠️ Config Status (DO NOT CREATE NEW) ---")
+        if (project_path / "jest.config.ts").exists():
+            result.append("⚠️ jest.config.ts EXISTS - DO NOT create jest.config.*")
+        elif (project_path / "jest.config.js").exists():
+            result.append("⚠️ jest.config.js EXISTS - DO NOT create jest.config.*")
+        else:
+            result.append("Jest: Not configured")
+        
         if (project_path / "playwright.config.ts").exists():
-            result.append("Playwright: ✅ Configured")
+            result.append("⚠️ playwright.config.ts EXISTS - DO NOT create playwright.config.*")
+        else:
+            result.append("Playwright: Not configured")
         
         return "\n".join(result)
         

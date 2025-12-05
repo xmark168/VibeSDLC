@@ -43,11 +43,10 @@ class TesterState(TypedDict, total=False):
     project_context: str         # Project structure, config info
     agents_md: str               # AGENTS.md content (coding guidelines)
     
-    # CocoIndex context
+    # Project context
     related_code: Dict           # {story_id: "related code markdown"}
     test_examples: str           # Existing test examples from project
     testing_context: Dict        # Auth library, ORM, existing mocks, ESM warnings
-    index_ready: bool            # Whether CocoIndex is available
     
     # ==========================================================================
     # Pre-loaded dependencies (MetaGPT-style - reduces tool calls)

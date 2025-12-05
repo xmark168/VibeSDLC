@@ -166,15 +166,50 @@ async def review(state: TesterState, agent=None) -> dict:
 
         # Read the implemented test file
         full_path = os.path.join(workspace_path, file_path) if workspace_path else file_path
+        
+        # Check max_reviews for file access errors
+        max_reviews = 2
+        current_review_count = state.get("review_count", 0)
+
+        # Check if path is a directory (invalid)
+        if os.path.isdir(full_path):
+            logger.warning(f"[review] Path is a directory, not a file: {full_path}")
+            new_count = current_review_count + 1
+            if new_count >= max_reviews:
+                logger.info(f"[review] Max reviews ({max_reviews}) reached for invalid path - force advancing")
+                return {
+                    "current_step": current_step + 1,
+                    "review_result": "LBTM",
+                    "review_feedback": f"Invalid path: {file_path} is a directory, not a test file.",
+                    "review_count": max_reviews,  # Keep at max so routing knows we hit limit
+                    "total_lbtm_count": state.get("total_lbtm_count", 0) + 1,
+                }
+            return {
+                "current_step": current_step,
+                "review_result": "LBTM",
+                "review_feedback": f"Invalid path: {file_path} is a directory. Please specify a valid test file path.",
+                "review_count": new_count,
+            }
 
         if not os.path.exists(full_path):
             logger.warning(f"[review] Test file not found: {full_path}")
+            new_count = current_review_count + 1
+            # Check max_reviews and force advance if exceeded
+            if new_count >= max_reviews:
+                logger.info(f"[review] Max reviews ({max_reviews}) reached for missing file - force advancing")
+                return {
+                    "current_step": current_step + 1,
+                    "review_result": "LBTM",
+                    "review_feedback": f"Test file {file_path} was not created after {max_reviews} attempts.",
+                    "review_count": max_reviews,  # Keep at max so routing knows we hit limit
+                    "total_lbtm_count": state.get("total_lbtm_count", 0) + 1,
+                }
             # LBTM but keep current_step to retry same step
             return {
                 "current_step": current_step,
                 "review_result": "LBTM",
                 "review_feedback": f"Test file {file_path} was not created. Please create the file at: {file_path}",
-                "review_count": state.get("review_count", 0) + 1,
+                "review_count": new_count,
             }
 
         with open(full_path, "r", encoding="utf-8") as f:
@@ -195,7 +230,7 @@ async def review(state: TesterState, agent=None) -> dict:
             scenarios=scenarios_str,
             file_path=file_path,
             file_ext=_get_file_extension(file_path),
-            file_content=file_content[:4000],
+            file_content=file_content,
             testing_context=testing_context_str or "N/A",
         )
 
@@ -244,8 +279,13 @@ async def review(state: TesterState, agent=None) -> dict:
             should_advance = True
             logger.info(f"[review] Max reviews ({max_reviews}) reached - force advancing to step {new_current_step}")
 
-        # Reset review_count to 0 when advancing step, keep new_count otherwise
-        final_review_count = 0 if should_advance else new_count
+        # Keep review_count at max when force-advancing (LBTM), reset to 0 only for LGTM
+        if should_advance and review_result["decision"] == "LGTM":
+            final_review_count = 0  # Reset for next step
+        elif should_advance:
+            final_review_count = max_reviews  # Keep at max so routing knows we hit limit
+        else:
+            final_review_count = new_count
 
         return {
             "current_step": new_current_step,
@@ -258,11 +298,26 @@ async def review(state: TesterState, agent=None) -> dict:
 
     except Exception as e:
         logger.error(f"[review] Error: {e}", exc_info=True)
-        # On error, advance to next step to avoid infinite loop
+        # On error, return LBTM with error info, check max_reviews to avoid infinite loop
+        max_reviews = 2
+        current_review_count = state.get("review_count", 0)
+        new_count = current_review_count + 1
+        
+        if new_count >= max_reviews:
+            logger.info(f"[review] Max reviews ({max_reviews}) reached after error - force advancing")
+            return {
+                "current_step": current_step + 1,
+                "review_result": "LBTM",
+                "review_feedback": f"Review failed with error: {str(e)}",
+                "review_count": max_reviews,  # Keep at max so routing knows we hit limit
+                "total_lbtm_count": state.get("total_lbtm_count", 0) + 1,
+                "error": str(e),
+            }
         return {
-            "current_step": current_step + 1,
-            "review_result": "LGTM",
-            "review_feedback": "",
+            "current_step": current_step,
+            "review_result": "LBTM",
+            "review_feedback": f"Review failed with error: {str(e)}. Please check the file path.",
+            "review_count": new_count,
             "error": str(e),
         }
 

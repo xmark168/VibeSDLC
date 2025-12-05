@@ -37,44 +37,78 @@ class Tester(BaseAgent):
         # Workspace management (aligned with Developer V2)
         self.main_workspace = _get_project_workspace(self.project_id)
         
+        # Auto-task tracking (for redirecting messages to story channel)
+        self._is_auto_task = False
+        self._current_story_ids: list[str] = []
+        
         logger.info(f"[{self.name}] Tester initialized, workspace: {self.main_workspace}")
+
+    async def message_user(self, event_type: str, content: str, details=None, **kwargs):
+        """Override to redirect messages to story channel when auto-triggered."""
+        # Check if auto task from routing reason (set by base_agent before handle_task)
+        is_auto_from_reason = getattr(self, '_current_routing_reason', '') == "story_status_changed_to_review"
+        is_auto = self._is_auto_task or is_auto_from_reason
+        
+        # Skip system events (thinking, idle) for auto tasks - they're noise in main chat
+        if is_auto and event_type in ("thinking", "idle"):
+            logger.debug(f"[{self.name}] Suppressing '{event_type}' event for auto task")
+            return None
+        
+        # For auto tasks, redirect regular messages to story channel
+        if is_auto and self._current_story_ids and event_type == "response":
+            for story_id in self._current_story_ids:
+                try:
+                    await self.message_story(
+                        UUID(story_id), 
+                        content, 
+                        message_type=details.get("message_type", "update") if details else "update"
+                    )
+                except Exception as e:
+                    logger.warning(f"[{self.name}] Failed to message story {story_id}: {e}")
+            return None
+        
+        # Default behavior for user-initiated tasks
+        return await super().message_user(event_type, content, details, **kwargs)
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
         """Handle task using LangGraph."""
         logger.info(f"[{self.name}] Task: type={task.task_type.value}, reason={task.routing_reason}")
         
-        # Setup Langfuse tracing (same pattern as Team Leader)
+        # Setup Langfuse tracing (TEMPORARILY DISABLED)
         langfuse_handler = None
         langfuse_span = None
         langfuse_ctx = None
-        try:
-            from langfuse import get_client
-            from langfuse.langchain import CallbackHandler
-            
-            langfuse = get_client()
-            # Create parent span for entire graph execution
-            langfuse_ctx = langfuse.start_as_current_observation(
-                as_type="span",
-                name="tester_graph"
-            )
-            # Enter context and get span object
-            langfuse_span = langfuse_ctx.__enter__()
-            # Update trace with metadata
-            langfuse_span.update_trace(
-                user_id=str(task.user_id) if task.user_id else None,
-                session_id=str(self.project_id),
-                input={"message": task.content[:200] if task.content else ""},
-                tags=["tester", self.role_type],
-                metadata={"agent": self.name, "task_id": str(task.task_id)}
-            )
-            # Handler inherits trace context automatically
-            langfuse_handler = CallbackHandler()
-        except Exception as e:
-            logger.debug(f"[{self.name}] Langfuse setup: {e}")
+        # TODO: Re-enable when Langfuse is back up
+        # try:
+        #     from langfuse import get_client
+        #     from langfuse.langchain import CallbackHandler
+        #     
+        #     langfuse = get_client()
+        #     # Create parent span for entire graph execution
+        #     langfuse_ctx = langfuse.start_as_current_observation(
+        #         as_type="span",
+        #         name="tester_graph"
+        #     )
+        #     # Enter context and get span object
+        #     langfuse_span = langfuse_ctx.__enter__()
+        #     # Update trace with metadata
+        #     langfuse_span.update_trace(
+        #         user_id=str(task.user_id) if task.user_id else None,
+        #         session_id=str(self.project_id),
+        #         input={"message": task.content[:200] if task.content else ""},
+        #         tags=["tester", self.role_type],
+        #         metadata={"agent": self.name, "task_id": str(task.task_id)}
+        #     )
+        #     # Handler inherits trace context automatically
+        #     langfuse_handler = CallbackHandler()
+        # except Exception as e:
+        #     logger.debug(f"[{self.name}] Langfuse setup: {e}")
         
         try:
-            # Determine if auto-triggered
+            # Determine if auto-triggered and set instance flags for message_user override
             is_auto = task.context.get("trigger_type") == "status_review"
+            self._is_auto_task = is_auto
+            self._current_story_ids = task.context.get("story_ids", [])
             
             # Build initial state
             initial_state = {
@@ -91,7 +125,6 @@ class Tester(BaseAgent):
                 "workspace_path": "",
                 "branch_name": "",
                 "workspace_ready": False,
-                "index_ready": False,
                 "merged": False,
             }
             
@@ -116,6 +149,10 @@ class Tester(BaseAgent):
             if error:
                 return TaskResult(success=False, output="", error_message=error)
             
+            # Reset flags
+            self._is_auto_task = False
+            self._current_story_ids = []
+            
             return TaskResult(
                 success=True,
                 output=final_state.get("message", ""),
@@ -131,6 +168,9 @@ class Tester(BaseAgent):
             )
             
         except Exception as e:
+            # Reset flags on error
+            self._is_auto_task = False
+            self._current_story_ids = []
             logger.error(f"[{self.name}] Error: {e}", exc_info=True)
             # Cleanup langfuse on error
             if langfuse_ctx:

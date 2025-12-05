@@ -177,7 +177,7 @@ class TesterGraph:
 
     Nodes (9 total):
     1. router - Entry point, decide action
-    2. setup_workspace - Git worktree, CocoIndex, project context
+    2. setup_workspace - Git worktree, project context
     3. plan_tests - Create test plan with pre-loaded dependencies
     4. implement_tests - Generate tests using skills
     5. review - LGTM/LBTM code review (MetaGPT-style)
@@ -196,7 +196,7 @@ class TesterGraph:
         # Router (entry point - also queries stories and gets tech_stack)
         graph.add_node("router", partial(router, agent=agent))
         
-        # Setup workspace (git worktree, CocoIndex, project context)
+        # Setup workspace (git worktree, project context)
         graph.add_node("setup_workspace", partial(setup_workspace, agent=agent))
 
         # Main flow: Plan → Implement → Review → Summarize → Run

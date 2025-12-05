@@ -13,7 +13,7 @@ from sqlmodel import Session
 
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
-from app.agents.tester.src.core_nodes import detect_testing_context
+from app.agents.tester.src.core_nodes import detect_testing_context, send_message
 from app.core.db import engine
 from app.models import Project
 
@@ -66,8 +66,97 @@ def _slugify(text: str) -> str:
     return text[:50] if text else "unnamed"
 
 
-def _preload_test_dependencies(workspace_path: str, test_plan: list) -> dict:
+def _extract_keywords_from_stories(stories: list) -> list[str]:
+    """Extract keywords from story titles and descriptions for searching source code."""
+    keywords = set()
+    
+    # Common stop words to ignore
+    stop_words = {
+        "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
+        "of", "with", "by", "from", "as", "is", "was", "are", "were", "been",
+        "be", "have", "has", "had", "do", "does", "did", "will", "would", "could",
+        "should", "may", "might", "must", "shall", "can", "need", "dare", "ought",
+        "used", "i", "you", "he", "she", "it", "we", "they", "what", "which",
+        "who", "whom", "this", "that", "these", "those", "am", "user", "users",
+        "feature", "story", "test", "tests", "testing", "should", "when", "then",
+        "given", "want", "so", "that", "able", "view", "see", "display", "show",
+    }
+    
+    for story in stories:
+        title = story.get("title", "") or ""
+        description = story.get("description", "") or ""
+        text = f"{title} {description}".lower()
+        
+        # Extract words (alphanumeric only)
+        words = re.findall(r'\b[a-z][a-z0-9]*\b', text)
+        
+        for word in words:
+            if len(word) >= 3 and word not in stop_words:
+                keywords.add(word)
+    
+    return list(keywords)[:15]  # Limit to top 15 keywords
+
+
+def _find_source_files_for_story(workspace_path: str, keywords: list[str]) -> list[str]:
+    """Find source files related to story keywords using glob and grep."""
+    from pathlib import Path
+    import subprocess
+    
+    found_files = set()
+    path = Path(workspace_path)
+    
+    if not path.exists():
+        return []
+    
+    # 1. Search in common source directories
+    source_patterns = [
+        "src/app/api/**/*.ts",
+        "src/app/api/**/*.tsx", 
+        "src/components/**/*.tsx",
+        "src/components/**/*.ts",
+        "src/lib/**/*.ts",
+        "src/services/**/*.ts",
+        "src/hooks/**/*.ts",
+        "src/utils/**/*.ts",
+        "app/api/**/*.ts",
+        "pages/api/**/*.ts",
+    ]
+    
+    for pattern in source_patterns:
+        for file_path in path.glob(pattern):
+            if "node_modules" not in str(file_path):
+                # Check if file contains any keyword
+                try:
+                    content = file_path.read_text(encoding="utf-8").lower()
+                    for keyword in keywords:
+                        if keyword in content or keyword in str(file_path).lower():
+                            found_files.add(str(file_path.relative_to(path)))
+                            break
+                except Exception:
+                    pass
+    
+    # 2. Also find API route files by common naming patterns
+    api_keywords = ["product", "cart", "order", "user", "auth", "category", "item", "checkout", "payment"]
+    for keyword in keywords:
+        if keyword in api_keywords or any(k in keyword for k in api_keywords):
+            # Look for route files with this name
+            for route_file in path.glob(f"**/api/**/{keyword}*/**/route.ts"):
+                if "node_modules" not in str(route_file):
+                    found_files.add(str(route_file.relative_to(path)))
+            for route_file in path.glob(f"**/api/**/{keyword}*/route.ts"):
+                if "node_modules" not in str(route_file):
+                    found_files.add(str(route_file.relative_to(path)))
+    
+    return list(found_files)[:20]  # Limit to 20 files
+
+
+def _preload_test_dependencies(workspace_path: str, test_plan: list, stories: list = None) -> dict:
     """Pre-load source files that tests will need as context (MetaGPT-style).
+    
+    This function:
+    1. Extracts keywords from stories
+    2. Finds actual source files related to those keywords
+    3. Reads their content so LLM knows actual exports, types, functions
     
     Returns:
         Dict mapping file_path -> content
@@ -79,10 +168,30 @@ def _preload_test_dependencies(workspace_path: str, test_plan: list) -> dict:
     if not workspace_path or not Path(workspace_path).exists():
         return dependencies_content
     
-    # Collect source files mentioned in test plan
+    # 1. Find source files related to stories
+    if stories:
+        keywords = _extract_keywords_from_stories(stories)
+        logger.info(f"[plan_tests] Extracted keywords: {keywords}")
+        
+        related_files = _find_source_files_for_story(workspace_path, keywords)
+        logger.info(f"[plan_tests] Found {len(related_files)} related source files")
+        
+        for file_path in related_files:
+            full_path = Path(workspace_path) / file_path
+            if full_path.exists() and full_path.is_file():
+                try:
+                    content = full_path.read_text(encoding="utf-8")
+                    # Keep more content for source files (important for LLM to understand)
+                    if len(content) > 5000:
+                        content = content[:5000] + "\n... (truncated)"
+                    dependencies_content[file_path] = content
+                    logger.info(f"[plan_tests] Pre-loaded source: {file_path}")
+                except Exception as e:
+                    logger.warning(f"[plan_tests] Failed to pre-load {file_path}: {e}")
+    
+    # 2. Collect source files mentioned in test plan
     source_files = set()
     for step in test_plan:
-        # Get dependencies from step
         deps = step.get("dependencies", [])
         if isinstance(deps, list):
             for dep in deps:
@@ -91,19 +200,16 @@ def _preload_test_dependencies(workspace_path: str, test_plan: list) -> dict:
         
         # Also extract from description (look for file paths)
         description = step.get("description", "")
-        import re
         file_patterns = re.findall(r'src/[^\s,\)]+\.(ts|tsx|js|jsx)', description)
         for match in file_patterns:
             if isinstance(match, tuple):
                 continue
             source_files.add(match)
     
-    # Always include common test setup files
+    # 3. Always include common test setup files
     common_files = [
-        "jest.config.js",
         "jest.config.ts",
         "jest.setup.ts",
-        "jest.setup.js",
         "src/lib/prisma.ts",
         "prisma/schema.prisma",
     ]
@@ -111,6 +217,8 @@ def _preload_test_dependencies(workspace_path: str, test_plan: list) -> dict:
     
     # Pre-load each file
     for file_path in source_files:
+        if file_path in dependencies_content:
+            continue  # Already loaded
         full_path = Path(workspace_path) / file_path
         if full_path.exists() and full_path.is_file():
             try:
@@ -128,9 +236,12 @@ def _preload_test_dependencies(workspace_path: str, test_plan: list) -> dict:
 def _detect_test_structure(project_path: str) -> dict:
     """Detect existing test folder structure in the project.
     
-    Strategy:
-    1. First try: Find from existing test FILES (*.test.ts, *.spec.ts)
-    2. Fallback: Check for common test FOLDERS
+    Strategy for integration tests:
+    1. First priority: Find existing "integration" folder
+    2. Second: Check for common test FOLDERS  
+    3. Fallback: Create in __tests__/integration/
+    
+    Note: Don't use folders like "lib/", "utils/" for story tests - those are for unit tests.
     
     Returns:
         dict with:
@@ -142,7 +253,7 @@ def _detect_test_structure(project_path: str) -> dict:
     from pathlib import Path
     
     structure = {
-        "integration_folder": "tests/integration",  # default
+        "integration_folder": "__tests__/integration",  # default
         "e2e_folder": "e2e",  # default
         "existing_tests": [],
         "existing_specs": [],
@@ -152,40 +263,48 @@ def _detect_test_structure(project_path: str) -> dict:
     if not path.exists():
         return structure
     
-    # 1. First try: Find from existing test FILES
-    # Exclude node_modules, .worktrees, and boilerplate folders
-    exclude_patterns = ["node_modules", ".worktrees", "boilerplate", "templates"]
+    # Exclude patterns for file searching
+    exclude_patterns = [
+        "node_modules", 
+        ".worktrees", 
+        "boilerplate", 
+        "templates",
+    ]
+    
+    # For integration tests: Prioritize folders with "integration" in name
+    # Don't use lib/, utils/, etc. - those are for unit tests
+    integration_candidates = [
+        "src/__tests__/integration",  # Next.js common pattern
+        "__tests__/integration",
+        "tests/integration",
+        "test/integration",
+        "__tests__",
+        "tests",
+    ]
+    
+    for folder in integration_candidates:
+        if (path / folder).is_dir():
+            structure["integration_folder"] = folder
+            logger.info(f"[_detect_test_structure] Found integration folder: {folder}")
+            break
+    
+    # If no folder exists, create __tests__/integration as default
+    if not (path / structure["integration_folder"]).exists():
+        structure["integration_folder"] = "__tests__/integration"
+        logger.info(f"[_detect_test_structure] Will use default integration folder: {structure['integration_folder']}")
+    
+    # Collect existing test files for reference (but don't use their folder)
     test_files = list(path.glob("**/*.test.ts")) + list(path.glob("**/*.test.js"))
     test_files = [f for f in test_files if not any(p in str(f) for p in exclude_patterns)]
-    
+    test_files = [f for f in test_files if len(f.relative_to(path).parts) <= 4]
     if test_files:
-        # Sort by path depth (prefer shallower paths)
-        test_files.sort(key=lambda f: len(f.parts))
-        first_test = test_files[0].relative_to(path)
-        structure["integration_folder"] = str(first_test.parent)
         structure["existing_tests"] = [str(f.relative_to(path)) for f in test_files[:5]]
-        logger.info(f"[_detect_test_structure] Found integration folder from files: {structure['integration_folder']}")
-    else:
-        # 2. Fallback: Check for common test FOLDERS
-        integration_candidates = [
-            "src/__tests__/integration",
-            "src/__tests__",
-            "__tests__/integration",
-            "__tests__",
-            "tests/integration",
-            "tests",
-            "test/integration",
-            "test",
-        ]
-        for folder in integration_candidates:
-            if (path / folder).is_dir():
-                structure["integration_folder"] = folder
-                logger.info(f"[_detect_test_structure] Found integration folder from dir: {folder}")
-                break
     
     # E2E detection - similar logic (reuse exclude_patterns)
     spec_files = list(path.glob("**/*.spec.ts")) + list(path.glob("**/*.spec.js"))
     spec_files = [f for f in spec_files if not any(p in str(f) for p in exclude_patterns)]
+    # Also exclude deeply nested paths
+    spec_files = [f for f in spec_files if len(f.relative_to(path).parts) <= 4]
     
     if spec_files:
         spec_files.sort(key=lambda f: len(f.parts))
@@ -294,24 +413,28 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
         test_plan = result.get("test_plan", [])
         
         # Ensure each step has required fields
+        integration_folder = test_structure.get("integration_folder", "__tests__/integration")
+        e2e_folder = test_structure.get("e2e_folder", "e2e")
+        
         for i, step in enumerate(test_plan):
             step["order"] = step.get("order", i + 1)
             step["type"] = step.get("type", "integration")
             
-            # Generate file path if not provided
+            # Generate file path if not provided - use detected folders
             if not step.get("file_path"):
                 story_title = step.get("story_title", "unknown")
                 slug = _slugify(story_title)
                 if step["type"] == "e2e":
-                    step["file_path"] = f"e2e/{slug}.spec.ts"
+                    step["file_path"] = f"{e2e_folder}/story-{slug}.spec.ts"
                 else:
-                    step["file_path"] = f"tests/integration/story-{slug}.test.ts"
+                    step["file_path"] = f"{integration_folder}/story-{slug}.test.ts"
         
         total_steps = len(test_plan)
         
         # Pre-load dependencies (MetaGPT-style - reduces tool calls in implement)
+        # Pass stories so we can find related source files
         workspace_path = state.get("workspace_path", "") or project_path
-        dependencies_content = _preload_test_dependencies(workspace_path, test_plan)
+        dependencies_content = _preload_test_dependencies(workspace_path, test_plan, stories)
         logger.info(f"[plan_tests] Pre-loaded {len(dependencies_content)} dependency files")
         
         # Build message
@@ -323,9 +446,8 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
         
         logger.info(f"[plan_tests] Created plan with {total_steps} steps")
         
-        # Notify user if agent available
-        if agent:
-            await agent.message_user("response", msg)
+        # Notify via appropriate channel
+        await send_message(state, agent, msg, "progress")
         
         return {
             "test_plan": test_plan,
@@ -343,8 +465,7 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
     except Exception as e:
         logger.error(f"[plan_tests] Error: {e}", exc_info=True)
         error_msg = f"Lỗi khi tạo test plan: {str(e)}"
-        if agent:
-            await agent.message_user("response", error_msg)
+        await send_message(state, agent, error_msg, "error")
         return {
             "test_plan": [],
             "testing_context": testing_context,

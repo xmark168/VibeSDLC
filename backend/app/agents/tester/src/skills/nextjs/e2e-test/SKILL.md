@@ -5,6 +5,50 @@ description: Write E2E tests with Playwright for full user flows. Use when testi
 
 # E2E Test (Playwright)
 
+## ⚠️ CRITICAL RULES - READ FIRST
+- **DO NOT** create config files (jest.config.*, playwright.config.*, tsconfig.json)
+- Config files **ALREADY EXIST** in project - use them as-is
+- **ONLY** create TEST files: *.spec.ts in e2e/ folder
+- **READ SOURCE CODE FIRST** - Check actual page routes, components, selectors before writing tests
+- **DO NOT INVENT SELECTORS** - Only use selectors that exist in the actual HTML
+
+## ⚠️ INVALID MATCHERS - DO NOT USE THESE
+```typescript
+// ❌ THESE DO NOT EXIST IN PLAYWRIGHT - WILL CAUSE TYPESCRIPT ERRORS
+await expect(locator).toHaveCountGreaterThan(5);     // DOES NOT EXIST
+await expect(locator).toHaveCountLessThan(10);       // DOES NOT EXIST
+await expect(locator).toHaveCountGreaterThanOrEqual(5);  // DOES NOT EXIST
+await expect(page).toHaveURL({ gt: 0 });             // INVALID SYNTAX
+
+// ✅ USE THESE INSTEAD
+await expect(locator).toHaveCount(5);                // Exact count
+const count = await locator.count();
+expect(count).toBeGreaterThan(5);                    // Use Jest matcher on count
+expect(count).toBeLessThan(10);
+```
+
+## ✅ VALID PLAYWRIGHT MATCHERS
+```typescript
+// Page assertions
+await expect(page).toHaveURL('/dashboard');
+await expect(page).toHaveURL(/.*dashboard/);
+await expect(page).toHaveTitle('Dashboard');
+
+// Locator assertions
+await expect(locator).toBeVisible();
+await expect(locator).toBeHidden();
+await expect(locator).toBeEnabled();
+await expect(locator).toBeDisabled();
+await expect(locator).toBeChecked();
+await expect(locator).toHaveText('Hello');
+await expect(locator).toContainText('Hello');
+await expect(locator).toHaveValue('input value');
+await expect(locator).toHaveAttribute('href', '/home');
+await expect(locator).toHaveClass(/active/);
+await expect(locator).toHaveCount(5);               // EXACT count only
+await expect(locator).toHaveCSS('color', 'red');
+```
+
 ## When to Use
 - Testing complete user flows (signup → login → dashboard)
 - Testing UI interactions and navigation
@@ -13,49 +57,7 @@ description: Write E2E tests with Playwright for full user flows. Use when testi
 - Testing authentication flows
 
 ## File Location
-`e2e/{feature}.spec.ts`
-
-## Setup (if not exists)
-
-### Install Playwright
-```bash
-bun add -D @playwright/test
-npx playwright install
-```
-
-### playwright.config.ts
-```typescript
-import { defineConfig, devices } from '@playwright/test';
-
-export default defineConfig({
-  testDir: './e2e',
-  fullyParallel: true,
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
-  reporter: 'html',
-  
-  use: {
-    baseURL: 'http://localhost:3000',
-    trace: 'on-first-retry',
-    screenshot: 'only-on-failure',
-  },
-
-  projects: [
-    {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
-    },
-  ],
-
-  webServer: {
-    command: 'bun run dev',
-    url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120 * 1000,
-  },
-});
-```
+Place tests in e2e/ folder: `e2e/story-{slug}.spec.ts`
 
 ## Test Structure
 

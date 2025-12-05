@@ -5,6 +5,36 @@ description: Write integration tests with Jest for API routes and database opera
 
 # Integration Test (Jest)
 
+## ⚠️ CRITICAL RULES - READ FIRST
+- **DO NOT** create config files (jest.config.*, playwright.config.*, tsconfig.json)
+- Config files **ALREADY EXIST** in project - use them as-is
+- **ONLY** create TEST files: *.test.ts
+- **READ SOURCE CODE FIRST** - Check actual exports, types, function signatures before writing tests
+- **DO NOT INVENT APIs** - Only test routes/functions that actually exist in the codebase
+
+## ⚠️ TYPESCRIPT STRICT RULES
+```typescript
+// ✅ CORRECT - Explicit types for ALL parameters
+const mockFn = jest.fn((...args: unknown[]) => mockImpl(...args));
+const handler = (req: Request, params: { id: string }) => {...};
+
+// ❌ WRONG - Implicit any (will cause TS errors)
+const mockFn = jest.fn((...args) => mockImpl(...args));  // Error: implicit any
+const handler = (req, params) => {...};  // Error: implicit any
+```
+
+## ⚠️ IMPORT RULES
+```typescript
+// ✅ CORRECT imports
+import { getServerSession } from 'next-auth';           // Named import
+import { prisma } from '@/lib/prisma';                  // Named import
+import { GET, POST } from '@/app/api/users/route';      // Named imports for route handlers
+
+// ❌ WRONG imports - DO NOT USE
+import getServerSession from 'next-auth';               // Wrong: not default export
+import prisma from '@/lib/prisma';                      // Wrong: check actual export
+```
+
 ## When to Use
 - Testing API route handlers (GET, POST, PUT, DELETE)
 - Testing database operations (Prisma)
@@ -12,7 +42,7 @@ description: Write integration tests with Jest for API routes and database opera
 - Testing with mocked external services
 
 ## File Location
-`tests/integration/story-{slug}.test.ts`
+Place tests in the integration folder detected by the system (e.g., `__tests__/integration/` or `src/__tests__/integration/`)
 
 ## Test Structure
 

@@ -1,5 +1,5 @@
 
-import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile, Link2, ExternalLink } from "lucide-react"
+import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile, Link2, ExternalLink, Loader2, Wifi, WifiOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -9,7 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import type { KanbanCardData } from "./kanban-card"
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
+import { useStoryWebSocket } from "@/hooks/useStoryWebSocket"
 
 interface TaskDetailModalProps {
   card: KanbanCardData | null
@@ -17,6 +18,7 @@ interface TaskDetailModalProps {
   onOpenChange: (open: boolean) => void
   onDownloadResult: (card: KanbanCardData) => void
   allStories?: KanbanCardData[]  // For resolving dependency titles
+  projectId?: string  // For WebSocket connection
 }
 
 // Mock chat messages type
@@ -38,10 +40,13 @@ interface EpicInfo {
   domain?: string
 }
 
-export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, allStories = [] }: TaskDetailModalProps) {
+export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, allStories = [], projectId }: TaskDetailModalProps) {
   const [selectedChild, setSelectedChild] = useState<KanbanCardData | null>(null)
   const [selectedDependency, setSelectedDependency] = useState<KanbanCardData | null>(null)
   const [selectedEpic, setSelectedEpic] = useState<EpicInfo | null>(null)
+  
+  // Get token from localStorage
+  const getToken = () => typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
   
   // Helper to get story title from dependency ID (UUID)
   const getDependencyTitle = (depId: string): string => {
@@ -56,30 +61,82 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
   }
   const [activeTab, setActiveTab] = useState<string>("detail")
   const [chatMessage, setChatMessage] = useState("")
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    {
-      id: '1',
-      author: 'John Doe',
-      author_type: 'user',
-      content: 'Chúng ta cần làm rõ acceptance criteria cho story này.',
-      timestamp: new Date(Date.now() - 3600000).toISOString(),
-    },
-    {
-      id: '2',
-      author: 'Product Owner Agent',
-      author_type: 'agent',
-      content: 'Tôi đã cập nhật acceptance criteria. Các điểm chính:\n1. User có thể login bằng email/password\n2. Hiển thị error message khi sai thông tin\n3. Redirect về dashboard sau khi login thành công',
-      timestamp: new Date(Date.now() - 3000000).toISOString(),
-    },
-    {
-      id: '3',
-      author: 'Jane Smith',
-      author_type: 'user',
-      content: 'Cảm ơn! Story point 5 có hợp lý không?',
-      timestamp: new Date(Date.now() - 1800000).toISOString(),
-    },
-  ])
+  const [initialMessages, setInitialMessages] = useState<ChatMessage[]>([])
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false)
   const chatScrollRef = useRef<HTMLDivElement>(null)
+  const token = getToken()
+
+  // Fetch initial messages from API
+  const fetchMessages = useCallback(async (storyId: string) => {
+    const authToken = getToken()
+    console.log('[fetchMessages] storyId:', storyId, 'token:', authToken ? 'exists' : 'missing')
+    if (!storyId || !authToken) {
+      console.log('[fetchMessages] Skipping - missing storyId or token')
+      return
+    }
+    
+    const apiUrl = `${import.meta.env.VITE_API_URL}/api/v1/stories/${storyId}/messages`
+    console.log('[fetchMessages] Fetching:', apiUrl)
+    
+    setIsLoadingMessages(true)
+    try {
+      const response = await fetch(
+        apiUrl,
+        {
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+      
+      console.log('[fetchMessages] Response status:', response.status)
+      if (response.ok) {
+        const data = await response.json()
+        console.log('[fetchMessages] Data:', data)
+        setInitialMessages(
+          data.data.map((msg: {
+            id: string
+            author_name: string
+            author_type: string
+            content: string
+            created_at: string
+          }) => ({
+            id: msg.id,
+            author: msg.author_name || 'Unknown',
+            author_type: msg.author_type === 'agent' ? 'agent' : 'user',
+            content: msg.content,
+            timestamp: msg.created_at,
+          }))
+        )
+      } else {
+        console.error('[fetchMessages] Error response:', response.status, response.statusText)
+      }
+    } catch (error) {
+      console.error('[fetchMessages] Failed to fetch story messages:', error)
+    } finally {
+      setIsLoadingMessages(false)
+    }
+  }, [])
+
+  // Reset and fetch messages when dialog opens or card changes
+  useEffect(() => {
+    console.log('[useEffect] open:', open, 'card?.id:', card?.id)
+    
+    if (open && card?.id) {
+      setInitialMessages([])
+      console.log('[useEffect] Triggering fetchMessages for:', card.id)
+      fetchMessages(card.id)
+    }
+  }, [open, card?.id, fetchMessages])
+
+  // WebSocket for real-time messages
+  const { messages: chatMessages, isConnected } = useStoryWebSocket(
+    open ? card?.id ?? null : null,
+    projectId ?? null,
+    token ?? undefined,
+    initialMessages
+  )
 
   // Auto scroll to bottom when new messages arrive
   useEffect(() => {
@@ -537,8 +594,18 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                   {chatMessages.length} messages
                 </Badge>
               </div>
-              <div className="text-xs text-muted-foreground">
-                Real-time collaboration
+              <div className="flex items-center gap-1.5 text-xs">
+                {isConnected ? (
+                  <>
+                    <Wifi className="w-3 h-3 text-green-500" />
+                    <span className="text-green-600 dark:text-green-400">Live</span>
+                  </>
+                ) : (
+                  <>
+                    <WifiOff className="w-3 h-3 text-muted-foreground" />
+                    <span className="text-muted-foreground">Connecting...</span>
+                  </>
+                )}
               </div>
             </div>
 
@@ -547,7 +614,15 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
               ref={chatScrollRef}
               className="flex-1 overflow-y-auto py-4 space-y-4"
             >
-              {chatMessages.map((msg) => (
+              {/* Loading State */}
+              {isLoadingMessages && (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-sm text-muted-foreground">Loading messages...</span>
+                </div>
+              )}
+
+              {!isLoadingMessages && chatMessages.map((msg) => (
                 <div
                   key={msg.id}
                   className={`flex items-start gap-3 ${
@@ -596,7 +671,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
               ))}
 
               {/* Empty State */}
-              {chatMessages.length === 0 && (
+              {!isLoadingMessages && chatMessages.length === 0 && (
                 <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground py-12">
                   <MessageSquare className="w-12 h-12 mb-3 opacity-30" />
                   <p className="text-sm font-medium">No messages yet</p>
@@ -671,6 +746,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
           onOpenChange={() => setSelectedChild(null)}
           onDownloadResult={onDownloadResult}
           allStories={allStories}
+          projectId={projectId}
         />
       )}
 
@@ -682,6 +758,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
           onOpenChange={() => setSelectedDependency(null)}
           onDownloadResult={onDownloadResult}
           allStories={allStories}
+          projectId={projectId}
         />
       )}
 

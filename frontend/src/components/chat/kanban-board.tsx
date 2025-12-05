@@ -1041,6 +1041,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         onOpenChange={() => setSelectedCard(null)}
         onDownloadResult={handleDownloadResult}
         allStories={columns.flatMap(col => col.cards)}
+        projectId={projectId}
       />
 
       <FlowMetricsDashboard

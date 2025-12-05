@@ -342,3 +342,58 @@ def list_epics(
         ],
         "count": len(epics)
     }
+
+
+# ===== Story Messages =====
+@router.get("/{story_id}/messages")
+async def get_story_messages(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    story_id: uuid.UUID,
+    limit: int = Query(default=50, le=100),
+    offset: int = Query(default=0, ge=0)
+) -> Any:
+    """Get messages in story channel."""
+    from app.models import StoryMessage
+    
+    # Verify story exists
+    story = session.get(Story, story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    
+    # Get messages ordered by created_at
+    statement = (
+        select(StoryMessage)
+        .where(StoryMessage.story_id == story_id)
+        .order_by(StoryMessage.created_at.asc())
+        .offset(offset)
+        .limit(limit)
+    )
+    messages = session.exec(statement).all()
+    
+    # Get total count
+    count_statement = (
+        select(func.count())
+        .select_from(StoryMessage)
+        .where(StoryMessage.story_id == story_id)
+    )
+    total = session.exec(count_statement).one()
+    
+    return {
+        "data": [
+            {
+                "id": str(msg.id),
+                "author_type": msg.author_type,
+                "author_name": msg.author_name,
+                "content": msg.content,
+                "message_type": msg.message_type,
+                "structured_data": msg.structured_data,
+                "created_at": msg.created_at.isoformat() if msg.created_at else None,
+            }
+            for msg in messages
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }

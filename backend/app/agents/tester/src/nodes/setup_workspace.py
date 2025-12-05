@@ -176,18 +176,7 @@ def _setup_git_worktree(
         }
 
 
-def _index_workspace(project_id: str, workspace_path: str, task_id: str) -> bool:
-    """Index workspace with CocoIndex if available."""
-    try:
-        from app.agents.developer_v2.src.tools import index_workspace
 
-        return index_workspace(project_id, workspace_path, task_id)
-    except ImportError:
-        logger.debug("[_index_workspace] CocoIndex tools not available")
-        return False
-    except Exception as e:
-        logger.warning(f"[_index_workspace] Error: {e}")
-        return False
 
 
 def _get_package_hash(workspace_path: str) -> str:
@@ -231,10 +220,9 @@ async def setup_workspace(state: TesterState, agent=None) -> dict:
     This node:
     1. Gets project path from database
     2. Creates git worktree for isolated test development
-    3. Indexes workspace with CocoIndex (if available)
-    4. Loads project context and AGENTS.md
-    5. Initializes skill registry
-    6. Runs package install if needed
+    3. Loads project context and AGENTS.md
+    4. Initializes skill registry
+    5. Runs package install if needed
 
     Returns:
         Updated state with workspace context
@@ -274,17 +262,6 @@ async def setup_workspace(state: TesterState, agent=None) -> dict:
         workspace_path = workspace_info.get("workspace_path", main_workspace)
         branch_name = workspace_info.get("branch_name", "")
         workspace_ready = workspace_info.get("workspace_ready", False)
-
-        # Index workspace
-        index_ready = False
-        if workspace_path:
-            index_ready = _index_workspace(project_id, workspace_path, task_id)
-            if index_ready:
-                logger.info("[setup_workspace] Indexed workspace with CocoIndex")
-            else:
-                logger.info(
-                    "[setup_workspace] CocoIndex not available, continuing without"
-                )
 
         # Load project context
         project_context = ""
@@ -348,7 +325,6 @@ async def setup_workspace(state: TesterState, agent=None) -> dict:
             "main_workspace": main_workspace,
             "workspace_ready": workspace_ready,
             "project_path": workspace_path,
-            "index_ready": index_ready,
             "project_context": project_context,
             "agents_md": agents_md,
             "tech_stack": tech_stack,

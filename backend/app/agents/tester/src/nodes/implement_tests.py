@@ -12,6 +12,7 @@ from langchain_openai import ChatOpenAI
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.skills import SkillRegistry
 from app.agents.tester.src.state import TesterState
+from app.agents.tester.src.core_nodes import send_message
 from app.agents.tester.src.tools.filesystem_tools import get_filesystem_tools, set_tool_context
 from app.agents.tester.src.tools.skill_tools import (
     get_skill_tools,
@@ -141,32 +142,61 @@ def _cfg(state: dict, name: str) -> dict:
 
 
 def _build_dependencies_context(dependencies_content: dict, step_dependencies: list) -> str:
-    """Build pre-loaded dependencies context for the current step (MetaGPT-style)."""
+    """Build pre-loaded dependencies context for the current step (MetaGPT-style).
+    
+    This includes:
+    1. Step-specific dependencies (from test plan)
+    2. Related source files (API routes, services, etc.) - CRITICAL for LLM
+    3. Common test setup files
+    """
     if not dependencies_content:
         return ""
     
     parts = []
+    included_paths = set()
     
-    # Add step-specific dependencies first
+    # 1. Add step-specific dependencies first
     if step_dependencies:
         for dep_path in step_dependencies:
             if not isinstance(dep_path, str):
                 continue
             if dep_path in dependencies_content:
                 content = dependencies_content[dep_path]
-                parts.append(f"### {dep_path}\n```\n{content}\n```")
+                ext = dep_path.split(".")[-1] if "." in dep_path else ""
+                lang = "typescript" if ext in ["ts", "tsx"] else "javascript" if ext in ["js", "jsx"] else ""
+                parts.append(f"### {dep_path}\n```{lang}\n{content}\n```")
+                included_paths.add(dep_path)
     
-    # Add common test files if not already included
-    common_files = ["jest.config.ts", "jest.setup.ts", "src/lib/prisma.ts"]
+    # 2. Add ALL source files (API routes, services, components)
+    # These are CRITICAL for LLM to understand actual exports, types, functions
+    source_patterns = ["src/app/api/", "src/lib/", "src/services/", "app/api/", "pages/api/"]
+    for dep_path, content in dependencies_content.items():
+        if dep_path in included_paths:
+            continue
+        if any(pattern in dep_path for pattern in source_patterns):
+            ext = dep_path.split(".")[-1] if "." in dep_path else ""
+            lang = "typescript" if ext in ["ts", "tsx"] else "javascript"
+            parts.append(f"### {dep_path} (SOURCE CODE - READ FOR ACTUAL EXPORTS/TYPES)\n```{lang}\n{content}\n```")
+            included_paths.add(dep_path)
+    
+    # 3. Add common test setup files
+    common_files = ["jest.config.ts", "jest.setup.ts", "prisma/schema.prisma"]
     for dep_path in common_files:
-        if dep_path in dependencies_content and dep_path not in (step_dependencies or []):
+        if dep_path in dependencies_content and dep_path not in included_paths:
             content = dependencies_content[dep_path]
             parts.append(f"### {dep_path}\n```\n{content}\n```")
+            included_paths.add(dep_path)
     
     if not parts:
         return ""
     
-    return "<pre_loaded_context>\n" + "\n\n".join(parts) + "\n</pre_loaded_context>"
+    header = """<pre_loaded_context>
+## ⚠️ IMPORTANT: Read the SOURCE CODE below to understand ACTUAL exports, types, and function signatures.
+## DO NOT invent APIs, imports, or types that don't exist in the source code.
+## Use the EXACT function names, parameter types, and return types shown in the source files.
+
+"""
+    return header + "\n\n".join(parts) + "\n</pre_loaded_context>"
 
 
 async def implement_tests(state: TesterState, agent=None) -> dict:
@@ -303,8 +333,7 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
 
         # Update progress message
         msg = f"✅ Step {current_step + 1}/{total_steps}: {description}"
-        if agent:
-            await agent.message_user("response", msg)
+        await send_message(state, agent, msg, "progress")
 
         logger.info(f"[implement_tests] Completed step {current_step + 1}")
 
@@ -324,8 +353,7 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
     except Exception as e:
         logger.error(f"[implement_tests] Error: {e}", exc_info=True)
         error_msg = f"Lỗi khi implement step {current_step + 1}: {str(e)}"
-        if agent:
-            await agent.message_user("response", error_msg)
+        await send_message(state, agent, error_msg, "error")
         return {
             "error": str(e),
             "message": error_msg,
