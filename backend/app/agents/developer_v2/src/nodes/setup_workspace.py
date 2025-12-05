@@ -153,7 +153,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                 agent_name=agent.name
             )
         
-        index_ready = False  # No longer using CocoIndex
+        index_ready = False
         workspace_path = workspace_info.get("workspace_path", "")
         
         project_context = ""
