@@ -729,7 +729,7 @@ class BaseAgent(ABC):
         # For now, return question_id - the calling code should handle the pause/resume
         logger.info(f"[{self.name}] Waiting for approval (question_id={question_id})")
         
-        # Return placeholder - actual implementation will need CrewAI Flow pause/resume
+        # Return placeholder - actual implementation will need async pause/resume
         return {
             "question_id": str(question_id),
             "status": "waiting_approval"

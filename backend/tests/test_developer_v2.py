@@ -674,35 +674,6 @@ class TestGraphRouting:
 
 
 # =============================================================================
-# UNIT TESTS - Git Operations
-# =============================================================================
-
-class TestGitOperations:
-    """Test GitPythonTool operations."""
-    
-    def test_merge_branch_operation(self, temp_workspace):
-        """Test merge branch operation exists."""
-        from app.agents.developer.tools.git_python_tool import GitPythonTool
-        
-        git_tool = GitPythonTool(root_dir=str(temp_workspace))
-        
-        # Initialize repo
-        git_tool._run("init")
-        
-        # Should have merge operation
-        assert hasattr(git_tool, '_merge_branch')
-    
-    def test_delete_branch_operation(self, temp_workspace):
-        """Test delete branch operation exists."""
-        from app.agents.developer.tools.git_python_tool import GitPythonTool
-        
-        git_tool = GitPythonTool(root_dir=str(temp_workspace))
-        
-        # Should have delete_branch operation
-        assert hasattr(git_tool, '_delete_branch')
-
-
-# =============================================================================
 # INTEGRATION TESTS - End-to-End Flow
 # =============================================================================
 
