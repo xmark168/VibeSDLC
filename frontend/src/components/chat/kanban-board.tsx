@@ -484,28 +484,29 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
           .filter(c => c.columnId === targetColumnId && c.id !== active.id)
           .sort((a, b) => (a.rank || 999) - (b.rank || 999))
 
-        let newRank = 1
+        let newRank = targetColumnCards.length + 1 // Default: add to end
         if (!isColumnTarget && overCard && over.rect) {
           // Dropping on a specific card - determine if above or below its center
           const overCardIndex = targetColumnCards.findIndex(c => c.id === over.id)
           if (overCardIndex !== -1) {
-            // Get the center Y of the over card
+            // Compare center-to-center for accurate positioning
             const overCardCenterY = over.rect.top + over.rect.height / 2
-            // Get the Y position of the drop (use active's current position)
-            const activeY = event.active.rect.current.translated?.top ?? 0
+            const activeRect = event.active.rect.current.translated
+            const activeHeight = activeRect?.height ?? 0
+            const activeTop = activeRect?.top ?? 0
+            const activeCenterY = activeTop + activeHeight / 2
             
-            if (activeY < overCardCenterY) {
-              // Dropping ABOVE the over card - take its position
+            if (activeCenterY < overCardCenterY) {
+              // Active center is above over center - insert before
               newRank = overCardIndex + 1
             } else {
-              // Dropping BELOW the over card - insert after it
+              // Active center is at or below over center - insert after
               newRank = overCardIndex + 2
             }
           }
-        } else if (isColumnTarget) {
-          // Dropping on empty column area - add to end
-          newRank = targetColumnCards.length + 1
+          // If overCardIndex === -1, keep default (add to end)
         }
+        // If isColumnTarget or no valid overCard, keep default (add to end)
 
         // Update ranks for all cards in target column
         const newRanks = new Map<string, number>()
