@@ -309,7 +309,7 @@ Create an implementation plan with:
 
 async def analyze_and_plan(state: DeveloperState, agent=None) -> DeveloperState:
     """Combined analyze + plan with tool exploration phase."""
-    print("[NODE] analyze_and_plan")
+    logger.info("[NODE] analyze_and_plan")
     
     try:
         workspace_path = state.get("workspace_path", "")

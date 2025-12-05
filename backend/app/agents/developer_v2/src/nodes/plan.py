@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 async def plan(state: DeveloperState, agent=None) -> DeveloperState:
     """Break story into abstract tasks (WHAT, not HOW)."""
-    print("[NODE] plan")
+    logger.info("[NODE] plan")
     try:
         analysis = state.get("analysis_result") or {}
         workspace_path = state.get("workspace_path", "")

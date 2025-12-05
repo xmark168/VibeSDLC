@@ -60,7 +60,7 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
     """Review implemented code with LGTM/LBTM decision."""
     current_step = state.get("current_step", 0)
     total_steps = state.get("total_steps", 0)
-    print(f"[NODE] review step {current_step}/{total_steps}")
+    logger.info(f"[NODE] review step {current_step}/{total_steps}")
     
     try:
         plan_steps = state.get("implementation_plan", [])

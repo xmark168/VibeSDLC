@@ -12,7 +12,6 @@ from ._base_context import (
 
 # Filesystem tools
 from .filesystem_tools import (
-    set_fs_context,  # backward compat, delegates to set_tool_context
     read_file_safe,
     write_file_safe,
     list_directory_safe,
@@ -27,7 +26,6 @@ from .filesystem_tools import (
 
 # Git tools
 from .git_tools import (
-    set_git_context,  # backward compat, delegates to set_tool_context
     git_status,
     git_commit,
     git_create_branch,
@@ -42,7 +40,6 @@ from .git_tools import (
 
 # Shell tools
 from .shell_tools import (
-    set_shell_context,  # backward compat, delegates to set_tool_context
     execute_shell,
     run_shell,
 )
@@ -79,10 +76,6 @@ __all__ = [
     "get_task_id",
     "is_safe_path",
     "reset_context",
-    # Backward compat context setters
-    "set_fs_context",
-    "set_git_context",
-    "set_shell_context",
     # Filesystem
     "read_file_safe",
     "write_file_safe",

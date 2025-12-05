@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import List, Optional
 from langchain_core.tools import tool
 
-from ._base_context import get_root_dir, set_tool_context
+from ._base_context import get_root_dir
 
 try:
     from git import Repo, InvalidGitRepositoryError
@@ -14,12 +14,6 @@ except ImportError:
     GIT_AVAILABLE = False
     Repo = None
     InvalidGitRepositoryError = Exception
-
-
-# Backward compatibility alias
-def set_git_context(root_dir: str = None):
-    """Set git context. Delegates to unified set_tool_context."""
-    set_tool_context(root_dir=root_dir)
 
 
 

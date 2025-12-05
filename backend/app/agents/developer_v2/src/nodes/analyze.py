@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 async def analyze(state: DeveloperState, agent=None) -> DeveloperState:
     """Analyze story to understand scope, complexity, and affected files."""
-    print("[NODE] analyze")
+    logger.info("[NODE] analyze")
     try:
         workspace_path = state.get("workspace_path", "")
         project_id = state.get("project_id")

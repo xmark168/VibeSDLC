@@ -7,17 +7,11 @@ from typing import Optional
 from langchain_core.tools import tool
 
 from app.agents.developer_v2.src.utils.llm_utils import file_cache
-from ._base_context import get_root_dir, is_safe_path, set_tool_context
+from ._base_context import get_root_dir, is_safe_path
 
 # Global tracking for modified files (session-specific, not context)
 _modified_files: set = set()
 _files_read_session: set = set()
-
-
-# Backward compatibility alias
-def set_fs_context(root_dir: str = None):
-    """Set filesystem context. Delegates to unified set_tool_context."""
-    set_tool_context(root_dir=root_dir)
 
 
 def get_modified_files() -> list:

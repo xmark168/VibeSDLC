@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
     """Setup git workspace/branch for code modification."""
-    print("[NODE] setup_workspace")
+    logger.info("[NODE] setup_workspace")
     try:
         story_id = state.get("story_id", state.get("task_id", "unknown"))
         

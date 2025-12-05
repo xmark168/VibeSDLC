@@ -199,7 +199,7 @@ class ErrorAnalysisAndPlan(BaseModel):
 
 async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
     """Analyze error and create fix plan in ONE LLM call."""
-    print("[NODE] analyze_error")
+    logger.info("[NODE] analyze_error")
     
     try:
         error_logs = state.get("run_stderr", "")

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from ._base_context import set_tool_context
 from .git_tools import (
-    set_git_context, _git_status, _git_commit,
+    _git_status, _git_commit,
     _git_create_worktree, _git_remove_worktree, _git_delete_branch
 )
 
@@ -21,7 +21,7 @@ def cleanup_old_worktree(main_workspace: Path, branch_name: str, agent_name: str
     if worktree_path.exists():
         logger.info(f"[{agent_name}] Removing worktree: {worktree_path}")
         try:
-            set_git_context(root_dir=str(main_workspace))
+            set_tool_context(root_dir=str(main_workspace))
             _git_remove_worktree(str(worktree_path))
         except Exception as e:
             logger.warning(f"[{agent_name}] Git worktree remove failed: {e}")
@@ -33,7 +33,7 @@ def cleanup_old_worktree(main_workspace: Path, branch_name: str, agent_name: str
                 logger.error(f"[{agent_name}] Failed to remove directory: {e}")
     
     try:
-        set_git_context(root_dir=str(main_workspace))
+        set_tool_context(root_dir=str(main_workspace))
         _git_delete_branch(branch_name)
         logger.info(f"[{agent_name}] Deleted branch: {branch_name}")
     except Exception as e:
@@ -55,7 +55,7 @@ def setup_git_worktree(
         return {"workspace_path": str(main_workspace), "branch_name": branch_name,
                 "main_workspace": str(main_workspace), "workspace_ready": False}
     
-    set_git_context(root_dir=str(main_workspace))
+    set_tool_context(root_dir=str(main_workspace))
     status_result = _git_status()
     
     if "not a git repository" in status_result.lower() or "fatal" in status_result.lower():
@@ -91,7 +91,7 @@ def commit_workspace_changes(
         return "No workspace to commit"
     
     workspace_path = Path(workspace_path)
-    set_git_context(root_dir=str(workspace_path))
+    set_tool_context(root_dir=str(workspace_path))
     
     status = _git_status()
     if "nothing to commit" in status.lower() or "clean" in status.lower():

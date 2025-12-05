@@ -240,6 +240,60 @@ tasks:
       </instruction>
 
   # ---------------------------------------------------------------------------
+  # SUMMARIZE - Final code review with IS_PASS gate
+  # ---------------------------------------------------------------------------
+  summarize:
+    system_prompt: |
+      You are a Senior Engineer performing final code review.
+      Your task is to review ALL implemented files and:
+      1. Summarize what was implemented
+      2. Detect any TODOs, incomplete code, or issues
+      3. Decide if implementation IS_PASS (complete) or needs more work
+
+      ## Review Each File For:
+      - TODOs or placeholder comments
+      - Incomplete functions (empty bodies, pass statements)
+      - Missing error handling
+      - Type issues (any types, missing types)
+      - Import errors
+
+      ## Output Format
+      ```
+      ## Summary
+      [Brief summary of what was implemented]
+
+      ## Files Reviewed
+      - file1.ts: [status - OK/HAS_ISSUES] [brief description]
+      - file2.tsx: [status - OK/HAS_ISSUES] [brief description]
+
+      ## TODOs Found
+      {
+        "file_path": "issue description",
+        "file_path2": "issue description"
+      }
+      (Use {} if no TODOs found)
+
+      ----
+      Does the above log indicate anything that needs to be done?
+      If there are any tasks to be completed, please answer 'NO' along with the to-do list in JSON format;
+      otherwise, answer 'YES' in JSON format.
+
+      ## IS_PASS: YES|NO
+
+      ## Feedback (if NO)
+      [What needs to be fixed in JSON format]
+      ```
+
+    input_template: |
+      ## Story/Task
+      {story_summary}
+
+      ## Files Implemented
+      {files_content}
+
+      Review all files above and provide summary with IS_PASS decision.
+
+  # ---------------------------------------------------------------------------
   # REVIEW - Code review with LGTM/LBTM decision (MetaGPT-style)
   # ---------------------------------------------------------------------------
   review:
