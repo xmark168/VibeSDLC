@@ -19,7 +19,6 @@ from app.agents.developer_v2.src.skills import get_project_structure, get_plan_p
 from app.agents.developer_v2.src.tools.filesystem_tools import (
     read_file_safe, list_directory_safe, glob, grep_files
 )
-from app.agents.developer_v2.src.tools.cocoindex_tools import search_codebase_tool
 
 logger = logging.getLogger(__name__)
 
@@ -370,9 +369,8 @@ CRITICAL: After exploration, you MUST output <result> JSON. Do not stop at explo
         tools = [
             read_file_safe,
             list_directory_safe,
-            glob,                # glob pattern search
-            grep_files,          # text search in files
-            search_codebase_tool,  # semantic search
+            glob,        # glob pattern search
+            grep_files,  # text search in files
         ]
         
         # Single-phase: explore + analyze + plan in one call

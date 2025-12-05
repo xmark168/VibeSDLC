@@ -30,30 +30,10 @@ from .git_tools import (
     git_list_worktrees,
 )
 
-# Shell and search tools
+# Shell tools
 from .shell_tools import (
     set_shell_context,
     execute_shell,
-)
-
-# CocoIndex and project context tools
-from .cocoindex_tools import (
-    set_tool_context,
-    search_codebase,
-    index_workspace,
-    update_workspace_index,
-    get_related_code_indexed,
-    search_codebase_tool,
-    reindex_workspace,
-    get_related_code,
-    get_project_structure,
-    get_coding_guidelines,
-    get_code_examples,
-    get_project_info,
-    get_agents_md,
-    get_project_context,
-    get_boilerplate_examples,
-    get_markdown_code_block_type,
 )
 
 # Execution tools
@@ -69,6 +49,7 @@ from .execution_tools import (
 from .workspace_tools import (
     setup_git_worktree,
     commit_workspace_changes,
+    set_tool_context,
 )
 
 # Skill tools (Claude-driven activation)
@@ -110,22 +91,6 @@ __all__ = [
     "git_list_worktrees",
     # Shell
     "execute_shell",
-    # CocoIndex & Project Context
-    "search_codebase",
-    "index_workspace",
-    "update_workspace_index",
-    "get_related_code_indexed",
-    "search_codebase_tool",
-    "reindex_workspace",
-    "get_related_code",
-    "get_project_structure",
-    "get_coding_guidelines",
-    "get_code_examples",
-    "get_project_info",
-    "get_agents_md",
-    "get_project_context",
-    "get_boilerplate_examples",
-    "get_markdown_code_block_type",
     # Execution
     "CommandResult",
     "install_dependencies",
