@@ -57,6 +57,8 @@ from .execution_tools import (
 from .workspace_tools import (
     setup_git_worktree,
     commit_workspace_changes,
+    get_agents_md,
+    get_project_context,
 )
 
 # Skill tools (Claude-driven activation)
@@ -110,6 +112,8 @@ __all__ = [
     # Workspace
     "setup_git_worktree",
     "commit_workspace_changes",
+    "get_agents_md",
+    "get_project_context",
     # Skill tools
     "set_skill_context",
     "reset_skill_cache",

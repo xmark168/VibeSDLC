@@ -102,3 +102,44 @@ def commit_workspace_changes(
     logger.info(f"[{agent_name}] Committed on '{branch_name}': {result}")
     
     return result
+
+
+def get_agents_md(workspace_path: str | Path) -> str:
+    """Read AGENTS.md from workspace root."""
+    if not workspace_path:
+        return ""
+    agents_path = Path(workspace_path) / "AGENTS.md"
+    if agents_path.exists():
+        try:
+            return agents_path.read_text(encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"Failed to read AGENTS.md: {e}")
+    return ""
+
+
+def get_project_context(workspace_path: str | Path) -> str:
+    """Read project context files (README.md, package.json summary)."""
+    if not workspace_path:
+        return ""
+    
+    workspace_path = Path(workspace_path)
+    parts = []
+    
+    readme_path = workspace_path / "README.md"
+    if readme_path.exists():
+        try:
+            content = readme_path.read_text(encoding="utf-8")[:2000]
+            parts.append(f"## README.md\n{content}")
+        except Exception:
+            pass
+    
+    pkg_path = workspace_path / "package.json"
+    if pkg_path.exists():
+        try:
+            import json
+            pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+            parts.append(f"## package.json\nname: {pkg.get('name', 'unknown')}\ndependencies: {list(pkg.get('dependencies', {}).keys())[:10]}")
+        except Exception:
+            pass
+    
+    return "\n\n".join(parts)

@@ -129,7 +129,7 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
             total_lbtm += 1
             
             # If this step has been LBTM'd 2+ times, force move to next step
-            if step_lbtm_counts[step_key] >= 2:
+            if step_lbtm_counts[step_key] >= 4:
                 logger.warning(f"[review] Step {step_index} has {step_lbtm_counts[step_key]} LBTM attempts, forcing LGTM")
                 review_result["decision"] = "LGTM"
                 review_result["feedback"] = f"(Force-approved after {step_lbtm_counts[step_key]} attempts)"

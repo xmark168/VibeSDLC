@@ -1,4 +1,4 @@
-"""LLM instances for Developer V2 nodes with timeout and retry support."""
+"""LLM instances"""
 import os
 import logging
 from functools import wraps
@@ -9,14 +9,14 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 logger = logging.getLogger(__name__)
 
-# Retry configuration
+# Retry config
 MAX_RETRIES = 3
-RETRY_WAIT_MIN = 1  # seconds
-RETRY_WAIT_MAX = 10  # seconds
+RETRY_WAIT_MIN = 1  
+RETRY_WAIT_MAX = 10  
 
 # Default model configs per step
 LLM_CONFIG = {
-    # Fast tasks (simple routing/response)
+    # Fast tasks 
     "router": {"model": "claude-opus-4-5-20251101", "temperature": 0.1, "timeout": 30},
     "clarify": {"model": "claude-opus-4-5-20251101", "temperature": 0.1, "timeout": 30},
     "respond": {"model": "claude-opus-4-5-20251101", "temperature": 0.1, "timeout": 30},
