@@ -169,11 +169,13 @@ def _build_dependencies_context(dependencies_content: dict, step_dependencies: l
     
     # 2. Add ALL source files (API routes, services, components)
     # These are CRITICAL for LLM to understand actual exports, types, functions
-    source_patterns = ["src/app/api/", "src/lib/", "src/services/", "app/api/", "pages/api/"]
+    source_patterns = ["src/app/api/", "src/lib/", "src/services/", "app/api/", "pages/api/", "src/components/"]
     for dep_path, content in dependencies_content.items():
         if dep_path in included_paths:
             continue
-        if any(pattern in dep_path for pattern in source_patterns):
+        # Normalize path separators for Windows compatibility
+        normalized_path = dep_path.replace("\\", "/")
+        if any(pattern in normalized_path for pattern in source_patterns):
             ext = dep_path.split(".")[-1] if "." in dep_path else ""
             lang = "typescript" if ext in ["ts", "tsx"] else "javascript"
             parts.append(f"### {dep_path} (SOURCE CODE - READ FOR ACTUAL EXPORTS/TYPES)\n```{lang}\n{content}\n```")
@@ -272,9 +274,12 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
     # Build pre-loaded dependencies context (MetaGPT-style)
     dependencies_content = state.get("dependencies_content", {})
     step_dependencies = step.get("dependencies", [])
+    logger.info(f"[implement_tests] dependencies_content has {len(dependencies_content)} files: {list(dependencies_content.keys())[:5]}...")
     deps_context = _build_dependencies_context(dependencies_content, step_dependencies)
     if deps_context:
-        logger.info(f"[implement_tests] Using {len(step_dependencies)} pre-loaded dependencies")
+        logger.info(f"[implement_tests] Built deps_context with {len(deps_context)} chars")
+    else:
+        logger.warning(f"[implement_tests] No deps_context built! dependencies_content empty or no files matched patterns")
 
     # Include feedback from previous review (if LBTM)
     feedback_section = ""
