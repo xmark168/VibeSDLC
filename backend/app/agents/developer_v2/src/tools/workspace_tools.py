@@ -3,21 +3,14 @@
 import logging
 import shutil
 from pathlib import Path
-from app.agents.developer_v2.src.tools.git_tools import (
+
+from ._base_context import set_tool_context
+from .git_tools import (
     set_git_context, _git_status, _git_commit,
     _git_create_worktree, _git_remove_worktree, _git_delete_branch
 )
-from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context
-from app.agents.developer_v2.src.tools.shell_tools import set_shell_context
 
 logger = logging.getLogger(__name__)
-
-
-def set_tool_context(workspace_path: str, project_id: str = None, task_id: str = None):
-    """Set global context for all workspace tools."""
-    set_fs_context(root_dir=workspace_path)
-    set_shell_context(root_dir=workspace_path)
-    set_git_context(root_dir=workspace_path)
 
 
 def cleanup_old_worktree(main_workspace: Path, branch_name: str, agent_name: str = "Developer"):

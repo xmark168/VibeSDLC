@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import List, Optional
 from langchain_core.tools import tool
 
+from ._base_context import get_root_dir, set_tool_context
+
 try:
     from git import Repo, InvalidGitRepositoryError
     GIT_AVAILABLE = True
@@ -14,21 +16,10 @@ except ImportError:
     InvalidGitRepositoryError = Exception
 
 
-# Global context for git operations
-_git_context = {
-    "root_dir": None,
-}
-
-
+# Backward compatibility alias
 def set_git_context(root_dir: str = None):
-    """Set global context for git tools."""
-    if root_dir:
-        _git_context["root_dir"] = root_dir
-
-
-def _get_root_dir() -> str:
-    """Get root directory from context or use cwd."""
-    return _git_context.get("root_dir") or os.getcwd()
+    """Set git context. Delegates to unified set_tool_context."""
+    set_tool_context(root_dir=root_dir)
 
 
 
@@ -36,7 +27,7 @@ def _git_status() -> str:
     """Internal: Get git status."""
     if not GIT_AVAILABLE:
         return "Error: GitPython not installed"
-    root_dir = _get_root_dir()
+    root_dir = get_root_dir()
     original_dir = os.getcwd()
     os.chdir(root_dir)
     try:
@@ -72,7 +63,7 @@ def _git_commit(message: str = "Auto-commit by AI agent", files: str = ".") -> s
     """Internal: Commit changes."""
     if not GIT_AVAILABLE:
         return "Error: GitPython not installed"
-    root_dir = _get_root_dir()
+    root_dir = get_root_dir()
     original_dir = os.getcwd()
     os.chdir(root_dir)
     try:
@@ -102,7 +93,7 @@ def git_create_branch(branch_name: Optional[str] = None) -> str:
     """
     Create and switch to a new git branch.
     """
-    root_dir = _get_root_dir()
+    root_dir = get_root_dir()
     original_dir = os.getcwd()
     os.chdir(root_dir)
     
@@ -134,7 +125,7 @@ def git_checkout(branch_name: str) -> str:
         branch_name: Name of branch to checkout
     """
     
-    root_dir = _get_root_dir()
+    root_dir = get_root_dir()
     original_dir = os.getcwd()
     os.chdir(root_dir)
     
@@ -154,7 +145,7 @@ def git_checkout(branch_name: str) -> str:
 @tool
 def git_diff() -> str:
     """Get list of changed files in the repository."""
-    root_dir = _get_root_dir()
+    root_dir = get_root_dir()
     original_dir = os.getcwd()
     os.chdir(root_dir)
     
@@ -181,7 +172,7 @@ def git_merge(branch_name: str) -> str:
     Merge a branch into the current branch.
     """
     
-    root_dir = _get_root_dir()
+    root_dir = get_root_dir()
     original_dir = os.getcwd()
     os.chdir(root_dir)
     
@@ -207,7 +198,7 @@ def _git_delete_branch(branch_name: str, force: bool = False) -> str:
     """Internal: Delete a branch."""
     if not GIT_AVAILABLE:
         return "Error: GitPython not installed"
-    root_dir = _get_root_dir()
+    root_dir = get_root_dir()
     original_dir = os.getcwd()
     os.chdir(root_dir)
     try:
@@ -231,7 +222,7 @@ def git_delete_branch(branch_name: str, force: bool = False) -> str:
 
 def _git_create_worktree(branch_name: str) -> str:
     """Internal: Create a worktree."""
-    root_dir = _get_root_dir()
+    root_dir = get_root_dir()
     original_dir = os.getcwd()
     os.chdir(root_dir)
     try:
@@ -264,7 +255,7 @@ def git_create_worktree(branch_name: str) -> str:
 
 def _git_remove_worktree(worktree_path: str) -> str:
     """Internal: Remove a worktree."""
-    root_dir = _get_root_dir()
+    root_dir = get_root_dir()
     original_dir = os.getcwd()
     os.chdir(root_dir)
     try:
@@ -285,7 +276,7 @@ def git_remove_worktree(worktree_path: str) -> str:
 @tool
 def git_list_worktrees() -> str:
     """List all git worktrees."""
-    root_dir = _get_root_dir()
+    root_dir = get_root_dir()
     original_dir = os.getcwd()
     os.chdir(root_dir)
     

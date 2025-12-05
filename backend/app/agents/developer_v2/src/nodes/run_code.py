@@ -1,35 +1,18 @@
 """Run code node - Execute format, lint fix, build + tests."""
-import json
 import logging
 from pathlib import Path
 from typing import Tuple, Optional
 
 from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.tools.shell_tools import execute_shell
-from app.agents.developer_v2.src.tools.container_tools import (
-    dev_container_manager, set_container_context,
+from app.agents.developer_v2.src.tools.shell_tools import run_shell
+from app.agents.developer_v2.src.utils.db_container import (
+    start_postgres_container, update_env_file, is_container_running
 )
 from app.agents.developer_v2.src.nodes._helpers import (
     setup_tool_context, get_langfuse_span, write_test_log
 )
 
 logger = logging.getLogger(__name__)
-
-
-# =============================================================================
-# HELPER FUNCTIONS
-# =============================================================================
-
-def _run_shell(cmd: str, cwd: str, timeout: int = 120) -> dict:
-    """Execute shell command and parse JSON result."""
-    result = execute_shell.invoke({
-        "command": cmd,
-        "working_directory": cwd,
-        "timeout": timeout
-    })
-    if isinstance(result, str):
-        result = json.loads(result)
-    return result
 
 
 def _run_step(
@@ -49,7 +32,7 @@ def _run_step(
     logger.info(f"[run_code] [{svc_name}] {step_name}: {cmd}")
     
     try:
-        result = _run_shell(cmd, cwd, timeout)
+        result = run_shell(cmd, cwd, timeout)
         stdout = result.get("stdout", "")
         stderr = result.get("stderr", "")
         exit_code = result.get("exit_code", 0)
@@ -158,12 +141,9 @@ async def _run_service_tests(
         # Step 3: Database setup (if needed)
         if needs_db:
             try:
-                set_container_context(branch_name=branch_name, workspace_path=workspace_path)
-                dev_container_manager.get_or_create(
-                    branch_name=branch_name,
-                    workspace_path=workspace_path,
-                    project_type="node",
-                )
+                if not is_container_running():
+                    start_postgres_container()
+                update_env_file(workspace_path)
                 logger.info(f"[run_code] [{svc_name}] DB container ready")
             except Exception as e:
                 logger.warning(f"[run_code] [{svc_name}] DB container error (continuing): {e}")

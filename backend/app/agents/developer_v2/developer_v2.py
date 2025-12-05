@@ -16,7 +16,7 @@ from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
 from app.agents.core.project_context import ProjectContext
 from app.models import Agent as AgentModel
 from app.agents.developer_v2.src import DeveloperGraph
-from app.agents.developer_v2.workspace_manager import ProjectWorkspaceManager
+from app.agents.developer_v2.src.tools.workspace_manager import ProjectWorkspaceManager
 from app.agents.developer_v2.src.tools import commit_workspace_changes
 from app.kafka.event_schemas import AgentTaskType
 

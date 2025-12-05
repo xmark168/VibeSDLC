@@ -3,13 +3,7 @@ import hashlib
 import logging
 import os
 import subprocess
-import sys
 from pathlib import Path
-
-
-def _use_shell() -> bool:
-    """Use shell=True on Windows to find commands in PATH."""
-    return sys.platform == 'win32'
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.tools import (
@@ -17,6 +11,7 @@ from app.agents.developer_v2.src.tools import (
     get_agents_md,
     get_project_context,
 )
+from app.agents.developer_v2.src.tools._base_context import get_shell_env, get_shared_bun_cache
 from app.agents.developer_v2.src.skills import SkillRegistry
 from app.agents.developer_v2.src.utils.db_container import (
     start_postgres_container,
@@ -25,42 +20,6 @@ from app.agents.developer_v2.src.utils.db_container import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _get_package_hash(workspace_path: str) -> str:
-    """Get hash of package.json content."""
-    pkg_path = os.path.join(workspace_path, "package.json")
-    if not os.path.exists(pkg_path):
-        return ""
-    with open(pkg_path, 'rb') as f:
-        return hashlib.md5(f.read()).hexdigest()
-
-
-def _should_run_bun_install(workspace_path: str) -> bool:
-    """Check if bun install should run based on package.json hash."""
-    hash_file = os.path.join(workspace_path, ".bun-install-hash")
-    current_hash = _get_package_hash(workspace_path)
-    
-    if not current_hash:
-        return False  # No package.json
-    
-    # Check cached hash
-    if os.path.exists(hash_file):
-        with open(hash_file, 'r') as f:
-            cached_hash = f.read().strip()
-        if cached_hash == current_hash:
-            return False  # Same hash, skip install
-    
-    return True
-
-
-def _save_package_hash(workspace_path: str):
-    """Save current package.json hash."""
-    hash_file = os.path.join(workspace_path, ".bun-install-hash")
-    current_hash = _get_package_hash(workspace_path)
-    if current_hash:
-        with open(hash_file, 'w') as f:
-            f.write(current_hash)
 
 
 def _get_schema_hash(workspace_path: str) -> str:
@@ -96,21 +55,7 @@ def _save_schema_hash(workspace_path: str):
             f.write(current_hash)
 
 
-def _get_shared_bun_cache() -> str:
-    """Get shared bun cache directory path."""
-    # backend/projects/.bun-cache
-    current_file = Path(__file__).resolve()
-    backend_root = current_file.parent.parent.parent.parent.parent.parent
-    cache_dir = backend_root / "projects" / ".bun-cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    return str(cache_dir)
 
-
-def _get_bun_env() -> dict:
-    """Get environment with shared bun cache."""
-    env = os.environ.copy()
-    env["BUN_INSTALL_CACHE_DIR"] = _get_shared_bun_cache()
-    return env
 
 
 async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
@@ -187,10 +132,11 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             except Exception as db_err:
                 logger.warning(f"[setup_workspace] Database setup failed: {db_err}")
         
-        # Smart bun install - only if package.json changed
-        if workspace_path and _should_run_bun_install(workspace_path):
+        # Run bun install if package.json exists
+        pkg_json = os.path.join(workspace_path, "package.json") if workspace_path else ""
+        if pkg_json and os.path.exists(pkg_json):
             try:
-                cache_dir = _get_shared_bun_cache()
+                cache_dir = get_shared_bun_cache()
                 logger.info(f"[setup_workspace] Running bun install (cache: {cache_dir})...")
                 result = subprocess.run(
                     "bun install --frozen-lockfile",
@@ -200,11 +146,10 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                     encoding='utf-8',
                     errors='replace',
                     timeout=120,
-                    shell=_use_shell(),
-                    env=_get_bun_env()
+                    shell=True,
+                    env=get_shell_env()
                 )
                 if result.returncode == 0:
-                    _save_package_hash(workspace_path)
                     logger.info("[setup_workspace] bun install successful")
                 else:
                     logger.warning(f"[setup_workspace] bun install failed: {result.stderr[:200]}")
@@ -212,9 +157,6 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                 logger.warning("[setup_workspace] bun install timed out")
             except Exception as e:
                 logger.warning(f"[setup_workspace] bun install error: {e}")
-        else:
-            if workspace_path:
-                logger.info("[setup_workspace] Skipping bun install (package.json unchanged)")
         
         # Smart prisma generate - only if schema changed
         if workspace_path and _should_run_prisma_generate(workspace_path):

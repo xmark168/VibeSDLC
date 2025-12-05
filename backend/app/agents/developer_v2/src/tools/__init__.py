@@ -1,8 +1,20 @@
 """Developer V2 Tools - LangChain @tool decorated functions."""
 
+# Unified context (single source of truth)
+from ._base_context import (
+    set_tool_context,
+    get_root_dir,
+    get_project_id,
+    get_task_id,
+    is_safe_path,
+    get_shared_bun_cache,
+    get_shell_env,
+    reset_context,
+)
+
 # Filesystem tools
 from .filesystem_tools import (
-    set_fs_context,
+    set_fs_context,  # backward compat, delegates to set_tool_context
     read_file_safe,
     write_file_safe,
     list_directory_safe,
@@ -17,7 +29,7 @@ from .filesystem_tools import (
 
 # Git tools
 from .git_tools import (
-    set_git_context,
+    set_git_context,  # backward compat, delegates to set_tool_context
     git_status,
     git_commit,
     git_create_branch,
@@ -32,8 +44,9 @@ from .git_tools import (
 
 # Shell tools
 from .shell_tools import (
-    set_shell_context,
+    set_shell_context,  # backward compat, delegates to set_tool_context
     execute_shell,
+    run_shell,
 )
 
 # Execution tools
@@ -49,7 +62,6 @@ from .execution_tools import (
 from .workspace_tools import (
     setup_git_worktree,
     commit_workspace_changes,
-    set_tool_context,
 )
 
 # Skill tools (Claude-driven activation)
@@ -91,6 +103,7 @@ __all__ = [
     "git_list_worktrees",
     # Shell
     "execute_shell",
+    "run_shell",
     # Execution
     "CommandResult",
     "install_dependencies",
