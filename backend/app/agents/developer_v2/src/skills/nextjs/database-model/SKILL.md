@@ -147,13 +147,9 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
 ## After Writing Schema
 
-Run db push to apply schema changes:
-
-```
-execute_shell("bunx prisma db push")
-```
-
-Note: `prisma generate` runs automatically with db push. If fails, fix schema and retry.
+DO NOT run db push manually during implementation.
+Database operations (`prisma generate`, `prisma db push`) run automatically in validation phase.
+Just write the schema file and proceed to next task.
 
 ## Commands Reference
 
@@ -172,6 +168,6 @@ NEVER:
 - Forget `@@index` on foreign key fields
 - Skip `onDelete: Cascade` on child relations
 - Create migration files (use `bunx prisma db push` for dev instead)
-- Forget to run `prisma db push` after schema changes
+- Run `execute_shell` for db push/generate during implementation (runs automatically in validation)
 
 **IMPORTANT**: Always add indexes on fields used in WHERE clauses or JOINs to improve query performance.

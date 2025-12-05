@@ -15,6 +15,21 @@ The user needs to run development commands, install packages, execute tests, or 
 - **Command order**: install - generate - build - test
 - **Verify success**: Always check exit code before proceeding
 
+## When NOT to Use This Skill (During Implementation)
+
+During `implement` phase, do NOT run these commands - they run automatically in validation phase:
+
+- `bunx prisma db push` - runs automatically after all code is written
+- `bunx prisma generate` - runs automatically after all code is written
+- `bun run typecheck` - runs automatically in validation
+- `bun run lint` - runs automatically in validation
+- `bun run build` - runs automatically in validation
+
+Only use this skill during implementation for:
+- Installing NEW dependencies (`bun add <package>`)
+- Running specific unit tests for debugging
+- Checking package.json contents
+
 ## Pre-installed Packages
 
 Do NOT install packages already in the boilerplate:
@@ -94,7 +109,7 @@ Always follow this sequence:
 NEVER:
 - Use npm, npx, yarn, or pnpm
 - Install packages already in boilerplate
-- Skip `prisma generate` after schema changes
+- Run prisma db push/generate during implementation (handled by validation phase)
 - Retry database commands when database is not running
 
-**IMPORTANT**: After any Prisma schema change, always run both `bunx prisma generate` and `bunx prisma db push`.
+**IMPORTANT**: Prisma generate and db push run automatically in validation phase. Do NOT run them manually during implementation.
