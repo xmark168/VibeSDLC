@@ -206,9 +206,10 @@ function DroppableColumn({
 
 export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
   const [cards, setCards] = useState<KanbanCardData[]>([])
-  const [activeCard, setActiveCard] = useState<KanbanCardData | null>(null)
-  const [originalColumnId, setOriginalColumnId] = useState<string | null>(null)
-  const isDraggingRef = useRef(false)
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [clonedCards, setClonedCards] = useState<KanbanCardData[] | null>(null)
+  const recentlyMovedToNewContainer = useRef(false)
+  const lastOverId = useRef<string | null>(null)
   const [selectedCard, setSelectedCard] = useState<KanbanCardData | null>(null)
   const [showFlowMetrics, setShowFlowMetrics] = useState(false)
   const [showPolicySettings, setShowPolicySettings] = useState(false)
@@ -310,6 +311,19 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     return cards.find(c => c.id === selectedCard.id) || selectedCard
   }, [cards, selectedCard?.id])
 
+  // Get the active card for DragOverlay
+  const activeCard = useMemo(() => {
+    if (!activeId) return null
+    return cards.find(c => c.id === activeId) || null
+  }, [activeId, cards])
+
+  // Reset recentlyMovedToNewContainer after layout settles (official dnd-kit pattern)
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      recentlyMovedToNewContainer.current = false
+    })
+  }, [cards])
+
   // Get cards by column
   const getCardsByColumn = useCallback((columnId: string) => {
     return cards
@@ -341,85 +355,146 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     })
   }, [searchQuery, selectedFilters])
 
-  // DnD Handlers
-  const handleDragStart = (event: DragStartEvent) => {
-    isDraggingRef.current = true
-    const card = cards.find(c => c.id === event.active.id)
-    if (card) {
-      setActiveCard(card)
-      setOriginalColumnId(card.columnId) // Save original column for status update
+  // Find container for an item (official dnd-kit pattern)
+  const findContainer = useCallback((id: string): string | undefined => {
+    // Check if id is a column
+    if (COLUMNS.some(col => col.id === id)) {
+      return id
     }
-  }
+    // Find the column containing this card
+    const card = cards.find(c => c.id === id)
+    return card?.columnId
+  }, [cards])
 
-  // NOTE: Don't update state in handleDragOver - it causes infinite loops
-  // dnd-kit handles visual reordering internally, we only commit changes in handleDragEnd
+  // DnD Handlers (following official dnd-kit pattern)
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveId(event.active.id as string)
+    setClonedCards(cards) // Save for cancel recovery
+  }, [cards])
+
   const handleDragOver = useCallback((event: DragOverEvent) => {
-    // Intentionally empty - visual feedback is handled by dnd-kit
-    // State updates happen only in handleDragEnd
-  }, [])
-
-  const handleDragEnd = async (event: DragEndEvent) => {
-    isDraggingRef.current = false
-    const savedOriginalColumnId = originalColumnId // Save before clearing
-    setActiveCard(null)
-    setOriginalColumnId(null)
-    
     const { active, over } = event
-    if (!over) return
+    const overId = over?.id as string | undefined
 
-    const activeCard = cards.find(c => c.id === active.id)
-    if (!activeCard) return
+    if (overId == null) return
 
-    const overId = over.id as string
-    const overCard = cards.find(c => c.id === overId)
-    // Check if dropping on a column or a card
-    const isColumnTarget = COLUMNS.some(col => col.id === overId)
-    const targetColumnId = isColumnTarget 
-      ? overId 
-      : (overCard?.columnId || activeCard.columnId)
+    const overContainer = findContainer(overId)
+    const activeContainer = findContainer(active.id as string)
 
-    // Update columnId in state if needed (for dropping on empty column)
-    if (isColumnTarget && activeCard.columnId !== targetColumnId) {
-      setCards(prev => prev.map(card =>
-        card.id === active.id ? { ...card, columnId: targetColumnId } : card
-      ))
+    if (!overContainer || !activeContainer || activeContainer === overContainer) {
+      return
     }
 
-    // Reorder within same column (only if dropping on a card, not on column)
-    if (active.id !== over.id && !isColumnTarget && savedOriginalColumnId === targetColumnId) {
-      // IMPORTANT: Sort by rank first before reordering
-      const columnCards = cards
-        .filter(c => c.columnId === targetColumnId)
+    // Moving to different container
+    setCards(prevCards => {
+      const activeItems = prevCards.filter(c => c.columnId === activeContainer)
+      const overItems = prevCards.filter(c => c.columnId === overContainer)
+      
+      // Find indices
+      const activeIndex = activeItems.findIndex(c => c.id === active.id)
+      const overIndex = overItems.findIndex(c => c.id === overId)
+
+      let newIndex: number
+      if (COLUMNS.some(col => col.id === overId)) {
+        // Dropping on container itself - add to end
+        newIndex = overItems.length
+      } else {
+        // Dropping on an item - calculate position
+        const isBelowOverItem = over && 
+          active.rect.current.translated &&
+          active.rect.current.translated.top > over.rect.top + over.rect.height
+
+        const modifier = isBelowOverItem ? 1 : 0
+        newIndex = overIndex >= 0 ? overIndex + modifier : overItems.length
+      }
+
+      recentlyMovedToNewContainer.current = true
+
+      // Update cards: change columnId and recalculate ranks
+      const activeCard = prevCards.find(c => c.id === active.id)
+      if (!activeCard) return prevCards
+
+      // Remove from old container, add to new container at correct position
+      const newCards = prevCards.filter(c => c.id !== active.id)
+      
+      // Get current items in target container and insert at newIndex
+      const targetItems = newCards
+        .filter(c => c.columnId === overContainer)
         .sort((a, b) => (a.rank || 999) - (b.rank || 999))
       
-      const oldIndex = columnCards.findIndex(c => c.id === active.id)
-      const newIndex = columnCards.findIndex(c => c.id === over.id)
+      // Calculate new ranks for target container
+      const updatedCards = newCards.map(card => {
+        if (card.columnId === overContainer) {
+          const currentIndex = targetItems.findIndex(c => c.id === card.id)
+          const adjustedIndex = currentIndex >= newIndex ? currentIndex + 1 : currentIndex
+          return { ...card, rank: adjustedIndex + 1 }
+        }
+        return card
+      })
 
-      if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
-        const reorderedCards = arrayMove(columnCards, oldIndex, newIndex)
+      // Add the moved card with new columnId and rank
+      updatedCards.push({
+        ...activeCard,
+        columnId: overContainer,
+        rank: newIndex + 1
+      })
+
+      return updatedCards
+    })
+  }, [findContainer])
+
+  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
+    const { active, over } = event
+    const originalColumnId = clonedCards?.find(c => c.id === active.id)?.columnId
+
+    // Always reset active state
+    setActiveId(null)
+    setClonedCards(null)
+
+    if (!over) return
+
+    const overId = over.id as string
+    const activeContainer = findContainer(active.id as string)
+    const overContainer = findContainer(overId)
+
+    if (!activeContainer || !overContainer) return
+
+    const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done' | 'Archived'> = {
+      'todo': 'Todo',
+      'inprogress': 'InProgress',
+      'review': 'Review', 
+      'done': 'Done',
+      'archived': 'Archived',
+    }
+
+    // Same container - handle reordering with arrayMove (official pattern)
+    if (activeContainer === overContainer) {
+      const containerCards = cards
+        .filter(c => c.columnId === activeContainer)
+        .sort((a, b) => (a.rank || 999) - (b.rank || 999))
+
+      const activeIndex = containerCards.findIndex(c => c.id === active.id)
+      const overIndex = containerCards.findIndex(c => c.id === overId)
+
+      if (activeIndex !== overIndex && activeIndex !== -1 && overIndex !== -1) {
+        const reorderedCards = arrayMove(containerCards, activeIndex, overIndex)
         
-        // Update ranks for all cards in this column
+        // Update ranks
         const newRanks = new Map<string, number>()
         reorderedCards.forEach((card, index) => {
           newRanks.set(card.id, index + 1)
         })
-        
-        const updatedCards = cards.map(card => {
-          const newRank = newRanks.get(card.id)
-          if (newRank !== undefined) {
-            return { ...card, rank: newRank }
-          }
-          return card
-        })
-        setCards(updatedCards)
 
-        // Update ranks for ALL affected cards in backend (single bulk API call)
+        setCards(prev => prev.map(card => {
+          const newRank = newRanks.get(card.id)
+          return newRank !== undefined ? { ...card, rank: newRank } : card
+        }))
+
+        // Save to backend
         if (projectId) {
           try {
             const rankUpdates: { story_id: string; rank: number }[] = []
-            newRanks.forEach((rank, cardId) => {
-              rankUpdates.push({ story_id: cardId, rank })
-            })
+            newRanks.forEach((rank, cardId) => rankUpdates.push({ story_id: cardId, rank }))
             await storiesApi.bulkUpdateRanks(rankUpdates)
             toast.success("Đã cập nhật thứ tự")
           } catch (error) {
@@ -428,93 +503,51 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
           }
         }
       }
-    }
+    } else {
+      // Cross-container move - handleDragOver already updated state
+      // Just need to save to backend
+      const currentCard = cards.find(c => c.id === active.id)
+      if (!currentCard || !originalColumnId) return
 
-    // Update status AND rank if column changed (use saved originalColumnId)
-    if (savedOriginalColumnId && savedOriginalColumnId !== targetColumnId) {
+      // Get all cards in the new container for rank update
+      const containerCards = cards
+        .filter(c => c.columnId === overContainer)
+        .sort((a, b) => (a.rank || 999) - (b.rank || 999))
+
+      const newRanks = new Map<string, number>()
+      containerCards.forEach((card, index) => {
+        newRanks.set(card.id, index + 1)
+      })
+
+      // Save to backend
       try {
-        const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done' | 'Archived'> = {
-          'todo': 'Todo',
-          'inprogress': 'InProgress',
-          'review': 'Review',
-          'done': 'Done',
-          'archived': 'Archived',
-        }
-
-        // Calculate new rank based on drop position
-        // Get cards in target column (excluding the dragged card), sorted by rank
-        const targetColumnCards = cards
-          .filter(c => c.columnId === targetColumnId && c.id !== active.id)
-          .sort((a, b) => (a.rank || 999) - (b.rank || 999))
-
-        let newRank = targetColumnCards.length + 1 // Default: add to end
-        if (!isColumnTarget && overCard && over.rect) {
-          // Dropping on a specific card - determine if above or below its center
-          const overCardIndex = targetColumnCards.findIndex(c => c.id === over.id)
-          if (overCardIndex !== -1) {
-            // Compare center-to-center for accurate positioning
-            const overCardCenterY = over.rect.top + over.rect.height / 2
-            const activeRect = event.active.rect.current.translated
-            const activeHeight = activeRect?.height ?? 0
-            const activeTop = activeRect?.top ?? 0
-            const activeCenterY = activeTop + activeHeight / 2
-            
-            if (activeCenterY < overCardCenterY) {
-              // Active center is above over center - insert before
-              newRank = overCardIndex + 1
-            } else {
-              // Active center is at or below over center - insert after
-              newRank = overCardIndex + 2
-            }
-          }
-          // If overCardIndex === -1, keep default (add to end)
-        }
-        // If isColumnTarget or no valid overCard, keep default (add to end)
-
-        // Update ranks for all cards in target column
-        const newRanks = new Map<string, number>()
-        newRanks.set(active.id as string, newRank)
-        targetColumnCards.forEach((card, index) => {
-          const cardPosition = index + 1
-          if (cardPosition >= newRank) {
-            newRanks.set(card.id, cardPosition + 1) // Shift down
-          } else {
-            newRanks.set(card.id, cardPosition) // Keep position
-          }
-        })
-
-        // Update state with new ranks
-        setCards(prev => prev.map(card => {
-          if (card.id === active.id) {
-            return { ...card, columnId: targetColumnId, rank: newRank }
-          }
-          const cardNewRank = newRanks.get(card.id)
-          if (cardNewRank !== undefined && card.columnId === targetColumnId) {
-            return { ...card, rank: cardNewRank }
-          }
-          return card
-        }))
-
-        // Update status and rank in backend
-        await storiesApi.updateStatus(active.id as string, statusMap[targetColumnId] || 'Todo')
+        await storiesApi.updateStatus(active.id as string, statusMap[overContainer] || 'Todo')
         
-        // Update ranks for ALL affected cards (single bulk API call)
         const rankUpdates: { story_id: string; rank: number }[] = []
-        newRanks.forEach((rank, cardId) => {
-          rankUpdates.push({ story_id: cardId, rank })
-        })
-        await storiesApi.bulkUpdateRanks(rankUpdates)
+        newRanks.forEach((rank, cardId) => rankUpdates.push({ story_id: cardId, rank }))
+        if (rankUpdates.length > 0) {
+          await storiesApi.bulkUpdateRanks(rankUpdates)
+        }
         toast.success("Đã cập nhật trạng thái story")
       } catch (error) {
         console.error("Failed to update status:", error)
         toast.error("Không thể cập nhật trạng thái")
-        // Revert to original column
-        setCards(prev => prev.map(card =>
-          card.id === active.id ? { ...card, columnId: savedOriginalColumnId } : card
-        ))
+        // Revert to original state on error
+        if (clonedCards) {
+          setCards(clonedCards)
+        }
       }
     }
-  }
+  }, [cards, clonedCards, findContainer, projectId])
+
+  // Handle drag cancel - restore original state
+  const handleDragCancel = useCallback(() => {
+    if (clonedCards) {
+      setCards(clonedCards)
+    }
+    setActiveId(null)
+    setClonedCards(null)
+  }, [clonedCards])
 
   // Card handlers
   const handleDownloadResult = useCallback((card: KanbanCardData) => {
@@ -828,7 +861,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}
-            onDragCancel={() => { isDraggingRef.current = false; setActiveCard(null); setOriginalColumnId(null) }}
+            onDragCancel={handleDragCancel}
           >
             <div className="flex gap-6 min-w-max px-8 py-6">
               {COLUMNS.map((column) => (
