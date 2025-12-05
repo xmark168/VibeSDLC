@@ -203,5 +203,18 @@ export const storiesApi = {
       method: 'GET',
       url: `/api/v1/stories/epics/${projectId}`,
     })
+  },
+
+  /**
+   * Bulk update ranks for multiple stories in one request
+   */
+  bulkUpdateRanks: async (
+    updates: { story_id: string; rank: number }[]
+  ): Promise<{ updated: number }> => {
+    return __request<{ updated: number }>(OpenAPI, {
+      method: 'PATCH',
+      url: '/api/v1/stories/bulk-rank',
+      body: { updates },
+    })
   }
 }

@@ -140,9 +140,11 @@ function DroppableColumn({
   onCardMove?: (cardId: string, targetColumn: string) => void
   onCardEdit?: (card: KanbanCardData) => void
 }) {
-  // Make the column itself droppable for empty columns
+  // Make the column itself droppable ONLY for empty columns
+  // When column has cards, only cards are droppables to ensure accurate positioning
   const { setNodeRef, isOver } = useDroppable({
     id: column.id,
+    disabled: cards.length > 0, // Disable column droppable when it has cards
   })
 
   const wipLimit = wipData?.wip_limit ?? column.wipLimit
@@ -179,9 +181,9 @@ function DroppableColumn({
 
       <SortableContext items={cards.map(c => c.id)} strategy={verticalListSortingStrategy}>
         <div 
-          ref={setNodeRef}
+          ref={cards.length === 0 ? setNodeRef : undefined}
           className={`space-y-3 min-h-[100px] rounded-xl p-3 border-2 transition-colors ${
-            isOver ? "border-dashed border-primary bg-primary/5" : "border-transparent"
+            isOver && cards.length === 0 ? "border-dashed border-primary bg-primary/5" : "border-transparent"
           }`}
         >
           {cards.map((card) => (
@@ -234,14 +236,14 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
 
-  // Load flow metrics
-  useEffect(() => {
-    if (projectId) {
-      loadFlowMetrics()
-      const interval = setInterval(loadFlowMetrics, 5 * 60 * 1000)
-      return () => clearInterval(interval)
-    }
-  }, [projectId])
+  // Load flow metrics - disabled auto-load, only load when user opens metrics dashboard
+  // useEffect(() => {
+  //   if (projectId) {
+  //     loadFlowMetrics()
+  //     const interval = setInterval(loadFlowMetrics, 5 * 60 * 1000)
+  //     return () => clearInterval(interval)
+  //   }
+  // }, [projectId])
 
   const loadFlowMetrics = async () => {
     if (!projectId) return
@@ -389,11 +391,36 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     const isOverColumn = COLUMNS.some(col => col.id === overId)
     const overColumn = isOverColumn ? overId : overCard?.columnId
 
-    // Only update columnId for cross-column moves
-    if (overColumn && activeCard.columnId !== overColumn) {
-      setCards(prev => prev.map(card =>
-        card.id === active.id ? { ...card, columnId: overColumn } : card
-      ))
+    if (!overColumn) return
+
+    // Cross-column move: update columnId and reorder if hovering over a card
+    if (activeCard.columnId !== overColumn) {
+      setCards(prev => {
+        let newCards = prev.map(card =>
+          card.id === active.id ? { ...card, columnId: overColumn } : card
+        )
+        
+        // If hovering over a card (not empty column), also reorder
+        if (overCard) {
+          const activeIndex = newCards.findIndex(c => c.id === active.id)
+          const overIndex = newCards.findIndex(c => c.id === over.id)
+          if (activeIndex !== -1 && overIndex !== -1) {
+            newCards = arrayMove(newCards, activeIndex, overIndex)
+          }
+        }
+        
+        return newCards
+      })
+    } else if (overCard && active.id !== over.id) {
+      // Same column move: reorder cards to match visual position
+      setCards(prev => {
+        const activeIndex = prev.findIndex(c => c.id === active.id)
+        const overIndex = prev.findIndex(c => c.id === over.id)
+        if (activeIndex !== -1 && overIndex !== -1 && activeIndex !== overIndex) {
+          return arrayMove(prev, activeIndex, overIndex)
+        }
+        return prev
+      })
     }
   }
 
@@ -451,14 +478,15 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         })
         setCards(updatedCards)
 
-        // Update rank in backend
+        // Update ranks for ALL affected cards in backend (single bulk API call)
         if (projectId) {
           try {
-            const newRank = newRanks.get(active.id as string)
-            if (newRank) {
-              await storiesApi.update(active.id as string, { rank: newRank })
-              toast.success("Đã cập nhật thứ tự")
-            }
+            const rankUpdates: { story_id: string; rank: number }[] = []
+            newRanks.forEach((rank, cardId) => {
+              rankUpdates.push({ story_id: cardId, rank })
+            })
+            await storiesApi.bulkUpdateRanks(rankUpdates)
+            toast.success("Đã cập nhật thứ tự")
           } catch (error) {
             console.error("Failed to update rank:", error)
             toast.error("Không thể cập nhật thứ tự")
@@ -534,7 +562,13 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
 
         // Update status and rank in backend
         await storiesApi.updateStatus(active.id as string, statusMap[targetColumnId] || 'Todo')
-        await storiesApi.update(active.id as string, { rank: newRank })
+        
+        // Update ranks for ALL affected cards (single bulk API call)
+        const rankUpdates: { story_id: string; rank: number }[] = []
+        newRanks.forEach((rank, cardId) => {
+          rankUpdates.push({ story_id: cardId, rank })
+        })
+        await storiesApi.bulkUpdateRanks(rankUpdates)
         toast.success("Đã cập nhật trạng thái story")
       } catch (error) {
         console.error("Failed to update status:", error)
