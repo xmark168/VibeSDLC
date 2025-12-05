@@ -29,6 +29,8 @@ from app.agents.core.prompt_utils import (
 from app.core.db import engine
 from app.models import AgentQuestion, Epic, Story, StoryStatus, StoryType, EpicStatus, ArtifactType
 from app.services.artifact_service import ArtifactService
+from app.kafka import KafkaTopics, get_kafka_producer
+from app.kafka.event_schemas import AgentEvent
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,24 @@ logger = logging.getLogger(__name__)
 _fast_llm = ChatOpenAI(model="claude-sonnet-4-5-20250929", temperature=0.1, timeout=30)
 _default_llm = ChatOpenAI(model="claude-sonnet-4-5-20250929", temperature=0.3, timeout=90)
 _story_llm = ChatOpenAI(model="claude-sonnet-4-5-20250929", temperature=0.3, timeout=180)
+
+# Categories for clarity check (used in check_clarity and analyze_domain)
+REQUIRED_CATEGORIES = {
+    "target_users": [
+        "khách hàng", "người dùng", "đối tượng", "ai sẽ dùng", "ai dùng",
+        "cá nhân", "mình tôi", "chỉ mình", "một mình", "cho ai", "dùng cho",
+        "sử dụng cho", "ai sử dụng", "người sử dụng", "dùng cho ai",
+        "chia sẻ", "đồng nghiệp", "gia đình", "bạn bè", "nhóm", "team"
+    ],
+    "main_features": ["tính năng", "chức năng", "website cần có", "cần có gì"],
+    "risks": ["lo ngại", "thách thức", "rủi ro", "khó khăn", "lo lắng", "bảo mật"],
+}
+
+OPTIONAL_CATEGORIES = {
+    "business_model": ["kiếm tiền", "thu nhập", "doanh thu", "mô hình"],
+    "priorities": ["ưu tiên", "quan trọng nhất", "quan trọng"],
+    "details": ["thanh toán", "giao hàng", "chi tiết"],
+}
 
 
 def _cfg(state: dict, name: str) -> dict:
@@ -55,6 +75,50 @@ def _user_prompt(task: str, **kwargs) -> str:
     # Extract user_message from kwargs if present, otherwise use empty string
     user_message = kwargs.pop("user_message", "")
     return _build_user_prompt(PROMPTS, task, user_message, **kwargs)
+
+
+def _save_interview_state_to_question(
+    session: Session,
+    question_id,
+    interview_state: dict,
+    verify: bool = False
+) -> bool:
+    """Save interview state to question's task_context for resume.
+    
+    Args:
+        session: SQLModel session
+        question_id: UUID of the question to update
+        interview_state: Interview state dict to save
+        verify: If True, refresh and verify the save
+        
+    Returns:
+        True if saved successfully
+    """
+    question = session.get(AgentQuestion, question_id)
+    if not question:
+        logger.error(f"[BA] Question {question_id} not found in database")
+        return False
+    
+    existing_context = question.task_context or {}
+    question.task_context = {
+        **existing_context,
+        "interview_state": interview_state
+    }
+    flag_modified(question, "task_context")
+    session.add(question)
+    session.commit()
+    
+    if verify:
+        session.refresh(question)
+        saved_state = question.task_context.get("interview_state") if question.task_context else None
+        if saved_state:
+            logger.info(f"[BA] Verified interview state saved to question {question_id}")
+            return True
+        else:
+            logger.error(f"[BA] Interview state NOT saved to question {question_id}!")
+            return False
+    
+    return True
 
 
 async def _generate_completion_message(
@@ -258,38 +322,14 @@ async def ask_one_question(state: BAState, agent=None) -> dict:
         
         # Save interview state to question's task_context for resume
         with Session(engine) as session:
-            question = session.get(AgentQuestion, question_id)
-            if question:
-                # Update task_context with interview state
-                # IMPORTANT: Create new dict to ensure SQLAlchemy detects the change
-                existing_context = question.task_context or {}
-                new_task_context = {
-                    **existing_context,
-                    "interview_state": {
-                        "questions": questions,
-                        "current_question_index": current_index,
-                        "collected_answers": state.get("collected_answers", []),
-                        "collected_info": state.get("collected_info", {}),
-                        "user_message": state.get("user_message", ""),  # Save original request for PRD generation
-                    }
-                }
-                question.task_context = new_task_context
-                # Explicitly mark the JSON field as modified so SQLAlchemy persists it
-                flag_modified(question, "task_context")
-                session.add(question)
-                session.commit()
-                
-                # Verify the save was successful by re-reading from DB
-                session.refresh(question)
-                saved_state = question.task_context.get("interview_state") if question.task_context else None
-                if saved_state:
-                    logger.info(f"[BA] Verified interview state saved to question {question_id} "
-                               f"(current_index={saved_state.get('current_question_index')}, "
-                               f"questions_count={len(saved_state.get('questions', []))})")
-                else:
-                    logger.error(f"[BA] Interview state NOT saved to question {question_id}! task_context={question.task_context}")
-            else:
-                logger.error(f"[BA] Failed to find question {question_id} in database to save interview state!")
+            interview_state = {
+                "questions": questions,
+                "current_question_index": current_index,
+                "collected_answers": state.get("collected_answers", []),
+                "collected_info": state.get("collected_info", {}),
+                "user_message": state.get("user_message", ""),
+            }
+            _save_interview_state_to_question(session, question_id, interview_state, verify=True)
         
         logger.info(f"[BA] Question {current_index + 1} sent, waiting for answer...")
         
@@ -352,25 +392,16 @@ async def ask_batch_questions(state: BAState, agent=None) -> dict:
             first_question = session.get(AgentQuestion, question_ids[0])
             if first_question and first_question.task_context:
                 batch_id = first_question.task_context.get("batch_id")
-                
-                # Update task_context with interview state
-                existing_context = first_question.task_context or {}
-                new_task_context = {
-                    **existing_context,
-                    "interview_state": {
-                        "questions": questions,
-                        "question_ids": [str(qid) for qid in question_ids],
-                        "collected_info": state.get("collected_info", {}),
-                        "user_message": state.get("user_message", ""),  # Save original request for PRD generation
-                        "research_loop_count": state.get("research_loop_count", 0),  # Track research loops
-                    }
-                }
-                first_question.task_context = new_task_context
-                flag_modified(first_question, "task_context")
-                session.add(first_question)
-                session.commit()
-                
-                logger.info(f"[BA] Saved interview state to batch (batch_id={batch_id}, questions={len(questions)})")
+            
+            interview_state = {
+                "questions": questions,
+                "question_ids": [str(qid) for qid in question_ids],
+                "collected_info": state.get("collected_info", {}),
+                "user_message": state.get("user_message", ""),
+                "research_loop_count": state.get("research_loop_count", 0),
+            }
+            _save_interview_state_to_question(session, question_ids[0], interview_state)
+            logger.info(f"[BA] Saved interview state to batch (batch_id={batch_id}, questions={len(questions)})")
         
         logger.info(f"[BA] All {len(questions)} questions sent in batch, waiting for answers...")
         
@@ -1024,25 +1055,6 @@ async def approve_stories(state: BAState, agent=None) -> dict:
         return {"error": f"Failed to save stories: {str(e)}"}
 
 
-# Categories for clarity check
-REQUIRED_CATEGORIES = {
-    "target_users": [
-        "khách hàng", "người dùng", "đối tượng", "ai sẽ dùng", "ai dùng",
-        "cá nhân", "mình tôi", "chỉ mình", "một mình", "cho ai", "dùng cho",
-        "sử dụng cho", "ai sử dụng", "người sử dụng", "dùng cho ai",
-        "chia sẻ", "đồng nghiệp", "gia đình", "bạn bè", "nhóm", "team"
-    ],
-    "main_features": ["tính năng", "chức năng", "website cần có", "cần có gì"],
-    "risks": ["lo ngại", "thách thức", "rủi ro", "khó khăn", "lo lắng", "bảo mật"],
-}
-
-OPTIONAL_CATEGORIES = {
-    "business_model": ["kiếm tiền", "thu nhập", "doanh thu", "mô hình"],
-    "priorities": ["ưu tiên", "quan trọng nhất", "quan trọng"],
-    "details": ["thanh toán", "giao hàng", "chi tiết"],
-}
-
-
 def check_clarity(state: BAState) -> dict:
     """Check if collected info covers required categories.
     
@@ -1216,6 +1228,134 @@ Return JSON format:
         }
 
 
+async def _save_prd_artifact(state: BAState, agent, project_files) -> dict:
+    """Save PRD to database and file system.
+    
+    Returns:
+        dict with prd_artifact_id, prd_saved, summary, next_steps, error
+    """
+    result = {"prd_artifact_id": None, "prd_saved": False, "summary": "", "next_steps": [], "error": None}
+    prd_data = state.get("prd_draft")
+    
+    if not prd_data or not agent:
+        return result
+    
+    try:
+        project_name = prd_data.get("project_name", "Project")
+        
+        # Save to Artifact table
+        with Session(engine) as session:
+            service = ArtifactService(session)
+            artifact = service.create_artifact(
+                project_id=agent.project_id,
+                agent_id=agent.agent_id,
+                agent_name=agent.name,
+                artifact_type=ArtifactType.PRD,
+                title=project_name,
+                content=prd_data,
+                description=f"PRD for {project_name}",
+                save_to_file=False
+            )
+            result["prd_artifact_id"] = str(artifact.id)
+        
+        # Save markdown for human reading
+        if project_files:
+            await project_files.save_prd(prd_data)
+        
+        result["prd_saved"] = True
+        result["summary"] = f"PRD '{project_name}' saved successfully"
+        result["next_steps"] = ["Review PRD document", "Approve to create user stories", "Or request edits"]
+        
+        # Send message to user
+        is_update = bool(state.get("change_summary"))
+        task_type = "prd_updated" if is_update else "prd_created"
+        context = f"Đã cập nhật PRD cho dự án '{project_name}'" if is_update else f"Đã tạo xong PRD cho dự án '{project_name}'"
+        next_step = "User cần review lại và cho biết còn gì cần chỉnh không" if is_update else "User cần xem qua và phê duyệt để tạo user stories"
+        fallback = f"Mình đã cập nhật PRD theo yêu cầu của bạn rồi nhé! 📝" if is_update else f"Tuyệt vời! 🎉 Mình đã hoàn thành PRD cho dự án '{project_name}' rồi!"
+        
+        message_content = await _generate_completion_message(state, agent, task_type, context, next_step, fallback)
+        await agent.message_user(
+            event_type="response",
+            content=message_content,
+            details={"message_type": "prd_created", "file_path": "docs/prd.md", "title": project_name, "artifact_id": result["prd_artifact_id"]}
+        )
+        
+        logger.info(f"[BA] PRD saved: {project_name} (artifact_id={result['prd_artifact_id']})")
+        
+    except Exception as e:
+        logger.error(f"[BA] Failed to save PRD: {e}", exc_info=True)
+        result["error"] = f"Failed to save PRD: {str(e)}"
+    
+    return result
+
+
+async def _save_stories_artifact(state: BAState, agent, project_files) -> dict:
+    """Save stories to database and file system.
+    
+    Returns:
+        dict with stories_artifact_id, stories_saved, summary, next_steps, error
+    """
+    result = {"stories_artifact_id": None, "stories_saved": False, "summary": "", "next_steps": [], "error": None}
+    
+    epics_data = state.get("epics", [])
+    stories_data = state.get("stories", [])
+    is_stories_approved = state.get("stories_approved", False) or bool(state.get("created_epics"))
+    intent = state.get("intent", "")
+    is_story_intent = intent in ["extract_stories", "stories_update", "update_stories"]
+    
+    if not (epics_data or stories_data) or not project_files or is_stories_approved or not is_story_intent:
+        return result
+    
+    try:
+        await project_files.save_user_stories(epics_data, stories_data)
+        result["stories_saved"] = True
+        
+        epics_count = len(epics_data)
+        stories_count = len(stories_data)
+        
+        # Save to Artifact table
+        if agent:
+            with Session(engine) as session:
+                service = ArtifactService(session)
+                artifact_content = {"epics": epics_data, "stories": stories_data, "epics_count": epics_count, "stories_count": stories_count}
+                artifact = service.create_artifact(
+                    project_id=agent.project_id,
+                    agent_id=agent.agent_id,
+                    agent_name=agent.name,
+                    artifact_type=ArtifactType.USER_STORIES,
+                    title="User Stories",
+                    content=artifact_content,
+                    description=f"{epics_count} epics with {stories_count} stories",
+                    save_to_file=False
+                )
+                result["stories_artifact_id"] = str(artifact.id)
+        
+        result["summary"] = f"Extracted {epics_count} epics with {stories_count} INVEST-compliant stories"
+        result["next_steps"] = ["Review epics and prioritize stories", "Approve to add to backlog"]
+        
+        # Send message to user
+        if agent:
+            stories_message = await _generate_completion_message(
+                state, agent, "stories_created",
+                f"Đã tạo {stories_count} User Stories từ {epics_count} Epics",
+                "User cần review và phê duyệt để đưa vào backlog",
+                f"Xong rồi! 🚀 Mình đã tạo '{stories_count} User Stories' từ PRD."
+            )
+            await agent.message_user(
+                event_type="response",
+                content=stories_message,
+                details={"message_type": "stories_created", "file_path": "docs/user-stories.md", "epics_count": epics_count, "stories_count": stories_count, "status": "pending"}
+            )
+        
+        logger.info(f"[BA] Saved {epics_count} epics with {stories_count} user stories (pending approval)")
+        
+    except Exception as e:
+        logger.error(f"[BA] Failed to save stories: {e}", exc_info=True)
+        result["error"] = f"Failed to save stories: {str(e)}"
+    
+    return result
+
+
 async def save_artifacts(state: BAState, agent=None) -> dict:
     """Node: Save PRD/stories to database and file system."""
     logger.info(f"[BA] Saving artifacts...")
@@ -1229,165 +1369,37 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
     
     project_files = agent.project_files if agent else None
     
-    # Save PRD if exists
-    if state.get("prd_draft") and agent:
-        try:
-            prd_data = state["prd_draft"]
-            project_name = prd_data.get("project_name", "Project")
-            
-            # Save to Artifact table
-            with Session(engine) as session:
-                service = ArtifactService(session)
-                artifact = service.create_artifact(
-                    project_id=agent.project_id,
-                    agent_id=agent.agent_id,
-                    agent_name=agent.name,
-                    artifact_type=ArtifactType.PRD,
-                    title=project_name,
-                    content=prd_data,
-                    description=f"PRD for {project_name}",
-                    save_to_file=False  # We save our own markdown
-                )
-                result["prd_artifact_id"] = str(artifact.id)
-            
-            # Also save markdown for human reading
-            if project_files:
-                await project_files.save_prd(prd_data)
-            
-            result["prd_saved"] = True
-            result["summary"] = f"PRD '{project_name}' saved successfully"
-            result["next_steps"].extend([
-                "Review PRD document",
-                "Approve to create user stories",
-                "Or request edits"
-            ])
-            
-            # Send message with View button (different text for create vs update)
-            is_update = bool(state.get("change_summary"))
-            if is_update:
-                message_content = await _generate_completion_message(
-                    state, agent,
-                    task_type="prd_updated",
-                    context=f"Đã cập nhật PRD cho dự án '{project_name}' theo feedback của user",
-                    next_step="User cần review lại và cho biết còn gì cần chỉnh không",
-                    fallback=f"Mình đã cập nhật PRD theo yêu cầu của bạn rồi nhé! 📝 Bạn xem lại và cho mình biết còn gì cần chỉnh sửa không"
-                )
-            else:
-                message_content = await _generate_completion_message(
-                    state, agent,
-                    task_type="prd_created",
-                    context=f"Đã tạo xong PRD cho dự án '{project_name}'",
-                    next_step="User cần xem qua và phê duyệt để tạo user stories",
-                    fallback=f"Tuyệt vời! 🎉 Mình đã hoàn thành PRD cho dự án '{project_name}' rồi! Bạn xem qua và phê duyệt để mình tạo user stories nhé~"
-                )
-            
-            if agent:
-                await agent.message_user(
-                    event_type="response",
-                    content=message_content,
-                    details={
-                        "message_type": "prd_created",
-                        "file_path": "docs/prd.md",
-                        "title": project_name,
-                        "artifact_id": result["prd_artifact_id"]
-                    }
-                )
-            
-            logger.info(f"[BA] PRD saved: {project_name} (artifact_id={result['prd_artifact_id']}")
-            
-        except Exception as e:
-            logger.error(f"[BA] Failed to save PRD: {e}", exc_info=True)
-            result["error"] = f"Failed to save PRD: {str(e)}"
+    # Save PRD using helper
+    prd_result = await _save_prd_artifact(state, agent, project_files)
+    if prd_result.get("prd_saved"):
+        result.update({
+            "prd_artifact_id": prd_result["prd_artifact_id"],
+            "prd_saved": True,
+            "summary": prd_result["summary"],
+        })
+        result["next_steps"].extend(prd_result["next_steps"])
+    if prd_result.get("error"):
+        result["error"] = prd_result["error"]
     
-    # Save epics and stories if exist (only for extract_stories/update_stories, not approve or prd_update)
-    epics_data = state.get("epics", [])
-    stories_data = state.get("stories", [])
-    # Check if stories were approved (either by stories_approved flag or by presence of created_epics)
-    is_stories_approved = state.get("stories_approved", False) or bool(state.get("created_epics"))
-    # Only process stories for story-related intents (not prd_create, prd_update, etc.)
-    intent = state.get("intent", "")
-    is_story_intent = intent in ["extract_stories", "stories_update", "update_stories"]
-    
-    logger.info(f"[BA] save_artifacts: epics_count={len(epics_data)}, stories_count={len(stories_data)}, is_approved={is_stories_approved}, intent={intent}")
-    
-    # Only save markdown and send stories_created message for extract_stories/update_stories (not approve or prd_update)
-    if (epics_data or stories_data) and project_files and not is_stories_approved and is_story_intent:
-        try:
-            # Save with epic structure to markdown
-            await project_files.save_user_stories(epics_data, stories_data)
-            result["stories_saved"] = True
-            
-            epics_count = len(epics_data)
-            stories_count = len(stories_data)
-            
-            # Also save to Artifact table for later retrieval (for approval flow)
-            if agent:
-                try:
-                    logger.info(f"[BA] Saving stories artifact for project_id={agent.project_id}")
-                    with Session(engine) as session:
-                        service = ArtifactService(session)
-                        # Store epics with their stories inside
-                        artifact_content = {
-                            "epics": epics_data,
-                            "stories": stories_data,
-                            "epics_count": epics_count,
-                            "stories_count": stories_count
-                        }
-                        # Log first story to verify priority/story_point
-                        if stories_data:
-                            first_story = stories_data[0]
-                            logger.info(f"[BA] Saving artifact - first story keys: {list(first_story.keys())}")
-                            logger.info(f"[BA] Saving artifact - first story priority={first_story.get('priority')}, story_point={first_story.get('story_point')}")
-                        artifact = service.create_artifact(
-                            project_id=agent.project_id,
-                            agent_id=agent.agent_id,
-                            agent_name=agent.name,
-                            artifact_type=ArtifactType.USER_STORIES,
-                            title="User Stories",
-                            content=artifact_content,
-                            description=f"{epics_count} epics with {stories_count} stories",
-                            save_to_file=False
-                        )
-                        result["stories_artifact_id"] = str(artifact.id)
-                        logger.info(f"[BA] Saved stories artifact: {artifact.id} for project {agent.project_id}")
-                except Exception as artifact_err:
-                    logger.error(f"[BA] Failed to save stories artifact: {artifact_err}", exc_info=True)
-            
-            result["summary"] = f"Extracted {epics_count} epics with {stories_count} INVEST-compliant stories"
-            result["next_steps"].extend([
-                "Review epics and prioritize stories",
-                "Approve to add to backlog"
-            ])
-            
-            # Send success message with View button (pending approval)
-            if agent:
-                stories_message = await _generate_completion_message(
-                    state, agent,
-                    task_type="stories_created",
-                    context=f"Đã tạo {stories_count} User Stories từ {epics_count} Epics",
-                    next_step="User cần review và phê duyệt để đưa vào backlog",
-                    fallback=f"Xong rồi! 🚀 Mình đã tạo '{stories_count} User Stories' từ PRD. Bạn review và phê duyệt để đưa vào backlog nhé~"
-                )
-                await agent.message_user(
-                    event_type="response",
-                    content=stories_message,
-                    details={
-                        "message_type": "stories_created",
-                        "file_path": "docs/user-stories.md",
-                        "epics_count": epics_count,
-                        "stories_count": stories_count,
-                        "status": "pending"  # Important: pending status
-                    }
-                )
-            
-            logger.info(f"[BA] Saved {epics_count} epics with {stories_count} user stories (pending approval)")
-            
-        except Exception as e:
-            logger.error(f"[BA] Failed to save stories: {e}", exc_info=True)
-            result["error"] = f"Failed to save stories: {str(e)}"
+    # Save stories using helper
+    stories_result = await _save_stories_artifact(state, agent, project_files)
+    if stories_result.get("stories_saved"):
+        result.update({
+            "stories_artifact_id": stories_result["stories_artifact_id"],
+            "stories_saved": True,
+            "summary": stories_result["summary"],
+        })
+        result["next_steps"].extend(stories_result["next_steps"])
+    if stories_result.get("error"):
+        result["error"] = stories_result["error"]
     
     # Handle case where story extraction failed (no stories returned)
-    elif is_story_intent and not epics_data and not stories_data and agent:
+    intent = state.get("intent", "")
+    is_story_intent = intent in ["extract_stories", "stories_update", "update_stories"]
+    epics_data = state.get("epics", [])
+    stories_data = state.get("stories", [])
+    
+    if is_story_intent and not epics_data and not stories_data and agent and not stories_result.get("stories_saved"):
         error_msg = state.get("error", "Không thể tạo stories từ PRD.")
         logger.warning(f"[BA] Story extraction failed: {error_msg}")
         result["error"] = error_msg
