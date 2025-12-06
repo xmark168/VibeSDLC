@@ -158,6 +158,27 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         
         logger.info(f"[run_code] Services: {[s.get('name', 'app') for s in services]}")
         
+        # Run prisma commands if schema exists
+        schema_path = Path(workspace_path) / "prisma" / "schema.prisma"
+        if schema_path.exists():
+            logger.info("[run_code] Prisma schema found, running generate + db push")
+            
+            # Generate client first
+            success, stdout, stderr = _run_step(
+                "Prisma Generate", "bunx prisma generate",
+                workspace_path, "prisma", timeout=60, allow_fail=False
+            )
+            if not success:
+                logger.warning(f"[run_code] Prisma generate failed: {stderr[:200]}")
+            
+            # Then push schema to DB
+            success, stdout, stderr = _run_step(
+                "Prisma DB Push", "bunx prisma db push --accept-data-loss",
+                workspace_path, "prisma", timeout=60, allow_fail=True
+            )
+            if not success:
+                logger.warning(f"[run_code] Prisma db push failed (may need DB): {stderr[:200]}")
+        
         # Format all services
         for svc in services:
             svc_name = svc.get("name", "app")

@@ -338,37 +338,8 @@ class SimpleDeveloperRunner:
     
     async def run_story(self, story: dict) -> dict:
         """Run a story through the graph."""
+        # Langfuse disabled for local testing
         langfuse_handler = None
-        langfuse_span = None
-        langfuse_ctx = None
-        
-        if os.getenv("ENABLE_LANGFUSE", "false").lower() == "true":
-            try:
-                from langfuse import get_client
-                from langfuse.langchain import CallbackHandler
-                
-                langfuse = get_client()
-                langfuse_ctx = langfuse.start_as_current_observation(as_type="span", name="developer_v2_story_execution")
-                langfuse_span = langfuse_ctx.__enter__()
-                langfuse_span.update_trace(
-                    user_id=str(uuid4()),
-                    session_id=str(self.project_id),
-                    input={
-                        "story_id": story.get("story_id", "unknown"),
-                        "epic": story.get("epic", ""),
-                        "title": story.get("title", "Untitled"),
-                        "description": story.get("description", "")[:200]
-                    },
-                    tags=["developer_v2", "story_execution", self.template or "no_template"],
-                    metadata={"agent": self.name, "template": self.template}
-                )
-                langfuse_handler = CallbackHandler()
-                
-                logger.info(f"[{self.name}] Langfuse tracing enabled (session={self.project_id})")
-            except Exception as e:
-                logger.error(f"Langfuse setup error: {e}")
-        else:
-            logger.info(f"[{self.name}] Langfuse disabled (set ENABLE_LANGFUSE=true to enable)")
         
         initial_state = {
             "story_id": story.get("story_id", str(uuid4())),
@@ -453,34 +424,10 @@ class SimpleDeveloperRunner:
                 config={"recursion_limit": 100}
             )
             print("\n[*] Graph completed!")
-            if langfuse_span and langfuse_ctx:
-                try:
-                    langfuse_span.update_trace(output={
-                        "action": final_state.get("action"),
-                        "task_type": final_state.get("task_type"),
-                        "complexity": final_state.get("complexity"),
-                        "files_created": len(final_state.get("files_created", [])),
-                        "files_modified": len(final_state.get("files_modified", [])),
-                        "run_status": final_state.get("run_status"),
-                        "debug_count": final_state.get("debug_count", 0),
-                        "react_loop_count": final_state.get("react_loop_count", 0)
-                    })
-                    langfuse_ctx.__exit__(None, None, None)
-                    logger.info(f"[{self.name}] Langfuse span closed successfully")
-                except Exception as e:
-                    logger.error(f"Langfuse span close error: {e}")
-            
             return final_state
             
         except Exception as e:
             logger.error(f"[{self.name}] Graph error: {e}", exc_info=True)
-            if langfuse_ctx:
-                try:
-                    langfuse_ctx.__exit__(type(e), e, e.__traceback__)
-                    logger.info(f"[{self.name}] Langfuse span closed (on error)")
-                except Exception as cleanup_err:
-                    logger.error(f"Langfuse cleanup error: {cleanup_err}")
-            
             raise
 
 

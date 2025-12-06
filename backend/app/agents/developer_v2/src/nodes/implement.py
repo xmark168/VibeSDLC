@@ -3,6 +3,7 @@ import logging
 import os
 import platform
 from datetime import date
+from typing import List, Dict
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
@@ -20,7 +21,7 @@ from app.agents.developer_v2.src.utils.prompt_utils import (
     build_system_prompt as _build_system_prompt,
 )
 from app.agents.developer_v2.src.utils.token_utils import truncate_to_tokens
-from app.agents.developer_v2.src.nodes._llm import code_llm
+from app.agents.developer_v2.src.nodes._llm import code_llm, get_llm_for_skills
 from app.agents.developer_v2.src.nodes._helpers import setup_tool_context
 from app.agents.developer_v2.src.skills import SkillRegistry, get_project_structure
 
@@ -45,7 +46,7 @@ def _build_dependencies_context(dependencies_content: dict, step_dependencies: l
             if dep_path in dependencies_content:
                 parts.append(f"### {dep_path}\n```\n{dependencies_content[dep_path]}\n```")
     
-    common_files = ["prisma/schema.prisma", "src/lib/prisma.ts"]
+    common_files = ["prisma/schema.prisma"]
     for dep_path in common_files:
         if dep_path in dependencies_content and dep_path not in (step_dependencies or []):
             parts.append(f"### {dep_path}\n```\n{dependencies_content[dep_path]}\n```")
@@ -159,8 +160,10 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             context_parts.append(deps_context)
         
         feedback_section = ""
+        if state.get("review_feedback"):
+            feedback_section = f"<review_feedback>\n{state.get('review_feedback')}\n</review_feedback>"
         if state.get("summarize_feedback"):
-            feedback_section = f"<feedback>\n{state.get('summarize_feedback')}\n</feedback>"
+            feedback_section += f"\n<summarize_feedback>\n{state.get('summarize_feedback')}\n</summarize_feedback>"
         if state.get('run_stderr'):
             feedback_section += f"\n<errors>\n{state.get('run_stderr')[:2000]}\n</errors>"
         
@@ -231,10 +234,13 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             HumanMessage(content=input_text)
         ]
         
+        # Select model based on step skills (opus for UI, sonnet for API/DB)
+        step_llm = get_llm_for_skills(step_skills)
+        
         logger.info(f"[implement] Task {current_step + 1}: {task_description[:50]}... (skills: {step_skills})")
         
         await _llm_with_tools(
-            llm=code_llm,
+            llm=step_llm,
             tools=tools,
             messages=messages,
             state=state,
@@ -263,3 +269,6 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
     except Exception as e:
         logger.error(f"[implement] Error: {e}", exc_info=True)
         return {**state, "error": str(e), "action": "RESPOND"}
+
+
+

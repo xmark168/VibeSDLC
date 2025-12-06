@@ -116,6 +116,8 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
         review_result = _parse_review_response(response_text)
         
         logger.info(f"[review] {file_path}: {review_result['decision']}")
+        if review_result['decision'] == "LBTM":
+            logger.info(f"[review] LBTM reason: {review_result['feedback'][:500] if review_result['feedback'] else 'No feedback'}")
         
         # Track LBTM count PER STEP (not global)
         step_lbtm_counts = state.get("step_lbtm_counts", {})
@@ -127,14 +129,16 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
         if review_result["decision"] == "LBTM":
             step_lbtm_counts[step_key] = step_lbtm_counts.get(step_key, 0) + 1
             total_lbtm += 1
+            logger.info(f"[review] Step {step_index} LBTM count: {step_lbtm_counts[step_key]}/2")
             
             # If this step has been LBTM'd 2+ times, force move to next step
-            if step_lbtm_counts[step_key] >= 4:
-                logger.warning(f"[review] Step {step_index} has {step_lbtm_counts[step_key]} LBTM attempts, forcing LGTM")
+            if step_lbtm_counts[step_key] >= 2:
+                logger.warning(f"[review] Step {step_index} reached max LBTM ({step_lbtm_counts[step_key]}), forcing LGTM")
                 review_result["decision"] = "LGTM"
                 review_result["feedback"] = f"(Force-approved after {step_lbtm_counts[step_key]} attempts)"
                 current_step += 1
         else:
+            logger.info(f"[review] Step {step_index} LGTM, moving to step {current_step + 1}")
             current_step += 1
         
         return {

@@ -18,8 +18,12 @@ from datetime import datetime
 from uuid import uuid4
 
 # Add backend path for imports
-backend_path = Path(__file__).parent.parent.parent.parent.parent
+backend_path = Path(__file__).parent.parent  # tests -> backend
 sys.path.insert(0, str(backend_path))
+
+# Load .env
+from dotenv import load_dotenv
+load_dotenv(backend_path / ".env")
 
 # Setup logging
 logging.basicConfig(
