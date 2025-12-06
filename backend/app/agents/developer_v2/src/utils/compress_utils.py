@@ -1,8 +1,8 @@
-"""Message compression utilities (MetaGPT-style)."""
+"""Message compression utilities for LangChain message lists (MetaGPT-style)."""
 import logging
 from enum import Enum
 from typing import List
-from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
+from langchain_core.messages import BaseMessage, SystemMessage
 
 from .token_utils import count_tokens
 
@@ -10,11 +10,11 @@ logger = logging.getLogger(__name__)
 
 
 class CompressType(Enum):
-    """Compression strategies for messages."""
+    """Message compression strategies. KEEP_RECENT=recent only, KEEP_FIRST_LAST=first+recent."""
     NO_COMPRESS = ""
-    KEEP_RECENT = "keep_recent"       # Keep N most recent messages
-    KEEP_FIRST_LAST = "first_last"    # Keep first + last messages
-    SUMMARIZE = "summarize"           # Summarize old messages (requires LLM)
+    KEEP_RECENT = "keep_recent"
+    KEEP_FIRST_LAST = "first_last"
+    SUMMARIZE = "summarize"
 
 
 def compress_messages(

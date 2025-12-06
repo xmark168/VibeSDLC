@@ -71,7 +71,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
     
     current_step = state.get("current_step", 0)
     total_steps = state.get("total_steps", 0)
-    print(f"[NODE] implement {current_step + 1}/{total_steps}")
+    logger.info(f"[NODE] implement {current_step + 1}/{total_steps}")
     
     previous_step = state.get("_last_implement_step", -1)
     review_count = 0 if current_step != previous_step else state.get("review_count", 0)

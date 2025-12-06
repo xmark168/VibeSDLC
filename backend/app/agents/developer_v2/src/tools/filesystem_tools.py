@@ -1,9 +1,4 @@
-"""File System Tools using LangChain @tool decorator.
-
-Optimizations:
-- File cache to avoid redundant reads
-- Cache invalidation on write/edit
-"""
+"""File System Tools using LangChain @tool decorator."""
 
 import os
 import shutil
@@ -12,23 +7,11 @@ from typing import Optional
 from langchain_core.tools import tool
 
 from app.agents.developer_v2.src.utils.llm_utils import file_cache
+from ._base_context import get_root_dir, is_safe_path
 
-# Global context for workspace-scoped tools
-_fs_context = {
-    "root_dir": None,
-}
-
-# Global tracking for modified files
+# Global tracking for modified files (session-specific, not context)
 _modified_files: set = set()
-
-# Track files that have been read this session (for edit enforcement)
 _files_read_session: set = set()
-
-
-def set_fs_context(root_dir: str = None):
-    """Set global context for filesystem tools."""
-    if root_dir:
-        _fs_context["root_dir"] = root_dir
 
 
 def get_modified_files() -> list:
@@ -53,18 +36,6 @@ def _track_read(file_path: str):
     _files_read_session.add(file_path)
 
 
-def _get_root_dir() -> str:
-    """Get root directory from context or use cwd."""
-    return _fs_context.get("root_dir") or os.getcwd()
-
-
-def _is_safe_path(path: str, root_dir: str) -> bool:
-    """Check if path is within root directory."""
-    real_path = os.path.realpath(path)
-    real_root = os.path.realpath(root_dir)
-    return real_path.startswith(real_root)
-
-
 @tool
 def read_file_safe(file_path: str) -> str:
     """Read contents of a file safely within the project root.
@@ -75,10 +46,10 @@ def read_file_safe(file_path: str) -> str:
     if not file_path or not file_path.strip():
         return "Error: file_path cannot be empty"
     
-    root_dir = _get_root_dir()
+    root_dir = get_root_dir()
     full_path = os.path.join(root_dir, file_path)
     
-    if not _is_safe_path(full_path, root_dir):
+    if not is_safe_path(full_path, root_dir):
         return f"Error: Access denied. Path outside root directory: {file_path}"
     
     # Check cache first (OPTIMIZATION)
@@ -112,10 +83,10 @@ def write_file_safe(file_path: str, content: str, mode: str = "w") -> str:
     if not file_path or not file_path.strip():
         return "Error: file_path cannot be empty"
     
-    root_dir = _get_root_dir()
+    root_dir = get_root_dir()
     full_path = os.path.join(root_dir, file_path)
     
-    if not _is_safe_path(full_path, root_dir):
+    if not is_safe_path(full_path, root_dir):
         return f"Error: Access denied. Path outside root directory: {file_path}"
     
     try:
@@ -141,10 +112,10 @@ def list_directory_safe(dir_path: str = ".") -> str:
     Args:
         dir_path: Directory path relative to project root (default: current)
     """
-    root_dir = _get_root_dir()
+    root_dir = get_root_dir()
     full_path = os.path.join(root_dir, dir_path)
     
-    if not _is_safe_path(full_path, root_dir):
+    if not is_safe_path(full_path, root_dir):
         return f"Error: Access denied. Path outside root directory: {dir_path}"
     
     try:
@@ -183,10 +154,10 @@ def delete_file_safe(file_path: str) -> str:
     Args:
         file_path: Path to file relative to project root
     """
-    root_dir = _get_root_dir()
+    root_dir = get_root_dir()
     full_path = os.path.join(root_dir, file_path)
     
-    if not _is_safe_path(full_path, root_dir):
+    if not is_safe_path(full_path, root_dir):
         return f"Error: Access denied. Path outside root directory: {file_path}"
     
     try:
@@ -206,11 +177,11 @@ def copy_file_safe(source_path: str, destination_path: str) -> str:
         source_path: Source file path relative to project root
         destination_path: Destination file path relative to project root
     """
-    root_dir = _get_root_dir()
+    root_dir = get_root_dir()
     full_source = os.path.join(root_dir, source_path)
     full_dest = os.path.join(root_dir, destination_path)
     
-    if not _is_safe_path(full_source, root_dir) or not _is_safe_path(full_dest, root_dir):
+    if not is_safe_path(full_source, root_dir) or not is_safe_path(full_dest, root_dir):
         return "Error: Access denied. Paths outside root directory"
     
     try:
@@ -231,11 +202,11 @@ def move_file_safe(source_path: str, destination_path: str) -> str:
         source_path: Source file path relative to project root
         destination_path: New file path relative to project root
     """
-    root_dir = _get_root_dir()
+    root_dir = get_root_dir()
     full_source = os.path.join(root_dir, source_path)
     full_dest = os.path.join(root_dir, destination_path)
     
-    if not _is_safe_path(full_source, root_dir) or not _is_safe_path(full_dest, root_dir):
+    if not is_safe_path(full_source, root_dir) or not is_safe_path(full_dest, root_dir):
         return "Error: Access denied. Paths outside root directory"
     
     try:
@@ -256,13 +227,13 @@ def glob(pattern: str, path: str = ".") -> str:
         pattern: Glob pattern (e.g., '*.py', 'test_*.txt', '**/*.tsx')
         path: Directory to search in relative to project root
     """
-    root_dir = _get_root_dir()
+    root_dir = get_root_dir()
     search_path = os.path.join(root_dir, path, pattern)
     
     try:
         matches = []
         for file_path in glob_module.glob(search_path, recursive=True):
-            if _is_safe_path(file_path, root_dir):
+            if is_safe_path(file_path, root_dir):
                 rel_path = os.path.relpath(file_path, root_dir)
                 matches.append(rel_path)
         
@@ -286,13 +257,13 @@ def grep_files(pattern: str, path: str = ".", file_pattern: str = "*") -> str:
         Matching lines with file:line format
     """
     import re
-    root_dir = _get_root_dir()
+    root_dir = get_root_dir()
     search_path = Path(os.path.join(root_dir, path))
     results = []
     
     try:
         for file_path in search_path.rglob(file_pattern):
-            if file_path.is_file() and _is_safe_path(str(file_path), root_dir):
+            if file_path.is_file() and is_safe_path(str(file_path), root_dir):
                 try:
                     content = file_path.read_text(encoding='utf-8', errors='ignore')
                     for i, line in enumerate(content.splitlines(), 1):
@@ -321,10 +292,10 @@ def edit_file(file_path: str, old_str: str, new_str: str, replace_all: bool = Fa
         new_str: New string to replace with
         replace_all: If True, replace all occurrences; if False, replace only first
     """
-    root_dir = _get_root_dir()
+    root_dir = get_root_dir()
     full_path = os.path.join(root_dir, file_path)
     
-    if not _is_safe_path(full_path, root_dir):
+    if not is_safe_path(full_path, root_dir):
         return f"Error: Access denied. Path outside root directory: {file_path}"
     
     # Enforce read-before-edit
@@ -388,10 +359,10 @@ def multi_edit_file(file_path: str, edits: list) -> str:
             {"old_str": "import X", "new_str": "import Y"}
         ])
     """
-    root_dir = _get_root_dir()
+    root_dir = get_root_dir()
     full_path = os.path.join(root_dir, file_path)
     
-    if not _is_safe_path(full_path, root_dir):
+    if not is_safe_path(full_path, root_dir):
         return f"Error: Access denied. Path outside root directory: {file_path}"
     
     # Enforce read-before-edit

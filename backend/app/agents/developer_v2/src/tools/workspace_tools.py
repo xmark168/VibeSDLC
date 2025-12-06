@@ -3,8 +3,10 @@
 import logging
 import shutil
 from pathlib import Path
-from app.agents.developer_v2.src.tools.git_tools import (
-    set_git_context, _git_status, _git_commit,
+
+from ._base_context import set_tool_context
+from .git_tools import (
+    _git_status, _git_commit,
     _git_create_worktree, _git_remove_worktree, _git_delete_branch
 )
 
@@ -19,7 +21,7 @@ def cleanup_old_worktree(main_workspace: Path, branch_name: str, agent_name: str
     if worktree_path.exists():
         logger.info(f"[{agent_name}] Removing worktree: {worktree_path}")
         try:
-            set_git_context(root_dir=str(main_workspace))
+            set_tool_context(root_dir=str(main_workspace))
             _git_remove_worktree(str(worktree_path))
         except Exception as e:
             logger.warning(f"[{agent_name}] Git worktree remove failed: {e}")
@@ -31,20 +33,11 @@ def cleanup_old_worktree(main_workspace: Path, branch_name: str, agent_name: str
                 logger.error(f"[{agent_name}] Failed to remove directory: {e}")
     
     try:
-        set_git_context(root_dir=str(main_workspace))
+        set_tool_context(root_dir=str(main_workspace))
         _git_delete_branch(branch_name)
         logger.info(f"[{agent_name}] Deleted branch: {branch_name}")
     except Exception as e:
         logger.debug(f"[{agent_name}] Branch delete (may not exist): {e}")
-    
-    # Unregister old CocoIndex task
-    try:
-        from app.agents.developer_v2.project_manager import project_manager
-        # Use branch_name as task_id approximation
-        project_manager.unregister_task("", branch_name)
-        logger.info(f"[{agent_name}] Unregistered old CocoIndex task: {branch_name}")
-    except Exception as e:
-        logger.debug(f"[{agent_name}] CocoIndex unregister (may not exist): {e}")
 
 
 def setup_git_worktree(
@@ -62,7 +55,7 @@ def setup_git_worktree(
         return {"workspace_path": str(main_workspace), "branch_name": branch_name,
                 "main_workspace": str(main_workspace), "workspace_ready": False}
     
-    set_git_context(root_dir=str(main_workspace))
+    set_tool_context(root_dir=str(main_workspace))
     status_result = _git_status()
     
     if "not a git repository" in status_result.lower() or "fatal" in status_result.lower():
@@ -98,7 +91,7 @@ def commit_workspace_changes(
         return "No workspace to commit"
     
     workspace_path = Path(workspace_path)
-    set_git_context(root_dir=str(workspace_path))
+    set_tool_context(root_dir=str(workspace_path))
     
     status = _git_status()
     if "nothing to commit" in status.lower() or "clean" in status.lower():
@@ -109,3 +102,44 @@ def commit_workspace_changes(
     logger.info(f"[{agent_name}] Committed on '{branch_name}': {result}")
     
     return result
+
+
+def get_agents_md(workspace_path: str | Path) -> str:
+    """Read AGENTS.md from workspace root."""
+    if not workspace_path:
+        return ""
+    agents_path = Path(workspace_path) / "AGENTS.md"
+    if agents_path.exists():
+        try:
+            return agents_path.read_text(encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"Failed to read AGENTS.md: {e}")
+    return ""
+
+
+def get_project_context(workspace_path: str | Path) -> str:
+    """Read project context files (README.md, package.json summary)."""
+    if not workspace_path:
+        return ""
+    
+    workspace_path = Path(workspace_path)
+    parts = []
+    
+    readme_path = workspace_path / "README.md"
+    if readme_path.exists():
+        try:
+            content = readme_path.read_text(encoding="utf-8")[:2000]
+            parts.append(f"## README.md\n{content}")
+        except Exception:
+            pass
+    
+    pkg_path = workspace_path / "package.json"
+    if pkg_path.exists():
+        try:
+            import json
+            pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+            parts.append(f"## package.json\nname: {pkg.get('name', 'unknown')}\ndependencies: {list(pkg.get('dependencies', {}).keys())[:10]}")
+        except Exception:
+            pass
+    
+    return "\n\n".join(parts)

@@ -1,4 +1,8 @@
-"""Skill Registry - manages skills by tech stack (Anthropic Agent Skills pattern)."""
+"""Skill Registry - manages skills by tech stack (Anthropic Agent Skills pattern).
+
+This module provides the SkillRegistry class that organizes and provides
+access to skills for a specific technology stack (e.g., Next.js, Python).
+"""
 import logging
 from pathlib import Path
 from typing import Dict, Optional, List
@@ -16,7 +20,7 @@ SKILLS_DIR = Path(__file__).parent
 
 @dataclass
 class SkillRegistry:
-    """Registry of skills for a specific tech stack."""
+    """Registry of skills by tech stack. Loads from skills/{tech_stack}/ + general/."""
     tech_stack: str
     skills: Dict[str, Skill] = field(default_factory=dict)
     

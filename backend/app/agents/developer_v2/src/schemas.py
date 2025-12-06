@@ -1,15 +1,15 @@
-"""Developer V2 Schemas for LLM Structured Output."""
+"""Developer V2 Schemas for LLM Structured Output and type-safe state access."""
 
 from typing import Optional, List, Literal, Dict, Any
 from pydantic import BaseModel, Field
 
 
 # =============================================================================
-# State Models (for type-safe state access)
+# State Models (for type-safe state access via state_helpers.py)
 # =============================================================================
 
 class StoryInput(BaseModel):
-    """Story input fields."""
+    """Story input fields from Kafka delegation."""
     story_id: str = ""
     epic: str = ""
     title: str = ""
@@ -22,7 +22,7 @@ class StoryInput(BaseModel):
 
 
 class WorkspaceState(BaseModel):
-    """Workspace context fields."""
+    """Git workspace/worktree state (path, branch, ready status)."""
     path: str = ""
     branch: str = ""
     main: str = ""
@@ -31,7 +31,7 @@ class WorkspaceState(BaseModel):
 
 
 class PlanState(BaseModel):
-    """Planning state fields."""
+    """Implementation plan state. Order: database -> API -> components -> pages."""
     steps: List[dict] = Field(default_factory=list)
     logic_analysis: List[List[str]] = Field(default_factory=list)
     current_step: int = 0
@@ -40,7 +40,7 @@ class PlanState(BaseModel):
 
 
 class ReviewState(BaseModel):
-    """Review state fields (LGTM/LBTM)."""
+    """Code review state. LGTM=approve, LBTM=reject. Max 2 LBTM/step."""
     result: Optional[str] = None
     feedback: Optional[str] = None
     details: Optional[str] = None
@@ -49,7 +49,7 @@ class ReviewState(BaseModel):
 
 
 class DebugState(BaseModel):
-    """Debug/error handling state."""
+    """Debug/error recovery state. Max 5 iterations."""
     count: int = 0
     max_attempts: int = 5
     history: List[Dict[str, Any]] = Field(default_factory=list)
@@ -57,7 +57,7 @@ class DebugState(BaseModel):
 
 
 class SummarizeState(BaseModel):
-    """Summarize state fields (IS_PASS)."""
+    """IS_PASS gate state. YES=complete, NO=needs work. Max 2 NO iterations."""
     summary: Optional[str] = None
     todos: Dict[str, str] = Field(default_factory=dict)
     is_pass: Optional[str] = None
@@ -66,7 +66,7 @@ class SummarizeState(BaseModel):
 
 
 class RunCodeState(BaseModel):
-    """Run code/test state."""
+    """Build/test execution state. PASS=success, FAIL=routes to analyze_error."""
     status: Optional[str] = None
     result: Optional[Dict[str, Any]] = None
     stdout: str = ""
@@ -74,11 +74,11 @@ class RunCodeState(BaseModel):
 
 
 # =============================================================================
-# LLM Structured Output Models
+# LLM Structured Output Models (for with_structured_output)
 # =============================================================================
 
 class StoryAnalysis(BaseModel):
-    """Story analysis result."""
+    """Story analysis result from LLM."""
     task_type: Literal["feature", "bugfix", "refactor", "enhancement", "documentation"]
     complexity: Literal["low", "medium", "high"]
     estimated_hours: float = Field(ge=0.5, le=100.0)
@@ -90,7 +90,7 @@ class StoryAnalysis(BaseModel):
 
 
 class PlanStep(BaseModel):
-    """Single step in implementation plan (legacy, for backwards compatibility)."""
+    """Single step in implementation plan. One file per step."""
     order: int = Field(ge=1)
     description: str
     file_path: Optional[str] = None
@@ -98,12 +98,12 @@ class PlanStep(BaseModel):
 
 
 class PlanTask(BaseModel):
-    """Single task in implementation plan (abstract)."""
+    """Abstract task in implementation plan (WHAT, not HOW)."""
     order: int = Field(ge=1)
-    task: str  # Abstract description of WHAT to do
+    task: str
 
 
 class ImplementationPlan(BaseModel):
-    """Implementation plan for a story."""
+    """Complete implementation plan from analyze_and_plan node."""
     story_summary: str
     tasks: List[PlanTask]

@@ -7,58 +7,12 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.nodes._llm import code_llm
 from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg
+from app.agents.developer_v2.src.utils.prompt_utils import (
+    build_system_prompt as _build_system_prompt,
+    format_input_template as _format_input_template,
+)
 
 logger = logging.getLogger(__name__)
-
-SUMMARIZE_SYSTEM_PROMPT = """You are a Senior Engineer performing final code review.
-Your task is to review ALL implemented files and:
-1. Summarize what was implemented
-2. Detect any TODOs, incomplete code, or issues
-3. Decide if implementation IS_PASS (complete) or needs more work
-
-## Review Each File For:
-- TODOs or placeholder comments
-- Incomplete functions (empty bodies, pass statements)
-- Missing error handling
-- Type issues (any types, missing types)
-- Import errors
-
-## Output Format
-```
-## Summary
-[Brief summary of what was implemented]
-
-## Files Reviewed
-- file1.ts: [status - OK/HAS_ISSUES] [brief description]
-- file2.tsx: [status - OK/HAS_ISSUES] [brief description]
-
-## TODOs Found
-{
-  "file_path": "issue description",
-  "file_path2": "issue description"
-}
-(Use {} if no TODOs found)
-
-----
-Does the above log indicate anything that needs to be done?
-If there are any tasks to be completed, please answer 'NO' along with the to-do list in JSON format;
-otherwise, answer 'YES' in JSON format.
-
-## IS_PASS: YES|NO
-
-## Feedback (if NO)
-[What needs to be fixed in JSON format]
-```
-"""
-
-SUMMARIZE_INPUT_TEMPLATE = """## Story/Task
-{story_summary}
-
-## Files Implemented
-{files_content}
-
-Review all files above and provide summary with IS_PASS decision.
-"""
 
 
 def _read_modified_files(workspace_path: str, files_modified: list) -> dict:
@@ -121,7 +75,7 @@ def _parse_summarize_response(response: str) -> dict:
 
 async def summarize(state: DeveloperState, agent=None) -> DeveloperState:
     """Summarize all implemented code and decide IS_PASS."""
-    print("[NODE] summarize")
+    logger.info("[NODE] summarize")
     
     try:
         workspace_path = state.get("workspace_path", "")
@@ -134,13 +88,14 @@ async def summarize(state: DeveloperState, agent=None) -> DeveloperState:
         files_content = _read_modified_files(workspace_path, files_modified)
         files_formatted = _format_files_for_prompt(files_content)
         
-        input_text = SUMMARIZE_INPUT_TEMPLATE.format(
+        input_text = _format_input_template(
+            "summarize",
             story_summary=story_summary or "Implementation task",
             files_content=files_formatted
         )
         
         messages = [
-            SystemMessage(content=SUMMARIZE_SYSTEM_PROMPT),
+            SystemMessage(content=_build_system_prompt("summarize")),
             HumanMessage(content=input_text)
         ]
         

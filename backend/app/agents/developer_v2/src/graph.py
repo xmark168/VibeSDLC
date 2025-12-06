@@ -1,7 +1,26 @@
-"""Developer V2 LangGraph - Story Implementation Flow.
+"""Developer V2 LangGraph - Story Implementation Workflow.
 
-Flow: setup → analyze_and_plan → implement → review → [summarize] → run_code → END
-      Bug fix: run_code FAIL → analyze_error → implement → ...
+This module defines the DeveloperGraph class, a LangGraph state machine
+that orchestrates the complete story-to-code workflow with 7 nodes.
+
+Workflow Diagram:
+    setup_workspace -> analyze_and_plan -> implement -> review
+                                              ^           |
+                                              |   LBTM    v
+                                              +-----------+
+                                                          | LGTM
+                                                          v
+    END <- run_code <- summarize <------------------------+
+             |
+             | FAIL (debug_count < 5)
+             v
+        analyze_error -> implement
+
+Key Features:
+    - Conditional routing for code review loops (LGTM/LBTM)
+    - Error recovery with analyze_error node
+    - Configurable review skipping via use_code_review flag
+    - Per-step LBTM limits (max 2) to prevent infinite loops
 """
 
 from functools import partial
@@ -30,11 +49,15 @@ def route_after_implement(state: DeveloperState) -> Literal["review", "implement
 
 
 def route_review_result(state: DeveloperState) -> Literal["implement", "summarize", "run_code"]:
-    """Route based on review result (LGTM/LBTM)."""
-    review_result = state.get("review_result", "LGTM")
-    review_count = state.get("review_count", 0)
+    """Route based on review result (LGTM/LBTM).
     
-    if review_result == "LBTM" and review_count < 2:
+    Note: Per-step LBTM limit (max 2) is enforced in review node.
+    If step gets LBTM 2+ times, review node forces LGTM and increments current_step.
+    """
+    review_result = state.get("review_result", "LGTM")
+    
+    # Per-step limit enforced in review node (forces LGTM after 2 attempts)
+    if review_result == "LBTM":
         return "implement"
     
     current_step = state.get("current_step", 0)
@@ -74,7 +97,14 @@ def route_after_analyze_error(state: DeveloperState) -> Literal["implement", "__
 
 
 class DeveloperGraph:
-    """Story implementation workflow with 7 nodes."""
+    """LangGraph state machine for story-driven code generation.
+
+    7 nodes: setup_workspace -> analyze_and_plan -> implement -> review ->
+    summarize -> run_code -> (analyze_error if FAIL)
+
+    Attrs: agent (DeveloperV2), graph (compiled StateGraph)
+    Limits: max 2 LBTM/step, max 5 debug iterations, max 40 react loops
+    """
     
     def __init__(self, agent=None):
         self.agent = agent

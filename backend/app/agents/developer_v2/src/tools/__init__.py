@@ -1,8 +1,17 @@
 """Developer V2 Tools - LangChain @tool decorated functions."""
 
+# Unified context (single source of truth)
+from ._base_context import (
+    set_tool_context,
+    get_root_dir,
+    get_project_id,
+    get_task_id,
+    is_safe_path,
+    reset_context,
+)
+
 # Filesystem tools
 from .filesystem_tools import (
-    set_fs_context,
     read_file_safe,
     write_file_safe,
     list_directory_safe,
@@ -17,7 +26,6 @@ from .filesystem_tools import (
 
 # Git tools
 from .git_tools import (
-    set_git_context,
     git_status,
     git_commit,
     git_create_branch,
@@ -30,30 +38,10 @@ from .git_tools import (
     git_list_worktrees,
 )
 
-# Shell and search tools
+# Shell tools
 from .shell_tools import (
-    set_shell_context,
     execute_shell,
-)
-
-# CocoIndex and project context tools
-from .cocoindex_tools import (
-    set_tool_context,
-    search_codebase,
-    index_workspace,
-    update_workspace_index,
-    get_related_code_indexed,
-    search_codebase_tool,
-    reindex_workspace,
-    get_related_code,
-    get_project_structure,
-    get_coding_guidelines,
-    get_code_examples,
-    get_project_info,
-    get_agents_md,
-    get_project_context,
-    get_boilerplate_examples,
-    get_markdown_code_block_type,
+    run_shell,
 )
 
 # Execution tools
@@ -69,6 +57,8 @@ from .execution_tools import (
 from .workspace_tools import (
     setup_git_worktree,
     commit_workspace_changes,
+    get_agents_md,
+    get_project_context,
 )
 
 # Skill tools (Claude-driven activation)
@@ -81,11 +71,13 @@ from .skill_tools import (
 )
 
 __all__ = [
-    # Context setters
-    "set_fs_context",
-    "set_git_context",
-    "set_shell_context",
+    # Unified context
     "set_tool_context",
+    "get_root_dir",
+    "get_project_id",
+    "get_task_id",
+    "is_safe_path",
+    "reset_context",
     # Filesystem
     "read_file_safe",
     "write_file_safe",
@@ -110,22 +102,7 @@ __all__ = [
     "git_list_worktrees",
     # Shell
     "execute_shell",
-    # CocoIndex & Project Context
-    "search_codebase",
-    "index_workspace",
-    "update_workspace_index",
-    "get_related_code_indexed",
-    "search_codebase_tool",
-    "reindex_workspace",
-    "get_related_code",
-    "get_project_structure",
-    "get_coding_guidelines",
-    "get_code_examples",
-    "get_project_info",
-    "get_agents_md",
-    "get_project_context",
-    "get_boilerplate_examples",
-    "get_markdown_code_block_type",
+    "run_shell",
     # Execution
     "CommandResult",
     "install_dependencies",
@@ -135,6 +112,8 @@ __all__ = [
     # Workspace
     "setup_git_worktree",
     "commit_workspace_changes",
+    "get_agents_md",
+    "get_project_context",
     # Skill tools
     "set_skill_context",
     "reset_skill_cache",

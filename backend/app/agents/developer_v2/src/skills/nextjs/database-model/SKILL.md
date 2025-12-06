@@ -45,7 +45,7 @@ Follow these conventions for all models:
 model Product {
   id        String   @id @default(uuid())
   name      String
-  price     Decimal
+  price     Float    // Use Float for simpler type handling in UI
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -63,6 +63,20 @@ enum Status {
   ARCHIVED
 }
 ```
+
+## Type Choices for Numbers
+
+| Type | Prisma Returns | Use Case |
+|------|---------------|----------|
+| `Int` | `number` | Counts, IDs, whole numbers |
+| `Float` | `number` | Prices, measurements (recommended for UI) |
+| `Decimal` | `Prisma.Decimal` | Financial calculations needing exact precision |
+
+**Recommendation**: Use `Float` for prices in most apps. It returns `number` directly, no conversion needed.
+
+If using `Decimal` (for financial apps):
+- API must convert: `Number(item.price)` or `item.price.toNumber()`
+- TypeScript type: `Prisma.Decimal` not `number`
 
 ## Relationships
 
@@ -147,13 +161,9 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
 ## After Writing Schema
 
-Run db push to apply schema changes:
-
-```
-execute_shell("bunx prisma db push")
-```
-
-Note: `prisma generate` runs automatically with db push. If fails, fix schema and retry.
+DO NOT run db push manually during implementation.
+Database operations (`prisma generate`, `prisma db push`) run automatically in validation phase.
+Just write the schema file and proceed to next task.
 
 ## Commands Reference
 
@@ -171,6 +181,7 @@ NEVER:
 - Recreate User/Account/Session models (already in boilerplate)
 - Forget `@@index` on foreign key fields
 - Skip `onDelete: Cascade` on child relations
-- Forget to run `prisma db push` after schema changes
+- Create migration files (use `bunx prisma db push` for dev instead)
+- Run `execute_shell` for db push/generate during implementation (runs automatically in validation)
 
 **IMPORTANT**: Always add indexes on fields used in WHERE clauses or JOINs to improve query performance.

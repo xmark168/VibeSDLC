@@ -1,4 +1,9 @@
-"""Developer V2 State Definition."""
+"""Developer V2 State Definition.
+
+LangGraph state schema with sections: INPUT, FLOW CONTROL, ANALYSIS, PLANNING,
+IMPLEMENTATION, WORKSPACE, OUTPUT, RUN CODE, DEBUG, REACT LOOP, SKILLS, CONTEXT,
+REVIEW, SUMMARIZE. All fields optional (total=False).
+"""
 
 from typing import TypedDict, Literal, Any, List, Optional, Dict
 
@@ -8,7 +13,13 @@ Complexity = Literal["low", "medium", "high"]
 
 
 class DeveloperState(TypedDict, total=False):
-    # Input
+    """LangGraph state schema for Developer V2 workflow.
+
+    All fields optional. Flows: setup_workspace -> analyze_and_plan -> implement
+    -> review -> summarize -> run_code -> (analyze_error if FAIL).
+    """
+
+    # ==================== INPUT ====================
     story_id: str
     epic: str
     story_title: str

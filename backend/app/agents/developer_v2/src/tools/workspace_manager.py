@@ -1,4 +1,9 @@
-"""Project Workspace Manager for Developer V2."""
+"""Project Workspace Manager for Developer V2.
+
+This module provides git worktree management for isolated story development.
+Each story gets its own workspace directory with a separate git branch,
+allowing parallel development without conflicts.
+"""
 
 import logging
 import shutil
@@ -9,7 +14,13 @@ logger = logging.getLogger(__name__)
 
 
 class ProjectWorkspaceManager:
-    """Manages project workspaces and task branches."""
+    """Git worktree manager for isolated story development.
+
+    Structure: projects_workspace/project_{uuid}/ws_main/ + ws_story_{id}/
+    Initializes from Next.js boilerplate, excludes node_modules/.next/build.
+
+    Attrs: project_id, backend_root, workspace_root, project_dir, template_dir
+    """
 
     def __init__(self, project_id: UUID):
         self.project_id = project_id
