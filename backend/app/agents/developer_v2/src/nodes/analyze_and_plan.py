@@ -412,6 +412,17 @@ CRITICAL: After exploration, you MUST output <result> JSON. Do not stop at explo
         for i, s in enumerate(steps):
             s["order"] = i + 1
         
+        # Auto-assign frontend-design skill for all .tsx files
+        for step in steps:
+            file_path = step.get("file_path", "")
+            skills = step.get("skills", [])
+            
+            # All .tsx files (components AND pages) should have frontend-design
+            if file_path.endswith(".tsx"):
+                if "frontend-component" in skills and "frontend-design" not in skills:
+                    step["skills"] = skills + ["frontend-design"]
+                    logger.debug(f"[analyze_and_plan] Added frontend-design to {file_path}")
+        
         # Build analysis from summary
         analysis = {
             "task_type": "feature",

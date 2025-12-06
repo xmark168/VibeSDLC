@@ -59,9 +59,29 @@ system_prompt: |
     - INPUTS/OUTPUTS: What data it receives and produces
     - DESIGN INTENT: Visual style, interactions, memorable aspects (for UI)
   - **dependencies**: Files to read as context
+  - **skills**: Skills to preload for implementation (REQUIRED!)
   
   DO NOT specify: imports, interfaces, implementation patterns - skills will decide!
   </logic_analysis_guide>
+  
+  <skills_selection>
+  ## Skills Selection (REQUIRED for each step!)
+  Each step MUST include "skills" array with relevant skill IDs:
+  
+  | File Type | Skills |
+  |-----------|--------|
+  | src/app/api/**/route.ts | ["api-route"] |
+  | src/components/**/*.tsx | ["frontend-component", "frontend-design"] |
+  | src/app/**/*.tsx (pages) | ["frontend-component", "frontend-design"] |
+  | prisma/schema.prisma | ["database-model"] |
+  | src/app/actions/*.ts | ["server-action"] |
+  | Auth-related files | ["authentication"] |
+  | State stores (zustand) | ["state-management"] |
+  
+  CRITICAL: ALL .tsx files (components AND pages) should have BOTH skills!
+  
+  Skills provide patterns, conventions, and code templates for implementation.
+  </skills_selection>
   
   <anti_patterns>
   NEVER create tasks for:
@@ -87,10 +107,10 @@ system_prompt: |
       ["src/app/products/page.tsx", "Products page displaying grid of product cards"]
     ],
     "steps": [
-      {"order": 1, "file_path": "prisma/schema.prisma", "action": "modify", "description": "Add Product model with fields for listing display", "dependencies": []},
-      {"order": 2, "file_path": "src/app/api/products/route.ts", "action": "create", "description": "API returning products with pagination support", "dependencies": ["prisma/schema.prisma", "src/lib/prisma.ts"]},
-      {"order": 3, "file_path": "src/components/ProductCard.tsx", "action": "create", "description": "Reusable product card. Design: striking visuals, memorable hover effect, elegant typography", "dependencies": []},
-      {"order": 4, "file_path": "src/app/products/page.tsx", "action": "create", "description": "Products listing page. Design: clean grid layout, good spacing, responsive", "dependencies": ["src/components/ProductCard.tsx"]}
+      {"order": 1, "file_path": "prisma/schema.prisma", "action": "modify", "description": "Add Product model with fields for listing display", "dependencies": [], "skills": ["database-model"]},
+      {"order": 2, "file_path": "src/app/api/products/route.ts", "action": "create", "description": "API returning products with pagination support", "dependencies": ["prisma/schema.prisma", "src/lib/prisma.ts"], "skills": ["api-route"]},
+      {"order": 3, "file_path": "src/components/ProductCard.tsx", "action": "create", "description": "Reusable product card. Design: striking visuals, memorable hover effect, elegant typography", "dependencies": [], "skills": ["frontend-component", "frontend-design"]},
+      {"order": 4, "file_path": "src/app/products/page.tsx", "action": "create", "description": "Products listing page. Design: clean grid layout, good spacing, responsive", "dependencies": ["src/components/ProductCard.tsx"], "skills": ["frontend-component"]}
     ]
   }
   ```
@@ -111,13 +131,13 @@ system_prompt: |
       ["src/app/page.tsx", "Homepage composing all sections. Design: cohesive flow, good rhythm between sections"]
     ],
     "steps": [
-      {"order": 1, "file_path": "prisma/schema.prisma", "action": "modify", "description": "Add Book and Category models", "dependencies": []},
-      {"order": 2, "file_path": "src/app/api/books/featured/route.ts", "action": "create", "description": "API for featured books", "dependencies": ["prisma/schema.prisma", "src/lib/prisma.ts"]},
-      {"order": 3, "file_path": "src/components/ui/BookCard.tsx", "action": "create", "description": "Book card displaying cover, title, author, price. Design: visually striking, memorable hover", "dependencies": []},
-      {"order": 4, "file_path": "src/components/home/HeroSection.tsx", "action": "create", "description": "Hero with value proposition and CTA. Design: bold, impactful, draws attention", "dependencies": []},
-      {"order": 5, "file_path": "src/components/home/FeaturedBooks.tsx", "action": "create", "description": "Featured books grid with loading skeleton. Design: engaging, showcases books well", "dependencies": ["src/components/ui/BookCard.tsx"]},
-      {"order": 6, "file_path": "src/components/home/TrustIndicators.tsx", "action": "create", "description": "Trust badges for credibility. Design: clean, professional, trustworthy", "dependencies": []},
-      {"order": 7, "file_path": "src/app/page.tsx", "action": "modify", "description": "Compose homepage sections. Design: cohesive, good visual flow", "dependencies": ["src/components/home/HeroSection.tsx", "src/components/home/FeaturedBooks.tsx", "src/components/home/TrustIndicators.tsx"]}
+      {"order": 1, "file_path": "prisma/schema.prisma", "action": "modify", "description": "Add Book and Category models", "dependencies": [], "skills": ["database-model"]},
+      {"order": 2, "file_path": "src/app/api/books/featured/route.ts", "action": "create", "description": "API for featured books", "dependencies": ["prisma/schema.prisma", "src/lib/prisma.ts"], "skills": ["api-route"]},
+      {"order": 3, "file_path": "src/components/ui/BookCard.tsx", "action": "create", "description": "Book card displaying cover, title, author, price. Design: visually striking, memorable hover", "dependencies": [], "skills": ["frontend-component", "frontend-design"]},
+      {"order": 4, "file_path": "src/components/home/HeroSection.tsx", "action": "create", "description": "Hero with value proposition and CTA. Design: bold, impactful, draws attention", "dependencies": [], "skills": ["frontend-component", "frontend-design"]},
+      {"order": 5, "file_path": "src/components/home/FeaturedBooks.tsx", "action": "create", "description": "Featured books grid with loading skeleton. Design: engaging, showcases books well", "dependencies": ["src/components/ui/BookCard.tsx"], "skills": ["frontend-component"]},
+      {"order": 6, "file_path": "src/components/home/TrustIndicators.tsx", "action": "create", "description": "Trust badges for credibility. Design: clean, professional, trustworthy", "dependencies": [], "skills": ["frontend-component", "frontend-design"]},
+      {"order": 7, "file_path": "src/app/page.tsx", "action": "modify", "description": "Compose homepage sections. Design: cohesive, good visual flow", "dependencies": ["src/components/home/HeroSection.tsx", "src/components/home/FeaturedBooks.tsx", "src/components/home/TrustIndicators.tsx"], "skills": ["frontend-component"]}
     ]
   }
   ```
@@ -134,16 +154,16 @@ system_prompt: |
       ["src/app/search/page.tsx", "Search results page. Design: clear results display, helpful empty state"]
     ],
     "steps": [
-      {"order": 1, "file_path": "src/app/api/books/search/route.ts", "action": "create", "description": "Search API with case-insensitive matching", "dependencies": ["prisma/schema.prisma", "src/lib/prisma.ts"]},
-      {"order": 2, "file_path": "src/components/SearchBar.tsx", "action": "create", "description": "Search bar with instant feedback. Design: modern, responsive, clear affordance", "dependencies": []},
-      {"order": 3, "file_path": "src/app/search/page.tsx", "action": "create", "description": "Search results page. Design: clear layout, good empty/loading states", "dependencies": ["src/components/ui/BookCard.tsx", "src/components/SearchBar.tsx"]}
+      {"order": 1, "file_path": "src/app/api/books/search/route.ts", "action": "create", "description": "Search API with case-insensitive matching", "dependencies": ["prisma/schema.prisma", "src/lib/prisma.ts"], "skills": ["api-route"]},
+      {"order": 2, "file_path": "src/components/SearchBar.tsx", "action": "create", "description": "Search bar with instant feedback. Design: modern, responsive, clear affordance", "dependencies": [], "skills": ["frontend-component", "frontend-design"]},
+      {"order": 3, "file_path": "src/app/search/page.tsx", "action": "create", "description": "Search results page. Design: clear layout, good empty/loading states", "dependencies": ["src/components/ui/BookCard.tsx", "src/components/SearchBar.tsx"], "skills": ["frontend-component"]}
     ]
   }
   ```
   </examples>
   
   <output>
-  JSON in <result> tags with logic_analysis:
+  JSON in <result> tags with logic_analysis and skills:
   <result>
   {
     "story_summary": "Brief summary of the feature",
@@ -157,11 +177,17 @@ system_prompt: |
         "description": "What to do",
         "file_path": "exact/path/to/file.ts",
         "action": "create|modify",
-        "dependencies": ["files/to/read/first.ts"]
+        "dependencies": ["files/to/read/first.ts"],
+        "skills": ["skill-id-1", "skill-id-2"]
       }
     ]
   }
   </result>
+  
+  IMPORTANT RULES:
+  1. Each step MUST have "skills" array!
+  2. For *.tsx files in src/components/**, ALWAYS use: ["frontend-component", "frontend-design"]
+  3. Only use ["frontend-component"] alone for src/app/**/*.tsx pages (page.tsx, layout.tsx)
   </output>
 
 input_template: |

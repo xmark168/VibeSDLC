@@ -11,7 +11,6 @@ from app.agents.developer_v2.src.tools.filesystem_tools import (
     get_modified_files, reset_modified_files,
 )
 from app.agents.developer_v2.src.tools.shell_tools import execute_shell
-from app.agents.developer_v2.src.tools.skill_tools import activate_skills, read_skill_file, list_skill_files, set_skill_context, reset_skill_cache
 from app.agents.developer_v2.src.utils.llm_utils import (
     get_langfuse_config as _cfg,
     execute_llm_with_tools as _llm_with_tools,
@@ -64,9 +63,47 @@ Git repo: {"Yes" if is_git else "No"}
 Date: {date.today().isoformat()}"""
 
 
+def _preload_skills(registry: SkillRegistry, skill_ids: list[str], include_bundled: bool = True) -> str:
+    """Preload skill content for injection into system prompt.
+    
+    Args:
+        registry: SkillRegistry instance
+        skill_ids: List of skill IDs to load
+        include_bundled: Whether to include bundled reference files
+    
+    Returns:
+        Formatted skill content string
+    """
+    if not skill_ids:
+        return ""
+    
+    parts = []
+    for skill_id in skill_ids:
+        skill = registry.get_skill(skill_id)
+        if not skill:
+            logger.warning(f"[implement] Skill not found: {skill_id}")
+            continue
+        
+        content = skill.load_content()
+        if not content:
+            continue
+        
+        # Optionally include bundled reference files
+        if include_bundled:
+            bundled = skill.list_bundled_files()
+            for bf in bundled[:2]:  # Top 2 bundled files
+                bf_content = skill.load_bundled_file(bf)
+                if bf_content:
+                    content += f"\n\n### Reference: {bf}\n{bf_content}"
+        
+        parts.append(f"## Skill: {skill_id}\n{content}")
+        logger.info(f"[implement] Preloaded skill: {skill_id} ({len(content)} chars)")
+    
+    return "\n\n---\n\n".join(parts) if parts else ""
+
+
 async def implement(state: DeveloperState, agent=None) -> DeveloperState:
-    """Execute implementation step."""
-    reset_skill_cache()
+    """Execute implementation step with preloaded skills."""
     reset_modified_files()
     
     current_step = state.get("current_step", 0)
@@ -101,8 +138,15 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         file_path = step.get("file_path", "")
         action = step.get("action", "")
         step_dependencies = step.get("dependencies", [])
+        step_skills = step.get("skills", [])  # Skills from plan
         
         setup_tool_context(workspace_path, project_id, task_id)
+        
+        # Load skill registry and preload skills from step
+        skill_registry = state.get("skill_registry") or SkillRegistry.load(tech_stack)
+        
+        # Preload skills specified in plan step
+        skills_content = _preload_skills(skill_registry, step_skills)
         
         context_parts = []
         project_structure = get_project_structure(tech_stack)
@@ -120,28 +164,20 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         if state.get('run_stderr'):
             feedback_section += f"\n<errors>\n{state.get('run_stderr')[:2000]}\n</errors>"
         
-        skill_registry = state.get("skill_registry") or SkillRegistry.load(tech_stack)
-        set_skill_context(skill_registry)
-        
         task_type = state.get("task_type", "")
         is_debug_mode = task_type == "bug_fix" or debug_count > 0
         
-        if is_debug_mode:
-            debug_skill = skill_registry.get_skill("debugging")
-            if debug_skill:
-                context_parts.append(f"<debugging_skill>\n{debug_skill.load_content()}\n</debugging_skill>")
+        # Add debugging skill if in debug mode
+        if is_debug_mode and "debugging" not in step_skills:
+            debug_content = _preload_skills(skill_registry, ["debugging"])
+            if debug_content:
+                skills_content = f"{skills_content}\n\n---\n\n{debug_content}" if skills_content else debug_content
         
+        # Simplified tools - no skill tools needed (skills preloaded)
         if is_debug_mode:
-            tools = [
-                read_file_safe, write_file_safe, edit_file, list_directory_safe,
-                execute_shell, glob, grep_files,
-                activate_skills, read_skill_file, list_skill_files,
-            ]
+            tools = [read_file_safe, write_file_safe, edit_file, list_directory_safe, execute_shell, glob, grep_files]
         else:
-            tools = [
-                write_file_safe, edit_file, read_file_safe,
-                activate_skills, read_skill_file, list_skill_files,
-            ]
+            tools = [write_file_safe, edit_file, read_file_safe]
         
         files_modified = state.get("files_modified", [])
         modified_files_content = _build_modified_files_context(files_modified)
@@ -180,22 +216,22 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             total_steps=len(plan_steps),
             task_description=enhanced_task,
             modified_files=modified_files_content,
-            related_context=truncate_to_tokens("\n\n".join(context_parts), 4000),  # Token-based limit
+            related_context=truncate_to_tokens("\n\n".join(context_parts), 4000),
             feedback_section=feedback_section,
             logic_analysis=logic_analysis_str,
             legacy_code=legacy_code,
             debug_logs=debug_logs,
         )
         
-        skill_catalog = skill_registry.get_skill_catalog_for_prompt()
-        system_prompt = _build_system_prompt("implement_step", skill_catalog=skill_catalog)
+        # Build system prompt with preloaded skills (no skill catalog needed)
+        system_prompt = _build_system_prompt("implement_step", skills_content=skills_content)
         
         messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(content=input_text)
         ]
         
-        logger.info(f"[implement] Task {current_step + 1}: {task_description[:50]}...")
+        logger.info(f"[implement] Task {current_step + 1}: {task_description[:50]}... (skills: {step_skills})")
         
         await _llm_with_tools(
             llm=code_llm,
@@ -203,7 +239,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             messages=messages,
             state=state,
             name="implement_code",
-            max_iterations=15
+            max_iterations=8  # Reduced - no skill tool calls needed
         )
         
         new_modified = get_modified_files()

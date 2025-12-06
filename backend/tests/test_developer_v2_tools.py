@@ -76,14 +76,14 @@ class TestFilesystemTools:
         """Test setting filesystem context."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, _get_root_dir
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         assert _get_root_dir() == temp_workspace
     
     def test_read_file_safe_success(self, temp_workspace):
         """Test reading file successfully."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, read_file_safe
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         result = invoke_tool(read_file_safe, file_path="src/app.py")
         assert "def main():" in result
     
@@ -91,7 +91,7 @@ class TestFilesystemTools:
         """Test reading non-existent file."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, read_file_safe
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         result = invoke_tool(read_file_safe, file_path="nonexistent.py")
         assert "Error" in result or "not found" in result.lower()
     
@@ -99,7 +99,7 @@ class TestFilesystemTools:
         """Test writing file successfully."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, write_file_safe, read_file_safe
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         result = invoke_tool(write_file_safe, file_path="new_file.txt", content="Hello World")
         assert "Written" in result or "file" in result.lower()
         
@@ -111,7 +111,7 @@ class TestFilesystemTools:
         """Test writing file creates parent directories."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, write_file_safe
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         result = invoke_tool(write_file_safe, file_path="new/nested/dir/file.txt", content="Content")
         assert "Written" in result or "file" in result.lower()
         assert (Path(temp_workspace) / "new/nested/dir/file.txt").exists()
@@ -120,7 +120,7 @@ class TestFilesystemTools:
         """Test listing directory."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, list_directory_safe
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         result = invoke_tool(list_directory_safe, dir_path="src")
         assert "app.py" in result
         assert "utils.py" in result
@@ -129,7 +129,7 @@ class TestFilesystemTools:
         """Test deleting file."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, write_file_safe, delete_file_safe
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         invoke_tool(write_file_safe, file_path="to_delete.txt", content="Delete me")
         
         result = invoke_tool(delete_file_safe, file_path="to_delete.txt")
@@ -140,7 +140,7 @@ class TestFilesystemTools:
         """Test copying file."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, copy_file_safe, read_file_safe
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         result = invoke_tool(copy_file_safe, source_path="src/app.py", destination_path="src/app_copy.py")
         assert "Copied" in result or "success" in result.lower()
         
@@ -151,7 +151,7 @@ class TestFilesystemTools:
         """Test moving file."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, write_file_safe, move_file_safe
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         invoke_tool(write_file_safe, file_path="to_move.txt", content="Move me")
         
         result = invoke_tool(move_file_safe, source_path="to_move.txt", destination_path="moved.txt")
@@ -163,7 +163,7 @@ class TestFilesystemTools:
         """Test searching files."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, search_files
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         result = invoke_tool(search_files, pattern="*.py", path="src")
         assert "app.py" in result
         assert "utils.py" in result
@@ -172,7 +172,7 @@ class TestFilesystemTools:
         """Test editing file."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, edit_file, read_file_safe
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         result = invoke_tool(edit_file, file_path="src/app.py", old_str="def main():", new_str="def main_edited():")
         assert "success" in result.lower() or "edited" in result.lower() or "replaced" in result.lower()
         
@@ -183,7 +183,7 @@ class TestFilesystemTools:
         """Test path safety check prevents directory escape."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, read_file_safe
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         result = invoke_tool(read_file_safe, file_path="../../../etc/passwd")
         assert "Error" in result or "denied" in result.lower()
 
@@ -195,43 +195,47 @@ class TestFilesystemTools:
 class TestGitTools:
     """Tests for git_tools module."""
     
-    def test_set_git_context(self, temp_git_repo):
-        """Test setting git context."""
-        from app.agents.developer_v2.src.tools.git_tools import set_git_context, _get_root_dir
+    def test_set_tool_context(self, temp_git_repo):
+        """Test setting tool context."""
+        from app.agents.developer_v2.src.tools import set_tool_context, get_root_dir
         
-        set_git_context(temp_git_repo)
-        assert _get_root_dir() == temp_git_repo
+        set_tool_context(root_dir=temp_git_repo)
+        assert get_root_dir() == temp_git_repo
     
     def test_git_status(self, temp_git_repo):
         """Test git status."""
-        from app.agents.developer_v2.src.tools.git_tools import set_git_context, git_status
+        from app.agents.developer_v2.src.tools import set_tool_context
+        from app.agents.developer_v2.src.tools.git_tools import git_status
         
-        set_git_context(temp_git_repo)
+        set_tool_context(root_dir=temp_git_repo)
         result = invoke_tool(git_status)
         assert "branch" in result.lower() or "clean" in result.lower() or "nothing to commit" in result.lower()
     
     def test_git_diff_clean(self, temp_git_repo):
         """Test git diff on clean repo."""
-        from app.agents.developer_v2.src.tools.git_tools import set_git_context, git_diff
+        from app.agents.developer_v2.src.tools import set_tool_context
+        from app.agents.developer_v2.src.tools.git_tools import git_diff
         
-        set_git_context(temp_git_repo)
+        set_tool_context(root_dir=temp_git_repo)
         result = invoke_tool(git_diff)
         # Clean repo should have no diff or empty diff
         assert result is not None
     
     def test_git_create_branch(self, temp_git_repo):
         """Test creating git branch."""
-        from app.agents.developer_v2.src.tools.git_tools import set_git_context, git_create_branch
+        from app.agents.developer_v2.src.tools import set_tool_context
+        from app.agents.developer_v2.src.tools.git_tools import git_create_branch
         
-        set_git_context(temp_git_repo)
+        set_tool_context(root_dir=temp_git_repo)
         result = invoke_tool(git_create_branch, branch_name="test-branch")
         assert "test-branch" in result or "created" in result.lower() or "switched" in result.lower()
     
     def test_git_checkout(self, temp_git_repo):
         """Test git checkout."""
-        from app.agents.developer_v2.src.tools.git_tools import set_git_context, git_create_branch, git_checkout
+        from app.agents.developer_v2.src.tools import set_tool_context
+        from app.agents.developer_v2.src.tools.git_tools import git_create_branch, git_checkout
         
-        set_git_context(temp_git_repo)
+        set_tool_context(root_dir=temp_git_repo)
         invoke_tool(git_create_branch, branch_name="feature-branch")
         
         # Go back to main/master
@@ -243,9 +247,10 @@ class TestGitTools:
     
     def test_git_commit(self, temp_git_repo):
         """Test git commit."""
-        from app.agents.developer_v2.src.tools.git_tools import set_git_context, git_commit
+        from app.agents.developer_v2.src.tools import set_tool_context
+        from app.agents.developer_v2.src.tools.git_tools import git_commit
         
-        set_git_context(temp_git_repo)
+        set_tool_context(root_dir=temp_git_repo)
         
         # Create a change
         (Path(temp_git_repo) / "new_file.txt").write_text("New content")
@@ -255,9 +260,10 @@ class TestGitTools:
     
     def test_git_list_worktrees(self, temp_git_repo):
         """Test listing git worktrees."""
-        from app.agents.developer_v2.src.tools.git_tools import set_git_context, git_list_worktrees
+        from app.agents.developer_v2.src.tools import set_tool_context
+        from app.agents.developer_v2.src.tools.git_tools import git_list_worktrees
         
-        set_git_context(temp_git_repo)
+        set_tool_context(root_dir=temp_git_repo)
         result = invoke_tool(git_list_worktrees)
         assert temp_git_repo in result or "worktree" in result.lower()
 
@@ -273,14 +279,14 @@ class TestShellTools:
         """Test setting shell context."""
         from app.agents.developer_v2.src.tools.shell_tools import set_shell_context, _get_root_dir
         
-        set_shell_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         assert _get_root_dir() == temp_workspace
     
     def test_execute_shell_safe_command(self, temp_workspace):
         """Test executing safe shell command."""
         from app.agents.developer_v2.src.tools.shell_tools import set_shell_context, execute_shell
         
-        set_shell_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         result = invoke_tool(execute_shell, command="echo hello")
         assert "hello" in result.lower()
     
@@ -288,7 +294,7 @@ class TestShellTools:
         """Test dangerous commands are blocked."""
         from app.agents.developer_v2.src.tools.shell_tools import set_shell_context, execute_shell
         
-        set_shell_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         result = invoke_tool(execute_shell, command="rm -rf /")
         assert "blocked" in result.lower() or "not allowed" in result.lower() or "dangerous" in result.lower()
     
@@ -440,7 +446,7 @@ class TestToolsIntegration:
             edit_file, delete_file_safe
         )
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         
         # Create file
         invoke_tool(write_file_safe, file_path="workflow_test.py", content="def original():\n    pass")
@@ -465,16 +471,13 @@ class TestToolsIntegration:
     
     def test_git_workflow(self, temp_git_repo):
         """Test complete git workflow."""
+        from app.agents.developer_v2.src.tools import set_tool_context
         from app.agents.developer_v2.src.tools.git_tools import (
-            set_git_context, git_status, git_create_branch,
-            git_checkout, git_commit
+            git_status, git_create_branch, git_checkout, git_commit
         )
-        from app.agents.developer_v2.src.tools.filesystem_tools import (
-            set_fs_context, write_file_safe
-        )
+        from app.agents.developer_v2.src.tools.filesystem_tools import write_file_safe
         
-        set_git_context(temp_git_repo)
-        set_fs_context(temp_git_repo)
+        set_tool_context(root_dir=temp_git_repo)
         
         # Check status
         status = invoke_tool(git_status)

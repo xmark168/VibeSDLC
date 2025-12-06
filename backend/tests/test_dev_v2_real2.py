@@ -88,7 +88,8 @@ class SimpleDeveloperRunner:
     
     def _setup_workspace(self, story_id: str) -> dict:
         """Setup git workspace and branch - called by graph's setup_workspace node."""
-        from app.agents.developer_v2.src.tools.git_tools import set_git_context, git_create_branch, _git_commit
+        from app.agents.developer_v2.src.tools import set_tool_context
+        from app.agents.developer_v2.src.tools.git_tools import git_create_branch, _git_commit
         
         short_id = story_id.split('-')[-1][:8] if '-' in story_id else story_id[:8]
         branch_name = f"story_{short_id}"
@@ -97,7 +98,7 @@ class SimpleDeveloperRunner:
         try:
             from git import Repo
             
-            set_git_context(str(self.workspace_path))
+            set_tool_context(root_dir=str(self.workspace_path))
             
             # Init git if needed
             git_dir = self.workspace_path / ".git"

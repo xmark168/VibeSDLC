@@ -62,7 +62,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from app.agents.developer_v2.src.graph import DeveloperGraph
 from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.tools.git_tools import set_git_context, git_create_branch, _git_commit
+from app.agents.developer_v2.src.tools import set_tool_context
+from app.agents.developer_v2.src.tools.git_tools import git_create_branch, _git_commit
 
 try:
     from git import Repo
@@ -194,8 +195,8 @@ class SimpleDeveloperRunner:
                     "workspace_ready": False,
                 }
             
-            # Set git context for git_tools
-            set_git_context(str(self.workspace_path))
+            # Set tool context for git_tools
+            set_tool_context(root_dir=str(self.workspace_path))
             
             # 1. Initialize git if needed
             git_dir = self.workspace_path / ".git"
@@ -397,6 +398,8 @@ class SimpleDeveloperRunner:
             "implementation_plan": [],
             "current_step": 0,
             "total_steps": 0,
+            "logic_analysis": [],
+            "dependencies_content": {},
             "files_created": [],
             "files_modified": [],
             "message": None,
@@ -420,7 +423,20 @@ class SimpleDeveloperRunner:
             "agents_md": None,
             "project_config": self._get_project_config(),
             "related_code_context": "",
+            # Review
+            "review_result": None,
+            "review_feedback": None,
+            "review_details": None,
+            "review_count": 0,
+            "total_lbtm_count": 0,
+            # Summarize
+            "summary": None,
+            "todos": None,
+            "is_pass": None,
             "summarize_feedback": None,
+            "summarize_count": 0,
+            "files_reviewed": None,
+            "story_summary": None,
         }
         
         logger.info(f"[{self.name}] Starting story: {story.get('title', 'Untitled')}")
