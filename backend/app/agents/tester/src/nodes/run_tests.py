@@ -35,7 +35,7 @@ def _detect_package_manager(project_path: Path) -> tuple[str, str]:
         return ("pnpm", "pnpm")
     if (project_path / "yarn.lock").exists():
         return ("yarn", "yarn")
-    return ("npm", "npm run")
+    return ("bun", "bun run")
 
 
 def _detect_test_commands(project_path: Path, test_plan: list[dict]) -> list[dict]:
@@ -75,7 +75,7 @@ def _detect_test_commands(project_path: Path, test_plan: list[dict]) -> list[dic
     if integration_files:
         files_arg = " ".join(f'"{f}"' for f in integration_files)
         # Always run jest with specific files, not entire suite
-        cmd = f"npx jest {files_arg} --passWithNoTests"
+        cmd = f"bunx jest {files_arg} --passWithNoTests"
         
         commands.append({
             "type": "integration",
@@ -88,7 +88,7 @@ def _detect_test_commands(project_path: Path, test_plan: list[dict]) -> list[dic
     if e2e_files:
         files_arg = " ".join(f'"{f}"' for f in e2e_files)
         # Always run playwright with specific files
-        cmd = f"npx playwright test {files_arg}"
+        cmd = f"bunx playwright test {files_arg}"
         
         commands.append({
             "type": "e2e",
@@ -147,32 +147,31 @@ def _parse_test_output(stdout: str, stderr: str, test_type: str) -> dict:
 
 
 def _run_typecheck(project_path: Path, test_files: list[str]) -> dict | None:
-    """Run TypeScript type checking on specific test files only.
+    """Run TypeScript type checking using Jest's compiler.
     
-    Only checks files in test_files list (story's test files).
-    Does NOT check entire project.
+    Uses Jest with --passWithNoTests to leverage moduleNameMapper config
+    which properly resolves @/* path aliases.
     
     Returns None if pass, or dict with error info if fail.
     """
     if not test_files:
         return None
     
-    # Filter valid TypeScript test files that exist
-    valid_files = []
-    for f in test_files:
-        if f and (f.endswith('.ts') or f.endswith('.tsx')):
-            file_path = project_path / f
-            if file_path.exists():
-                valid_files.append(f)
+    # Filter integration test files only (Jest handles these)
+    # E2E files (.spec.ts) are for Playwright, not Jest
+    integration_files = [
+        f for f in test_files 
+        if f and f.endswith('.test.ts') and (project_path / f).exists()
+    ]
     
-    if not valid_files:
-        logger.info("[_run_typecheck] No valid test files to check")
+    if not integration_files:
+        logger.info("[_run_typecheck] No integration test files to check")
         return None
     
     try:
-        # Build command with specific files only
-        files_arg = " ".join(f'"{f}"' for f in valid_files)
-        cmd = f"npx tsc --noEmit --skipLibCheck {files_arg}"
+        files_arg = " ".join(f'"{f}"' for f in integration_files)
+        # Use Jest to compile - it has moduleNameMapper configured for @/* paths
+        cmd = f"bunx jest {files_arg} --passWithNoTests --no-coverage --testPathIgnorePatterns=[]"
         
         logger.info(f"[_run_typecheck] Running: {cmd}")
         
@@ -188,14 +187,14 @@ def _run_typecheck(project_path: Path, test_files: list[str]) -> dict | None:
         )
         
         if result.returncode != 0:
-            stderr = result.stderr or ""
-            stdout = result.stdout or ""
-            output = stdout + stderr
+            output = (result.stdout or "") + (result.stderr or "")
             
-            # All errors are from our files (since we only checked those)
-            error_lines = [line for line in output.split("\n") if line.strip() and "error TS" in line]
-            
-            if error_lines:
+            # Check for TypeScript/compilation errors
+            if "error TS" in output or "Cannot find module" in output or "SyntaxError" in output:
+                error_lines = [
+                    line for line in output.split("\n") 
+                    if "error TS" in line or "Cannot find module" in line or "SyntaxError" in line
+                ]
                 logger.info(f"[_run_typecheck] Found {len(error_lines)} TypeScript errors")
                 return {
                     "success": False,
@@ -207,10 +206,10 @@ def _run_typecheck(project_path: Path, test_files: list[str]) -> dict | None:
         
     except subprocess.TimeoutExpired:
         logger.warning("[_run_typecheck] TypeCheck timeout")
-        return None  # Skip on timeout, let tests run
+        return None
     except Exception as e:
         logger.warning(f"[_run_typecheck] Error: {e}")
-        return None  # Skip on error
+        return None
 
 
 async def run_tests(state: TesterState, agent=None) -> dict:

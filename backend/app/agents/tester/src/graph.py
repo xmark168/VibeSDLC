@@ -88,10 +88,15 @@ def route_after_review(
     
     logger.info(f"[route_after_review] review_result={review_result}, review_count={review_count}")
     
-    # LBTM: re-implement (per-step limit enforced in review node)
-    if review_result == "LBTM":
+    # LBTM: re-implement only if under max reviews limit
+    max_reviews = 2
+    if review_result == "LBTM" and review_count < max_reviews:
         logger.info(f"[route_after_review] LBTM -> re-implement (attempt {review_count + 1})")
         return "implement_tests"
+    
+    # If LBTM but max reviews reached, treat as LGTM (force advance)
+    if review_result == "LBTM" and review_count >= max_reviews:
+        logger.info(f"[route_after_review] LBTM but max reviews ({max_reviews}) reached -> advancing")
     
     # LGTM - check if more steps
     current = state.get("current_step", 0)

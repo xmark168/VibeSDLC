@@ -4,22 +4,13 @@ import os
 import re
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 
 from app.agents.tester.src.state import TesterState
+from app.agents.tester.src._llm import summarize_llm
 
 logger = logging.getLogger(__name__)
 
-# LLM setup
-_api_key = os.getenv("TESTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-_base_url = os.getenv("TESTER_BASE_URL") or os.getenv("OPENAI_BASE_URL")
-_model = os.getenv("TESTER_MODEL", "gpt-4.1")
-
-_llm = (
-    ChatOpenAI(model=_model, temperature=0, api_key=_api_key, base_url=_base_url)
-    if _base_url
-    else ChatOpenAI(model=_model, temperature=0)
-)
+_llm = summarize_llm
 
 
 SUMMARIZE_SYSTEM_PROMPT = """You are a Senior QA Engineer performing final test review.

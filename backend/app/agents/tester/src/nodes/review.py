@@ -4,26 +4,17 @@ import os
 import re
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.utils.token_utils import smart_truncate_tokens
+from app.agents.tester.src._llm import review_llm
 
 logger = logging.getLogger(__name__)
 
 # Max tokens for review (leave room for LLM response)
 MAX_REVIEW_TOKENS = 8000
 
-# LLM setup
-_api_key = os.getenv("TESTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-_base_url = os.getenv("TESTER_BASE_URL") or os.getenv("OPENAI_BASE_URL")
-_model = os.getenv("TESTER_MODEL", "gpt-4.1")
-
-_llm = (
-    ChatOpenAI(model=_model, temperature=0, api_key=_api_key, base_url=_base_url)
-    if _base_url
-    else ChatOpenAI(model=_model, temperature=0)
-)
+_llm = review_llm
 
 
 REVIEW_SYSTEM_PROMPT = """You are a Senior QA Engineer performing test code review.
@@ -308,8 +299,8 @@ async def review(state: TesterState, agent=None) -> dict:
             logger.info(f"[review] Max reviews ({max_reviews}) reached after error - force advancing")
             return {
                 "current_step": current_step + 1,
-                "review_result": "LBTM",
-                "review_feedback": f"Review failed with error: {str(e)}",
+                "review_result": "LGTM",  # Force approve to break loop
+                "review_feedback": f"Force approved after error: {str(e)}",
                 "review_count": max_reviews,  # Keep at max so routing knows we hit limit
                 "total_lbtm_count": state.get("total_lbtm_count", 0) + 1,
                 "error": str(e),

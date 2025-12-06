@@ -291,8 +291,8 @@ def _detect_package_manager(project_path: Path) -> tuple[str, str]:
         return ("pnpm", "pnpm")
     if (project_path / "yarn.lock").exists():
         return ("yarn", "yarn")
-    # Default to npm
-    return ("npm", "npm run")
+    # Default to bun
+    return ("bun", "bun run")
 
 
 def _detect_test_command(project_path: Path, test_type: str, test_file: str = "") -> str:
@@ -310,7 +310,7 @@ def _detect_test_command(project_path: Path, test_type: str, test_file: str = ""
             if test_file:
                 if "test" in scripts:
                     return f"{run_cmd} test -- {test_file}"
-                return f"{run_cmd} jest {test_file}" if pm == "bun" else f"npx jest {test_file}"
+                return f"bunx jest {test_file}"
             
             # Check for test type variants
             type_variants = [f"test:{test_type}", f"test-{test_type}"]

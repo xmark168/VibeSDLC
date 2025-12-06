@@ -32,6 +32,11 @@
 # playwright
 /playwright-report/
 /test-results/
+/.playwright/
+
+# test database
+prisma/test.db
+prisma/test.db-journal
 
 # debug
 npm-debug.log*

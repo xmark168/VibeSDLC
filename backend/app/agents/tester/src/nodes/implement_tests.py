@@ -7,7 +7,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
-from langchain_openai import ChatOpenAI
+from langchain_core.language_models import BaseChatModel
 
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.skills import SkillRegistry
@@ -20,6 +20,7 @@ from app.agents.tester.src.tools.skill_tools import (
     set_skill_context,
 )
 from app.agents.tester.src.utils.token_utils import truncate_to_tokens, count_tokens
+from app.agents.tester.src._llm import implement_llm
 
 logger = logging.getLogger(__name__)
 
@@ -38,25 +39,11 @@ async def _execute_tool_async(tool, tool_args: dict) -> str:
         return await loop.run_in_executor(_tool_executor, lambda: tool(**tool_args))
 
 
-# Use custom API endpoint if configured
-_api_key = os.getenv("TESTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-_base_url = os.getenv("TESTER_BASE_URL") or os.getenv("OPENAI_BASE_URL")
-_model = os.getenv("TESTER_MODEL", "gpt-4.1")
-
-_llm = (
-    ChatOpenAI(
-        model=_model,
-        temperature=0,
-        api_key=_api_key,
-        base_url=_base_url,
-    )
-    if _base_url
-    else ChatOpenAI(model=_model, temperature=0)
-)
+_llm = implement_llm
 
 
 async def _execute_llm_with_tools(
-    llm: ChatOpenAI,
+    llm: BaseChatModel,
     tools: list,
     messages: list,
     state: dict,

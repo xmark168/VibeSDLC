@@ -8,28 +8,18 @@ import unicodedata
 from uuid import UUID
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 from sqlmodel import Session
 
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.core_nodes import detect_testing_context, send_message
+from app.agents.tester.src._llm import plan_llm
 from app.core.db import engine
 from app.models import Project
 
 logger = logging.getLogger(__name__)
 
-# Use custom API endpoint if configured
-_api_key = os.getenv("TESTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-_base_url = os.getenv("TESTER_BASE_URL") or os.getenv("OPENAI_BASE_URL")
-_model = os.getenv("TESTER_MODEL", "gpt-4.1")
-
-_llm = ChatOpenAI(
-    model=_model,
-    temperature=0,
-    api_key=_api_key,
-    base_url=_base_url,
-) if _base_url else ChatOpenAI(model=_model, temperature=0)
+_llm = plan_llm
 
 
 def _cfg(state: dict, name: str) -> dict:

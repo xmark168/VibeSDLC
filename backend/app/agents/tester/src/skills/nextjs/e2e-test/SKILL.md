@@ -194,13 +194,13 @@ await expect(page.locator('.spinner')).toBeHidden({ timeout: 10000 });
 
 ## Commands
 ```bash
-npx playwright test                    # Run all E2E
-npx playwright test auth.spec.ts       # Run specific file
-npx playwright test --ui               # Interactive UI mode
-npx playwright test --headed           # See browser
-npx playwright test --debug            # Debug mode
-npx playwright show-report             # View HTML report
-npx playwright codegen                 # Generate tests by recording
+bunx playwright test                    # Run all E2E
+bunx playwright test auth.spec.ts       # Run specific file
+bunx playwright test --ui               # Interactive UI mode
+bunx playwright test --headed           # See browser
+bunx playwright test --debug            # Debug mode
+bunx playwright show-report             # View HTML report
+bunx playwright codegen                 # Generate tests by recording
 ```
 
 ## Tips

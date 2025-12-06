@@ -1,21 +1,16 @@
 """Tester Agent - LangGraph Implementation."""
 
 import logging
-from pathlib import Path
 from typing import Any, Dict
 from uuid import UUID
 
-import yaml
-from crewai import Agent, Crew, Task
+from sqlmodel import Session
 
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
-from app.agents.tester.tasks import (
-    create_test_plan_task,
-    create_validate_requirements_task,
-    create_test_cases_task,
-)
-from app.agents.tester.tools import get_tester_tools
-from app.models import Agent as AgentModel
+from app.agents.tester.src.graph import TesterGraph
+from app.core.db import engine
+from app.core.langfuse_client import flush_langfuse
+from app.models import Agent as AgentModel, Project
 
 
 logger = logging.getLogger(__name__)
