@@ -278,6 +278,23 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         
         all_modified = list(set(files_modified + new_modified))
         
+        # Refresh dependencies_content with modified files (fix stale context issue)
+        dependencies_content = state.get("dependencies_content", {})
+        workspace = state.get("workspace_path", "")
+        if workspace and new_modified:
+            important_files = ["prisma/schema.prisma", "src/app/layout.tsx", "src/lib/prisma.ts", "src/types/index.ts"]
+            for mod_file in new_modified:
+                normalized = mod_file.replace("\\", "/")
+                if normalized in important_files or normalized in dependencies_content:
+                    full_path = os.path.join(workspace, normalized)
+                    if os.path.exists(full_path):
+                        try:
+                            with open(full_path, "r", encoding="utf-8") as f:
+                                dependencies_content[normalized] = f.read()
+                            logger.info(f"[implement] Refreshed dependency: {normalized}")
+                        except Exception as e:
+                            logger.warning(f"[implement] Failed to refresh {normalized}: {e}")
+        
         return {
             **state,
             "current_step": current_step,
@@ -288,6 +305,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             "run_status": None,
             "skill_registry": skill_registry,
             "files_modified": all_modified,
+            "dependencies_content": dependencies_content,  # Refreshed with modified files
             "last_implemented_file": file_path,
             "message": f"✅ Task {current_step + 1}: {task_description}",
             "action": "IMPLEMENT" if current_step + 1 < len(plan_steps) else "VALIDATE",
