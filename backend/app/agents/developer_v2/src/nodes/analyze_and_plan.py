@@ -9,6 +9,7 @@ from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.utils.json_utils import extract_json_universal
 from app.agents.developer_v2.src.utils.llm_utils import (
     get_langfuse_config as _cfg,
+    flush_langfuse,
     execute_llm_with_tools as _llm_with_tools,
 )
 from app.agents.developer_v2.src.nodes._llm import code_llm
@@ -53,7 +54,7 @@ def _smart_prefetch(workspace_path: str, story_title: str, requirements: list) -
     core_files = [
         ("package.json", 500),
         ("prisma/schema.prisma", 2000),
-        ("src/app/layout.tsx", 500),
+        ("src/app/layout.tsx", 2000),  # Full content to see rendered components
         ("tsconfig.json", 300),
     ]
     
@@ -126,8 +127,9 @@ def _preload_dependencies(workspace_path: str, steps: list) -> dict:
     # Also add common files that are often needed
     common_files = [
         "prisma/schema.prisma",
-        "src/lib/prisma.ts",
+        "src/app/layout.tsx",  # See what components are already rendered
         "src/types/index.ts",
+        "src/lib/prisma.ts",
     ]
     all_deps.update(common_files)
     
@@ -174,6 +176,7 @@ Output a bullet-point summary focusing on:
         SystemMessage(content="You are a technical summarizer. Be concise."),
         HumanMessage(content=summary_prompt)
     ], config=_cfg(state, "summarize_exploration"))
+    flush_langfuse(state)  # Real-time update
     
     return f"## Exploration Summary\n{response.content}"
 
@@ -271,6 +274,7 @@ Create an implementation plan with:
             SystemMessage(content="You are a technical planner. Create structured implementation plans."),
             HumanMessage(content=structured_prompt)
         ], config=_cfg(state, "analyze_and_plan_structured"))
+        flush_langfuse(state)  # Real-time update
         
         data = result.model_dump()
         if data and data.get("steps"):

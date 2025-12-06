@@ -6,7 +6,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.nodes._llm import code_llm
-from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg
+from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse
 from app.agents.developer_v2.src.utils.prompt_utils import (
     build_system_prompt as _build_system_prompt,
     format_input_template as _format_input_template,
@@ -100,6 +100,7 @@ async def summarize(state: DeveloperState, agent=None) -> DeveloperState:
         ]
         
         response = await code_llm.ainvoke(messages, config=_cfg(state, "summarize"))
+        flush_langfuse(state)  # Real-time update
         response_text = response.content if hasattr(response, 'content') else str(response)
         result = _parse_summarize_response(response_text)
         

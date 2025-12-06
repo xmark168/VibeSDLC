@@ -92,7 +92,7 @@ def _preload_skills(registry: SkillRegistry, skill_ids: list[str], include_bundl
         # Optionally include bundled reference files
         if include_bundled:
             bundled = skill.list_bundled_files()
-            for bf in bundled[:2]:  # Top 2 bundled files
+            for bf in bundled:  # Load all bundled files
                 bf_content = skill.load_bundled_file(bf)
                 if bf_content:
                     content += f"\n\n### Reference: {bf}\n{bf_content}"
@@ -249,6 +249,33 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         )
         
         new_modified = get_modified_files()
+        
+        # Auto db:push if prisma schema was modified (handle both / and \ separators)
+        prisma_modified = any(
+            f.replace("\\", "/").endswith("prisma/schema.prisma") or f.endswith("schema.prisma")
+            for f in new_modified
+        )
+        if prisma_modified:
+            workspace = state.get("workspace_path", "")
+            if workspace:
+                logger.info("[implement] Prisma schema modified, running generate + db:push...")
+                try:
+                    # Generate client first
+                    result = execute_shell.invoke({
+                        "command": "bunx prisma generate",
+                        "cwd": workspace
+                    })
+                    logger.info(f"[implement] prisma generate: {result[:200] if result else 'OK'}")
+                    
+                    # Then push schema to DB
+                    result = execute_shell.invoke({
+                        "command": "bunx prisma db push --accept-data-loss",
+                        "cwd": workspace
+                    })
+                    logger.info(f"[implement] db:push: {result[:200] if result else 'OK'}")
+                except Exception as e:
+                    logger.warning(f"[implement] prisma commands failed: {e}")
+        
         all_modified = list(set(files_modified + new_modified))
         
         return {

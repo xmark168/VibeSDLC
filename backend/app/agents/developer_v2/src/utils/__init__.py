@@ -2,6 +2,7 @@
 
 from .llm_utils import (
     get_langfuse_config,
+    flush_langfuse,
     execute_llm_with_tools,
     clean_json_response,
     extract_json_from_messages,
@@ -26,6 +27,7 @@ from .compress_utils import (
 __all__ = [
     # LLM utilities
     "get_langfuse_config",
+    "flush_langfuse",
     "execute_llm_with_tools",
     "clean_json_response",
     "extract_json_from_messages",

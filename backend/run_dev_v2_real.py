@@ -338,8 +338,19 @@ class SimpleDeveloperRunner:
     
     async def run_story(self, story: dict) -> dict:
         """Run a story through the graph."""
-        # Langfuse disabled for local testing
         langfuse_handler = None
+        langfuse_client = None
+        
+        if os.getenv("ENABLE_LANGFUSE", "false").lower() == "true":
+            try:
+                from langfuse import Langfuse
+                from langfuse.langchain import CallbackHandler
+                
+                langfuse_client = Langfuse()
+                langfuse_handler = CallbackHandler()
+                logger.info("Langfuse tracing enabled")
+            except Exception as e:
+                logger.warning(f"Langfuse setup failed: {e}")
         
         initial_state = {
             "story_id": story.get("story_id", str(uuid4())),
@@ -352,6 +363,7 @@ class SimpleDeveloperRunner:
             "task_id": str(uuid4()),
             "user_id": str(uuid4()),
             "langfuse_handler": langfuse_handler,
+            "langfuse_client": langfuse_client,
             "workspace_path": str(self.workspace_path),
             "branch_name": "",
             "main_workspace": str(self.workspace_path),
@@ -419,15 +431,33 @@ class SimpleDeveloperRunner:
         sys.stdout.flush()
         
         try:
+            invoke_config = {"recursion_limit": 100}
+            if langfuse_handler:
+                invoke_config["callbacks"] = [langfuse_handler]
+            
             final_state = await self.graph.graph.ainvoke(
                 initial_state,
-                config={"recursion_limit": 100}
+                config=invoke_config
             )
             print("\n[*] Graph completed!")
+            
+            # Flush Langfuse
+            if langfuse_client:
+                try:
+                    langfuse_client.flush()
+                    logger.info("Langfuse flushed")
+                except Exception as e:
+                    logger.warning(f"Langfuse flush error: {e}")
+            
             return final_state
             
         except Exception as e:
             logger.error(f"[{self.name}] Graph error: {e}", exc_info=True)
+            if langfuse_client:
+                try:
+                    langfuse_client.flush()
+                except Exception:
+                    pass
             raise
 
 
@@ -533,23 +563,16 @@ Create a Python calculator module with basic arithmetic operations and proper er
 
 
 # =============================================================================
-# GLOBAL STATE FOR CLEANUP
+# GLOBAL STATE
 # =============================================================================
 
 _active_branch = None
 _active_workspace = None
-_should_cleanup = False
-
-
-def cleanup_containers(remove: bool = False):
-    """Disabled - keep containers alive for reuse."""
-    pass  # Do nothing - containers stay alive
 
 
 def signal_handler(signum, frame):
-    """Handle Ctrl+C gracefully - keep containers alive."""
+    """Handle Ctrl+C gracefully."""
     print("\n\n[!] Interrupted!")
-    # Không cleanup, giữ container sống để reuse
     sys.exit(0)
 
 
@@ -566,12 +589,7 @@ def print_help():
     print("\n" + "-"*40)
     print("COMMANDS:")
     print("  run     - Run another story")
-    print("  test    - Run tests in container")
-    print("  exec    - Execute command in container")
-    print("  logs    - Show container logs")
-    print("  status  - Show container status")
-    print("  clear   - Remove containers and exit")
-    print("  exit    - Stop containers and exit (can resume later)")
+    print("  exit    - Exit")
     print("  help    - Show this help")
     print("-"*40)
 
@@ -582,8 +600,6 @@ async def handle_command(cmd: str, branch_name: str, workspace_path: Path) -> bo
     Returns:
         True to continue, False to exit
     """
-    from app.agents.developer_v2.src.tools.container_tools import dev_container_manager
-    
     cmd = cmd.strip().lower()
     
     if cmd == "help" or cmd == "?":
@@ -591,71 +607,7 @@ async def handle_command(cmd: str, branch_name: str, workspace_path: Path) -> bo
         return True
     
     elif cmd == "exit" or cmd == "quit" or cmd == "q":
-        cleanup_containers(remove=False)
         return False
-    
-    elif cmd == "clear":
-        cleanup_containers(remove=True)
-        return False
-    
-    elif cmd == "status":
-        try:
-            status = dev_container_manager.status(branch_name)
-            print("\n" + json.dumps(status, indent=2))
-        except Exception as e:
-            print(f"Error: {e}")
-        return True
-    
-    elif cmd == "logs":
-        try:
-            logs = dev_container_manager.get_logs(branch_name, tail=50)
-            print("\n" + "-"*40)
-            print("CONTAINER LOGS (last 50 lines):")
-            print("-"*40)
-            print(logs)
-        except Exception as e:
-            print(f"Error: {e}")
-        return True
-    
-    elif cmd == "test":
-        try:
-            print("\n[*] Running tests in container...")
-            # Detect test command based on files
-            if (workspace_path / "bun.lock").exists():
-                test_cmd = "bun run test"
-            elif (workspace_path / "package.json").exists():
-                test_cmd = "npm test"
-            elif (workspace_path / "pytest.ini").exists() or (workspace_path / "pyproject.toml").exists():
-                test_cmd = "pytest -v"
-            else:
-                test_cmd = "npm test"
-            
-            print(f"[*] Executing: {test_cmd}")
-            result = dev_container_manager.exec(branch_name, test_cmd)
-            print("\n" + "-"*40)
-            print(f"Exit code: {result.get('exit_code')}")
-            print("-"*40)
-            print(result.get("output", ""))
-        except Exception as e:
-            print(f"Error: {e}")
-        return True
-    
-    elif cmd.startswith("exec "):
-        try:
-            shell_cmd = cmd[5:].strip()
-            if not shell_cmd:
-                print("Usage: exec <command>")
-                return True
-            
-            print(f"\n[*] Executing: {shell_cmd}")
-            result = dev_container_manager.exec(branch_name, shell_cmd)
-            print("\n" + "-"*40)
-            print(f"Exit code: {result.get('exit_code')}")
-            print("-"*40)
-            print(result.get("output", ""))
-        except Exception as e:
-            print(f"Error: {e}")
-        return True
     
     elif cmd == "run":
         return "run"  # Special signal to run another story

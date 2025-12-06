@@ -69,6 +69,19 @@ def get_langfuse_config(state: dict, run_name: str) -> dict:
     return {"run_name": run_name}
 
 
+def flush_langfuse(state: dict) -> None:
+    """Flush Langfuse for real-time updates.
+    
+    Call this after each LLM invocation for real-time tracing.
+    """
+    langfuse_client = state.get("langfuse_client")
+    if langfuse_client:
+        try:
+            langfuse_client.flush()
+        except Exception:
+            pass  # Ignore flush errors
+
+
 async def execute_llm_with_tools(
     llm: ChatOpenAI,
     tools: list,
@@ -104,6 +117,9 @@ async def execute_llm_with_tools(
             config=get_langfuse_config(state, name)
         )
         conversation.append(response)
+        
+        # Flush Langfuse for real-time updates
+        flush_langfuse(state)
         
         if not response.tool_calls:
             logger.info(f"[{name}] Completed at iteration {i+1}")

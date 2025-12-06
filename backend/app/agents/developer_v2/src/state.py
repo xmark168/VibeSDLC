@@ -30,6 +30,7 @@ class DeveloperState(TypedDict, total=False):
     task_id: str
     user_id: str
     langfuse_handler: Any
+    langfuse_client: Any  # For real-time flush
 
     # Flow control
     action: Action

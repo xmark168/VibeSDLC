@@ -11,6 +11,7 @@ from app.agents.developer_v2.src.schemas import PlanStep
 from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, list_directory_safe, glob
 from app.agents.developer_v2.src.utils.llm_utils import (
     get_langfuse_config as _cfg,
+    flush_langfuse,
     execute_llm_with_tools as _llm_with_tools,
 )
 from app.agents.developer_v2.src.utils.prompt_utils import (
@@ -293,6 +294,7 @@ CRITICAL: Respond ONLY with the JSON in <result> tags. No other text.
         
         # Invoke LLM and extract JSON
         response = await code_llm.ainvoke(messages, config=_cfg(state, "analyze_error"))
+        flush_langfuse(state)  # Real-time update
         response_text = response.content if hasattr(response, 'content') else str(response)
         
         # Parse JSON from response

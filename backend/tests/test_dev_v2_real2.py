@@ -166,31 +166,18 @@ class SimpleDeveloperRunner:
     async def run_story(self, story: dict) -> dict:
         """Run a story through the graph."""
         langfuse_handler = None
-        langfuse_span = None
-        langfuse_ctx = None
+        langfuse_client = None
         
         if os.getenv("ENABLE_LANGFUSE", "false").lower() == "true":
             try:
-                from langfuse import get_client
+                from langfuse import Langfuse
                 from langfuse.langchain import CallbackHandler
                 
-                langfuse = get_client()
-                langfuse_ctx = langfuse.start_as_current_observation(as_type="span", name="developer_v2_story_execution")
-                langfuse_span = langfuse_ctx.__enter__()
-                langfuse_span.update_trace(
-                    user_id=str(uuid4()),
-                    session_id=str(self.project_id),
-                    input={
-                        "story_id": story.get("story_id", "unknown"),
-                        "epic": story.get("epic", ""),
-                        "story_title": story.get("story_title", story.get("title", "Untitled")),
-                    },
-                    tags=["developer_v2", "story_execution", self.template or "no_template", "test"],
-                    metadata={"agent": self.name, "template": self.template}
-                )
+                # Simple setup - no context manager (doesn't propagate to async tasks)
+                langfuse_client = Langfuse()
                 langfuse_handler = CallbackHandler()
                 
-                logger.info(f"[{self.name}] Langfuse tracing enabled (session={self.project_id})")
+                logger.info(f"[{self.name}] Langfuse tracing enabled")
             except Exception as e:
                 logger.warning(f"[{self.name}] Langfuse setup failed: {e}")
         
@@ -212,6 +199,7 @@ class SimpleDeveloperRunner:
             "task_id": str(uuid4()),
             "user_id": str(uuid4()),
             "langfuse_handler": langfuse_handler,
+            "langfuse_client": langfuse_client,  # Pass client for flushing
             
             # Workspace - reuse if available, else let graph setup
             "workspace_path": workspace_to_use,
@@ -279,9 +267,14 @@ class SimpleDeveloperRunner:
         logger.info(f"[{self.name}] Starting story: {story.get('story_title', story.get('title', 'Untitled'))}")
         
         try:
+            # Build config with callbacks for Langfuse
+            invoke_config = {"recursion_limit": 100}
+            if langfuse_handler:
+                invoke_config["callbacks"] = [langfuse_handler]
+            
             result = await self.graph.graph.ainvoke(
                 initial_state,
-                config={"recursion_limit": 100}
+                config=invoke_config
             )
             
             # Save workspace for reuse in subsequent stories
@@ -289,32 +282,22 @@ class SimpleDeveloperRunner:
                 self.active_workspace = result["workspace_path"]
                 logger.info(f"[{self.name}] Saved workspace for reuse: {self.active_workspace}")
             
-            # Close Langfuse span on success
-            if langfuse_span and langfuse_ctx:
+            # Flush Langfuse on success
+            if langfuse_client:
                 try:
-                    langfuse_span.update_trace(output={
-                        "action": result.get("action"),
-                        "task_type": result.get("task_type"),
-                        "complexity": result.get("complexity"),
-                        "run_status": result.get("run_status"),
-                        "files_modified": len(result.get("files_modified", [])),
-                        "total_steps": result.get("total_steps", 0),
-                        "debug_count": result.get("debug_count", 0),
-                        "react_loop_count": result.get("react_loop_count", 0)
-                    })
-                    langfuse_ctx.__exit__(None, None, None)
-                    logger.info(f"[{self.name}] Langfuse span closed successfully")
+                    langfuse_client.flush()
+                    logger.info(f"[{self.name}] Langfuse flushed")
                 except Exception as e:
-                    logger.error(f"Langfuse span close error: {e}")
+                    logger.error(f"Langfuse flush error: {e}")
             
             return result
             
         except Exception as e:
             logger.error(f"[{self.name}] Graph error: {e}", exc_info=True)
-            if langfuse_ctx:
+            if langfuse_client:
                 try:
-                    langfuse_ctx.__exit__(type(e), e, e.__traceback__)
-                    logger.info(f"[{self.name}] Langfuse span closed (on error)")
+                    langfuse_client.flush()
+                    logger.info(f"[{self.name}] Langfuse flushed (on error)")
                 except Exception as cleanup_err:
                     logger.error(f"Langfuse cleanup error: {cleanup_err}")
             raise
