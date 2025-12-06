@@ -395,74 +395,32 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
       return
     }
 
-    // Get current cards from ref
-    const currentCards = cardsRef.current
-    const activeCard = currentCards.find(c => c.id === active.id)
-    
-    // Only update columnId ONCE when first crossing to new container
-    // This prevents infinite loop from continuous rank updates
-    if (activeCard?.columnId === overContainer) {
-      // Already in target container, just update target position ref
-      const targetCards = currentCards
-        .filter(c => c.columnId === overContainer && c.id !== active.id)
-        .sort((a, b) => (a.rank || 999) - (b.rank || 999))
-
-      let targetIndex = targetCards.length
-      const isColumnDrop = COLUMNS.some(col => col.id === overId)
-      
-      // Skip update if hovering over self (active card)
-      if (overId === active.id) {
-        // Keep current target, don't update
-        return
-      }
-      
-      if (!isColumnDrop) {
-        const overIndex = targetCards.findIndex(c => c.id === overId)
-        if (overIndex >= 0) {
-          const isBelowOverItem = over && 
-            active.rect.current.translated &&
-            over.rect.top !== undefined &&
-            active.rect.current.translated.top > over.rect.top + over.rect.height / 2
-          targetIndex = isBelowOverItem ? overIndex + 1 : overIndex
-        }
-        // If overIndex not found and not hovering over self, keep current targetIndex from ref
-        else if (crossContainerTarget.current) {
-          targetIndex = crossContainerTarget.current.targetIndex
-        }
-      }
-
-      crossContainerTarget.current = {
-        targetColumn: overContainer,
-        targetIndex,
-        overId: overId
-      }
+    // Skip update if hovering over self (active card)
+    if (overId === active.id) {
       return
     }
 
-    // First time crossing to new container - calculate target index
-    // (actual columnId update happens in handleDragEnd)
-    const targetCards = currentCards
-      .filter(c => c.columnId === overContainer)
-      .sort((a, b) => (a.rank || 999) - (b.rank || 999))
-
-    let targetIndex = targetCards.length
-    if (!COLUMNS.some(col => col.id === overId)) {
-      const overIndex = targetCards.findIndex(c => c.id === overId)
-      if (overIndex >= 0) {
-        const isBelowOverItem = over && 
-          active.rect.current.translated &&
-          over.rect.top !== undefined &&
-          active.rect.current.translated.top > over.rect.top + over.rect.height / 2
-        targetIndex = isBelowOverItem ? overIndex + 1 : overIndex
-      }
-    }
-
+    // Store target info for handleDragEnd
     crossContainerTarget.current = {
       targetColumn: overContainer,
-      targetIndex,
+      targetIndex: 0, // Will be calculated in handleDragEnd based on over.id
       overId: overId
     }
-    // No state update here - only update in handleDragEnd to avoid jerk
+
+    // Update columnId to show placeholder in target column
+    // SortableContext will handle visual positioning automatically
+    setCards(prevCards => {
+      const card = prevCards.find(c => c.id === active.id)
+      if (!card || card.columnId === overContainer) return prevCards
+
+      const newCards = prevCards.map(c => 
+        c.id === active.id 
+          ? { ...c, columnId: overContainer }
+          : c
+      )
+      cardsRef.current = newCards
+      return newCards
+    })
   }, [findContainer])
 
   const handleDragEnd = useCallback(async (event: DragEndEvent) => {
@@ -557,18 +515,15 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         .filter(c => c.columnId === overContainer && c.id !== active.id)
         .sort((a, b) => (a.rank || 999) - (b.rank || 999))
 
-      // Use saved target index from handleDragOver
+      // Calculate newIndex based on over.id at drop time
       let newIndex: number
-      if (crossContainerTarget.current && crossContainerTarget.current.targetColumn === overContainer) {
-        newIndex = crossContainerTarget.current.targetIndex
+      if (COLUMNS.some(col => col.id === overId)) {
+        // Dropped on column itself → append to end
+        newIndex = otherCardsInTarget.length
       } else {
-        // Fallback: calculate from overId
-        if (COLUMNS.some(col => col.id === overId)) {
-          newIndex = otherCardsInTarget.length
-        } else {
-          const overIndex = otherCardsInTarget.findIndex(c => c.id === overId)
-          newIndex = overIndex >= 0 ? overIndex : otherCardsInTarget.length
-        }
+        // Dropped on a card → insert at that card's position
+        const overIndex = otherCardsInTarget.findIndex(c => c.id === overId)
+        newIndex = overIndex >= 0 ? overIndex : otherCardsInTarget.length
       }
 
       // Clear the ref
