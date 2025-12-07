@@ -142,6 +142,7 @@ class TeamLeader(BaseAgent):
                 "task_id": str(task.task_id),
                 "conversation_history": self.context.format_memory(),
                 "user_preferences": self.context.format_preferences(),
+                "attachments": task.context.get("attachments") if task.context else None,  # Pass file attachments
                 "action": None,
                 "target_role": None,
                 "message": None,

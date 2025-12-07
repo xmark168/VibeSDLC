@@ -29,6 +29,8 @@ function WorkspacePage() {
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null)
   // Track selected file for viewing
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
+  // Callback to insert @mention in chat
+  const insertMentionRef = useRef<((agentName: string) => void) | null>(null)
 
   const handleOpenArtifact = (artifactId: string) => {
     console.log('[Workspace] Opening artifact:', artifactId)
@@ -40,6 +42,18 @@ function WorkspacePage() {
     console.log('[Workspace] Opening file:', filePath)
     setSelectedFile(filePath)
     setActiveTab('file') // Switch to file tab
+  }
+
+  const handleMessageAgent = (agentName: string) => {
+    console.log('[Workspace] Messaging agent:', agentName)
+    // Expand chat if collapsed
+    if (chatCollapsed) {
+      setChatCollapsed(false)
+    }
+    // Insert @mention via the ref callback
+    if (insertMentionRef.current) {
+      insertMentionRef.current(agentName)
+    }
   }
 
   // Stable resize handler - directly manipulates DOM for smooth dragging
@@ -85,6 +99,9 @@ function WorkspacePage() {
                   onAgentStatusesChange={setAgentStatuses}
                   onOpenArtifact={handleOpenArtifact}
                   onOpenFile={handleOpenFile}
+                  onInsertMentionReady={(fn) => {
+                    insertMentionRef.current = fn
+                  }}
                 />
               </div>
 
@@ -102,6 +119,7 @@ function WorkspacePage() {
               selectedArtifactId={selectedArtifactId}
               initialSelectedFile={selectedFile}
               onResize={handleResize}
+              onMessageAgent={handleMessageAgent}
             />
           </div>
         </div>

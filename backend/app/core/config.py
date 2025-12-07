@@ -235,3 +235,11 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Document Upload Configuration
+DOCUMENT_UPLOAD_LIMITS = {
+    "max_file_size": 10 * 1024 * 1024,  # 10 MB
+    "max_text_length": 50_000,  # 50K characters after extraction (safe for LLM)
+    "allowed_extensions": [".docx"],  # Phase 1: Word only
+    "max_files_per_message": 1,
+}

@@ -17,6 +17,7 @@ class BAState(TypedDict, total=False):
     task_id: str
     user_id: str
     project_path: str
+    has_attachments: bool  # True if user uploaded file(s)
     
     # Context
     collected_info: dict

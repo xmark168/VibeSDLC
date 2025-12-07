@@ -24,6 +24,7 @@ export const agentQueryKeys = {
   systemStats: () => [...agentQueryKeys.all, "system-stats"] as const,
   alerts: (limit?: number) => [...agentQueryKeys.all, "alerts", limit] as const,
   project: (projectId: string) => [...agentQueryKeys.all, "project", projectId] as const,
+  activity: (agentId: string) => [...agentQueryKeys.all, "activity", agentId] as const,
   executions: (filters?: ExecutionFilters) => [...agentQueryKeys.all, "executions", filters] as const,
   metrics: () => [...agentQueryKeys.all, "metrics"] as const,
   metricsTimeseries: (params: {
@@ -52,6 +53,19 @@ export function useProjectAgents(projectId: string, options?: { enabled?: boolea
     enabled: (options?.enabled ?? true) && !!projectId,
     staleTime: 10000, // Consider stale after 10s
     refetchOnWindowFocus: false, // Agent status updated via WebSocket
+  })
+}
+
+/**
+ * Fetch agent activity for popup display
+ */
+export function useAgentActivity(agentId: string, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: agentQueryKeys.activity(agentId),
+    queryFn: () => agentsApi.getAgentActivity(agentId),
+    enabled: (options?.enabled ?? true) && !!agentId,
+    staleTime: 5000, // 5s - activity data should be fresh
+    refetchOnWindowFocus: true,
   })
 }
 

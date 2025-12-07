@@ -134,6 +134,9 @@ tasks:
       1. If user request is vague or missing key details (target users, features, constraints), choose "interview"
       2. Only choose "prd_create" if user provides comprehensive requirements
       3. If no collected info exists yet, prefer "interview" to gather details first
+      4. **DOCUMENT + EXISTING PRD RULE:** If user uploads a document (message contains "[Tài liệu đính kèm:") AND existing PRD exists:
+         - Default to "prd_update" (assume user wants to update based on document)
+         - Only choose "prd_create" if user EXPLICITLY says "tạo mới", "tạo PRD mới", "bỏ PRD cũ"
       
       **Available Intents:**
       - **conversational**: Greetings, thanks, casual chat NOT about product/project
@@ -199,6 +202,19 @@ tasks:
       
       - "Phê duyệt Stories" -> stories_approve
          Reasoning: "User approves stories and wants to add them to project backlog"
+      
+      **Document upload scenarios (message contains "[Tài liệu đính kèm:"):**
+      - "Tạo PRD từ file này [Tài liệu đính kèm: req.docx]..." (has_prd=No) -> prd_create
+         Reasoning: "User uploads document for new PRD creation"
+      
+      - "Cập nhật PRD theo file này [Tài liệu đính kèm: updates.docx]..." (has_prd=Yes) -> prd_update
+         Reasoning: "User wants to update existing PRD with document content"
+      
+      - "Xem file này [Tài liệu đính kèm: spec.docx]..." (has_prd=Yes) -> prd_update
+         Reasoning: "Document uploaded with existing PRD, default to update"
+      
+      - "Tạo PRD mới từ file [Tài liệu đính kèm: new_req.docx]..." (has_prd=Yes) -> prd_create
+         Reasoning: "User EXPLICITLY says 'tạo mới' - wants new PRD, not update"
 
   # ---------------------------------------------------------------------------
   # INTERVIEW REQUIREMENTS - Context-aware clarification questions
@@ -763,6 +779,67 @@ tasks:
         "change_summary": "Summary of changes made"
       }}
       ```
+
+  # ---------------------------------------------------------------------------
+  # ANALYZE DOCUMENT - Extract requirements from uploaded document
+  # ---------------------------------------------------------------------------
+  analyze_document:
+    system_prompt: |
+      {shared_context.agent_identity}
+      
+      ---
+      
+      # DOCUMENT ANALYSIS
+      
+      You are analyzing a requirements document uploaded by the user.
+      Your task is to extract key information to determine if we have enough details to create a PRD directly.
+      
+      **EXTRACT THESE CATEGORIES:**
+      1. **target_users**: Who will use this product? (customers, admins, guests, etc.)
+      2. **main_features**: What features/functionalities are described?
+      3. **business_model**: How will this make money? (sales, subscription, ads, etc.)
+      4. **priorities**: What's most important to the user?
+      5. **constraints**: Any limitations, requirements, or concerns mentioned?
+      
+      **SCORING RULES:**
+      - Each category found = 20 points (max 100)
+      - Category is "found" if document clearly describes it
+      - Vague mentions don't count (e.g., "users" without specifics)
+      
+      **OUTPUT DECISION:**
+      - Score >= 60%: Document is comprehensive → can create PRD directly
+      - Score < 60%: Document is incomplete → need to ask clarification questions
+
+    user_prompt: |
+      # DOCUMENT CONTENT
+      
+      {document_text}
+      
+      # YOUR TASK
+      
+      Analyze the document and extract requirements information.
+      
+      Return ONLY valid JSON:
+      ```json
+      {{
+        "collected_info": {{
+          "target_users": "extracted info or null",
+          "main_features": "extracted info or null", 
+          "business_model": "extracted info or null",
+          "priorities": "extracted info or null",
+          "constraints": "extracted info or null"
+        }},
+        "completeness_score": 0.0 to 1.0,
+        "is_comprehensive": true/false,
+        "summary": "Brief summary of what the document describes",
+        "missing_info": ["list of missing categories that need clarification"]
+      }}
+      ```
+      
+      **IMPORTANT:**
+      - Set is_comprehensive=true if score >= 0.6 (60%)
+      - Only include categories in collected_info if document CLEARLY describes them
+      - Be strict - vague descriptions don't count
 
   # ---------------------------------------------------------------------------
   # RESPOND CONVERSATIONAL - Handle casual chat (greetings, thanks, etc.)

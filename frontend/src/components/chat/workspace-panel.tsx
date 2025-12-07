@@ -10,7 +10,7 @@ import { FileExplorer } from "../shared/file-explorer"
 import { CodeViewer } from "../shared/code-viewer"
 import { AnimatedTooltip } from "../ui/animated-tooltip"
 import { AppViewer } from "./app-viewer"
-import { DatabaseAgentDetailSheet } from "../agents/database-agent-detail-sheet"
+import { AgentPopup } from "../agents/agent-popup"
 import { useProjectAgents } from "@/queries/agents"
 import { useQueryClient } from "@tanstack/react-query"
 import type { AgentPublic } from "@/client/types.gen"
@@ -33,6 +33,7 @@ interface WorkspacePanelProps {
   selectedArtifactId?: string | null
   initialSelectedFile?: string | null
   onResize?: (delta: number) => void
+  onMessageAgent?: (agentName: string) => void // Callback to @mention agent in chat
 }
 
 // Generate avatar URL from agent human_name using DiceBear API
@@ -58,7 +59,7 @@ const getRoleDesignation = (roleType: string): string => {
   return roleMap[roleType] || roleType
 }
 
-export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projectId, activeTab: wsActiveTab, agentStatuses, selectedArtifactId, onResize, initialSelectedFile }: WorkspacePanelProps) {
+export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projectId, activeTab: wsActiveTab, agentStatuses, selectedArtifactId, onResize, initialSelectedFile, onMessageAgent }: WorkspacePanelProps) {
   const queryClient = useQueryClient()
 
   // Resize handle state - use refs to avoid re-renders during drag
@@ -448,11 +449,12 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
         </div>
       </div>
 
-      {/* Agent Detail Sheet */}
-      <DatabaseAgentDetailSheet
+      {/* Agent Popup */}
+      <AgentPopup
         agent={selectedAgent}
         open={agentDetailOpen}
         onOpenChange={setAgentDetailOpen}
+        onMessage={onMessageAgent}
       />
     </div>
   )
