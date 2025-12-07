@@ -74,7 +74,7 @@ tasks:
       - Each story should have at least 1 integration test
       - E2E tests ONLY for stories with UI flows (forms, navigation)
       - CRITICAL: Use EXACT folder paths (shown in test_types table)
-      - Use descriptive file names: story-{slug-from-title}.test.ts
+      - Use descriptive file names: story-{{slug-from-title}}.test.ts
       - List specific scenarios (3-6 for integration, 2-4 for e2e)
       - SKIP stories about config/setup/refactoring - only test USER FEATURES
       </rules>
@@ -145,8 +145,8 @@ tasks:
       <test_structure>
       ## Integration Test Template
       ```typescript
-      import { GET, POST } from '@/app/api/xxx/route';
-      import { prismaMock } from '@/lib/__mocks__/prisma';
+      import {{ GET, POST }} from '@/app/api/xxx/route';
+      import {{ prismaMock }} from '@/lib/__mocks__/prisma';
       
       describe('API /api/xxx', () => {
         beforeEach(() => {
@@ -172,7 +172,7 @@ tasks:
       
       ## E2E Test Template
       ```typescript
-      import { test, expect } from '@playwright/test';
+      import {{ test, expect }} from '@playwright/test';
       
       test.describe('Feature Name', () => {
         test('user can complete action', async ({ page }) => {
@@ -383,7 +383,7 @@ tasks:
       ## Prisma Mock Errors
       | Error Pattern | Root Cause | Quick Fix |
       |---------------|------------|-----------|
-      | prismaMock is not defined | Missing import | Add `import { prismaMock } from '@/lib/__mocks__/prisma'` |
+      | prismaMock is not defined | Missing import | Add `import {{ prismaMock }} from '@/lib/__mocks__/prisma'` |
       | Cannot read findMany of undefined | Model not mocked | Add `prismaMock.modelName.findMany.mockResolvedValue()` |
       | mockResolvedValue is not a function | Wrong mock setup | Check jest.setup.ts has prisma mock |
       | Unique constraint failed | Duplicate test data | Use unique IDs per test |

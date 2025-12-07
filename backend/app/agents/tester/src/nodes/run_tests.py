@@ -14,8 +14,18 @@ from app.agents.tester.src.core_nodes import send_message
 logger = logging.getLogger(__name__)
 
 
-def _get_project_path(project_id: str) -> Path | None:
-    """Get project path from database."""
+def _get_workspace_path(state: dict) -> Path | None:
+    """Get workspace path from state (worktree) or fallback to project path from DB."""
+    # Prefer workspace_path (worktree) where files are actually written
+    workspace_path = state.get("workspace_path")
+    if workspace_path:
+        return Path(workspace_path)
+    
+    # Fallback to project path from DB
+    project_id = state.get("project_id")
+    if not project_id:
+        return None
+        
     from sqlmodel import Session
     from app.core.db import engine
     from app.models import Project
@@ -230,7 +240,6 @@ async def run_tests(state: TesterState, agent=None) -> dict:
     """
     print("[NODE] run_tests")
     
-    project_id = state.get("project_id", "")
     test_plan = state.get("test_plan", [])
     
     if not test_plan:
@@ -241,13 +250,16 @@ async def run_tests(state: TesterState, agent=None) -> dict:
             "message": "Không có tests để chạy.",
         }
     
-    project_path = _get_project_path(project_id)
+    # Use workspace_path (worktree) where files are written, not project_path from DB
+    project_path = _get_workspace_path(state)
     if not project_path:
         return {
             "run_status": "ERROR",
-            "error": "Project path not configured",
-            "message": "Lỗi: Không tìm thấy project path.",
+            "error": "Workspace path not configured",
+            "message": "Lỗi: Không tìm thấy workspace path.",
         }
+    
+    logger.info(f"[run_tests] Using workspace: {project_path}")
     
     # Collect all test files
     all_test_files = [step.get("file_path", "") for step in test_plan if step.get("file_path")]

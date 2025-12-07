@@ -1,6 +1,7 @@
 """Prompt utilities for Tester graph."""
 
 import logging
+import re
 from pathlib import Path
 
 import yaml
@@ -23,6 +24,20 @@ def _resolve_shared_context(template: str) -> str:
             template = template.replace(placeholder, value)
     
     return template
+
+
+def _safe_format(template: str, **kwargs) -> str:
+    """Safely format template, only replacing provided keys.
+    
+    Unlike str.format(), this doesn't fail on unmatched placeholders.
+    Handles code examples with curly braces gracefully.
+    """
+    result = template
+    for key, value in kwargs.items():
+        # Only replace simple {key} patterns, not nested braces
+        pattern = r'\{' + re.escape(key) + r'\}'
+        result = re.sub(pattern, str(value), result)
+    return result
 
 
 def get_prompt(task_name: str, prompt_type: str = "user_prompt", **kwargs) -> str:
@@ -49,12 +64,8 @@ def get_prompt(task_name: str, prompt_type: str = "user_prompt", **kwargs) -> st
     # Resolve shared context first
     template = _resolve_shared_context(template)
     
-    # Then format with kwargs
-    try:
-        return template.format(**kwargs)
-    except KeyError as e:
-        logger.warning(f"Missing key {e} in prompt kwargs for {task_name}")
-        return template
+    # Safe format - only replaces provided keys
+    return _safe_format(template, **kwargs)
 
 
 def get_system_prompt(task_name: str, **kwargs) -> str:
